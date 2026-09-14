@@ -1,0 +1,39 @@
+myCarlos Evaluation for Windows x64
+
+This is an unsigned development build. Use synthetic files only, never real patient information.
+
+1. Extract all files from the downloaded ZIP.
+2. Open myCarlos-Evaluation-Windows-x64-setup.exe and follow the installer.
+3. Launch myCarlos Evaluation from the Windows Start menu.
+4. Create a fictional patient profile and choose a unique test passphrase of at least 15 characters.
+5. Choose files to import and select the PDFs in the sample-files folder from this ZIP.
+
+After importing, drag documents or folders onto a folder to move them within myCarlos.
+Drop onto My records to move them to the root. Dragging PDFs from Windows File Explorer into
+the app is not implemented; use Choose files to import instead.
+
+To change a folder name, click Rename beside it, or open it and choose Rename folder.
+To change an imported file name, open its document details and choose Rename document.
+Enter the new name and choose Save name. Keep .pdf at the end of PDF file names.
+Names are saved in the encrypted vault; document contents and original imported files are unchanged.
+
+No Node, Rust, or developer tools are needed. The installer installs for your Windows account.
+If Microsoft Edge WebView2 is missing, setup installs it; this requires internet access.
+
+Windows may warn about an unknown publisher or block this unsigned app. Organization policies
+may also prevent installation. A signed publisher build is not available yet; do not disable
+Windows security features to install this evaluation.
+
+The app is not connected to CARLOS EMR. Forgetting the passphrase loses access to this test vault.
+Uninstalling the app can leave its vault data behind. To erase the test vault, use Security >
+Erase entire vault before uninstalling. Reset does not delete any readable copies you exported.
+
+BUILD.txt identifies the source commit and GitHub build. SHA256SUMS.txt identifies the installer.
+Updates are manual: download and run the installer from a newer successful Windows native build.
+The overall workflow can be red because the known Linux dependency audit remains a release blocker.
+
+Latest builds:
+https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Afeat%2Finitial-tauri-vault
+
+Installation and signing details:
+https://github.com/carlos-emr/mycarlos/blob/feat/initial-tauri-vault/WINDOWS.md

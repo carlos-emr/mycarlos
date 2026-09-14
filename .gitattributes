@@ -1,0 +1,9 @@
+# Preserve the source repository's LF text and binary-file handling on Windows.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.svg text
+package-lock.json -diff linguist-generated
+*.md diff=markdown
