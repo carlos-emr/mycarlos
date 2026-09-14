@@ -1,6 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
-
 export interface RuntimeInfo {
   platform: string;
   architecture: string;
@@ -17,14 +14,6 @@ export interface SelectedDocument {
 export interface PlatformBridge {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   selectPdf(): Promise<SelectedDocument | null>;
-}
-
-function isTauriRuntime(): boolean {
-  return "__TAURI_INTERNALS__" in window;
-}
-
-function safeBasename(path: string): string {
-  return path.split(/[\\/]/).at(-1) || "Selected document.pdf";
 }
 
 function selectPdfInBrowser(): Promise<SelectedDocument | null> {
@@ -45,34 +34,19 @@ function selectPdfInBrowser(): Promise<SelectedDocument | null> {
   });
 }
 
+// Only the nonpersistent browser preview uses this bridge. The native vault
+// imports through VaultBridge and Rust-owned pickers, never renderer file paths.
 export function createPlatformBridge(): PlatformBridge {
   return {
     async getRuntimeInfo() {
-      if (!isTauriRuntime()) {
-        return {
-          platform: "Browser preview",
-          architecture: "web",
-          appVersion: "0.1.0",
-          message: "Hello from the shared web UI",
-          native: false,
-        };
-      }
-
-      const result = await invoke<Omit<RuntimeInfo, "native">>("runtime_info");
-      return { ...result, native: true };
+      return {
+        platform: "Browser preview",
+        architecture: "web",
+        appVersion: "0.1.0",
+        message: "Hello from the shared web UI",
+        native: false,
+      };
     },
-
-    async selectPdf() {
-      if (!isTauriRuntime()) {
-        return selectPdfInBrowser();
-      }
-
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "PDF documents", extensions: ["pdf"] }],
-      });
-      return selected ? { name: safeBasename(selected) } : null;
-    },
+    selectPdf: selectPdfInBrowser,
   };
 }

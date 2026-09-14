@@ -1,6 +1,6 @@
 import process from "node:process";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -21,12 +21,5 @@ export default defineConfig({
     watch: {
       ignored: ["**/src-tauri/**"],
     },
-  },
-  test: {
-    environment: "jsdom",
-    setupFiles: "./src/test/setup.ts",
-    include: ["src/**/*.test.{ts,tsx}"],
-    testTimeout: 15_000,
-    css: true,
   },
 });

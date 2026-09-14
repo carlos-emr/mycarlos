@@ -89,10 +89,6 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run check
-      - run: npm test
-      - run: npm run test:dev-data
-      - run: npm run test:android-security
-      - run: npm run build
       - name: Install Playwright Chromium with bounded mirror retries
         run: |
           for attempt in 1 2 3; do
@@ -104,6 +100,10 @@ jobs:
             fi
             sleep $((attempt * 10))
           done
+      - run: npm test
+      - run: npm run test:dev-data
+      - run: npm run test:android-security
+      - run: npm run build
       - run: npm run test:e2e
       - name: Upload responsive screenshots and traces
         if: always()

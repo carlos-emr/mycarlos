@@ -44,16 +44,21 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
   };
 }
 
-function dragTransfer() {
-  let payload = "";
-  return {
-    effectAllowed: "none",
-    dropEffect: "none",
-    setData: vi.fn((_type: string, value: string) => {
-      payload = value;
-    }),
-    getData: vi.fn(() => payload),
-  };
+// Testing Library's drag convenience helpers clone DataTransfer and lose native
+// file items. Dispatch a real browser DragEvent to preserve its payload.
+function fireDragEvent(
+  type: string,
+  target: Element | Window,
+  init: DragEventInit,
+): boolean {
+  return fireEvent(
+    target,
+    new DragEvent(type, { bubbles: true, cancelable: true, ...init }),
+  );
+}
+
+function dragTransfer(): DataTransfer {
+  return new DataTransfer();
 }
 
 function renameBridge() {
@@ -253,7 +258,8 @@ describe("durable vault UI", () => {
     expect(screen.queryByText("FAKE_Bloodwork.pdf")).not.toBeInTheDocument();
 
     const recordTransfer = dragTransfer();
-    fireEvent.dragStart(
+    fireDragEvent(
+      "dragstart",
       screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }),
       { dataTransfer: recordTransfer },
     );
@@ -266,10 +272,10 @@ describe("durable vault UI", () => {
     const sidebarFolder = within(folderNavigation).getByRole("button", {
       name: /FAKE Test Results/,
     });
-    fireEvent.dragOver(visibleFolder, { dataTransfer: recordTransfer });
+    fireDragEvent("dragover", visibleFolder, { dataTransfer: recordTransfer });
     expect(visibleFolder).toHaveClass("native-drop-target");
     expect(sidebarFolder).not.toHaveClass("native-drop-target");
-    fireEvent.drop(visibleFolder, { dataTransfer: recordTransfer });
+    fireDragEvent("drop", visibleFolder, { dataTransfer: recordTransfer });
     await waitFor(() =>
       expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
         ["record-root"],
@@ -278,15 +284,20 @@ describe("durable vault UI", () => {
     );
 
     const nestedTransfer = dragTransfer();
-    fireEvent.dragStart(
+    fireDragEvent(
+      "dragstart",
       screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }),
       { dataTransfer: nestedTransfer },
     );
     const nestedSidebarFolder = within(folderNavigation).getByRole("button", {
       name: /FAKE 2025 Letters/,
     });
-    fireEvent.dragOver(nestedSidebarFolder, { dataTransfer: nestedTransfer });
-    fireEvent.drop(nestedSidebarFolder, { dataTransfer: nestedTransfer });
+    fireDragEvent("dragover", nestedSidebarFolder, {
+      dataTransfer: nestedTransfer,
+    });
+    fireDragEvent("drop", nestedSidebarFolder, {
+      dataTransfer: nestedTransfer,
+    });
     await waitFor(() =>
       expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
         ["record-root"],
@@ -295,15 +306,18 @@ describe("durable vault UI", () => {
     );
 
     const folderTransfer = dragTransfer();
-    fireEvent.dragStart(
+    fireDragEvent(
+      "dragstart",
       screen.getByRole("article", { name: "FAKE Test Results folder" }),
       { dataTransfer: folderTransfer },
     );
-    fireEvent.dragOver(
+    fireDragEvent(
+      "dragover",
       screen.getByRole("article", { name: "FAKE Letters folder" }),
       { dataTransfer: folderTransfer },
     );
-    fireEvent.drop(
+    fireDragEvent(
+      "drop",
       screen.getByRole("article", { name: "FAKE Letters folder" }),
       { dataTransfer: folderTransfer },
     );
@@ -324,15 +338,16 @@ describe("durable vault UI", () => {
     expect(screen.getByText("FAKE_Bloodwork.pdf")).toBeVisible();
 
     const rootTransfer = dragTransfer();
-    fireEvent.dragStart(
+    fireDragEvent(
+      "dragstart",
       screen.getByRole("article", { name: "FAKE_Bloodwork.pdf document" }),
       { dataTransfer: rootTransfer },
     );
     const rootDropTarget = within(folderNavigation).getByRole("button", {
       name: /My records/,
     });
-    fireEvent.dragOver(rootDropTarget, { dataTransfer: rootTransfer });
-    fireEvent.drop(rootDropTarget, { dataTransfer: rootTransfer });
+    fireDragEvent("dragover", rootDropTarget, { dataTransfer: rootTransfer });
+    fireDragEvent("drop", rootDropTarget, { dataTransfer: rootTransfer });
     await waitFor(() =>
       expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
         ["record-folder"],
@@ -460,9 +475,7 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: "Rename folder FAKE Parent" }),
     );
-    const results = await axe.run(screen.getByRole("dialog"), {
-      rules: { "color-contrast": { enabled: false } },
-    });
+    const results = await axe.run(screen.getByRole("dialog"));
     expect(results.violations).toEqual([]);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -503,29 +516,35 @@ describe("durable vault UI", () => {
       const heading = await screen.findByRole("heading", {
         name: status === "locked" ? "Unlock your vault" : "My records",
       });
-      const transfer = {
-        types: ["Files"],
-        dropEffect: "copy",
-        getData: vi.fn(),
-      };
-      expect(fireEvent.dragOver(heading, { dataTransfer: transfer })).toBe(
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File(["%PDF-1.7"], "FAKE dropped.pdf", { type: "application/pdf" }),
+      );
+      transfer.dropEffect = "copy";
+      expect(
+        fireDragEvent("dragover", heading, { dataTransfer: transfer }),
+      ).toBe(false);
+      expect(transfer.dropEffect).toBe("none");
+      expect(fireDragEvent("drop", heading, { dataTransfer: transfer })).toBe(
         false,
       );
-      expect(transfer.dropEffect).toBe("none");
-      expect(fireEvent.drop(heading, { dataTransfer: transfer })).toBe(false);
       expect(
         await screen.findByText(
           /To import PDFs, unlock your vault and use Choose files to import/,
         ),
       ).toBeVisible();
+      const urlTransfer = new DataTransfer();
+      urlTransfer.setData("text/uri-list", "https://example.invalid/");
       expect(
-        fireEvent.drop(heading, { dataTransfer: { types: ["text/uri-list"] } }),
+        fireDragEvent("drop", heading, { dataTransfer: urlTransfer }),
       ).toBe(false);
       expect(bridge.importFiles).not.toHaveBeenCalled();
       expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
       expect(bridge.updateFolder).not.toHaveBeenCalled();
       unmount();
-      expect(fireEvent.drop(window, { dataTransfer: transfer })).toBe(true);
+      expect(fireDragEvent("drop", window, { dataTransfer: transfer })).toBe(
+        true,
+      );
     },
   );
 
@@ -633,8 +652,10 @@ describe("durable vault UI", () => {
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
       });
-      render(<VaultApp bridge={bridge} />);
-      await act(async () => undefined);
+      // Await the initial session load inside the timer-controlled act scope.
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
       expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
 
       window.dispatchEvent(new Event("blur"));
@@ -675,8 +696,10 @@ describe("durable vault UI", () => {
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
       });
-      render(<VaultApp bridge={bridge} />);
-      await act(async () => undefined);
+      // Await the initial session load inside the timer-controlled act scope.
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
 
       await act(async () => vi.advanceTimersByTime(59 * 1000));
       expect(bridge.lock).not.toHaveBeenCalled();
@@ -879,8 +902,6 @@ describe("durable vault UI", () => {
         type: "tag" as const,
         values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
       },
-      // jsdom has no canvas implementation; real-browser Playwright covers color contrast.
-      rules: { "color-contrast": { enabled: false } },
     };
     const locked = render(<VaultApp bridge={nativeBridge()} />);
     await screen.findByRole("heading", { name: "Unlock your vault" });

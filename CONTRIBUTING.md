@@ -1,7 +1,9 @@
 # Working on myCarlos
 
 Use the pinned Node and Rust versions from the evaluation workflow. Run `npm ci`
-after changing branches or dependency locks. See [README.md](README.md#checks) for
+after changing branches or dependency locks. Install Chromium with
+`npx playwright install chromium` before `npm test`; component tests and end-to-end
+tests share Playwright. See [README.md](README.md#checks) for
 the checks and native build prerequisites.
 
 ## Frontend responsibilities
@@ -21,7 +23,8 @@ the checks and native build prerequisites.
 - `src/vault.ts` defines the typed native bridge and adapts it to Tauri IPC.
   Tests inject a substitute bridge through `VaultApp`.
 - `src/App.tsx` is the nonpersistent browser demonstration. Shared icons live in
-  `src/Icon.tsx`, independently of either app's state.
+  `src/Icon.tsx`, independently of either app's state. Its platform bridge uses browser APIs only;
+  the durable app keeps native dialogs and file handles in Rust.
 
 Prefer one responsibility per component, narrow data/action props, and named
 handlers for operations with side effects. Keep persistence behind the bridge
@@ -35,6 +38,6 @@ bundles, dependency sources, and lockfiles are not formatting targets.
 
 ## Dependency alerts
 
-Read [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md) for the Socket findings on the
-initial import. Source readability and dependency security need separate review;
+Read [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md) for dependency removal decisions
+and the remaining Socket finding. Source readability and dependency security need separate review;
 reformatting application code does not resolve an alert in an upstream package.

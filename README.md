@@ -64,7 +64,7 @@ evaluation evidence and must not be distributed to patients.
   update all affected library sections in memory until refresh, close, or reset.
 - Browser-only Security & backup and Health data concept screens, alongside a native Security
   screen for the implemented vault lock, passphrase, profile, and reset operations.
-- A typed `runtime_info` command crossing from TypeScript to Rust.
+- Typed vault commands crossing from TypeScript to Rust; the browser preview uses no native picker APIs.
 - Native multi-file import and explicit export dialogs owned by Rust; filesystem paths and file
   bytes are never accepted from or returned to React.
 - PDF-filtered imports are limited to 100 files per batch to bound simultaneously open handles and
@@ -186,15 +186,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for component responsibilities and format
 ```bash
 npm run format:check
 npm run check
+npx playwright install chromium
 npm test
 npm run build
-npx playwright install chromium
 npm run test:e2e
 
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 CARGO_BUILD_JOBS=1 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 CARGO_BUILD_JOBS=1 cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 ```
+
+`npm test` runs the component tests in headless Chromium using the same Playwright installation
+as `npm run test:e2e`. On a fresh Linux host, use `npx playwright install --with-deps chromium`
+to install browser system libraries as well.
 
 The single Cargo build job and test thread are the low-memory defaults for a shared development
 container. They trade speed for predictable memory use and do not affect the produced application.
