@@ -42,14 +42,28 @@ export interface ImportOutcome {
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
-  create(passphrase: string, initialProfileName: string): Promise<VaultSnapshot>;
+  create(
+    passphrase: string,
+    initialProfileName: string,
+  ): Promise<VaultSnapshot>;
   unlock(passphrase: string): Promise<VaultSnapshot>;
   lock(): Promise<void>;
   snapshot(): Promise<VaultSnapshot>;
-  changePassphrase(currentPassphrase: string, newPassphrase: string): Promise<void>;
+  changePassphrase(
+    currentPassphrase: string,
+    newPassphrase: string,
+  ): Promise<void>;
   createProfile(displayName: string): Promise<string>;
-  createFolder(profileId: string, parentId: string | null, name: string): Promise<string>;
-  updateFolder(folderId: string, parentId: string | null, name: string): Promise<void>;
+  createFolder(
+    profileId: string,
+    parentId: string | null,
+    name: string,
+  ): Promise<string>;
+  updateFolder(
+    folderId: string,
+    parentId: string | null,
+    name: string,
+  ): Promise<void>;
   renameRecord(recordId: string, name: string): Promise<void>;
   assignFolders(recordId: string, folderIds: string[]): Promise<void>;
   assignFoldersBatch(recordIds: string[], folderIds: string[]): Promise<void>;
@@ -82,8 +96,11 @@ export function createVaultBridge(): VaultBridge {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
     create: (passphrase, initialProfileName) =>
-      invoke<VaultSnapshot>("vault_create", { request: { passphrase, initialProfileName } }),
-    unlock: (passphrase) => invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
+      invoke<VaultSnapshot>("vault_create", {
+        request: { passphrase, initialProfileName },
+      }),
+    unlock: (passphrase) =>
+      invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
     lock: () => invoke<void>("vault_lock"),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
     changePassphrase: (currentPassphrase, newPassphrase) =>
@@ -93,21 +110,32 @@ export function createVaultBridge(): VaultBridge {
     createProfile: (displayName) =>
       invoke<string>("vault_create_profile", { request: { displayName } }),
     createFolder: (profileId, parentId, name) =>
-      invoke<string>("vault_create_folder", { request: { profileId, parentId, name } }),
+      invoke<string>("vault_create_folder", {
+        request: { profileId, parentId, name },
+      }),
     updateFolder: (folderId, parentId, name) =>
-      invoke<void>("vault_update_folder", { request: { folderId, parentId, name } }),
+      invoke<void>("vault_update_folder", {
+        request: { folderId, parentId, name },
+      }),
     renameRecord: (recordId, name) =>
       invoke<void>("vault_rename_record", { request: { recordId, name } }),
     assignFolders: (recordId, folderIds) =>
-      invoke<void>("vault_assign_folders", { request: { recordId, folderIds } }),
+      invoke<void>("vault_assign_folders", {
+        request: { recordId, folderIds },
+      }),
     assignFoldersBatch: (recordIds, folderIds) =>
-      invoke<void>("vault_assign_folders_batch", { request: { recordIds, folderIds } }),
+      invoke<void>("vault_assign_folders_batch", {
+        request: { recordIds, folderIds },
+      }),
     importFiles: (profileId, folderIds) =>
-      invoke<ImportOutcome>("vault_import_begin", { request: { profileId, folderIds } }),
+      invoke<ImportOutcome>("vault_import_begin", {
+        request: { profileId, folderIds },
+      }),
     exportFile: (recordId) =>
       invoke<boolean>("vault_export_begin", { request: { recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
-    reset: (confirmation) => invoke<boolean>("vault_reset", { request: { confirmation } }),
+    reset: (confirmation) =>
+      invoke<boolean>("vault_reset", { request: { confirmation } }),
   };
 }

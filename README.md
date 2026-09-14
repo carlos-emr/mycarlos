@@ -171,8 +171,8 @@ build runs on macOS.
   flags [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g), which is patched
   only in `glib` 0.20.0. Linux therefore remains outside the initial supported platform set. The
   old CARLOS draft had a narrowly scoped audit exception. That exception was not imported here:
-  the strict Rust audit reports this finding and blocks the security check until the dependency
-  is patched and reviewed. Windows evaluation builds run independently; they do not waive the
+  the Rust audit reports this finding as an unsoundness warning, even when the job passes.
+  It remains a release blocker until patched and reviewed. Windows evaluation builds do not waive the
   audit finding or establish release readiness.
 - Hosted CI produced a 48 MB Linux debug `.deb`, a 131 MB Android debug APK, and a 92 MB unsigned
   iOS simulator `.app`. These unoptimized artifacts are useful feasibility evidence, not release
@@ -180,7 +180,11 @@ build runs on macOS.
 
 ## Checks
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for component responsibilities and formatting, and
+[DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md) for the unresolved Socket warnings.
+
 ```bash
+npm run format:check
 npm run check
 npm test
 npm run build

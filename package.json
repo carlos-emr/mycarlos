@@ -19,7 +19,9 @@
     "test:android-security": "node --test scripts/configure-android-security.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
@@ -29,9 +31,9 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@tauri-apps/cli": "^2.11.4",
     "@cyclonedx/cyclonedx-npm": "6.0.1",
     "@playwright/test": "^1.62.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
@@ -41,6 +43,7 @@
     "@vitejs/plugin-react": "^6.1.0",
     "axe-core": "4.13.0",
     "jsdom": "29.0.1",
+    "prettier": "3.6.2",
     "typescript": "~6.0.3",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"

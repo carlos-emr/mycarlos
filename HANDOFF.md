@@ -27,7 +27,7 @@ transfer GitHub review comments or original commit IDs into the new PR.
 - Git attributes preserve LF text and binary PDF/image handling on Windows checkouts.
 - Download and developer documentation point to this repository.
 - The original draft-only Rust audit exception is removed. The known Linux `glib` advisory remains
-  a failing security gate; it is not waived for this import.
+  a release blocker; the audit reports it as an unsoundness warning even when CI passes.
 - Security reporting retains the existing private CARLOS intake while dedicated private reporting
   is not enabled here. See [SECURITY.md](SECURITY.md).
 - The destination's existing AGPL license and upstream GPL notices are preserved; see

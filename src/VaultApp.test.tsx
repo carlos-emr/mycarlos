@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +34,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     renameRecord: vi.fn().mockResolvedValue(undefined),
     assignFolders: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
-    importFiles: vi.fn().mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+    importFiles: vi
+      .fn()
+      .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     exportFile: vi.fn().mockResolvedValue(false),
     deleteRecord: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn().mockResolvedValue(true),
@@ -40,7 +49,9 @@ function dragTransfer() {
   return {
     effectAllowed: "none",
     dropEffect: "none",
-    setData: vi.fn((_type: string, value: string) => { payload = value; }),
+    setData: vi.fn((_type: string, value: string) => {
+      payload = value;
+    }),
     getData: vi.fn(() => payload),
   };
 }
@@ -49,19 +60,52 @@ function renameBridge() {
   let snapshot: VaultSnapshot = {
     ...emptySnapshot,
     folders: [
-      { id: "parent", profileId: "profile-1", parentId: null, name: "FAKE Parent", createdAtMs: 1 },
-      { id: "child", profileId: "profile-1", parentId: "parent", name: "FAKE Old folder", createdAtMs: 2 },
+      {
+        id: "parent",
+        profileId: "profile-1",
+        parentId: null,
+        name: "FAKE Parent",
+        createdAtMs: 1,
+      },
+      {
+        id: "child",
+        profileId: "profile-1",
+        parentId: "parent",
+        name: "FAKE Old folder",
+        createdAtMs: 2,
+      },
     ],
-    records: [{ id: "record", profileId: "profile-1", folderIds: ["parent"], displayName: "FAKE Old.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 1 }],
+    records: [
+      {
+        id: "record",
+        profileId: "profile-1",
+        folderIds: ["parent"],
+        displayName: "FAKE Old.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/octet-stream",
+        plaintextSize: 2048,
+        importedAtMs: 1,
+      },
+    ],
   };
   return nativeBridge({
     status: vi.fn().mockResolvedValue("unlocked"),
     snapshot: vi.fn().mockImplementation(async () => snapshot),
     updateFolder: vi.fn().mockImplementation(async (id, parentId, name) => {
-      snapshot = { ...snapshot, folders: snapshot.folders.map((folder) => folder.id === id ? { ...folder, parentId, name } : folder) };
+      snapshot = {
+        ...snapshot,
+        folders: snapshot.folders.map((folder) =>
+          folder.id === id ? { ...folder, parentId, name } : folder,
+        ),
+      };
     }),
     renameRecord: vi.fn().mockImplementation(async (id, displayName) => {
-      snapshot = { ...snapshot, records: snapshot.records.map((record) => record.id === id ? { ...record, displayName } : record) };
+      snapshot = {
+        ...snapshot,
+        records: snapshot.records.map((record) =>
+          record.id === id ? { ...record, displayName } : record,
+        ),
+      };
     }),
   });
 }
@@ -72,55 +116,127 @@ describe("durable vault UI", () => {
   });
 
   it("creates the vault only when passphrases match", async () => {
-    const bridge = nativeBridge({ status: vi.fn().mockResolvedValue("absent") });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+    });
     render(<VaultApp bridge={bridge} />);
 
     await screen.findByRole("heading", { name: "Create your encrypted vault" });
-    fireEvent.change(screen.getByLabelText("First patient profile"), { target: { value: "Jamie" } });
+    fireEvent.change(screen.getByLabelText("First patient profile"), {
+      target: { value: "Jamie" },
+    });
     const passwords = screen.getAllByLabelText(/passphrase/i);
-    fireEvent.change(passwords[0], { target: { value: "river-azimuth-cobalt-sparrow-934" } });
+    fireEvent.change(passwords[0], {
+      target: { value: "river-azimuth-cobalt-sparrow-934" },
+    });
     fireEvent.change(passwords[1], { target: { value: "different" } });
     expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
-    fireEvent.change(passwords[1], { target: { value: "river-azimuth-cobalt-sparrow-934" } });
+    fireEvent.change(passwords[1], {
+      target: { value: "river-azimuth-cobalt-sparrow-934" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
 
     await screen.findByRole("heading", { name: "My records" });
-    expect(bridge.create).toHaveBeenCalledWith("river-azimuth-cobalt-sparrow-934", "Jamie");
+    expect(bridge.create).toHaveBeenCalledWith(
+      "river-azimuth-cobalt-sparrow-934",
+      "Jamie",
+    );
   });
 
   it("unlocks and imports through the native bridge", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
-      importFiles: vi.fn().mockResolvedValue({ imported: ["record-1"], skippedDuplicates: ["copy.pdf"] }),
+      importFiles: vi.fn().mockResolvedValue({
+        imported: ["record-1"],
+        skippedDuplicates: ["copy.pdf"],
+      }),
       snapshot: vi.fn().mockResolvedValue({
         ...emptySnapshot,
-        records: [{ id: "record-1", profileId: "profile-1", folderIds: [], displayName: "report.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 1 }],
+        records: [
+          {
+            id: "record-1",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: "report.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/octet-stream",
+            plaintextSize: 2048,
+            importedAtMs: 1,
+          },
+        ],
       }),
     });
     render(<VaultApp bridge={bridge} />);
 
     await screen.findByRole("heading", { name: "Unlock your vault" });
-    await user.type(screen.getByLabelText("Passphrase"), "river-azimuth-cobalt-sparrow-934");
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
-    await user.click(await screen.findByRole("button", { name: "Choose files to import" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Choose files to import" }),
+    );
 
     expect(await screen.findByText("report.pdf")).toBeVisible();
-    expect(screen.getByText("1 file(s) encrypted and imported. 1 duplicate(s) skipped.")).toBeVisible();
+    expect(
+      screen.getByText(
+        "1 file(s) encrypted and imported. 1 duplicate(s) skipped.",
+      ),
+    ).toBeVisible();
     expect(bridge.importFiles).toHaveBeenCalledWith("profile-1", []);
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {
     const user = userEvent.setup();
     const filingSnapshot: VaultSnapshot = {
-      profiles: [{ id: "profile-1", displayName: "FAKE Avery Patient", createdAtMs: 1 }],
+      profiles: [
+        { id: "profile-1", displayName: "FAKE Avery Patient", createdAtMs: 1 },
+      ],
       folders: [
-        { id: "folder-1", profileId: "profile-1", parentId: null, name: "FAKE Test Results", createdAtMs: 2 },
-        { id: "folder-2", profileId: "profile-1", parentId: null, name: "FAKE Letters", createdAtMs: 2 },
-        { id: "folder-3", profileId: "profile-1", parentId: "folder-2", name: "FAKE 2025 Letters", createdAtMs: 2 },
+        {
+          id: "folder-1",
+          profileId: "profile-1",
+          parentId: null,
+          name: "FAKE Test Results",
+          createdAtMs: 2,
+        },
+        {
+          id: "folder-2",
+          profileId: "profile-1",
+          parentId: null,
+          name: "FAKE Letters",
+          createdAtMs: 2,
+        },
+        {
+          id: "folder-3",
+          profileId: "profile-1",
+          parentId: "folder-2",
+          name: "FAKE 2025 Letters",
+          createdAtMs: 2,
+        },
       ],
       records: [
-        { id: "record-root", profileId: "profile-1", folderIds: [], displayName: "FAKE_Root_Letter.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 1024, importedAtMs: 3 },
-        { id: "record-folder", profileId: "profile-1", folderIds: ["folder-1"], displayName: "FAKE_Bloodwork.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 4 },
+        {
+          id: "record-root",
+          profileId: "profile-1",
+          folderIds: [],
+          displayName: "FAKE_Root_Letter.pdf",
+          sourceLabel: "Manual import — unverified",
+          mediaType: "application/octet-stream",
+          plaintextSize: 1024,
+          importedAtMs: 3,
+        },
+        {
+          id: "record-folder",
+          profileId: "profile-1",
+          folderIds: ["folder-1"],
+          displayName: "FAKE_Bloodwork.pdf",
+          sourceLabel: "Manual import — unverified",
+          mediaType: "application/octet-stream",
+          plaintextSize: 2048,
+          importedAtMs: 4,
+        },
       ],
       degraded: false,
     };
@@ -130,88 +246,182 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    expect(await screen.findByRole("heading", { name: "My records" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
     expect(screen.getByText("FAKE_Root_Letter.pdf")).toBeVisible();
     expect(screen.queryByText("FAKE_Bloodwork.pdf")).not.toBeInTheDocument();
 
     const recordTransfer = dragTransfer();
-    fireEvent.dragStart(screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }), { dataTransfer: recordTransfer });
-    const visibleFolder = screen.getByRole("article", { name: "FAKE Test Results folder" });
-    const folderNavigation = screen.getByRole("navigation", { name: "Record library" });
-    const sidebarFolder = within(folderNavigation).getByRole("button", { name: /FAKE Test Results/ });
+    fireEvent.dragStart(
+      screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }),
+      { dataTransfer: recordTransfer },
+    );
+    const visibleFolder = screen.getByRole("article", {
+      name: "FAKE Test Results folder",
+    });
+    const folderNavigation = screen.getByRole("navigation", {
+      name: "Record library",
+    });
+    const sidebarFolder = within(folderNavigation).getByRole("button", {
+      name: /FAKE Test Results/,
+    });
     fireEvent.dragOver(visibleFolder, { dataTransfer: recordTransfer });
     expect(visibleFolder).toHaveClass("native-drop-target");
     expect(sidebarFolder).not.toHaveClass("native-drop-target");
     fireEvent.drop(visibleFolder, { dataTransfer: recordTransfer });
-    await waitFor(() => expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(["record-root"], ["folder-1"]));
+    await waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
+        ["record-root"],
+        ["folder-1"],
+      ),
+    );
 
     const nestedTransfer = dragTransfer();
-    fireEvent.dragStart(screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }), { dataTransfer: nestedTransfer });
-    const nestedSidebarFolder = within(folderNavigation).getByRole("button", { name: /FAKE 2025 Letters/ });
+    fireEvent.dragStart(
+      screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }),
+      { dataTransfer: nestedTransfer },
+    );
+    const nestedSidebarFolder = within(folderNavigation).getByRole("button", {
+      name: /FAKE 2025 Letters/,
+    });
     fireEvent.dragOver(nestedSidebarFolder, { dataTransfer: nestedTransfer });
     fireEvent.drop(nestedSidebarFolder, { dataTransfer: nestedTransfer });
-    await waitFor(() => expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(["record-root"], ["folder-3"]));
+    await waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
+        ["record-root"],
+        ["folder-3"],
+      ),
+    );
 
     const folderTransfer = dragTransfer();
-    fireEvent.dragStart(screen.getByRole("article", { name: "FAKE Test Results folder" }), { dataTransfer: folderTransfer });
-    fireEvent.dragOver(screen.getByRole("article", { name: "FAKE Letters folder" }), { dataTransfer: folderTransfer });
-    fireEvent.drop(screen.getByRole("article", { name: "FAKE Letters folder" }), { dataTransfer: folderTransfer });
-    await waitFor(() => expect(bridge.updateFolder).toHaveBeenCalledWith("folder-1", "folder-2", "FAKE Test Results"));
+    fireEvent.dragStart(
+      screen.getByRole("article", { name: "FAKE Test Results folder" }),
+      { dataTransfer: folderTransfer },
+    );
+    fireEvent.dragOver(
+      screen.getByRole("article", { name: "FAKE Letters folder" }),
+      { dataTransfer: folderTransfer },
+    );
+    fireEvent.drop(
+      screen.getByRole("article", { name: "FAKE Letters folder" }),
+      { dataTransfer: folderTransfer },
+    );
+    await waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "folder-1",
+        "folder-2",
+        "FAKE Test Results",
+      ),
+    );
 
-    await user.click(screen.getByRole("button", { name: "Open FAKE Test Results" }));
-    expect(screen.getByRole("heading", { name: "FAKE Test Results" })).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Open FAKE Test Results" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "FAKE Test Results" }),
+    ).toBeVisible();
     expect(screen.getByText("FAKE_Bloodwork.pdf")).toBeVisible();
 
     const rootTransfer = dragTransfer();
-    fireEvent.dragStart(screen.getByRole("article", { name: "FAKE_Bloodwork.pdf document" }), { dataTransfer: rootTransfer });
-    const rootDropTarget = within(folderNavigation).getByRole("button", { name: /My records/ });
+    fireEvent.dragStart(
+      screen.getByRole("article", { name: "FAKE_Bloodwork.pdf document" }),
+      { dataTransfer: rootTransfer },
+    );
+    const rootDropTarget = within(folderNavigation).getByRole("button", {
+      name: /My records/,
+    });
     fireEvent.dragOver(rootDropTarget, { dataTransfer: rootTransfer });
     fireEvent.drop(rootDropTarget, { dataTransfer: rootTransfer });
-    await waitFor(() => expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(["record-folder"], []));
+    await waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
+        ["record-folder"],
+        [],
+      ),
+    );
 
-    await user.click(screen.getByRole("button", { name: "Select FAKE_Bloodwork.pdf" }));
+    await user.click(
+      screen.getByRole("button", { name: "Select FAKE_Bloodwork.pdf" }),
+    );
     await user.selectOptions(screen.getByLabelText("Move selected to"), "");
     await user.click(screen.getByRole("button", { name: "Move" }));
-    await waitFor(() => expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(["record-folder"], []));
+    await waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
+        ["record-folder"],
+        [],
+      ),
+    );
 
     await user.click(screen.getByText("FAKE_Bloodwork.pdf"));
-    const exportConfirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
-    fireEvent.click(screen.getByRole("button", { name: "Save a copy to this computer" }));
-    expect(exportConfirmation).toHaveBeenCalledWith(expect.stringContaining("cannot erase that copy"));
+    const exportConfirmation = vi
+      .spyOn(window, "confirm")
+      .mockReturnValue(false);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save a copy to this computer" }),
+    );
+    expect(exportConfirmation).toHaveBeenCalledWith(
+      expect.stringContaining("cannot erase that copy"),
+    );
     expect(bridge.exportFile).not.toHaveBeenCalled();
     exportConfirmation.mockRestore();
   });
 
-  it.each(["list", "grid"])("renames a nested folder in %s view without moving it", async (view) => {
-    const user = userEvent.setup();
-    const bridge = renameBridge();
-    render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Open FAKE Parent" }));
-    if (view === "grid") await user.click(screen.getByRole("button", { name: "Grid view" }));
-    await user.click(screen.getByRole("button", { name: "Rename folder FAKE Old folder" }));
-    const dialog = screen.getByRole("dialog", { name: "Rename folder" });
-    const input = within(dialog).getByLabelText("Folder name");
-    expect(input).toHaveFocus();
-    await user.clear(input);
-    await user.type(input, "   ");
-    expect(within(dialog).getByRole("button", { name: "Save name" })).toBeDisabled();
-    await user.clear(input);
-    await user.type(input, " FAKE Results ");
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(bridge.updateFolder).toHaveBeenCalledWith("child", "parent", "FAKE Results");
-    expect(screen.getByRole("article", { name: "FAKE Results folder" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "FAKE Parent" })).toBeVisible();
-    expect(screen.queryByText("FAKE Old folder")).not.toBeInTheDocument();
-  });
+  it.each(["list", "grid"])(
+    "renames a nested folder in %s view without moving it",
+    async (view) => {
+      const user = userEvent.setup();
+      const bridge = renameBridge();
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Open FAKE Parent" }),
+      );
+      if (view === "grid")
+        await user.click(screen.getByRole("button", { name: "Grid view" }));
+      await user.click(
+        screen.getByRole("button", { name: "Rename folder FAKE Old folder" }),
+      );
+      const dialog = screen.getByRole("dialog", { name: "Rename folder" });
+      const input = within(dialog).getByLabelText("Folder name");
+      expect(input).toHaveFocus();
+      await user.clear(input);
+      await user.type(input, "   ");
+      expect(
+        within(dialog).getByRole("button", { name: "Save name" }),
+      ).toBeDisabled();
+      await user.clear(input);
+      await user.type(input, " FAKE Results ");
+      await user.keyboard("{Enter}");
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "child",
+        "parent",
+        "FAKE Results",
+      );
+      expect(
+        screen.getByRole("article", { name: "FAKE Results folder" }),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: "FAKE Parent" }),
+      ).toBeVisible();
+      expect(screen.queryByText("FAKE Old folder")).not.toBeInTheDocument();
+    },
+  );
 
   it("renames a document from its details, keeps failed input for retry, and supports cancellation", async () => {
     const user = userEvent.setup();
     const bridge = renameBridge();
-    vi.mocked(bridge.renameRecord).mockRejectedValueOnce({ message: "There is not enough storage to complete this operation." });
+    vi.mocked(bridge.renameRecord).mockRejectedValueOnce({
+      message: "There is not enough storage to complete this operation.",
+    });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Open FAKE Parent" }));
-    await user.click(screen.getByRole("button", { name: "More options for FAKE Old.pdf" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
     await user.type(screen.getByLabelText("File name"), "FAKE Cancelled.pdf");
@@ -222,62 +432,113 @@ describe("durable vault UI", () => {
     await user.clear(screen.getByLabelText("File name"));
     await user.type(screen.getByLabelText("File name"), "FAKE Results.pdf");
     await user.click(screen.getByRole("button", { name: "Save name" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("not enough storage");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "not enough storage",
+    );
     expect(screen.getByLabelText("File name")).toHaveValue("FAKE Results.pdf");
     await user.click(screen.getByRole("button", { name: "Save name" }));
-    expect(await screen.findByRole("dialog", { name: "FAKE Results.pdf" })).toBeVisible();
-    expect(bridge.renameRecord).toHaveBeenCalledWith("record", "FAKE Results.pdf");
+    expect(
+      await screen.findByRole("dialog", { name: "FAKE Results.pdf" }),
+    ).toBeVisible();
+    expect(bridge.renameRecord).toHaveBeenCalledWith(
+      "record",
+      "FAKE Results.pdf",
+    );
     expect(bridge.assignFolders).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Close document details" }));
-    expect(screen.getByRole("article", { name: "FAKE Results.pdf document" })).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Close document details" }),
+    );
+    expect(
+      screen.getByRole("article", { name: "FAKE Results.pdf document" }),
+    ).toBeVisible();
   });
 
   it("allows Escape to cancel folder renaming and disables renaming in recovery mode", async () => {
     const user = userEvent.setup();
     const bridge = renameBridge();
     const { unmount } = render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Rename folder FAKE Parent" }));
-    const results = await axe.run(screen.getByRole("dialog"), { rules: { "color-contrast": { enabled: false } } });
+    await user.click(
+      await screen.findByRole("button", { name: "Rename folder FAKE Parent" }),
+    );
+    const results = await axe.run(screen.getByRole("dialog"), {
+      rules: { "color-contrast": { enabled: false } },
+    });
     expect(results.violations).toEqual([]);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Rename folder FAKE Parent" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Rename folder FAKE Parent" }),
+    ).toHaveFocus();
     expect(bridge.updateFolder).not.toHaveBeenCalled();
     unmount();
 
     const snapshot = await bridge.snapshot();
-    vi.mocked(bridge.snapshot).mockResolvedValue({ ...snapshot, degraded: true });
+    vi.mocked(bridge.snapshot).mockResolvedValue({
+      ...snapshot,
+      degraded: true,
+    });
     render(<VaultApp bridge={bridge} />);
-    expect(await screen.findByRole("button", { name: "Rename folder FAKE Parent" })).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: "Rename folder FAKE Parent" }),
+    ).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Open FAKE Parent" }));
-    expect(screen.getByRole("button", { name: "Rename folder" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "More options for FAKE Old.pdf" }));
-    expect(screen.getByRole("button", { name: "Rename document" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Rename folder" }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Rename document" }),
+    ).toBeDisabled();
   });
 
-  it.each(["locked", "unlocked"] as const)("prevents external drop navigation while %s without importing or moving records", async (status) => {
-    const bridge = nativeBridge({ status: vi.fn().mockResolvedValue(status) });
-    const { unmount } = render(<VaultApp bridge={bridge} />);
-    const heading = await screen.findByRole("heading", {
-      name: status === "locked" ? "Unlock your vault" : "My records",
-    });
-    const transfer = { types: ["Files"], dropEffect: "copy", getData: vi.fn() };
-    expect(fireEvent.dragOver(heading, { dataTransfer: transfer })).toBe(false);
-    expect(transfer.dropEffect).toBe("none");
-    expect(fireEvent.drop(heading, { dataTransfer: transfer })).toBe(false);
-    expect(await screen.findByText(/To import PDFs, unlock your vault and use Choose files to import/)).toBeVisible();
-    expect(fireEvent.drop(heading, { dataTransfer: { types: ["text/uri-list"] } })).toBe(false);
-    expect(bridge.importFiles).not.toHaveBeenCalled();
-    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
-    expect(bridge.updateFolder).not.toHaveBeenCalled();
-    unmount();
-    expect(fireEvent.drop(window, { dataTransfer: transfer })).toBe(true);
-  });
+  it.each(["locked", "unlocked"] as const)(
+    "prevents external drop navigation while %s without importing or moving records",
+    async (status) => {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue(status),
+      });
+      const { unmount } = render(<VaultApp bridge={bridge} />);
+      const heading = await screen.findByRole("heading", {
+        name: status === "locked" ? "Unlock your vault" : "My records",
+      });
+      const transfer = {
+        types: ["Files"],
+        dropEffect: "copy",
+        getData: vi.fn(),
+      };
+      expect(fireEvent.dragOver(heading, { dataTransfer: transfer })).toBe(
+        false,
+      );
+      expect(transfer.dropEffect).toBe("none");
+      expect(fireEvent.drop(heading, { dataTransfer: transfer })).toBe(false);
+      expect(
+        await screen.findByText(
+          /To import PDFs, unlock your vault and use Choose files to import/,
+        ),
+      ).toBeVisible();
+      expect(
+        fireEvent.drop(heading, { dataTransfer: { types: ["text/uri-list"] } }),
+      ).toBe(false);
+      expect(bridge.importFiles).not.toHaveBeenCalled();
+      expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+      expect(bridge.updateFolder).not.toHaveBeenCalled();
+      unmount();
+      expect(fireEvent.drop(window, { dataTransfer: transfer })).toBe(true);
+    },
+  );
 
   it("cancels an active native import while locking a backgrounded app", async () => {
     const user = userEvent.setup();
-    let finishImport!: (value: { imported: string[]; skippedDuplicates: string[] }) => void;
-    const pendingImport = new Promise<{ imported: string[]; skippedDuplicates: string[] }>((resolve) => {
+    let finishImport!: (value: {
+      imported: string[];
+      skippedDuplicates: string[];
+    }) => void;
+    const pendingImport = new Promise<{
+      imported: string[];
+      skippedDuplicates: string[];
+    }>((resolve) => {
       finishImport = resolve;
     });
     const importFiles = vi.fn().mockReturnValue(pendingImport);
@@ -286,19 +547,26 @@ describe("durable vault UI", () => {
       importFiles,
     });
     let visibilityState: DocumentVisibilityState = "visible";
-    const visibility = vi.spyOn(document, "visibilityState", "get")
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
       .mockImplementation(() => visibilityState);
     try {
       render(<VaultApp bridge={bridge} />);
 
-      await user.click(await screen.findByRole("button", { name: "Choose files to import" }));
+      await user.click(
+        await screen.findByRole("button", { name: "Choose files to import" }),
+      );
       await act(async () => {
         visibilityState = "hidden";
         document.dispatchEvent(new Event("visibilitychange"));
       });
       expect(bridge.lock).toHaveBeenCalledOnce();
-      expect(screen.queryByRole("heading", { name: "My records" })).not.toBeInTheDocument();
-      expect(await screen.findByRole("heading", { name: "Unlock your vault" })).toBeVisible();
+      expect(
+        screen.queryByRole("heading", { name: "My records" }),
+      ).not.toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
 
       await act(async () => {
         finishImport({ imported: [], skippedDuplicates: [] });
@@ -312,9 +580,19 @@ describe("durable vault UI", () => {
 
   it("requires confirmation before permanently deleting a durable record", async () => {
     const user = userEvent.setup();
-    const record = { id: "record-1", profileId: "profile-1", folderIds: [], displayName: "FAKE_Report.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 1 };
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Report.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+    };
     const deleteRecord = vi.fn().mockResolvedValue(undefined);
-    const snapshot = vi.fn()
+    const snapshot = vi
+      .fn()
       .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
       .mockResolvedValueOnce(emptySnapshot);
     const bridge = nativeBridge({
@@ -322,17 +600,29 @@ describe("durable vault UI", () => {
       snapshot,
       deleteRecord,
     });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
     render(<VaultApp bridge={bridge} />);
 
     await user.click(await screen.findByText("FAKE_Report.pdf"));
-    await user.click(screen.getByRole("button", { name: "Permanently delete" }));
+    await user.click(
+      screen.getByRole("button", { name: "Permanently delete" }),
+    );
     expect(deleteRecord).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenNthCalledWith(1, expect.stringContaining("clinic's source medical record"));
+    expect(confirm).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("clinic's source medical record"),
+    );
 
-    await user.click(screen.getByRole("button", { name: "Permanently delete" }));
+    await user.click(
+      screen.getByRole("button", { name: "Permanently delete" }),
+    );
     await waitFor(() => expect(deleteRecord).toHaveBeenCalledWith("record-1"));
-    expect(await screen.findByText("FAKE_Report.pdf was permanently deleted.")).toBeVisible();
+    expect(
+      await screen.findByText("FAKE_Report.pdf was permanently deleted."),
+    ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     confirm.mockRestore();
   });
@@ -340,7 +630,9 @@ describe("durable vault UI", () => {
   it("ignores window blur and locks after 5 minutes of inactivity", async () => {
     vi.useFakeTimers();
     try {
-      const bridge = nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") });
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
       render(<VaultApp bridge={bridge} />);
       await act(async () => undefined);
       expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
@@ -357,24 +649,32 @@ describe("durable vault UI", () => {
   });
 
   it("persists a bounded automatic lock delay", async () => {
-    const bridge = nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
     render(<VaultApp bridge={bridge} />);
     await screen.findByRole("heading", { name: "My records" });
 
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
-    const delay = screen.getByRole("combobox", { name: "Automatic lock delay" });
+    const delay = screen.getByRole("combobox", {
+      name: "Automatic lock delay",
+    });
     expect(delay).toHaveValue("5");
     fireEvent.change(delay, { target: { value: "1" } });
 
     expect(delay).toHaveValue("1");
-    expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe("1");
+    expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
+      "1",
+    );
   });
 
   it("applies a persisted one-minute automatic lock delay", async () => {
     vi.useFakeTimers();
     try {
       window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "1");
-      const bridge = nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") });
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
       render(<VaultApp bridge={bridge} />);
       await act(async () => undefined);
 
@@ -389,17 +689,29 @@ describe("durable vault UI", () => {
 
   it("loads a persisted delay but rejects out-of-range stored values", async () => {
     window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "15");
-    const first = render(<VaultApp bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })} />);
+    const first = render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
+      />,
+    );
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
-    expect(screen.getByRole("combobox", { name: "Automatic lock delay" })).toHaveValue("15");
+    expect(
+      screen.getByRole("combobox", { name: "Automatic lock delay" }),
+    ).toHaveValue("15");
     first.unmount();
 
     window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "999");
-    render(<VaultApp bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })} />);
+    render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
+      />,
+    );
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
-    expect(screen.getByRole("combobox", { name: "Automatic lock delay" })).toHaveValue("5");
+    expect(
+      screen.getByRole("combobox", { name: "Automatic lock delay" }),
+    ).toHaveValue("5");
   });
 
   it("requires the exact destructive reset phrase", async () => {
@@ -410,46 +722,114 @@ describe("durable vault UI", () => {
     await user.click(screen.getByText("Forgot your passphrase?"));
     const erase = screen.getByRole("button", { name: "Erase vault" });
     expect(erase).toBeDisabled();
-    await user.type(screen.getByLabelText("Type RESET MYCARLOS VAULT"), "RESET MYCARLOS VAULT");
+    await user.type(
+      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+      "RESET MYCARLOS VAULT",
+    );
     expect(erase).toBeEnabled();
     await user.click(erase);
-    await waitFor(() => expect(bridge.reset).toHaveBeenCalledWith("RESET MYCARLOS VAULT"));
+    await waitFor(() =>
+      expect(bridge.reset).toHaveBeenCalledWith("RESET MYCARLOS VAULT"),
+    );
+  });
+
+  it("clears unfinished passphrase fields when leaving Security", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    fireEvent.change(screen.getByLabelText("Current passphrase"), {
+      target: { value: "fake-current-secret" },
+    });
+    fireEvent.change(screen.getByLabelText("New passphrase"), {
+      target: { value: "fake-replacement-secret" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new passphrase"), {
+      target: { value: "fake-replacement-secret" },
+    });
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Record library" }),
+      ).getByRole("button", { name: /My records/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Security" }));
+    expect(screen.getByLabelText("Current passphrase")).toHaveValue("");
+    expect(screen.getByLabelText("New passphrase")).toHaveValue("");
+    expect(screen.getByLabelText("Confirm new passphrase")).toHaveValue("");
+    expect(bridge.changePassphrase).not.toHaveBeenCalled();
   });
 
   it("requires matching replacement passphrases", async () => {
     const user = userEvent.setup();
-    const bridge = nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
     render(<VaultApp bridge={bridge} />);
     await user.click(await screen.findByRole("button", { name: "Security" }));
 
-    await user.type(screen.getByLabelText("Current passphrase"), "river-azimuth-cobalt-sparrow-934");
-    await user.type(screen.getByLabelText("New passphrase"), "lantern-orbit-willow-cascade-572");
-    await user.type(screen.getByLabelText("Confirm new passphrase"), "different replacement");
-    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeDisabled();
+    await user.type(
+      screen.getByLabelText("Current passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText("New passphrase"),
+      "lantern-orbit-willow-cascade-572",
+    );
+    await user.type(
+      screen.getByLabelText("Confirm new passphrase"),
+      "different replacement",
+    );
+    expect(
+      screen.getByRole("button", { name: "Change passphrase" }),
+    ).toBeDisabled();
     await user.clear(screen.getByLabelText("Confirm new passphrase"));
-    await user.type(screen.getByLabelText("Confirm new passphrase"), "lantern-orbit-willow-cascade-572");
+    await user.type(
+      screen.getByLabelText("Confirm new passphrase"),
+      "lantern-orbit-willow-cascade-572",
+    );
     await user.click(screen.getByRole("button", { name: "Change passphrase" }));
 
-    await waitFor(() => expect(bridge.changePassphrase).toHaveBeenCalledWith(
-      "river-azimuth-cobalt-sparrow-934",
-      "lantern-orbit-willow-cascade-572",
-    ));
+    await waitFor(() =>
+      expect(bridge.changePassphrase).toHaveBeenCalledWith(
+        "river-azimuth-cobalt-sparrow-934",
+        "lantern-orbit-willow-cascade-572",
+      ),
+    );
   });
 
   it("traps modal focus and returns it to the record control", async () => {
     const user = userEvent.setup();
-    const record = { id: "record-1", profileId: "profile-1", folderIds: [], displayName: "FAKE_Report.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 1 };
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Report.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+    };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
     });
     render(<VaultApp bridge={bridge} />);
-    const opener = await screen.findByRole("button", { name: "FAKE_Report.pdf" });
+    const opener = await screen.findByRole("button", {
+      name: "FAKE_Report.pdf",
+    });
     await user.click(opener);
-    const close = screen.getByRole("button", { name: "Close document details" });
+    const close = screen.getByRole("button", {
+      name: "Close document details",
+    });
     expect(close).toHaveFocus();
     await user.tab({ shift: true });
-    expect(screen.getByRole("button", { name: "Save a copy to this computer" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Save a copy to this computer" }),
+    ).toHaveFocus();
     await user.tab();
     expect(close).toHaveFocus();
     await user.keyboard("{Escape}");
@@ -458,26 +838,47 @@ describe("durable vault UI", () => {
   });
 
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {
-    const hostileName = '<img src="https://attacker.invalid/leak">\u202ereport.pdf';
+    const hostileName =
+      '<img src="https://attacker.invalid/leak">\u202ereport.pdf';
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn().mockResolvedValue({
         ...emptySnapshot,
         degraded: true,
-        records: [{ id: "record-hostile", profileId: "profile-1", folderIds: [], displayName: hostileName, sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 42, importedAtMs: 1 }],
+        records: [
+          {
+            id: "record-hostile",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: hostileName,
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/octet-stream",
+            plaintextSize: 42,
+            importedAtMs: 1,
+          },
+        ],
       }),
     });
     render(<VaultApp bridge={bridge} />);
 
     expect(await screen.findByText(hostileName)).toBeVisible();
-    expect(document.querySelector('img[src="https://attacker.invalid/leak"]')).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent("Read-only recovery mode");
-    expect(screen.getByRole("button", { name: "Choose files to import" })).toBeDisabled();
+    expect(
+      document.querySelector('img[src="https://attacker.invalid/leak"]'),
+    ).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Read-only recovery mode",
+    );
+    expect(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    ).toBeDisabled();
   });
 
   it("has no automatically detectable WCAG A or AA violations in durable states", async () => {
     const axeOptions = {
-      runOnly: { type: "tag" as const, values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+      runOnly: {
+        type: "tag" as const,
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+      },
       // jsdom has no canvas implementation; real-browser Playwright covers color contrast.
       rules: { "color-contrast": { enabled: false } },
     };
@@ -486,7 +887,11 @@ describe("durable vault UI", () => {
     expect((await axe.run(document.body, axeOptions)).violations).toEqual([]);
     locked.unmount();
 
-    render(<VaultApp bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })} />);
+    render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
+      />,
+    );
     await screen.findByRole("heading", { name: "My records" });
     expect((await axe.run(document.body, axeOptions)).violations).toEqual([]);
   });

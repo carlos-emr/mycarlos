@@ -15,9 +15,14 @@ export function useModalFocus(
   useEffect(() => {
     if (!active) return;
     returnFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const focusable = () =>
-      Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []);
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ??
+          [],
+      );
     focusable()[0]?.focus();
 
     const containFocus = (event: KeyboardEvent) => {
