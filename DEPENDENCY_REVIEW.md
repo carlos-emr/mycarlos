@@ -111,8 +111,8 @@ a passing default audit does not establish that every dependency is maintained.
 
 All seven jobs passed in the linked run for code commit `c5f682b`: Windows, macOS,
 Linux, Android, iOS simulator, browser tests, and dependency/SBOM checks. Windows
-and Linux each passed 62 native tests (four subprocess helpers are ignored in the
-main run and invoked by their parent tests); Linux also passed all five optimized
+passed 59 native tests and Linux passed 62 (four subprocess helpers are ignored in
+the main run and invoked by their parent tests); Linux also passed all five optimized
 backport regressions. Windows installation and the GUI subsystem check passed.
 Subsequent commits update documentation only. Device testing and release review
 remain separate gates.
