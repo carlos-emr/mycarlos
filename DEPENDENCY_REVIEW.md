@@ -96,3 +96,23 @@ are the evidence for this specific backport, independent of scanner status.
 The two local patches add maintenance responsibility. Retire them once compatible
 stable upstream releases provide the same fixes/removal. Encryption libraries,
 our vault implementation, encrypted format, and native file handling are unchanged.
+
+### Remaining advisory warnings
+
+The [native dependency CI run](https://github.com/carlos-emr/mycarlos/actions/runs/34980156900)
+on the patched sources passes the existing audit gate, but is not warning-free.
+It reports six unmaintained-package warnings (`proc-macro-error` and five `unic-*`
+crates), plus the original glib unsoundness warning retained for upstream tracking.
+The glib source fix is verified separately as described above. The unmaintained
+packages still need an upstream migration or replacement review before release;
+a passing default audit does not establish that every dependency is maintained.
+
+### Cross-platform validation
+
+All seven jobs passed in the linked run for code commit `c5f682b`: Windows, macOS,
+Linux, Android, iOS simulator, browser tests, and dependency/SBOM checks. Windows
+and Linux each passed 62 native tests (four subprocess helpers are ignored in the
+main run and invoked by their parent tests); Linux also passed all five optimized
+backport regressions. Windows installation and the GUI subsystem check passed.
+Subsequent commits update documentation only. Device testing and release review
+remain separate gates.
