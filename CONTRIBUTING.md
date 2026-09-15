@@ -41,3 +41,15 @@ bundles, dependency sources, and lockfiles are not formatting targets.
 Read [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md) for dependency removal decisions
 and the remaining Socket finding. Source readability and dependency security need separate review;
 reformatting application code does not resolve an alert in an upstream package.
+
+## Native dependency patches
+
+Read [the native patch notes](src-tauri/vendor/README.md) before touching the pinned
+Tauri/glib sources. Every difference from their published crates must be recorded
+in a reviewed patch and pass the source reconstruction check. Preserve license
+notices and original versions. Run the optimized glib regression suite and the
+full native tests when changing these patches.
+
+Mobile testing uses installed bundled-asset builds; the removed development-server
+proxy means `tauri android dev` and `tauri ios dev` intentionally fail. Desktop
+live reload is unchanged. CI exercises bundled Android and iOS builds.

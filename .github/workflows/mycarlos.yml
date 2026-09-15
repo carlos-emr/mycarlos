@@ -47,8 +47,12 @@ jobs:
         run: cargo install cargo-cyclonedx --version 0.5.9 --locked
       - name: Install pinned Rust advisory scanner
         run: cargo install cargo-audit --version 0.22.2 --locked
-      - name: Reject known Rust vulnerabilities
-        run: cargo audit --file src-tauri/Cargo.lock
+      - name: Verify native dependency sources and reviewed patches
+        run: python3 scripts/verify-native-vendor.py
+      - name: Reject restored networking dependencies or patch bypasses
+        run: python3 scripts/check-native-dependency-graph.py
+      - name: Reject known Rust vulnerabilities, including upstream patch identities
+        run: python3 scripts/audit-native-dependencies.py
       - name: Generate reproducible native CycloneDX SBOM
         env:
           SOURCE_DATE_EPOCH: "0"
@@ -70,6 +74,9 @@ jobs:
           path: |
             sbom-frontend.cdx.json
             sbom-native.cdx.json
+            src-tauri/vendor/upstream.json
+            src-tauri/vendor/*.patch
+            src-tauri/vendor/README.md
           if-no-files-found: error
           retention-days: 30
 
@@ -117,8 +124,8 @@ jobs:
           retention-days: 7
 
   desktop:
-    # Linux is not an initial supported platform while the documented glib advisory is unresolved.
-    # Keep this build as a compatibility monitor so an upstream resolution remains visible.
+    # Keep Linux as an evaluation monitor pending device and release review.
+    # Verify the glib backport under optimization before testing the full app.
     name: Linux compatibility monitor (unsupported)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -151,7 +158,11 @@ jobs:
       - run: npm ci
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Exercise all affected glib iterator methods with optimization
+        env:
+          CARGO_BUILD_JOBS: "2"
+        run: cargo test --manifest-path security-tests/glib-variant/Cargo.toml --release --locked
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
       - run: npm run tauri build -- --debug --bundles deb
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Report desktop artifact sizes
@@ -180,7 +191,7 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal
       - run: npm ci
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
       - name: Build Windows evaluation installer
         # Invoke the pinned CLI directly: npm/PowerShell can consume the build flags.
         run: node node_modules/@tauri-apps/cli/tauri.js build --debug --bundles nsis

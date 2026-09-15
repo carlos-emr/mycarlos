@@ -44,7 +44,7 @@ of production readiness.
 ## Initial platform scope
 
 The planned initial supported platforms are **Windows, macOS, Android, and iOS**. Linux is deferred
-until the `glib` advisory below is resolved and the updated dependency graph passes security review.
+pending review of the `glib` backport below, device validation, and release approval.
 The Linux CI job is retained only as a compatibility monitor; its debug package is unsupported
 evaluation evidence and must not be distributed to patients.
 
@@ -152,28 +152,32 @@ Install the platform prerequisites described by Tauri, then initialize and run t
 npm run tauri android init
 # Required after init; Android builds fail closed if these settings are absent.
 npm run android:secure
-npm run tauri android dev
+npm run tauri android build -- --debug --apk --target aarch64 --ci
 
 # macOS/Xcode only
 npm run tauri ios init
-npm run tauri ios dev
+npm run tauri ios build -- --debug --target aarch64-sim --no-sign --ci
 ```
 
 The generated `src-tauri/gen/android` and `src-tauri/gen/apple` directories are build products of
 the pinned Tauri CLI rather than reviewed application source, so CI regenerates them on clean
 runners. A checked-in configuration script applies the Android backup policy and `build.rs` enforces
 it for every Android compilation. Android debug builds run on Linux; the unsigned iOS simulator
-build runs on macOS.
+build runs on macOS. Install the resulting build to test it. Mobile live reload (`tauri android dev`
+or `tauri ios dev`) is intentionally disabled by our Tauri patch, which removes its HTTP proxy and
+networking dependencies. Desktop `tauri dev` remains available. See [native patch notes](src-tauri/vendor/README.md).
 
 ## Known evaluation findings
 
-- The current Tauri v2 Linux dependency graph resolves `glib` 0.18.5. GitHub's dependency review
-  flags [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g), which is patched
-  only in `glib` 0.20.0. Linux therefore remains outside the initial supported platform set. The
-  old CARLOS draft had a narrowly scoped audit exception. That exception was not imported here:
-  the Rust audit reports this finding as an unsoundness warning, even when the job passes.
-  It remains a release blocker until patched and reviewed. Windows evaluation builds do not waive the
-  audit finding or establish release readiness.
+- The Linux dependency graph uses a pinned local `glib` 0.18.5 snapshot with the exact two-line
+  upstream backport for [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html).
+  CI verifies source provenance and exercises all affected iterator methods under optimization.
+  Audit still reports the original upstream warning rather than hiding the package's identity.
+  Linux remains an unsupported evaluation pending review and device validation.
+- A pinned Tauri patch removes the mobile development-server proxy and its HTTP stack from all
+  build targets. This addresses the `hyper-util` dependency exposure by removal; it does not
+  classify Socket's original warning as a false positive. Both patches add maintenance work;
+  see [source provenance, deltas, and retirement criteria](src-tauri/vendor/README.md).
 - Hosted CI produced a 48 MB Linux debug `.deb`, a 131 MB Android debug APK, and a 92 MB unsigned
   iOS simulator `.app`. These unoptimized artifacts are useful feasibility evidence, not release
   size estimates.
@@ -181,7 +185,7 @@ build runs on macOS.
 ## Checks
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for component responsibilities and formatting, and
-[DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md) for the unresolved Socket warnings.
+[DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md) for the dependency findings and remediation status.
 
 ```bash
 npm run format:check
@@ -191,6 +195,10 @@ npm test
 npm run build
 npm run test:e2e
 
+python3 scripts/verify-native-vendor.py
+python3 scripts/check-native-dependency-graph.py
+python3 scripts/audit-native-dependencies.py  # requires cargo-audit 0.22.2
+cargo test --manifest-path security-tests/glib-variant/Cargo.toml --release --locked
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 CARGO_BUILD_JOBS=1 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 CARGO_BUILD_JOBS=1 cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1

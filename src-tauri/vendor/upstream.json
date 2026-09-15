@@ -1,0 +1,20 @@
+[
+  {
+    "name": "glib",
+    "version": "0.18.5",
+    "archiveSha256": "233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5",
+    "archiveUrl": "https://static.crates.io/crates/glib/glib-0.18.5.crate",
+    "upstreamRevision": "42b9caf98e03ded086362d9653ca58fe94dc8658",
+    "excludedFiles": []
+  },
+  {
+    "name": "tauri",
+    "version": "2.11.5",
+    "archiveSha256": "667b20e2726d572dea2de7370da16e188eb06008faf9a92fab7cdc46791190b5",
+    "archiveUrl": "https://static.crates.io/crates/tauri/tauri-2.11.5.crate",
+    "upstreamRevision": "7cd71369c00978a3783b6ae3e9972358abbe4ae6",
+    "excludedFiles": [
+      "Cargo.lock"
+    ]
+  }
+]

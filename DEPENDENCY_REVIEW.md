@@ -45,32 +45,54 @@ has been suppressed or marked acceptable.
 - SBOM generators, the formatter, compiler, and build tools retain their specific
   development/CI roles.
 
-### Remaining Socket finding: hyper-util
+## Native remediation
 
-The full path is **Tauri → reqwest → hyper-util**. In Tauri 2.11.5, reqwest is a
-[mobile-target dependency](https://github.com/tauri-apps/tauri/blob/tauri-v2.11.5/crates/tauri/Cargo.toml),
-used by its
-[mobile development-server proxy](https://github.com/tauri-apps/tauri/blob/tauri-v2.11.5/crates/tauri/src/protocol/tauri.rs).
-`cargo tree --locked --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --invert hyper-util`
-reports no path for our Windows target. The shared Cargo.lock still records it
-for mobile builds. Removing it from that lockfile by hand or forking Tauri solely
-to avoid a warning is not justified by the available evidence.
+### Mobile networking removed
 
-The published hyper-util crate's SHA-256 matches Cargo.lock. Its `src/lib.rs` and
-runtime adapter documentation in `src/rt/tokio.rs` are readable; it records source
-revision `b23a13e2b7ee73e15ba008cd9b19dcd2d3861957`. This was a source spot check,
-not a full package audit. A checksum establishes consistency with the lockfile,
-not safety. The detailed organization alert view was inaccessible, so the finding
-remains **unresolved**. Obtain the flagged file/range or detection rationale from
-Socket before classifying it or selecting an upstream fix.
+The former path was Tauri → reqwest → hyper-util on Android/iOS. A pinned Tauri
+2.11.5 source patch now removes the mobile development-server proxy and those
+HTTP dependencies entirely. The root lockfile and all-target Cargo metadata no
+longer include reqwest, hyper, or hyper-util. Installed mobile builds use the
+existing bundled-asset protocol. Mobile live reload intentionally fails with an
+explanation; desktop live reload and native vault/file-picker operations remain.
 
-## Other audit results
+Before removal, all **51 Rust files** in the published hyper-util 0.1.20 crate
+were compared byte-for-byte with its recorded upstream revision
+`b23a13e2b7ee73e15ba008cd9b19dcd2d3861957`; they match. Socket's detailed organization
+alert view remained inaccessible, so the precise detection rationale is unknown.
+Removing the dependency resolves this application's exposure without asserting
+that the package was malicious, safe, or a false positive. No alert is suppressed.
 
-A fresh npm installation reports zero known vulnerabilities. That is a separate
-check from obfuscation/malware detection, not a security certification.
+### Linux glib fix backported
 
-The [initial standalone supply-chain run](https://github.com/carlos-emr/mycarlos/actions/runs/34890522374)
-passed, but its Rust audit log reports `glib@0.18.5` `RUSTSEC-2024-0429` as an
-**unsoundness warning**. A successful job does not mean that finding disappeared.
-The Linux support/release restriction in the README remains in place. Native
-source, features, and Cargo.lock are unchanged by this dependency cleanup.
+The pinned local glib 0.18.5 source contains exactly the two-line fix from
+[gtk-rs-core PR #1343](https://github.com/gtk-rs/gtk-rs-core/pull/1343) for
+[RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html).
+The affected iterator now passes an explicitly mutable output pointer. A separate
+optimized regression suite covers every affected iterator method; debug-only
+testing is insufficient for this optimizer-sensitive defect. The identical suite
+against the unpatched published release crashed with SIGSEGV; all five tests pass
+with the backport.
+
+A compatible stable upgrade was considered: Tauri 2.11.5 still depends on GTK's
+older glib line, while Tauri 3 is an alpha. We chose the narrow backport over
+introducing an alpha framework across every platform. Linux remains an evaluation
+pending review and device validation; fixing one defect does not approve release.
+
+### Provenance, audit, and maintenance
+
+[Native patch notes](src-tauri/vendor/README.md) contain the exact deltas, pinned
+archive checksums/source revisions, development tradeoff, and retirement criteria.
+CI reconstructs each complete source snapshot from its checksum-verified release
+plus patch, then checks that Cargo selects those sources. Licenses are preserved;
+package versions are not changed to impersonate upstream fixed releases.
+
+Local source patches can disappear from registry-only advisory scanning. Our
+audit helper restores their upstream identities in a temporary audit lockfile,
+retaining the original glib warning and future advisories. It does not change the
+real lockfile or ignore an advisory. The source verification and optimized tests
+are the evidence for this specific backport, independent of scanner status.
+
+The two local patches add maintenance responsibility. Retire them once compatible
+stable upstream releases provide the same fixes/removal. Encryption libraries,
+our vault implementation, encrypted format, and native file handling are unchanged.

@@ -97,5 +97,5 @@ privacy, accessibility, or clinical review.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
 - [ ] Add signing, notarization, app-store packaging, updater security, and release operations.
-- [ ] Resolve all high/critical shipped-runtime findings; Linux remains prohibited while its
-      documented `glib` advisory is unresolved.
+- [ ] Resolve all high/critical shipped-runtime findings; Linux remains an evaluation pending review of the
+      documented `glib` backport and device/release validation.
