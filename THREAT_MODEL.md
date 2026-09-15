@@ -4,7 +4,7 @@
 - **Version:** 0.2
 - **Date:** 2026-09-08
 - **Initial platforms:** Windows, macOS, Android, and iOS
-- **Deferred platform:** Linux, until the documented `glib` advisory is resolved and reviewed
+- **Deferred platform:** Linux, pending review of the documented `glib` backport and device/release validation
 - **Data restriction:** Synthetic files only; this model does not authorize PHI use
 
 ## Purpose
@@ -203,7 +203,7 @@ The synthetic local-vault vertical slice is not complete until all of the follow
 - [ ] Storage and OS-backup inspection finds no plaintext canaries.
 - [ ] No unresolved critical/high vulnerability affects a shipped runtime dependency.
 - [ ] Windows, macOS, Android, and iOS checks pass; no release workflow produces a supported Linux
-      artifact while the `glib` advisory remains unresolved.
+      artifact before review of the `glib` backport and Linux device/release validation.
 
 Passing this gate permits the next synthetic-data development phase. It does not by itself authorize
 real patient data, a patient pilot, CARLOS integration, or production release.

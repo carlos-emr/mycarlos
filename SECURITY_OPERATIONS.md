@@ -44,8 +44,11 @@ For an evaluation security incident:
 
 CI produces reproducible CycloneDX inventories for the locked npm and Cargo graphs, rejects high or
 critical production npm findings, and runs a pinned Rust advisory scan on pull requests and weekly.
-The original draft-only `glib` audit exception was not imported. The strict audit reports the known
-advisory until its dependency is patched; Linux remains an unsupported compatibility monitor.
+The original draft-only `glib` audit exception was not imported. A pinned source snapshot now
+backports the upstream fix; source reconstruction and optimized regression tests verify it. The
+audit deliberately retains upstream package identities, so the original warning and future
+advisories remain visible. Linux remains an unsupported compatibility monitor pending security,
+device, and release review. See [the patch record](src-tauri/vendor/README.md).
 GitHub Actions are commit pinned and checkout does not persist credentials. These are inventory
 and pull-request controls, not release provenance.
 

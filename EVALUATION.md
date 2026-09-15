@@ -11,7 +11,7 @@ See [`ARCHITECTURE_DECISION.md`](ARCHITECTURE_DECISION.md) for the decision and 
 See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the security boundaries and Secure Vault v0.1 gate.
 
 The initial supported platforms are Windows, macOS, Android, and iOS. Linux is deferred until the
-documented `glib` advisory is resolved and the updated dependency graph passes security review. The
+documented `glib` backport and updated dependency graph pass security and device/release review. The
 Linux CI job remains only as an unsupported compatibility monitor.
 
 The dedicated-repository import remains a draft synthetic-data evaluation.
@@ -106,9 +106,9 @@ production decision, the deeper spike must establish that:
 - accessibility findings and platform differences are recorded;
 - required native capabilities and missing plugins are listed;
 - artifact sizes, build times, and developer setup friction are recorded; and
-- no release or support surface includes Linux while its dependency advisory remains unresolved.
+- no release or support surface includes Linux before its backport and release gates are reviewed.
 
-Before adding Linux to the supported platform set, its dependency advisory must be resolved and the
+Before adding Linux to the supported platform set, the dependency fix must be reviewed and the
 updated package must pass the same security, device, signing, and release-readiness gates.
 
 It cannot support a production decision until a separate security and data-lifecycle spike proves

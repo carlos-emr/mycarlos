@@ -9,10 +9,10 @@
 Use **Tauri v2 with a shared React/TypeScript interface** as the application shell for
 myCarlos. The initial supported platforms are Windows, macOS, Android, and iOS.
 
-Linux is explicitly deferred while the Tauri Linux dependency graph contains the documented
-`glib` vulnerability. Linux compatibility may continue to be built in CI so the dependency and
-upstream resolution remain visible, but those artifacts are evaluation evidence and must not be
-distributed as supported releases.
+Linux is explicitly deferred pending review of the documented `glib` backport and device/release
+validation. Linux compatibility continues to be built in CI, including an optimized regression
+suite for the fix, but those artifacts are evaluation evidence and must not be distributed as
+supported releases.
 
 This replaces Electron plus Capacitor as the active implementation direction. It does not approve
 the current proof of concept for production use and does not establish that the application is safe
@@ -45,8 +45,8 @@ the future product.
 - Grant only the Tauri capabilities needed for a specific workflow.
 - Use synthetic records until the security, privacy, and clinical-safety controls permit otherwise.
 - Do not include Linux in release packaging, distribution, support claims, or production readiness
-  until the `glib` advisory documented in the README is resolved and the resulting dependency graph
-  passes security review.
+  until the `glib` backport documented in the README and the resulting dependency graph pass
+  security review, followed by device and release validation.
 - Complete physical Android and iOS device testing, including file selection, application
   lifecycle, accessibility, rotation, text scaling, and reduced motion.
 - Treat encrypted storage, key handling and recovery, secure deletion, backup and synchronization,
