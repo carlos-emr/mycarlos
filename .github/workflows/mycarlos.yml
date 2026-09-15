@@ -1,0 +1,372 @@
+name: myCarlos evaluation
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 9 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mycarlos-tauri-poc-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: .
+
+jobs:
+  supply-chain:
+    name: Locked dependencies and SBOMs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - run: npm ci
+      - name: Reject known high or critical production npm vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+      - name: Generate reproducible frontend CycloneDX SBOM
+        run: |
+          npm run sbom:frontend
+          cp sbom-frontend.cdx.json /tmp/sbom-frontend-first.cdx.json
+          npm run sbom:frontend
+          cmp /tmp/sbom-frontend-first.cdx.json sbom-frontend.cdx.json
+          jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' sbom-frontend.cdx.json
+      - name: Install pinned Rust CycloneDX generator
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
+      - name: Install pinned Rust advisory scanner
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Verify native dependency sources and reviewed patches
+        run: python3 scripts/verify-native-vendor.py
+      - name: Verify upstream Tauri and the glib backport are selected
+        run: python3 scripts/check-native-dependency-graph.py
+      - name: Reject known Rust vulnerabilities, including upstream patch identities
+        run: python3 scripts/audit-native-dependencies.py
+      - name: Generate reproducible native CycloneDX SBOM
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        run: |
+          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+          cargo cyclonedx --manifest-path src-tauri/Cargo.toml --format json --target all
+          cp src-tauri/mycarlos-tauri-poc.cdx.json /tmp/sbom-native-first.cdx.json
+          cargo cyclonedx --manifest-path src-tauri/Cargo.toml --format json --target all
+          cmp /tmp/sbom-native-first.cdx.json src-tauri/mycarlos-tauri-poc.cdx.json
+          git diff --exit-code -- src-tauri/Cargo.lock
+          jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' \
+            src-tauri/mycarlos-tauri-poc.cdx.json
+      - name: Collect native SBOM
+        run: mv src-tauri/mycarlos-tauri-poc.cdx.json sbom-native.cdx.json
+      - name: Upload dependency inventories
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-cyclonedx-sboms
+          path: |
+            sbom-frontend.cdx.json
+            sbom-native.cdx.json
+            src-tauri/vendor/upstream.json
+            src-tauri/vendor/*.patch
+            src-tauri/vendor/README.md
+          if-no-files-found: error
+          retention-days: 30
+
+  web:
+    name: Web UI and browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run check
+      - name: Install Playwright Chromium with bounded mirror retries
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+      - run: npm test
+      - run: npm run test:dev-hmr
+      - run: npm run test:dev-data
+      - run: npm run test:android-security
+      - run: npm run build
+      - run: npm run test:e2e
+      - name: Upload responsive screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-browser-evidence
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  desktop:
+    # Keep Linux as an evaluation monitor pending device and release review.
+    # Verify the glib backport under optimization before testing the full app.
+    name: Linux compatibility monitor (unsupported)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Linux webview dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+        working-directory: .
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned Rust toolchain
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --component rustfmt --component clippy
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+      - name: Exercise all affected glib iterator methods with optimization
+        env:
+          CARGO_BUILD_JOBS: "2"
+        run: cargo test --manifest-path security-tests/glib-variant/Cargo.toml --release --locked
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - run: npm run tauri build -- --debug --bundles deb
+      - run: git diff --exit-code -- src-tauri/Cargo.lock
+      - name: Report desktop artifact sizes
+        run: find src-tauri/target/debug/bundle -type f -printf '%p %k KB\n' | sort
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-linux-evaluation-debug
+          path: src-tauri/target/debug/bundle
+          retention-days: 7
+
+  windows:
+    # This downloadable installer is unsigned synthetic-data evaluation evidence.
+    # Publisher signing and patient-release approval remain separate gates.
+    name: Windows native build
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - run: npm ci
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - name: Build Windows evaluation installer
+        # Invoke the pinned CLI directly: npm/PowerShell can consume the build flags.
+        run: node node_modules/@tauri-apps/cli/tauri.js build --debug --bundles nsis
+      - run: git diff --exit-code -- src-tauri/Cargo.lock
+      - name: Verify Windows installation
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe)
+          if ($installers.Count -ne 1) { throw "Expected exactly one Windows installer" }
+          $installPath = Join-Path $env:RUNNER_TEMP 'mycarlos-install-smoke'
+          $setup = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S', "/D=$installPath" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer exited with $($setup.ExitCode)" }
+          if (!(Test-Path "$installPath/mycarlos-tauri-poc.exe")) { throw "Installed application is missing" }
+      - name: Verify installed app launches without a console
+        shell: python
+        run: |
+          import os
+          import struct
+          from pathlib import Path
+
+          app = Path(os.environ["RUNNER_TEMP"]) / "mycarlos-install-smoke" / "mycarlos-tauri-poc.exe"
+          data = app.read_bytes()
+          if data[:2] != b"MZ":
+              raise SystemExit("Installed application is not a Windows executable")
+          pe_offset = struct.unpack_from("<I", data, 0x3c)[0]
+          if data[pe_offset:pe_offset + 4] != b"PE\0\0":
+              raise SystemExit("Installed application has no PE header")
+          optional_header = pe_offset + 24
+          if struct.unpack_from("<H", data, optional_header)[0] != 0x20b:
+              raise SystemExit("Expected a PE32+ application")
+          # Subsystem is at offset 68 in the PE32+ optional header.
+          # IMAGE_SUBSYSTEM_WINDOWS_GUI = 2; WINDOWS_CUI = 3 opens a console.
+          subsystem = struct.unpack_from("<H", data, optional_header + 68)[0]
+          if subsystem != 2:
+              raise SystemExit(f"Installed app must use the Windows GUI subsystem, got {subsystem}")
+          print("Installed app uses the Windows GUI subsystem; no console is allocated at launch.")
+      - name: Prepare Windows download
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe)
+          if ($installers.Count -ne 1) { throw "Expected exactly one Windows installer" }
+          New-Item -ItemType Directory -Path windows-download | Out-Null
+          $installer = 'myCarlos-Evaluation-Windows-x64-setup.exe'
+          Copy-Item $installers[0].FullName "windows-download/$installer"
+          Copy-Item WINDOWS_DOWNLOAD.txt windows-download/START-HERE.txt
+          Copy-Item dev-data windows-download/sample-files -Recurse
+          $hash = (Get-FileHash "windows-download/$installer" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $installer" | Set-Content windows-download/SHA256SUMS.txt -Encoding utf8
+          $commit = git rev-parse HEAD
+          @(
+            'myCarlos Windows x64 evaluation — unsigned; synthetic data only'
+            "Source commit: $commit"
+            "Build: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          ) | Set-Content windows-download/BUILD.txt -Encoding utf8
+      - name: Upload Windows installer
+        id: windows-download
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: myCarlos-Windows-x64-Evaluation
+          path: windows-download/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Show Windows download link
+        shell: pwsh
+        env:
+          DOWNLOAD_URL: ${{ steps.windows-download.outputs.artifact-url }}
+        run: |
+          @(
+            '## Download myCarlos for Windows'
+            ''
+            "[Download Windows x64 evaluation installer]($env:DOWNLOAD_URL)"
+            ''
+            'Sign in to GitHub, download and extract the ZIP, then open myCarlos-Evaluation-Windows-x64-setup.exe.'
+            'Launch myCarlos Evaluation from Start. No Node, Rust, or developer tools are needed.'
+            'The ZIP includes sample PDFs and START-HERE.txt. Internet access is needed if WebView2 must be installed.'
+            ''
+            '**Unsigned evaluation build — synthetic data only. Windows may warn or block installation.**'
+            'This download expires after 30 days; newer successful runs provide fresh downloads.'
+          ) | Add-Content $env:GITHUB_STEP_SUMMARY
+
+  macos:
+    name: macOS native build
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - run: npm ci
+      - run: npm run tauri build -- --debug --bundles app
+      - run: git diff --exit-code -- src-tauri/Cargo.lock
+
+  android:
+    name: Android debug build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Configure hosted Android NDK
+        run: |
+          test -d "$ANDROID_NDK_LATEST_HOME"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - name: Install pinned Rust toolchain and Android target
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --target aarch64-linux-android
+      - run: npm ci
+      - run: npm run tauri android init -- --ci
+      - name: Disable Android cloud and device-transfer backup
+        run: npm run android:secure
+      - name: Verify Android backup remains disabled
+        run: grep -q 'android:allowBackup="false"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+      - run: npm run tauri android build -- --debug --apk --target aarch64 --ci
+      - name: Compile Android mobile development proxy
+        run: |
+          export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          cargo check --manifest-path src-tauri/Cargo.toml --lib --target aarch64-linux-android --no-default-features --locked
+      - run: git diff --exit-code -- src-tauri/Cargo.lock
+      - name: Report Android artifact sizes
+        run: find src-tauri/gen/android -type f -name '*.apk' -printf '%p %k KB\n' | sort
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-android-debug
+          path: src-tauri/gen/android/app/build/outputs/apk
+          retention-days: 7
+
+  ios:
+    name: iOS simulator debug build
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned Rust toolchain and iOS simulator target
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --target aarch64-apple-ios-sim
+      - run: npm ci
+      - run: npm run tauri ios init -- --ci
+      - run: npm run tauri ios build -- --debug --target aarch64-sim --no-sign --ci
+      - name: Compile iOS mobile development proxy
+        run: cargo check --manifest-path src-tauri/Cargo.toml --lib --target aarch64-apple-ios-sim --no-default-features --locked
+      - run: git diff --exit-code -- src-tauri/Cargo.lock
+      - name: Report iOS simulator artifact sizes
+        run: find src-tauri/gen/apple/build -type d -name '*.app' -exec du -sh {} \;
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-ios-simulator-debug
+          path: src-tauri/gen/apple/build/**/*.app
+          if-no-files-found: error
+          retention-days: 7
