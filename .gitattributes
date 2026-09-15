@@ -10,5 +10,4 @@ package-lock.json -diff linguist-generated
 
 # Preserve upstream snapshots byte-for-byte; review deltas in vendor/*.patch.
 src-tauri/vendor/glib/** -text -whitespace linguist-vendored
-src-tauri/vendor/tauri/** -text -whitespace linguist-vendored
 src-tauri/vendor/*.patch -whitespace

@@ -152,10 +152,14 @@ Install the platform prerequisites described by Tauri, then initialize and run t
 npm run tauri android init
 # Required after init; Android builds fail closed if these settings are absent.
 npm run android:secure
+npm run tauri android dev
+# Or create an installed evaluation build:
 npm run tauri android build -- --debug --apk --target aarch64 --ci
 
 # macOS/Xcode only
 npm run tauri ios init
+npm run tauri ios dev
+# Or create an installed simulator build:
 npm run tauri ios build -- --debug --target aarch64-sim --no-sign --ci
 ```
 
@@ -163,9 +167,12 @@ The generated `src-tauri/gen/android` and `src-tauri/gen/apple` directories are 
 the pinned Tauri CLI rather than reviewed application source, so CI regenerates them on clean
 runners. A checked-in configuration script applies the Android backup policy and `build.rs` enforces
 it for every Android compilation. Android debug builds run on Linux; the unsigned iOS simulator
-build runs on macOS. Install the resulting build to test it. Mobile live reload (`tauri android dev`
-or `tauri ios dev`) is intentionally disabled by our Tauri patch, which removes its HTTP proxy and
-networking dependencies. Desktop `tauri dev` remains available. See [native patch notes](src-tauri/vendor/README.md).
+build runs on macOS. Use the `dev` commands for live UI updates and automatic Rust
+rebuild/relaunch; use `build` for standalone evaluation packages. For a physical device,
+follow [Tauri's mobile development setup](https://v2.tauri.app/develop/): the device must
+reach the development computer, and Vite uses `TAURI_DEV_HOST` selected by the CLI.
+Development WebSockets use port 1421; only the development CSP permits those connections.
+
 
 ## Known evaluation findings
 
@@ -174,10 +181,10 @@ networking dependencies. Desktop `tauri dev` remains available. See [native patc
   CI verifies source provenance and exercises all affected iterator methods under optimization.
   Audit still reports the original upstream warning rather than hiding the package's identity.
   Linux remains an unsupported evaluation pending review and device validation.
-- A pinned Tauri patch removes the mobile development-server proxy and its HTTP stack from all
-  build targets. This addresses the `hyper-util` dependency exposure by removal; it does not
-  classify Socket's original warning as a false positive. Both patches add maintenance work;
-  see [source provenance, deltas, and retirement criteria](src-tauri/vendor/README.md).
+- Upstream Tauri's mobile development proxy is restored for live reload, including its
+  reqwest/hyper/hyper-util dependencies. Socket's original package warning has not been
+  classified as a false positive. The glib backport is the only local dependency patch;
+  see [source provenance and retirement criteria](src-tauri/vendor/README.md).
 - Hosted CI produced a 48 MB Linux debug `.deb`, a 131 MB Android debug APK, and a 92 MB unsigned
   iOS simulator `.app`. These unoptimized artifacts are useful feasibility evidence, not release
   size estimates.

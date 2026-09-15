@@ -47,4 +47,3 @@ strip = true
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
-tauri = { path = "vendor/tauri" }

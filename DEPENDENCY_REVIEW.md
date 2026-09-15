@@ -47,21 +47,32 @@ has been suppressed or marked acceptable.
 
 ## Native remediation
 
-### Mobile networking removed
+### Mobile live reload restored
 
-The former path was Tauri → reqwest → hyper-util on Android/iOS. A pinned Tauri
-2.11.5 source patch now removes the mobile development-server proxy and those
-HTTP dependencies entirely. The root lockfile and all-target Cargo metadata no
-longer include reqwest, hyper, or hyper-util. Installed mobile builds use the
-existing bundled-asset protocol. Mobile live reload intentionally fails with an
-explanation; desktop live reload and native vault/file-picker operations remain.
+At the user's request, mobile live reload is restored using the original upstream
+Tauri 2.11.5 release. The local Tauri source snapshot and proxy-removal patch are
+removed. Its reqwest/hyper/hyper-util chain and supporting dependencies return to
+the lockfile, restoring the original 485-package Rust graph with only glib patched.
+Original locked versions are preserved. The npm dependency cleanup remains intact.
 
-Before removal, all **51 Rust files** in the published hyper-util 0.1.20 crate
-were compared byte-for-byte with its recorded upstream revision
+The earlier removal saved 20 packages but disabled Android/iOS live reload and
+introduced a Tauri fork to maintain. Fast mobile iteration is the chosen tradeoff
+for now. The proxy is used in Tauri's mobile development configuration; packaged
+apps continue loading bundled assets. This does not assert that the HTTP packages
+are malicious, risk-free, or a false positive, and no Socket alert is suppressed.
+
+All **51 Rust files** in the published hyper-util 0.1.20 crate were previously
+compared byte-for-byte with recorded upstream revision
 `b23a13e2b7ee73e15ba008cd9b19dcd2d3861957`; they match. Socket's detailed organization
-alert view remained inaccessible, so the precise detection rationale is unknown.
-Removing the dependency resolves this application's exposure without asserting
-that the package was malicious, safe, or a false positive. No alert is suppressed.
+alert view was inaccessible, so the precise detection rationale remains unknown.
+The warning may return now that the dependency is restored.
+
+The development CSP permits the selected computer's HMR WebSocket on port 1421,
+including physical-device connections. The production CSP remains unchanged. A
+browser regression checks a hot update without navigation at a non-localhost
+address; CI compiles the mobile development proxy on Android and iOS in addition
+to building standalone packages. UI updates are distinct from Rust edits, which
+require an automatic rebuild and app relaunch.
 
 ### Linux glib fix backported
 
@@ -83,18 +94,18 @@ pending review and device validation; fixing one defect does not approve release
 
 [Native patch notes](src-tauri/vendor/README.md) contain the exact deltas, pinned
 archive checksums/source revisions, development tradeoff, and retirement criteria.
-CI reconstructs each complete source snapshot from its checksum-verified release
-plus patch, then checks that Cargo selects those sources. Licenses are preserved;
+CI reconstructs the complete glib source snapshot from its checksum-verified release
+plus patch, then checks that Cargo selects the glib backport and upstream Tauri. Licenses are preserved;
 package versions are not changed to impersonate upstream fixed releases.
 
 Local source patches can disappear from registry-only advisory scanning. Our
-audit helper restores their upstream identities in a temporary audit lockfile,
+audit helper restores the glib upstream identity in a temporary audit lockfile,
 retaining the original glib warning and future advisories. It does not change the
 real lockfile or ignore an advisory. The source verification and optimized tests
 are the evidence for this specific backport, independent of scanner status.
 
-The two local patches add maintenance responsibility. Retire them once compatible
-stable upstream releases provide the same fixes/removal. Encryption libraries,
+The remaining glib patch adds maintenance responsibility. Retire it once a
+compatible stable upstream release provides the same fix. Encryption libraries,
 our vault implementation, encrypted format, and native file handling are unchanged.
 
 ### Remaining advisory warnings
@@ -107,12 +118,13 @@ The glib source fix is verified separately as described above. The unmaintained
 packages still need an upstream migration or replacement review before release;
 a passing default audit does not establish that every dependency is maintained.
 
-### Cross-platform validation
+### Previous removal validation (historical)
 
 All seven jobs passed in the linked run for code commit `c5f682b`: Windows, macOS,
 Linux, Android, iOS simulator, browser tests, and dependency/SBOM checks. Windows
 passed 59 native tests and Linux passed 62 (four subprocess helpers are ignored in
 the main run and invoked by their parent tests); Linux also passed all five optimized
 backport regressions. Windows installation and the GUI subsystem check passed.
-Subsequent commits update documentation only. Device testing and release review
-remain separate gates.
+This run predates restoration of mobile live reload and is historical evidence.
+The restoration triggers fresh checks, including both mobile development builds.
+Device testing and release review remain separate gates.

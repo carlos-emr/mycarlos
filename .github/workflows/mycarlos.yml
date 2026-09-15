@@ -49,7 +49,7 @@ jobs:
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Verify native dependency sources and reviewed patches
         run: python3 scripts/verify-native-vendor.py
-      - name: Reject restored networking dependencies or patch bypasses
+      - name: Verify upstream Tauri and the glib backport are selected
         run: python3 scripts/check-native-dependency-graph.py
       - name: Reject known Rust vulnerabilities, including upstream patch identities
         run: python3 scripts/audit-native-dependencies.py
@@ -108,6 +108,7 @@ jobs:
             sleep $((attempt * 10))
           done
       - run: npm test
+      - run: npm run test:dev-hmr
       - run: npm run test:dev-data
       - run: npm run test:android-security
       - run: npm run build
@@ -324,6 +325,11 @@ jobs:
       - name: Verify Android backup remains disabled
         run: grep -q 'android:allowBackup="false"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
       - run: npm run tauri android build -- --debug --apk --target aarch64 --ci
+      - name: Compile Android mobile development proxy
+        run: |
+          export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          cargo check --manifest-path src-tauri/Cargo.toml --lib --target aarch64-linux-android --no-default-features --locked
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Report Android artifact sizes
         run: find src-tauri/gen/android -type f -name '*.apk' -printf '%p %k KB\n' | sort
@@ -353,6 +359,8 @@ jobs:
       - run: npm ci
       - run: npm run tauri ios init -- --ci
       - run: npm run tauri ios build -- --debug --target aarch64-sim --no-sign --ci
+      - name: Compile iOS mobile development proxy
+        run: cargo check --manifest-path src-tauri/Cargo.toml --lib --target aarch64-apple-ios-sim --no-default-features --locked
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Report iOS simulator artifact sizes
         run: find src-tauri/gen/apple/build -type d -name '*.app' -exec du -sh {} \;

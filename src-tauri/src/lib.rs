@@ -704,10 +704,7 @@ mod tests {
         ] {
             assert!(production_csp.contains(directive));
         }
-        assert!(security["devCsp"]
-            .as_str()
-            .unwrap()
-            .contains("ws://localhost:1421"));
+        assert!(security["devCsp"].as_str().unwrap().contains("ws://*:1421"));
         assert_eq!(security["freezePrototype"], true);
         assert_eq!(config["build"]["removeUnusedCommands"], true);
 

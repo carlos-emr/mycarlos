@@ -24,11 +24,11 @@ def file_contents(directory):
 
 def verify():
     entries = json.loads((VENDOR / "upstream.json").read_text())
-    if len(entries) != 2 or {entry["name"] for entry in entries} != {"glib", "tauri"}:
-        raise ValueError("Both reviewed native dependencies must be present exactly once")
+    if len(entries) != 1 or entries[0]["name"] != "glib":
+        raise ValueError("The reviewed glib dependency must be present exactly once")
     for entry in entries:
         name, version = entry["name"], entry["version"]
-        if name not in {"glib", "tauri"}:
+        if name != "glib":
             raise ValueError(f"Unexpected local dependency: {name}")
         with tempfile.TemporaryDirectory(prefix="mycarlos-vendor-") as temporary:
             temporary = Path(temporary)

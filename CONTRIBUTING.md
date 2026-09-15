@@ -45,11 +45,16 @@ reformatting application code does not resolve an alert in an upstream package.
 ## Native dependency patches
 
 Read [the native patch notes](src-tauri/vendor/README.md) before touching the pinned
-Tauri/glib sources. Every difference from their published crates must be recorded
+glib source. Every difference from its published crate must be recorded
 in a reviewed patch and pass the source reconstruction check. Preserve license
 notices and original versions. Run the optimized glib regression suite and the
 full native tests when changing these patches.
 
-Mobile testing uses installed bundled-asset builds; the removed development-server
-proxy means `tauri android dev` and `tauri ios dev` intentionally fail. Desktop
-live reload is unchanged. CI exercises bundled Android and iOS builds.
+Mobile live reload uses upstream Tauri: run `npm run tauri android dev` after Android
+initialization and `npm run android:secure`, or `npm run tauri ios dev` on macOS after
+iOS initialization. UI edits hot-update; Rust edits rebuild/relaunch the native app.
+Vite uses `TAURI_DEV_HOST` for physical devices and WebSocket port 1421. The broader
+WebSocket host allowance is confined to `devCsp`; packaged builds keep the production CSP.
+`npm run test:dev-hmr` verifies a real hot update under that development policy using a
+non-localhost address. CI also compiles both mobile development paths and builds the
+bundled Android/iOS packages.

@@ -10,3 +10,5 @@ src-tauri/gen/schemas/
 *.local
 security-tests/**/target/
 __pycache__/
+
+.hmr-test-*/
