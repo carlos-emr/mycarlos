@@ -130,9 +130,11 @@ On Apple platforms the vault is deliberately stored in the application data/Appl
 area so normal device backups can carry its ciphertext. A restored vault still requires the
 patient passphrase. No plaintext cache is created or marked for backup. Android cloud backup is not
 promised and the generated Android application manifest is configured in CI with
-`android:allowBackup="false"` and `android:fullBackupContent="false"`. Checked-in build logic rejects
-an Android build unless those generated-manifest settings are present; Android users still need a
-future explicit encrypted export/restore flow and physical OEM transfer testing.
+`android:allowBackup="false"` and `android:fullBackupContent="false"`. Android 12 and later ignore
+both for device-to-device transfer, so the same step writes data extraction rules that exclude every
+storage domain from `<cloud-backup>` and `<device-transfer>`. Checked-in build logic rejects an
+Android build unless those generated-manifest settings and the rules file are present; Android users
+still need a future explicit encrypted export/restore flow and physical OEM transfer testing.
 
 Losing the passphrase means losing access. The only fallback is a typed-confirmation whole-vault
 reset followed by a trusted native confirmation dialog. It permanently removes all local profiles

@@ -335,8 +335,11 @@ jobs:
       - run: npm run tauri android init -- --ci
       - name: Disable Android cloud and device-transfer backup
         run: npm run android:secure
-      - name: Verify Android backup remains disabled
-        run: grep -q 'android:allowBackup="false"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+      - name: Verify Android backup and device transfer remain disabled
+        run: |
+          grep -q 'android:allowBackup="false"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:dataExtractionRules="@xml/mycarlos_data_extraction_rules"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          grep -q '<device-transfer>' src-tauri/gen/android/app/src/main/res/xml/mycarlos_data_extraction_rules.xml
       - run: npm run tauri android build -- --debug --apk --target aarch64 --ci
       - name: Compile Android mobile development proxy
         run: |

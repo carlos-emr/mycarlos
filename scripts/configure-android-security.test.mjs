@@ -20,6 +20,23 @@ test("Android backup exclusions are applied exactly once", async () => {
     assert.equal((manifest.match(/android:allowBackup="false"/g) ?? []).length, 1);
     assert.equal((manifest.match(/android:fullBackupContent="false"/g) ?? []).length, 1);
     assert.doesNotMatch(manifest, /android:allowBackup="true"/);
+
+    // Android 12 and later ignore both attributes for device-to-device transfer.
+    assert.equal(
+      (manifest.match(/android:dataExtractionRules="@xml\/mycarlos_data_extraction_rules"/g) ?? [])
+        .length,
+      1,
+    );
+    const rules = await readFile(
+      join(directory, "res", "xml", "mycarlos_data_extraction_rules.xml"),
+      "utf8",
+    );
+    for (const section of ["cloud-backup", "device-transfer"]) {
+      const body = rules.split(`<${section}>`)[1].split(`</${section}>`)[0];
+      for (const domain of ["root", "file", "database", "sharedpref", "external"]) {
+        assert.match(body, new RegExp(`<exclude domain="${domain}" path="\\." />`));
+      }
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

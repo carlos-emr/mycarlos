@@ -74,6 +74,13 @@ privacy, accessibility, or clinical review.
 - [x] Replace the stale PR title/body with the implemented scope and current test evidence.
 - [ ] Obtain application-owner and independent security review of the vault and threat model.
 - [ ] Run the native lifecycle checklist on representative physical target devices.
+- [ ] Confirm on a physical Android device that choosing files still completes. The app locks
+      whenever its page becomes hidden, and Android shows the document picker as a separate activity,
+      so the import or export that opened the picker may find the vault locked when it returns. If
+      so, decide how a picker the app itself opened should differ from the app being backgrounded.
+- [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
+      refuses every reparse point, not only links and junctions, and cloud-synchronized files may
+      carry a reparse tag even when fully downloaded.
 - [ ] Run true power-cut/filesystem crash testing around the atomic replacement primitive on every
       supported filesystem and physical target; subprocess termination coverage is implemented.
 - [ ] Reproduce genuine full-filesystem behavior and test OS backup/restore. Deterministic

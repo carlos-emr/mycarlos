@@ -5,9 +5,18 @@ fn main() {
         println!("cargo:rerun-if-changed={}", manifest.display());
         let contents = std::fs::read_to_string(&manifest)
             .unwrap_or_else(|_| panic!("Android manifest missing at {}", manifest.display()));
+        // Android 12 and later ignore the first two for device-to-device
+        // transfer, which only the data extraction rules exclude.
         assert!(
             contents.contains("android:allowBackup=\"false\"")
-                && contents.contains("android:fullBackupContent=\"false\""),
+                && contents.contains("android:fullBackupContent=\"false\"")
+                && contents.contains(
+                    "android:dataExtractionRules=\"@xml/mycarlos_data_extraction_rules\""
+                )
+                && manifest
+                    .with_file_name("res")
+                    .join("xml/mycarlos_data_extraction_rules.xml")
+                    .is_file(),
             "Android backup exclusions must be applied with `npm run android:secure` before every Android build"
         );
     }
