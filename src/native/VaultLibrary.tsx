@@ -141,7 +141,15 @@ export function VaultLibrary({
   const renameFolder = (folder: VaultFolder) =>
     setRenameTarget({ kind: "folder", id: folder.id, name: folder.name });
   const saveName = async (name: string) => {
-    if (!renameTarget || busy || readOnly) return;
+    if (!renameTarget) return;
+    // The dialog closes when this resolves, so a refusal has to reject: a
+    // silent return would look like a saved name.
+    if (busy || readOnly)
+      throw new Error(
+        readOnly
+          ? "The vault is read-only, so the name was not changed."
+          : "Another vault operation is still running. Try again when it finishes.",
+      );
     if (renameTarget.kind === "folder") {
       const folder = folders.find(
         (candidate) => candidate.id === renameTarget.id,

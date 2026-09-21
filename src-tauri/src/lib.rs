@@ -423,10 +423,7 @@ async fn vault_import_begin(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
     let Some(paths) = picked else {
-        return Ok(vault::ImportOutcome {
-            imported: Vec::new(),
-            skipped_duplicates: Vec::new(),
-        });
+        return Ok(vault::ImportOutcome::default());
     };
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
     // Opening a source can block: a network path, or a content provider that

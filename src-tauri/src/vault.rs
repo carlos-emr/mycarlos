@@ -304,7 +304,7 @@ impl<W: Write> Write for CancellableWriter<W> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportOutcome {
     pub imported: Vec<Uuid>,
@@ -386,10 +386,11 @@ impl VaultStore {
         fs::create_dir_all(parent)?;
         let stage = parent.join(format!(".mycarlos-create-{}", Uuid::new_v4()));
         create_private_dir(&stage)?;
-        create_private_dir(&stage.join("objects"))?;
-        create_private_dir(&stage.join("staging"))?;
 
         let result = (|| {
+            // Inside the closure so that a failure here also removes the stage.
+            create_private_dir(&stage.join("objects"))?;
+            create_private_dir(&stage.join("staging"))?;
             let vault_id = Uuid::new_v4();
             let mut master_key = Zeroizing::new([0_u8; 32]);
             OsRng.fill_bytes(master_key.as_mut());
@@ -679,17 +680,20 @@ impl VaultStore {
             return Err(VaultError::Invalid);
         }
         self.mutate_manifest(|manifest| {
-            let unique_record_ids = unique(record_ids);
+            let unique_record_ids: HashSet<Uuid> = record_ids.into_iter().collect();
             // Folder validity depends only on the owning profile, so check each
-            // profile once rather than once per record.
+            // profile once rather than once per record. Record ids are unique
+            // within a manifest, so one pass both finds and counts the targets.
             let mut profile_ids = HashSet::new();
-            for record_id in &unique_record_ids {
-                let record = manifest
-                    .records
-                    .iter()
-                    .find(|record| record.id == *record_id)
-                    .ok_or(VaultError::NotFound)?;
-                profile_ids.insert(record.profile_id);
+            let mut found = 0_usize;
+            for record in &manifest.records {
+                if unique_record_ids.contains(&record.id) {
+                    found += 1;
+                    profile_ids.insert(record.profile_id);
+                }
+            }
+            if found != unique_record_ids.len() {
+                return Err(VaultError::NotFound);
             }
             let assignments = unique(folder_ids);
             for profile_id in profile_ids {
@@ -712,10 +716,7 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<ImportOutcome, VaultError> {
         if sources.is_empty() {
-            return Ok(ImportOutcome {
-                imported: Vec::new(),
-                skipped_duplicates: Vec::new(),
-            });
+            return Ok(ImportOutcome::default());
         }
         validate_import_count(sources.len())?;
         let mut guard = self.session();
@@ -901,19 +902,11 @@ impl VaultStore {
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         let destination_parent = fs::canonicalize(destination_parent)?;
         let destination_name = destination.file_name().ok_or(VaultError::Invalid)?;
-        // The directories are canonical, but the chosen file name is not. Windows
-        // and macOS resolve "VAULT-V1.LOCK" to the lock file, and replacing it
-        // would let a second instance lock a new inode, so ignore case here.
-        let lock_path = sibling_path(&vault_root, ".lock")?;
-        let names_lock_file = lock_path.parent() == Some(destination_parent.as_path())
-            && lock_path.file_name().is_some_and(|lock_name| {
-                lock_name
-                    .to_string_lossy()
-                    .eq_ignore_ascii_case(&destination_name.to_string_lossy())
-            });
+        let names_vault_sibling = vault_root.parent() == Some(destination_parent.as_path())
+            && is_vault_managed_name(&vault_root, &destination_name.to_string_lossy())?;
         if destination_parent.starts_with(&vault_root)
             || destination_parent.starts_with(reset_path(&vault_root)?)
-            || names_lock_file
+            || names_vault_sibling
         {
             return Err(VaultError::Invalid);
         }
@@ -1165,12 +1158,9 @@ fn sanitize_basename(value: &str) -> String {
         } else {
             character
         };
-        if cleaned.len() + character.len_utf8() > MAX_RECORD_NAME_LEN {
-            break;
-        }
         cleaned.push(character);
     }
-    cleaned = cleaned.trim().trim_end_matches(['.', ' ']).to_owned();
+    cleaned = truncate_record_name(cleaned.trim().trim_end_matches(['.', ' ']));
     // Win32 ignores spaces between the stem and the extension, so "CON .txt"
     // still names the console device.
     let stem = cleaned
@@ -1217,15 +1207,43 @@ fn sanitize_basename(value: &str) -> String {
         cleaned.insert(0, '_');
         // The prefix must not push a maximum-length name past the limit that
         // `valid_record_name` enforces when the manifest is read back.
-        while cleaned.len() > MAX_RECORD_NAME_LEN {
-            cleaned.pop();
-        }
-        cleaned.truncate(cleaned.trim_end_matches(['.', ' ']).len());
+        cleaned = truncate_record_name(&cleaned);
     }
     if cleaned.is_empty() {
         "Imported file".to_owned()
     } else {
         cleaned
+    }
+}
+
+/// Shortens `name` to `MAX_RECORD_NAME_LEN` bytes on a character boundary and
+/// drops any trailing dots or spaces the cut exposes. A short final extension
+/// is kept, so the export of a long name still suggests a file the platform
+/// can open.
+fn truncate_record_name(name: &str) -> String {
+    const MAX_KEPT_EXTENSION_LEN: usize = 16;
+    fn cut(value: &str, limit: usize) -> &str {
+        let mut end = limit.min(value.len());
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value[..end].trim_end_matches(['.', ' '])
+    }
+    if name.len() <= MAX_RECORD_NAME_LEN {
+        return name.to_owned();
+    }
+    match name.rsplit_once('.') {
+        Some((stem, extension))
+            if !extension.is_empty() && extension.len() <= MAX_KEPT_EXTENSION_LEN =>
+        {
+            let stem = cut(stem, MAX_RECORD_NAME_LEN - extension.len() - 1);
+            if stem.is_empty() {
+                cut(name, MAX_RECORD_NAME_LEN).to_owned()
+            } else {
+                format!("{stem}.{extension}")
+            }
+        }
+        _ => cut(name, MAX_RECORD_NAME_LEN).to_owned(),
     }
 }
 
@@ -1370,6 +1388,20 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     Ok(())
 }
 
+/// The current KDF parameters with a fresh random salt.
+fn new_kdf_config() -> KdfConfig {
+    let mut salt = [0_u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    KdfConfig {
+        algorithm: "argon2id".to_owned(),
+        version: 19,
+        memory_kib: ARGON_MEMORY_KIB,
+        iterations: ARGON_ITERATIONS,
+        lanes: ARGON_LANES,
+        salt: BASE64.encode(salt),
+    }
+}
+
 #[cfg(test)]
 fn build_header(
     vault_id: Uuid,
@@ -1377,16 +1409,7 @@ fn build_header(
     passphrase: &str,
     master_key: &[u8; 32],
 ) -> Result<VaultHeader, VaultError> {
-    let mut salt = [0_u8; 16];
-    OsRng.fill_bytes(&mut salt);
-    let kdf = KdfConfig {
-        algorithm: "argon2id".to_owned(),
-        version: 19,
-        memory_kib: ARGON_MEMORY_KIB,
-        iterations: ARGON_ITERATIONS,
-        lanes: ARGON_LANES,
-        salt: BASE64.encode(salt),
-    };
+    let kdf = new_kdf_config();
     let wrapping_key = derive_passphrase_key(passphrase, &kdf)?;
     build_header_with_key(vault_id, generation, kdf, &wrapping_key, master_key)
 }
@@ -1398,16 +1421,7 @@ fn build_header_pair(
     master_key: &[u8; 32],
 ) -> Result<(VaultHeader, VaultHeader), VaultError> {
     let second_generation = first_generation.checked_add(1).ok_or(VaultError::Storage)?;
-    let mut salt = [0_u8; 16];
-    OsRng.fill_bytes(&mut salt);
-    let kdf = KdfConfig {
-        algorithm: "argon2id".to_owned(),
-        version: 19,
-        memory_kib: ARGON_MEMORY_KIB,
-        iterations: ARGON_ITERATIONS,
-        lanes: ARGON_LANES,
-        salt: BASE64.encode(salt),
-    };
+    let kdf = new_kdf_config();
     let wrapping_key = derive_passphrase_key(passphrase, &kdf)?;
     Ok((
         build_header_with_key(
@@ -2115,18 +2129,29 @@ fn verify_object<W: Write>(
         }
     })?;
     let mut reader = BufReader::new(file);
+    // An object cut short inside its header, such as the empty file a power
+    // loss can leave, is damaged ciphertext and not a failed storage operation.
+    let mut read_header = |buffer: &mut [u8]| {
+        reader.read_exact(buffer).map_err(|error| {
+            if error.kind() == io::ErrorKind::UnexpectedEof {
+                VaultError::Corrupt
+            } else {
+                error.into()
+            }
+        })
+    };
     let mut magic = [0_u8; 5];
-    reader.read_exact(&mut magic)?;
+    read_header(&mut magic)?;
     if &magic != OBJECT_MAGIC {
         return Err(VaultError::Corrupt);
     }
     let mut size_bytes = [0_u8; 4];
-    reader.read_exact(&mut size_bytes)?;
+    read_header(&mut size_bytes)?;
     if u32::from_be_bytes(size_bytes) as usize != CHUNK_SIZE {
         return Err(VaultError::Corrupt);
     }
     let mut nonce_prefix = [0_u8; 16];
-    reader.read_exact(&mut nonce_prefix)?;
+    read_header(&mut nonce_prefix)?;
     let cipher = XChaCha20Poly1305::new(object_key.into());
     let mut total = 0_u64;
     let mut index = 0_u64;
@@ -2225,6 +2250,24 @@ fn acquire_storage_lock(root: &Path) -> Result<Arc<File>, VaultError> {
 
 fn reset_path(root: &Path) -> Result<PathBuf, VaultError> {
     sibling_path(root, ".reset-pending")
+}
+
+/// Whether `name`, in the vault's parent directory, is an entry the vault
+/// manages: the vault itself, its lock file, or a pending reset.
+///
+/// An export must never create or replace one. Replacing the lock file would let
+/// a second instance lock a new inode, and a regular file under a pending-reset
+/// name makes `finish_pending_resets` fail closed on every later status, unlock,
+/// create and reset. The chosen file name is not canonical, and Windows and macOS
+/// resolve "VAULT-V1.LOCK" to the lock file, so case is ignored.
+fn is_vault_managed_name(root: &Path, name: &str) -> Result<bool, VaultError> {
+    let root_name = root.file_name().ok_or(VaultError::Storage)?;
+    let root_name = root_name.to_string_lossy();
+    let name = name.to_ascii_lowercase();
+    Ok(["", ".lock", ".reset-pending"]
+        .iter()
+        .any(|suffix| name == format!("{root_name}{suffix}").to_ascii_lowercase())
+        || name.starts_with("mycarlos-vault-reset-"))
 }
 
 // The caller holds the stable sibling lock. A retired directory is itself the durable reset
@@ -2880,6 +2923,19 @@ mod tests {
             store.export_atomic(record, &root.with_file_name("VAULT.LOCK")),
             Err(VaultError::Invalid)
         ));
+        // A regular file under a pending-reset name would make every later
+        // status, unlock, create and reset fail closed.
+        for name in [
+            "vault.reset-pending".to_owned(),
+            "Vault.Reset-Pending".to_owned(),
+            format!("mycarlos-vault-reset-{}", Uuid::new_v4()),
+        ] {
+            assert!(matches!(
+                store.export_atomic(record, &root.with_file_name(&name)),
+                Err(VaultError::Invalid)
+            ));
+            assert!(!root.with_file_name(&name).exists());
+        }
         assert!(matches!(
             VaultStore::new(root.clone()).unlock(PASSWORD),
             Err(VaultError::InUse)
@@ -4524,6 +4580,27 @@ mod tests {
     }
 
     #[test]
+    fn a_name_cut_to_the_limit_keeps_its_extension() {
+        for long in [
+            format!("{}.pdf", "a".repeat(300)),
+            format!("{}.pdf", "🩺".repeat(100)),
+            format!("{} . .pdf", "a".repeat(236)),
+            format!("con{}.pdf", " ".repeat(300)),
+        ] {
+            let sanitized = sanitize_basename(&long);
+            assert!(sanitized.ends_with(".pdf"), "{sanitized:?}");
+            assert!(sanitized.len() <= MAX_RECORD_NAME_LEN);
+            assert!(valid_record_name(&sanitized));
+            // `rename_record` relies on a sanitized name being a fixed point.
+            assert_eq!(sanitize_basename(&sanitized), sanitized);
+        }
+        // An implausibly long "extension" is part of the name, not a type.
+        let sanitized = sanitize_basename(&format!("report.{}", "b".repeat(300)));
+        assert_eq!(sanitized.len(), MAX_RECORD_NAME_LEN);
+        assert_eq!(sanitize_basename(&sanitized), sanitized);
+    }
+
+    #[test]
     fn reserved_name_prefix_keeps_a_maximum_length_name_within_the_limit() {
         let longest = format!("con.{}.pdf", "a".repeat(232));
         assert_eq!(longest.len(), MAX_RECORD_NAME_LEN);
@@ -4849,6 +4926,32 @@ mod tests {
             object_aad(vault_id, record_id, 0, false),
             object_aad(vault_id, Uuid::new_v4(), 0, false)
         );
+    }
+
+    #[test]
+    fn an_object_cut_short_inside_its_header_is_reported_as_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let object = temp.path().join("truncated.mcobj");
+        let mut header = OBJECT_MAGIC.to_vec();
+        header.extend_from_slice(&(CHUNK_SIZE as u32).to_be_bytes());
+        header.extend_from_slice(&[0_u8; 16]);
+        for length in [0, 3, 7, 20] {
+            fs::write(&object, &header[..length]).unwrap();
+            assert!(
+                matches!(
+                    verify_object(
+                        &object,
+                        io::sink(),
+                        Uuid::new_v4(),
+                        Uuid::new_v4(),
+                        &[0x61_u8; 32],
+                        0,
+                    ),
+                    Err(VaultError::Corrupt)
+                ),
+                "header cut to {length} bytes"
+            );
+        }
     }
 
     #[test]

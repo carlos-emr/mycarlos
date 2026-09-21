@@ -78,6 +78,9 @@ privacy, accessibility, or clinical review.
       whenever its page becomes hidden, and Android shows the document picker as a separate activity,
       so the import or export that opened the picker may find the vault locked when it returns. If
       so, decide how a picker the app itself opened should differ from the app being backgrounded.
+      The same decision covers inactivity on every platform: only input to the app's own window
+      counts as activity, so browsing in a native picker for longer than the automatic lock delay
+      (one minute at its shortest) locks the vault and the chosen import or export is refused.
 - [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
       refuses every reparse point, not only links and junctions, and cloud-synchronized files may
       carry a reparse tag even when fully downloaded.
