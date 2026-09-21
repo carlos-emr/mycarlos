@@ -1,10 +1,8 @@
 mod vault;
 
 use serde::{Deserialize, Serialize};
-#[cfg(windows)]
-use std::os::windows::fs::OpenOptionsExt as _;
 #[cfg(desktop)]
-use std::{fs, io, path::Path};
+use std::io;
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -243,45 +241,6 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
     }
 }
 
-#[cfg(desktop)]
-fn open_regular_local_file(path: &Path) -> io::Result<fs::File> {
-    let metadata = fs::symlink_metadata(path)?;
-    if !vault::is_regular_non_reparse(&metadata) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "selected path is not a regular file",
-        ));
-    }
-    open_without_following(path)
-}
-
-/// Opens `path` without following a link, then checks the handle itself. The
-/// handle check is authoritative: the path can be replaced after any earlier
-/// inspection of it.
-#[cfg(desktop)]
-fn open_without_following(path: &Path) -> io::Result<fs::File> {
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        // Without O_NONBLOCK, a FIFO swapped in after the caller's check would
-        // block this open forever and leave the import command unresolved. The
-        // flag has no effect on reads from a regular file.
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    #[cfg(windows)]
-    options.custom_flags(vault::FILE_FLAG_OPEN_REPARSE_POINT);
-    let file = options.open(path)?;
-    if !vault::is_regular_non_reparse(&file.metadata()?) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "selected handle is not a regular file",
-        ));
-    }
-    Ok(file)
-}
-
 #[tauri::command]
 fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
@@ -297,8 +256,7 @@ async fn vault_create(
     store: State<'_, Arc<VaultStore>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
-    let store = store.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    run_blocking(store.inner(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
             .and_then(|_| store.snapshot());
@@ -306,8 +264,6 @@ async fn vault_create(
         result
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -315,8 +271,7 @@ async fn vault_unlock(
     store: State<'_, Arc<VaultStore>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
-    let store = store.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    run_blocking(store.inner(), move |store| {
         let result = store
             .unlock(&request.passphrase)
             .and_then(|_| store.snapshot());
@@ -324,17 +279,15 @@ async fn vault_unlock(
         result
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    result.map_err(Into::into)
 }
 
 #[tauri::command]
 async fn vault_lock(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
-    let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || store.lock())
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(())
+    run_blocking(store.inner(), |store| {
+        store.lock();
+        Ok(())
+    })
+    .await
 }
 
 /// Runs a vault operation on the blocking thread pool.
@@ -366,16 +319,13 @@ async fn vault_change_passphrase(
     store: State<'_, Arc<VaultStore>>,
     mut request: ChangePassphraseRequest,
 ) -> CommandResult<()> {
-    let store = store.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    run_blocking(store.inner(), move |store| {
         let result = store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
         request.current_passphrase.zeroize();
         request.new_passphrase.zeroize();
         result
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -479,45 +429,49 @@ async fn vault_import_begin(
         });
     };
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
-    let mut sources = Vec::with_capacity(paths.len());
-    for path in paths {
-        let display_name = import_display_name(&path);
-        #[cfg(desktop)]
-        {
-            if let Ok(local_path) = path.clone().into_path() {
-                let file = open_regular_local_file(&local_path).map_err(|error| {
-                    if error.kind() == io::ErrorKind::InvalidInput {
-                        PublicError::from(VaultError::Invalid)
-                    } else {
-                        PublicError::from(VaultError::Storage)
-                    }
-                })?;
-                sources.push(ImportSource {
-                    display_name,
-                    reader: Box::new(file),
-                });
-                continue;
-            }
+    // Opening a source can block: a network path, or a content provider that
+    // fetches the document first. It belongs on the blocking pool with the import.
+    run_blocking(store.inner(), move |store| {
+        let mut sources = Vec::with_capacity(paths.len());
+        for path in paths {
+            sources.push(open_import_source(&app, path)?);
         }
-        let mut options = OpenOptions::new();
-        options.read(true);
-        let file = app
-            .fs()
-            .open(path, options)
-            .map_err(|_| PublicError::from(VaultError::Storage))?;
-        sources.push(ImportSource {
-            display_name,
-            reader: Box::new(file),
-        });
-    }
-    let store = store.inner().clone();
-    let outcome = tauri::async_runtime::spawn_blocking(move || {
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?
-    .map_err(PublicError::from)?;
-    Ok(outcome)
+}
+
+fn open_import_source(
+    app: &tauri::AppHandle,
+    path: tauri_plugin_fs::FilePath,
+) -> Result<ImportSource, VaultError> {
+    let display_name = import_display_name(&path);
+    #[cfg(desktop)]
+    {
+        if let Ok(local_path) = path.clone().into_path() {
+            let file = vault::open_regular_read(&local_path).map_err(|error| {
+                if error.kind() == io::ErrorKind::InvalidData {
+                    VaultError::Invalid
+                } else {
+                    VaultError::Storage
+                }
+            })?;
+            return Ok(ImportSource {
+                display_name,
+                reader: Box::new(file),
+            });
+        }
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    let file = app
+        .fs()
+        .open(path, options)
+        .map_err(|_| VaultError::Storage)?;
+    Ok(ImportSource {
+        display_name,
+        reader: Box::new(file),
+    })
 }
 
 #[tauri::command]
@@ -544,38 +498,34 @@ async fn vault_export_begin(
     };
 
     if let Ok(destination_path) = destination.clone().into_path() {
-        let store = store.inner().clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            store.export_atomic(request.record_id, &destination_path)
+        run_blocking(store.inner(), move |store| {
+            store.export_atomic(record_id, &destination_path)
         })
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(PublicError::from)?;
+        .await?;
         return Ok(true);
     }
 
     // Android content providers can return a content URI rather than a filesystem path, so an
     // atomic rename is unavailable. Authenticate the complete object before opening/truncating
     // the selected URI; the second pass streams the verified plaintext to the provider.
-    let store_for_verify = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        store_for_verify.export(request.record_id, std::io::sink())
+    run_blocking(store.inner(), move |store| {
+        store.export(record_id, std::io::sink())
+    })
+    .await?;
+
+    // Opening the provider's document can block too, so it shares the blocking
+    // task with the write. Any failure from here on may leave a partial copy.
+    run_blocking(store.inner(), move |store| {
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        let mut output = app
+            .fs()
+            .open(destination, options)
+            .map_err(|_| VaultError::Storage)?;
+        store.export(record_id, &mut output)
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?
-    .map_err(PublicError::from)?;
-
-    let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    let mut output = app
-        .fs()
-        .open(destination, options)
-        .map_err(|_| PublicError::partial_export())?;
-    let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || store.export(request.record_id, &mut output))
-        .await
-        .map_err(|_| PublicError::partial_export())?
-        .map_err(|_| PublicError::partial_export())?;
+    .map_err(|_| PublicError::partial_export())?;
     Ok(true)
 }
 
@@ -617,11 +567,7 @@ async fn vault_reset(
     if !confirmed {
         return Ok(false);
     }
-    let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || store.reset())
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(PublicError::from)?;
+    run_blocking(store.inner(), VaultStore::reset).await?;
     Ok(true)
 }
 
@@ -717,8 +663,8 @@ mod tests {
         // Opening a FIFO for reading blocks until a writer appears, which here
         // is never. The handle check must still get to reject it.
         assert_eq!(
-            open_without_following(&fifo).unwrap_err().kind(),
-            io::ErrorKind::InvalidInput
+            vault::open_without_following(&fifo).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
         );
     }
 
@@ -767,12 +713,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join("record.pdf");
         let link = temp.path().join("selected.pdf");
-        fs::write(&target, b"%PDF-synthetic").unwrap();
+        std::fs::write(&target, b"%PDF-synthetic").unwrap();
         symlink(&target, &link).unwrap();
 
         assert_eq!(
-            open_regular_local_file(&link).unwrap_err().kind(),
-            io::ErrorKind::InvalidInput
+            vault::open_regular_read(&link).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
         );
     }
 

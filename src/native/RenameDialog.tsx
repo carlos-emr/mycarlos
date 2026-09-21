@@ -2,6 +2,12 @@ import { useState, useRef, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import { vaultErrorMessage } from "../vault";
 
+// The vault stores document names in at most this many UTF-8 bytes. `maxLength`
+// counts UTF-16 units, so it alone would let a long non-Latin name through to a
+// native rejection that cannot say what was wrong.
+const MAX_DOCUMENT_NAME_BYTES = 240;
+const encoder = new TextEncoder();
+
 export type RenameTarget = {
   kind: "folder" | "document";
   id: string;
@@ -23,13 +29,16 @@ export function RenameDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
+  const tooLong =
+    target.kind === "document" &&
+    encoder.encode(name.trim()).length > MAX_DOCUMENT_NAME_BYTES;
   const close = () => {
     if (!saving) onClose();
   };
   useModalFocus(true, dialogRef, close);
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (saving || readOnly || !name.trim()) return;
+    if (saving || readOnly || tooLong || !name.trim()) return;
     setSaving(true);
     setError("");
     try {
@@ -76,6 +85,9 @@ export function RenameDialog({
                 ? "The folder and its contents stay in the same location."
                 : "This changes the name in myCarlos and suggested export name. Keep the .pdf extension for PDF files."}
             </p>
+            {tooLong && (
+              <p role="alert">This name is too long. Shorten it to save.</p>
+            )}
             {error && <p role="alert">{error}</p>}
           </div>
           <footer className="dialog-actions">
@@ -89,7 +101,7 @@ export function RenameDialog({
             </button>
             <button
               className="button primary"
-              disabled={saving || readOnly || !name.trim()}
+              disabled={saving || readOnly || tooLong || !name.trim()}
             >
               {saving ? "Saving…" : "Save name"}
             </button>

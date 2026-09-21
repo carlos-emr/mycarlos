@@ -495,6 +495,45 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("refuses a document name longer than the vault's byte limit before saving it", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Long.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Long.pdf"));
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    // 100 characters fit the input's 240-unit limit but need 300 UTF-8 bytes.
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: "字".repeat(100) },
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    expect(bridge.renameRecord).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: "字".repeat(80) },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save name" })).toBeEnabled();
+  });
+
   it("allows Escape to cancel folder renaming and disables renaming in recovery mode", async () => {
     const user = userEvent.setup();
     const bridge = renameBridge();

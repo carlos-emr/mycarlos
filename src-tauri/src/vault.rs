@@ -48,7 +48,7 @@ const ARGON_LANES: u32 = 4;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
 #[cfg(windows)]
-pub(crate) const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 #[cfg(test)]
 const TEST_TERMINATION_EXIT_CODE: i32 = 86;
@@ -680,15 +680,21 @@ impl VaultStore {
         }
         self.mutate_manifest(|manifest| {
             let unique_record_ids = unique(record_ids);
+            // Folder validity depends only on the owning profile, so check each
+            // profile once rather than once per record.
+            let mut profile_ids = HashSet::new();
             for record_id in &unique_record_ids {
                 let record = manifest
                     .records
                     .iter()
                     .find(|record| record.id == *record_id)
                     .ok_or(VaultError::NotFound)?;
-                validate_folder_ids(manifest, record.profile_id, &folder_ids)?;
+                profile_ids.insert(record.profile_id);
             }
             let assignments = unique(folder_ids);
+            for profile_id in profile_ids {
+                validate_folder_ids(manifest, profile_id, &assignments)?;
+            }
             for record in &mut manifest.records {
                 if unique_record_ids.contains(&record.id) {
                     record.folder_ids = assignments.clone();
@@ -794,6 +800,15 @@ impl VaultStore {
             if self.cancel_io.load(Ordering::Acquire) {
                 return Err(VaultError::Cancelled);
             }
+            if staged.is_empty() {
+                // Every source was a duplicate. Nothing changed, so there is no
+                // manifest to commit: a commit here could only fail, or leave
+                // the session read-only, over an import that added nothing.
+                return Ok(ImportOutcome {
+                    imported: Vec::new(),
+                    skipped_duplicates,
+                });
+            }
             terminate_at_test_boundary("import.after-staging");
 
             let objects = self.root.join("objects");
@@ -867,13 +882,18 @@ impl VaultStore {
     pub fn export_name(&self, record_id: Uuid) -> Result<String, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        unlocked
+        let record = unlocked
             .manifest
             .records
             .iter()
             .find(|record| record.id == record_id)
-            .map(|record| record.display_name.clone())
-            .ok_or(VaultError::NotFound)
+            .ok_or(VaultError::NotFound)?;
+        // The name is asked for just before a save picker opens. Refuse here, as
+        // `export` will, so nobody chooses a destination for a lost object.
+        if unlocked.unavailable.contains(&record.id) {
+            return Err(VaultError::Corrupt);
+        }
+        Ok(record.display_name.clone())
     }
 
     pub fn export_atomic(&self, record_id: Uuid, destination: &Path) -> Result<(), VaultError> {
@@ -881,9 +901,19 @@ impl VaultStore {
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         let destination_parent = fs::canonicalize(destination_parent)?;
         let destination_name = destination.file_name().ok_or(VaultError::Invalid)?;
+        // The directories are canonical, but the chosen file name is not. Windows
+        // and macOS resolve "VAULT-V1.LOCK" to the lock file, and replacing it
+        // would let a second instance lock a new inode, so ignore case here.
+        let lock_path = sibling_path(&vault_root, ".lock")?;
+        let names_lock_file = lock_path.parent() == Some(destination_parent.as_path())
+            && lock_path.file_name().is_some_and(|lock_name| {
+                lock_name
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&destination_name.to_string_lossy())
+            });
         if destination_parent.starts_with(&vault_root)
             || destination_parent.starts_with(reset_path(&vault_root)?)
-            || destination_parent.join(destination_name) == sibling_path(&vault_root, ".lock")?
+            || names_lock_file
         {
             return Err(VaultError::Invalid);
         }
@@ -2261,7 +2291,7 @@ fn read_bounded_regular_file(path: &Path, maximum: usize) -> io::Result<Vec<u8>>
     Ok(data)
 }
 
-fn open_regular_read(path: &Path) -> io::Result<File> {
+pub(crate) fn open_regular_read(path: &Path) -> io::Result<File> {
     let metadata = fs::symlink_metadata(path)?;
     if !is_regular_non_reparse(&metadata) {
         return Err(io::Error::new(
@@ -2269,10 +2299,20 @@ fn open_regular_read(path: &Path) -> io::Result<File> {
             "path is not a regular file",
         ));
     }
+    open_without_following(path)
+}
+
+/// Opens `path` without following a link, then checks the handle itself. The
+/// handle check is authoritative: the path can be replaced after any earlier
+/// inspection of it.
+pub(crate) fn open_without_following(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
+    // Without O_NONBLOCK, a FIFO swapped in after the caller's check would block
+    // this open forever, leaving an import unresolved or the session mutex held.
+    // The flag has no effect on reads from a regular file.
     #[cfg(unix)]
-    options.custom_flags(libc::O_NOFOLLOW);
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     #[cfg(windows)]
     options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     let file = options.open(path)?;
@@ -2285,7 +2325,7 @@ fn open_regular_read(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-pub(crate) fn is_regular_non_reparse(metadata: &fs::Metadata) -> bool {
+fn is_regular_non_reparse(metadata: &fs::Metadata) -> bool {
     if !metadata.file_type().is_file() {
         return false;
     }
@@ -2835,6 +2875,11 @@ mod tests {
             store.export_atomic(record, &sibling_path(&root, ".lock").unwrap()),
             Err(VaultError::Invalid)
         ));
+        // Windows and macOS resolve a differently cased name to the same file.
+        assert!(matches!(
+            store.export_atomic(record, &root.with_file_name("VAULT.LOCK")),
+            Err(VaultError::Invalid)
+        ));
         assert!(matches!(
             VaultStore::new(root.clone()).unlock(PASSWORD),
             Err(VaultError::InUse)
@@ -3271,6 +3316,32 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn an_import_of_only_duplicates_commits_no_manifest() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("a", b"same")], 2)
+            .unwrap();
+        let generation = store.session().as_ref().unwrap().manifest.generation;
+
+        let outcome = store
+            .import(profile, vec![], vec![source("b", b"same")], 3)
+            .unwrap();
+
+        assert!(outcome.imported.is_empty());
+        assert_eq!(outcome.skipped_duplicates, vec!["b"]);
+        assert_eq!(
+            store.session().as_ref().unwrap().manifest.generation,
+            generation
+        );
+        assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
     }
 
     #[test]
