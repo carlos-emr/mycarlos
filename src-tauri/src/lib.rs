@@ -2,24 +2,19 @@ mod vault;
 
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
-use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
+use std::os::windows::fs::OpenOptionsExt as _;
 #[cfg(desktop)]
 use std::{fs, io, path::Path};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{Emitter, Manager, State};
+use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use uuid::Uuid;
 use vault::{ImportSource, VaultError, VaultSnapshot, VaultStatus, VaultStore};
 use zeroize::Zeroize;
-
-#[cfg(windows)]
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
-#[cfg(windows)]
-const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -197,13 +192,6 @@ struct ResetRequest {
     confirmation: String,
 }
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ImportProgress {
-    job_id: Uuid,
-    state: &'static str,
-}
-
 fn current_runtime_info() -> RuntimeInfo {
     RuntimeInfo {
         platform: std::env::consts::OS.to_owned(),
@@ -258,7 +246,7 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
 #[cfg(desktop)]
 fn open_regular_local_file(path: &Path) -> io::Result<fs::File> {
     let metadata = fs::symlink_metadata(path)?;
-    if !is_regular_local_file(&metadata) {
+    if !vault::is_regular_non_reparse(&metadata) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "selected path is not a regular file",
@@ -283,27 +271,15 @@ fn open_without_following(path: &Path) -> io::Result<fs::File> {
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     #[cfg(windows)]
-    options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    options.custom_flags(vault::FILE_FLAG_OPEN_REPARSE_POINT);
     let file = options.open(path)?;
-    if !is_regular_local_file(&file.metadata()?) {
+    if !vault::is_regular_non_reparse(&file.metadata()?) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "selected handle is not a regular file",
         ));
     }
     Ok(file)
-}
-
-#[cfg(desktop)]
-fn is_regular_local_file(metadata: &fs::Metadata) -> bool {
-    if !metadata.file_type().is_file() {
-        return false;
-    }
-    #[cfg(windows)]
-    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return false;
-    }
-    true
 }
 
 #[tauri::command]
@@ -313,11 +289,7 @@ fn runtime_info() -> RuntimeInfo {
 
 #[tauri::command]
 async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultStatus> {
-    let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || store.status())
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
+    run_blocking(store.inner(), VaultStore::status).await
 }
 
 #[tauri::command]
@@ -485,9 +457,11 @@ async fn vault_import_begin(
 ) -> CommandResult<vault::ImportOutcome> {
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     // Refuse before the picker opens; `import` still re-checks under its own lock.
-    store
-        .ensure_import_allowed(request.profile_id)
-        .map_err(PublicError::from)?;
+    let profile_id = request.profile_id;
+    run_blocking(store.inner(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
     let picker_app = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         picker_app
@@ -505,14 +479,6 @@ async fn vault_import_begin(
         });
     };
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
-    let job_id = Uuid::new_v4();
-    let _ = app.emit(
-        "vault-import-progress",
-        ImportProgress {
-            job_id,
-            state: "reading",
-        },
-    );
     let mut sources = Vec::with_capacity(paths.len());
     for path in paths {
         let display_name = import_display_name(&path);
@@ -551,13 +517,6 @@ async fn vault_import_begin(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
     .map_err(PublicError::from)?;
-    let _ = app.emit(
-        "vault-import-progress",
-        ImportProgress {
-            job_id,
-            state: "complete",
-        },
-    );
     Ok(outcome)
 }
 
@@ -568,9 +527,9 @@ async fn vault_export_begin(
     request: ExportRequest,
 ) -> CommandResult<bool> {
     let picker_app = app.clone();
-    let suggested_name = store
-        .export_name(request.record_id)
-        .map_err(PublicError::from)?;
+    let record_id = request.record_id;
+    let suggested_name =
+        run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
     let destination = tauri::async_runtime::spawn_blocking(move || {
         picker_app
             .dialog()

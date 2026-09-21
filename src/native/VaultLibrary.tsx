@@ -288,7 +288,17 @@ export function VaultLibrary({
     });
   const resetVault = (confirmation: string) =>
     run(async () => {
-      if (await bridge.reset(confirmation)) window.location.reload();
+      let erased: boolean;
+      try {
+        erased = await bridge.reset(confirmation);
+      } catch (error) {
+        // A reset closes the native session before it erases anything, so a
+        // failed one leaves the vault locked. Show that instead of a library
+        // whose every action would be refused.
+        await onLock();
+        throw error;
+      }
+      if (erased) window.location.reload();
       else setNotice("Vault erase cancelled. Nothing changed.");
     });
   const moveRecord = (recordId: string, folderId: string | null) =>

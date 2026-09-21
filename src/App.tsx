@@ -7,6 +7,7 @@ import {
   type SelectedDocument,
 } from "./platform";
 import { useModalFocus } from "./useModalFocus";
+import { AUTO_LOCK_OPTIONS } from "./native/autoLock";
 
 type Category =
   | "Test results"
@@ -23,7 +24,6 @@ type AppSection =
   | "trash"
   | "security"
   | "health";
-const AUTO_LOCK_MINUTES = Array.from({ length: 15 }, (_, index) => index + 1);
 interface FolderItem {
   id: string;
   title: string;
@@ -1104,7 +1104,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                         value={autoLock}
                         onChange={(event) => setAutoLock(event.target.value)}
                       >
-                        {AUTO_LOCK_MINUTES.map((minutes) => (
+                        {AUTO_LOCK_OPTIONS.map((minutes) => (
                           <option key={minutes}>
                             {minutes} minute{minutes === 1 ? "" : "s"}
                           </option>

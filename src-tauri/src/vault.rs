@@ -48,7 +48,7 @@ const ARGON_LANES: u32 = 4;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
 #[cfg(windows)]
-const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+pub(crate) const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 #[cfg(test)]
 const TEST_TERMINATION_EXIT_CODE: i32 = 86;
@@ -2285,7 +2285,7 @@ fn open_regular_read(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-fn is_regular_non_reparse(metadata: &fs::Metadata) -> bool {
+pub(crate) fn is_regular_non_reparse(metadata: &fs::Metadata) -> bool {
     if !metadata.file_type().is_file() {
         return false;
     }
