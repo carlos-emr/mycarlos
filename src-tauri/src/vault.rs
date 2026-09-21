@@ -21,7 +21,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
     },
 };
 use thiserror::Error;
@@ -336,8 +336,21 @@ impl VaultStore {
         }
     }
 
+    /// Takes the session mutex. A panic while it was held may have left the
+    /// session half-updated, so a poisoned session is dropped, which locks the
+    /// vault and its keys, instead of being reused. Clearing the poison keeps
+    /// every later call from panicking until the app is restarted.
+    fn session(&self) -> MutexGuard<'_, Option<UnlockedVault>> {
+        self.unlocked.lock().unwrap_or_else(|poisoned| {
+            let mut guard = poisoned.into_inner();
+            *guard = None;
+            self.unlocked.clear_poison();
+            guard
+        })
+    }
+
     pub fn status(&self) -> Result<VaultStatus, VaultError> {
-        let guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let guard = self.session();
         if guard.is_some() {
             return Ok(VaultStatus::Unlocked);
         }
@@ -358,7 +371,7 @@ impl VaultStore {
     ) -> Result<(), VaultError> {
         validate_name(initial_profile)?;
         validate_new_passphrase(passphrase, &[initial_profile])?;
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         if guard.is_some() {
             return Err(VaultError::AlreadyExists);
         }
@@ -428,7 +441,7 @@ impl VaultStore {
         if passphrase.len() > MAX_PASSPHRASE_BYTES {
             return Err(VaultError::Invalid);
         }
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         let storage_lock = match guard.as_ref() {
             Some(unlocked) => Arc::clone(&unlocked.storage_lock),
             None => acquire_storage_lock(&self.root)?,
@@ -478,6 +491,16 @@ impl VaultStore {
                 Err(error) => return Err(error),
             }
         }
+        // Backup and sync tools drop empty directories. A vault restored without
+        // `objects` would otherwise fail every import until it is reset.
+        // Only a missing directory is created: an existing entry is never
+        // followed or re-permissioned here.
+        let objects = self.root.join("objects");
+        if matches!(fs::symlink_metadata(&objects), Err(error) if error.kind() == io::ErrorKind::NotFound)
+            && create_private_dir(&objects).is_err()
+        {
+            degraded = true;
+        }
         remove_staging(&self.root);
         remove_orphan_objects(&self.root, &manifest);
         *guard = Some(UnlockedVault {
@@ -492,11 +515,7 @@ impl VaultStore {
 
     pub fn lock(&self) {
         self.cancel_io.store(true, Ordering::Release);
-        // Locking must drop the keys even if an earlier panic poisoned the mutex.
-        *self
-            .unlocked
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self.session() = None;
         self.cancel_io.store(false, Ordering::Release);
     }
 
@@ -505,7 +524,7 @@ impl VaultStore {
     /// Lets a command refuse before it opens a native picker, so nobody chooses
     /// files for an import that is already certain to be rejected.
     pub fn ensure_import_allowed(&self, profile_id: Uuid) -> Result<(), VaultError> {
-        let guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         if unlocked.degraded {
             return Err(VaultError::RecoveryMode);
@@ -514,7 +533,7 @@ impl VaultStore {
     }
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
-        let guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         Ok(VaultSnapshot {
             profiles: unlocked.manifest.profiles.clone(),
@@ -693,7 +712,7 @@ impl VaultStore {
             });
         }
         validate_import_count(sources.len())?;
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.degraded {
             return Err(VaultError::RecoveryMode);
@@ -782,7 +801,11 @@ impl VaultStore {
                 let destination = objects.join(&record.object_name);
                 fs::rename(path, &destination)?;
             }
-            sync_parent(&objects);
+            // The manifest about to be committed references these objects. If
+            // their directory entries are not durable, a power loss could leave
+            // the newest manifest pointing at files that no longer exist.
+            fail_at_test_boundary("import.objects-sync")?;
+            sync_dir(&objects)?;
             if self.cancel_io.load(Ordering::Acquire) {
                 return Err(VaultError::Cancelled);
             }
@@ -814,7 +837,7 @@ impl VaultStore {
     }
 
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
-        let guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let record = unlocked
             .manifest
@@ -842,7 +865,7 @@ impl VaultStore {
     }
 
     pub fn export_name(&self, record_id: Uuid) -> Result<String, VaultError> {
-        let guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         unlocked
             .manifest
@@ -878,7 +901,7 @@ impl VaultStore {
     }
 
     pub fn delete_record(&self, record_id: Uuid) -> Result<(), VaultError> {
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.degraded {
             return Err(VaultError::RecoveryMode);
@@ -934,7 +957,7 @@ impl VaultStore {
         if current.len() > MAX_PASSPHRASE_BYTES {
             return Err(VaultError::Invalid);
         }
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.degraded {
             return Err(VaultError::RecoveryMode);
@@ -977,7 +1000,7 @@ impl VaultStore {
 
     pub fn reset(&self) -> Result<(), VaultError> {
         self.cancel_io.store(true, Ordering::Release);
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         let _storage_lock = match guard.as_ref() {
             Some(unlocked) => Arc::clone(&unlocked.storage_lock),
             None => acquire_storage_lock(&self.root)?,
@@ -1009,7 +1032,7 @@ impl VaultStore {
         &self,
         mutation: impl FnOnce(&mut Manifest) -> Result<T, VaultError>,
     ) -> Result<T, VaultError> {
-        let mut guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.degraded {
             return Err(VaultError::RecoveryMode);
@@ -1118,13 +1141,29 @@ fn sanitize_basename(value: &str) -> String {
         cleaned.push(character);
     }
     cleaned = cleaned.trim().trim_end_matches(['.', ' ']).to_owned();
-    let stem = cleaned.split('.').next().unwrap_or_default();
+    // Win32 ignores spaces between the stem and the extension, so "CON .txt"
+    // still names the console device.
+    let stem = cleaned
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ');
     let reserved = matches!(
         stem.to_ascii_uppercase().as_str(),
         "CON"
             | "PRN"
             | "AUX"
             | "NUL"
+            | "CONIN$"
+            | "CONOUT$"
+            | "COM\u{b9}"
+            | "COM\u{b2}"
+            | "COM\u{b3}"
+            | "LPT\u{b9}"
+            | "LPT\u{b2}"
+            | "LPT\u{b3}"
+            | "COM0"
+            | "LPT0"
             | "COM1"
             | "COM2"
             | "COM3"
@@ -2295,10 +2334,34 @@ fn open_private_new(path: &Path) -> Result<File, VaultError> {
     options.open(path).map_err(Into::into)
 }
 
-fn sync_parent(parent: &Path) {
-    if let Ok(directory) = File::open(parent) {
-        let _ = directory.sync_all();
+/// Makes renames into `directory` durable, reporting failure. Windows cannot
+/// open a directory this way; there the renames rely on the filesystem journal.
+fn sync_dir(directory: &Path) -> Result<(), VaultError> {
+    #[cfg(unix)]
+    match File::open(directory)?.sync_all() {
+        // Some network, FUSE and removable-storage filesystems cannot sync a
+        // directory at all and say so with EINVAL or ENOTSUP. That is a limit of
+        // the medium, not a failed write, and must not make every import fail.
+        Err(error) if !directory_sync_unsupported(&error) => return Err(error.into()),
+        _ => {}
     }
+    #[cfg(not(unix))]
+    let _ = directory;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn directory_sync_unsupported(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+    )
+}
+
+/// Best-effort variant for cleanup paths, where a failure changes nothing the
+/// caller could do.
+fn sync_parent(parent: &Path) {
+    let _ = sync_dir(parent);
 }
 
 fn remove_staging(root: &Path) {
@@ -3398,6 +3461,7 @@ mod tests {
 
         for (boundary, committed) in [
             ("object.after-chunk-write", false),
+            ("import.objects-sync", false),
             ("manifest.before-first-write", false),
             ("manifest.after-first-write", true),
         ] {
@@ -3644,6 +3708,49 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(guard.is_none());
+        drop(guard);
+
+        // The session is gone, so nothing the panic interrupted is still in use.
+        // Every other method must work again instead of panicking until restart.
+        assert!(matches!(store.status().unwrap(), VaultStatus::Locked));
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().profiles.len(), 1);
+    }
+
+    #[test]
+    fn a_poisoned_session_is_dropped_by_whichever_method_runs_next() {
+        // The unlock screen never calls `lock`, so recovery cannot depend on it.
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let poisoner = Arc::clone(&store);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.unlocked.lock().unwrap();
+            panic!("synthetic panic while holding the vault mutex");
+        })
+        .join();
+        assert!(store.unlocked.is_poisoned());
+
+        // The interrupted session is not trusted: the vault reports locked.
+        assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        assert!(!store.unlocked.is_poisoned());
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().profiles.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_an_unsupported_directory_sync_is_tolerated() {
+        for code in [libc::EINVAL, libc::ENOTSUP] {
+            assert!(directory_sync_unsupported(&io::Error::from_raw_os_error(
+                code
+            )));
+        }
+        for code in [libc::EIO, libc::ENOSPC, libc::EACCES] {
+            assert!(!directory_sync_unsupported(&io::Error::from_raw_os_error(
+                code
+            )));
+        }
     }
 
     #[test]
@@ -4197,6 +4304,44 @@ mod tests {
             validate_new_passphrase("Jamie-Jamie-Jamie", &["Jamie"]),
             Err(VaultError::WeakPassphrase)
         ));
+    }
+
+    #[test]
+    fn reserved_device_names_are_prefixed_even_with_a_padded_stem() {
+        // Win32 ignores spaces after the stem, so "CON .txt" still opens the console.
+        for name in [
+            "CON .txt",
+            "nul  .pdf",
+            "CONIN$",
+            "conout$.log",
+            "COM\u{b9}.txt",
+            "LPT\u{b3}",
+            "COM0",
+            "lpt0.pdf",
+        ] {
+            let sanitized = sanitize_basename(name);
+            assert!(sanitized.starts_with('_'), "{name:?} became {sanitized:?}");
+            assert!(valid_record_name(&sanitized));
+        }
+        assert_eq!(sanitize_basename("CONTRACT .pdf"), "CONTRACT .pdf");
+    }
+
+    #[test]
+    fn unlock_restores_a_missing_objects_directory() {
+        // Backup and sync tools commonly drop empty directories.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store.lock();
+        fs::remove_dir(root.join("objects")).unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+        let outcome = store
+            .import(profile, Vec::new(), vec![source("FAKE.pdf", b"fake")], 2)
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
     }
 
     #[test]

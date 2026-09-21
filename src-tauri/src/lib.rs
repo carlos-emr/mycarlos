@@ -222,6 +222,39 @@ fn now_ms() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+/// Name recorded for an imported file. Desktop pickers return a path, whose
+/// final component the vault keeps. Mobile pickers return a URL: its final
+/// segment is percent-encoded, and for Android document providers it is a
+/// document id that either embeds the storage path ("primary:Documents/labs.pdf")
+/// or is opaque ("msf:31").
+fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let tauri_plugin_fs::FilePath::Url(url) = path else {
+        return path.to_string();
+    };
+    let segment = url
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .unwrap_or_default();
+    let decoded = percent_encoding::percent_decode_str(segment).decode_utf8_lossy();
+    if url.scheme() != "content" {
+        // A file URL's final segment is the file name itself. It may hold a
+        // colon ("Scan 10:30.pdf") and need not have an extension.
+        return decoded.into_owned();
+    }
+    // The picker offers only PDFs, so a tail that does not end in ".pdf" is
+    // part of an opaque id rather than a name. The fallback keeps the extension
+    // so that an export still suggests a file the platform can open.
+    let name = decoded.rsplit(['/', ':']).next().unwrap_or_default();
+    let is_pdf_name = name
+        .rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && extension.eq_ignore_ascii_case("pdf"));
+    if is_pdf_name {
+        name.to_owned()
+    } else {
+        "Imported document.pdf".to_owned()
+    }
+}
+
 #[cfg(desktop)]
 fn open_regular_local_file(path: &Path) -> io::Result<fs::File> {
     let metadata = fs::symlink_metadata(path)?;
@@ -231,12 +264,23 @@ fn open_regular_local_file(path: &Path) -> io::Result<fs::File> {
             "selected path is not a regular file",
         ));
     }
+    open_without_following(path)
+}
+
+/// Opens `path` without following a link, then checks the handle itself. The
+/// handle check is authoritative: the path can be replaced after any earlier
+/// inspection of it.
+#[cfg(desktop)]
+fn open_without_following(path: &Path) -> io::Result<fs::File> {
     let mut options = fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_NOFOLLOW);
+        // Without O_NONBLOCK, a FIFO swapped in after the caller's check would
+        // block this open forever and leave the import command unresolved. The
+        // flag has no effect on reads from a regular file.
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     #[cfg(windows)]
     options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
@@ -321,9 +365,28 @@ async fn vault_lock(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
     Ok(())
 }
 
+/// Runs a vault operation on the blocking thread pool.
+///
+/// Tauri runs a plain synchronous command on the main thread, and a synchronous
+/// body marked `command(async)` on an async runtime worker. Neither may block,
+/// and these operations all take the vault mutex, which import, export and
+/// unlock hold for their whole duration; the mutating ones also make two fsynced
+/// manifest commits. A stalled worker could also delay `vault_lock`.
+async fn run_blocking<T, F>(store: &Arc<VaultStore>, operation: F) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&VaultStore) -> Result<T, VaultError> + Send + 'static,
+{
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || operation(&store))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
 #[tauri::command]
-fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
-    store.snapshot().map_err(Into::into)
+async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
+    run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
 #[tauri::command]
@@ -344,68 +407,74 @@ async fn vault_change_passphrase(
 }
 
 #[tauri::command]
-fn vault_create_profile(
+async fn vault_create_profile(
     store: State<'_, Arc<VaultStore>>,
     request: NameRequest,
 ) -> CommandResult<Uuid> {
-    store
-        .create_profile(&request.display_name, now_ms())
-        .map_err(Into::into)
+    run_blocking(store.inner(), move |store| {
+        store.create_profile(&request.display_name, now_ms())
+    })
+    .await
 }
 
 #[tauri::command]
-fn vault_create_folder(
+async fn vault_create_folder(
     store: State<'_, Arc<VaultStore>>,
     request: FolderRequest,
 ) -> CommandResult<Uuid> {
-    store
-        .create_folder(
+    run_blocking(store.inner(), move |store| {
+        store.create_folder(
             request.profile_id,
             request.parent_id,
             &request.name,
             now_ms(),
         )
-        .map_err(Into::into)
+    })
+    .await
 }
 
 #[tauri::command]
-fn vault_update_folder(
+async fn vault_update_folder(
     store: State<'_, Arc<VaultStore>>,
     request: UpdateFolderRequest,
 ) -> CommandResult<()> {
-    store
-        .update_folder(request.folder_id, request.parent_id, &request.name)
-        .map_err(Into::into)
+    run_blocking(store.inner(), move |store| {
+        store.update_folder(request.folder_id, request.parent_id, &request.name)
+    })
+    .await
 }
 
 #[tauri::command]
-fn vault_rename_record(
+async fn vault_rename_record(
     store: State<'_, Arc<VaultStore>>,
     request: RenameRecordRequest,
 ) -> CommandResult<()> {
-    store
-        .rename_record(request.record_id, &request.name)
-        .map_err(Into::into)
+    run_blocking(store.inner(), move |store| {
+        store.rename_record(request.record_id, &request.name)
+    })
+    .await
 }
 
 #[tauri::command]
-fn vault_assign_folders(
+async fn vault_assign_folders(
     store: State<'_, Arc<VaultStore>>,
     request: AssignFoldersRequest,
 ) -> CommandResult<()> {
-    store
-        .assign_folders(request.record_id, request.folder_ids)
-        .map_err(Into::into)
+    run_blocking(store.inner(), move |store| {
+        store.assign_folders(request.record_id, request.folder_ids)
+    })
+    .await
 }
 
 #[tauri::command]
-fn vault_assign_folders_batch(
+async fn vault_assign_folders_batch(
     store: State<'_, Arc<VaultStore>>,
     request: AssignFoldersBatchRequest,
 ) -> CommandResult<()> {
-    store
-        .assign_folders_batch(request.record_ids, request.folder_ids)
-        .map_err(Into::into)
+    run_blocking(store.inner(), move |store| {
+        store.assign_folders_batch(request.record_ids, request.folder_ids)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -446,7 +515,7 @@ async fn vault_import_begin(
     );
     let mut sources = Vec::with_capacity(paths.len());
     for path in paths {
-        let display_name = path.to_string();
+        let display_name = import_display_name(&path);
         #[cfg(desktop)]
         {
             if let Ok(local_path) = path.clone().into_path() {
@@ -552,11 +621,14 @@ async fn vault_export_begin(
 }
 
 #[tauri::command]
-fn vault_delete_record(
+async fn vault_delete_record(
     store: State<'_, Arc<VaultStore>>,
     request: DeleteRecordRequest,
 ) -> CommandResult<()> {
-    store.delete_record(request.record_id).map_err(Into::into)
+    run_blocking(store.inner(), move |store| {
+        store.delete_record(request.record_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -675,7 +747,60 @@ mod tests {
         ));
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn local_import_does_not_block_on_a_fifo_swapped_in_after_the_check() {
+        let temp = tempfile::tempdir().unwrap();
+        let fifo = temp.path().join("selected.pdf");
+        let name = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+
+        // Opening a FIFO for reading blocks until a writer appears, which here
+        // is never. The handle check must still get to reject it.
+        assert_eq!(
+            open_without_following(&fifo).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+    }
+
+    #[test]
+    fn mobile_imports_are_named_after_the_file_not_the_uri() {
+        let named = |value: &str| {
+            import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+        };
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/My%20Report.pdf"),
+            "My Report.pdf"
+        );
+        // Only a document id is split at a colon; a file name keeps its own.
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/Scan%2010%3A30.pdf"),
+            "Scan 10:30.pdf"
+        );
+        // Android document ids embed the storage path in one encoded segment.
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf"),
+            "labs.pdf"
+        );
+        // An opaque provider id is not a name worth showing or exporting.
+        assert_eq!(
+            named("content://com.android.providers.downloads.documents/document/msf%3A31"),
+            "Imported document.pdf"
+        );
+        // A dot inside an opaque id does not make it a file name.
+        assert_eq!(
+            named("content://com.example.cloud.documents/document/acc%3D1%3Bdoc%3Dv1.4f9a"),
+            "Imported document.pdf"
+        );
+        assert_eq!(
+            import_display_name(&tauri_plugin_fs::FilePath::Path(
+                "/home/jamie/FAKE.pdf".into()
+            )),
+            "/home/jamie/FAKE.pdf"
+        );
+    }
+
+    #[cfg(all(unix, desktop))]
     #[test]
     fn local_import_rejects_symbolic_links() {
         use std::os::unix::fs::symlink;
