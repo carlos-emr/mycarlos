@@ -8,6 +8,7 @@ import type {
   VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { LibraryItems } from "./LibraryItems";
@@ -50,6 +51,11 @@ export function VaultLibrary({
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  // Bound to one record so a stale prompt can never apply to a different document.
+  const [confirmation, setConfirmation] = useState<{
+    action: "delete" | "export";
+    recordId: string;
+  } | null>(null);
   const [showFolderForm, setShowFolderForm] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
@@ -106,6 +112,10 @@ export function VaultLibrary({
   );
   const activeRecord =
     records.find((record) => record.id === activeRecordId) ?? null;
+  const pendingAction =
+    activeRecord && confirmation?.recordId === activeRecord.id
+      ? confirmation.action
+      : null;
   const readOnly = snapshot.degraded;
 
   useEffect(() => {
@@ -186,7 +196,28 @@ export function VaultLibrary({
       );
     });
 
+  // The whole pane is a drop target for the open folder, so letting go of a drag
+  // where it started is the usual way to abandon it. That must not rewrite the
+  // manifest, clear the selection, or claim something moved.
+  const alreadyIn = (item: DragItem, folderId: string | null) => {
+    if (item.kind === "folder")
+      return (
+        (folders.find((folder) => folder.id === item.id)?.parentId ?? null) ===
+        folderId
+      );
+    return item.ids.every((id) => {
+      const current = records.find((record) => record.id === id)?.folderIds;
+      return (
+        current !== undefined &&
+        (folderId
+          ? current.length === 1 && current[0] === folderId
+          : current.length === 0)
+      );
+    });
+  };
+
   const moveItem = (item: DragItem, folderId: string | null) => {
+    if (alreadyIn(item, folderId)) return;
     void run(async () => {
       if (item.kind === "records") {
         await bridge.assignFoldersBatch(item.ids, folderId ? [folderId] : []);
@@ -222,12 +253,7 @@ export function VaultLibrary({
   });
 
   const exportRecord = (record: VaultRecord) => {
-    if (
-      !window.confirm(
-        "Saving creates a readable file outside the encrypted vault. myCarlos cannot erase that copy later, and deleting this record will not remove it. Continue?",
-      )
-    )
-      return;
+    setConfirmation(null);
     void run(async () =>
       setNotice(
         (await bridge.exportFile(record.id))
@@ -238,12 +264,7 @@ export function VaultLibrary({
   };
 
   const deleteRecord = (record: VaultRecord) => {
-    if (
-      !window.confirm(
-        `Permanently delete ${record.displayName} from this vault? This cannot be undone here. Readable exports and the clinic's source medical record are not deleted.`,
-      )
-    )
-      return;
+    setConfirmation(null);
     void run(async () => {
       await bridge.deleteRecord(record.id);
       setActiveRecordId(null);
@@ -333,7 +354,6 @@ export function VaultLibrary({
             <button
               className="unlock-pill native-lock-button"
               type="button"
-              disabled={busy}
               onClick={() => void onLock()}
             >
               <Icon name="lock-open" /> Unlocked · Lock now
@@ -696,12 +716,13 @@ export function VaultLibrary({
               onClose={() => setRenameTarget(null)}
             />
           )}
-          {activeRecord && !renameTarget && (
+          {activeRecord && !renameTarget && !pendingAction && (
             <RecordDetails
               record={activeRecord}
               folders={folders}
               busy={busy}
               readOnly={readOnly}
+              notice={notice}
               onClose={() => setActiveRecordId(null)}
               onRename={() =>
                 setRenameTarget({
@@ -711,9 +732,45 @@ export function VaultLibrary({
                 })
               }
               onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
-              onDelete={() => deleteRecord(activeRecord)}
-              onExport={() => exportRecord(activeRecord)}
+              onDelete={() =>
+                setConfirmation({ action: "delete", recordId: activeRecord.id })
+              }
+              onExport={() =>
+                setConfirmation({ action: "export", recordId: activeRecord.id })
+              }
             />
+          )}
+          {activeRecord && pendingAction === "delete" && (
+            <ConfirmDialog
+              title="Permanently delete this document?"
+              confirmLabel="Permanently delete"
+              danger
+              onConfirm={() => deleteRecord(activeRecord)}
+              onCancel={() => setConfirmation(null)}
+            >
+              <p>
+                <strong>{activeRecord.displayName}</strong> will be permanently
+                deleted from this vault. This cannot be undone here.
+              </p>
+              <p>
+                Readable exports and the clinic's source medical record are not
+                deleted.
+              </p>
+            </ConfirmDialog>
+          )}
+          {activeRecord && pendingAction === "export" && (
+            <ConfirmDialog
+              title="Save a readable copy?"
+              confirmLabel="Save a copy"
+              onConfirm={() => exportRecord(activeRecord)}
+              onCancel={() => setConfirmation(null)}
+            >
+              <p>
+                Saving creates a readable file outside the encrypted vault.
+                myCarlos cannot erase that copy later, and deleting this record
+                will not remove it.
+              </p>
+            </ConfirmDialog>
           )}
         </section>
       </div>

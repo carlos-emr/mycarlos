@@ -20,6 +20,18 @@ export interface VaultAppProps {
 }
 const defaultBridge = createVaultBridge();
 
+// Timers pause while a device sleeps, so the inactivity deadline is kept as a
+// wall-clock time and rechecked at least this often. The same recheck retries a
+// lock that failed.
+const LOCK_RECHECK_MS = 10_000;
+const ACTIVITY_EVENTS = [
+  "pointerdown",
+  "pointermove",
+  "wheel",
+  "keydown",
+  "touchstart",
+] as const;
+
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
   return <NativeVault bridge={bridge} />;
@@ -34,6 +46,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [lockFailed, setLockFailed] = useState(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
+  // Incremented whenever the vault locks. Work started in an earlier session
+  // must not put its decrypted results or document names back on screen.
+  const sessionRef = useRef(0);
 
   useEffect(() => {
     // HTML drag/drop owns in-vault moves. External files still use the native
@@ -68,6 +83,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     lockingRef.current = true;
     try {
       await bridge.lock();
+      sessionRef.current += 1;
       setSnapshot(null);
       setConcealed(false);
       setLockFailed(false);
@@ -103,6 +119,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (active) setStatus(next);
       })
       .catch((error) => {
+        // The unlock screen is about to be shown, so no timer or background
+        // lock will cover a native session that is still open. Close it.
+        void bridge.lock().catch(() => undefined);
         if (active) {
           setNotice(vaultErrorMessage(error));
           setStatus("locked");
@@ -116,23 +135,35 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   useEffect(() => {
     if (status !== "unlocked") return;
     const delayMs = autoLockMinutes * 60 * 1000;
-    let timer = window.setTimeout(requestLock, delayMs);
-    const restart = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(requestLock, delayMs);
+    let deadline = Date.now() + delayMs;
+    let timer = 0;
+    const check = () => {
+      const remaining = deadline - Date.now();
+      // Hide content at once: an unattended screen must not stay readable while
+      // the lock is pending, or if it fails and has to be retried.
+      if (remaining <= 0) requestLock(true);
+      timer = window.setTimeout(
+        check,
+        remaining > 0 ? Math.min(remaining, LOCK_RECHECK_MS) : LOCK_RECHECK_MS,
+      );
+    };
+    const postpone = () => {
+      // Once the delay has elapsed the lock is owed; activity cannot cancel it.
+      if (Date.now() < deadline) deadline = Date.now() + delayMs;
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") requestLock(true);
     };
-    for (const event of ["pointerdown", "keydown", "touchstart"] as const) {
-      window.addEventListener(event, restart, { passive: true });
+    check();
+    for (const event of ACTIVITY_EVENTS) {
+      window.addEventListener(event, postpone, { passive: true });
     }
     document.addEventListener("visibilitychange", onVisibility);
     if (document.visibilityState === "hidden") requestLock(true);
     return () => {
       window.clearTimeout(timer);
-      for (const event of ["pointerdown", "keydown", "touchstart"] as const) {
-        window.removeEventListener(event, restart);
+      for (const event of ACTIVITY_EVENTS) {
+        window.removeEventListener(event, postpone);
       }
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -159,7 +190,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
   };
 
-  const refresh = async () => setSnapshot(await bridge.snapshot());
+  // These are handed to the library, which unmounts on lock. A call that is
+  // still in flight then belongs to a finished session and is ignored.
+  const session = sessionRef.current;
+  const inSession = () => sessionRef.current === session;
+  const refresh = async () => {
+    const next = await bridge.snapshot();
+    if (inSession()) setSnapshot(next);
+  };
+  const setSessionNotice = (message: string) => {
+    if (inSession()) setNotice(message);
+  };
 
   if (status === "loading") {
     return (
@@ -249,7 +290,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       snapshot={snapshot}
       busy={busy}
       notice={notice}
-      setNotice={setNotice}
+      setNotice={setSessionNotice}
       run={run}
       refresh={refresh}
       onLock={lock}

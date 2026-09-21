@@ -9,6 +9,9 @@ interface RecordDetailsProps {
   folders: VaultFolder[];
   busy: boolean;
   readOnly: boolean;
+  /** Result of the last operation. The page behind this modal is inert, so its
+   * own status line is neither announced nor reliably visible from here. */
+  notice: string;
   onClose: () => void;
   onRename: () => void;
   onMove: (folderId: string | null) => Promise<void>;
@@ -20,6 +23,7 @@ export function RecordDetails({
   folders,
   busy,
   readOnly,
+  notice,
   onClose,
   onRename,
   onMove,
@@ -121,6 +125,9 @@ export function RecordDetails({
             Rename document
           </button>
         </div>
+        <p className="native-dialog-status" role="status">
+          {notice}
+        </p>
         <footer className="dialog-actions native-dialog-actions">
           <label>
             Move to

@@ -46,6 +46,16 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
 
 // Testing Library's drag convenience helpers clone DataTransfer and lose native
 // file items. Dispatch a real browser DragEvent to preserve its payload.
+// On desktop and iOS, tauri-plugin-dialog replaces window.confirm with an async
+// function. Its promise is always truthy, so a synchronous `if (!confirm(...))`
+// guard never stops a destructive action. The app must not rely on it.
+function tauriConfirmShim() {
+  return vi
+    .spyOn(window, "confirm")
+    .mockImplementation((() =>
+      Promise.reject(new Error("not allowed"))) as never);
+}
+
 function fireDragEvent(
   type: string,
   target: Element | Window,
@@ -372,17 +382,30 @@ describe("durable vault UI", () => {
     );
 
     await user.click(screen.getByText("FAKE_Bloodwork.pdf"));
-    const exportConfirmation = vi
-      .spyOn(window, "confirm")
-      .mockReturnValue(false);
-    fireEvent.click(
+    const shim = tauriConfirmShim();
+    await user.click(
       screen.getByRole("button", { name: "Save a copy to this computer" }),
     );
-    expect(exportConfirmation).toHaveBeenCalledWith(
-      expect.stringContaining("cannot erase that copy"),
-    );
+    const warning = screen.getByRole("alertdialog", {
+      name: "Save a readable copy?",
+    });
+    expect(warning).toHaveTextContent("cannot erase that copy");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(bridge.exportFile).not.toHaveBeenCalled();
-    exportConfirmation.mockRestore();
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Save a copy to this computer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save a copy" }));
+    await waitFor(() =>
+      expect(bridge.exportFile).toHaveBeenCalledWith("record-folder"),
+    );
+    expect(shim).not.toHaveBeenCalled();
+    shim.mockRestore();
   });
 
   it.each(["list", "grid"])(
@@ -624,31 +647,41 @@ describe("durable vault UI", () => {
       snapshot,
       deleteRecord,
     });
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+    const shim = tauriConfirmShim();
     render(<VaultApp bridge={bridge} />);
 
     await user.click(await screen.findByText("FAKE_Report.pdf"));
     await user.click(
       screen.getByRole("button", { name: "Permanently delete" }),
     );
+    const warning = screen.getByRole("alertdialog", {
+      name: "Permanently delete this document?",
+    });
+    expect(warning).toHaveTextContent("FAKE_Report.pdf");
+    expect(warning).toHaveTextContent("clinic's source medical record");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     expect(deleteRecord).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining("clinic's source medical record"),
-    );
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(deleteRecord).not.toHaveBeenCalled();
 
     await user.click(
       screen.getByRole("button", { name: "Permanently delete" }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Permanently delete",
+      }),
     );
     await waitFor(() => expect(deleteRecord).toHaveBeenCalledWith("record-1"));
     expect(
       await screen.findByText("FAKE_Report.pdf was permanently deleted."),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    confirm.mockRestore();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(shim).not.toHaveBeenCalled();
+    shim.mockRestore();
   });
 
   it("ignores window blur and locks after 5 minutes of inactivity", async () => {
@@ -671,6 +704,234 @@ describe("durable vault UI", () => {
       expect(bridge.lock).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("treats a drag released where it started as no move", async () => {
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Stay.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const document = await screen.findByRole("article", {
+      name: "FAKE_Stay.pdf document",
+    });
+    const pane = screen.getByRole("main");
+
+    const transfer = dragTransfer();
+    fireDragEvent("dragstart", document, { dataTransfer: transfer });
+    fireDragEvent("dragover", pane, { dataTransfer: transfer });
+    fireDragEvent("drop", pane, { dataTransfer: transfer });
+    await act(async () => undefined);
+
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+    expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
+  });
+
+  it("keeps Lock now available while an operation is running", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importFiles: vi.fn(() => new Promise<never>(() => undefined)),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /Choose files to import/ }),
+    );
+    await waitFor(() => expect(bridge.importFiles).toHaveBeenCalled());
+    // Locking is what cancels streaming I/O, so it must stay reachable.
+    expect(screen.getByRole("button", { name: /Lock now/ })).toBeEnabled();
+  });
+
+  it("announces a result inside the open document dialog", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Copy.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      exportFile: vi.fn().mockResolvedValue(false),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Copy.pdf"));
+    await user.click(
+      screen.getByRole("button", { name: "Save a copy to this computer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save a copy" }));
+
+    // The page behind a modal is inert, so its status line is not announced.
+    const details = await screen.findByRole("dialog", {
+      name: "FAKE_Copy.pdf",
+    });
+    await waitFor(() =>
+      expect(within(details).getByRole("status")).toHaveTextContent(
+        "Save cancelled. Nothing changed.",
+      ),
+    );
+  });
+
+  it.each(["wheel", "pointermove", "keydown"])(
+    "treats %s as activity that postpones the inactivity lock",
+    async (activity) => {
+      vi.useFakeTimers();
+      try {
+        const bridge = nativeBridge({
+          status: vi.fn().mockResolvedValue("unlocked"),
+        });
+        await act(async () => {
+          render(<VaultApp bridge={bridge} />);
+        });
+
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        window.dispatchEvent(new Event(activity));
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+
+        await act(async () => vi.advanceTimersByTime(60 * 1000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("locks soon after the device wakes when the delay elapsed during sleep", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+
+      // Timers do not run while a device sleeps, but the wall clock moves on.
+      await act(async () => vi.advanceTimersByTime(60 * 1000));
+      vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+      expect(bridge.lock).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTime(10 * 1000));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hides content and keeps retrying when the inactivity lock fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const lock = vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        })
+        .mockResolvedValue(undefined);
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        lock,
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+
+      await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
+      expect(lock).toHaveBeenCalledOnce();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "the vault is still open",
+      );
+      expect(
+        screen.queryByRole("heading", { name: "My records" }),
+      ).not.toBeInTheDocument();
+
+      await act(async () => vi.advanceTimersByTime(10 * 1000));
+      expect(lock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Vault locked.")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a result that arrives after the vault locked", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Late.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    let deliverSnapshot: (value: VaultSnapshot) => void = () => undefined;
+    const snapshot = vi
+      .fn()
+      .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
+      .mockImplementationOnce(
+        () =>
+          new Promise<VaultSnapshot>((resolve) => {
+            deliverSnapshot = resolve;
+          }),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+      renameRecord: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Late.pdf"));
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE_Renamed.pdf");
+    await user.click(screen.getByRole("button", { name: "Save name" }));
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(await screen.findByText("Vault locked.")).toBeVisible();
+
+      await act(async () =>
+        deliverSnapshot({
+          ...emptySnapshot,
+          records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
+        }),
+      );
+      expect(screen.getByText("Vault locked.")).toBeVisible();
+      expect(screen.queryByText(/FAKE_Renamed/)).not.toBeInTheDocument();
+    } finally {
+      visibility.mockRestore();
     }
   });
 
