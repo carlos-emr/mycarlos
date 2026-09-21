@@ -501,12 +501,18 @@ impl VaultStore {
                 // generation, which that would silently roll back.
                 degraded = true;
             } else {
-                match repair_header_redundancy(&self.root, &header, passphrase, &master_key) {
+                match repair_header_redundancy(&self.root, &header, &wrapping_key, &master_key) {
                     Ok(()) => {}
                     Err(VaultError::NoSpace | VaultError::Storage) => degraded = true,
                     Err(error) => return Err(error),
                 }
             }
+        } else {
+            // Both slots are authentic and current, so a legacy envelope has been
+            // superseded. Its removal is best effort where the slots are written;
+            // retry here so a failure then does not leave a key wrapped under an
+            // earlier passphrase on disk for good.
+            let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
         }
         // Backup and sync tools drop empty directories. A vault restored without
         // `objects` would otherwise fail every import until it is reset.
@@ -1794,10 +1800,13 @@ fn header_redundancy_healthy(
         })
 }
 
+/// Rewrites both slots under the wrapping key that unlock already derived for
+/// `current`. Deriving it again from the passphrase would run the memory-hard
+/// KDF a second time inside the same unlock.
 fn repair_header_redundancy(
     root: &Path,
     current: &VaultHeader,
-    passphrase: &str,
+    wrapping_key: &[u8; 32],
     master_key: &[u8; 32],
 ) -> Result<(), VaultError> {
     fail_at_test_boundary("header.repair")?;
@@ -1805,8 +1814,21 @@ fn repair_header_redundancy(
         .generation
         .checked_add(1)
         .ok_or(VaultError::Storage)?;
-    let (first, second) =
-        build_header_pair(current.vault_id, first_generation, passphrase, master_key)?;
+    let second_generation = first_generation.checked_add(1).ok_or(VaultError::Storage)?;
+    let first = build_header_with_key(
+        current.vault_id,
+        first_generation,
+        current.kdf.clone(),
+        wrapping_key,
+        master_key,
+    )?;
+    let second = build_header_with_key(
+        current.vault_id,
+        second_generation,
+        current.kdf.clone(),
+        wrapping_key,
+        master_key,
+    )?;
     atomic_json(&header_path(root, first_generation), &first)?;
     atomic_json(&header_path(root, second.generation), &second)?;
     let _ = fs::remove_file(root.join(LEGACY_HEADER));
@@ -2353,14 +2375,19 @@ fn is_vault_managed_name(root: &Path, name: &str) -> Result<bool, VaultError> {
 fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
     // An interrupted header write leaves a wrapped key in its temporary directory.
     remove_abandoned_atomic_writes(directory);
+    // Every envelope wraps the same key, so one that cannot be removed must not
+    // keep the others on disk. Try them all and report the first failure.
+    let mut failure = None;
     for header in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
         match fs::remove_file(directory.join(header)) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
+            Err(error) => {
+                failure.get_or_insert(error);
+            }
         }
     }
-    Ok(())
+    failure.map_or(Ok(()), |error| Err(error.into()))
 }
 
 /// Removes staging directories that a `create` left behind when the process
@@ -2519,7 +2546,13 @@ fn create_private_dir(path: &Path) -> Result<(), VaultError> {
 }
 
 fn create_private_dir_all(path: &Path) -> Result<(), VaultError> {
-    fs::create_dir_all(path)?;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    // The mode covers every directory created on the way, such as a `staging`
+    // directory that a backup tool dropped, and not only the final one.
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(path)?;
     #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     Ok(())
@@ -3886,6 +3919,44 @@ mod tests {
         fs::copy(root.join(HEADER_SLOTS[0]), abandoned.join("tmpfile.tmp")).unwrap();
         remove_key_envelopes(&root).unwrap();
         assert!(!abandoned.exists());
+    }
+
+    #[test]
+    fn an_envelope_that_cannot_be_removed_does_not_keep_the_others() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // A directory in a slot's place cannot be removed as a file.
+        fs::remove_file(root.join(HEADER_SLOTS[0])).unwrap();
+        fs::create_dir(root.join(HEADER_SLOTS[0])).unwrap();
+
+        assert!(remove_key_envelopes(&root).is_err());
+        assert!(!root.join(HEADER_SLOTS[1]).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_recreated_staging_directory_is_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        // Backup and sync tools drop empty directories.
+        fs::remove_dir_all(root.join("staging")).unwrap();
+
+        store
+            .import(profile, vec![], vec![source("FAKE.pdf", b"fake")], 2)
+            .unwrap();
+        let mode = fs::metadata(root.join("staging"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 
     #[test]

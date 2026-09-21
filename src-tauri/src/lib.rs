@@ -230,7 +230,10 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
     // The picker offers only PDFs, so a tail that does not end in ".pdf" is
     // part of an opaque id rather than a name. The fallback keeps the extension
     // so that an export still suggests a file the platform can open.
-    let name = decoded.rsplit(['/', ':']).next().unwrap_or_default();
+    // A document id is "<root>:<path>". Only the first colon separates them; a
+    // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
+    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
+    let name = path.rsplit('/').next().unwrap_or_default();
     let is_pdf_name = name
         .rsplit_once('.')
         .is_some_and(|(stem, extension)| !stem.is_empty() && extension.eq_ignore_ascii_case("pdf"));
@@ -683,6 +686,10 @@ mod tests {
         assert_eq!(
             named("content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf"),
             "labs.pdf"
+        );
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3ADocuments%2FScan%2010%3A30.pdf"),
+            "Scan 10:30.pdf"
         );
         // An opaque provider id is not a name worth showing or exporting.
         assert_eq!(

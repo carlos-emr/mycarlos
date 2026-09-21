@@ -94,7 +94,8 @@ privacy, accessibility, or clinical review.
       platform filesystem and policy inspection remains. This includes filesystems that cannot
       sync a directory (some FUSE, network, and removable mounts): the atomic-write primitive syncs
       the parent after its rename, so there a manifest commit or an export is reported as failed
-      although the complete file is already in place. Decide whether such storage is supported.
+      although the complete file is already in place, and an import then removes the objects that
+      the manifest on disk already references. Decide whether such storage is supported.
 - [ ] Benchmark Argon2id on the oldest supported device class. A repeatable release-mode harness and
       result template are in [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md); physical results remain.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext
