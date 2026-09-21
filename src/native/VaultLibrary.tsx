@@ -686,7 +686,12 @@ export function VaultLibrary({
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
                   onOpenFolder={setCurrentFolderId}
-                  onOpenRecord={setActiveRecordId}
+                  onOpenRecord={(recordId) => {
+                    // The details dialog repeats the notice. One left over from
+                    // an earlier operation would read as being about this record.
+                    setNotice("");
+                    setActiveRecordId(recordId);
+                  }}
                   onRenameFolder={renameFolder}
                   onToggleSelected={toggleSelected}
                 />

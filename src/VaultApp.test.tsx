@@ -878,6 +878,81 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("retries a lock that failed while the app was hidden, whatever activity follows", async () => {
+    vi.useFakeTimers();
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      const lock = vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        })
+        .mockResolvedValue(undefined);
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        lock,
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      expect(lock).toHaveBeenCalledOnce();
+
+      // Movement over the concealed window must not buy the open session
+      // another full inactivity delay.
+      await act(async () => {
+        window.dispatchEvent(new Event("pointermove"));
+        vi.advanceTimersByTime(10 * 1000);
+      });
+      expect(lock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Vault locked.")).toBeVisible();
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not repeat an earlier operation's notice inside another document's dialog", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Other.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      importFiles: vi
+        .fn()
+        .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).not.toBeEmptyDOMElement(),
+    );
+    const earlierNotice = screen.getByRole("status").textContent ?? "";
+
+    await user.click(screen.getByText("FAKE_Other.pdf"));
+    const details = await screen.findByRole("dialog", {
+      name: "FAKE_Other.pdf",
+    });
+    expect(details).not.toHaveTextContent(earlierNotice);
+  });
+
   it("drops a result that arrives after the vault locked", async () => {
     const user = userEvent.setup();
     const record = {

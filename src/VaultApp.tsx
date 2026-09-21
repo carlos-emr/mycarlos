@@ -152,14 +152,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       if (Date.now() < deadline) deadline = Date.now() + delayMs;
     };
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") requestLock(true);
+      if (document.visibilityState !== "hidden") return;
+      // The lock is owed from here on, exactly as if the delay had elapsed:
+      // activity cannot postpone it, and the recheck retries it if it fails.
+      deadline = 0;
+      requestLock(true);
     };
     check();
     for (const event of ACTIVITY_EVENTS) {
       window.addEventListener(event, postpone, { passive: true });
     }
     document.addEventListener("visibilitychange", onVisibility);
-    if (document.visibilityState === "hidden") requestLock(true);
+    onVisibility();
     return () => {
       window.clearTimeout(timer);
       for (const event of ACTIVITY_EVENTS) {
