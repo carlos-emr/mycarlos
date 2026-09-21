@@ -4,7 +4,7 @@
 > an encrypted durable-vault vertical slice, but it has not passed the security, privacy, signing,
 > physical-device, or release gates required for PHI. It is not connected to CARLOS EMR.
 
-**[Download the Windows evaluation build](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Afeat%2Finitial-tauri-vault)**
+**[Download the Windows evaluation build](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain)**
 — open the newest run with a successful **Windows native build** job and select
 **myCarlos-Windows-x64-Evaluation** under Artifacts
 (GitHub sign-in required). Extract the ZIP, run `myCarlos-Evaluation-Windows-x64-setup.exe`,

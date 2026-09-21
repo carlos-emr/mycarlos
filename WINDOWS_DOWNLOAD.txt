@@ -33,7 +33,7 @@ Updates are manual: download and run the installer from a newer successful Windo
 The overall workflow can be red because the known Linux dependency audit remains a release blocker.
 
 Latest builds:
-https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Afeat%2Finitial-tauri-vault
+https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain
 
 Installation and signing details:
-https://github.com/carlos-emr/mycarlos/blob/feat/initial-tauri-vault/WINDOWS.md
+https://github.com/carlos-emr/mycarlos/blob/main/WINDOWS.md

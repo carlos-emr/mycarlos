@@ -5,7 +5,7 @@
 *.icns binary
 *.pdf binary
 *.svg text
-package-lock.json -diff linguist-generated
+package-lock.json linguist-generated
 *.md diff=markdown
 
 # Preserve upstream snapshots byte-for-byte; review deltas in vendor/*.patch.

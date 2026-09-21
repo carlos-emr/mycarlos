@@ -26,6 +26,13 @@ def verify():
     entries = json.loads((VENDOR / "upstream.json").read_text())
     if len(entries) != 1 or entries[0]["name"] != "glib":
         raise ValueError("The reviewed glib dependency must be present exactly once")
+    # Anything else under vendor/ would be unreviewed source that no check covers.
+    allowed = {"README.md", "upstream.json"} | {
+        item for entry in entries for item in (entry["name"], f"{entry['name']}.patch")
+    }
+    unexpected = sorted(path.name for path in VENDOR.iterdir() if path.name not in allowed)
+    if unexpected:
+        raise ValueError(f"Unexpected entries in vendor/: {', '.join(unexpected)}")
     for entry in entries:
         name, version = entry["name"], entry["version"]
         if name != "glib":
