@@ -59,10 +59,11 @@ directories left by earlier evaluation builds. Symlink/reparse-point reset direc
 rejected. Abrupt-exit tests cover the rename and key-removal boundaries; physical power-cut and
 filesystem durability validation remain release gates.
 
-The encrypted manifest contains profiles, nested folders, folder assignments, immutable imported
-filenames, sizes, timestamps, unverified-source labels, per-record fingerprints, opaque object
-names, and wrapped content keys. Mutations write the same logical state into two consecutive
-generations using a cross-platform atomic replacement primitive. Once the first generation is
+The encrypted manifest contains profiles, nested folders, folder assignments, sanitized document
+names that the patient may rename, sizes, timestamps, unverified-source labels, per-record
+fingerprints, opaque object names, and wrapped content keys. Mutations write the same logical state
+into two consecutive generations using a cross-platform atomic replacement primitive. Once the first
+generation is
 durable, the logical mutation is committed; failure of the redundant write is reported in the
 snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
 the highest valid generation whose objects exist, rejects divergent authenticated states at the same
@@ -74,11 +75,15 @@ Two cases open the vault in recovery mode without writing to storage at all: no 
 cleanup, and no orphan removal. First, if no authentic generation has all of its objects, unlock
 selects the newest authentic manifest anyway, reports each record whose object is missing or is not
 a regular file as unavailable, and refuses to export those records; the remaining records stay
-exportable, so one lost object no longer leaves whole-vault reset as the only action. Second, if a
+exportable, so one lost object no longer leaves whole-vault reset as the only action. The same
+applies when an older generation is complete but the newest authentic one also references an intact
+object the older one lacks: falling back would overwrite the newer manifest and delete that object
+as an orphan, so the newest generation is opened read-only instead. Second, if a
 manifest slot exists but cannot be read (for example a sharing violation or device error), that
 slot may hold the newest committed state, so unlock does not repair over it or remove the objects
 it may reference. An absent, oversized, or non-regular slot is still treated as damage that repair
-replaces.
+replaces. A header slot that exists but cannot be read is likewise never rewrapped over, because it
+may hold a newer passphrase generation; the session opens in recovery mode instead.
 
 Every manifest is checked with the reader's own validation before it is written. A mutation that
 would produce a manifest the reader rejects fails as an invalid change and leaves both slots

@@ -492,10 +492,17 @@ impl VaultStore {
             }
         };
         if !header_healthy {
-            match repair_header_redundancy(&self.root, &header, passphrase, &master_key) {
-                Ok(()) => {}
-                Err(VaultError::NoSpace | VaultError::Storage) => degraded = true,
-                Err(error) => return Err(error),
+            if header_slot_unreadable(&self.root) {
+                // Repair rewrites both slots under the passphrase just used. A
+                // slot that could not be read may be a newer passphrase
+                // generation, which that would silently roll back.
+                degraded = true;
+            } else {
+                match repair_header_redundancy(&self.root, &header, passphrase, &master_key) {
+                    Ok(()) => {}
+                    Err(VaultError::NoSpace | VaultError::Storage) => degraded = true,
+                    Err(error) => return Err(error),
+                }
             }
         }
         // Backup and sync tools drop empty directories. A vault restored without
@@ -1905,35 +1912,77 @@ fn select_manifest_for_unlock(
     // device error) may hold the newest committed state. Treating it as damaged
     // would let repair overwrite it and orphan cleanup delete its objects.
     let slot_unreadable = (0..=1).any(|slot| manifest_slot_unreadable(root, slot));
-    match read_latest_manifest(root, master_key, vault_id) {
-        Ok(manifest) => Ok(SelectedManifest {
+    // Opens an authentic manifest that lacks some objects read-only, so the
+    // intact records can still be exported and nothing on disk is touched.
+    let read_only_selection = |manifest: Manifest| {
+        let unavailable = manifest
+            .records
+            .iter()
+            .filter(|record| !object_is_present(root, record))
+            .map(|record| record.id)
+            .collect();
+        SelectedManifest {
             manifest,
-            unavailable: HashSet::new(),
-            read_only: slot_unreadable,
-        }),
+            unavailable,
+            read_only: true,
+        }
+    };
+    match read_latest_manifest(root, master_key, vault_id) {
+        Ok(manifest) => {
+            // The other slot may hold a newer authentic generation that was passed
+            // over because one of its objects is lost. Falling back is only safe
+            // when that loses nothing: repair would overwrite the newer manifest
+            // and orphan cleanup would delete every intact object that only it
+            // references. If such an object exists, keep the newer generation.
+            let keys = derive_keys(vault_id, master_key)?;
+            let other_slot = 1 - manifest.generation % 2;
+            let newer = read_manifest_slot_with(root, &keys.manifest, vault_id, other_slot, false)
+                .filter(|other| other.generation > manifest.generation);
+            if let Some(newer) = newer {
+                let kept: HashSet<&str> = manifest
+                    .records
+                    .iter()
+                    .map(|record| record.object_name.as_str())
+                    .collect();
+                if newer.records.iter().any(|record| {
+                    !kept.contains(record.object_name.as_str()) && object_is_present(root, record)
+                }) {
+                    return Ok(read_only_selection(newer));
+                }
+            }
+            Ok(SelectedManifest {
+                manifest,
+                unavailable: HashSet::new(),
+                read_only: slot_unreadable,
+            })
+        }
         Err(VaultError::Corrupt) => {
             // No generation has all of its objects. Open the newest authentic
             // manifest read-only so intact records can still be exported.
             let manifest = read_latest_manifest_with(root, master_key, vault_id, false)?;
-            let unavailable = manifest
-                .records
-                .iter()
-                .filter(|record| !object_is_present(root, record))
-                .map(|record| record.id)
-                .collect();
-            Ok(SelectedManifest {
-                manifest,
-                unavailable,
-                read_only: true,
-            })
+            Ok(read_only_selection(manifest))
         }
         Err(error) => Err(error),
     }
 }
 
 fn manifest_slot_unreadable(root: &Path, slot: u64) -> bool {
-    let path = root.join(format!("manifest-{slot}.bin"));
-    match read_bounded_regular_file(&path, MAX_MANIFEST_BYTES) {
+    file_unreadable(
+        &root.join(format!("manifest-{slot}.bin")),
+        MAX_MANIFEST_BYTES,
+    )
+}
+
+/// A header slot that exists but cannot be read may hold a newer passphrase
+/// generation, so repair must not rewrap the key over it.
+fn header_slot_unreadable(root: &Path) -> bool {
+    HEADER_SLOTS
+        .iter()
+        .any(|name| file_unreadable(&root.join(name), MAX_HEADER_BYTES))
+}
+
+fn file_unreadable(path: &Path, maximum: usize) -> bool {
+    match read_bounded_regular_file(path, maximum) {
         Ok(_) => false,
         // Absent, oversized and non-regular slots are damage that repair may replace.
         Err(error) => !matches!(
@@ -3928,6 +3977,117 @@ mod tests {
     }
 
     #[test]
+    fn a_lost_object_does_not_roll_back_over_intact_newer_records() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("first.pdf", b"first")], 2)
+            .unwrap();
+        let older_slots = [
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+        ];
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![source("lost.pdf", b"lost"), source("kept.pdf", b"kept")],
+                3,
+            )
+            .unwrap()
+            .imported;
+        let (newest_slot, lost_object, kept_object) = {
+            let guard = store.unlocked.lock().unwrap();
+            let manifest = &guard.as_ref().unwrap().manifest;
+            let object = |id: Uuid| {
+                let record = manifest.records.iter().find(|r| r.id == id).unwrap();
+                root.join("objects").join(&record.object_name)
+            };
+            (
+                manifest_path(&root, manifest.generation),
+                object(imported[0]),
+                object(imported[1]),
+            )
+        };
+        store.lock();
+        // Leave the newest state in one slot only, as a failed redundant write
+        // would, then lose one of the objects only that state references.
+        let stale_slot = usize::from(newest_slot.ends_with("manifest-0.bin"));
+        fs::write(
+            root.join(format!("manifest-{stale_slot}.bin")),
+            &older_slots[stale_slot],
+        )
+        .unwrap();
+        let newest_before = fs::read(&newest_slot).unwrap();
+        fs::remove_file(&lost_object).unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert!(snapshot.degraded);
+        assert_eq!(snapshot.records.len(), 3);
+        let available = |id: Uuid| {
+            snapshot
+                .records
+                .iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .available
+        };
+        assert!(!available(imported[0]));
+        assert!(available(imported[1]));
+        assert!(kept_object.exists());
+        assert_eq!(fs::read(&newest_slot).unwrap(), newest_before);
+        let mut exported = Vec::new();
+        store.export(imported[1], &mut exported).unwrap();
+        assert_eq!(exported, b"kept");
+    }
+
+    #[test]
+    fn a_newer_manifest_whose_new_objects_are_all_lost_still_falls_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("first.pdf", b"first")], 2)
+            .unwrap();
+        let older_slots = [
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+        ];
+        let second = store
+            .import(profile, vec![], vec![source("second.pdf", b"second")], 3)
+            .unwrap()
+            .imported[0];
+        let (newest_slot, second_object) = {
+            let guard = store.unlocked.lock().unwrap();
+            let manifest = &guard.as_ref().unwrap().manifest;
+            let record = manifest.records.iter().find(|r| r.id == second).unwrap();
+            (
+                manifest_path(&root, manifest.generation),
+                root.join("objects").join(&record.object_name),
+            )
+        };
+        store.lock();
+        let stale_slot = usize::from(newest_slot.ends_with("manifest-0.bin"));
+        fs::write(
+            root.join(format!("manifest-{stale_slot}.bin")),
+            &older_slots[stale_slot],
+        )
+        .unwrap();
+        fs::remove_file(&second_object).unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert!(!snapshot.degraded);
+        assert_eq!(snapshot.records.len(), 1);
+    }
+
+    #[test]
     fn damaged_or_absent_manifest_slots_are_not_treated_as_unreadable() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
@@ -4001,6 +4161,52 @@ mod tests {
             .records
             .iter()
             .any(|record| record.id == second));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_header_slot_is_not_rewrapped_under_the_old_passphrase() {
+        use std::os::unix::fs::PermissionsExt as _;
+        const REPLACEMENT: &str = "lantern-orbit-willow-cascade-572";
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let older_slots = HEADER_SLOTS.map(|name| fs::read(root.join(name)).unwrap());
+        store.change_passphrase(PASSWORD, REPLACEMENT).unwrap();
+        store.lock();
+        // Leave the change in its first header write only, as a failed second
+        // write would, by restoring the slot that received the later generation.
+        let generation = |slot: usize| {
+            let header: VaultHeader =
+                serde_json::from_slice(&fs::read(root.join(HEADER_SLOTS[slot])).unwrap()).unwrap();
+            header.generation
+        };
+        let first_write = usize::from(generation(1) < generation(0));
+        fs::write(
+            root.join(HEADER_SLOTS[1 - first_write]),
+            &older_slots[1 - first_write],
+        )
+        .unwrap();
+        let newest_slot = root.join(HEADER_SLOTS[first_write]);
+        let newest_before = fs::read(&newest_slot).unwrap();
+        fs::set_permissions(&newest_slot, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&newest_slot).is_ok() {
+            // A privileged process ignores file modes, so the unreadable slot
+            // cannot be simulated here.
+            return;
+        }
+
+        // The old passphrase still opens the one readable header, but repair must
+        // not reinstate it over the slot that could not be read.
+        store.unlock(PASSWORD).unwrap();
+        assert!(store.snapshot().unwrap().degraded);
+        store.lock();
+
+        fs::set_permissions(&newest_slot, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(fs::read(&newest_slot).unwrap(), newest_before);
+        store.unlock(REPLACEMENT).unwrap();
     }
 
     #[test]

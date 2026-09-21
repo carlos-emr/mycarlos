@@ -512,6 +512,47 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("starts the selection again when a search could hide selected documents", async () => {
+    const user = userEvent.setup();
+    const record = (id: string, displayName: string) => ({
+      id,
+      profileId: "profile-1",
+      folderIds: [],
+      displayName,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        records: [record("a", "FAKE_Alpha.pdf"), record("b", "FAKE_Beta.pdf")],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select FAKE_Alpha.pdf" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Select FAKE_Beta.pdf" }),
+    );
+    expect(screen.getByText("2 selected")).toBeVisible();
+
+    await user.type(
+      screen.getByPlaceholderText("Search this location"),
+      "Alpha",
+    );
+    expect(screen.queryByText("FAKE_Beta.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Move" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("refuses a document name longer than the vault's byte limit before saving it", async () => {
     const user = userEvent.setup();
     const record = {

@@ -303,6 +303,9 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal
       - run: npm ci
+      # macOS is a supported target with its own filesystem and locking
+      # behaviour, so the vault tests run here as they do on Windows.
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
       - run: npm run tauri build -- --debug --bundles app
       - run: git diff --exit-code -- src-tauri/Cargo.lock
 

@@ -8,6 +8,7 @@ import {
 } from "./platform";
 import { useModalFocus } from "./useModalFocus";
 import { AUTO_LOCK_OPTIONS } from "./native/autoLock";
+import { formatBytes } from "./native/recordPresentation";
 
 type Category =
   | "Test results"
@@ -153,17 +154,15 @@ const sampleRecentIds = [
 
 const filters: Filter[] = ["All", "Test results", "Letters", "Imaging"];
 
-function formatBytes(size?: number): string {
-  if (size === undefined) return "PDF";
-  if (size < 1024) return `${size} B · PDF`;
-  return `${Math.round(size / 1024)} KB · PDF`;
+function describeSize(size?: number): string {
+  return size === undefined ? "PDF" : `${formatBytes(size)} · PDF`;
 }
 
 function toDemoDocument(file: SelectedDocument): DemoDocument {
   return {
     id: `session-${crypto.randomUUID()}`,
     title: file.name,
-    subtitle: formatBytes(file.sizeBytes),
+    subtitle: describeSize(file.sizeBytes),
     source: "Chosen on this device",
     added: "Just now",
     category: "Letters",

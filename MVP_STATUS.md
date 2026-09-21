@@ -81,6 +81,9 @@ privacy, accessibility, or clinical review.
       The same decision covers inactivity on every platform: only input to the app's own window
       counts as activity, so browsing in a native picker for longer than the automatic lock delay
       (one minute at its shortest) locks the vault and the chosen import or export is refused.
+- [ ] Give the native session its own idle deadline. Automatic locking runs only as timers and
+      events in the renderer, so if the webview crashes, hangs, or is suspended before its lock
+      request is delivered, the native session keeps the vault unlocked until the app exits.
 - [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
       refuses every reparse point, not only links and junctions, and cloud-synchronized files may
       carry a reparse tag even when fully downloaded.

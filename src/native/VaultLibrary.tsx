@@ -138,6 +138,12 @@ export function VaultLibrary({
     setQuery("");
   }, [currentFolderId]);
 
+  // A search can hide selected documents, and "Move" acts on the whole
+  // selection. Start it again so that it never includes a document out of view.
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [query]);
+
   const renameFolder = (folder: VaultFolder) =>
     setRenameTarget({ kind: "folder", id: folder.id, name: folder.name });
   const saveName = async (name: string) => {
@@ -319,9 +325,10 @@ export function VaultLibrary({
   const submitFolder = (event: FormEvent) => {
     event.preventDefault();
     const name = folderName;
-    setFolderName("");
     void run(async () => {
       await bridge.createFolder(profileId, currentFolderId, name);
+      // Cleared only once the folder exists, so a refused name can be corrected.
+      setFolderName("");
       await refresh();
       setShowFolderForm(false);
       setNotice(`${name} was created.`);
@@ -341,6 +348,27 @@ export function VaultLibrary({
       await refresh();
       setNotice(`${folder.name} moved.`);
     });
+
+  // A folder cannot move into itself or anything beneath it, so those are not
+  // offered as destinations.
+  const folderDestinations = useMemo(() => {
+    const excluded = new Set([folderToMoveId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const folder of folders) {
+        if (
+          folder.parentId &&
+          excluded.has(folder.parentId) &&
+          !excluded.has(folder.id)
+        ) {
+          excluded.add(folder.id);
+          grew = true;
+        }
+      }
+    }
+    return folders.filter((folder) => !excluded.has(folder.id));
+  }, [folders, folderToMoveId]);
 
   const folderCount = (id: string) =>
     records.filter((record) => record.folderIds.includes(id)).length;
@@ -559,13 +587,11 @@ export function VaultLibrary({
                           }
                         >
                           <option value="">My records</option>
-                          {folders
-                            .filter((folder) => folder.id !== folderToMoveId)
-                            .map((folder) => (
-                              <option value={folder.id} key={folder.id}>
-                                {folder.name}
-                              </option>
-                            ))}
+                          {folderDestinations.map((folder) => (
+                            <option value={folder.id} key={folder.id}>
+                              {folder.name}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <button
