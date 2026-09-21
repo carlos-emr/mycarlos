@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
+import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { AUTO_LOCK_OPTIONS } from "./autoLock";
 
 interface SecuritySettingsProps {
@@ -31,10 +32,12 @@ export function SecuritySettings({
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
     useState("");
   const [resetText, setResetText] = useState("");
+  const newPassphraseTooLong = utf8Length(newPassphrase) > MAX_PASSPHRASE_BYTES;
 
   const submitPassphrase = (event: FormEvent) => {
     event.preventDefault();
-    if (newPassphrase !== newPassphraseConfirmation) return;
+    if (newPassphraseTooLong || newPassphrase !== newPassphraseConfirmation)
+      return;
     const current = currentPassphrase;
     const replacement = newPassphrase;
     setCurrentPassphrase("");
@@ -164,10 +167,16 @@ export function SecuritySettings({
               newPassphrase !== newPassphraseConfirmation && (
                 <p role="alert">New passphrases do not match.</p>
               )}
+            {newPassphraseTooLong && (
+              <p role="alert">The new passphrase is too long. Shorten it.</p>
+            )}
             <button
               className="button"
               disabled={
-                busy || readOnly || newPassphrase !== newPassphraseConfirmation
+                busy ||
+                readOnly ||
+                newPassphraseTooLong ||
+                newPassphrase !== newPassphraseConfirmation
               }
             >
               Change passphrase

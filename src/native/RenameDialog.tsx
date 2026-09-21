@@ -1,12 +1,9 @@
 import { useState, useRef, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
-import { vaultErrorMessage } from "../vault";
+import { utf8Length, vaultErrorMessage } from "../vault";
 
-// The vault stores document names in at most this many UTF-8 bytes. `maxLength`
-// counts UTF-16 units, so it alone would let a long non-Latin name through to a
-// native rejection that cannot say what was wrong.
+// The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
-const encoder = new TextEncoder();
 
 export type RenameTarget = {
   kind: "folder" | "document";
@@ -31,7 +28,7 @@ export function RenameDialog({
   const dialogRef = useRef<HTMLElement | null>(null);
   const tooLong =
     target.kind === "document" &&
-    encoder.encode(name.trim()).length > MAX_DOCUMENT_NAME_BYTES;
+    utf8Length(name.trim()) > MAX_DOCUMENT_NAME_BYTES;
   const close = () => {
     if (!saving) onClose();
   };

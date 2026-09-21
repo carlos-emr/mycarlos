@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "../Icon";
+import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 
 export function VaultAuthFrame({
   state,
@@ -49,9 +50,10 @@ export function CreateVault({
   const [profile, setProfile] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (passphrase !== confirmation) return;
+    if (tooLong || passphrase !== confirmation) return;
     const secret = passphrase;
     setPassphrase("");
     setConfirmation("");
@@ -105,10 +107,13 @@ export function CreateVault({
           {confirmation && passphrase !== confirmation && (
             <p role="alert">Passphrases do not match.</p>
           )}
+          {tooLong && (
+            <p role="alert">This passphrase is too long. Shorten it.</p>
+          )}
           {notice && <p role="status">{notice}</p>}
           <button
             className="button primary"
-            disabled={busy || passphrase !== confirmation}
+            disabled={busy || tooLong || passphrase !== confirmation}
           >
             Create vault
           </button>

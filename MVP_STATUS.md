@@ -88,7 +88,10 @@ privacy, accessibility, or clinical review.
       supported filesystem and physical target; subprocess termination coverage is implemented.
 - [ ] Reproduce genuine full-filesystem behavior and test OS backup/restore. Deterministic
       `NoSpace` injection, Unix permission modes, and the local corruption matrix are automated;
-      platform filesystem and policy inspection remains.
+      platform filesystem and policy inspection remains. This includes filesystems that cannot
+      sync a directory (some FUSE, network, and removable mounts): the atomic-write primitive syncs
+      the parent after its rename, so there a manifest commit or an export is reported as failed
+      although the complete file is already in place. Decide whether such storage is supported.
 - [ ] Benchmark Argon2id on the oldest supported device class. A repeatable release-mode harness and
       result template are in [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md); physical results remain.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext

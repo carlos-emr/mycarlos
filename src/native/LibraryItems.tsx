@@ -19,6 +19,22 @@ interface LibraryItemsProps {
   onToggleSelected: (recordId: string) => void;
 }
 
+function EmptyState({ searching }: { searching: boolean }) {
+  return (
+    <div className="empty-state">
+      <Icon name="folder" />
+      <strong>
+        {searching ? "No matching records" : "This location is empty"}
+      </strong>
+      <span>
+        {searching
+          ? "Try another search."
+          : "Add a folder or import a document here."}
+      </span>
+    </div>
+  );
+}
+
 export function LibraryItems({
   view,
   folders,
@@ -144,17 +160,7 @@ export function LibraryItems({
         );
       })}
       {!folders.length && !records.length && (
-        <div className="empty-state">
-          <Icon name="folder" />
-          <strong>
-            {searching ? "No matching records" : "This location is empty"}
-          </strong>
-          <span>
-            {searching
-              ? "Try another search."
-              : "Add a folder or import a document here."}
-          </span>
-        </div>
+        <EmptyState searching={searching} />
       )}
     </div>
   ) : (
@@ -244,17 +250,7 @@ export function LibraryItems({
         );
       })}
       {!folders.length && !records.length && (
-        <div className="empty-state">
-          <Icon name="folder" />
-          <strong>
-            {searching ? "No matching records" : "This location is empty"}
-          </strong>
-          <span>
-            {searching
-              ? "Try another search."
-              : "Add a folder or import a document here."}
-          </span>
-        </div>
+        <EmptyState searching={searching} />
       )}
     </div>
   );

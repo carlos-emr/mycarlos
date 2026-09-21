@@ -159,6 +159,23 @@ describe("durable vault UI", () => {
     );
   });
 
+  it("says when a new passphrase exceeds the vault's byte limit instead of sending it", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const create = await screen.findByRole("button", { name: "Create vault" });
+    // 600 characters fit the input's 1024-unit limit but need 1800 UTF-8 bytes.
+    const long = "字".repeat(600);
+    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+      fireEvent.change(field, { target: { value: long } });
+    }
+
+    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(create).toBeDisabled();
+    expect(bridge.create).not.toHaveBeenCalled();
+  });
+
   it("unlocks and imports through the native bridge", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({

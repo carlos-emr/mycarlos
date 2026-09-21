@@ -36,6 +36,7 @@ pub(crate) const MAX_IMPORT_FILES: usize = 100;
 pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
+const CREATE_STAGE_PREFIX: &str = ".mycarlos-create-";
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 // The sanitizer caps record names at this many bytes and manifest validation
@@ -135,7 +136,12 @@ impl From<io::Error> for VaultError {
             .is_some()
         {
             Self::Cancelled
-        } else if error.raw_os_error() == Some(28) || error.kind() == io::ErrorKind::StorageFull {
+        } else if matches!(
+            error.kind(),
+            io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded
+        ) {
+            // The kinds cover ENOSPC and EDQUOT on Unix and the disk-full and
+            // quota codes on Windows, where raw code 28 means something else.
             Self::NoSpace
         } else {
             Self::Storage
@@ -384,7 +390,7 @@ impl VaultStore {
 
         let parent = self.root.parent().ok_or(VaultError::Storage)?;
         fs::create_dir_all(parent)?;
-        let stage = parent.join(format!(".mycarlos-create-{}", Uuid::new_v4()));
+        let stage = parent.join(format!("{CREATE_STAGE_PREFIX}{}", Uuid::new_v4()));
         create_private_dir(&stage)?;
 
         let result = (|| {
@@ -1003,21 +1009,19 @@ impl VaultStore {
             .generation
             .checked_add(1)
             .ok_or(VaultError::Storage)?;
-        let second_generation = first_generation.checked_add(1).ok_or(VaultError::Storage)?;
         let (first, second) = build_header_pair(
             header.vault_id,
             first_generation,
             replacement,
             &unlocked.master_key,
         )?;
-        debug_assert_eq!(second.generation, second_generation);
         atomic_json(&header_path(&self.root, first.generation), &first)?;
         if atomic_json(&header_path(&self.root, second.generation), &second).is_err() {
             unlocked.degraded = true;
             return Ok(());
         }
         unlocked.degraded = false;
-        let _ = fs::remove_file(self.root.join("header.json"));
+        let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
         Ok(())
     }
 
@@ -1641,17 +1645,21 @@ fn valid_header(header: &VaultHeader) -> bool {
                 .is_ok_and(|tag| tag.len() == 32))
 }
 
+const HEADER_SLOTS: [&str; 2] = ["header-0.json", "header-1.json"];
+const LEGACY_HEADER: &str = "header.json";
+
+/// The structurally valid headers among `names`, in the order given.
+fn read_headers(root: &Path, names: &[&str]) -> Vec<VaultHeader> {
+    names
+        .iter()
+        .filter_map(|name| read_bounded_regular_file(&root.join(name), MAX_HEADER_BYTES).ok())
+        .filter_map(|data| serde_json::from_slice::<VaultHeader>(&data).ok())
+        .filter(valid_header)
+        .collect()
+}
+
 fn read_header_candidates(root: &Path) -> Vec<VaultHeader> {
-    [
-        root.join("header-0.json"),
-        root.join("header-1.json"),
-        root.join("header.json"),
-    ]
-    .into_iter()
-    .filter_map(|path| read_bounded_regular_file(&path, MAX_HEADER_BYTES).ok())
-    .filter_map(|data| serde_json::from_slice::<VaultHeader>(&data).ok())
-    .filter(valid_header)
-    .collect()
+    read_headers(root, &[HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER])
 }
 
 fn read_latest_header(root: &Path) -> Result<VaultHeader, VaultError> {
@@ -1742,12 +1750,7 @@ fn header_redundancy_healthy(
     wrapping_key: &[u8; 32],
     master_key: &[u8; 32],
 ) -> bool {
-    let headers = [root.join("header-0.json"), root.join("header-1.json")]
-        .into_iter()
-        .filter_map(|path| read_bounded_regular_file(&path, MAX_HEADER_BYTES).ok())
-        .filter_map(|data| serde_json::from_slice::<VaultHeader>(&data).ok())
-        .filter(valid_header)
-        .collect::<Vec<_>>();
+    let headers = read_headers(root, &HEADER_SLOTS);
     headers.len() == 2
         && headers[0].generation.abs_diff(headers[1].generation) == 1
         && headers
@@ -1781,7 +1784,7 @@ fn repair_header_redundancy(
         build_header_pair(current.vault_id, first_generation, passphrase, master_key)?;
     atomic_json(&header_path(root, first_generation), &first)?;
     atomic_json(&header_path(root, second.generation), &second)?;
-    let _ = fs::remove_file(root.join("header.json"));
+    let _ = fs::remove_file(root.join(LEGACY_HEADER));
     Ok(())
 }
 
@@ -1800,7 +1803,16 @@ fn write_valid_manifest_at(
     master_key: &[u8; 32],
     manifest: &Manifest,
 ) -> Result<(), VaultError> {
-    validate_manifest(root, manifest, manifest.vault_id).map_err(|_| VaultError::Invalid)?;
+    validate_manifest_structure(manifest, manifest.vault_id).map_err(|_| VaultError::Invalid)?;
+    // An object that went missing during the session is damage to the vault,
+    // not a mistake in the request being committed.
+    if !manifest
+        .records
+        .iter()
+        .all(|record| object_is_present(root, record))
+    {
+        return Err(VaultError::Corrupt);
+    }
     write_manifest_at(root, master_key, manifest)
 }
 
@@ -2270,10 +2282,51 @@ fn is_vault_managed_name(root: &Path, name: &str) -> Result<bool, VaultError> {
         || name.starts_with("mycarlos-vault-reset-"))
 }
 
+/// Deletes every header, legacy or current, from a vault directory.
+fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
+    for header in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
+        match fs::remove_file(directory.join(header)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+/// Removes staging directories that a `create` left behind when the process
+/// died before the rename. Each holds headers that wrap a key under the chosen
+/// passphrase, so it must not outlive the attempt or a later reset. Best effort:
+/// an abandoned stage never blocks access to the vault. The caller holds the
+/// storage lock, so no other `create` can own a stage.
+fn remove_abandoned_create_stages(parent: &Path) {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let is_stage = entry.file_name().to_str().is_some_and(|name| {
+            name.strip_prefix(CREATE_STAGE_PREFIX)
+                .is_some_and(|id| Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == id))
+        });
+        let path = entry.path();
+        // `DirEntry::file_type` does not follow links, so a link is never entered.
+        if !is_stage || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        if remove_key_envelopes(&path).is_ok() {
+            sync_parent(&path);
+        }
+        if fs::remove_dir_all(&path).is_ok() {
+            sync_parent(parent);
+        }
+    }
+}
+
 // The caller holds the stable sibling lock. A retired directory is itself the durable reset
 // intent, so partial deletion and process death can be retried without the passphrase.
 fn finish_pending_resets(root: &Path) -> Result<bool, VaultError> {
     let parent = root.parent().ok_or(VaultError::Storage)?;
+    remove_abandoned_create_stages(parent);
     let pending = reset_path(root)?;
     let mut resumed = false;
     for entry in fs::read_dir(parent)? {
@@ -2297,13 +2350,7 @@ fn finish_pending_resets(root: &Path) -> Result<bool, VaultError> {
         }
         fail_at_test_boundary("reset.before-cleanup")?;
         // Erase key envelopes first. Keep the retired directory until all deletion succeeds.
-        for header in ["header-0.json", "header-1.json", "header.json"] {
-            match fs::remove_file(path.join(header)) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
-        }
+        remove_key_envelopes(&path)?;
         sync_parent(&path);
         terminate_at_test_boundary("reset.after-key-removal");
         fs::remove_dir_all(&path)?;
@@ -4629,6 +4676,66 @@ mod tests {
 
         store.unlock(PASSWORD).unwrap();
         assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+
+    #[test]
+    fn an_object_lost_during_the_session_is_reported_as_damage_not_bad_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile_id = store.snapshot().unwrap().profiles[0].id;
+        let outcome = store
+            .import(
+                profile_id,
+                Vec::new(),
+                vec![source("kept.pdf", b"kept"), source("lost.pdf", b"lost")],
+                2,
+            )
+            .unwrap();
+        let lost = store.session().as_ref().unwrap().manifest.records[1]
+            .object_name
+            .clone();
+        fs::remove_file(root.join("objects").join(lost)).unwrap();
+
+        assert!(matches!(
+            store.rename_record(outcome.imported[0], "renamed.pdf"),
+            Err(VaultError::Corrupt)
+        ));
+        assert!(matches!(
+            store.create_profile("Alex", 3),
+            Err(VaultError::Corrupt)
+        ));
+        assert_eq!(
+            store.snapshot().unwrap().records[0].display_name,
+            "kept.pdf"
+        );
+    }
+
+    #[test]
+    fn startup_removes_a_create_stage_abandoned_with_its_key_envelopes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let abandoned = temp
+            .path()
+            .join(format!("{CREATE_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::create_dir_all(abandoned.join("objects")).unwrap();
+        fs::write(abandoned.join("header-0.json"), b"wrapped key").unwrap();
+        let unrelated = temp.path().join(format!("{CREATE_STAGE_PREFIX}notes"));
+        fs::create_dir(&unrelated).unwrap();
+        let file = temp
+            .path()
+            .join(format!("{CREATE_STAGE_PREFIX}{}.txt", Uuid::new_v4()));
+        fs::write(&file, b"not a stage").unwrap();
+
+        let store = VaultStore::new(root);
+        assert_eq!(store.status().unwrap(), VaultStatus::Absent);
+        assert!(!abandoned.exists());
+        assert!(unrelated.exists());
+        assert!(file.exists());
+
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert_eq!(store.status().unwrap(), VaultStatus::Unlocked);
     }
 
     #[test]

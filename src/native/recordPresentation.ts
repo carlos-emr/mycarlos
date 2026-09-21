@@ -2,7 +2,9 @@ import type { IconName } from "../Icon";
 
 export function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  // Compare the rounded figure, so a size just under 1 MB is not "1024 KB".
+  const kilobytes = Math.round(value / 1024);
+  if (kilobytes < 1024) return `${kilobytes} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 

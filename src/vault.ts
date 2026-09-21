@@ -141,3 +141,10 @@ export function createVaultBridge(): VaultBridge {
       invoke<boolean>("vault_reset", { request: { confirmation } }),
   };
 }
+
+// The vault limits names and passphrases in UTF-8 bytes. An input's `maxLength`
+// counts UTF-16 units, so on its own it lets long non-Latin text through to a
+// native rejection that cannot say what was wrong.
+export const MAX_PASSPHRASE_BYTES = 1024;
+const encoder = new TextEncoder();
+export const utf8Length = (value: string) => encoder.encode(value).length;
