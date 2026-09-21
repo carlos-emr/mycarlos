@@ -11,5 +11,30 @@ fn main() {
             "Android backup exclusions must be applied with `npm run android:secure` before every Android build"
         );
     }
-    tauri_build::build()
+    // Without an app manifest Tauri allows every app command from any window and
+    // origin, and capabilities/default.json would only gate plugin commands.
+    // Declaring the commands makes that capability file authoritative for them.
+    // Keep this list in step with `generate_handler!` in src/lib.rs.
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "runtime_info",
+            "vault_status",
+            "vault_create",
+            "vault_unlock",
+            "vault_lock",
+            "vault_snapshot",
+            "vault_change_passphrase",
+            "vault_create_profile",
+            "vault_create_folder",
+            "vault_update_folder",
+            "vault_rename_record",
+            "vault_assign_folders",
+            "vault_assign_folders_batch",
+            "vault_import_begin",
+            "vault_export_begin",
+            "vault_delete_record",
+            "vault_reset",
+        ]),
+    ))
+    .expect("failed to run tauri-build");
 }

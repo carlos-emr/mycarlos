@@ -3,5 +3,23 @@
   "identifier": "main-window",
   "description": "Renderer capabilities for the myCarlos native vault",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "allow-runtime-info",
+    "allow-vault-status",
+    "allow-vault-create",
+    "allow-vault-unlock",
+    "allow-vault-lock",
+    "allow-vault-snapshot",
+    "allow-vault-change-passphrase",
+    "allow-vault-create-profile",
+    "allow-vault-create-folder",
+    "allow-vault-update-folder",
+    "allow-vault-rename-record",
+    "allow-vault-assign-folders",
+    "allow-vault-assign-folders-batch",
+    "allow-vault-import-begin",
+    "allow-vault-export-begin",
+    "allow-vault-delete-record",
+    "allow-vault-reset"
+  ]
 }

@@ -710,7 +710,29 @@ mod tests {
 
         let capability: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
-        assert_eq!(capability["permissions"], serde_json::json!([]));
+        // build.rs declares the app commands, so this list is the only thing
+        // that lets the renderer call them. It must cover exactly the registered
+        // commands and must never grant a plugin (`plugin:permission`) scope.
+        let permissions: Vec<&str> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|permission| permission.as_str().unwrap())
+            .collect();
+        let library = include_str!("lib.rs");
+        let build_script = include_str!("../build.rs");
+        let command_marker = ["#[tauri", "::command]"].concat();
+        assert_eq!(permissions.len(), library.matches(&command_marker).count());
+        for permission in permissions {
+            assert!(!permission.contains(':'));
+            let command = permission.strip_prefix("allow-").unwrap().replace('-', "_");
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(
+                library.contains(&format!("    {command},\n"))
+                    || library.contains(&format!("    {command}\n"))
+            );
+            assert!(build_script.contains(&format!("\"{command}\"")));
+        }
     }
 
     proptest! {
