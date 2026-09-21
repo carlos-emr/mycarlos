@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { AUTO_LOCK_OPTIONS } from "./autoLock";
+import { ResetConfirmation } from "./VaultAuth";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -31,7 +32,6 @@ export function SecuritySettings({
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
     useState("");
-  const [resetText, setResetText] = useState("");
   const newPassphraseTooLong = utf8Length(newPassphrase) > MAX_PASSPHRASE_BYTES;
 
   const submitPassphrase = (event: FormEvent) => {
@@ -224,21 +224,11 @@ export function SecuritySettings({
           </div>
           <details>
             <summary>Show reset controls</summary>
-            <label>
-              Type RESET MYCARLOS VAULT
-              <input
-                maxLength={21}
-                value={resetText}
-                onChange={(event) => setResetText(event.target.value)}
-              />
-            </label>
-            <button
-              className="button danger"
-              disabled={busy || resetText !== "RESET MYCARLOS VAULT"}
-              onClick={() => void onReset(resetText)}
-            >
-              Erase entire vault
-            </button>
+            <ResetConfirmation
+              busy={busy}
+              actionLabel="Erase entire vault"
+              onReset={onReset}
+            />
           </details>
         </section>
       </div>

@@ -374,8 +374,16 @@ export function VaultLibrary({
     return folders.filter((folder) => !excluded.has(folder.id));
   }, [folders, folderToMoveId]);
 
-  const folderCount = (id: string) =>
-    records.filter((record) => record.folderIds.includes(id)).length;
+  // Asked once per folder by both the sidebar and the item list, so count in
+  // one pass instead of filtering every record for every folder on each render.
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const record of records)
+      for (const id of record.folderIds)
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+    return counts;
+  }, [records]);
+  const folderCount = (id: string) => folderCounts.get(id) ?? 0;
   const locationTitle = currentFolder?.name ?? "My records";
 
   return (

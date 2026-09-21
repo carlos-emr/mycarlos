@@ -84,6 +84,12 @@ privacy, accessibility, or clinical review.
 - [ ] Give the native session its own idle deadline. Automatic locking runs only as timers and
       events in the renderer, so if the webview crashes, hangs, or is suspended before its lock
       request is delivered, the native session keeps the vault unlocked until the app exits.
+- [ ] Decide how a vault leaves recovery mode after one encrypted object is lost. Every later
+      unlock is read-only and deletion is refused there, so the damaged record can never be dropped;
+      the only way back to a writable vault is to export everything, reset, and import again.
+- [ ] Review the passphrase policy against passphrases built from the profile's own name. The name
+      is passed to zxcvbn as context, which only matches it as a whole, so rearranged or joined name
+      words ("Family+Given") still reach the accepted score.
 - [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
       refuses every reparse point, not only links and junctions, and cloud-synchronized files may
       carry a reparse tag even when fully downloaded.

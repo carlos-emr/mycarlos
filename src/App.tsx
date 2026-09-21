@@ -681,7 +681,12 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   <input
                     type="search"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      // Star and Trash act on the whole selection, so it must
+                      // never include a record the search has hidden.
+                      setSelectedIds([]);
+                    }}
                     placeholder="Search your records"
                   />
                 </label>

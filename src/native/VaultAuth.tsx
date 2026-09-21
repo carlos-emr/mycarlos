@@ -38,6 +38,42 @@ export function VaultAuthFrame({
   );
 }
 
+// The native side compares the typed text with this exact phrase again.
+const RESET_CONFIRMATION = "RESET MYCARLOS VAULT";
+
+/** The typed confirmation shared by every place that can erase the vault. */
+export function ResetConfirmation({
+  busy,
+  actionLabel,
+  onReset,
+}: {
+  busy: boolean;
+  actionLabel: string;
+  onReset: (confirmation: string) => Promise<void>;
+}) {
+  const [resetText, setResetText] = useState("");
+  return (
+    <>
+      <label>
+        Type {RESET_CONFIRMATION}
+        <input
+          maxLength={RESET_CONFIRMATION.length + 1}
+          value={resetText}
+          onChange={(event) => setResetText(event.target.value)}
+        />
+      </label>
+      <button
+        className="button danger"
+        type="button"
+        disabled={busy || resetText !== RESET_CONFIRMATION}
+        onClick={() => void onReset(resetText)}
+      >
+        {actionLabel}
+      </button>
+    </>
+  );
+}
+
 export function CreateVault({
   busy,
   notice,
@@ -137,7 +173,6 @@ export function UnlockVault({
   onReset: (confirmation: string) => Promise<void>;
 }) {
   const [passphrase, setPassphrase] = useState("");
-  const [resetText, setResetText] = useState("");
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const secret = passphrase;
@@ -178,21 +213,11 @@ export function UnlockVault({
             There is no recovery code. Reset permanently erases this vault so
             you can start again.
           </p>
-          <label>
-            Type RESET MYCARLOS VAULT
-            <input
-              maxLength={21}
-              value={resetText}
-              onChange={(e) => setResetText(e.target.value)}
-            />
-          </label>
-          <button
-            className="button danger"
-            disabled={busy || resetText !== "RESET MYCARLOS VAULT"}
-            onClick={() => void onReset(resetText)}
-          >
-            Erase vault
-          </button>
+          <ResetConfirmation
+            busy={busy}
+            actionLabel="Erase vault"
+            onReset={onReset}
+          />
         </details>
       </section>
     </VaultAuthFrame>

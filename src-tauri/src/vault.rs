@@ -1195,7 +1195,11 @@ fn sanitize_basename(value: &str) -> String {
         };
         cleaned.push(character);
     }
-    cleaned = truncate_record_name(cleaned.trim().trim_end_matches(['.', ' ']));
+    cleaned = truncate_record_name(
+        cleaned
+            .trim_start()
+            .trim_end_matches(is_trailing_name_padding),
+    );
     // Win32 ignores spaces between the stem and the extension, so "CON .txt"
     // still names the console device.
     let stem = cleaned
@@ -1251,6 +1255,14 @@ fn sanitize_basename(value: &str) -> String {
     }
 }
 
+/// Dots and whitespace that a name must not end with. Any whitespace counts, not
+/// only the ASCII space: stripping the dots after a no-break space would otherwise
+/// leave a name that the next pass trims again, and `rename_record` relies on a
+/// sanitized name being a fixed point.
+fn is_trailing_name_padding(character: char) -> bool {
+    character == '.' || character.is_whitespace()
+}
+
 /// Shortens `name` to `MAX_RECORD_NAME_LEN` bytes on a character boundary and
 /// drops any trailing dots or spaces the cut exposes. A short final extension
 /// is kept, so the export of a long name still suggests a file the platform
@@ -1262,7 +1274,7 @@ fn truncate_record_name(name: &str) -> String {
         while !value.is_char_boundary(end) {
             end -= 1;
         }
-        value[..end].trim_end_matches(['.', ' '])
+        value[..end].trim_end_matches(is_trailing_name_padding)
     }
     if name.len() <= MAX_RECORD_NAME_LEN {
         return name.to_owned();
@@ -2597,8 +2609,24 @@ fn sync_parent(parent: &Path) {
     let _ = sync_dir(parent);
 }
 
+/// Whether `path` is a directory itself and not a link or reparse point to one.
+/// `read_dir` follows a link, so cleanup that entered a linked `staging` or
+/// `objects` would delete the contents of whatever directory it points at.
+fn is_real_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| {
+        #[cfg(windows)]
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+        metadata.is_dir()
+    })
+}
+
 fn remove_staging(root: &Path) {
     let staging = root.join("staging");
+    if !is_real_dir(&staging) {
+        return;
+    }
     if let Ok(entries) = fs::read_dir(&staging) {
         for entry in entries.flatten() {
             let _ = fs::remove_dir_all(entry.path());
@@ -2636,7 +2664,11 @@ fn remove_orphan_objects(root: &Path, manifest: &Manifest) {
         .iter()
         .map(|record| record.object_name.as_str())
         .collect();
-    if let Ok(entries) = fs::read_dir(root.join("objects")) {
+    let objects = root.join("objects");
+    if !is_real_dir(&objects) {
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(objects) {
         for entry in entries.flatten() {
             let path = entry.path();
             let is_referenced = path
@@ -4869,6 +4901,51 @@ mod tests {
             validate_new_passphrase("Jamie-Jamie-Jamie", &["Jamie"]),
             Err(VaultError::WeakPassphrase)
         ));
+    }
+
+    #[test]
+    fn a_sanitized_name_is_a_fixed_point_around_unicode_whitespace() {
+        for raw in [
+            "name\u{a0}.",
+            "a\u{3000}. ",
+            "\u{a0}scan.pdf\u{2003}..",
+            "x\u{a0}. .\u{a0}",
+        ] {
+            let sanitized = sanitize_basename(raw);
+            assert_eq!(sanitize_basename(&sanitized), sanitized, "{raw:?}");
+            assert_eq!(sanitized.trim(), sanitized, "{raw:?}");
+            assert!(valid_record_name(&sanitized), "{raw:?}");
+        }
+        assert_eq!(sanitize_basename("name\u{a0}."), "name");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unlock_cleanup_never_enters_a_linked_staging_or_objects_directory() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("data").join("vault-v1");
+        let store = VaultStore::new(root.clone());
+        store
+            .create("plum orbit lantern meadow quartz", "Avery", 1)
+            .unwrap();
+        store.lock();
+
+        let outside_staging = temp.path().join("outside-staging");
+        fs::create_dir_all(outside_staging.join("folder")).unwrap();
+        fs::write(outside_staging.join("folder/keep.txt"), b"keep").unwrap();
+        let outside_objects = temp.path().join("outside-objects");
+        fs::create_dir_all(&outside_objects).unwrap();
+        fs::write(outside_objects.join("keep.txt"), b"keep").unwrap();
+        fs::remove_dir_all(root.join("staging")).unwrap();
+        symlink(&outside_staging, root.join("staging")).unwrap();
+        fs::remove_dir_all(root.join("objects")).unwrap();
+        symlink(&outside_objects, root.join("objects")).unwrap();
+
+        store.unlock("plum orbit lantern meadow quartz").unwrap();
+        assert!(outside_staging.join("folder/keep.txt").exists());
+        assert!(outside_objects.join("keep.txt").exists());
     }
 
     #[test]
