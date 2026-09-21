@@ -90,6 +90,7 @@ function renameBridge() {
         mediaType: "application/octet-stream",
         plaintextSize: 2048,
         importedAtMs: 1,
+        available: true,
       },
     ],
   };
@@ -167,6 +168,7 @@ describe("durable vault UI", () => {
             mediaType: "application/octet-stream",
             plaintextSize: 2048,
             importedAtMs: 1,
+            available: true,
           },
         ],
       }),
@@ -231,6 +233,7 @@ describe("durable vault UI", () => {
           mediaType: "application/octet-stream",
           plaintextSize: 1024,
           importedAtMs: 3,
+          available: true,
         },
         {
           id: "record-folder",
@@ -241,6 +244,7 @@ describe("durable vault UI", () => {
           mediaType: "application/octet-stream",
           plaintextSize: 2048,
           importedAtMs: 4,
+          available: true,
         },
       ],
       degraded: false,
@@ -608,6 +612,7 @@ describe("durable vault UI", () => {
       mediaType: "application/octet-stream",
       plaintextSize: 2048,
       importedAtMs: 1,
+      available: true,
     };
     const deleteRecord = vi.fn().mockResolvedValue(undefined);
     const snapshot = vi
@@ -833,6 +838,7 @@ describe("durable vault UI", () => {
       mediaType: "application/octet-stream",
       plaintextSize: 2048,
       importedAtMs: 1,
+      available: true,
     };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
@@ -860,6 +866,91 @@ describe("durable vault UI", () => {
     expect(opener).toHaveFocus();
   });
 
+  it("returns focus to the record control after renaming from its details", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Report.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const opener = await screen.findByRole("button", {
+      name: "FAKE_Report.pdf",
+    });
+    await user.click(opener);
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(
+      screen.getByRole("button", { name: "Close document details" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it("reports a failed manual lock instead of leaving it unnoticed", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      lock: vi.fn().mockRejectedValue({
+        code: "storage",
+        message: "The storage operation could not be completed.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Lock now/ }));
+    expect(bridge.lock).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(/storage operation could not be completed/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Lock now/ })).toBeEnabled();
+  });
+
+  it("marks a document whose encrypted file is missing and blocks saving it", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        degraded: true,
+        records: [
+          {
+            id: "record-lost",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: "FAKE_Lost.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/octet-stream",
+            plaintextSize: 2048,
+            importedAtMs: 1,
+            available: false,
+          },
+        ],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(
+      await screen.findByText(/Some encrypted files are missing/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Damaged: file missing/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "FAKE_Lost.pdf" }));
+    expect(screen.getByText("This document is damaged.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save a copy to this computer" }),
+    ).toBeDisabled();
+  });
+
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {
     const hostileName =
       '<img src="https://attacker.invalid/leak">\u202ereport.pdf';
@@ -878,6 +969,7 @@ describe("durable vault UI", () => {
             mediaType: "application/octet-stream",
             plaintextSize: 42,
             importedAtMs: 1,
+            available: true,
           },
         ],
       }),

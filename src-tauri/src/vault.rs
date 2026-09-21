@@ -38,6 +38,10 @@ const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
+// The sanitizer caps record names at this many bytes and manifest validation
+// caps them at this many characters. A name never has more characters than
+// bytes, so every sanitized name passes validation when it is read back.
+const MAX_RECORD_NAME_LEN: usize = 240;
 const ARGON_MEMORY_KIB: u32 = 64 * 1024;
 const ARGON_ITERATIONS: u32 = 3;
 const ARGON_LANES: u32 = 4;
@@ -227,6 +231,8 @@ pub struct VaultRecord {
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
+    /// False when the encrypted object was missing at unlock and cannot be exported.
+    pub available: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -309,6 +315,8 @@ struct UnlockedVault {
     master_key: Zeroizing<[u8; 32]>,
     manifest: Manifest,
     degraded: bool,
+    // Records whose object was missing at unlock. Only populated in recovery mode.
+    unavailable: HashSet<Uuid>,
     // Keep the OS lock until the session (and any operation using it) ends.
     storage_lock: Arc<File>,
 }
@@ -392,12 +400,12 @@ impl VaultStore {
                 folders: Vec::new(),
                 records: Vec::new(),
             };
-            write_manifest_at(&stage, &master_key, &manifest)?;
+            write_valid_manifest_at(&stage, &master_key, &manifest)?;
             manifest.generation = manifest
                 .generation
                 .checked_add(1)
                 .ok_or(VaultError::Storage)?;
-            write_manifest_at(&stage, &master_key, &manifest)?;
+            write_valid_manifest_at(&stage, &master_key, &manifest)?;
             sync_parent(&stage);
             fs::rename(&stage, &self.root)?;
             sync_parent(parent);
@@ -406,6 +414,7 @@ impl VaultStore {
                 master_key,
                 manifest,
                 degraded: false,
+                unavailable: HashSet::new(),
             });
             Ok(())
         })();
@@ -428,7 +437,23 @@ impl VaultStore {
         self.cancel_io.store(false, Ordering::Release);
         let (header, master_key, wrapping_key) =
             read_header_for_passphrase(&self.root, passphrase)?;
-        let manifest = read_latest_manifest(&self.root, &master_key, header.vault_id)?;
+        let SelectedManifest {
+            manifest,
+            unavailable,
+            read_only,
+        } = select_manifest_for_unlock(&self.root, &master_key, header.vault_id)?;
+        if read_only {
+            // Leave storage exactly as found: no redundancy repair, no staging or
+            // orphan cleanup. The session can only read and export.
+            *guard = Some(UnlockedVault {
+                storage_lock,
+                master_key,
+                manifest,
+                degraded: true,
+                unavailable,
+            });
+            return Ok(());
+        }
         let manifest_healthy =
             manifest_redundancy_healthy(&self.root, &master_key, header.vault_id, &manifest);
         let header_healthy =
@@ -460,14 +485,32 @@ impl VaultStore {
             master_key,
             manifest,
             degraded,
+            unavailable,
         });
         Ok(())
     }
 
     pub fn lock(&self) {
         self.cancel_io.store(true, Ordering::Release);
-        *self.unlocked.lock().expect("vault mutex poisoned") = None;
+        // Locking must drop the keys even if an earlier panic poisoned the mutex.
+        *self
+            .unlocked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         self.cancel_io.store(false, Ordering::Release);
+    }
+
+    /// Fails unless the vault is unlocked, writable, and owns `profile_id`.
+    ///
+    /// Lets a command refuse before it opens a native picker, so nobody chooses
+    /// files for an import that is already certain to be rejected.
+    pub fn ensure_import_allowed(&self, profile_id: Uuid) -> Result<(), VaultError> {
+        let guard = self.unlocked.lock().expect("vault mutex poisoned");
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        if unlocked.degraded {
+            return Err(VaultError::RecoveryMode);
+        }
+        require_profile(&unlocked.manifest, profile_id)
     }
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
@@ -489,6 +532,7 @@ impl VaultStore {
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
+                    available: !unlocked.unavailable.contains(&record.id),
                 })
                 .collect(),
             degraded: unlocked.degraded,
@@ -778,6 +822,9 @@ impl VaultStore {
             .iter()
             .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
+        if unlocked.unavailable.contains(&record.id) {
+            return Err(VaultError::Corrupt);
+        }
         let keys = derive_keys(unlocked.manifest.vault_id, &unlocked.master_key)?;
         let object_key = unwrap_secret(
             &keys.object_wrap,
@@ -851,7 +898,7 @@ impl VaultStore {
         next.generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
         let second_generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
         fail_at_test_boundary("delete.before-first-manifest")?;
-        write_manifest_at(&self.root, &unlocked.master_key, &next)?;
+        write_valid_manifest_at(&self.root, &unlocked.master_key, &next)?;
         unlocked.manifest = next.clone();
         terminate_at_test_boundary("delete.after-first-manifest");
         let mut omit_redundant_write =
@@ -873,7 +920,7 @@ impl VaultStore {
         }
 
         next.generation = second_generation;
-        if write_manifest_at(&self.root, &unlocked.master_key, &next).is_err() {
+        if write_valid_manifest_at(&self.root, &unlocked.master_key, &next).is_err() {
             unlocked.degraded = true;
             return Ok(());
         }
@@ -1065,7 +1112,7 @@ fn sanitize_basename(value: &str) -> String {
         } else {
             character
         };
-        if cleaned.len() + character.len_utf8() > 240 {
+        if cleaned.len() + character.len_utf8() > MAX_RECORD_NAME_LEN {
             break;
         }
         cleaned.push(character);
@@ -1099,6 +1146,12 @@ fn sanitize_basename(value: &str) -> String {
     );
     if reserved {
         cleaned.insert(0, '_');
+        // The prefix must not push a maximum-length name past the limit that
+        // `valid_record_name` enforces when the manifest is read back.
+        while cleaned.len() > MAX_RECORD_NAME_LEN {
+            cleaned.pop();
+        }
+        cleaned.truncate(cleaned.trim_end_matches(['.', ' ']).len());
     }
     if cleaned.is_empty() {
         "Imported file".to_owned()
@@ -1142,13 +1195,33 @@ fn valid_object_name(object_name: &str) -> bool {
 
 fn valid_record_name(name: &str) -> bool {
     !name.trim().is_empty()
-        && name.chars().count() <= 240
+        && name.chars().count() <= MAX_RECORD_NAME_LEN
         && !name.chars().any(char::is_control)
         && !name.contains('/')
         && !name.contains('\\')
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
+    validate_manifest_structure(manifest, vault_id)?;
+    if manifest
+        .records
+        .iter()
+        .all(|record| object_is_present(root, record))
+    {
+        Ok(())
+    } else {
+        Err(VaultError::Corrupt)
+    }
+}
+
+fn object_is_present(root: &Path, record: &StoredRecord) -> bool {
+    fs::symlink_metadata(root.join("objects").join(&record.object_name))
+        .is_ok_and(|metadata| metadata.file_type().is_file())
+}
+
+/// Checks everything about a decrypted manifest except whether its objects
+/// are on disk, so a vault with a lost object can still be opened read-only.
+fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
     if manifest.format_version != VAULT_FORMAT
         || manifest.vault_id != vault_id
         || manifest.generation == 0
@@ -1222,11 +1295,6 @@ fn validate_manifest(root: &Path, manifest: &Manifest, vault_id: Uuid) -> Result
                     .is_none_or(|(profile_id, _)| *profile_id != record.profile_id)
             })
         {
-            return Err(VaultError::Corrupt);
-        }
-        let object_path = root.join("objects").join(&record.object_name);
-        let metadata = fs::symlink_metadata(object_path).map_err(|_| VaultError::Corrupt)?;
-        if !metadata.file_type().is_file() {
             return Err(VaultError::Corrupt);
         }
     }
@@ -1638,6 +1706,21 @@ fn manifest_path(root: &Path, generation: u64) -> PathBuf {
     root.join(format!("manifest-{}.bin", generation % 2))
 }
 
+/// Writes a manifest only if the reader would accept it.
+///
+/// Unlock rejects any manifest that fails `validate_manifest`, and a rejected
+/// manifest leaves whole-vault reset as the only action. Every production write
+/// goes through this check so a defect in one mutation surfaces as a failed
+/// operation instead of a vault that can no longer be opened.
+fn write_valid_manifest_at(
+    root: &Path,
+    master_key: &[u8; 32],
+    manifest: &Manifest,
+) -> Result<(), VaultError> {
+    validate_manifest(root, manifest, manifest.vault_id).map_err(|_| VaultError::Invalid)?;
+    write_manifest_at(root, master_key, manifest)
+}
+
 fn write_manifest_at(
     root: &Path,
     master_key: &[u8; 32],
@@ -1678,7 +1761,7 @@ fn commit_manifest_redundant(
         .ok_or(VaultError::Storage)?;
     let second_generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
     fail_at_test_boundary("manifest.before-first-write")?;
-    write_manifest_at(root, master_key, &next)?;
+    write_valid_manifest_at(root, master_key, &next)?;
     *current = next.clone();
     terminate_at_test_boundary("manifest.after-first-write");
     if fail_at_test_boundary("manifest.after-first-write").is_err() {
@@ -1686,7 +1769,7 @@ fn commit_manifest_redundant(
     }
 
     next.generation = second_generation;
-    if write_manifest_at(root, master_key, &next).is_err() {
+    if write_valid_manifest_at(root, master_key, &next).is_err() {
         return Ok(false);
     }
     *current = next;
@@ -1704,8 +1787,65 @@ fn repair_manifest_redundancy(
         .checked_add(1)
         .ok_or(VaultError::Storage)?;
     fail_at_test_boundary("manifest.repair")?;
-    write_manifest_at(root, master_key, &manifest)?;
+    write_valid_manifest_at(root, master_key, &manifest)?;
     Ok(manifest)
+}
+
+/// The manifest chosen at unlock and what the session may safely do with it.
+struct SelectedManifest {
+    manifest: Manifest,
+    /// Records whose ciphertext object is missing or is not a regular file.
+    unavailable: HashSet<Uuid>,
+    /// Set when storage must not be written: repair or orphan cleanup could
+    /// destroy a newer manifest or ciphertext that is only temporarily out of reach.
+    read_only: bool,
+}
+
+fn select_manifest_for_unlock(
+    root: &Path,
+    master_key: &[u8; 32],
+    vault_id: Uuid,
+) -> Result<SelectedManifest, VaultError> {
+    // A slot that exists but cannot be read (sharing violation, permission or
+    // device error) may hold the newest committed state. Treating it as damaged
+    // would let repair overwrite it and orphan cleanup delete its objects.
+    let slot_unreadable = (0..=1).any(|slot| manifest_slot_unreadable(root, slot));
+    match read_latest_manifest(root, master_key, vault_id) {
+        Ok(manifest) => Ok(SelectedManifest {
+            manifest,
+            unavailable: HashSet::new(),
+            read_only: slot_unreadable,
+        }),
+        Err(VaultError::Corrupt) => {
+            // No generation has all of its objects. Open the newest authentic
+            // manifest read-only so intact records can still be exported.
+            let manifest = read_latest_manifest_with(root, master_key, vault_id, false)?;
+            let unavailable = manifest
+                .records
+                .iter()
+                .filter(|record| !object_is_present(root, record))
+                .map(|record| record.id)
+                .collect();
+            Ok(SelectedManifest {
+                manifest,
+                unavailable,
+                read_only: true,
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn manifest_slot_unreadable(root: &Path, slot: u64) -> bool {
+    let path = root.join(format!("manifest-{slot}.bin"));
+    match read_bounded_regular_file(&path, MAX_MANIFEST_BYTES) {
+        Ok(_) => false,
+        // Absent, oversized and non-regular slots are damage that repair may replace.
+        Err(error) => !matches!(
+            error.kind(),
+            io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+        ),
+    }
 }
 
 fn read_latest_manifest(
@@ -1713,9 +1853,20 @@ fn read_latest_manifest(
     master_key: &[u8; 32],
     vault_id: Uuid,
 ) -> Result<Manifest, VaultError> {
+    read_latest_manifest_with(root, master_key, vault_id, true)
+}
+
+fn read_latest_manifest_with(
+    root: &Path,
+    master_key: &[u8; 32],
+    vault_id: Uuid,
+    require_objects: bool,
+) -> Result<Manifest, VaultError> {
     let keys = derive_keys(vault_id, master_key)?;
     let candidates = (0..=1)
-        .filter_map(|slot| read_manifest_slot(root, &keys.manifest, vault_id, slot))
+        .filter_map(|slot| {
+            read_manifest_slot_with(root, &keys.manifest, vault_id, slot, require_objects)
+        })
         .collect::<Vec<_>>();
     let latest_generation = candidates
         .iter()
@@ -1738,6 +1889,16 @@ fn read_manifest_slot(
     vault_id: Uuid,
     slot: u64,
 ) -> Option<Manifest> {
+    read_manifest_slot_with(root, manifest_key, vault_id, slot, true)
+}
+
+fn read_manifest_slot_with(
+    root: &Path,
+    manifest_key: &[u8; 32],
+    vault_id: Uuid,
+    slot: u64,
+    require_objects: bool,
+) -> Option<Manifest> {
     let path = root.join(format!("manifest-{slot}.bin"));
     let data = read_bounded_regular_file(&path, MAX_MANIFEST_BYTES).ok()?;
     if data.len() < 40 {
@@ -1755,7 +1916,11 @@ fn read_manifest_slot(
         .ok()?;
     let plaintext = Zeroizing::new(plaintext);
     let manifest = serde_json::from_slice::<Manifest>(&plaintext).ok()?;
-    validate_manifest(root, &manifest, vault_id).ok()?;
+    if require_objects {
+        validate_manifest(root, &manifest, vault_id).ok()?;
+    } else {
+        validate_manifest_structure(&manifest, vault_id).ok()?;
+    }
     Some(manifest)
 }
 
@@ -3364,6 +3529,200 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_object_opens_the_vault_read_only_instead_of_failing_unlock() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("lost.pdf", b"synthetic lost record"),
+                    source("kept.pdf", b"synthetic kept record"),
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
+        let (lost, kept) = (imported[0], imported[1]);
+        let lost_object = {
+            let guard = store.unlocked.lock().unwrap();
+            let manifest = &guard.as_ref().unwrap().manifest;
+            let record = manifest.records.iter().find(|r| r.id == lost).unwrap();
+            root.join("objects").join(&record.object_name)
+        };
+        store.lock();
+        fs::remove_file(&lost_object).unwrap();
+        let orphan = root.join("objects").join("unreferenced.mcobj");
+        fs::write(&orphan, b"synthetic orphan ciphertext").unwrap();
+        let manifests_before = [
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+        ];
+
+        store.unlock(PASSWORD).unwrap();
+
+        let snapshot = store.snapshot().unwrap();
+        assert!(snapshot.degraded);
+        let availability = |id| {
+            snapshot
+                .records
+                .iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .available
+        };
+        assert!(!availability(lost));
+        assert!(availability(kept));
+        assert!(matches!(
+            store.export(lost, io::sink()),
+            Err(VaultError::Corrupt)
+        ));
+        let mut exported = Vec::new();
+        store.export(kept, &mut exported).unwrap();
+        assert_eq!(exported, b"synthetic kept record");
+        assert!(matches!(
+            store.delete_record(lost),
+            Err(VaultError::RecoveryMode)
+        ));
+        // Recovery mode must leave storage exactly as it was found.
+        assert!(orphan.exists());
+        assert_eq!(
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            manifests_before[0]
+        );
+        assert_eq!(
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+            manifests_before[1]
+        );
+    }
+
+    #[test]
+    fn import_is_refused_before_a_picker_when_it_cannot_succeed() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+
+        assert!(store.ensure_import_allowed(profile).is_ok());
+        assert!(matches!(
+            store.ensure_import_allowed(Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        store.unlocked.lock().unwrap().as_mut().unwrap().degraded = true;
+        assert!(matches!(
+            store.ensure_import_allowed(profile),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.lock();
+        assert!(matches!(
+            store.ensure_import_allowed(profile),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn lock_drops_the_keys_even_after_a_panic_poisoned_the_vault_mutex() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let poisoner = Arc::clone(&store);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.unlocked.lock().unwrap();
+            panic!("synthetic panic while holding the vault mutex");
+        })
+        .join();
+        assert!(store.unlocked.is_poisoned());
+
+        store.lock();
+
+        let guard = store
+            .unlocked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(guard.is_none());
+    }
+
+    #[test]
+    fn damaged_or_absent_manifest_slots_are_not_treated_as_unreadable() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        assert!(!manifest_slot_unreadable(root, 0));
+        fs::write(root.join("manifest-0.bin"), b"damaged").unwrap();
+        assert!(!manifest_slot_unreadable(root, 0));
+        fs::create_dir(root.join("manifest-1.bin")).unwrap();
+        assert!(!manifest_slot_unreadable(root, 1));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_newest_manifest_slot_is_not_overwritten_or_cleaned_up_after() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("first.pdf", b"first")], 2)
+            .unwrap();
+        let older_slots = [
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+        ];
+        let second = store
+            .import(profile, vec![], vec![source("second.pdf", b"second")], 3)
+            .unwrap()
+            .imported[0];
+        let (newest_slot, second_object) = {
+            let guard = store.unlocked.lock().unwrap();
+            let manifest = &guard.as_ref().unwrap().manifest;
+            let record = manifest.records.iter().find(|r| r.id == second).unwrap();
+            (
+                manifest_path(&root, manifest.generation),
+                root.join("objects").join(&record.object_name),
+            )
+        };
+        store.lock();
+        // Leave the newest state in one slot only, as a failed redundant write
+        // would, by restoring the other slot to the state before the import.
+        let stale_slot = if newest_slot.ends_with("manifest-0.bin") {
+            1
+        } else {
+            0
+        };
+        fs::write(
+            root.join(format!("manifest-{stale_slot}.bin")),
+            &older_slots[stale_slot],
+        )
+        .unwrap();
+        let newest_before = fs::read(&newest_slot).unwrap();
+        fs::set_permissions(&newest_slot, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&newest_slot).is_ok() {
+            // A privileged process ignores file modes, so the unreadable slot
+            // cannot be simulated here.
+            return;
+        }
+
+        store.unlock(PASSWORD).unwrap();
+        assert!(store.snapshot().unwrap().degraded);
+        store.lock();
+
+        fs::set_permissions(&newest_slot, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(fs::read(&newest_slot).unwrap(), newest_before);
+        assert!(second_object.exists());
+        store.unlock(PASSWORD).unwrap();
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .any(|record| record.id == second));
+    }
+
+    #[test]
     fn incomplete_vault_can_be_reset_and_recreated() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
@@ -3946,6 +4305,60 @@ mod tests {
         assert_eq!(sanitize_basename("bad:name?.pdf. "), "bad_name_.pdf");
         assert_eq!(sanitize_basename("\u{200b}\u{feff}"), "Imported file");
         assert!(sanitize_basename(&"🩺".repeat(100)).len() <= 240);
+    }
+
+    #[test]
+    fn reserved_name_prefix_keeps_a_maximum_length_name_within_the_limit() {
+        let longest = format!("con.{}.pdf", "a".repeat(232));
+        assert_eq!(longest.len(), MAX_RECORD_NAME_LEN);
+        let sanitized = sanitize_basename(&longest);
+        assert!(sanitized.starts_with("_con."));
+        assert!(sanitized.len() <= MAX_RECORD_NAME_LEN);
+        assert!(valid_record_name(&sanitized));
+
+        let trailing_dot = sanitize_basename(&format!("nul.{}.x", "b".repeat(234)));
+        assert!(!trailing_dot.ends_with('.'));
+        assert!(valid_record_name(&trailing_dot));
+    }
+
+    #[test]
+    fn vault_unlocks_after_importing_a_maximum_length_reserved_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root);
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let name = format!("con.{}.pdf", "a".repeat(232));
+        store
+            .import(profile, vec![], vec![source(&name, b"synthetic record")], 2)
+            .unwrap();
+        store.lock();
+
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+
+    #[test]
+    fn a_manifest_the_reader_would_reject_is_never_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let before = [
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+        ];
+
+        let result = store.mutate_manifest(|manifest| {
+            manifest.profiles[0].display_name = String::new();
+            Ok(())
+        });
+
+        assert!(matches!(result, Err(VaultError::Invalid)));
+        assert_eq!(fs::read(root.join("manifest-0.bin")).unwrap(), before[0]);
+        assert_eq!(fs::read(root.join("manifest-1.bin")).unwrap(), before[1]);
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
     }
 
     #[test]

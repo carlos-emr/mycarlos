@@ -70,6 +70,20 @@ generation, and repairs only missing or damaged redundancy. If repair cannot wri
 is full, unlock still permits read/export access in recovery mode. Staging and definite precommit
 orphan objects are removed without relying on a later unlock.
 
+Two cases open the vault in recovery mode without writing to storage at all: no repair, no staging
+cleanup, and no orphan removal. First, if no authentic generation has all of its objects, unlock
+selects the newest authentic manifest anyway, reports each record whose object is missing or is not
+a regular file as unavailable, and refuses to export those records; the remaining records stay
+exportable, so one lost object no longer leaves whole-vault reset as the only action. Second, if a
+manifest slot exists but cannot be read (for example a sharing violation or device error), that
+slot may hold the newest committed state, so unlock does not repair over it or remove the objects
+it may reference. An absent, oversized, or non-regular slot is still treated as damage that repair
+replaces.
+
+Every manifest is checked with the reader's own validation before it is written. A mutation that
+would produce a manifest the reader rejects fails as an invalid change and leaves both slots
+untouched.
+
 Each header binds its generation into the master-key wrapping operation and carries a separate
 master-key-authenticated tag over the KDF configuration and wrapped envelope. That tag lets unlock
 reject a genuinely newer passphrase generation while recovering from a newer slot whose still-valid

@@ -415,6 +415,10 @@ async fn vault_import_begin(
     request: ImportRequest,
 ) -> CommandResult<vault::ImportOutcome> {
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    // Refuse before the picker opens; `import` still re-checks under its own lock.
+    store
+        .ensure_import_allowed(request.profile_id)
+        .map_err(PublicError::from)?;
     let picker_app = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         picker_app

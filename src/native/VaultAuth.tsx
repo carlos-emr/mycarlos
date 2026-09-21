@@ -5,7 +5,7 @@ export function VaultAuthFrame({
   state,
   children,
 }: {
-  state: "Locked" | "Setting up" | "Opening";
+  state: "Locked" | "Not locked" | "Setting up" | "Opening";
   children: ReactNode;
 }) {
   return (

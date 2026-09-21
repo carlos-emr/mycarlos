@@ -31,6 +31,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
+  const [lockFailed, setLockFailed] = useState(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
 
@@ -69,8 +70,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       setSnapshot(null);
       setConcealed(false);
+      setLockFailed(false);
       setStatus("locked");
       setNotice("Vault locked.");
+    } catch (error) {
+      // The vault is still unlocked natively. Every caller must learn that,
+      // including the concealed screen, which would otherwise claim "Locked".
+      setLockFailed(true);
+      setNotice(vaultErrorMessage(error));
     } finally {
       lockingRef.current = false;
     }
@@ -79,7 +86,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const requestLock = useCallback(
     (concealImmediately = false) => {
       if (concealImmediately) setConcealed(true);
-      void lock().catch((error) => setNotice(vaultErrorMessage(error)));
+      void lock();
     },
     [lock],
   );
@@ -215,7 +222,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }
 
   if (concealed) {
-    return (
+    return lockFailed ? (
+      <VaultAuthFrame state="Not locked">
+        <p role="alert">
+          myCarlos could not lock the vault. Its content is hidden, but the
+          vault is still open. {notice}
+        </p>
+        <button
+          className="button primary"
+          type="button"
+          onClick={() => requestLock(true)}
+        >
+          Try locking again
+        </button>
+      </VaultAuthFrame>
+    ) : (
       <VaultAuthFrame state="Locked">
         <p>Vault content is hidden while myCarlos finishes locking…</p>
       </VaultAuthFrame>

@@ -116,6 +116,11 @@ export function VaultLibrary({
     setCurrentFolderId(null);
     setSelectedIds([]);
     setQuery("");
+    // Folder ids belong to one profile. A kept id would no longer match any
+    // option, so the select would show "My records" while sending the old id.
+    setMoveFolderId("");
+    setFolderToMoveId("");
+    setFolderDestinationId("");
   }, [profileId]);
 
   useEffect(() => {
@@ -493,9 +498,11 @@ export function VaultLibrary({
                         Folder
                         <select
                           value={folderToMoveId}
-                          onChange={(event) =>
-                            setFolderToMoveId(event.target.value)
-                          }
+                          onChange={(event) => {
+                            setFolderToMoveId(event.target.value);
+                            // The destination list excludes the chosen folder.
+                            setFolderDestinationId("");
+                          }}
                         >
                           <option value="">Choose a folder</option>
                           {folders.map((folder) => (
@@ -538,12 +545,23 @@ export function VaultLibrary({
                 {snapshot.degraded && (
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
-                    <span>
-                      <strong>Read-only recovery mode.</strong> A redundant
-                      vault metadata copy could not be repaired. Export
-                      important records and free storage; the vault will reject
-                      changes until it can repair itself on a later unlock.
-                    </span>
+                    {snapshot.records.some((record) => !record.available) ? (
+                      <span>
+                        <strong>Read-only recovery mode.</strong> Some encrypted
+                        files are missing from this device. Documents marked
+                        damaged cannot be saved; save copies of the others. The
+                        vault will reject changes until the missing files are
+                        restored.
+                      </span>
+                    ) : (
+                      <span>
+                        <strong>Read-only recovery mode.</strong> A vault
+                        metadata copy could not be read or repaired. Export
+                        important records and free storage; the vault will
+                        reject changes until it can repair itself on a later
+                        unlock.
+                      </span>
+                    )}
                   </div>
                 )}
 

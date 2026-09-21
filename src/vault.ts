@@ -25,6 +25,8 @@ export interface VaultRecord {
   mediaType: string;
   plaintextSize: number;
   importedAtMs: number;
+  /** False when the encrypted file was missing at unlock and cannot be saved. */
+  available: boolean;
 }
 
 export interface VaultSnapshot {

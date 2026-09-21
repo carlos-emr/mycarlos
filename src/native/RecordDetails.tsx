@@ -71,10 +71,18 @@ export function RecordDetails({
             <i />
             <i />
           </div>
-          <p>
-            The file stays encrypted in the vault. Save a copy only when you
-            need a readable file outside myCarlos.
-          </p>
+          {record.available ? (
+            <p>
+              The file stays encrypted in the vault. Save a copy only when you
+              need a readable file outside myCarlos.
+            </p>
+          ) : (
+            <p role="alert">
+              <strong>This document is damaged.</strong> Its encrypted file is
+              missing from this device, so a copy cannot be saved. Restoring the
+              vault folder from a backup may recover it.
+            </p>
+          )}
         </div>
         <dl className="record-metadata">
           <div>
@@ -117,7 +125,7 @@ export function RecordDetails({
           <label>
             Move to
             <select
-              disabled={readOnly}
+              disabled={busy || readOnly}
               value={record.folderIds[0] ?? ""}
               onChange={(event) => void onMove(event.target.value || null)}
             >
@@ -140,7 +148,7 @@ export function RecordDetails({
           <button
             className="button primary"
             type="button"
-            disabled={busy}
+            disabled={busy || !record.available}
             onClick={onExport}
           >
             Save a copy to this computer

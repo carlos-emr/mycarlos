@@ -8,7 +8,7 @@ test("renames native-library folders and documents with accessible dialogs", asy
     const snapshot = {
       profiles: [{ id: "profile", displayName: "FAKE Patient", createdAtMs: 1 }],
       folders: [{ id: "folder", profileId: "profile", parentId: null, name: "FAKE Old folder", createdAtMs: 1 }],
-      records: [{ id: "record", profileId: "profile", folderIds: [], displayName: "FAKE Old.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1 }],
+      records: [{ id: "record", profileId: "profile", folderIds: [], displayName: "FAKE Old.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true }],
       degraded: false,
     };
     Reflect.set(window, "__TAURI_INTERNALS__", {

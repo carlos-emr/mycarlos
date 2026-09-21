@@ -3,6 +3,11 @@ import { useEffect, useRef, type RefObject } from "react";
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// When one dialog replaces another, the first dialog's cleanup runs while the
+// page behind it is still inert, so its opener cannot take focus and focus
+// falls to <body>. Remember that opener so the replacing dialog can return to it.
+let pendingOpener: HTMLElement | null = null;
+
 export function useModalFocus(
   active: boolean,
   dialogRef: RefObject<HTMLElement | null>,
@@ -14,10 +19,11 @@ export function useModalFocus(
 
   useEffect(() => {
     if (!active) return;
+    const focused = document.activeElement;
     returnFocusRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+      focused instanceof HTMLElement && focused !== document.body
+        ? focused
+        : pendingOpener;
     const focusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ??
@@ -48,7 +54,10 @@ export function useModalFocus(
     window.addEventListener("keydown", containFocus);
     return () => {
       window.removeEventListener("keydown", containFocus);
-      returnFocusRef.current?.focus();
+      const opener = returnFocusRef.current;
+      opener?.focus();
+      pendingOpener =
+        opener && document.activeElement !== opener ? opener : null;
     };
   }, [active, dialogRef]);
 }

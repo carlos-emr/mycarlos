@@ -124,6 +124,7 @@ export function LibraryItems({
                 </button>
                 <small>
                   {formatBytes(record.plaintextSize)} · {kind.label}
+                  {!record.available && " · Damaged: file missing"}
                 </small>
               </span>
             </div>
@@ -234,6 +235,7 @@ export function LibraryItems({
                   <strong>{record.displayName}</strong>
                   <small>
                     {new Date(record.importedAtMs).toLocaleDateString()}
+                    {!record.available && " · Damaged: file missing"}
                   </small>
                 </span>
               </span>
