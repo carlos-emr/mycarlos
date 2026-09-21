@@ -45,6 +45,18 @@ opt-level = 3
 panic = "abort"
 strip = true
 
+# CI publishes debug bundles as the evaluation downloads. Unoptimized, the
+# memory-hard KDF alone takes several seconds on every unlock, so keep it and
+# the passphrase estimator optimized in debug builds and tests as well.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.zxcvbn]
+opt-level = 3
+
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }

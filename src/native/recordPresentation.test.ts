@@ -11,6 +11,8 @@ describe("recordKind", () => {
     ["scanned knee.pdf", "Imaging"],
     ["FAKE_Morgan_Patient_Prescription.pdf", "Prescription"],
     ["Medications list.pdf", "Prescription"],
+    // Upper case must lower to the ASCII stems whatever the device locale is.
+    ["IMAGING REPORT.PDF", "Imaging"],
   ])("recognises %s as %s", (name, label) => {
     expect(recordKind(name).label).toBe(label);
   });

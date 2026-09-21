@@ -100,9 +100,19 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
   }, [bridge]);
 
+  // Read through a ref so that `requestLock` keeps its identity: the automatic
+  // lock effect depends on it, and re-running that effect resets its deadline.
+  const concealedRef = useRef(concealed);
+  concealedRef.current = concealed;
   const requestLock = useCallback(
     (concealImmediately = false) => {
-      if (concealImmediately) setConcealed(true);
+      if (concealImmediately) {
+        // A failure left by an earlier manual attempt is not this attempt's.
+        // Retries from the concealed screen keep theirs, so the alert is not
+        // announced again on every recheck.
+        if (!concealedRef.current) setLockFailed(false);
+        setConcealed(true);
+      }
       void lock();
     },
     [lock],

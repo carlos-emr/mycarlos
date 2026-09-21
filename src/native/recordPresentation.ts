@@ -30,8 +30,10 @@ const KIND_RULES: {
 ];
 
 export function recordKind(name: string): { icon: IconName; label: string } {
+  // Not the locale's lower case: under a Turkish locale "IMAGING" becomes
+  // "ımagıng", which matches none of the ASCII stems below.
   const words = name
-    .toLocaleLowerCase()
+    .toLowerCase()
     .replace(/x-ray/g, "xray")
     .split(/[^\p{L}\p{N}]+/u);
   for (const { icon, label, stems, exact = [] } of KIND_RULES) {

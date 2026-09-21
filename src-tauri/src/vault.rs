@@ -2241,8 +2241,13 @@ fn verify_object<W: Write>(
     object_key: &[u8; 32],
     expected_size: u64,
 ) -> Result<(), VaultError> {
+    // An object that is gone, like one that is no longer a regular file, is
+    // damage to the vault and not a storage operation that could be retried.
     let file = open_regular_read(path).map_err(|error| {
-        if error.kind() == io::ErrorKind::InvalidData {
+        if matches!(
+            error.kind(),
+            io::ErrorKind::InvalidData | io::ErrorKind::NotFound
+        ) {
             VaultError::Corrupt
         } else {
             error.into()
@@ -5204,6 +5209,15 @@ mod tests {
             store.create_profile("Alex", 3),
             Err(VaultError::Corrupt)
         ));
+        // Saving a copy of the lost record reports the same damage, while the
+        // intact record can still be exported.
+        assert!(matches!(
+            store.export(outcome.imported[1], io::sink()),
+            Err(VaultError::Corrupt)
+        ));
+        let mut kept = Vec::new();
+        store.export(outcome.imported[0], &mut kept).unwrap();
+        assert_eq!(kept, b"kept");
         assert_eq!(
             store.snapshot().unwrap().records[0].display_name,
             "kept.pdf"

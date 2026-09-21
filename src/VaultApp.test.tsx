@@ -1081,6 +1081,46 @@ describe("durable vault UI", () => {
     expect(details).not.toHaveTextContent(earlierNotice);
   });
 
+  it("does not show an earlier manual lock failure while a later automatic lock is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishLock: () => void = () => undefined;
+      const lock = vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        })
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finishLock = resolve;
+            }),
+        );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        lock,
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      expect(lock).toHaveBeenCalledOnce();
+
+      await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
+      expect(lock).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getByText(/finishes locking/)).toBeVisible();
+
+      await act(async () => finishLock());
+      expect(screen.getByText("Vault locked.")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("drops a result that arrives after the vault locked", async () => {
     const user = userEvent.setup();
     const record = {
