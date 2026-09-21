@@ -294,12 +294,16 @@ export function VaultLibrary({
       await refresh();
       setNotice("Passphrase changed.");
     });
-  const createProfile = (name: string) =>
-    run(async () => {
+  const createProfile = async (name: string) => {
+    let created = false;
+    await run(async () => {
       await bridge.createProfile(name);
+      created = true;
       await refresh();
       setNotice(`${name} was added.`);
     });
+    return created;
+  };
   const resetVault = (confirmation: string) =>
     run(async () => {
       let erased: boolean;

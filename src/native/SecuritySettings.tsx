@@ -11,7 +11,7 @@ interface SecuritySettingsProps {
   onAutoLockMinutes: (value: unknown) => void;
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
-  onCreateProfile: (name: string) => Promise<void>;
+  onCreateProfile: (name: string) => Promise<boolean>;
   onReset: (confirmation: string) => Promise<void>;
 }
 
@@ -47,9 +47,10 @@ export function SecuritySettings({
   };
   const submitProfile = (event: FormEvent) => {
     event.preventDefault();
-    const name = profileName;
-    setProfileName("");
-    void onCreateProfile(name);
+    // Cleared only once the profile exists, so a refused name can be corrected.
+    void onCreateProfile(profileName).then((created) => {
+      if (created) setProfileName("");
+    });
   };
   return (
     <main className="library-main purpose-screen">

@@ -176,6 +176,37 @@ describe("durable vault UI", () => {
     expect(bridge.create).not.toHaveBeenCalled();
   });
 
+  it("offers to create a vault when unlocking finds that none exists", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      // A failed startup check shows the unlock screen without knowing the state.
+      status: vi.fn().mockRejectedValue({
+        code: "in_use",
+        message: "This vault is open in another myCarlos window.",
+      }),
+      unlock: vi.fn().mockRejectedValue({
+        code: "missing",
+        message: "No vault exists on this device.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "a long synthetic passphrase",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Create your encrypted vault",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No vault exists on this device."),
+    ).toBeInTheDocument();
+  });
+
   it("unlocks and imports through the native bridge", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -1223,6 +1254,33 @@ describe("durable vault UI", () => {
     expect(
       screen.getByText("The storage operation could not be completed."),
     ).toBeVisible();
+  });
+
+  it("keeps a refused profile name in the form and clears an accepted one", async () => {
+    const user = userEvent.setup();
+    const createProfile = vi
+      .fn()
+      .mockRejectedValueOnce({
+        code: "invalid",
+        message: "Check the requested information and try again.",
+      })
+      .mockResolvedValue(undefined);
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      createProfile,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "My records" });
+    await user.click(screen.getByRole("button", { name: "Security" }));
+
+    const name = screen.getByLabelText("New profile name");
+    await user.type(name, "Jamie's parent");
+    await user.click(screen.getByRole("button", { name: "Add profile" }));
+    await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
+    expect(name).toHaveValue("Jamie's parent");
+
+    await user.click(screen.getByRole("button", { name: "Add profile" }));
+    await waitFor(() => expect(name).toHaveValue(""));
   });
 
   it("clears unfinished passphrase fields when leaving Security", async () => {

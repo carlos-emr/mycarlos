@@ -69,7 +69,9 @@ snapshot as recovery mode rather than as a failed mutation. Unlock authenticates
 the highest valid generation whose objects exist, rejects divergent authenticated states at the same
 generation, and repairs only missing or damaged redundancy. If repair cannot write because storage
 is full, unlock still permits read/export access in recovery mode. Staging and definite precommit
-orphan objects are removed without relying on a later unlock.
+orphan objects are removed without relying on a later unlock. The atomic replacement primitive
+stages each header or manifest in an `.atomicwrite*` directory beside it; one that a killed process
+left behind may still hold a superseded wrapped key, so a writable unlock and reset remove them.
 
 Two cases open the vault in recovery mode without writing to storage at all: no repair, no staging
 cleanup, and no orphan removal. First, if no authentic generation has all of its objects, unlock

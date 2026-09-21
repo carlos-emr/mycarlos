@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import App from "./App";
 import {
   createVaultBridge,
+  isMissingVaultError,
   vaultErrorMessage,
   type VaultBridge,
   type VaultSnapshot,
@@ -188,6 +189,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await operation();
     } catch (error) {
+      // The unlock screen is also shown when the startup status check fails. If
+      // there is no vault after all, offer to create one: nothing on the unlock
+      // screen can succeed, and only a restart would otherwise leave it.
+      if (isMissingVaultError(error))
+        setStatus((current) => (current === "locked" ? "absent" : current));
       setNotice(vaultErrorMessage(error));
     } finally {
       setBusy(false);

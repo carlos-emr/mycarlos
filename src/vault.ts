@@ -88,6 +88,15 @@ export function vaultErrorMessage(error: unknown): string {
   return "The vault operation could not be completed.";
 }
 
+/** True when the native side reports that there is no vault to unlock or erase. */
+export function isMissingVaultError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as PublicError).code === "missing"
+  );
+}
+
 function isNativeRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

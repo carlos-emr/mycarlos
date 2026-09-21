@@ -37,6 +37,9 @@ pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
 const CREATE_STAGE_PREFIX: &str = ".mycarlos-create-";
+// The atomic-write primitive stages each file in a directory with this prefix,
+// beside the file it replaces.
+const ATOMIC_WRITE_PREFIX: &str = ".atomicwrite";
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 // The sanitizer caps record names at this many bytes and manifest validation
@@ -516,6 +519,7 @@ impl VaultStore {
             degraded = true;
         }
         remove_staging(&self.root);
+        remove_abandoned_atomic_writes(&self.root);
         remove_orphan_objects(&self.root, &manifest);
         *guard = Some(UnlockedVault {
             storage_lock,
@@ -915,8 +919,21 @@ impl VaultStore {
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         let destination_parent = fs::canonicalize(destination_parent)?;
         let destination_name = destination.file_name().ok_or(VaultError::Invalid)?;
-        let names_vault_sibling = vault_root.parent() == Some(destination_parent.as_path())
-            && is_vault_managed_name(&vault_root, &destination_name.to_string_lossy())?;
+        // The typed name is only one spelling of the entry. Windows also resolves
+        // a short 8.3 alias or a name with trailing dots or spaces to the same
+        // file, so an existing destination is checked under its real name too.
+        let resolved_name = fs::canonicalize(destination_parent.join(destination_name))
+            .ok()
+            .and_then(|resolved| resolved.file_name().map(|name| name.to_os_string()));
+        let mut names_vault_sibling = false;
+        if vault_root.parent() == Some(destination_parent.as_path()) {
+            for name in [Some(destination_name), resolved_name.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                names_vault_sibling |= is_vault_managed_name(&vault_root, &name.to_string_lossy())?;
+            }
+        }
         if destination_parent.starts_with(&vault_root)
             || destination_parent.starts_with(reset_path(&vault_root)?)
             || names_vault_sibling
@@ -984,7 +1001,6 @@ impl VaultStore {
             return Ok(());
         }
         unlocked.manifest = next;
-        unlocked.degraded = false;
         terminate_at_test_boundary("delete.after-second-manifest");
         Ok(())
     }
@@ -1027,7 +1043,6 @@ impl VaultStore {
             unlocked.degraded = true;
             return Ok(());
         }
-        unlocked.degraded = false;
         let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
         Ok(())
     }
@@ -1035,6 +1050,9 @@ impl VaultStore {
     pub fn reset(&self) -> Result<(), VaultError> {
         self.cancel_io.store(true, Ordering::Release);
         let mut guard = self.session();
+        // Holding the mutex means the cancelled operation has stopped. Clear the
+        // flag on every path, as `lock` does, so that no later session inherits it.
+        self.cancel_io.store(false, Ordering::Release);
         let _storage_lock = match guard.as_ref() {
             Some(unlocked) => Arc::clone(&unlocked.storage_lock),
             None => acquire_storage_lock(&self.root)?,
@@ -2333,6 +2351,8 @@ fn is_vault_managed_name(root: &Path, name: &str) -> Result<bool, VaultError> {
 
 /// Deletes every header, legacy or current, from a vault directory.
 fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
+    // An interrupted header write leaves a wrapped key in its temporary directory.
+    remove_abandoned_atomic_writes(directory);
     for header in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
         match fs::remove_file(directory.join(header)) {
             Ok(()) => {}
@@ -2531,10 +2551,11 @@ fn sync_dir(directory: &Path) -> Result<(), VaultError> {
 
 #[cfg(unix)]
 fn directory_sync_unsupported(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
-    )
+    // Compared as raw codes: how the standard library classifies them differs
+    // by platform, and macOS does not report ENOTSUP as `Unsupported`.
+    error
+        .raw_os_error()
+        .is_some_and(|code| [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP].contains(&code))
 }
 
 /// Best-effort variant for cleanup paths, where a failure changes nothing the
@@ -2548,6 +2569,30 @@ fn remove_staging(root: &Path) {
     if let Ok(entries) = fs::read_dir(&staging) {
         for entry in entries.flatten() {
             let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Removes the temporary directories of atomic writes that the process did not
+/// survive. One may hold a header that wraps the master key under a passphrase
+/// since replaced, or a manifest that still carries the wrapped key of a record
+/// since deleted, so it must not outlive the next writable unlock or a reset.
+/// Best effort, and only while the caller holds the storage lock.
+fn remove_abandoned_atomic_writes(directory: &Path) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let is_temporary = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(ATOMIC_WRITE_PREFIX));
+        // `DirEntry::file_type` does not follow links, so a link is never entered.
+        if is_temporary
+            && entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && fs::remove_dir_all(entry.path()).is_ok()
+        {
+            sync_parent(directory);
         }
     }
 }
@@ -3816,6 +3861,75 @@ mod tests {
     }
 
     #[test]
+    fn unlock_and_reset_remove_abandoned_atomic_write_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // What a process killed inside an atomic header write leaves behind.
+        let abandoned = root.join(format!("{ATOMIC_WRITE_PREFIX}AbC123"));
+        fs::create_dir(&abandoned).unwrap();
+        fs::copy(root.join(HEADER_SLOTS[0]), abandoned.join("tmpfile.tmp")).unwrap();
+        // Only a directory with the prefix is a temporary write.
+        let unrelated = root.join(format!("{ATOMIC_WRITE_PREFIX}-note"));
+        fs::write(&unrelated, b"not a directory").unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+
+        assert!(!abandoned.exists());
+        assert!(unrelated.exists());
+        assert!(!store.snapshot().unwrap().degraded);
+
+        store.lock();
+        fs::create_dir(&abandoned).unwrap();
+        fs::copy(root.join(HEADER_SLOTS[0]), abandoned.join("tmpfile.tmp")).unwrap();
+        remove_key_envelopes(&root).unwrap();
+        assert!(!abandoned.exists());
+    }
+
+    #[test]
+    fn reset_never_leaves_io_cancelled_for_a_later_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(matches!(store.reset(), Err(VaultError::Missing)));
+        assert!(!store.cancel_io.load(Ordering::Acquire));
+
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.reset().unwrap();
+        assert!(!store.cancel_io.load(Ordering::Acquire));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn export_refuses_another_spelling_of_a_managed_name() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(profile, vec![], vec![source("report.pdf", b"record")], 2)
+            .unwrap()
+            .imported[0];
+        // Stands in for a Windows short name or trailing-dot spelling: a second
+        // name in the vault's parent that resolves to the lock file.
+        let alias = root.with_file_name("alias.pdf");
+        symlink(sibling_path(&root, ".lock").unwrap(), &alias).unwrap();
+
+        assert!(matches!(
+            store.export_atomic(record, &alias),
+            Err(VaultError::Invalid)
+        ));
+        assert!(fs::symlink_metadata(&alias)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
     fn a_missing_object_opens_the_vault_read_only_instead_of_failing_unlock() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
@@ -3964,7 +4078,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn only_an_unsupported_directory_sync_is_tolerated() {
-        for code in [libc::EINVAL, libc::ENOTSUP] {
+        for code in [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP] {
             assert!(directory_sync_unsupported(&io::Error::from_raw_os_error(
                 code
             )));
