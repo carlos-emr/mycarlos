@@ -90,6 +90,17 @@ privacy, accessibility, or clinical review.
 - [ ] Review the passphrase policy against passphrases built from the profile's own name. The name
       is passed to zxcvbn as context, which only matches it as a whole, so rearranged or joined name
       words ("Family+Given") still reach the accepted score.
+- [ ] Decide how passphrases are normalized before any vault holds real data. The bytes reach
+      Argon2id exactly as typed, so the same visible passphrase entered composed on one keyboard and
+      decomposed on another derives a different key, and the passphrase is the only way in.
+      Normalizing later changes key derivation for existing vaults.
+- [ ] Decide where the vault lives on Windows. It is rooted in the application data directory,
+      which Tauri resolves to the roaming profile; on a domain-joined PC the ciphertext and the lock
+      file would then roam between machines. Moving it later needs a migration.
+- [ ] Handle a desktop export that is interrupted. The atomic-write primitive stages the readable
+      copy in a hidden `.atomicwrite*` directory beside the chosen file, and nothing removes it if
+      the app dies before the rename. Also confirm on iOS and sandboxed macOS that the save
+      picker's folder allows creating that directory at all.
 - [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
       refuses every reparse point, not only links and junctions, and cloud-synchronized files may
       carry a reparse tag even when fully downloaded.

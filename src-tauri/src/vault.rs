@@ -749,6 +749,7 @@ impl VaultStore {
         }
         require_profile(&unlocked.manifest, profile_id)?;
         validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        let folder_ids = unique(folder_ids);
 
         let job_id = Uuid::new_v4();
         let stage = self.root.join("staging").join(job_id.to_string());
@@ -809,7 +810,7 @@ impl VaultStore {
                     StoredRecord {
                         id: record_id,
                         profile_id,
-                        folder_ids: unique(folder_ids.clone()),
+                        folder_ids: folder_ids.clone(),
                         display_name: sanitize_basename(&source.display_name),
                         source_label: "Manual import — unverified".to_owned(),
                         media_type: "application/octet-stream".to_owned(),
@@ -1027,8 +1028,10 @@ impl VaultStore {
             .map(|profile| profile.display_name.as_str())
             .collect::<Vec<_>>();
         validate_new_passphrase(replacement, &profile_names)?;
-        let header = self.read_header()?;
-        let verified = unwrap_master_key(&header, current)?;
+        // Select the header as unlock does: the newest one that `current`
+        // authenticates. Taking the highest generation on structure alone would
+        // let a damaged or planted slot turn the right passphrase into a refusal.
+        let (header, verified, _) = read_header_for_passphrase(&self.root, current)?;
         if header.vault_id != unlocked.manifest.vault_id
             || verified.as_ref() != unlocked.master_key.as_ref()
         {
@@ -1082,6 +1085,7 @@ impl VaultStore {
         Ok(())
     }
 
+    #[cfg(test)]
     fn read_header(&self) -> Result<VaultHeader, VaultError> {
         read_latest_header(&self.root)
     }
@@ -1504,10 +1508,12 @@ fn build_header_with_key(
     Ok(header)
 }
 
+#[cfg(test)]
 fn unwrap_master_key(header: &VaultHeader, passphrase: &str) -> Result<SecretKey, VaultError> {
     unwrap_master_key_and_wrapping_key(header, passphrase).map(|(master_key, _)| master_key)
 }
 
+#[cfg(test)]
 fn unwrap_master_key_and_wrapping_key(
     header: &VaultHeader,
     passphrase: &str,
@@ -1705,6 +1711,7 @@ fn read_header_candidates(root: &Path) -> Vec<VaultHeader> {
     read_headers(root, &[HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER])
 }
 
+#[cfg(test)]
 fn read_latest_header(root: &Path) -> Result<VaultHeader, VaultError> {
     let candidates = read_header_candidates(root);
     let generation = candidates
@@ -3989,6 +3996,29 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn a_planted_newer_header_does_not_refuse_the_right_passphrase_on_change() {
+        const REPLACEMENT: &str = "lantern-orbit-willow-cascade-572";
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        // Structurally valid, newest by generation, and authentic under no key.
+        let mut planted: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(HEADER_SLOTS[0])).unwrap()).unwrap();
+        planted["generation"] = serde_json::json!(4_000);
+        fs::write(
+            root.join(LEGACY_HEADER),
+            serde_json::to_vec(&planted).unwrap(),
+        )
+        .unwrap();
+
+        store.change_passphrase(PASSWORD, REPLACEMENT).unwrap();
+        store.lock();
+        store.unlock(REPLACEMENT).unwrap();
     }
 
     #[test]

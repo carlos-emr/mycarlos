@@ -8,27 +8,36 @@ export function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// A kind is only a hint drawn from the file name, so it must not fire on a
+// fragment of another word: "Latest" is not a test, "Collaboration" is not a lab
+// and "Prescan" is not a scan. Words are compared from their start, which still
+// accepts "Bloodwork", "tests" and "scanned".
+const KIND_RULES: {
+  icon: IconName;
+  label: string;
+  stems: string[];
+  exact?: string[];
+}[] = [
+  {
+    icon: "flask",
+    label: "Test result",
+    stems: ["blood", "test", "laboratory"],
+    // "lab" as a stem would also claim "label".
+    exact: ["lab", "labs"],
+  },
+  { icon: "image", label: "Imaging", stems: ["imag", "xray", "scan"] },
+  { icon: "pill", label: "Prescription", stems: ["prescri", "medicat"] },
+];
+
 export function recordKind(name: string): { icon: IconName; label: string } {
-  const normalized = name.toLocaleLowerCase();
-  if (
-    normalized.includes("blood") ||
-    normalized.includes("test") ||
-    normalized.includes("lab")
-  ) {
-    return { icon: "flask", label: "Test result" };
-  }
-  if (
-    normalized.includes("image") ||
-    normalized.includes("x-ray") ||
-    normalized.includes("scan")
-  ) {
-    return { icon: "image", label: "Imaging" };
-  }
-  if (
-    normalized.includes("prescription") ||
-    normalized.includes("medication")
-  ) {
-    return { icon: "pill", label: "Prescription" };
+  const words = name
+    .toLocaleLowerCase()
+    .replace(/x-ray/g, "xray")
+    .split(/[^\p{L}\p{N}]+/u);
+  for (const { icon, label, stems, exact = [] } of KIND_RULES) {
+    const matches = (word: string) =>
+      exact.includes(word) || stems.some((stem) => word.startsWith(stem));
+    if (words.some(matches)) return { icon, label };
   }
   return { icon: "letter", label: "Document" };
 }

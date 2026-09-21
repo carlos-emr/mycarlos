@@ -32,6 +32,7 @@ export function RecordDetails({
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
   useModalFocus(true, dialogRef, onClose);
+  const kind = recordKind(record.displayName);
   const folderNameById = new Map(
     folders.map((folder) => [folder.id, folder.name]),
   );
@@ -63,10 +64,8 @@ export function RecordDetails({
           className="document-preview"
           aria-label="Encrypted document details"
         >
-          <span
-            className={`document-icon ${recordKind(record.displayName).icon}`}
-          >
-            <Icon name={recordKind(record.displayName).icon} />
+          <span className={`document-icon ${kind.icon}`}>
+            <Icon name={kind.icon} />
           </span>
           <div className="preview-paper" aria-hidden="true">
             <i />
@@ -91,7 +90,7 @@ export function RecordDetails({
         <dl className="record-metadata">
           <div>
             <dt>Kind</dt>
-            <dd>{recordKind(record.displayName).label}</dd>
+            <dd>{kind.label}</dd>
           </div>
           <div>
             <dt>Source</dt>
