@@ -482,8 +482,16 @@ impl VaultStore {
         let SelectedManifest {
             manifest,
             unavailable,
-            recovery,
+            mut recovery,
         } = select_manifest(&slots)?;
+        if recovery == Some(RecoveryReason::LostObjects) && header_slot_unreadable(&self.root) {
+            // `select_manifest` only sees the manifest slots. A header slot that
+            // cannot be read outranks lost objects for the same reason an
+            // unreadable manifest slot does: removing the lost records would
+            // make the session writable, and a passphrase change could then
+            // rewrap the key over a newer generation held in that slot.
+            recovery = Some(RecoveryReason::UnreadableSlot);
+        }
         if recovery.is_some() {
             // Leave storage exactly as found: no redundancy repair, no staging or
             // orphan cleanup. The session can only read and export.
@@ -534,14 +542,7 @@ impl VaultStore {
             // earlier passphrase on disk for good.
             let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
         }
-        // Backup and sync tools drop empty directories. A vault restored without
-        // `objects` would otherwise fail every import until it is reset.
-        // Only a missing directory is created: an existing entry is never
-        // followed or re-permissioned here.
-        let objects = self.root.join("objects");
-        if matches!(fs::symlink_metadata(&objects), Err(error) if error.kind() == io::ErrorKind::NotFound)
-            && create_private_dir(&objects).is_err()
-        {
+        if ensure_objects_dir(&self.root).is_err() {
             recovery = Some(RecoveryReason::WriteFailed);
         }
         remove_staging(&self.root);
@@ -1035,7 +1036,15 @@ impl VaultStore {
             || Ok(()),
         )?;
         unlocked.unavailable.clear();
-        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        // The session becomes writable without passing through the writable
+        // unlock path, which is where a dropped `objects` directory is normally
+        // restored. Every record's file was lost when the directory itself is
+        // gone, so imports would fail here until the next unlock without this.
+        unlocked.recovery = if redundant && ensure_objects_dir(&self.root).is_ok() {
+            None
+        } else {
+            Some(RecoveryReason::WriteFailed)
+        };
         Ok(removed)
     }
 
@@ -2051,8 +2060,7 @@ fn read_manifest_slot_reading(
     vault_id: Uuid,
     slot: u64,
 ) -> SlotReading {
-    let path = root.join(format!("manifest-{slot}.bin"));
-    let data = match read_bounded_regular_file(&path, MAX_MANIFEST_BYTES) {
+    let data = match read_bounded_regular_file(&manifest_path(root, slot), MAX_MANIFEST_BYTES) {
         Ok(data) => data,
         Err(error) => {
             return match error.kind() {
@@ -2736,6 +2744,18 @@ fn remove_abandoned_atomic_writes(directory: &Path) {
         {
             sync_parent(directory);
         }
+    }
+}
+
+/// Backup and sync tools drop empty directories. A vault restored without
+/// `objects` would otherwise fail every import until it is reset. Only a
+/// missing directory is created: an existing entry is never followed or
+/// re-permissioned here.
+fn ensure_objects_dir(root: &Path) -> Result<(), VaultError> {
+    let objects = root.join("objects");
+    match fs::symlink_metadata(&objects) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => create_private_dir(&objects),
+        _ => Ok(()),
     }
 }
 
@@ -4275,6 +4295,72 @@ mod tests {
         let mut exported = Vec::new();
         store.export(imported[1], &mut exported).unwrap();
         assert_eq!(exported, b"b");
+    }
+
+    #[test]
+    fn removing_damaged_records_restores_a_dropped_objects_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, imported, _) = vault_with_records(&root, &["a", "b"]);
+        // A restore that lost the whole directory loses every record with it.
+        fs::remove_dir_all(root.join("objects")).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+
+        let mut removed = store.remove_unavailable_records().unwrap();
+        removed.sort();
+        let mut expected = imported.clone();
+        expected.sort();
+        assert_eq!(removed, expected);
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+
+        // The session is writable again, so an import must work without a
+        // lock and unlock in between.
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let outcome = store
+            .import(profile, vec![], vec![source("c", b"c")], 3)
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let mut exported = Vec::new();
+        store.export(outcome.imported[0], &mut exported).unwrap();
+        assert_eq!(exported, b"c");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_header_slot_outranks_lost_objects() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, _, objects) = vault_with_records(&root, &["lost"]);
+        fs::remove_file(&objects[0]).unwrap();
+        let slot = root.join(HEADER_SLOTS[0]);
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&slot).is_ok() {
+            // A privileged process ignores file modes, so the unreadable slot
+            // cannot be simulated here.
+            return;
+        }
+
+        // The other header still opens the vault, but the slot that could not
+        // be read may hold a newer passphrase generation. Removing the lost
+        // record would make the session writable and let a passphrase change
+        // rewrap the key over it.
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        assert!(matches!(
+            store.remove_unavailable_records(),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.lock();
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o600)).unwrap();
     }
 
     #[test]

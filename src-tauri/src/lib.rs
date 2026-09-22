@@ -208,64 +208,69 @@ struct PickedExportRequest {
 /// used, when the vault locks, and after a bounded time.
 #[derive(Default)]
 struct PendingPicks {
-    imports: Mutex<HashMap<Uuid, (Instant, Vec<tauri_plugin_fs::FilePath>)>>,
-    exports: Mutex<HashMap<Uuid, (Instant, tauri_plugin_fs::FilePath)>>,
+    imports: PickTable<Vec<tauri_plugin_fs::FilePath>>,
+    exports: PickTable<tauri_plugin_fs::FilePath>,
 }
 
 // Long enough to cover the renderer's round trip after the picker closes, and
 // short enough that a stale choice cannot be used much later.
 const PICK_TTL: Duration = Duration::from_secs(120);
 
-impl PendingPicks {
-    fn store_import(&self, paths: Vec<tauri_plugin_fs::FilePath>) -> Uuid {
-        let mut imports = self
-            .imports
+/// One kind of pending pick, keyed by the id handed to the renderer.
+struct PickTable<T>(Mutex<HashMap<Uuid, (Instant, T)>>);
+
+impl<T> Default for PickTable<T> {
+    fn default() -> Self {
+        Self(Mutex::new(HashMap::new()))
+    }
+}
+
+impl<T> PickTable<T> {
+    fn entries(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, (Instant, T)>> {
+        self.0
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        imports.retain(|_, (picked_at, _)| picked_at.elapsed() < PICK_TTL);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn store(&self, value: T) -> Uuid {
+        let mut entries = self.entries();
+        entries.retain(|_, (picked_at, _)| picked_at.elapsed() < PICK_TTL);
         let pick_id = Uuid::new_v4();
-        imports.insert(pick_id, (Instant::now(), paths));
+        entries.insert(pick_id, (Instant::now(), value));
         pick_id
     }
 
-    fn take_import(&self, pick_id: Uuid) -> Option<Vec<tauri_plugin_fs::FilePath>> {
-        let mut imports = self
-            .imports
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let (picked_at, paths) = imports.remove(&pick_id)?;
-        (picked_at.elapsed() < PICK_TTL).then_some(paths)
-    }
-
-    fn store_export(&self, destination: tauri_plugin_fs::FilePath) -> Uuid {
-        let mut exports = self
-            .exports
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        exports.retain(|_, (picked_at, _)| picked_at.elapsed() < PICK_TTL);
-        let pick_id = Uuid::new_v4();
-        exports.insert(pick_id, (Instant::now(), destination));
-        pick_id
-    }
-
-    fn take_export(&self, pick_id: Uuid) -> Option<tauri_plugin_fs::FilePath> {
-        let mut exports = self
-            .exports
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let (picked_at, destination) = exports.remove(&pick_id)?;
-        (picked_at.elapsed() < PICK_TTL).then_some(destination)
+    /// Removes the pick whether or not it is still fresh: a stale one is never used.
+    fn take(&self, pick_id: Uuid) -> Option<T> {
+        let (picked_at, value) = self.entries().remove(&pick_id)?;
+        (picked_at.elapsed() < PICK_TTL).then_some(value)
     }
 
     fn clear(&self) {
-        self.imports
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
-        self.exports
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
+        self.entries().clear();
+    }
+}
+
+impl PendingPicks {
+    fn store_import(&self, paths: Vec<tauri_plugin_fs::FilePath>) -> Uuid {
+        self.imports.store(paths)
+    }
+
+    fn take_import(&self, pick_id: Uuid) -> Option<Vec<tauri_plugin_fs::FilePath>> {
+        self.imports.take(pick_id)
+    }
+
+    fn store_export(&self, destination: tauri_plugin_fs::FilePath) -> Uuid {
+        self.exports.store(destination)
+    }
+
+    fn take_export(&self, pick_id: Uuid) -> Option<tauri_plugin_fs::FilePath> {
+        self.exports.take(pick_id)
+    }
+
+    fn clear(&self) {
+        self.imports.clear();
+        self.exports.clear();
     }
 }
 
@@ -635,7 +640,8 @@ async fn vault_export_picked(
     .await?;
 
     // Opening the provider's document can block too, so it shares the blocking
-    // task with the write. Any failure from here on may leave a partial copy.
+    // task with the write. Only a failure after the open, which truncates the
+    // destination, can leave a partial copy; a failed open changed nothing.
     run_blocking(store.inner(), move |store| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -643,9 +649,9 @@ async fn vault_export_picked(
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
-        store.export(record_id, &mut output)
+        Ok(store.export(record_id, &mut output))
     })
-    .await
+    .await?
     .map_err(|_| PublicError::partial_export())
 }
 
@@ -820,8 +826,7 @@ mod tests {
         // A stale pick is never used.
         picks
             .exports
-            .lock()
-            .unwrap()
+            .entries()
             .insert(pick_id, (Instant::now() - PICK_TTL, path()));
         assert!(picks.take_export(pick_id).is_none());
     }
