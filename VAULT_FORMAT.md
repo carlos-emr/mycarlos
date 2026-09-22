@@ -2,11 +2,18 @@
 
 - **Status:** Implemented for synthetic-data development; security review required
 - **Identifier:** `ca.carlos.mycarlos`
-- **Storage root:** Tauri application-data directory, `vault-v1/`. On Windows that is the roaming
-  profile (`%APPDATA%`); keeping it there is a recorded decision, so a domain profile carries the
-  ciphertext and lock file between machines. The location must not sit on storage that cannot
-  confirm a directory write (some network, FUSE, and removable filesystems): creation probes for
-  this and refuses with `unsupported_storage`.
+- **Storage root:** Tauri's machine-local application-data directory, `vault-v1/`. On Windows that
+  is `%LOCALAPPDATA%`, which neither roams nor can be redirected to a network share. Roaming data
+  (`%APPDATA%`) was rejected: a roaming profile copies the vault between machines, where each locks
+  its own copy of the lock file, both may write, and the last upload wins file by file; it can also
+  restore an older authentic state, undoing a passphrase change or a deletion. On every other
+  platform the local and roaming directories are the same. A vault therefore stays on the device
+  it was created on, and the create screen says so.
+- **Storage requirement:** the location must confirm directory writes. On Unix-like platforms,
+  creation probes a directory fsync and refuses storage that cannot perform one (some network,
+  FUSE, and removable filesystems) with `unsupported_storage`. Windows has no equivalent call, so
+  the probe cannot detect such storage there; the local application-data directory is what keeps
+  the vault off it.
 - **Implemented recovery:** the patient passphrase; there is no vendor key or recovery code
 - **Approved patient-pilot recovery:** a patient-held recovery key; not implemented in format v1
 

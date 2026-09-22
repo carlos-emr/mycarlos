@@ -718,9 +718,14 @@ pub fn run() {
         .setup(|app| {
             // `vault-v1` is the vault home: it holds the vault and only what the
             // vault manages beside it (lock file, pending reset, create stage).
-            // Back up or restore the whole directory.
+            // Back up or restore the whole directory. Machine-local data, because
+            // the Windows roaming profile would copy it between machines, where
+            // each would lock its own copy of the lock file.
             app.manage(Arc::new(VaultStore::new(
-                app.path().app_data_dir()?.join("vault-v1").join("vault"),
+                app.path()
+                    .app_local_data_dir()?
+                    .join("vault-v1")
+                    .join("vault"),
             )));
             app.manage(Arc::new(PendingPicks::default()));
             Ok(())
@@ -812,6 +817,23 @@ mod tests {
             vault::open_without_following(&fifo).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn the_vault_is_rooted_in_machine_local_application_data() {
+        // On Windows `app_data_dir` is the roaming profile. Roaming copies the
+        // vault between machines at sign-in and sign-out, so each machine locks
+        // its own copy of the lock file and both may write; the last upload wins
+        // file by file. `app_local_data_dir` never roams, and on every other
+        // platform it is the same directory.
+        let library = include_str!("lib.rs");
+        let setup = library
+            .split("app.manage(Arc::new(VaultStore::new(")
+            .nth(1)
+            .unwrap();
+        let root = &setup[..setup.find(")))").unwrap()];
+        assert!(root.contains("app_local_data_dir()"), "{root}");
+        assert!(!root.contains("app_data_dir()"), "{root}");
     }
 
     #[test]

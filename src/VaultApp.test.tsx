@@ -134,6 +134,20 @@ describe("durable vault UI", () => {
     window.localStorage.clear();
   });
 
+  it("says a vault stays on the device it was created on", async () => {
+    // A patient who signs in on a second computer sees this screen there. It
+    // must not read as though their vault was lost.
+    render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("absent") })}
+      />,
+    );
+    await screen.findByRole("heading", { name: "Create your encrypted vault" });
+    expect(screen.getByText(/stays on this device/)).toHaveTextContent(
+      /another device/,
+    );
+  });
+
   it("creates the vault only when passphrases match", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("absent"),

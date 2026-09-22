@@ -96,10 +96,10 @@ privacy, accessibility, or clinical review.
       zxcvbn matches the name only as a whole and rearranged or joined name words scored as strong.
 - [x] Passphrases are normalized to Unicode NFC before key derivation, so the same visible
       passphrase unlocks whichever composition form the keyboard produces.
-- [x] Decided: the vault stays in the Tauri application-data directory, which on Windows is the
-      roaming profile. On a domain-joined PC with roaming profiles the ciphertext and lock file
-      travel between machines; that is accepted for the first release and recorded in
-      [`VAULT_FORMAT.md`](VAULT_FORMAT.md).
+- [x] The vault lives in machine-local application data (`%LOCALAPPDATA%` on Windows), not the
+      roaming profile, which would copy it between machines where each locks its own copy of the
+      lock file. The reasoning is in [`VAULT_FORMAT.md`](VAULT_FORMAT.md). Multi-device access is
+      the planned E2EE synchronization, not profile roaming.
 - [ ] Handle a desktop export that is interrupted. The atomic-write primitive stages the readable
       copy in a hidden `.atomicwrite*` directory beside the chosen file, and nothing removes it if
       the app dies before the rename. Also confirm on iOS and sandboxed macOS that the save

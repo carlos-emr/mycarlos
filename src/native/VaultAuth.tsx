@@ -104,6 +104,10 @@ export function CreateVault({
           Your files and record details are encrypted on this device. Your
           passphrase is the only recovery method.
         </p>
+        <p>
+          Your vault stays on this device. If you created one on another device,
+          it is still there, and will not appear here.
+        </p>
         <form onSubmit={submit}>
           <label>
             First patient profile
