@@ -34,6 +34,9 @@ const ACTIVITY_EVENTS = [
 ] as const;
 // Dispatched on the document when a picker this app opened settles.
 const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
+// Time in a picker counts as activity for at most this long, the longest
+// auto-lock delay, so a picker left open cannot keep the vault unlocked.
+const PICKER_GRACE_MS = 15 * 60 * 1000;
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
@@ -150,8 +153,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // ordinary rules, so backgrounding the app during a transfer still locks the
   // vault and cancels it at the next I/O boundary.
   const pickersOpenRef = useRef(0);
+  const pickerOpenedAtRef = useRef(0);
   const trackedBridge = useMemo<VaultBridge>(() => {
     const track = async <T,>(picker: Promise<T>): Promise<T> => {
+      if (pickersOpenRef.current === 0) pickerOpenedAtRef.current = Date.now();
       pickersOpenRef.current += 1;
       try {
         return await picker;
@@ -179,10 +184,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     const delayMs = autoLockMinutes * 60 * 1000;
     let deadline = Date.now() + delayMs;
     let timer = 0;
+    const inPickerGrace = () =>
+      Date.now() - pickerOpenedAtRef.current < PICKER_GRACE_MS;
     const check = () => {
       // Time spent in a picker the app opened is not idle time: the user is
       // choosing files for this vault. The deadline restarts once it closes.
-      if (pickersOpenRef.current > 0) deadline = Date.now() + delayMs;
+      if (pickersOpenRef.current > 0 && inPickerGrace())
+        deadline = Date.now() + delayMs;
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
@@ -201,7 +209,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // the concealed screen, stays owed. A page still hidden now is locked by
     // the visibility check that follows.
     const onPickerSettled = () => {
-      if (!concealedRef.current) deadline = Date.now() + delayMs;
+      if (!concealedRef.current && inPickerGrace())
+        deadline = Date.now() + delayMs;
     };
     const onVisibility = () => {
       if (document.visibilityState !== "hidden") return;
