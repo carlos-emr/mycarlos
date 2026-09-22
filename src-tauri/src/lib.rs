@@ -216,7 +216,8 @@ struct PickedExportRequest {
 ///
 /// A picker can still be open when the vault locks and return afterwards, so
 /// each pick records the unlocked session its picker opened in and is refused
-/// in any later one. It also records the request it was opened for, and is
+/// in any later one. A lock or reset ends a session, and an unlock or create
+/// starts a new one. Each pick also records the request it was opened for, and is
 /// refused for any other record, profile or folders.
 #[derive(Default)]
 struct PendingPicks {
@@ -411,11 +412,14 @@ async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultS
 #[tauri::command]
 async fn vault_create(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let picks = Arc::clone(picks.inner());
     run_blocking(store.inner(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
+            .inspect(|_| picks.clear())
             .and_then(|_| store.snapshot());
         request.passphrase.zeroize();
         result
@@ -426,11 +430,17 @@ async fn vault_create(
 #[tauri::command]
 async fn vault_unlock(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let picks = Arc::clone(picks.inner());
     run_blocking(store.inner(), move |store| {
         let result = store
             .unlock(&request.passphrase)
+            // A pick can read the session after a lock clears it but pass its
+            // unlocked check before the lock lands. Starting a new session here
+            // leaves such a pick in the one that ended.
+            .inspect(|_| picks.clear())
             .and_then(|_| store.snapshot());
         request.passphrase.zeroize();
         result
@@ -961,6 +971,24 @@ mod tests {
             picks.take_export(pick_id, record_id),
             Err(VaultError::NotFound)
         ));
+
+        // A pick can also read the session just after a lock cleared it, and
+        // pass its unlocked check before the lock lands. Unlocking starts a
+        // new session, so that pick is not usable after the next unlock.
+        picks.clear();
+        let session = picks.session();
+        picks.clear();
+        let pick_id = picks.store_export(session, record_id, path());
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+        let source = include_str!("lib.rs");
+        for command in ["async fn vault_unlock(", "async fn vault_create("] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            assert!(body.contains("picks.clear()"), "{command}");
+        }
 
         // A stale pick is never used.
         picks.exports.entries().insert(
