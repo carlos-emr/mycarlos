@@ -9,10 +9,12 @@
   also restore an older authentic state, undoing a passphrase change or a deletion. On every other
   platform the local and roaming directories are the same. A vault therefore stays on the device it
   was created on, and the create screen says so.
-- **Earlier evaluation builds:** they kept the vault itself at `<application data>/vault-v1/`. That
-  directory is not migrated, read, or removed; it held synthetic data only and may be deleted by
-  hand. The new home has a different name so that, on macOS and Linux, the new layout never places
-  an old vault's files inside it.
+- **Earlier evaluation builds:** they used `<application data>/vault-v1/`, first as the vault itself
+  (with `vault-v1.lock` and possibly `vault-v1.reset-pending/` beside it), later as a home holding
+  `vault/`. On Windows that directory is under `%APPDATA%`, or `%LOCALAPPDATA%` for the last two
+  builds before this layout. None of these is migrated, read, or removed; they held synthetic data
+  only and may be deleted by hand. The new home has a different name so that, on macOS and Linux,
+  the new layout never places an old vault's files inside it.
 - **Storage requirement:** the location must confirm directory writes. On Unix-like platforms,
   creation probes a directory fsync and refuses storage that cannot perform one (some network,
   FUSE, and removable filesystems) with `unsupported_storage`. Windows has no equivalent call, so
