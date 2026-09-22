@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import VaultApp from "./VaultApp";
 import type { VaultBridge, VaultSnapshot } from "./vault";
 
@@ -47,18 +47,21 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
   };
 }
 
-// Testing Library's drag convenience helpers clone DataTransfer and lose native
-// file items. Dispatch a real browser DragEvent to preserve its payload.
 // On desktop and iOS, tauri-plugin-dialog replaces window.confirm with an async
 // function. Its promise is always truthy, so a synchronous `if (!confirm(...))`
 // guard never stops a destructive action. The app must not rely on it.
 function tauriConfirmShim() {
-  return vi
+  const shim = vi
     .spyOn(window, "confirm")
     .mockImplementation((() =>
       Promise.reject(new Error("not allowed"))) as never);
+  // Restored even when the test fails, so later tests get the real confirm.
+  onTestFinished(() => shim.mockRestore());
+  return shim;
 }
 
+// Testing Library's drag convenience helpers clone DataTransfer and lose native
+// file items. Dispatch a real browser DragEvent to preserve its payload.
 function fireDragEvent(
   type: string,
   target: Element | Window,
@@ -477,7 +480,6 @@ describe("durable vault UI", () => {
       ),
     );
     expect(shim).not.toHaveBeenCalled();
-    shim.mockRestore();
   });
 
   it.each(["list", "grid"])(
@@ -834,7 +836,6 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(shim).not.toHaveBeenCalled();
-    shim.mockRestore();
   });
 
   it("ignores window blur and locks after 5 minutes of inactivity", async () => {
@@ -1009,6 +1010,42 @@ describe("durable vault UI", () => {
       });
       await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
       expect(bridge.lock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("restarts the inactivity deadline when a picker closes before the recheck", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishPick!: (pickId: string | null) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickImportFiles: vi.fn(
+          () =>
+            new Promise<string | null>((resolve) => {
+              finishPick = resolve;
+            }),
+        ),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      // Timers do not run while the page is suspended under Android's picker
+      // activity, so no recheck sees the picker open.
+      vi.setSystemTime(Date.now() + 6 * 60 * 1000);
+      await act(async () => finishPick(null));
+      await act(async () => vi.advanceTimersByTime(10_000));
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+
+      await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
+      expect(bridge.lock).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }

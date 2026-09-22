@@ -32,6 +32,8 @@ const ACTIVITY_EVENTS = [
   "keydown",
   "touchstart",
 ] as const;
+// Dispatched on the document when a picker this app opened settles.
+const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
@@ -155,6 +157,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         return await picker;
       } finally {
         pickersOpenRef.current -= 1;
+        // Restart the inactivity deadline: the recheck only sees a picker that
+        // is open when it runs, and it cannot run while the page is suspended
+        // under Android's picker activity.
+        document.dispatchEvent(new Event(PICKER_SETTLED_EVENT));
         // Let the visibility handler decide again now that the picker is gone.
         document.dispatchEvent(new Event("visibilitychange"));
       }
@@ -190,6 +196,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // Once the delay has elapsed the lock is owed; activity cannot cancel it.
       if (Date.now() < deadline) deadline = Date.now() + delayMs;
     };
+    // Unlike `postpone`, this also applies after the delay has elapsed: the
+    // time since the picker opened was not idle. A lock already owed, shown by
+    // the concealed screen, stays owed. A page still hidden now is locked by
+    // the visibility check that follows.
+    const onPickerSettled = () => {
+      if (!concealedRef.current) deadline = Date.now() + delayMs;
+    };
     const onVisibility = () => {
       if (document.visibilityState !== "hidden") return;
       // On Android the system picker is a separate activity, so the page is
@@ -207,6 +220,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     for (const event of ACTIVITY_EVENTS) {
       window.addEventListener(event, postpone, { passive: true });
     }
+    document.addEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
     return () => {
@@ -214,6 +228,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, postpone);
       }
+      document.removeEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [autoLockMinutes, requestLock, status]);
