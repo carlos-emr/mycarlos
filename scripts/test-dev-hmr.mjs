@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { createServer } from "vite";
 
-// Use a non-localhost address to exercise the physical-device CSP/HMR path.
+// Use a non-"localhost" host to exercise the physical-device CSP/HMR path. 127.0.0.2
+// is still loopback, so this checks the policy and host wiring, not LAN reachability.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixture = await mkdtemp(join(root, ".hmr-test-"));
 const previousHost = process.env.TAURI_DEV_HOST;
@@ -17,8 +18,9 @@ try {
     await readFile(join(root, "src-tauri/tauri.conf.json"), "utf8"),
   );
   const policy = config.app.security.devCsp;
-  assert(
-    !config.app.security.csp.includes("ws:"),
+  assert.doesNotMatch(
+    config.app.security.csp,
+    /\bwss?:/i,
     "Production policy must exclude HMR",
   );
   await writeFile(
@@ -61,7 +63,7 @@ try {
     "Expected a hot update without page reload",
   );
   console.log(
-    "Mobile-host HMR connected under the app's dev CSP and updated without reloading the page",
+    "Non-localhost HMR connected under the app's dev CSP and updated without reloading the page",
   );
 } finally {
   await browser?.close();
