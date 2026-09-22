@@ -18,6 +18,7 @@ type Category =
   | "Other";
 type Filter = "All" | Category;
 type ViewMode = "list" | "grid";
+type SortOrder = "newest" | "name";
 type AppSection =
   | "records"
   | "recent"
@@ -53,6 +54,7 @@ interface TrashItem {
   countdown: string;
   icon: IconName;
   document?: DemoDocument;
+  folder?: FolderItem;
 }
 
 const sampleFolders: FolderItem[] = [
@@ -76,17 +78,9 @@ const sampleFolders: FolderItem[] = [
   },
 ];
 
+// Kept newest first, as are session additions and restores (both prepended),
+// so the "Newest first" order is simply the order of this list.
 const sampleDocuments: DemoDocument[] = [
-  {
-    id: "sample-bloodwork",
-    title: "Bloodwork — cholesterol and liver panel",
-    subtitle: "2 pages · PDF",
-    source: "Maple Creek Medical",
-    added: "12 Aug 2026",
-    category: "Test results",
-    icon: "flask",
-    starred: true,
-  },
   {
     id: "sample-cardiology",
     title: "Specialist letter — cardiology",
@@ -95,6 +89,16 @@ const sampleDocuments: DemoDocument[] = [
     added: "19 Aug 2026",
     category: "Letters",
     icon: "letter",
+    starred: true,
+  },
+  {
+    id: "sample-bloodwork",
+    title: "Bloodwork — cholesterol and liver panel",
+    subtitle: "2 pages · PDF",
+    source: "Maple Creek Medical",
+    added: "12 Aug 2026",
+    category: "Test results",
+    icon: "flask",
     starred: true,
   },
   {
@@ -143,6 +147,12 @@ const sampleTrashItems: TrashItem[] = [
     previousLocation: "My records",
     countdown: "Gone in 29 days",
     icon: "folder",
+    folder: {
+      id: "folder-scans",
+      title: "Scans to sort out",
+      subtitle: "4 items",
+      date: "Restored just now",
+    },
   },
 ];
 
@@ -194,6 +204,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewMode>("list");
+  const [sort, setSort] = useState<SortOrder>("newest");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [trashItems, setTrashItems] = useState(sampleTrashItems);
   const [recentIds, setRecentIds] = useState(sampleRecentIds);
@@ -244,11 +255,16 @@ export default function App({ bridge = defaultBridge }: AppProps) {
           .includes(normalizedQuery);
       return matchesSection && matchesFilter && matchesQuery;
     });
+    if (sort === "name") {
+      return matchingDocuments.sort((left, right) =>
+        left.title.localeCompare(right.title),
+      );
+    }
     if (activeSection !== "recent") return matchingDocuments;
     return matchingDocuments.sort(
       (left, right) => recentIds.indexOf(left.id) - recentIds.indexOf(right.id),
     );
-  }, [activeSection, documents, filter, query, recentIds]);
+  }, [activeSection, documents, filter, query, recentIds, sort]);
 
   const filteredFolders = useMemo(() => {
     if (activeSection !== "records" || filter !== "All") return [];
@@ -269,6 +285,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
   const hasSessionChanges =
     documents !== sampleDocuments ||
     folders !== sampleFolders ||
+    sort !== "newest" ||
     // Opening a document reorders Recent and changes nothing else, so reset
     // must stay available to put that order back.
     recentIds !== sampleRecentIds ||
@@ -343,6 +360,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
     setActiveSection("records");
     setFilter("All");
     setQuery("");
+    setSort("newest");
     setSelectedIds([]);
     setCloudBackup(true);
     setDriveBackup(false);
@@ -431,6 +449,9 @@ export default function App({ bridge = defaultBridge }: AppProps) {
 
   function showSection(section: AppSection) {
     setActiveSection(section);
+    // Like the sidebar's My records, the section picker shows every record,
+    // not whichever kind was filtered before leaving.
+    if (section === "records") setFilter("All");
     setQuery("");
     setSelectedIds([]);
     setNotice(
@@ -444,6 +465,13 @@ export default function App({ bridge = defaultBridge }: AppProps) {
     setTrashItems((current) =>
       current.filter((candidate) => candidate.id !== item.id),
     );
+    setNotice(`${item.title} was restored to My records.`);
+    // A deleted folder comes back as a folder, not as a one-page document.
+    if (item.folder) {
+      const restoredFolder = item.folder;
+      setFolders((current) => [...current, restoredFolder]);
+      return;
+    }
     const restoredDocument = item.document ?? {
       id: `restored-${item.id}`,
       title: item.title,
@@ -459,7 +487,6 @@ export default function App({ bridge = defaultBridge }: AppProps) {
       restoredDocument.id,
       ...current.filter((id) => id !== restoredDocument.id),
     ]);
-    setNotice(`${item.title} was restored to My records.`);
   }
 
   function emptyTrash() {
@@ -711,9 +738,19 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                     </div>
                   )}
                   <div className="view-controls">
-                    <button className="sort-button" type="button">
-                      <Icon name="sort" /> Newest first <span>⌄</span>
-                    </button>
+                    <label className="native-sort">
+                      <Icon name="sort" />
+                      <span className="sr-only">Sort records</span>
+                      <select
+                        value={sort}
+                        onChange={(event) =>
+                          setSort(event.target.value as SortOrder)
+                        }
+                      >
+                        <option value="newest">Newest first</option>
+                        <option value="name">Name A–Z</option>
+                      </select>
+                    </label>
                     <span className="segment" aria-label="Choose record view">
                       <button
                         className={view === "list" ? "selected" : ""}
@@ -778,7 +815,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   >
                     <div className="file-head" aria-hidden="true">
                       <span />
-                      <span className="sorted">Name ↑</span>
+                      <span className="sorted">Name</span>
                       <span className="column">Sent by</span>
                       <span className="column">Date added</span>
                       <span />
@@ -786,13 +823,9 @@ export default function App({ bridge = defaultBridge }: AppProps) {
 
                     {filteredFolders.map((folder) => (
                       <article className="file-row" key={folder.id}>
-                        <button
-                          className={`check ${selectedIds.includes(folder.id) ? "checked" : ""}`}
-                          type="button"
-                          aria-label={`Select ${folder.title}`}
-                          aria-pressed={selectedIds.includes(folder.id)}
-                          onClick={() => toggleSelected(folder.id)}
-                        />
+                        {/* No record action applies to a folder, so folders
+                            are not selectable, as in the native library. */}
+                        <span />
                         <div className="file-name">
                           <span className="document-icon folder">
                             <Icon name="folder" />

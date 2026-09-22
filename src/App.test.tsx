@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
 import App from "./App";
 import type { PlatformBridge } from "./platform";
 
@@ -16,6 +17,13 @@ function bridge(overrides: Partial<PlatformBridge> = {}): PlatformBridge {
     selectPdf: vi.fn().mockResolvedValue(null),
     ...overrides,
   };
+}
+
+function listedDocumentTitles(): string[] {
+  return Array.from(
+    document.querySelectorAll(".filelist .record-open"),
+    (button) => button.textContent ?? "",
+  );
 }
 
 describe("myCarlos Tauri evaluation", () => {
@@ -89,7 +97,8 @@ describe("myCarlos Tauri evaluation", () => {
     render(<App bridge={bridge()} />);
 
     await user.click(screen.getByRole("button", { name: "Recent" }));
-    const firstBefore = screen.getAllByRole("article")[0];
+    const recentBefore = listedDocumentTitles();
+    expect(recentBefore[0]).not.toBe("Prescription — ramipril 5mg");
     await user.click(screen.getByRole("button", { name: "My records" }));
     // Opening a document moves it to the top of Recent and changes nothing else.
     await user.click(
@@ -107,9 +116,66 @@ describe("myCarlos Tauri evaluation", () => {
     await user.click(reset);
 
     await user.click(screen.getByRole("button", { name: "Recent" }));
-    expect(screen.getAllByRole("article")[0]).toHaveAccessibleName(
-      firstBefore.getAttribute("aria-label") ?? "",
+    expect(listedDocumentTitles()).toEqual(recentBefore);
+  });
+
+  it("sorts records newest first or by name", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+
+    const sort = screen.getByRole("combobox", { name: "Sort records" });
+    expect(sort).toHaveValue("newest");
+    expect(listedDocumentTitles()).toEqual([
+      "Specialist letter — cardiology",
+      "Bloodwork — cholesterol and liver panel",
+      "Chest X-ray report",
+      "Prescription — ramipril 5mg",
+      "Letter from physio (photo)",
+    ]);
+
+    await user.selectOptions(sort, "name");
+    expect(listedDocumentTitles()).toEqual([
+      "Bloodwork — cholesterol and liver panel",
+      "Chest X-ray report",
+      "Letter from physio (photo)",
+      "Prescription — ramipril 5mg",
+      "Specialist letter — cardiology",
+    ]);
+  });
+
+  it("does not offer selection on folders, which have no record actions", () => {
+    render(<App bridge={bridge()} />);
+
+    expect(screen.getByText("Heart & blood pressure")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Select Heart & blood pressure" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows every record when the section picker returns to My records", async ({
+    onTestFinished,
+  }) => {
+    // The section picker replaces the sidebar only on narrow screens.
+    await page.viewport(390, 844);
+    onTestFinished(() => page.viewport(1100, 760));
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+
+    await user.click(
+      within(screen.getByLabelText("Filter records")).getByRole("button", {
+        name: "Imaging",
+      }),
     );
+    const picker = screen.getByRole("combobox", { name: "Section" });
+    await user.selectOptions(picker, "recent");
+    await user.selectOptions(picker, "records");
+
+    expect(screen.getByText("Specialist letter — cardiology")).toBeVisible();
+    expect(
+      within(screen.getByLabelText("Filter records")).getByRole("button", {
+        name: "All",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("searches, filters, and switches record views", async () => {
@@ -268,6 +334,25 @@ describe("myCarlos Tauri evaluation", () => {
 
     await user.click(screen.getByRole("button", { name: "Empty trash" }));
     expect(screen.getByText("Trash is empty")).toBeVisible();
+  });
+
+  it("restores a deleted folder as a folder, not as a document", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+
+    await user.click(screen.getByRole("button", { name: /Trash/ }));
+    const scans = screen.getByText("Scans to sort out").closest("article");
+    expect(scans).not.toBeNull();
+    await user.click(
+      within(scans as HTMLElement).getByRole("button", { name: "Restore" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "My records" }));
+    expect(
+      screen.getByText("4 folders · 5 documents · sample data"),
+    ).toBeVisible();
+    expect(screen.getByText("Scans to sort out")).toBeVisible();
+    expect(listedDocumentTitles()).not.toContain("Scans to sort out");
   });
 
   it("demonstrates security and backup controls without creating security material", async () => {

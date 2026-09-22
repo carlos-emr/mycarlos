@@ -315,18 +315,6 @@ h1, h2, p { margin: 0; }
 .chip:hover { background: var(--canvas); }
 .chip.selected { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); font-weight: 700; }
 .view-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.sort-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 35px;
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
-  color: var(--ink-soft);
-  font-size: 13px;
-}
 .segment { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
 .segment button { display: grid; place-items: center; width: 38px; min-height: 35px; padding: 7px 10px; border: 0; background: transparent; color: var(--ink-soft); }
 .segment button + button { border-left: 1px solid var(--line); }
