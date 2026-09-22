@@ -185,7 +185,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     const create = await screen.findByRole("button", { name: "Create vault" });
-    // 600 characters fit the input's 1024-unit limit but need 1800 UTF-8 bytes.
+    // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
     const long = "字".repeat(600);
     for (const field of screen.getAllByLabelText(/passphrase/i)) {
       fireEvent.change(field, { target: { value: long } });
@@ -442,6 +442,8 @@ describe("durable vault UI", () => {
       ),
     );
 
+    // The drag above made the same call, so only a call from here counts.
+    vi.mocked(bridge.assignFoldersBatch).mockClear();
     await user.click(
       screen.getByRole("button", { name: "Select FAKE_Bloodwork.pdf" }),
     );
@@ -1015,6 +1017,63 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("locks once a picker has been left open past the grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickExportDestination: vi.fn(() => new Promise<never>(() => undefined)),
+        pickImportFiles: vi.fn(() => new Promise<never>(() => undefined)),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      // A walked-away desktop dialog: the grace period, then the delay.
+      await act(async () => vi.advanceTimersByTime(15 * 60 * 1000));
+      expect(bridge.lock).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+      expect(bridge.lock).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not restart the deadline for a picker left open past the grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishPick!: (pickId: string | null) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickImportFiles: vi.fn(
+          () =>
+            new Promise<string | null>((resolve) => {
+              finishPick = resolve;
+            }),
+        ),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      // Suspended under Android's picker, then away from it for an hour.
+      vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+      await act(async () => finishPick(null));
+      await act(async () => vi.advanceTimersByTime(10_000));
+      expect(bridge.lock).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("restarts the inactivity deadline when a picker closes before the recheck", async () => {
     vi.useFakeTimers();
     try {
@@ -1327,6 +1386,10 @@ describe("durable vault UI", () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot,
+      unlock: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        records: [{ ...record, displayName: "FAKE_Current.pdf" }],
+      }),
       renameRecord: vi.fn().mockResolvedValue(undefined),
     });
     render(<VaultApp bridge={bridge} />);
@@ -1344,18 +1407,27 @@ describe("durable vault UI", () => {
     try {
       document.dispatchEvent(new Event("visibilitychange"));
       expect(await screen.findByText("Vault locked.")).toBeVisible();
-
-      await act(async () =>
-        deliverSnapshot({
-          ...emptySnapshot,
-          records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
-        }),
-      );
-      expect(screen.getByText("Vault locked.")).toBeVisible();
-      expect(screen.queryByText(/FAKE_Renamed/)).not.toBeInTheDocument();
     } finally {
       visibility.mockRestore();
     }
+
+    // Unlocked again before the earlier session's refresh returns: that result
+    // must not replace the new session's library.
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(await screen.findByText("FAKE_Current.pdf")).toBeVisible();
+
+    await act(async () =>
+      deliverSnapshot({
+        ...emptySnapshot,
+        records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
+      }),
+    );
+    expect(screen.getByText("FAKE_Current.pdf")).toBeVisible();
+    expect(screen.queryByText(/FAKE_Renamed/)).not.toBeInTheDocument();
   });
 
   it("persists a bounded automatic lock delay", async () => {

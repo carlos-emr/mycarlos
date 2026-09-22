@@ -145,7 +145,6 @@ export function SecuritySettings({
               Current passphrase
               <input
                 required
-                maxLength={1024}
                 type="password"
                 autoComplete="current-password"
                 value={currentPassphrase}
@@ -156,7 +155,6 @@ export function SecuritySettings({
               New passphrase
               <input
                 required
-                maxLength={1024}
                 type="password"
                 autoComplete="new-password"
                 value={newPassphrase}
@@ -167,7 +165,6 @@ export function SecuritySettings({
               Confirm new passphrase
               <input
                 required
-                maxLength={1024}
                 type="password"
                 autoComplete="new-password"
                 value={newPassphraseConfirmation}
@@ -233,7 +230,12 @@ export function SecuritySettings({
             )}
             <button
               className="button"
-              disabled={busy || readOnly || nameTooLong(profileName)}
+              disabled={
+                busy ||
+                readOnly ||
+                !profileName.trim() ||
+                nameTooLong(profileName)
+              }
             >
               Add profile
             </button>

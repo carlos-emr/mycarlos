@@ -31,13 +31,20 @@ export function RenameDialog({
     target.kind === "document"
       ? utf8Length(name.trim()) > MAX_DOCUMENT_NAME_BYTES
       : nameTooLong(name);
+  // The vault keeps document names usable as file names on every platform, so
+  // it refuses these rather than change them. Name them instead of letting the
+  // save fail with a generic message.
+  const unsafeName =
+    target.kind === "document" &&
+    (/[<>:"|?*/\\]/.test(name.trim()) || name.trim().endsWith("."));
+  const invalid = tooLong || unsafeName || !name.trim();
   const close = () => {
     if (!saving) onClose();
   };
   useModalFocus(true, dialogRef, close);
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (saving || readOnly || tooLong || !name.trim()) return;
+    if (saving || readOnly || invalid) return;
     setSaving(true);
     setError("");
     try {
@@ -91,6 +98,12 @@ export function RenameDialog({
             {tooLong && (
               <p role="alert">This name is too long. Shorten it to save.</p>
             )}
+            {unsafeName && (
+              <p role="alert">
+                Document names cannot contain &lt; &gt; : &quot; | ? * / \ or
+                end with a dot.
+              </p>
+            )}
             {error && <p role="alert">{error}</p>}
           </div>
           <footer className="dialog-actions">
@@ -104,7 +117,7 @@ export function RenameDialog({
             </button>
             <button
               className="button primary"
-              disabled={saving || readOnly || tooLong || !name.trim()}
+              disabled={saving || readOnly || invalid}
             >
               {saving ? "Saving…" : "Save name"}
             </button>

@@ -97,7 +97,11 @@ export function CreateVault({
   const tooShort = tooShortPassphrase(passphrase);
   const profileTooLong = nameTooLong(profile);
   const invalid =
-    profileTooLong || tooLong || tooShort || passphrase !== confirmation;
+    !profile.trim() ||
+    profileTooLong ||
+    tooLong ||
+    tooShort ||
+    passphrase !== confirmation;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (invalid) return;
@@ -136,7 +140,6 @@ export function CreateVault({
             Passphrase
             <input
               required
-              maxLength={1024}
               type="password"
               autoComplete="new-password"
               value={passphrase}
@@ -152,7 +155,6 @@ export function CreateVault({
             Confirm passphrase
             <input
               required
-              maxLength={1024}
               type="password"
               autoComplete="new-password"
               value={confirmation}
@@ -212,8 +214,8 @@ export function UnlockVault({
         <h1 id="unlock-title">Unlock your vault</h1>
         <p>
           The vault locks after {autoLockMinutes} minute
-          {autoLockMinutes === 1 ? "" : "s"} of inactivity and whenever the app
-          is backgrounded.
+          {autoLockMinutes === 1 ? "" : "s"} of inactivity and whenever myCarlos
+          is hidden, for example minimized or sent to the background.
         </p>
         <form onSubmit={submit}>
           <label>
@@ -221,7 +223,6 @@ export function UnlockVault({
             <input
               autoFocus
               required
-              maxLength={1024}
               type="password"
               autoComplete="current-password"
               value={passphrase}

@@ -32,4 +32,34 @@ describe("RenameDialog", () => {
     fireEvent.submit(save.closest("form")!);
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("names the characters a document name cannot contain before saving", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    const save = screen.getByRole("button", { name: "Save name" });
+    for (const name of [
+      "Visit: notes.pdf",
+      "Results?.pdf",
+      "a/b.pdf",
+      "Notes.",
+    ]) {
+      fireEvent.change(input, { target: { value: name } });
+      expect(screen.getByRole("alert")).toHaveTextContent("cannot contain");
+      expect(save).toBeDisabled();
+    }
+    fireEvent.submit(save.closest("form")!);
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "Visit notes.pdf" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(save).toBeEnabled();
+  });
 });

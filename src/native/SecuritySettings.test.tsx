@@ -37,7 +37,7 @@ describe("SecuritySettings passphrase change", () => {
 
   it("says a current passphrase over the vault's byte limit cannot be right", () => {
     const props = renderSettings();
-    // 600 characters fit the input's 1024-unit limit but need 1800 UTF-8 bytes.
+    // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
     change("Current passphrase", "字".repeat(600));
     change("New passphrase", "lantern-orbit-willow-cascade-572");
     change("Confirm new passphrase", "lantern-orbit-willow-cascade-572");
@@ -67,6 +67,9 @@ describe("SecuritySettings profiles", () => {
 
     fireEvent.change(name, { target: { value: "a".repeat(121) } });
     expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+
+    fireEvent.change(name, { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
   });
 });

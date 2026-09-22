@@ -457,7 +457,9 @@ export function VaultLibrary({
         >
           <header
             className="titlebar"
-            inert={Boolean(activeRecord || renameTarget)}
+            inert={Boolean(
+              activeRecord || renameTarget || confirmRemoveDamaged,
+            )}
           >
             <span className="window-dots" aria-hidden="true">
               <i />
@@ -476,7 +478,9 @@ export function VaultLibrary({
 
           <label
             className="mobile-section-picker"
-            inert={Boolean(activeRecord || renameTarget)}
+            inert={Boolean(
+              activeRecord || renameTarget || confirmRemoveDamaged,
+            )}
           >
             <span>Section</span>
             <select
@@ -493,7 +497,9 @@ export function VaultLibrary({
 
           <div
             className="app-body"
-            inert={Boolean(activeRecord || renameTarget)}
+            inert={Boolean(
+              activeRecord || renameTarget || confirmRemoveDamaged,
+            )}
           >
             <LibrarySidebar
               profileName={profile?.displayName ?? "Private vault"}
@@ -613,7 +619,12 @@ export function VaultLibrary({
                     )}
                     <button
                       className="button primary"
-                      disabled={busy || readOnly || nameTooLong(folderName)}
+                      disabled={
+                        busy ||
+                        readOnly ||
+                        !folderName.trim() ||
+                        nameTooLong(folderName)
+                      }
                     >
                       Create
                     </button>

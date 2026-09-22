@@ -42,6 +42,33 @@ describe("CreateVault", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("too long");
     expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
   });
+
+  it("refuses a profile name of only spaces, which the vault would refuse", () => {
+    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("First patient profile"), {
+      target: { value: "   " },
+    });
+    for (const field of screen.getAllByLabelText(/passphrase/i))
+      fireEvent.change(field, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+  });
+
+  it("does not silently shorten a long pasted passphrase", () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(<CreateVault busy={false} notice="" onCreate={onCreate} />);
+    fireEvent.change(screen.getByLabelText("First patient profile"), {
+      target: { value: "Jamie" },
+    });
+    const long = "a".repeat(1025);
+    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+      fireEvent.change(field, { target: { value: long } });
+      expect(field).toHaveValue(long);
+    }
+    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+  });
 });
 
 describe("UnlockVault", () => {
@@ -56,7 +83,7 @@ describe("UnlockVault", () => {
         onReset={vi.fn()}
       />,
     );
-    // 600 characters fit the input's 1024-unit limit but need 1800 UTF-8 bytes.
+    // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
     const passphrase = screen.getByLabelText("Passphrase");
     fireEvent.change(passphrase, { target: { value: "字".repeat(600) } });
 
