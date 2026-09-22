@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State};
@@ -171,7 +174,7 @@ struct AssignFoldersBatchRequest {
     folder_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct ImportRequest {
     profile_id: Uuid,
@@ -209,11 +212,17 @@ struct PickedExportRequest {
 /// exported there. Splitting each operation into a pick and a run lets the
 /// renderer tell a picker it opened from a real backgrounding, and lets a lock
 /// during the I/O phase still cancel the transfer. Entries are dropped when
-/// used, when the vault locks, and after a bounded time.
+/// used, when the vault locks or resets, and after a bounded time.
+///
+/// A picker can still be open when the vault locks and return afterwards, so
+/// each pick records the unlocked session its picker opened in and is refused
+/// in any later one. It also records the request it was opened for, and is
+/// refused for any other record, profile or folders.
 #[derive(Default)]
 struct PendingPicks {
-    imports: PickTable<Vec<tauri_plugin_fs::FilePath>>,
-    exports: PickTable<tauri_plugin_fs::FilePath>,
+    session: AtomicU64,
+    imports: PickTable<(ImportRequest, Vec<tauri_plugin_fs::FilePath>)>,
+    exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
 }
 
 // Long enough to cover the renderer's round trip after the picker closes, and
@@ -221,7 +230,10 @@ struct PendingPicks {
 const PICK_TTL: Duration = Duration::from_secs(120);
 
 /// One kind of pending pick, keyed by the id handed to the renderer.
-struct PickTable<T>(Mutex<HashMap<Uuid, (Instant, T)>>);
+struct PickTable<T>(Mutex<HashMap<Uuid, PickEntry<T>>>);
+
+/// When the picker returned, the session its picker opened in, and the pick.
+type PickEntry<T> = (Instant, u64, T);
 
 impl<T> Default for PickTable<T> {
     fn default() -> Self {
@@ -230,24 +242,25 @@ impl<T> Default for PickTable<T> {
 }
 
 impl<T> PickTable<T> {
-    fn entries(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, (Instant, T)>> {
+    fn entries(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, PickEntry<T>>> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn store(&self, value: T) -> Uuid {
+    fn store(&self, session: u64, value: T) -> Uuid {
         let mut entries = self.entries();
-        entries.retain(|_, (picked_at, _)| picked_at.elapsed() < PICK_TTL);
+        entries.retain(|_, (picked_at, _, _)| picked_at.elapsed() < PICK_TTL);
         let pick_id = Uuid::new_v4();
-        entries.insert(pick_id, (Instant::now(), value));
+        entries.insert(pick_id, (Instant::now(), session, value));
         pick_id
     }
 
-    /// Removes the pick whether or not it is still fresh: a stale one is never used.
-    fn take(&self, pick_id: Uuid) -> Option<T> {
-        let (picked_at, value) = self.entries().remove(&pick_id)?;
-        (picked_at.elapsed() < PICK_TTL).then_some(value)
+    /// Removes the pick whether or not it is still usable: a stale one, or one
+    /// from an earlier session, is never used.
+    fn take(&self, pick_id: Uuid, session: u64) -> Option<T> {
+        let (picked_at, picked_in, value) = self.entries().remove(&pick_id)?;
+        (picked_at.elapsed() < PICK_TTL && picked_in == session).then_some(value)
     }
 
     fn clear(&self) {
@@ -256,23 +269,65 @@ impl<T> PickTable<T> {
 }
 
 impl PendingPicks {
-    fn store_import(&self, paths: Vec<tauri_plugin_fs::FilePath>) -> Uuid {
-        self.imports.store(paths)
+    /// The current unlocked session. Read it before opening a picker.
+    fn session(&self) -> u64 {
+        self.session.load(Ordering::SeqCst)
     }
 
-    fn take_import(&self, pick_id: Uuid) -> Option<Vec<tauri_plugin_fs::FilePath>> {
-        self.imports.take(pick_id)
+    fn store_import(
+        &self,
+        session: u64,
+        request: ImportRequest,
+        paths: Vec<tauri_plugin_fs::FilePath>,
+    ) -> Uuid {
+        self.imports.store(session, (request, paths))
     }
 
-    fn store_export(&self, destination: tauri_plugin_fs::FilePath) -> Uuid {
-        self.exports.store(destination)
+    /// A pick is gone when it was used, expired, or cleared by a lock while the
+    /// picker was open. None of those is a mistake in the request.
+    fn take_import(
+        &self,
+        pick_id: Uuid,
+        request: &ImportRequest,
+    ) -> Result<Vec<tauri_plugin_fs::FilePath>, VaultError> {
+        let (picked_for, paths) = self
+            .imports
+            .take(pick_id, self.session())
+            .ok_or(VaultError::NotFound)?;
+        if picked_for != *request {
+            return Err(VaultError::Invalid);
+        }
+        Ok(paths)
     }
 
-    fn take_export(&self, pick_id: Uuid) -> Option<tauri_plugin_fs::FilePath> {
-        self.exports.take(pick_id)
+    fn store_export(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        destination: tauri_plugin_fs::FilePath,
+    ) -> Uuid {
+        self.exports.store(session, (record_id, destination))
     }
 
+    fn take_export(
+        &self,
+        pick_id: Uuid,
+        record_id: Uuid,
+    ) -> Result<tauri_plugin_fs::FilePath, VaultError> {
+        let (picked_for, destination) = self
+            .exports
+            .take(pick_id, self.session())
+            .ok_or(VaultError::NotFound)?;
+        if picked_for != record_id {
+            return Err(VaultError::Invalid);
+        }
+        Ok(destination)
+    }
+
+    /// Ends the session first, so that a picker returning during the clear
+    /// stores a pick that can no longer be used.
     fn clear(&self) {
+        self.session.fetch_add(1, Ordering::SeqCst);
         self.imports.clear();
         self.exports.clear();
     }
@@ -515,6 +570,7 @@ async fn vault_import_pick(
     request: ImportRequest,
 ) -> CommandResult<Option<Uuid>> {
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
     // Refuse before the picker opens; `import` still re-checks under its own lock.
     let profile_id = request.profile_id;
     run_blocking(store.inner(), move |store| {
@@ -533,7 +589,7 @@ async fn vault_import_pick(
         return Ok(None);
     };
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
-    Ok(Some(picks.store_import(paths)))
+    Ok(Some(picks.store_import(session, request, paths)))
 }
 
 #[tauri::command]
@@ -544,11 +600,11 @@ async fn vault_import_picked(
     request: PickedImportRequest,
 ) -> CommandResult<vault::ImportOutcome> {
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
-    let paths = picks
-        // A pick is gone when it was used, expired, or cleared by a lock while
-        // the picker was open. None of those is a mistake in the request.
-        .take_import(request.pick_id)
-        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
+    let picked_for = ImportRequest {
+        profile_id: request.profile_id,
+        folder_ids: request.folder_ids.clone(),
+    };
+    let paths = picks.take_import(request.pick_id, &picked_for)?;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
@@ -612,6 +668,7 @@ async fn vault_export_pick(
     request: ExportRequest,
 ) -> CommandResult<Option<Uuid>> {
     let record_id = request.record_id;
+    let session = picks.session();
     let suggested_name =
         run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
     let destination = tauri::async_runtime::spawn_blocking(move || {
@@ -622,7 +679,7 @@ async fn vault_export_pick(
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(destination.map(|destination| picks.store_export(destination)))
+    Ok(destination.map(|destination| picks.store_export(session, record_id, destination)))
 }
 
 #[tauri::command]
@@ -633,9 +690,7 @@ async fn vault_export_picked(
     request: PickedExportRequest,
 ) -> CommandResult<()> {
     let record_id = request.record_id;
-    let destination = picks
-        .take_export(request.pick_id)
-        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
+    let destination = picks.take_export(request.pick_id, record_id)?;
 
     if let Ok(destination_path) = destination.clone().into_path() {
         return run_blocking(store.inner(), move |store| {
@@ -690,6 +745,7 @@ async fn vault_delete_record(
 async fn vault_reset(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: ResetRequest,
 ) -> CommandResult<bool> {
     if request.confirmation != "RESET MYCARLOS VAULT" {
@@ -713,6 +769,7 @@ async fn vault_reset(
     if !confirmed {
         return Ok(false);
     }
+    picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
     Ok(true)
 }
@@ -870,23 +927,97 @@ mod tests {
     fn a_pick_is_used_once_and_cleared_by_a_lock() {
         let picks = PendingPicks::default();
         let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let request = ImportRequest {
+            profile_id: Uuid::new_v4(),
+            folder_ids: vec![Uuid::new_v4()],
+        };
+        let record_id = Uuid::new_v4();
 
-        let pick_id = picks.store_import(vec![path()]);
-        assert!(picks.take_import(Uuid::new_v4()).is_none());
-        assert_eq!(picks.take_import(pick_id).unwrap().len(), 1);
+        let pick_id = picks.store_import(picks.session(), request.clone(), vec![path()]);
+        assert!(matches!(
+            picks.take_import(Uuid::new_v4(), &request),
+            Err(VaultError::NotFound)
+        ));
+        assert_eq!(picks.take_import(pick_id, &request).unwrap().len(), 1);
         // A pick is consumed by its run, so a replayed request finds nothing.
-        assert!(picks.take_import(pick_id).is_none());
+        assert!(matches!(
+            picks.take_import(pick_id, &request),
+            Err(VaultError::NotFound)
+        ));
 
-        let pick_id = picks.store_export(path());
+        let pick_id = picks.store_export(picks.session(), record_id, path());
         picks.clear();
-        assert!(picks.take_export(pick_id).is_none());
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+
+        // A picker opened before a lock can return after it. Its pick is
+        // stored, but belongs to the ended session and is never used.
+        let session = picks.session();
+        picks.clear();
+        let pick_id = picks.store_export(session, record_id, path());
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
 
         // A stale pick is never used.
-        picks
-            .exports
-            .entries()
-            .insert(pick_id, (Instant::now() - PICK_TTL, path()));
-        assert!(picks.take_export(pick_id).is_none());
+        picks.exports.entries().insert(
+            pick_id,
+            (
+                Instant::now() - PICK_TTL,
+                picks.session(),
+                (record_id, path()),
+            ),
+        );
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn a_pick_is_only_used_for_the_request_it_was_opened_for() {
+        let picks = PendingPicks::default();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let request = ImportRequest {
+            profile_id: Uuid::new_v4(),
+            folder_ids: vec![Uuid::new_v4()],
+        };
+
+        for other in [
+            ImportRequest {
+                profile_id: Uuid::new_v4(),
+                ..request.clone()
+            },
+            ImportRequest {
+                folder_ids: Vec::new(),
+                ..request.clone()
+            },
+        ] {
+            let pick_id = picks.store_import(picks.session(), request.clone(), vec![path()]);
+            assert!(matches!(
+                picks.take_import(pick_id, &other),
+                Err(VaultError::Invalid)
+            ));
+            // The refused request still spent the pick.
+            assert!(matches!(
+                picks.take_import(pick_id, &request),
+                Err(VaultError::NotFound)
+            ));
+        }
+
+        let record_id = Uuid::new_v4();
+        let pick_id = picks.store_export(picks.session(), record_id, path());
+        assert!(matches!(
+            picks.take_export(pick_id, Uuid::new_v4()),
+            Err(VaultError::Invalid)
+        ));
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
     }
 
     #[test]
