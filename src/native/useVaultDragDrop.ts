@@ -18,34 +18,14 @@ export function useVaultDragDrop({ disabled, onMove }: VaultDragDropOptions) {
       return;
     }
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData(
-      "application/x-mycarlos-item",
-      JSON.stringify(item),
-    );
+    // Some engines will not start a drag without data. It names no document or
+    // folder, since wherever the drag ends can read it, and is not read on drop.
+    event.dataTransfer.setData("application/x-mycarlos-item", item.kind);
     setDragItem(item);
   };
 
-  const readDragItem = (event: ReactDragEvent): DragItem | null => {
-    if (dragItem) return dragItem;
-    try {
-      const value = JSON.parse(
-        event.dataTransfer.getData("application/x-mycarlos-item"),
-      ) as DragItem;
-      if (value.kind === "folder" && typeof value.id === "string") return value;
-      if (
-        value.kind === "records" &&
-        Array.isArray(value.ids) &&
-        value.ids.every((id) => typeof id === "string")
-      )
-        return value;
-    } catch {
-      return null;
-    }
-    return null;
-  };
-
   const dragOver = (event: ReactDragEvent, zone: string) => {
-    if (disabled || !readDragItem(event)) return;
+    if (disabled || !dragItem) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
@@ -55,7 +35,10 @@ export function useVaultDragDrop({ disabled, onMove }: VaultDragDropOptions) {
   const dropInto = (event: ReactDragEvent, folderId: string | null) => {
     event.preventDefault();
     event.stopPropagation();
-    const item = readDragItem(event);
+    // Only a drag this hook started can move anything. The transferred data
+    // is never read back: another application can offer the same type, with
+    // any IDs in it, and the webview delivers that drop here as well.
+    const item = dragItem;
     setDropTarget(null);
     setDragItem(null);
     if (disabled || !item) return;
