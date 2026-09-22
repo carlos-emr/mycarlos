@@ -460,11 +460,12 @@ impl VaultStore {
         self.cancel_io.store(false, Ordering::Release);
         let (header, master_key, wrapping_key) =
             read_header_for_passphrase(&self.root, passphrase)?;
+        let slots = read_manifest_slots(&self.root, &master_key, header.vault_id)?;
         let SelectedManifest {
             manifest,
             unavailable,
             read_only,
-        } = select_manifest_for_unlock(&self.root, &master_key, header.vault_id)?;
+        } = select_manifest(&slots)?;
         if read_only {
             // Leave storage exactly as found: no redundancy repair, no staging or
             // orphan cleanup. The session can only read and export.
@@ -477,8 +478,7 @@ impl VaultStore {
             });
             return Ok(());
         }
-        let manifest_healthy =
-            manifest_redundancy_healthy(&self.root, &master_key, header.vault_id, &manifest);
+        let manifest_healthy = manifest_redundancy_healthy(&slots, &manifest);
         let header_healthy =
             header_redundancy_healthy(&self.root, &header, &wrapping_key, &master_key);
         let mut degraded = false;
@@ -1322,6 +1322,8 @@ fn valid_record_name(name: &str) -> bool {
         && !name.contains('\\')
 }
 
+/// Structure plus object presence: what a slot must satisfy to be complete.
+#[cfg(test)]
 fn validate_manifest(root: &Path, manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
     validate_manifest_structure(manifest, vault_id)?;
     if manifest
@@ -1945,74 +1947,202 @@ struct SelectedManifest {
     read_only: bool,
 }
 
-fn select_manifest_for_unlock(
-    root: &Path,
-    master_key: &[u8; 32],
-    vault_id: Uuid,
-) -> Result<SelectedManifest, VaultError> {
-    // A slot that exists but cannot be read (sharing violation, permission or
-    // device error) may hold the newest committed state. Treating it as damaged
-    // would let repair overwrite it and orphan cleanup delete its objects.
-    let slot_unreadable = (0..=1).any(|slot| manifest_slot_unreadable(root, slot));
-    // Opens an authentic manifest that lacks some objects read-only, so the
-    // intact records can still be exported and nothing on disk is touched.
-    let read_only_selection = |manifest: Manifest| {
-        let unavailable = manifest
-            .records
-            .iter()
-            .filter(|record| !object_is_present(root, record))
-            .map(|record| record.id)
-            .collect();
-        SelectedManifest {
-            manifest,
-            unavailable,
-            read_only: true,
+/// One manifest slot as found on disk. Read once at unlock; every decision
+/// about which generation to open, and whether the slots agree, is made from
+/// the two readings without touching the files again.
+enum SlotReading {
+    Absent,
+    /// Present but not an authentic manifest: damage that a repair may replace.
+    Damaged,
+    /// Exists but could not be read (sharing violation, permission or device
+    /// error). It may hold the newest committed state, so nothing may replace
+    /// it and no orphan cleanup may run.
+    Unreadable,
+    Authentic {
+        manifest: Manifest,
+        /// Records whose object is missing or is not a regular file.
+        missing: HashSet<Uuid>,
+    },
+}
+
+impl SlotReading {
+    fn authentic(&self) -> Option<(&Manifest, &HashSet<Uuid>)> {
+        match self {
+            Self::Authentic { manifest, missing } => Some((manifest, missing)),
+            _ => None,
         }
-    };
-    match read_latest_manifest(root, master_key, vault_id) {
-        Ok(manifest) => {
-            // The other slot may hold a newer authentic generation that was passed
-            // over because one of its objects is lost. Falling back is only safe
-            // when that loses nothing: repair would overwrite the newer manifest
-            // and orphan cleanup would delete every intact object that only it
-            // references. If such an object exists, keep the newer generation.
-            let keys = derive_keys(vault_id, master_key)?;
-            let other_slot = 1 - manifest.generation % 2;
-            let newer = read_manifest_slot_with(root, &keys.manifest, vault_id, other_slot, false)
-                .filter(|other| other.generation > manifest.generation);
-            if let Some(newer) = newer {
-                let kept: HashSet<&str> = manifest
-                    .records
-                    .iter()
-                    .map(|record| record.object_name.as_str())
-                    .collect();
-                if newer.records.iter().any(|record| {
-                    !kept.contains(record.object_name.as_str()) && object_is_present(root, record)
-                }) {
-                    return Ok(read_only_selection(newer));
-                }
-            }
-            Ok(SelectedManifest {
-                manifest,
-                unavailable: HashSet::new(),
-                read_only: slot_unreadable,
-            })
-        }
-        Err(VaultError::Corrupt) => {
-            // No generation has all of its objects. Open the newest authentic
-            // manifest read-only so intact records can still be exported.
-            let manifest = read_latest_manifest_with(root, master_key, vault_id, false)?;
-            Ok(read_only_selection(manifest))
-        }
-        Err(error) => Err(error),
+    }
+
+    fn complete(&self) -> Option<&Manifest> {
+        self.authentic()
+            .filter(|(_, missing)| missing.is_empty())
+            .map(|(manifest, _)| manifest)
     }
 }
 
-fn manifest_slot_unreadable(root: &Path, slot: u64) -> bool {
-    file_unreadable(
-        &root.join(format!("manifest-{slot}.bin")),
-        MAX_MANIFEST_BYTES,
-    )
+fn read_manifest_slots(
+    root: &Path,
+    master_key: &[u8; 32],
+    vault_id: Uuid,
+) -> Result<[SlotReading; 2], VaultError> {
+    let keys = derive_keys(vault_id, master_key)?;
+    Ok([
+        read_manifest_slot_reading(root, &keys.manifest, vault_id, 0),
+        read_manifest_slot_reading(root, &keys.manifest, vault_id, 1),
+    ])
+}
+
+fn read_manifest_slot_reading(
+    root: &Path,
+    manifest_key: &[u8; 32],
+    vault_id: Uuid,
+    slot: u64,
+) -> SlotReading {
+    let path = root.join(format!("manifest-{slot}.bin"));
+    let data = match read_bounded_regular_file(&path, MAX_MANIFEST_BYTES) {
+        Ok(data) => data,
+        Err(error) => {
+            return match error.kind() {
+                io::ErrorKind::NotFound => SlotReading::Absent,
+                // Oversized and non-regular slots are damage that repair may replace.
+                io::ErrorKind::InvalidData => SlotReading::Damaged,
+                _ => SlotReading::Unreadable,
+            };
+        }
+    };
+    let Some(manifest) = decrypt_manifest(&data, manifest_key, vault_id) else {
+        return SlotReading::Damaged;
+    };
+    let missing = manifest
+        .records
+        .iter()
+        .filter(|record| !object_is_present(root, record))
+        .map(|record| record.id)
+        .collect();
+    SlotReading::Authentic { manifest, missing }
+}
+
+fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Option<Manifest> {
+    if data.len() < 40 {
+        return None;
+    }
+    let aad = manifest_aad(vault_id);
+    let plaintext = XChaCha20Poly1305::new(manifest_key.into())
+        .decrypt(
+            XNonce::from_slice(&data[..24]),
+            Payload {
+                msg: &data[24..],
+                aad: &aad,
+            },
+        )
+        .ok()?;
+    let plaintext = Zeroizing::new(plaintext);
+    let manifest = serde_json::from_slice::<Manifest>(&plaintext).ok()?;
+    validate_manifest_structure(&manifest, vault_id).ok()?;
+    Some(manifest)
+}
+
+/// Which generation an unlock opens, and what the session may do with it.
+///
+/// - The newest complete generation (authentic, every object present) is
+///   opened writable, unless a slot could not be read: it may hold a newer
+///   state, so nothing on disk may be replaced or cleaned up.
+/// - If the other slot holds a newer authentic generation that was passed over
+///   for a lost object, falling back is only safe when that loses nothing.
+///   Repair would overwrite the newer manifest and orphan cleanup would delete
+///   every intact object only it references. If such an object exists, the
+///   newer generation is opened read-only with its lost records unavailable.
+/// - If no generation is complete, the newest authentic one is opened
+///   read-only so its intact records can still be exported.
+fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultError> {
+    let slot_unreadable = slots
+        .iter()
+        .any(|slot| matches!(slot, SlotReading::Unreadable));
+    let read_only_selection = |manifest: &Manifest, missing: &HashSet<Uuid>| SelectedManifest {
+        manifest: manifest.clone(),
+        unavailable: missing.clone(),
+        read_only: true,
+    };
+    let Some(selected) = newest(slots.iter().filter_map(SlotReading::complete))? else {
+        // No generation has all of its objects.
+        let (manifest, missing) =
+            newest(slots.iter().filter_map(SlotReading::authentic))?.ok_or(VaultError::Corrupt)?;
+        return Ok(read_only_selection(manifest, missing));
+    };
+    let kept: HashSet<&str> = selected
+        .records
+        .iter()
+        .map(|record| record.object_name.as_str())
+        .collect();
+    let newer_with_intact_object = slots
+        .iter()
+        .filter_map(SlotReading::authentic)
+        .filter(|(manifest, _)| manifest.generation > selected.generation)
+        .find(|(manifest, missing)| {
+            manifest.records.iter().any(|record| {
+                !kept.contains(record.object_name.as_str()) && !missing.contains(&record.id)
+            })
+        });
+    if let Some((manifest, missing)) = newer_with_intact_object {
+        return Ok(read_only_selection(manifest, missing));
+    }
+    Ok(SelectedManifest {
+        manifest: selected.clone(),
+        unavailable: HashSet::new(),
+        read_only: slot_unreadable,
+    })
+}
+
+/// The candidate with the highest generation. Two candidates with the same
+/// generation but different content are damage, not a choice.
+fn newest<T: Copy + ManifestLike>(
+    candidates: impl Iterator<Item = T>,
+) -> Result<Option<T>, VaultError> {
+    let mut best: Option<T> = None;
+    for candidate in candidates {
+        match best {
+            Some(current) if current.manifest().generation == candidate.manifest().generation => {
+                if current.manifest() != candidate.manifest() {
+                    return Err(VaultError::Corrupt);
+                }
+            }
+            Some(current) if current.manifest().generation > candidate.manifest().generation => {}
+            _ => best = Some(candidate),
+        }
+    }
+    Ok(best)
+}
+
+trait ManifestLike {
+    fn manifest(&self) -> &Manifest;
+}
+
+impl ManifestLike for &Manifest {
+    fn manifest(&self) -> &Manifest {
+        self
+    }
+}
+
+impl ManifestLike for (&Manifest, &HashSet<Uuid>) {
+    fn manifest(&self) -> &Manifest {
+        self.0
+    }
+}
+
+/// Whether both slots hold the selected state, in adjacent generations, with
+/// every object present: the condition after a completed redundant commit.
+fn manifest_redundancy_healthy(slots: &[SlotReading; 2], selected: &Manifest) -> bool {
+    let (Some(first), Some(second)) = (slots[0].complete(), slots[1].complete()) else {
+        return false;
+    };
+    let adjacent = first.generation.abs_diff(second.generation) == 1;
+    let includes_selected =
+        first.generation == selected.generation || second.generation == selected.generation;
+    let mut first = first.clone();
+    let mut second = second.clone();
+    first.generation = 0;
+    second.generation = 0;
+    adjacent && includes_selected && first == second
 }
 
 /// A header slot that exists but cannot be read may hold a newer passphrase
@@ -2034,103 +2164,18 @@ fn file_unreadable(path: &Path, maximum: usize) -> bool {
     }
 }
 
+/// The newest complete generation, as an unlock would select before any
+/// read-only rule applies.
+#[cfg(test)]
 fn read_latest_manifest(
     root: &Path,
     master_key: &[u8; 32],
     vault_id: Uuid,
 ) -> Result<Manifest, VaultError> {
-    read_latest_manifest_with(root, master_key, vault_id, true)
-}
-
-fn read_latest_manifest_with(
-    root: &Path,
-    master_key: &[u8; 32],
-    vault_id: Uuid,
-    require_objects: bool,
-) -> Result<Manifest, VaultError> {
-    let keys = derive_keys(vault_id, master_key)?;
-    let candidates = (0..=1)
-        .filter_map(|slot| {
-            read_manifest_slot_with(root, &keys.manifest, vault_id, slot, require_objects)
-        })
-        .collect::<Vec<_>>();
-    let latest_generation = candidates
-        .iter()
-        .map(|manifest| manifest.generation)
-        .max()
-        .ok_or(VaultError::Corrupt)?;
-    let mut newest = candidates
-        .into_iter()
-        .filter(|manifest| manifest.generation == latest_generation);
-    let selected = newest.next().ok_or(VaultError::Corrupt)?;
-    if newest.any(|candidate| candidate != selected) {
-        return Err(VaultError::Corrupt);
-    }
-    Ok(selected)
-}
-
-fn read_manifest_slot(
-    root: &Path,
-    manifest_key: &[u8; 32],
-    vault_id: Uuid,
-    slot: u64,
-) -> Option<Manifest> {
-    read_manifest_slot_with(root, manifest_key, vault_id, slot, true)
-}
-
-fn read_manifest_slot_with(
-    root: &Path,
-    manifest_key: &[u8; 32],
-    vault_id: Uuid,
-    slot: u64,
-    require_objects: bool,
-) -> Option<Manifest> {
-    let path = root.join(format!("manifest-{slot}.bin"));
-    let data = read_bounded_regular_file(&path, MAX_MANIFEST_BYTES).ok()?;
-    if data.len() < 40 {
-        return None;
-    }
-    let aad = manifest_aad(vault_id);
-    let plaintext = XChaCha20Poly1305::new(manifest_key.into())
-        .decrypt(
-            XNonce::from_slice(&data[..24]),
-            Payload {
-                msg: &data[24..],
-                aad: &aad,
-            },
-        )
-        .ok()?;
-    let plaintext = Zeroizing::new(plaintext);
-    let manifest = serde_json::from_slice::<Manifest>(&plaintext).ok()?;
-    if require_objects {
-        validate_manifest(root, &manifest, vault_id).ok()?;
-    } else {
-        validate_manifest_structure(&manifest, vault_id).ok()?;
-    }
-    Some(manifest)
-}
-
-fn manifest_redundancy_healthy(
-    root: &Path,
-    master_key: &[u8; 32],
-    vault_id: Uuid,
-    selected: &Manifest,
-) -> bool {
-    let Ok(keys) = derive_keys(vault_id, master_key) else {
-        return false;
-    };
-    let Some(mut first) = read_manifest_slot(root, &keys.manifest, vault_id, 0) else {
-        return false;
-    };
-    let Some(mut second) = read_manifest_slot(root, &keys.manifest, vault_id, 1) else {
-        return false;
-    };
-    let adjacent = first.generation.abs_diff(second.generation) == 1;
-    let includes_selected =
-        first.generation == selected.generation || second.generation == selected.generation;
-    first.generation = 0;
-    second.generation = 0;
-    adjacent && includes_selected && first == second
+    let slots = read_manifest_slots(root, master_key, vault_id)?;
+    newest(slots.iter().filter_map(SlotReading::complete))?
+        .cloned()
+        .ok_or(VaultError::Corrupt)
 }
 
 fn manifest_aad(vault_id: Uuid) -> Vec<u8> {
@@ -4361,15 +4406,145 @@ mod tests {
         assert_eq!(snapshot.records.len(), 1);
     }
 
+    /// A manifest with `records` named after their objects, all in one profile.
+    fn manifest_with(vault_id: Uuid, generation: u64, records: &[&str]) -> Manifest {
+        let profile = Uuid::from_u128(1);
+        Manifest {
+            format_version: VAULT_FORMAT,
+            vault_id,
+            generation,
+            profiles: vec![PatientProfile {
+                id: profile,
+                display_name: "Jamie".to_owned(),
+                created_at_ms: 1,
+            }],
+            folders: vec![],
+            records: records
+                .iter()
+                .map(|name| StoredRecord {
+                    id: Uuid::from_u128(u128::from(
+                        name.bytes()
+                            .fold(7_u64, |h, b| h.wrapping_mul(31).wrapping_add(u64::from(b))),
+                    )),
+                    profile_id: profile,
+                    folder_ids: vec![],
+                    display_name: format!("{name}.pdf"),
+                    source_label: "test".to_owned(),
+                    media_type: "application/pdf".to_owned(),
+                    plaintext_size: 1,
+                    imported_at_ms: 1,
+                    object_name: format!("{name}.mcobj"),
+                    fingerprint: String::new(),
+                    wrapped_object_key: WrappedSecret {
+                        nonce: String::new(),
+                        ciphertext: String::new(),
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    fn authentic(manifest: Manifest, missing: &[&str]) -> SlotReading {
+        let missing = manifest
+            .records
+            .iter()
+            .filter(|record| missing.contains(&record.object_name.trim_end_matches(".mcobj")))
+            .map(|record| record.id)
+            .collect();
+        SlotReading::Authentic { manifest, missing }
+    }
+
+    #[test]
+    fn unlock_selects_the_newest_complete_generation_and_reports_health() {
+        let id = Uuid::new_v4();
+        let older = manifest_with(id, 4, &["a"]);
+        let newer = manifest_with(id, 5, &["a", "b"]);
+        let slots = [authentic(older.clone(), &[]), authentic(newer.clone(), &[])];
+
+        let selected = select_manifest(&slots).unwrap();
+        assert!(selected.manifest == newer);
+        assert!(!selected.read_only);
+        assert!(selected.unavailable.is_empty());
+        // Adjacent generations with different content: the redundant write of
+        // generation 5 has not happened, so the slots are not yet healthy.
+        assert!(!manifest_redundancy_healthy(&slots, &selected.manifest));
+
+        let mut redundant = newer.clone();
+        redundant.generation = 6;
+        let slots = [authentic(redundant, &[]), authentic(newer.clone(), &[])];
+        assert!(manifest_redundancy_healthy(&slots, &newer));
+    }
+
+    #[test]
+    fn unlock_is_read_only_while_a_slot_cannot_be_read() {
+        let id = Uuid::new_v4();
+        let slots = [
+            SlotReading::Unreadable,
+            authentic(manifest_with(id, 5, &["a"]), &[]),
+        ];
+        let selected = select_manifest(&slots).unwrap();
+        assert_eq!(selected.manifest.generation, 5);
+        assert!(selected.read_only);
+        assert!(!manifest_redundancy_healthy(&slots, &selected.manifest));
+    }
+
+    #[test]
+    fn unlock_keeps_a_newer_generation_whose_intact_objects_an_older_one_lacks() {
+        let id = Uuid::new_v4();
+        let older = manifest_with(id, 4, &["a"]);
+        let newer = manifest_with(id, 5, &["a", "lost", "kept"]);
+        let slots = [authentic(older, &[]), authentic(newer.clone(), &["lost"])];
+
+        let selected = select_manifest(&slots).unwrap();
+        assert!(selected.manifest == newer);
+        assert!(selected.read_only);
+        assert_eq!(selected.unavailable.len(), 1);
+        assert!(selected.unavailable.contains(&newer.records[1].id));
+    }
+
+    #[test]
+    fn unlock_falls_back_when_every_new_object_of_the_newer_generation_is_lost() {
+        let id = Uuid::new_v4();
+        let older = manifest_with(id, 4, &["a"]);
+        let newer = manifest_with(id, 5, &["a", "lost"]);
+        let slots = [authentic(older.clone(), &[]), authentic(newer, &["lost"])];
+
+        let selected = select_manifest(&slots).unwrap();
+        assert!(selected.manifest == older);
+        assert!(!selected.read_only);
+        assert!(selected.unavailable.is_empty());
+    }
+
+    #[test]
+    fn unlock_opens_the_newest_authentic_generation_read_only_when_none_is_complete() {
+        let id = Uuid::new_v4();
+        let older = manifest_with(id, 4, &["a"]);
+        let newer = manifest_with(id, 5, &["a", "b"]);
+        let slots = [authentic(older, &["a"]), authentic(newer.clone(), &["b"])];
+
+        let selected = select_manifest(&slots).unwrap();
+        assert!(selected.manifest == newer);
+        assert!(selected.read_only);
+        assert_eq!(selected.unavailable.len(), 1);
+
+        for slots in [
+            [SlotReading::Absent, SlotReading::Damaged],
+            [SlotReading::Damaged, SlotReading::Unreadable],
+        ] {
+            assert!(matches!(select_manifest(&slots), Err(VaultError::Corrupt)));
+        }
+    }
+
     #[test]
     fn damaged_or_absent_manifest_slots_are_not_treated_as_unreadable() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        assert!(!manifest_slot_unreadable(root, 0));
+        let reading = |slot| read_manifest_slot_reading(root, &[0_u8; 32], Uuid::nil(), slot);
+        assert!(matches!(reading(0), SlotReading::Absent));
         fs::write(root.join("manifest-0.bin"), b"damaged").unwrap();
-        assert!(!manifest_slot_unreadable(root, 0));
+        assert!(matches!(reading(0), SlotReading::Damaged));
         fs::create_dir(root.join("manifest-1.bin")).unwrap();
-        assert!(!manifest_slot_unreadable(root, 1));
+        assert!(matches!(reading(1), SlotReading::Damaged));
     }
 
     #[cfg(unix)]
