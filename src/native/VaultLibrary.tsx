@@ -12,11 +12,32 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { LibraryItems } from "./LibraryItems";
+import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
+
+/** The ids of a folder and of every folder beneath it. */
+function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
+  const subtree = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const folder of folders) {
+      if (
+        folder.parentId &&
+        subtree.has(folder.parentId) &&
+        !subtree.has(folder.id)
+      ) {
+        subtree.add(folder.id);
+        grew = true;
+      }
+    }
+  }
+  return subtree;
+}
 
 export function VaultLibrary({
   bridge,
@@ -251,8 +272,14 @@ export function VaultLibrary({
         );
       } else {
         const folder = folders.find((candidate) => candidate.id === item.id);
-        if (!folder || folder.id === folderId) {
-          setNotice("A folder cannot be moved into itself.");
+        if (!folder) {
+          setNotice("That folder is no longer available.");
+          return;
+        }
+        // The sidebar lists every folder, so a folder can be dropped on one
+        // of its own subfolders. The vault refuses that as a cycle.
+        if (folderId && folderSubtree(folders, folder.id).has(folderId)) {
+          setNotice("A folder cannot be moved into itself or its subfolders.");
           return;
         }
         await bridge.updateFolder(folder.id, folderId, folder.name);
@@ -395,21 +422,7 @@ export function VaultLibrary({
   // A folder cannot move into itself or anything beneath it, so those are not
   // offered as destinations.
   const folderDestinations = useMemo(() => {
-    const excluded = new Set([folderToMoveId]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const folder of folders) {
-        if (
-          folder.parentId &&
-          excluded.has(folder.parentId) &&
-          !excluded.has(folder.id)
-        ) {
-          excluded.add(folder.id);
-          grew = true;
-        }
-      }
-    }
+    const excluded = folderSubtree(folders, folderToMoveId);
     return folders.filter((folder) => !excluded.has(folder.id));
   }, [folders, folderToMoveId]);
 
@@ -586,14 +599,17 @@ export function VaultLibrary({
                       <input
                         autoFocus
                         required
-                        maxLength={120}
+                        maxLength={NAME_INPUT_MAX_LENGTH}
                         value={folderName}
                         onChange={(event) => setFolderName(event.target.value)}
                       />
                     </label>
+                    {nameTooLong(folderName) && (
+                      <p role="alert">This name is too long. Shorten it.</p>
+                    )}
                     <button
                       className="button primary"
-                      disabled={busy || readOnly}
+                      disabled={busy || readOnly || nameTooLong(folderName)}
                     >
                       Create
                     </button>

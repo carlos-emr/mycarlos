@@ -95,7 +95,9 @@ export function LibraryItems({
             </span>
           </button>
           <span className="column">—</span>
-          <span className="column">Folder</span>
+          <span className="column">
+            {new Date(folder.createdAtMs).toLocaleDateString()}
+          </span>
           <button
             className="native-rename-button"
             type="button"
