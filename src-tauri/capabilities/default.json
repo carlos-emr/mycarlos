@@ -17,8 +17,10 @@
     "allow-vault-rename-record",
     "allow-vault-assign-folders",
     "allow-vault-assign-folders-batch",
-    "allow-vault-import-begin",
-    "allow-vault-export-begin",
+    "allow-vault-import-pick",
+    "allow-vault-import-picked",
+    "allow-vault-export-pick",
+    "allow-vault-export-picked",
     "allow-vault-delete-record",
     "allow-vault-reset"
   ]

@@ -74,13 +74,18 @@ privacy, accessibility, or clinical review.
 - [x] Replace the stale PR title/body with the implemented scope and current test evidence.
 - [ ] Obtain application-owner and independent security review of the vault and threat model.
 - [ ] Run the native lifecycle checklist on representative physical target devices.
-- [ ] Confirm on a physical Android device that choosing files still completes. The app locks
-      whenever its page becomes hidden, and Android shows the document picker as a separate activity,
-      so the import or export that opened the picker may find the vault locked when it returns. If
-      so, decide how a picker the app itself opened should differ from the app being backgrounded.
-      The same decision covers inactivity on every platform: only input to the app's own window
-      counts as activity, so browsing in a native picker for longer than the automatic lock delay
-      (one minute at its shortest) locks the vault and the chosen import or export is refused.
+- [ ] Verify import and export on an Android emulator or device. Android shows the document picker
+      as a separate activity, which hides the page, so the app used to lock the vault under its own
+      picker and every import and export failed with "locked". Import and export are now split into
+      a native pick step, which holds the chosen paths natively, and a run step: the renderer does
+      not lock while a picker it opened is in the foreground, treats that time as activity rather
+      than inactivity, and locks once the picker closes if the page is still hidden. Backgrounding
+      during the transfer itself still locks and cancels it. This is written against Android's
+      documented lifecycle and covered by renderer tests, but it has not been run on Android: the
+      development container has no Android SDK or emulator. Run `npm run tauri android dev` from a
+      machine with Android Studio's emulator (see the Android section in `README.md`), then check
+      that choosing PDFs imports them, that Save a copy writes the file, and that pressing Home
+      while the picker is open locks the vault when the app returns.
 - [ ] Give the native session its own idle deadline. Automatic locking runs only as timers and
       events in the renderer, so if the webview crashes, hangs, or is suspended before its lock
       request is delivered, the native session keeps the vault unlocked until the app exits.

@@ -69,8 +69,21 @@ export interface VaultBridge {
   renameRecord(recordId: string, name: string): Promise<void>;
   assignFolders(recordId: string, folderIds: string[]): Promise<void>;
   assignFoldersBatch(recordIds: string[], folderIds: string[]): Promise<void>;
-  importFiles(profileId: string, folderIds: string[]): Promise<ImportOutcome>;
-  exportFile(recordId: string): Promise<boolean>;
+  /** Opens the file picker. Resolves to the id of the chosen files, kept
+   * natively, or null when the picker was cancelled. */
+  pickImportFiles(
+    profileId: string,
+    folderIds: string[],
+  ): Promise<string | null>;
+  importPickedFiles(
+    pickId: string,
+    profileId: string,
+    folderIds: string[],
+  ): Promise<ImportOutcome>;
+  /** Opens the save picker. Resolves to the id of the chosen destination,
+   * kept natively, or null when the picker was cancelled. */
+  pickExportDestination(recordId: string): Promise<string | null>;
+  exportToPicked(pickId: string, recordId: string): Promise<void>;
   deleteRecord(recordId: string): Promise<void>;
   reset(confirmation: string): Promise<boolean>;
 }
@@ -138,12 +151,18 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_assign_folders_batch", {
         request: { recordIds, folderIds },
       }),
-    importFiles: (profileId, folderIds) =>
-      invoke<ImportOutcome>("vault_import_begin", {
+    pickImportFiles: (profileId, folderIds) =>
+      invoke<string | null>("vault_import_pick", {
         request: { profileId, folderIds },
       }),
-    exportFile: (recordId) =>
-      invoke<boolean>("vault_export_begin", { request: { recordId } }),
+    importPickedFiles: (pickId, profileId, folderIds) =>
+      invoke<ImportOutcome>("vault_import_picked", {
+        request: { pickId, profileId, folderIds },
+      }),
+    pickExportDestination: (recordId) =>
+      invoke<string | null>("vault_export_pick", { request: { recordId } }),
+    exportToPicked: (pickId, recordId) =>
+      invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
     reset: (confirmation) =>

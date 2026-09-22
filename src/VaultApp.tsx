@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import App from "./App";
 import {
   createVaultBridge,
@@ -143,12 +143,40 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
   }, [bridge]);
 
+  // Pickers this app opened and has not yet heard back from. Only the pick
+  // phase counts: once the paths are chosen, the I/O phase runs under the
+  // ordinary rules, so backgrounding the app during a transfer still locks the
+  // vault and cancels it at the next I/O boundary.
+  const pickersOpenRef = useRef(0);
+  const trackedBridge = useMemo<VaultBridge>(() => {
+    const track = async <T,>(picker: Promise<T>): Promise<T> => {
+      pickersOpenRef.current += 1;
+      try {
+        return await picker;
+      } finally {
+        pickersOpenRef.current -= 1;
+        // Let the visibility handler decide again now that the picker is gone.
+        document.dispatchEvent(new Event("visibilitychange"));
+      }
+    };
+    return {
+      ...bridge,
+      pickImportFiles: (profileId, folderIds) =>
+        track(bridge.pickImportFiles(profileId, folderIds)),
+      pickExportDestination: (recordId) =>
+        track(bridge.pickExportDestination(recordId)),
+    };
+  }, [bridge]);
+
   useEffect(() => {
     if (status !== "unlocked") return;
     const delayMs = autoLockMinutes * 60 * 1000;
     let deadline = Date.now() + delayMs;
     let timer = 0;
     const check = () => {
+      // Time spent in a picker the app opened is not idle time: the user is
+      // choosing files for this vault. The deadline restarts once it closes.
+      if (pickersOpenRef.current > 0) deadline = Date.now() + delayMs;
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
@@ -164,6 +192,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     const onVisibility = () => {
       if (document.visibilityState !== "hidden") return;
+      // On Android the system picker is a separate activity, so the page is
+      // hidden while a picker this app opened is in the foreground. Locking then
+      // would drop the session the chosen files are about to be imported into.
+      // The picker's settlement re-dispatches this event, so a page still
+      // hidden once it closes is treated as backgrounded and locked then.
+      if (pickersOpenRef.current > 0) return;
       // The lock is owed from here on, exactly as if the delay had elapsed:
       // activity cannot postpone it, and the recheck retries it if it fails.
       deadline = 0;
@@ -306,7 +340,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   return (
     <VaultLibrary
-      bridge={bridge}
+      bridge={trackedBridge}
       snapshot={snapshot}
       busy={busy}
       notice={notice}

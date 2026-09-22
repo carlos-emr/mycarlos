@@ -34,10 +34,12 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     renameRecord: vi.fn().mockResolvedValue(undefined),
     assignFolders: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
-    importFiles: vi
+    pickImportFiles: vi.fn().mockResolvedValue("pick-1"),
+    importPickedFiles: vi
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
-    exportFile: vi.fn().mockResolvedValue(false),
+    pickExportDestination: vi.fn().mockResolvedValue(null),
+    exportToPicked: vi.fn().mockResolvedValue(undefined),
     deleteRecord: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
@@ -210,7 +212,7 @@ describe("durable vault UI", () => {
   it("unlocks and imports through the native bridge", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
-      importFiles: vi.fn().mockResolvedValue({
+      importPickedFiles: vi.fn().mockResolvedValue({
         imported: ["record-1"],
         skippedDuplicates: ["copy.pdf"],
       }),
@@ -249,7 +251,12 @@ describe("durable vault UI", () => {
         "1 file(s) encrypted and imported. 1 duplicate(s) skipped.",
       ),
     ).toBeVisible();
-    expect(bridge.importFiles).toHaveBeenCalledWith("profile-1", []);
+    expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []);
+    expect(bridge.importPickedFiles).toHaveBeenCalledWith(
+      "pick-1",
+      "profile-1",
+      [],
+    );
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {
@@ -440,7 +447,7 @@ describe("durable vault UI", () => {
     expect(warning).toHaveTextContent("cannot erase that copy");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(bridge.exportFile).not.toHaveBeenCalled();
+    expect(bridge.pickExportDestination).not.toHaveBeenCalled();
     expect(
       screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" }),
     ).toBeVisible();
@@ -450,7 +457,9 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: "Save a copy" }));
     await waitFor(() =>
-      expect(bridge.exportFile).toHaveBeenCalledWith("record-folder"),
+      expect(bridge.pickExportDestination).toHaveBeenCalledWith(
+        "record-folder",
+      ),
     );
     expect(shim).not.toHaveBeenCalled();
     shim.mockRestore();
@@ -693,7 +702,7 @@ describe("durable vault UI", () => {
       expect(
         fireDragEvent("drop", heading, { dataTransfer: urlTransfer }),
       ).toBe(false);
-      expect(bridge.importFiles).not.toHaveBeenCalled();
+      expect(bridge.pickImportFiles).not.toHaveBeenCalled();
       expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
       expect(bridge.updateFolder).not.toHaveBeenCalled();
       unmount();
@@ -715,10 +724,10 @@ describe("durable vault UI", () => {
     }>((resolve) => {
       finishImport = resolve;
     });
-    const importFiles = vi.fn().mockReturnValue(pendingImport);
+    const importPickedFiles = vi.fn().mockReturnValue(pendingImport);
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      importFiles,
+      importPickedFiles,
     });
     let visibilityState: DocumentVisibilityState = "visible";
     const visibility = vi
@@ -730,6 +739,7 @@ describe("durable vault UI", () => {
       await user.click(
         await screen.findByRole("button", { name: "Choose files to import" }),
       );
+      await waitFor(() => expect(importPickedFiles).toHaveBeenCalled());
       await act(async () => {
         visibilityState = "hidden";
         document.dispatchEvent(new Event("visibilitychange"));
@@ -869,18 +879,138 @@ describe("durable vault UI", () => {
     expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
   });
 
+  it("does not lock under a picker it opened, but locks once the picker closes if still hidden", async () => {
+    // On Android the system picker is a separate activity, so the page is
+    // hidden for as long as it is open.
+    const user = userEvent.setup();
+    let finishPick!: (pickId: string | null) => void;
+    const pickImportFiles = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishPick = resolve;
+        }),
+    );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportFiles,
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
+
+      await act(async () => {
+        visibilityState = "hidden";
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+
+      // The picker returns while the app is still hidden: the user left with
+      // it open, so this is a backgrounding after all.
+      await act(async () => finishPick("pick-1"));
+      await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+      expect(
+        await screen.findByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it("imports the chosen files when the page is visible again after the picker", async () => {
+    const user = userEvent.setup();
+    let finishPick!: (pickId: string | null) => void;
+    const pickImportFiles = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishPick = resolve;
+        }),
+    );
+    const importPickedFiles = vi
+      .fn()
+      .mockResolvedValue({ imported: ["record-1"], skippedDuplicates: [] });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportFiles,
+      importPickedFiles,
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
+      await act(async () => {
+        visibilityState = "hidden";
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => {
+        visibilityState = "visible";
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => finishPick("pick-1"));
+
+      await waitFor(() =>
+        expect(importPickedFiles).toHaveBeenCalledWith(
+          "pick-1",
+          "profile-1",
+          [],
+        ),
+      );
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(
+        await screen.findByText("1 file(s) encrypted and imported."),
+      ).toBeVisible();
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it("does not count time in a picker as inactivity", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickImportFiles: vi.fn(() => new Promise<never>(() => undefined)),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
+      expect(bridge.lock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps Lock now available while an operation is running", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      importFiles: vi.fn(() => new Promise<never>(() => undefined)),
+      importPickedFiles: vi.fn(() => new Promise<never>(() => undefined)),
     });
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
       await screen.findByRole("button", { name: /Choose files to import/ }),
     );
-    await waitFor(() => expect(bridge.importFiles).toHaveBeenCalled());
+    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
     // Locking is what cancels streaming I/O, so it must stay reachable.
     expect(screen.getByRole("button", { name: /Lock now/ })).toBeEnabled();
   });
@@ -903,7 +1033,7 @@ describe("durable vault UI", () => {
       snapshot: vi
         .fn()
         .mockResolvedValue({ ...emptySnapshot, records: [record] }),
-      exportFile: vi.fn().mockResolvedValue(false),
+      pickExportDestination: vi.fn().mockResolvedValue(null),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -1060,9 +1190,7 @@ describe("durable vault UI", () => {
       snapshot: vi
         .fn()
         .mockResolvedValue({ ...emptySnapshot, records: [record] }),
-      importFiles: vi
-        .fn()
-        .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+      pickImportFiles: vi.fn().mockResolvedValue(null),
     });
     render(<VaultApp bridge={bridge} />);
 

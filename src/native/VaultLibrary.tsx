@@ -173,9 +173,16 @@ export function VaultLibrary({
 
   const importFiles = () =>
     run(async () => {
-      const outcome = await bridge.importFiles(
+      const folderIds = currentFolderId ? [currentFolderId] : [];
+      const pickId = await bridge.pickImportFiles(profileId, folderIds);
+      if (!pickId) {
+        setNotice("No files selected. Nothing changed.");
+        return;
+      }
+      const outcome = await bridge.importPickedFiles(
+        pickId,
         profileId,
-        currentFolderId ? [currentFolderId] : [],
+        folderIds,
       );
       if (!outcome.imported.length && !outcome.skippedDuplicates.length) {
         setNotice("No files selected. Nothing changed.");
@@ -268,13 +275,15 @@ export function VaultLibrary({
 
   const exportRecord = (record: VaultRecord) => {
     setConfirmation(null);
-    void run(async () =>
-      setNotice(
-        (await bridge.exportFile(record.id))
-          ? "A readable copy was saved to this computer."
-          : "Save cancelled. Nothing changed.",
-      ),
-    );
+    void run(async () => {
+      const pickId = await bridge.pickExportDestination(record.id);
+      if (!pickId) {
+        setNotice("Save cancelled. Nothing changed.");
+        return;
+      }
+      await bridge.exportToPicked(pickId, record.id);
+      setNotice("A readable copy was saved to this computer.");
+    });
   };
 
   const deleteRecord = (record: VaultRecord) => {

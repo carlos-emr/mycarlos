@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
 use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -179,6 +180,95 @@ struct ExportRequest {
     record_id: Uuid,
 }
 
+/// Finishes an import or export whose picker already closed. The paths the
+/// picker returned stay native, under `pick_id`; the renderer never sees them.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickedImportRequest {
+    pick_id: Uuid,
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickedExportRequest {
+    pick_id: Uuid,
+    record_id: Uuid,
+}
+
+/// Paths chosen in native pickers, waiting for the command that uses them.
+///
+/// A picker is a separate activity on Android, so while it is open the webview
+/// is hidden. The renderer must not treat that as the app being backgrounded
+/// and lock the vault under the picker, or nothing can ever be imported or
+/// exported there. Splitting each operation into a pick and a run lets the
+/// renderer tell a picker it opened from a real backgrounding, and lets a lock
+/// during the I/O phase still cancel the transfer. Entries are dropped when
+/// used, when the vault locks, and after a bounded time.
+#[derive(Default)]
+struct PendingPicks {
+    imports: Mutex<HashMap<Uuid, (Instant, Vec<tauri_plugin_fs::FilePath>)>>,
+    exports: Mutex<HashMap<Uuid, (Instant, tauri_plugin_fs::FilePath)>>,
+}
+
+// Long enough to cover the renderer's round trip after the picker closes, and
+// short enough that a stale choice cannot be used much later.
+const PICK_TTL: Duration = Duration::from_secs(120);
+
+impl PendingPicks {
+    fn store_import(&self, paths: Vec<tauri_plugin_fs::FilePath>) -> Uuid {
+        let mut imports = self
+            .imports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        imports.retain(|_, (picked_at, _)| picked_at.elapsed() < PICK_TTL);
+        let pick_id = Uuid::new_v4();
+        imports.insert(pick_id, (Instant::now(), paths));
+        pick_id
+    }
+
+    fn take_import(&self, pick_id: Uuid) -> Option<Vec<tauri_plugin_fs::FilePath>> {
+        let mut imports = self
+            .imports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (picked_at, paths) = imports.remove(&pick_id)?;
+        (picked_at.elapsed() < PICK_TTL).then_some(paths)
+    }
+
+    fn store_export(&self, destination: tauri_plugin_fs::FilePath) -> Uuid {
+        let mut exports = self
+            .exports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        exports.retain(|_, (picked_at, _)| picked_at.elapsed() < PICK_TTL);
+        let pick_id = Uuid::new_v4();
+        exports.insert(pick_id, (Instant::now(), destination));
+        pick_id
+    }
+
+    fn take_export(&self, pick_id: Uuid) -> Option<tauri_plugin_fs::FilePath> {
+        let mut exports = self
+            .exports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (picked_at, destination) = exports.remove(&pick_id)?;
+        (picked_at.elapsed() < PICK_TTL).then_some(destination)
+    }
+
+    fn clear(&self) {
+        self.imports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.exports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeleteRecordRequest {
@@ -285,7 +375,11 @@ async fn vault_unlock(
 }
 
 #[tauri::command]
-async fn vault_lock(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
+async fn vault_lock(
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+) -> CommandResult<()> {
+    picks.clear();
     run_blocking(store.inner(), |store| {
         store.lock();
         Ok(())
@@ -402,12 +496,15 @@ async fn vault_assign_folders_batch(
     .await
 }
 
+/// Opens the file picker. Returns the id of the chosen files, or `None` when
+/// the picker was cancelled. The import itself is `vault_import_picked`.
 #[tauri::command]
-async fn vault_import_begin(
+async fn vault_import_pick(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: ImportRequest,
-) -> CommandResult<vault::ImportOutcome> {
+) -> CommandResult<Option<Uuid>> {
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     // Refuse before the picker opens; `import` still re-checks under its own lock.
     let profile_id = request.profile_id;
@@ -415,10 +512,8 @@ async fn vault_import_begin(
         store.ensure_import_allowed(profile_id)
     })
     .await?;
-    let picker_app = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        picker_app
-            .dialog()
+        app.dialog()
             .file()
             .add_filter("PDF documents", &["pdf"])
             .blocking_pick_files()
@@ -426,9 +521,23 @@ async fn vault_import_begin(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
     let Some(paths) = picked else {
-        return Ok(vault::ImportOutcome::default());
+        return Ok(None);
     };
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
+    Ok(Some(picks.store_import(paths)))
+}
+
+#[tauri::command]
+async fn vault_import_picked(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickedImportRequest,
+) -> CommandResult<vault::ImportOutcome> {
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let paths = picks
+        .take_import(request.pick_id)
+        .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
@@ -474,35 +583,47 @@ fn open_import_source(
     })
 }
 
+/// Opens the save picker with the record's name. Returns the id of the chosen
+/// destination, or `None` when the picker was cancelled. The copy itself is
+/// written by `vault_export_picked`.
 #[tauri::command]
-async fn vault_export_begin(
+async fn vault_export_pick(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: ExportRequest,
-) -> CommandResult<bool> {
-    let picker_app = app.clone();
+) -> CommandResult<Option<Uuid>> {
     let record_id = request.record_id;
     let suggested_name =
         run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        picker_app
-            .dialog()
+        app.dialog()
             .file()
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
-    let Some(destination) = destination else {
-        return Ok(false);
-    };
+    Ok(destination.map(|destination| picks.store_export(destination)))
+}
+
+#[tauri::command]
+async fn vault_export_picked(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickedExportRequest,
+) -> CommandResult<()> {
+    let record_id = request.record_id;
+    let destination = picks
+        .take_export(request.pick_id)
+        .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
 
     if let Ok(destination_path) = destination.clone().into_path() {
-        run_blocking(store.inner(), move |store| {
+        return run_blocking(store.inner(), move |store| {
             store.export_atomic(record_id, &destination_path)
         })
-        .await?;
-        return Ok(true);
+        .await;
     }
 
     // Android content providers can return a content URI rather than a filesystem path, so an
@@ -525,8 +646,7 @@ async fn vault_export_begin(
         store.export(record_id, &mut output)
     })
     .await
-    .map_err(|_| PublicError::partial_export())?;
-    Ok(true)
+    .map_err(|_| PublicError::partial_export())
 }
 
 #[tauri::command]
@@ -580,6 +700,7 @@ pub fn run() {
             app.manage(Arc::new(VaultStore::new(
                 app.path().app_data_dir()?.join("vault-v1"),
             )));
+            app.manage(Arc::new(PendingPicks::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -596,8 +717,10 @@ pub fn run() {
             vault_rename_record,
             vault_assign_folders,
             vault_assign_folders_batch,
-            vault_import_begin,
-            vault_export_begin,
+            vault_import_pick,
+            vault_import_picked,
+            vault_export_pick,
+            vault_export_picked,
             vault_delete_record,
             vault_reset
         ])
@@ -666,6 +789,30 @@ mod tests {
             vault::open_without_following(&fifo).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn a_pick_is_used_once_and_cleared_by_a_lock() {
+        let picks = PendingPicks::default();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+
+        let pick_id = picks.store_import(vec![path()]);
+        assert!(picks.take_import(Uuid::new_v4()).is_none());
+        assert_eq!(picks.take_import(pick_id).unwrap().len(), 1);
+        // A pick is consumed by its run, so a replayed request finds nothing.
+        assert!(picks.take_import(pick_id).is_none());
+
+        let pick_id = picks.store_export(path());
+        picks.clear();
+        assert!(picks.take_export(pick_id).is_none());
+
+        // A stale pick is never used.
+        picks
+            .exports
+            .lock()
+            .unwrap()
+            .insert(pick_id, (Instant::now() - PICK_TTL, path()));
+        assert!(picks.take_export(pick_id).is_none());
     }
 
     #[test]
