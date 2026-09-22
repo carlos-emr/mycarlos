@@ -10,7 +10,7 @@ that 90% of the application source was obfuscated or that a package was maliciou
 Component tests now run in headless Chromium through Vitest's Playwright
 provider, sharing the Playwright version/browser already used by end-to-end
 tests. This removes the need for jsdom and its simulated DOM/parsing tree,
-including data-urls. All 38 component tests are retained. Tests use the app's CSS,
+including data-urls. All existing component tests are retained. Tests use the app's CSS,
 real drag-transfer objects, and accessibility checks with color contrast enabled.
 
 The JavaScript `@tauri-apps/plugin-dialog` package is also removed. Only the
@@ -44,11 +44,11 @@ has been suppressed or marked acceptable.
   serve component and end-to-end accessibility checks respectively.
 - SBOM generators, the formatter, compiler, and build tools retain their specific
   development/CI roles.
-- `unicode-normalization` (0.1.25, the unicode-rs project, pure Rust, already in
-  the locked graph through Tauri) is now a direct dependency: passphrases are
-  normalized to NFC before key derivation so the same visible passphrase derives
-  the same key whichever composition form a keyboard produces. Its only
-  dependency, `tinyvec`, was already locked.
+- `unicode-normalization` (0.1.25, the unicode-rs project, pure Rust) is now a
+  direct dependency: passphrases are normalized to NFC before key derivation so
+  the same visible passphrase derives the same key whichever composition form a
+  keyboard produces. It adds one package to the Rust lockfile (485 → 486); its
+  only dependency, `tinyvec`, was already locked.
 
 ## Native remediation
 

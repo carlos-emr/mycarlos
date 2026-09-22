@@ -13,12 +13,15 @@ the checks and native build prerequisites.
 - `src/native/VaultAuth.tsx` owns setup and unlock forms.
 - `src/native/VaultLibrary.tsx` coordinates library navigation and persistence
   actions through the injected `VaultBridge`.
-- `LibrarySidebar.tsx` displays the folder tree; `LibraryItems.tsx` displays list
-  and grid entries. Neither performs vault operations.
-- `SecuritySettings.tsx`, `RecordDetails.tsx`, and `RenameDialog.tsx` own their
-  forms/dialogs and accept only the action callbacks they need. Passphrase form
-  state is discarded when leaving Security.
-- `useVaultDragDrop.ts` handles browser drag state and validated transfer data.
+- `src/native/LibrarySidebar.tsx` displays the folder tree;
+  `src/native/LibraryItems.tsx` displays list and grid entries. Neither performs
+  vault operations.
+- `src/native/SecuritySettings.tsx`, `src/native/RecordDetails.tsx`, and
+  `src/native/RenameDialog.tsx` own their forms/dialogs and accept only the
+  action callbacks they need. Passphrase form state is discarded when leaving
+  Security.
+- `src/native/useVaultDragDrop.ts` handles browser drag state and validated
+  transfer data.
   The library supplies the move operation; Rust still validates folder moves.
 - `src/vault.ts` defines the typed native bridge and adapts it to Tauri IPC.
   Tests inject a substitute bridge through `VaultApp`.

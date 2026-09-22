@@ -23,8 +23,9 @@
 - **Implemented recovery:** the patient passphrase; there is no vendor key or recovery code
 - **Approved patient-pilot recovery:** a patient-held recovery key; not implemented in format v1
 
-This records decisions D-01, D-02, D-03, and D-05 for the current local-only vertical slice. It is
-an implementation description, not approval to store PHI.
+This records decisions D-01, D-02, D-03, and D-05 from the [threat model's mandatory design
+decisions](THREAT_MODEL.md#mandatory-design-decisions) for the current local-only vertical slice.
+It is an implementation description, not approval to store PHI.
 
 ## Key hierarchy
 

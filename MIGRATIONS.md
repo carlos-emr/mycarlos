@@ -63,13 +63,18 @@ zeroization and renderer-boundary rules as ordinary vault operations.
 
 ## Restart recovery
 
-Startup resolves migration artifacts before ordinary unlock and never chooses a vault by timestamp
-alone:
+Headers and manifests can only be authenticated with the passphrase, so migration artifacts are
+resolved within the unlock flow, before the vault is opened for any other command; any handling
+before the passphrase is entered is structural only. Recovery never chooses a vault by timestamp
+alone. "Valid" below means fully authenticated as in step 2 or step 8; no verification result is
+trusted from before the interruption:
 
-- Live valid, retired valid: keep live; remove retired only after confirming the live target version
-  and its migration identity.
+- Live valid, retired present (valid, or partially removed by an interrupted step 9): keep live;
+  remove retired only after re-running step 8 on live and confirming that its target version and
+  authenticated operation ID match the retired sibling.
 - Live missing, retired valid, stage valid: activate the stage only if its authenticated migration
-  metadata identifies the retired vault and verification is complete; otherwise restore retired.
+  metadata identifies the retired vault and re-running step 5 against the retired source succeeds;
+  otherwise restore retired.
 - Live missing, retired valid, stage invalid/incomplete: restore retired and remove stage.
 - Live valid, stage present: keep live and remove the uncommitted stage.
 - Live invalid, retired valid: restore retired and report that migration did not complete.

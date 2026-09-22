@@ -24,9 +24,9 @@ production end-of-support schedule remain an owner decision and release gate.
 
 Follow [SECURITY.md](SECURITY.md) for private reporting; never place a suspected patient-data issue
 in a public ticket. During the handoff, the existing CARLOS private advisory channel and its
-acknowledgement/assessment targets remain the reporting route until dedicated intake is enabled. A production owner must additionally set remediation and
-release targets by severity, name an incident commander and privacy/clinical contacts, and exercise
-the process before a pilot.
+acknowledgement/assessment targets remain the reporting route until dedicated intake is enabled.
+A production owner must additionally set remediation and release targets by severity, name an
+incident commander and privacy/clinical contacts, and exercise the process before a pilot.
 
 For an evaluation security incident:
 
@@ -52,11 +52,11 @@ device, and release review. See [the patch record](src-tauri/vendor/README.md).
 GitHub Actions are commit pinned and checkout does not persist credentials. These are inventory
 and pull-request controls, not release provenance.
 
-Before a supported release, this repository must protect its release pipeline and bind each signed platform artifact to
-its source revision, lockfiles, SBOM, build identity and provenance attestation. Signing/notarization,
-hardware-backed key custody, updater/store policy, reproducible-build comparison and key-loss/
-revocation drills remain release gates because they require credentials, infrastructure and named
-owners that this evaluation does not have.
+Before a supported release, this repository must protect its release pipeline and bind each
+signed platform artifact to its source revision, lockfiles, SBOM, build identity and provenance
+attestation. Signing/notarization, hardware-backed key custody, updater/store policy,
+reproducible-build comparison and key-loss/revocation drills remain release gates because they
+require credentials, infrastructure and named owners that this evaluation does not have.
 
 ## Synthetic canary drill
 
