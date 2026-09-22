@@ -61,15 +61,16 @@ reset cannot replace the inode/handle being locked. It contains no secret materi
 Whole-vault reset renames the vault to the fixed `vault.reset-pending/` sibling before removing
 key envelopes and the remaining files. Startup status, creation, unlock, and reset all finish this
 cleanup under the same OS lock before proceeding. A cleanup error is surfaced and blocks access
-and creation until retry succeeds. Symlink/reparse-point reset directories are rejected. Abrupt-exit tests cover the rename and key-removal boundaries; physical power-cut and
-filesystem durability validation remain release gates.
+and creation until retry succeeds. Symlink/reparse-point reset directories are rejected. Abrupt-exit
+tests cover the rename and key-removal boundaries; physical power-cut and filesystem durability
+validation remain release gates.
 
 The encrypted manifest contains profiles, nested folders, folder assignments, sanitized document
 names that the patient may rename, sizes, timestamps, unverified-source labels, per-record
 fingerprints, opaque object names, and wrapped content keys. Mutations write the same logical state
 into two consecutive generations using a cross-platform atomic replacement primitive. Once the first
-generation is durable, the logical mutation is committed; failure of the redundant write is reported
-in the snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
+generation is durable, the logical mutation is committed; failure of the redundant write is
+reported in the snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
 the highest valid generation whose objects exist, rejects divergent authenticated states at the same
 generation, and repairs only missing or damaged redundancy. If repair cannot write because storage
 is full, unlock still permits read/export access in recovery mode. Staging and definite precommit
