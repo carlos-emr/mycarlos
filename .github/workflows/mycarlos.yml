@@ -56,6 +56,10 @@ jobs:
         run: python3 scripts/check-native-dependency-graph.py
       - name: Reject known Rust vulnerabilities, including upstream patch identities
         run: python3 scripts/audit-native-dependencies.py
+      # The glib regression tests lock a few crate versions the app does not.
+      # Its local glib is audited under its upstream identity by the step above.
+      - name: Reject known Rust vulnerabilities in the glib regression tests
+        run: cargo audit --file security-tests/glib-variant/Cargo.lock
       - name: Generate reproducible native CycloneDX SBOM
         env:
           SOURCE_DATE_EPOCH: "0"
