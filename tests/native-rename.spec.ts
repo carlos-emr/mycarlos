@@ -9,7 +9,7 @@ test("renames native-library folders and documents with accessible dialogs", asy
       profiles: [{ id: "profile", displayName: "FAKE Patient", createdAtMs: 1 }],
       folders: [{ id: "folder", profileId: "profile", parentId: null, name: "FAKE Old folder", createdAtMs: 1 }],
       records: [{ id: "record", profileId: "profile", folderIds: [], displayName: "FAKE Old.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true }],
-      degraded: false,
+      recovery: null,
     };
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string, args?: { request: { folderId?: string; recordId?: string; parentId?: string | null; name: string } }) => {
