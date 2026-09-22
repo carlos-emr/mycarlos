@@ -85,7 +85,7 @@ jobs:
 
   web:
     name: Web UI and browser tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -234,6 +234,9 @@ jobs:
           print("Installed app uses the Windows GUI subsystem; no console is allocated at launch.")
       - name: Prepare Windows download
         shell: pwsh
+        env:
+          # On a pull request HEAD is a temporary merge commit; name the PR head.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           $installers = @(Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe)
           if ($installers.Count -ne 1) { throw "Expected exactly one Windows installer" }
@@ -244,7 +247,7 @@ jobs:
           Copy-Item dev-data windows-download/sample-files -Recurse
           $hash = (Get-FileHash "windows-download/$installer" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $installer" | Set-Content windows-download/SHA256SUMS.txt -Encoding utf8
-          $commit = git rev-parse HEAD
+          $commit = $env:HEAD_SHA
           @(
             'myCarlos Windows x64 evaluation — unsigned; synthetic data only'
             "Source commit: $commit"
@@ -264,8 +267,9 @@ jobs:
         env:
           DOWNLOAD_URL: ${{ steps.windows-download.outputs.artifact-url }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          $commit = git rev-parse HEAD
+          $commit = $env:HEAD_SHA
           $source = if ($env:HEAD_REPOSITORY) { $env:HEAD_REPOSITORY } else { $env:GITHUB_REPOSITORY }
           $provenance = if ($source -ne $env:GITHUB_REPOSITORY) {
             "**Built from the fork $source at $commit. This is not a myCarlos project build; install it only if you trust that fork.**"
