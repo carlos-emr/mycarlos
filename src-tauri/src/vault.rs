@@ -858,6 +858,7 @@ impl VaultStore {
                 &unlocked.master_key,
                 &mut unlocked.manifest,
                 next,
+                || Ok(()),
             )?;
             unlocked.degraded = !redundant;
             Ok(ImportOutcome {
@@ -957,41 +958,29 @@ impl VaultStore {
             .ok_or(VaultError::NotFound)?;
         let object_name = next.records.remove(index).object_name;
 
-        // Commit once before unlinking the ciphertext. If the second manifest write is
-        // interrupted, the newest manifest records the deletion and the older manifest cannot
-        // decrypt a ciphertext that was successfully removed. Unlock repairs slot redundancy
-        // before it considers orphan cleanup.
-        next.generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
-        let second_generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
-        fail_at_test_boundary("delete.before-first-manifest")?;
-        write_valid_manifest_at(&self.root, &unlocked.master_key, &next)?;
-        unlocked.manifest = next.clone();
-        terminate_at_test_boundary("delete.after-first-manifest");
-        let mut omit_redundant_write =
-            fail_at_test_boundary("delete.after-first-manifest").is_err();
-
+        // The ciphertext is unlinked between the two manifest writes. Once the
+        // first is durable, the newest manifest records the deletion and the
+        // older one cannot decrypt a ciphertext that was removed. Unlock repairs
+        // slot redundancy before it considers orphan cleanup, so an unlink that
+        // fails here is retried there.
         let objects = self.root.join("objects");
-        match fs::remove_file(objects.join(object_name)) {
-            Ok(()) => sync_parent(&objects),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            // The second manifest commit below still performs cryptographic erasure. Unlock
-            // cleanup retries removal of ciphertext that no live manifest can decrypt.
-            Err(_) => {}
-        }
-        terminate_at_test_boundary("delete.after-object-unlink");
-        omit_redundant_write |= fail_at_test_boundary("delete.after-object-unlink").is_err();
-        if omit_redundant_write {
-            unlocked.degraded = true;
-            return Ok(());
-        }
-
-        next.generation = second_generation;
-        if write_valid_manifest_at(&self.root, &unlocked.master_key, &next).is_err() {
-            unlocked.degraded = true;
-            return Ok(());
-        }
-        unlocked.manifest = next;
-        terminate_at_test_boundary("delete.after-second-manifest");
+        let redundant = commit_manifest_redundant(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            || {
+                match fs::remove_file(objects.join(&object_name)) {
+                    Ok(()) => sync_parent(&objects),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    // The second manifest commit still performs cryptographic erasure.
+                    Err(_) => {}
+                }
+                terminate_at_test_boundary("delete.after-object-unlink");
+                fail_at_test_boundary("delete.after-object-unlink")
+            },
+        )?;
+        unlocked.degraded = !redundant;
         Ok(())
     }
 
@@ -1089,6 +1078,7 @@ impl VaultStore {
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
+            || Ok(()),
         )?;
         unlocked.degraded = !redundant;
         Ok(result)
@@ -1895,11 +1885,19 @@ fn write_manifest_at(
     atomic_bytes(&manifest_path(root, manifest.generation), &output)
 }
 
+/// Commits `next` as two consecutive generations, one per slot.
+///
+/// Once the first write is durable the mutation is committed and `current`
+/// reflects it. `between` runs at that point, before the redundant write: a
+/// deletion unlinks its ciphertext there. Returns whether the redundant write
+/// also succeeded; when it did not, or when `between` failed, the caller's
+/// session must become degraded, since unlock repairs the slot redundancy.
 fn commit_manifest_redundant(
     root: &Path,
     master_key: &[u8; 32],
     current: &mut Manifest,
     mut next: Manifest,
+    between: impl FnOnce() -> Result<(), VaultError>,
 ) -> Result<bool, VaultError> {
     next.generation = current
         .generation
@@ -1910,7 +1908,7 @@ fn commit_manifest_redundant(
     write_valid_manifest_at(root, master_key, &next)?;
     *current = next.clone();
     terminate_at_test_boundary("manifest.after-first-write");
-    if fail_at_test_boundary("manifest.after-first-write").is_err() {
+    if fail_at_test_boundary("manifest.after-first-write").is_err() || between().is_err() {
         return Ok(false);
     }
 
@@ -3089,9 +3087,7 @@ mod tests {
         };
         let committed = matches!(
             std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref(),
-            Ok("manifest.after-first-write"
-                | "delete.after-first-manifest"
-                | "delete.after-object-unlink")
+            Ok("manifest.after-first-write" | "delete.after-object-unlink")
         );
         if committed {
             assert!(outcome.is_ok());
@@ -4977,9 +4973,9 @@ mod tests {
         template_store.lock();
 
         for boundary in [
-            "delete.after-first-manifest",
+            "manifest.after-first-write",
             "delete.after-object-unlink",
-            "delete.after-second-manifest",
+            "manifest.after-second-write",
         ] {
             let root = temp.path().join(boundary);
             copy_directory(&template, &root);
@@ -5010,8 +5006,8 @@ mod tests {
         template_store.lock();
 
         for (boundary, deleted) in [
-            ("delete.before-first-manifest", false),
-            ("delete.after-first-manifest", true),
+            ("manifest.before-first-write", false),
+            ("manifest.after-first-write", true),
             ("delete.after-object-unlink", true),
         ] {
             let root = temp.path().join(boundary);
@@ -5648,7 +5644,7 @@ mod tests {
         let mut live = current.clone();
         let next = current.clone();
         assert!(matches!(
-            commit_manifest_redundant(&root, &master_key, &mut live, next),
+            commit_manifest_redundant(&root, &master_key, &mut live, next, || Ok(())),
             Err(VaultError::Storage)
         ));
         assert!(matches!(
@@ -5661,7 +5657,7 @@ mod tests {
         live.generation = u64::MAX - 1;
         let next = live.clone();
         assert!(matches!(
-            commit_manifest_redundant(&root, &master_key, &mut live, next),
+            commit_manifest_redundant(&root, &master_key, &mut live, next, || Ok(())),
             Err(VaultError::Storage)
         ));
         assert!(matches!(
