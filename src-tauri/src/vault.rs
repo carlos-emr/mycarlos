@@ -23,6 +23,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, MutexGuard,
     },
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
@@ -2495,12 +2496,25 @@ fn acquire_storage_lock(root: &Path) -> Result<Arc<File>, VaultError> {
     if !is_regular_non_reparse(&file.metadata()?) {
         return Err(VaultError::Storage);
     }
-    file.try_lock().map_err(|error| match error {
-        fs::TryLockError::WouldBlock => VaultError::InUse,
-        fs::TryLockError::Error(error) => error.into(),
-    })?;
-    Ok(Arc::new(file))
+    // A lock can outlive its owner's close by a moment: on Unix a subprocess
+    // forked meanwhile holds a copy of the descriptor until it execs, and
+    // Windows releases a closed handle's lock asynchronously. Another instance
+    // holds the lock for as long as it runs, so a short wait tells them apart.
+    let deadline = Instant::now() + STORAGE_LOCK_GRACE;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(Arc::new(file)),
+            Err(fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(STORAGE_LOCK_RETRY);
+            }
+            Err(fs::TryLockError::WouldBlock) => return Err(VaultError::InUse),
+            Err(fs::TryLockError::Error(error)) => return Err(error.into()),
+        }
+    }
 }
+
+const STORAGE_LOCK_GRACE: Duration = Duration::from_millis(250);
+const STORAGE_LOCK_RETRY: Duration = Duration::from_millis(10);
 
 fn reset_path(root: &Path) -> Result<PathBuf, VaultError> {
     sibling_path(root, ".reset-pending")
@@ -3477,6 +3491,46 @@ mod tests {
                 VaultError::UnsupportedStorage
             ));
         }
+    }
+
+    #[test]
+    fn a_lock_released_moments_later_is_not_reported_as_in_use() {
+        // A lock can be held for a moment after its owner closed it: on Unix a
+        // subprocess forked meanwhile holds a copy of the descriptor until it
+        // execs, and on Windows a closed handle's lock is released shortly after.
+        // Another instance holds the lock for as long as it is open, so a short
+        // wait tells the two apart.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let lock_path = sibling_path(&root, ".lock").unwrap();
+        fs::write(&lock_path, b"").unwrap();
+        let held = File::open(&lock_path).unwrap();
+        held.try_lock().unwrap();
+        let holder = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            drop(held);
+        });
+
+        acquire_storage_lock(&root).unwrap();
+        holder.join().unwrap();
+    }
+
+    #[test]
+    fn a_lock_held_by_another_instance_is_reported_as_in_use_promptly() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let lock_path = sibling_path(&root, ".lock").unwrap();
+        fs::write(&lock_path, b"").unwrap();
+        let held = File::open(&lock_path).unwrap();
+        held.try_lock().unwrap();
+
+        let started = Instant::now();
+        assert!(matches!(
+            acquire_storage_lock(&root),
+            Err(VaultError::InUse)
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(held);
     }
 
     #[test]
