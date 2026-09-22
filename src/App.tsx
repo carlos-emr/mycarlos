@@ -8,7 +8,7 @@ import {
 } from "./platform";
 import { useModalFocus } from "./useModalFocus";
 import { AUTO_LOCK_OPTIONS } from "./native/autoLock";
-import { formatBytes } from "./native/recordPresentation";
+import { formatBytes, searchKey } from "./native/recordPresentation";
 
 type Category =
   | "Test results"
@@ -182,7 +182,7 @@ function toDemoDocument(file: SelectedDocument): DemoDocument {
 }
 
 function isPdf(file: SelectedDocument): boolean {
-  return file.name.toLocaleLowerCase().endsWith(".pdf");
+  return file.name.toLowerCase().endsWith(".pdf");
 }
 
 export interface AppProps {
@@ -238,7 +238,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
   );
 
   const filteredDocuments = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const normalizedQuery = searchKey(query.trim());
     const matchingDocuments = documents.filter((document) => {
       const matchesSection =
         activeSection === "records" ||
@@ -250,9 +250,9 @@ export default function App({ bridge = defaultBridge }: AppProps) {
         document.category === filter;
       const matchesQuery =
         normalizedQuery.length === 0 ||
-        `${document.title} ${document.source} ${document.category}`
-          .toLocaleLowerCase()
-          .includes(normalizedQuery);
+        searchKey(
+          `${document.title} ${document.source} ${document.category}`,
+        ).includes(normalizedQuery);
       return matchesSection && matchesFilter && matchesQuery;
     });
     if (sort === "name") {
@@ -268,10 +268,10 @@ export default function App({ bridge = defaultBridge }: AppProps) {
 
   const filteredFolders = useMemo(() => {
     if (activeSection !== "records" || filter !== "All") return [];
-    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const normalizedQuery = searchKey(query.trim());
     if (!normalizedQuery) return folders;
     return folders.filter((folder) =>
-      folder.title.toLocaleLowerCase().includes(normalizedQuery),
+      searchKey(folder.title).includes(normalizedQuery),
     );
   }, [activeSection, filter, folders, query]);
 

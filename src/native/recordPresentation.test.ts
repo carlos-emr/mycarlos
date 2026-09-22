@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, nameTooLong, recordKind } from "./recordPresentation";
+import {
+  formatBytes,
+  nameTooLong,
+  recordKind,
+  searchKey,
+} from "./recordPresentation";
 
 describe("recordKind", () => {
   it.each([
@@ -40,5 +45,17 @@ describe("nameTooLong", () => {
     expect(nameTooLong("\u{1F4C1}".repeat(120))).toBe(false);
     expect(nameTooLong(`  ${"a".repeat(120)}  `)).toBe(false);
     expect(nameTooLong("a".repeat(121))).toBe(true);
+  });
+});
+
+describe("searchKey", () => {
+  it("does not depend on the device's locale", () => {
+    // What a Turkish default locale would make of it.
+    expect("Imaging".toLocaleLowerCase("tr")).toBe("ımaging");
+    expect(searchKey("Imaging")).toBe(searchKey("imaging"));
+  });
+
+  it("matches an accent typed either way", () => {
+    expect(searchKey("Café")).toBe(searchKey("Café"));
   });
 });

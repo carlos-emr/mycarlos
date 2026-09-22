@@ -52,3 +52,10 @@ export const MAX_NAME_CHARS = 120;
 export const NAME_INPUT_MAX_LENGTH = 2 * MAX_NAME_CHARS;
 export const nameTooLong = (name: string) =>
   [...name.trim()].length > MAX_NAME_CHARS;
+
+// Search compares text in one form whatever the device's locale: with a
+// Turkish default locale, toLocaleLowerCase() turns "I" into a dotless "ı",
+// so "imaging" would not find "Imaging". NFC makes an accent typed as a
+// separate mark match the same letter typed precomposed.
+export const searchKey = (value: string) =>
+  value.normalize("NFC").toLowerCase();

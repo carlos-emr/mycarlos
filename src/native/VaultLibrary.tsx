@@ -12,7 +12,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { LibraryItems } from "./LibraryItems";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import {
+  NAME_INPUT_MAX_LENGTH,
+  nameTooLong,
+  searchKey,
+} from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 
 type NativeSection = "records" | "security";
@@ -101,7 +105,7 @@ export function VaultLibrary({
     () => new Map(folders.map((folder) => [folder.id, folder.name])),
     [folders],
   );
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const normalizedQuery = searchKey(query.trim());
   const visibleFolders = useMemo(
     () =>
       folders
@@ -109,7 +113,7 @@ export function VaultLibrary({
         .filter(
           (folder) =>
             !normalizedQuery ||
-            folder.name.toLocaleLowerCase().includes(normalizedQuery),
+            searchKey(folder.name).includes(normalizedQuery),
         )
         .sort((left, right) => left.name.localeCompare(right.name)),
     [currentFolderId, folders, normalizedQuery],
@@ -122,7 +126,7 @@ export function VaultLibrary({
       return (
         inFolder &&
         (!normalizedQuery ||
-          record.displayName.toLocaleLowerCase().includes(normalizedQuery))
+          searchKey(record.displayName).includes(normalizedQuery))
       );
     });
     return matching.sort((left, right) =>
