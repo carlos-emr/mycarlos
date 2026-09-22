@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Files excluded here are not first-party source: the vendored upstream `glib`
+# snapshot (reviewed through its recorded provenance and patch in
+# src-tauri/vendor/README.md), generated icons and mobile project files, locked
+# dependency graphs, synthetic PDFs, and build or test output. Without this,
+# the file count hides the code that should be read.
+reviews:
+  path_filters:
+    - "!src-tauri/vendor/**"
+    - "!src-tauri/icons/**"
+    - "!src-tauri/gen/**"
+    - "!**/Cargo.lock"
+    - "!**/package-lock.json"
+    - "!**/*.pdf"
+    - "!**/*.png"
+    - "!dev-data/**"
+    - "!screenshots/**"
+    - "!dist/**"
+    - "!test-results/**"
+    - "!playwright-report/**"
+  auto_review:
+    enabled: true
