@@ -51,8 +51,8 @@ name would otherwise score as strong. Then local zxcvbn analysis rejects scores 
 its common-password/name/pattern data plus myCarlos and the current profile names as context. No
 proposed passphrase leaves the process.
 Unlock accepts a passphrase shorter than the current minimum, so a vault whose passphrase was set
-under an earlier rule stays openable; every length, composition, and strength rule applies to the
-normalized form. A production breach corpus, independent threshold review, and the patient-held
+under an earlier rule stays openable. Input over 1,024 bytes is refused before normalization; every
+other length, composition, and strength rule applies to the normalized form. A production breach corpus, independent threshold review, and the patient-held
 recovery key remain patient-pilot work.
 
 ## Files and transactions

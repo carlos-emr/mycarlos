@@ -30,7 +30,8 @@ Erase entire vault before uninstalling. Reset does not delete any readable copie
 
 BUILD.txt identifies the source commit and GitHub build. SHA256SUMS.txt identifies the installer.
 Updates are manual: download and run the installer from a newer successful Windows native build.
-The overall workflow can be red because the known Linux dependency audit remains a release blocker.
+Another job, such as the unsupported Linux compatibility monitor, can fail while the Windows job
+succeeds; use any run whose Windows native build job succeeded.
 
 Latest builds:
 https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain

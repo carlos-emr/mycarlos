@@ -7,7 +7,7 @@ original archive checksum; `glib.patch` contains the complete local change.
 Run `python3 scripts/verify-native-vendor.py` from the repository root. It downloads
 the checksum-pinned archive, applies the patch, and compares every file against
 the checked-in source. Unexpected additions, removals, edits, and symlinks fail.
-Python 3.11+ and Git are required. This is a provenance check, not an independent
+Python 3.11.4+ and Git are required. This is a provenance check, not an independent
 security audit. Review patch and provenance changes together.
 
 ## glib 0.18.5

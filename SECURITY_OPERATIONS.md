@@ -6,8 +6,8 @@ without creating a production service or collecting patient data. It does not au
 ## Supported-version boundary
 
 There is no supported patient release today. Windows, macOS, Android and iOS are evaluation targets;
-Linux is an unsupported compatibility monitor while GHSA-wrw7-89jp-8q8g remains in the resolved
-runtime graph. Debug/unsigned artifacts are test evidence only. Minimum OS/WebView versions and a
+Linux is an unsupported compatibility monitor pending review of the local backport for
+GHSA-wrw7-89jp-8q8g and Linux device/release validation. Debug/unsigned artifacts are test evidence only. Minimum OS/WebView versions and a
 production end-of-support schedule remain an owner decision and release gate.
 
 ## Diagnostics and data egress

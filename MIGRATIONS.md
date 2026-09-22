@@ -24,13 +24,16 @@ this document: it also needs format-specific review, fixtures, and interruption 
 
 ## Transaction layout
 
-For a live vault named `mycarlos-vault`, migration uses sibling directories on the same filesystem:
+Migration uses sibling directories of the live vault inside `vault-home/`, on the same filesystem:
 
 ```text
-mycarlos-vault/                         current complete vault
-.mycarlos-migrate-<operation-id>/       staged replacement
-.mycarlos-retired-<operation-id>/       previous complete vault during activation
+vault-home/vault-v1/                    current complete vault
+vault-home/.migrate-<operation-id>/     staged replacement
+vault-home/.retired-<operation-id>/     previous complete vault during activation
 ```
+
+`VAULT_FORMAT.md` lists everything the home may hold, and exports refuse the whole home, so a
+migration must add these entries to that layout before it writes them.
 
 The operation ID is random and is not derived from patient data. Staging on the same filesystem is
 required so directory renames use the platform's atomic rename boundary. Migration must refuse a

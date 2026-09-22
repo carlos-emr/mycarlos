@@ -6,7 +6,7 @@
 - **Current code:** Synthetic-data evaluation only; these decisions do not authorize PHI use
 
 This record separates the agreed patient-pilot behavior from the smaller local-vault slice already
-implemented in this draft PR. An approved decision is not evidence that its controls have been
+implemented on this branch. An approved decision is not evidence that its controls have been
 built, tested, or independently reviewed.
 
 ## Identity, keys, and recovery
@@ -98,9 +98,9 @@ built, tested, or independently reviewed.
 These decisions require new protocols and substantial code beyond this PR: recovery-key envelopes,
 portable backup/restore, enrolled-device key exchange and revocation, encrypted synchronization,
 tombstones, signed CARLOS packages, explicit sharing, encrypted audit history, a sandboxed renderer,
-configurable locking, platform privacy controls, release signing, and secure updates.
+a native-side idle deadline, platform privacy controls, release signing, and secure updates.
 
 Physical-device lifecycle tests, real full-disk and power-loss tests, Argon2id benchmarks,
 accessibility review, privacy/regulatory and clinical-safety approval, and independent security
-review remain mandatory. Linux remains unsupported until its documented runtime advisory is
-resolved and reviewed.
+review remain mandatory. Linux remains unsupported until the documented `glib` backport is reviewed
+and Linux passes device/release validation.

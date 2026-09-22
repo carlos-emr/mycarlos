@@ -18,9 +18,10 @@ install it. No development tools are required. Windows on ARM has not been valid
 
 The ZIP includes `START-HERE.txt`, the installer, sample PDFs, its SHA-256 checksum, and a
 `BUILD.txt` identifying the exact source commit and workflow run. Downloads are retained for
-30 days. Updates are manual; use the same link to find a newer build. The strict Linux dependency
-audit can leave the overall workflow red while the separate Windows evaluation job succeeds.
-That audit remains a release blocker; these artifacts are for synthetic-data evaluation only.
+30 days. Updates are manual; use the same link to find a newer build. Another job, such as the
+unsupported Linux compatibility monitor, can fail while the Windows job succeeds; use any run
+whose **Windows native build** job succeeded. These artifacts are for synthetic-data evaluation
+only.
 
 Windows may warn about an unknown publisher or block this unsigned build, particularly on
 managed computers. Do not disable Windows security controls to install it. An installer produced
@@ -57,8 +58,9 @@ Choose **Save name** to commit, or **Cancel** / Escape to leave the name unchang
 
 Renames persist in the encrypted vault and update search, sorting, navigation, and the suggested
 export name. Folder locations, document contents, and original files outside myCarlos are unchanged.
-Keep `.pdf` at the end of PDF file names. Empty names, paths, and unsafe Windows file names are
-rejected; document names are limited to 240 UTF-8 bytes and folder names to 120 characters.
+Keep `.pdf` at the end of PDF file names. Empty names are rejected. Document names that contain a
+path or an unsafe Windows file name are rejected and limited to 240 UTF-8 bytes; folder names are
+limited to 120 characters.
 Renaming is unavailable while the vault is locked or in read-only recovery mode.
 
 ## Getting a trusted Windows signature

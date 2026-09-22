@@ -33,16 +33,15 @@ gates, not a reason to maintain a parallel Electron/Capacitor implementation.
 
 ## Evaluation tasks
 
-Run the responsive concept tasks in the browser, desktop shell, Android emulator/device, and iOS
-simulator/device where available:
+Run the responsive concept tasks in the browser preview (`npm run dev`) at desktop and phone widths;
+native builds open the vault instead, which the native checks below cover:
 
 1. Confirm the evaluation warning is visible without scrolling.
 2. Review the synthetic record library at desktop and phone widths.
 3. Choose a synthetic PDF with the **New** button and confirm only its filename appears with the
    `session only` label.
 4. Reset the session and confirm the imported filename disappears.
-5. Open **Evaluation details** and confirm it reports a Rust command in a Tauri build and
-   `Browser preview` in Vite.
+5. Open **Evaluation details** and confirm it reports `Browser preview`.
 6. Open a document preview, add it to Starred, and confirm opening it places it at the top of Recent.
 7. Move that document to Trash, confirm it disappears from the library, then restore it and confirm
    it returns to My records. Check that the 30-day countdown remains visible on phone.

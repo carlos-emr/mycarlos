@@ -27,7 +27,8 @@ draft synthetic-data evaluation. [HANDOFF.md](HANDOFF.md) records the exact sour
 
 The proof of concept demonstrated, at evaluation depth:
 
-- one responsive React/TypeScript interface across browser, Linux desktop, Android, and iOS;
+- one responsive React/TypeScript interface running in the browser and packaged for Linux desktop,
+  Android, and iOS (the mobile packages were built, not launched);
 - successful Linux, Android, and unsigned iOS simulator debug builds in hosted CI;
 - a narrow typed TypeScript-to-Rust command boundary;
 - a native PDF picker with narrowly scoped Tauri capabilities;
