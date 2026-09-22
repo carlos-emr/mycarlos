@@ -97,6 +97,10 @@ impl From<VaultError> for PublicError {
                 code: "cancelled",
                 message: "The operation stopped because the vault was locked.",
             },
+            VaultError::UnsupportedStorage => Self {
+                code: "unsupported_storage",
+                message: "This location cannot store the vault safely, because it does not confirm when files are durably written. Choose a local disk.",
+            },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
                 message: "The vault is in read-only recovery mode. Export important records and free storage before retrying.",

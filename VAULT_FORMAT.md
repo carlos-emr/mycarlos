@@ -2,7 +2,11 @@
 
 - **Status:** Implemented for synthetic-data development; security review required
 - **Identifier:** `ca.carlos.mycarlos`
-- **Storage root:** Tauri application-data directory, `vault-v1/`
+- **Storage root:** Tauri application-data directory, `vault-v1/`. On Windows that is the roaming
+  profile (`%APPDATA%`); keeping it there is a recorded decision, so a domain profile carries the
+  ciphertext and lock file between machines. The location must not sit on storage that cannot
+  confirm a directory write (some network, FUSE, and removable filesystems): creation probes for
+  this and refuses with `unsupported_storage`.
 - **Implemented recovery:** the patient passphrase; there is no vendor key or recovery code
 - **Approved patient-pilot recovery:** a patient-held recovery key; not implemented in format v1
 
@@ -24,9 +28,14 @@ Rust zeroizes passphrase request strings and long-lived secret-key buffers where
 that practical.
 
 New and replacement passphrases must contain at least 15 Unicode characters, contain no control
-characters, and encode to no more than 1,024 bytes. There are no composition rules. Before the KDF
-runs, local zxcvbn analysis rejects scores below three using its common-password/name/pattern data
-plus myCarlos and the current profile names as context. No proposed passphrase leaves the process.
+characters, and encode to no more than 1,024 bytes. There are no composition rules. A passphrase is
+normalized to Unicode NFC before it reaches the KDF, at creation, unlock, and change alike, so the
+same visible text derives the same key whichever composition form a keyboard or input method
+produces. A passphrase that contains any word of four or more characters from a profile name is
+refused outright, since the estimator matches a name only as a whole and a rearranged or joined
+name would otherwise score as strong. Then local zxcvbn analysis rejects scores below three using
+its common-password/name/pattern data plus myCarlos and the current profile names as context. No
+proposed passphrase leaves the process.
 Unlock remains compatible with a shorter passphrase created by an earlier evaluation build. A
 production breach corpus, independent threshold review, and the patient-held recovery key remain
 patient-pilot work.

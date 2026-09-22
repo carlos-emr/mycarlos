@@ -44,6 +44,11 @@ has been suppressed or marked acceptable.
   serve component and end-to-end accessibility checks respectively.
 - SBOM generators, the formatter, compiler, and build tools retain their specific
   development/CI roles.
+- `unicode-normalization` (0.1.25, the unicode-rs project, pure Rust, already in
+  the locked graph through Tauri) is now a direct dependency: passphrases are
+  normalized to NFC before key derivation so the same visible passphrase derives
+  the same key whichever composition form a keyboard produces. Its only
+  dependency, `tinyvec`, was already locked.
 
 ## Native remediation
 

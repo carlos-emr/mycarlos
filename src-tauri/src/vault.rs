@@ -25,6 +25,7 @@ use std::{
     },
 };
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
@@ -129,6 +130,8 @@ pub enum VaultError {
     Cancelled,
     #[error("the vault is in read-only recovery mode")]
     RecoveryMode,
+    #[error("this storage cannot hold the vault safely")]
+    UnsupportedStorage,
 }
 
 impl From<io::Error> for VaultError {
@@ -415,6 +418,7 @@ impl VaultStore {
         create_private_dir(&stage)?;
 
         let result = (|| {
+            ensure_storage_supports_directory_sync(&stage)?;
             // Inside the closure so that a failure here also removes the stage.
             create_private_dir(&stage.join("objects"))?;
             create_private_dir(&stage.join("staging"))?;
@@ -1168,12 +1172,28 @@ struct ObjectContext {
     profile_id: Uuid,
 }
 
+/// A word of a profile name long enough that its presence in a passphrase is
+/// not a coincidence.
+const MIN_NAME_WORD_CHARS: usize = 4;
+
 fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), VaultError> {
     if passphrase.chars().count() < MIN_PASSPHRASE_CHARS
         || passphrase.len() > MAX_PASSPHRASE_BYTES
         || passphrase.chars().any(char::is_control)
     {
         return Err(VaultError::Invalid);
+    }
+    // The estimator matches a context entry only as a whole string, so a name
+    // rearranged or joined with a symbol scores as strong. Any word of a
+    // profile name is refused outright instead.
+    let normalized = normalize_passphrase(passphrase).to_lowercase();
+    let contains_name_word = context
+        .iter()
+        .flat_map(|value| value.split(|c: char| !c.is_alphanumeric()))
+        .filter(|word| word.chars().count() >= MIN_NAME_WORD_CHARS)
+        .any(|word| normalized.contains(&normalize_passphrase(word).to_lowercase()));
+    if contains_name_word {
+        return Err(VaultError::WeakPassphrase);
     }
 
     let mut user_inputs = vec!["mycarlos", "carlos", "myvitalhistory"];
@@ -1576,10 +1596,18 @@ fn unwrap_master_key_with_wrapping_key(
     Ok(master_key)
 }
 
+/// The passphrase as key material. The same visible text can arrive in
+/// different Unicode forms from different keyboards and input methods, and the
+/// passphrase is the only way into the vault, so it is normalized (NFC) first.
+fn normalize_passphrase(passphrase: &str) -> Zeroizing<String> {
+    Zeroizing::new(passphrase.nfc().collect())
+}
+
 fn derive_passphrase_key(passphrase: &str, config: &KdfConfig) -> Result<SecretKey, VaultError> {
     if !valid_kdf_config(config) {
         return Err(VaultError::Corrupt);
     }
+    let passphrase = normalize_passphrase(passphrase);
     let salt = BASE64
         .decode(&config.salt)
         .map_err(|_| VaultError::Corrupt)?;
@@ -2669,27 +2697,42 @@ fn open_private_new(path: &Path) -> Result<File, VaultError> {
 
 /// Makes renames into `directory` durable, reporting failure. Windows cannot
 /// open a directory this way; there the renames rely on the filesystem journal.
+///
+/// Storage that cannot sync a directory at all is refused when the vault is
+/// created, so here that answer means the vault was moved somewhere it cannot
+/// be kept safely; it is reported, not tolerated.
 fn sync_dir(directory: &Path) -> Result<(), VaultError> {
     #[cfg(unix)]
-    match File::open(directory)?.sync_all() {
-        // Some network, FUSE and removable-storage filesystems cannot sync a
-        // directory at all and say so with EINVAL or ENOTSUP. That is a limit of
-        // the medium, not a failed write, and must not make every import fail.
-        Err(error) if !directory_sync_unsupported(&error) => return Err(error.into()),
-        _ => {}
-    }
+    File::open(directory)?
+        .sync_all()
+        .map_err(classify_directory_sync_error)?;
     #[cfg(not(unix))]
     let _ = directory;
     Ok(())
 }
 
+/// EINVAL, ENOTSUP and EOPNOTSUPP from a directory fsync mean the filesystem
+/// cannot confirm durability, which some network, FUSE and removable-storage
+/// filesystems cannot. Compared as raw codes: how the standard library
+/// classifies them differs by platform, and macOS does not report ENOTSUP as
+/// `Unsupported`.
 #[cfg(unix)]
-fn directory_sync_unsupported(error: &io::Error) -> bool {
-    // Compared as raw codes: how the standard library classifies them differs
-    // by platform, and macOS does not report ENOTSUP as `Unsupported`.
-    error
+fn classify_directory_sync_error(error: io::Error) -> VaultError {
+    let unsupported = error
         .raw_os_error()
-        .is_some_and(|code| [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP].contains(&code))
+        .is_some_and(|code| [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP].contains(&code));
+    if unsupported {
+        VaultError::UnsupportedStorage
+    } else {
+        error.into()
+    }
+}
+
+/// Refuses to create a vault where a commit could be reported as failed after
+/// it landed: the atomic-write primitive syncs the parent directory after each
+/// rename and fails when that is unsupported.
+fn ensure_storage_supports_directory_sync(directory: &Path) -> Result<(), VaultError> {
+    sync_dir(directory)
 }
 
 /// Best-effort variant for cleanup paths, where a failure changes nothing the
@@ -3376,6 +3419,64 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn a_passphrase_unlocks_whichever_unicode_form_it_is_typed_in() {
+        // "café" with a precomposed é, then with e + combining acute. The same
+        // visible passphrase must derive the same key on every keyboard.
+        const COMPOSED: &str = "caf\u{e9} lantern orbit willow cascade 572";
+        const DECOMPOSED: &str = "cafe\u{301} lantern orbit willow cascade 572";
+        assert_ne!(COMPOSED.as_bytes(), DECOMPOSED.as_bytes());
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(COMPOSED, "Jamie", 1).unwrap();
+        store.lock();
+        store.unlock(DECOMPOSED).unwrap();
+        store
+            .change_passphrase(COMPOSED, "river azimuth cobalt sparrow 934")
+            .unwrap();
+    }
+
+    #[test]
+    fn a_passphrase_containing_a_profile_name_word_is_refused() {
+        let names = ["Brzezykowa Qvarnstrom"];
+        for passphrase in [
+            "QvarnstromBrzezykowa1",
+            "Brzezykowa+Qvarnstrom",
+            "lantern qvarnstrom orbit willow cascade",
+            "Lantern-BRZEZYKOWA-orbit-572",
+        ] {
+            assert!(
+                matches!(
+                    validate_new_passphrase(passphrase, &names),
+                    Err(VaultError::WeakPassphrase)
+                ),
+                "{passphrase}"
+            );
+        }
+        // Short words such as "Al" or "Lee" would forbid too much.
+        validate_new_passphrase("lantern orbit willow cascade 572", &["Al Lee"]).unwrap();
+        // A word that merely shares letters is not the name.
+        validate_new_passphrase("lantern orbit willow cascade 572", &["Cascadia Orbital"]).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn storage_that_cannot_sync_a_directory_is_refused_not_tolerated() {
+        for code in [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP] {
+            assert!(matches!(
+                classify_directory_sync_error(io::Error::from_raw_os_error(code)),
+                VaultError::UnsupportedStorage
+            ));
+        }
+        for code in [libc::EIO, libc::ENOSPC] {
+            assert!(!matches!(
+                classify_directory_sync_error(io::Error::from_raw_os_error(code)),
+                VaultError::UnsupportedStorage
+            ));
+        }
     }
 
     #[test]
@@ -4527,21 +4628,6 @@ mod tests {
         assert!(!store.unlocked.is_poisoned());
         store.unlock(PASSWORD).unwrap();
         assert_eq!(store.snapshot().unwrap().profiles.len(), 1);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn only_an_unsupported_directory_sync_is_tolerated() {
-        for code in [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP] {
-            assert!(directory_sync_unsupported(&io::Error::from_raw_os_error(
-                code
-            )));
-        }
-        for code in [libc::EIO, libc::ENOSPC, libc::EACCES] {
-            assert!(!directory_sync_unsupported(&io::Error::from_raw_os_error(
-                code
-            )));
-        }
     }
 
     #[test]

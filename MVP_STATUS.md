@@ -92,16 +92,14 @@ privacy, accessibility, or clinical review.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.
-- [ ] Review the passphrase policy against passphrases built from the profile's own name. The name
-      is passed to zxcvbn as context, which only matches it as a whole, so rearranged or joined name
-      words ("Family+Given") still reach the accepted score.
-- [ ] Decide how passphrases are normalized before any vault holds real data. The bytes reach
-      Argon2id exactly as typed, so the same visible passphrase entered composed on one keyboard and
-      decomposed on another derives a different key, and the passphrase is the only way in.
-      Normalizing later changes key derivation for existing vaults.
-- [ ] Decide where the vault lives on Windows. It is rooted in the application data directory,
-      which Tauri resolves to the roaming profile; on a domain-joined PC the ciphertext and the lock
-      file would then roam between machines. Moving it later needs a migration.
+- [x] Passphrases containing a word of the profile's own name are refused before scoring, since
+      zxcvbn matches the name only as a whole and rearranged or joined name words scored as strong.
+- [x] Passphrases are normalized to Unicode NFC before key derivation, so the same visible
+      passphrase unlocks whichever composition form the keyboard produces.
+- [x] Decided: the vault stays in the Tauri application-data directory, which on Windows is the
+      roaming profile. On a domain-joined PC with roaming profiles the ciphertext and lock file
+      travel between machines; that is accepted for the first release and recorded in
+      [`VAULT_FORMAT.md`](VAULT_FORMAT.md).
 - [ ] Handle a desktop export that is interrupted. The atomic-write primitive stages the readable
       copy in a hidden `.atomicwrite*` directory beside the chosen file, and nothing removes it if
       the app dies before the rename. Also confirm on iOS and sandboxed macOS that the save
@@ -113,11 +111,10 @@ privacy, accessibility, or clinical review.
       supported filesystem and physical target; subprocess termination coverage is implemented.
 - [ ] Reproduce genuine full-filesystem behavior and test OS backup/restore. Deterministic
       `NoSpace` injection, Unix permission modes, and the local corruption matrix are automated;
-      platform filesystem and policy inspection remains. This includes filesystems that cannot
-      sync a directory (some FUSE, network, and removable mounts): the atomic-write primitive syncs
-      the parent after its rename, so there a manifest commit or an export is reported as failed
-      although the complete file is already in place, and an import then removes the objects that
-      the manifest on disk already references. Decide whether such storage is supported.
+      platform filesystem and policy inspection remains. Filesystems that cannot sync a directory
+      (some FUSE, network, and removable mounts) are decided unsupported: vault creation probes for
+      it and refuses with a clear message, and the earlier tolerance in the import path is gone, so
+      a vault later moved to such storage fails its writes rather than mis-reporting them.
 - [ ] Benchmark Argon2id on the oldest supported device class. A repeatable release-mode harness and
       result template are in [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md); physical results remain.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext
