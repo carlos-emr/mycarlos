@@ -569,13 +569,7 @@ fn open_import_source(
     #[cfg(desktop)]
     {
         if let Ok(local_path) = path.clone().into_path() {
-            let file = vault::open_regular_read(&local_path).map_err(|error| {
-                if error.kind() == io::ErrorKind::InvalidData {
-                    VaultError::Invalid
-                } else {
-                    VaultError::Storage
-                }
-            })?;
+            let file = vault::open_regular_read(&local_path).map_err(import_source_error)?;
             return Ok(ImportSource {
                 display_name,
                 reader: Box::new(file),
@@ -592,6 +586,19 @@ fn open_import_source(
         display_name,
         reader: Box::new(file),
     })
+}
+
+/// A picked file that cannot be opened is a problem with that file, not with
+/// the vault, so only an unexplained failure is reported as a storage error.
+#[cfg(desktop)]
+fn import_source_error(error: io::Error) -> VaultError {
+    match error.kind() {
+        // Moved, renamed or deleted after it was picked.
+        io::ErrorKind::NotFound => VaultError::NotFound,
+        // Not a regular file, such as a link or a device.
+        io::ErrorKind::InvalidData => VaultError::Invalid,
+        _ => VaultError::Storage,
+    }
 }
 
 /// Opens the save picker with the record's name. Returns the id of the chosen
@@ -768,6 +775,21 @@ mod tests {
         assert_eq!(info.architecture, std::env::consts::ARCH);
         assert_eq!(info.app_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(info.message, "Hello from the Tauri Rust boundary");
+    }
+    #[test]
+    fn a_picked_file_that_is_gone_is_not_a_storage_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = vault::open_regular_read(&dir.path().join("moved.pdf")).unwrap_err();
+        assert!(matches!(import_source_error(missing), VaultError::NotFound));
+        let directory = vault::open_regular_read(dir.path()).unwrap_err();
+        assert!(matches!(
+            import_source_error(directory),
+            VaultError::Invalid
+        ));
+        assert!(matches!(
+            import_source_error(io::Error::other("device error")),
+            VaultError::Storage
+        ));
     }
     #[test]
     fn public_errors_do_not_expose_internal_details() {
