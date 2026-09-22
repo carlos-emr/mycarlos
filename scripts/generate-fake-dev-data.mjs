@@ -63,7 +63,10 @@ const duplicate = {
 };
 
 function escapePdfText(value) {
-  return value.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("(", "\\(")
+    .replaceAll(")", "\\)");
 }
 
 function createPdf(title, lines) {
@@ -92,7 +95,10 @@ function createPdf(title, lines) {
   const xrefOffset = Buffer.byteLength(pdf);
   pdf += `xref\n0 ${objects.length + 1}\n`;
   pdf += "0000000000 65535 f \n";
-  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join("");
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   return Buffer.from(pdf);
 }
@@ -103,7 +109,10 @@ export async function generateFakeDevData(outputDirectory) {
   let duplicateBytes;
 
   for (const document of documents) {
-    if (!document.fileName.startsWith(`${FAKE_PREFIX}_`) || !document.profileName.startsWith(`${FAKE_PREFIX} `)) {
+    if (
+      !document.fileName.startsWith(`${FAKE_PREFIX}_`) ||
+      !document.profileName.startsWith(`${FAKE_PREFIX} `)
+    ) {
       throw new Error("Fake fixture names must start with the FAKE prefix");
     }
     const bytes = createPdf(document.title, document.lines);
@@ -112,16 +121,32 @@ export async function generateFakeDevData(outputDirectory) {
     if (document.fileName === duplicate.duplicateOf) duplicateBytes = bytes;
   }
 
-  await writeFile(path.join(outputDirectory, duplicate.fileName), duplicateBytes);
+  await writeFile(
+    path.join(outputDirectory, duplicate.fileName),
+    duplicateBytes,
+  );
   generated.push(duplicate.fileName);
   const manifest = {
-    warning: "FAKE synthetic development data only. Contains no patient information.",
-    passphraseGuidance: "Choose a unique throwaway passphrase; no credential is stored in these fixtures.",
+    warning:
+      "FAKE synthetic development data only. Contains no patient information.",
+    passphraseGuidance:
+      "Choose a unique throwaway passphrase; no credential is stored in these fixtures.",
     profiles: [
-      { name: "FAKE Avery Patient", folders: ["FAKE Test Results", "FAKE Specialist Letters"] },
-      { name: "FAKE Morgan Patient", folders: ["FAKE Imaging", "FAKE Prescriptions"] },
+      {
+        name: "FAKE Avery Patient",
+        folders: ["FAKE Test Results", "FAKE Specialist Letters"],
+      },
+      {
+        name: "FAKE Morgan Patient",
+        folders: ["FAKE Imaging", "FAKE Prescriptions"],
+      },
     ],
-    documents: [...documents.map(({ lines: _lines, title: _title, ...document }) => document), duplicate],
+    documents: [
+      ...documents.map(
+        ({ lines: _lines, title: _title, ...document }) => document,
+      ),
+      duplicate,
+    ],
   };
   await writeFile(
     path.join(outputDirectory, "FAKE_MANIFEST.json"),
@@ -131,9 +156,15 @@ export async function generateFakeDevData(outputDirectory) {
   return generated;
 }
 
-const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : "";
+const invokedPath = process.argv[1]
+  ? pathToFileURL(path.resolve(process.argv[1])).href
+  : "";
 if (import.meta.url === invokedPath) {
-  const outputDirectory = fileURLToPath(new URL("../dev-data", import.meta.url));
+  const outputDirectory = fileURLToPath(
+    new URL("../dev-data", import.meta.url),
+  );
   const generated = await generateFakeDevData(outputDirectory);
-  console.log(`Generated ${generated.length} FAKE development files in ${outputDirectory}`);
+  console.log(
+    `Generated ${generated.length} FAKE development files in ${outputDirectory}`,
+  );
 }

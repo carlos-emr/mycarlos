@@ -11,8 +11,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run preview -- --host 127.0.0.1",
+    // Build first so a newly started preview never serves a missing or stale dist/.
+    command: "npm run build && npm run preview -- --host 127.0.0.1",
     port: 4173,
+    timeout: 120_000,
     reuseExistingServer: !process.env.CI,
   },
   projects: [

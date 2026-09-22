@@ -114,7 +114,7 @@ jobs:
       - run: npm run test:dev-hmr
       - run: npm run test:dev-data
       - run: npm run test:android-security
-      - run: npm run build
+      # Playwright's webServer builds dist/ before starting the preview.
       - run: npm run test:e2e
       - name: Upload responsive screenshots and traces
         if: always()

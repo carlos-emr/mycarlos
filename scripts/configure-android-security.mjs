@@ -52,7 +52,10 @@ export async function configureAndroidSecurity(manifestPath) {
   await writeFile(manifestPath, manifest, "utf8");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   await configureAndroidSecurity(
     process.argv[2] ?? "src-tauri/gen/android/app/src/main/AndroidManifest.xml",
   );
