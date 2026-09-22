@@ -654,9 +654,10 @@ export function VaultLibrary({
                     <span>
                       <strong>Read-only recovery mode.</strong> Some encrypted
                       files are missing from this device. Documents marked
-                      damaged cannot be saved; save copies of the others. To
-                      make changes again, restore the vault folder from a
-                      backup, or remove the damaged documents.
+                      damaged cannot be opened or copied; save copies of the
+                      others now. To make changes again, restore the myCarlos
+                      data folder from a backup, or remove the damaged
+                      documents.
                     </span>
                     <button
                       className="button danger"
@@ -675,8 +676,8 @@ export function VaultLibrary({
                       <strong>Read-only recovery mode.</strong> A copy of the
                       vault's metadata could not be read, and it may be newer
                       than what is shown. Nothing will be changed on disk. Check
-                      that no other program holds the vault folder, then lock
-                      and unlock again.
+                      that no other program holds the myCarlos data folder, then
+                      lock and unlock again.
                     </span>
                   </div>
                 )}
@@ -884,8 +885,8 @@ export function VaultLibrary({
                 them forgets their names and details too. This cannot be undone.
               </p>
               <p>
-                If you have a backup of the vault folder, restore it first: any
-                file that is back is kept, not removed.
+                If you have a backup of the myCarlos data folder, restore it
+                first: any file that is back is kept, not removed.
               </p>
             </ConfirmDialog>
           )}

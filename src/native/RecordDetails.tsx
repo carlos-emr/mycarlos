@@ -83,7 +83,7 @@ export function RecordDetails({
             <p role="alert">
               <strong>This document is damaged.</strong> Its encrypted file is
               missing from this device, so a copy cannot be saved. Restoring the
-              vault folder from a backup may recover it.
+              myCarlos data folder from a backup may recover it.
             </p>
           )}
         </div>

@@ -545,8 +545,10 @@ async fn vault_import_picked(
 ) -> CommandResult<vault::ImportOutcome> {
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let paths = picks
+        // A pick is gone when it was used, expired, or cleared by a lock while
+        // the picker was open. None of those is a mistake in the request.
         .take_import(request.pick_id)
-        .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
@@ -626,7 +628,7 @@ async fn vault_export_picked(
     let record_id = request.record_id;
     let destination = picks
         .take_export(request.pick_id)
-        .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
 
     if let Ok(destination_path) = destination.clone().into_path() {
         return run_blocking(store.inner(), move |store| {
