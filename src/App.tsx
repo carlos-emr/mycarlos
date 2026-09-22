@@ -276,12 +276,16 @@ export default function App({ bridge = defaultBridge }: AppProps) {
   }, [activeSection, filter, folders, query]);
 
   const visibleCount = filteredFolders.length + filteredDocuments.length;
-  const selectedDocuments = documents.filter((document) =>
+  // Only what is shown can be acted on: un-starring in Starred, or Recent
+  // dropping an entry, can hide a document that is still selected.
+  const selectedDocuments = filteredDocuments.filter((document) =>
     selectedIds.includes(document.id),
   );
   const activeDocument =
     documents.find((document) => document.id === activeDocumentId) ?? null;
   const starredCount = documents.filter((document) => document.starred).length;
+  const categoryCount = (category: Filter) =>
+    documents.filter((document) => document.category === category).length;
   const hasSessionChanges =
     documents !== sampleDocuments ||
     folders !== sampleFolders ||
@@ -445,6 +449,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
     setActiveSection("records");
     setFilter(nextFilter);
     setSelectedIds([]);
+    setNotice("Showing synthetic records for evaluation.");
   }
 
   function showSection(section: AppSection) {
@@ -604,7 +609,9 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   onClick={() => setCategory("Test results")}
                 >
                   <Icon name="flask" /> Test results{" "}
-                  <span className="nav-count">18</span>
+                  <span className="nav-count">
+                    {categoryCount("Test results")}
+                  </span>
                 </button>
                 <button
                   className={
@@ -616,7 +623,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   onClick={() => setCategory("Letters")}
                 >
                   <Icon name="letter" /> Letters{" "}
-                  <span className="nav-count">11</span>
+                  <span className="nav-count">{categoryCount("Letters")}</span>
                 </button>
                 <button
                   className={
@@ -628,7 +635,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   onClick={() => setCategory("Imaging")}
                 >
                   <Icon name="image" /> Imaging{" "}
-                  <span className="nav-count">6</span>
+                  <span className="nav-count">{categoryCount("Imaging")}</span>
                 </button>
                 <button
                   className={
@@ -640,7 +647,9 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   onClick={() => setCategory("Prescriptions")}
                 >
                   <Icon name="pill" /> Prescriptions{" "}
-                  <span className="nav-count">7</span>
+                  <span className="nav-count">
+                    {categoryCount("Prescriptions")}
+                  </span>
                 </button>
 
                 <span className="nav-label">Settings</span>
@@ -774,26 +783,17 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   </div>
                 </div>
 
-                {selectedIds.length > 0 && (
+                {selectedDocuments.length > 0 && (
                   <div className="bulkbar" role="status">
-                    <strong>{selectedIds.length} selected</strong>
-                    <span>
-                      {selectedDocuments.length > 0
-                        ? "Apply an action to the selected documents."
-                        : "Choose a document to use record actions."}
-                    </span>
+                    <strong>{selectedDocuments.length} selected</strong>
+                    <span>Apply an action to the selected documents.</span>
                     <div className="bulk-actions">
-                      <button
-                        type="button"
-                        onClick={starSelectedDocuments}
-                        disabled={selectedDocuments.length === 0}
-                      >
+                      <button type="button" onClick={starSelectedDocuments}>
                         Star
                       </button>
                       <button
                         type="button"
                         onClick={() => moveDocumentsToTrash(selectedDocuments)}
-                        disabled={selectedDocuments.length === 0}
                       >
                         Trash
                       </button>
@@ -837,13 +837,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                         </div>
                         <span className="column">—</span>
                         <span className="column">{folder.date}</span>
-                        <button
-                          className="more-button"
-                          type="button"
-                          aria-label={`More options for ${folder.title}`}
-                        >
-                          <Icon name="more" />
-                        </button>
+                        <span />
                       </article>
                     ))}
 

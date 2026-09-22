@@ -280,14 +280,14 @@ describe("myCarlos Tauri evaluation", () => {
         screen.getByText("Prescription — ramipril 5mg").closest("article")!,
       ).getByRole("button", { name: "Restore" }),
     );
-
-    await user.click(screen.getByRole("button", { name: "My records" }));
-    expect(screen.getByText("Prescription — ramipril 5mg")).toBeVisible();
     expect(
       screen.getByText(
         "Prescription — ramipril 5mg was restored to My records.",
       ),
     ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "My records" }));
+    expect(screen.getByText("Prescription — ramipril 5mg")).toBeVisible();
   });
 
   it("applies bulk star and trash actions to selected documents", async () => {
@@ -315,6 +315,30 @@ describe("myCarlos Tauri evaluation", () => {
     expect(
       screen.getByText("Prescription — ramipril 5mg was moved to Trash."),
     ).toBeVisible();
+  });
+
+  it("drops a document from the selection once it is no longer shown", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+    const title = "Specialist letter — cardiology";
+
+    await user.click(screen.getByRole("button", { name: /Starred/ }));
+    await user.click(screen.getByRole("button", { name: `Select ${title}` }));
+    expect(screen.getByText("1 selected")).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: `More options for ${title}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove star" }));
+    await user.click(
+      screen.getByRole("button", { name: "Close document preview" }),
+    );
+    expect(screen.queryByText(title)).not.toBeInTheDocument();
+    // No bulk action can reach a document the list no longer shows.
+    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Trash" }),
+    ).not.toBeInTheDocument();
   });
 
   it("demonstrates recoverable deletion in trash", async () => {
