@@ -29,11 +29,15 @@ export interface VaultRecord {
   available: boolean;
 }
 
+/** Why the vault refuses changes: some encrypted files are missing, a copy of
+ * the vault's metadata could not be read, or a write failed. */
+export type RecoveryReason = "lostObjects" | "unreadableSlot" | "writeFailed";
+
 export interface VaultSnapshot {
   profiles: PatientProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];
-  degraded: boolean;
+  recovery: RecoveryReason | null;
 }
 
 export interface ImportOutcome {
@@ -85,6 +89,9 @@ export interface VaultBridge {
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
   deleteRecord(recordId: string): Promise<void>;
+  /** Drops every record whose encrypted file is still missing, so the vault
+   * leaves recovery mode. Resolves to the ids removed. */
+  removeUnavailableRecords(): Promise<string[]>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -165,6 +172,8 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
+    removeUnavailableRecords: () =>
+      invoke<string[]>("vault_remove_unavailable_records"),
     reset: (confirmation) =>
       invoke<boolean>("vault_reset", { request: { confirmation } }),
   };

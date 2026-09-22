@@ -16,7 +16,7 @@ const emptySnapshot: VaultSnapshot = {
   profiles: [{ id: "profile-1", displayName: "Jamie", createdAtMs: 1 }],
   folders: [],
   records: [],
-  degraded: false,
+  recovery: null,
 };
 
 function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
@@ -41,6 +41,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     pickExportDestination: vi.fn().mockResolvedValue(null),
     exportToPicked: vi.fn().mockResolvedValue(undefined),
     deleteRecord: vi.fn().mockResolvedValue(undefined),
+    removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
@@ -312,7 +313,7 @@ describe("durable vault UI", () => {
           available: true,
         },
       ],
-      degraded: false,
+      recovery: null,
     };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
@@ -652,7 +653,7 @@ describe("durable vault UI", () => {
     const snapshot = await bridge.snapshot();
     vi.mocked(bridge.snapshot).mockResolvedValue({
       ...snapshot,
-      degraded: true,
+      recovery: "writeFailed",
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -1613,7 +1614,7 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn().mockResolvedValue({
         ...emptySnapshot,
-        degraded: true,
+        recovery: "lostObjects",
         records: [
           {
             id: "record-lost",
@@ -1641,6 +1642,90 @@ describe("durable vault UI", () => {
     ).toBeDisabled();
   });
 
+  it("removes damaged documents from the recovery banner after confirmation", async () => {
+    const user = userEvent.setup();
+    const lost = {
+      id: "record-lost",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Lost.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: false,
+    };
+    const kept = {
+      ...lost,
+      id: "record-kept",
+      displayName: "FAKE_Kept.pdf",
+      available: true,
+    };
+    const removeUnavailableRecords = vi.fn().mockResolvedValue(["record-lost"]);
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [lost, kept],
+        })
+        .mockResolvedValue({
+          ...emptySnapshot,
+          recovery: null,
+          records: [kept],
+        }),
+      removeUnavailableRecords,
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Remove damaged documents" }),
+    );
+    const warning = screen.getByRole("alertdialog", {
+      name: "Remove 1 damaged document?",
+    });
+    expect(warning).toHaveTextContent(/cannot be undone/);
+    expect(warning).toHaveTextContent(/backup/);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(removeUnavailableRecords).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(removeUnavailableRecords).toHaveBeenCalledOnce(),
+    );
+    expect(
+      await screen.findByText(
+        "1 damaged document removed. The vault accepts changes again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Read-only recovery mode/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("FAKE_Lost.pdf")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
+  });
+
+  it("offers no removal when recovery is not about missing files", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        recovery: "unreadableSlot",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(await screen.findByText(/could not be read/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Remove damaged documents" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {
     const hostileName =
       '<img src="https://attacker.invalid/leak">\u202ereport.pdf';
@@ -1648,7 +1733,7 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn().mockResolvedValue({
         ...emptySnapshot,
-        degraded: true,
+        recovery: "writeFailed",
         records: [
           {
             id: "record-hostile",

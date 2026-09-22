@@ -22,6 +22,7 @@
     "allow-vault-export-pick",
     "allow-vault-export-picked",
     "allow-vault-delete-record",
+    "allow-vault-remove-unavailable-records",
     "allow-vault-reset"
   ]
 }

@@ -56,6 +56,7 @@ export function VaultLibrary({
     action: "delete" | "export";
     recordId: string;
   } | null>(null);
+  const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
   const [showFolderForm, setShowFolderForm] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
@@ -116,7 +117,7 @@ export function VaultLibrary({
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
       : null;
-  const readOnly = snapshot.degraded;
+  const readOnly = snapshot.recovery !== null;
 
   useEffect(() => {
     if (profile && profile.id !== profileId) setProfileId(profile.id);
@@ -283,6 +284,26 @@ export function VaultLibrary({
       }
       await bridge.exportToPicked(pickId, record.id);
       setNotice("A readable copy was saved to this computer.");
+    });
+  };
+
+  const damagedCount = snapshot.records.filter(
+    (record) => !record.available,
+  ).length;
+  const removeDamaged = () => {
+    setConfirmRemoveDamaged(false);
+    void run(async () => {
+      const removed = await bridge.removeUnavailableRecords();
+      setActiveRecordId(null);
+      setSelectedIds((current) =>
+        current.filter((id) => !removed.includes(id)),
+      );
+      await refresh();
+      setNotice(
+        removed.length === 0
+          ? "Every file is back on this device. Nothing was removed, and the vault accepts changes again."
+          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} removed. The vault accepts changes again.`,
+      );
     });
   };
 
@@ -627,26 +648,47 @@ export function VaultLibrary({
                   </details>
                 )}
 
-                {snapshot.degraded && (
+                {snapshot.recovery === "lostObjects" && (
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
-                    {snapshot.records.some((record) => !record.available) ? (
-                      <span>
-                        <strong>Read-only recovery mode.</strong> Some encrypted
-                        files are missing from this device. Documents marked
-                        damaged cannot be saved; save copies of the others. The
-                        vault will reject changes until the missing files are
-                        restored.
-                      </span>
-                    ) : (
-                      <span>
-                        <strong>Read-only recovery mode.</strong> A vault
-                        metadata copy could not be read or repaired. Export
-                        important records and free storage; the vault will
-                        reject changes until it can repair itself on a later
-                        unlock.
-                      </span>
-                    )}
+                    <span>
+                      <strong>Read-only recovery mode.</strong> Some encrypted
+                      files are missing from this device. Documents marked
+                      damaged cannot be saved; save copies of the others. To
+                      make changes again, restore the vault folder from a
+                      backup, or remove the damaged documents.
+                    </span>
+                    <button
+                      className="button danger"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setConfirmRemoveDamaged(true)}
+                    >
+                      Remove damaged documents
+                    </button>
+                  </div>
+                )}
+                {snapshot.recovery === "unreadableSlot" && (
+                  <div className="purpose-note warning" role="alert">
+                    <Icon name="info" />
+                    <span>
+                      <strong>Read-only recovery mode.</strong> A copy of the
+                      vault's metadata could not be read, and it may be newer
+                      than what is shown. Nothing will be changed on disk. Check
+                      that no other program holds the vault folder, then lock
+                      and unlock again.
+                    </span>
+                  </div>
+                )}
+                {snapshot.recovery === "writeFailed" && (
+                  <div className="purpose-note warning" role="alert">
+                    <Icon name="info" />
+                    <span>
+                      <strong>Read-only recovery mode.</strong> A write to the
+                      vault failed. Free storage or check the disk, then lock
+                      and unlock again; the vault repairs itself when it can
+                      write.
+                    </span>
                   </div>
                 )}
 
@@ -825,6 +867,25 @@ export function VaultLibrary({
               <p>
                 Readable exports and the clinic's source medical record are not
                 deleted.
+              </p>
+            </ConfirmDialog>
+          )}
+          {confirmRemoveDamaged && (
+            <ConfirmDialog
+              title={`Remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Remove"
+              danger
+              onConfirm={removeDamaged}
+              onCancel={() => setConfirmRemoveDamaged(false)}
+            >
+              <p>
+                The encrypted files for these documents are missing from this
+                device, so their content is already gone from here. Removing
+                them forgets their names and details too. This cannot be undone.
+              </p>
+              <p>
+                If you have a backup of the vault folder, restore it first: any
+                file that is back is kept, not removed.
               </p>
             </ConfirmDialog>
           )}

@@ -68,9 +68,8 @@ The encrypted manifest contains profiles, nested folders, folder assignments, sa
 names that the patient may rename, sizes, timestamps, unverified-source labels, per-record
 fingerprints, opaque object names, and wrapped content keys. Mutations write the same logical state
 into two consecutive generations using a cross-platform atomic replacement primitive. Once the first
-generation is
-durable, the logical mutation is committed; failure of the redundant write is reported in the
-snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
+generation is durable, the logical mutation is committed; failure of the redundant write is reported
+in the snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
 the highest valid generation whose objects exist, rejects divergent authenticated states at the same
 generation, and repairs only missing or damaged redundancy. If repair cannot write because storage
 is full, unlock still permits read/export access in recovery mode. Staging and definite precommit
@@ -91,6 +90,15 @@ slot may hold the newest committed state, so unlock does not repair over it or r
 it may reference. An absent, oversized, or non-regular slot is still treated as damage that repair
 replaces. A header slot that exists but cannot be read is likewise never rewrapped over, because it
 may hold a newer passphrase generation; the session opens in recovery mode instead.
+
+The snapshot names the reason for recovery mode, because each has its own way out. `lostObjects`:
+some records' ciphertext is missing; the patient can restore the vault folder from a backup, or
+choose to remove the damaged documents. Removal re-checks the disk first, drops only records whose
+object is still missing, commits the now-complete manifest through the ordinary two-generation
+write, and leaves recovery mode; a file that came back is kept. `unreadableSlot`: a manifest or
+header slot could not be read and may be newer than what was opened, so nothing is written, not
+even a removal, until a later unlock can read it. `writeFailed`: a redundant write or repair failed;
+a later unlock retries the repair.
 
 Every manifest is checked with the reader's own validation before it is written. A mutation that
 would produce a manifest the reader rejects fails as an invalid change and leaves both slots

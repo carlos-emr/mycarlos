@@ -44,6 +44,7 @@ fn main() {
             "vault_export_pick",
             "vault_export_picked",
             "vault_delete_record",
+            "vault_remove_unavailable_records",
             "vault_reset",
         ]),
     ))

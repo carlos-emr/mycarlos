@@ -296,8 +296,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setConcealed(false);
             setStatus("unlocked");
             setNotice(
-              current.degraded
-                ? "Vault unlocked in read-only recovery mode. Export important records and free storage before unlocking again."
+              current.recovery
+                ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
                 : "Vault unlocked.",
             );
           })

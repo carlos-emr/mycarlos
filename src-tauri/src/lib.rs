@@ -650,6 +650,13 @@ async fn vault_export_picked(
 }
 
 #[tauri::command]
+async fn vault_remove_unavailable_records(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<Vec<Uuid>> {
+    run_blocking(store.inner(), VaultStore::remove_unavailable_records).await
+}
+
+#[tauri::command]
 async fn vault_delete_record(
     store: State<'_, Arc<VaultStore>>,
     request: DeleteRecordRequest,
@@ -725,6 +732,7 @@ pub fn run() {
             vault_export_pick,
             vault_export_picked,
             vault_delete_record,
+            vault_remove_unavailable_records,
             vault_reset
         ])
         .run(tauri::generate_context!())
