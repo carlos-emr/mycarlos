@@ -1,3 +1,6 @@
+_Retained from the upstream CARLOS repository. It describes that repository as a whole, not the
+myCarlos application code here; see [LICENSE_NOTES.md](LICENSE_NOTES.md)._
+
 # CARLOS EMR - Project Notice
 
 ## Project Identity
