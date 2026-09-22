@@ -16,10 +16,10 @@ def main():
     # cargo-audit cannot match advisories for path or git packages, so the only
     # packages allowed outside crates.io are this crate and the reviewed glib.
     registry = "registry+https://github.com/rust-lang/crates.io-index"
-    members = set(metadata["workspace_members"])
+    root = metadata["resolve"]["root"]
     outside = sorted(
         p["name"] for p in metadata["packages"]
-        if p["source"] != registry and p["id"] not in members
+        if p["source"] != registry and p["id"] != root
     )
     if outside != ["glib"]:
         raise ValueError(f"Only glib may come from outside crates.io, found: {outside}")

@@ -7,6 +7,5 @@ publish = false
 [dependencies]
 glib = { path = "../../src-tauri/vendor/glib", default-features = false }
 
-# The original defect manifests under optimization, so CI must use --release.
-[profile.release]
-opt-level = 3
+# The original defect manifests under optimization, so CI must use --release
+# (Cargo's release profile already builds with opt-level = 3).

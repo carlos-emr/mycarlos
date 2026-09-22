@@ -30,7 +30,8 @@ def verify():
     allowed = {"README.md", "upstream.json"} | {
         item for entry in entries for item in (entry["name"], f"{entry['name']}.patch")
     }
-    unexpected = sorted(path.name for path in VENDOR.iterdir() if path.name not in allowed)
+    unexpected = sorted(path.name for path in VENDOR.iterdir()
+                        if path.name not in allowed or path.is_symlink())
     if unexpected:
         raise ValueError(f"Unexpected entries in vendor/: {', '.join(unexpected)}")
     for entry in entries:
