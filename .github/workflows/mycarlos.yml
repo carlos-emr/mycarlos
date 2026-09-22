@@ -209,7 +209,7 @@ jobs:
           $setup = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S', "/D=$installPath" -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "Installer exited with $($setup.ExitCode)" }
           if (!(Test-Path "$installPath/mycarlos-tauri-poc.exe")) { throw "Installed application is missing" }
-      - name: Verify installed app launches without a console
+      - name: Verify installed app is a GUI program (no console at launch)
         shell: python
         run: |
           import os

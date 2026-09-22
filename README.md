@@ -43,15 +43,33 @@ of production readiness.
 
 ## Initial platform scope
 
-The planned initial supported platforms are **Windows, macOS, Android, and iOS**. Linux is deferred
-pending review of the `glib` backport below, device validation, and release approval.
-The Linux CI job is retained only as a compatibility monitor; its debug package is unsupported
-evaluation evidence and must not be distributed to patients.
+The planned initial supported platforms are **Windows, macOS, Android, and iOS**. Today every one
+of them is **buildable but unverified**: CI compiles and packages the app for all four, but a
+successful build is not evidence that the app works there. Linux is deferred pending review of the
+`glib` backport below, device validation, and release approval; its CI job is retained only as a
+compatibility monitor, and its debug package is unsupported evaluation evidence that must not be
+distributed to patients.
+
+| Platform | Built and packaged in CI | Vault tests run in CI | Run by a person on this revision |
+| --- | --- | --- | --- |
+| Windows | Yes (installer) | Yes | No |
+| macOS | Yes (`.app`) | Yes | No |
+| Android | Yes (debug APK) | No | No ([#4](https://github.com/carlos-emr/mycarlos/issues/4)) |
+| iOS | Yes (unsigned simulator `.app`) | No | No ([#5](https://github.com/carlos-emr/mycarlos/issues/5)) |
+| Linux (unsupported) | Yes (debug `.deb`) | Yes | No |
+
+"Vault tests" are the Rust storage, encryption, and crash-recovery tests; they do not launch the
+app's window. The Windows job also installs the package silently and checks that the installed
+executable is marked as a GUI program, so no console window will open; it does not start the app.
+Nothing on Android or iOS has been launched: import and export there depend on the
+system file pickers, whose behaviour has been reasoned from platform documentation but not
+observed. Physical-device, lifecycle, and backup/restore checks are tracked in
+[`MVP_STATUS.md`](MVP_STATUS.md) and issues #4 to #13.
 
 ## What it demonstrates
 
-- The same responsive, mock-aligned filing-cabinet screen in a browser, desktop webview, Android
-  webview, and iOS webview.
+- One responsive, mock-aligned filing-cabinet screen, rendered in a browser and packaged for
+  desktop, Android, and iOS webviews (the mobile packages are unverified; see the table above).
 - A durable native filing cabinet aligned with the discussion mocks in [CARLOS PR #3479](https://github.com/carlos-emr/carlos/pull/3479): patient-profile
   switching, nested folder navigation, location search, list/grid views, sorting, bulk moves, and
   drag-and-drop document/folder moves, folder and imported-document renaming, plus plain-language
@@ -191,8 +209,8 @@ Development WebSockets use port 1421; only the development CSP permits those con
   classified as a false positive. The glib backport is the only local dependency patch;
   see [source provenance and retirement criteria](src-tauri/vendor/README.md).
 - Hosted CI produced a 48 MB Linux debug `.deb`, a 131 MB Android debug APK, and a 92 MB unsigned
-  iOS simulator `.app`. These unoptimized artifacts are useful feasibility evidence, not release
-  size estimates.
+  iOS simulator `.app`. These unoptimized artifacts show the app can be built for each platform;
+  they are not evidence that it runs there, and not release size estimates.
 
 ## Checks
 
