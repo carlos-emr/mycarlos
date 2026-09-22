@@ -36,7 +36,7 @@ pub(crate) const MAX_IMPORT_FILES: usize = 100;
 pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
-const CREATE_STAGE_PREFIX: &str = ".mycarlos-create-";
+const CREATE_STAGE_PREFIX: &str = ".create-";
 // The atomic-write primitive stages each file in a directory with this prefix,
 // beside the file it replaces.
 const ATOMIC_WRITE_PREFIX: &str = ".atomicwrite";
@@ -922,29 +922,12 @@ impl VaultStore {
     }
 
     pub fn export_atomic(&self, record_id: Uuid, destination: &Path) -> Result<(), VaultError> {
-        let vault_root = fs::canonicalize(&self.root)?;
+        // The vault home holds only entries the vault manages: the vault, its
+        // lock, a pending reset, a create stage. No export may land anywhere in
+        // it, whatever it is called, so the check needs no list of names.
+        let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
-        let destination_parent = fs::canonicalize(destination_parent)?;
-        let destination_name = destination.file_name().ok_or(VaultError::Invalid)?;
-        // The typed name is only one spelling of the entry. Windows also resolves
-        // a short 8.3 alias or a name with trailing dots or spaces to the same
-        // file, so an existing destination is checked under its real name too.
-        let resolved_name = fs::canonicalize(destination_parent.join(destination_name))
-            .ok()
-            .and_then(|resolved| resolved.file_name().map(|name| name.to_os_string()));
-        let mut names_vault_sibling = false;
-        if vault_root.parent() == Some(destination_parent.as_path()) {
-            for name in [Some(destination_name), resolved_name.as_deref()]
-                .into_iter()
-                .flatten()
-            {
-                names_vault_sibling |= is_vault_managed_name(&vault_root, &name.to_string_lossy())?;
-            }
-        }
-        if destination_parent.starts_with(&vault_root)
-            || destination_parent.starts_with(reset_path(&vault_root)?)
-            || names_vault_sibling
-        {
+        if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
         }
 
@@ -2345,6 +2328,13 @@ fn read_chunk(reader: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, VaultEr
     Ok(used)
 }
 
+/// The directory that holds the vault and everything the vault manages beside
+/// it: its lock file, a pending reset, a create stage. Nothing else is ever
+/// written there, which is what lets an export refuse the whole directory.
+fn vault_home(root: &Path) -> Result<&Path, VaultError> {
+    root.parent().ok_or(VaultError::Storage)
+}
+
 fn sibling_path(root: &Path, suffix: &str) -> Result<PathBuf, VaultError> {
     let mut name = root.file_name().ok_or(VaultError::Storage)?.to_os_string();
     name.push(suffix);
@@ -2352,8 +2342,7 @@ fn sibling_path(root: &Path, suffix: &str) -> Result<PathBuf, VaultError> {
 }
 
 fn acquire_storage_lock(root: &Path) -> Result<Arc<File>, VaultError> {
-    let parent = root.parent().ok_or(VaultError::Storage)?;
-    fs::create_dir_all(parent)?;
+    create_private_dir_all(vault_home(root)?)?;
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
@@ -2377,25 +2366,6 @@ fn reset_path(root: &Path) -> Result<PathBuf, VaultError> {
     sibling_path(root, ".reset-pending")
 }
 
-/// Whether `name`, in the vault's parent directory, is an entry the vault
-/// manages: the vault itself, its lock file, or a pending reset.
-///
-/// An export must never create or replace one. Replacing the lock file would let
-/// a second instance lock a new inode, and a regular file under a pending-reset
-/// name makes `finish_pending_resets` fail closed on every later status, unlock,
-/// create and reset. The chosen file name is not canonical, and Windows and macOS
-/// resolve "VAULT-V1.LOCK" to the lock file, so case is ignored.
-fn is_vault_managed_name(root: &Path, name: &str) -> Result<bool, VaultError> {
-    let root_name = root.file_name().ok_or(VaultError::Storage)?;
-    let root_name = root_name.to_string_lossy();
-    let name = name.to_ascii_lowercase();
-    Ok(["", ".lock", ".reset-pending"]
-        .iter()
-        .any(|suffix| name == format!("{root_name}{suffix}").to_ascii_lowercase())
-        || name.starts_with("mycarlos-vault-reset-"))
-}
-
-/// Deletes every header, legacy or current, from a vault directory.
 fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
     // An interrupted header write leaves a wrapped key in its temporary directory.
     remove_abandoned_atomic_writes(directory);
@@ -2452,12 +2422,7 @@ fn finish_pending_resets(root: &Path) -> Result<bool, VaultError> {
     for entry in fs::read_dir(parent)? {
         let entry = entry?;
         let path = entry.path();
-        let name = entry.file_name();
-        let legacy = name.to_str().is_some_and(|name| {
-            name.strip_prefix("mycarlos-vault-reset-")
-                .is_some_and(|id| Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == id))
-        });
-        if path != pending && !legacy {
+        if path != pending {
             continue;
         }
         let metadata = fs::symlink_metadata(&path)?;
@@ -2814,6 +2779,20 @@ mod tests {
         time::{Duration, Instant},
     };
 
+    /// Whether two metadata describe the same inode (or, on Windows, the same
+    /// file index), so a file was kept rather than replaced under its name.
+    fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            a.ino() == b.ino() && a.dev() == b.dev()
+        }
+        #[cfg(not(unix))]
+        {
+            a.created().ok() == b.created().ok() && a.len() == b.len()
+        }
+    }
+
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
 
     #[derive(Deserialize)]
@@ -3143,16 +3122,12 @@ mod tests {
         ));
         // A regular file under a pending-reset name would make every later
         // status, unlock, create and reset fail closed.
-        for name in [
-            "vault.reset-pending".to_owned(),
-            "Vault.Reset-Pending".to_owned(),
-            format!("mycarlos-vault-reset-{}", Uuid::new_v4()),
-        ] {
+        for name in ["vault.reset-pending", "Vault.Reset-Pending"] {
             assert!(matches!(
-                store.export_atomic(record, &root.with_file_name(&name)),
+                store.export_atomic(record, &root.with_file_name(name)),
                 Err(VaultError::Invalid)
             ));
-            assert!(!root.with_file_name(&name).exists());
+            assert!(!root.with_file_name(name).exists());
         }
         assert!(matches!(
             VaultStore::new(root.clone()).unlock(PASSWORD),
@@ -3233,22 +3208,67 @@ mod tests {
     }
 
     #[test]
-    fn startup_cleans_legacy_reset_directories_without_removing_unrelated_paths() {
+    fn export_refuses_every_destination_inside_the_vault_home() {
+        // The vault's parent directory holds only entries the vault manages: the
+        // vault, its lock, a pending reset, a create stage. Nothing may be
+        // written there by name, so no list of names has to stay complete.
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("vault");
+        let root = temp.path().join("home").join("vault");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
-        store.lock();
-        let retired = temp
-            .path()
-            .join(format!("mycarlos-vault-reset-{}", Uuid::new_v4()));
-        fs::rename(&root, &retired).unwrap();
-        let unrelated = temp.path().join("mycarlos-vault-reset-not-a-uuid");
-        fs::create_dir(&unrelated).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(profile, vec![], vec![source("report.pdf", b"record")], 2)
+            .unwrap()
+            .imported[0];
+        let home = root.parent().unwrap();
+
+        for name in ["copy.pdf", "vault.lock", ".create-notes", "anything"] {
+            assert!(
+                matches!(
+                    store.export_atomic(record, &home.join(name)),
+                    Err(VaultError::Invalid)
+                ),
+                "{name}"
+            );
+            assert!(!home.join(name).exists() || name == "vault.lock", "{name}");
+        }
+        // Beside the home is fine: that is the user's space.
+        store
+            .export_atomic(record, &temp.path().join("copy.pdf"))
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_vault_home_is_created_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        VaultStore::new(root.clone())
+            .create(PASSWORD, "Jamie", 1)
+            .unwrap();
+        let mode = fs::metadata(root.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn reset_keeps_the_lock_file() {
+        // Another process may hold the lock's inode; a new inode under the same
+        // name would let both open the vault.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let lock = sibling_path(&root, ".lock").unwrap();
+        let inode_before = fs::metadata(&lock).unwrap();
+        store.reset().unwrap();
         assert_eq!(store.status().unwrap(), VaultStatus::Absent);
-        assert!(!retired.exists());
-        assert!(unrelated.exists());
-        assert!(sibling_path(&root, ".lock").unwrap().exists());
+        assert!(same_file(&inode_before, &fs::metadata(&lock).unwrap()));
     }
 
     #[cfg(unix)]
@@ -4040,11 +4060,11 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn export_refuses_another_spelling_of_a_managed_name() {
+    fn export_through_a_link_to_the_lock_file_replaces_the_link_not_the_lock() {
         use std::os::unix::fs::symlink;
 
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("vault");
+        let root = temp.path().join("home").join("vault");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
@@ -4052,19 +4072,21 @@ mod tests {
             .import(profile, vec![], vec![source("report.pdf", b"record")], 2)
             .unwrap()
             .imported[0];
-        // Stands in for a Windows short name or trailing-dot spelling: a second
-        // name in the vault's parent that resolves to the lock file.
-        let alias = root.with_file_name("alias.pdf");
-        symlink(sibling_path(&root, ".lock").unwrap(), &alias).unwrap();
+        // A link outside the home that points at the lock file. The export is
+        // allowed there, but it must replace the link, not write through it.
+        let lock = sibling_path(&root, ".lock").unwrap();
+        let lock_before = fs::metadata(&lock).unwrap();
+        let alias = temp.path().join("alias.pdf");
+        symlink(&lock, &alias).unwrap();
 
-        assert!(matches!(
-            store.export_atomic(record, &alias),
-            Err(VaultError::Invalid)
-        ));
-        assert!(fs::symlink_metadata(&alias)
+        store.export_atomic(record, &alias).unwrap();
+        assert!(!fs::symlink_metadata(&alias)
             .unwrap()
             .file_type()
             .is_symlink());
+        assert_eq!(fs::read(&alias).unwrap(), b"record");
+        assert!(same_file(&lock_before, &fs::metadata(&lock).unwrap()));
+        assert_eq!(fs::metadata(&lock).unwrap().len(), 0);
     }
 
     #[test]
@@ -4676,7 +4698,7 @@ mod tests {
     #[test]
     fn atomic_export_preserves_an_existing_destination_on_corruption() {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("vault");
+        let root = temp.path().join("home").join("vault");
         let destination = temp.path().join("export.pdf");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();

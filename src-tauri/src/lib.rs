@@ -697,8 +697,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // `vault-v1` is the vault home: it holds the vault and only what the
+            // vault manages beside it (lock file, pending reset, create stage).
+            // Back up or restore the whole directory.
             app.manage(Arc::new(VaultStore::new(
-                app.path().app_data_dir()?.join("vault-v1"),
+                app.path().app_data_dir()?.join("vault-v1").join("vault"),
             )));
             app.manage(Arc::new(PendingPicks::default()));
             Ok(())
