@@ -43,3 +43,12 @@ export function recordKind(name: string): { icon: IconName; label: string } {
   }
   return { icon: "letter", label: "Document" };
 }
+
+// The vault allows profile and folder names of at most this many characters
+// (Unicode code points) once trimmed. An input's `maxLength` counts UTF-16
+// units, in which one character can take two, so inputs are capped at twice
+// this and the name itself is checked here.
+export const MAX_NAME_CHARS = 120;
+export const NAME_INPUT_MAX_LENGTH = 2 * MAX_NAME_CHARS;
+export const nameTooLong = (name: string) =>
+  [...name.trim()].length > MAX_NAME_CHARS;

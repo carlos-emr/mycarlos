@@ -2,7 +2,12 @@ import { useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { AUTO_LOCK_OPTIONS } from "./autoLock";
-import { ResetConfirmation } from "./VaultAuth";
+import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import {
+  MIN_PASSPHRASE_CHARS,
+  ResetConfirmation,
+  tooShortPassphrase,
+} from "./VaultAuth";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -32,12 +37,19 @@ export function SecuritySettings({
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
     useState("");
+  const currentPassphraseTooLong =
+    utf8Length(currentPassphrase) > MAX_PASSPHRASE_BYTES;
   const newPassphraseTooLong = utf8Length(newPassphrase) > MAX_PASSPHRASE_BYTES;
+  const newPassphraseTooShort = tooShortPassphrase(newPassphrase);
+  const passphraseFormInvalid =
+    currentPassphraseTooLong ||
+    newPassphraseTooLong ||
+    newPassphraseTooShort ||
+    newPassphrase !== newPassphraseConfirmation;
 
   const submitPassphrase = (event: FormEvent) => {
     event.preventDefault();
-    if (newPassphraseTooLong || newPassphrase !== newPassphraseConfirmation)
-      return;
+    if (passphraseFormInvalid) return;
     const current = currentPassphrase;
     const replacement = newPassphrase;
     setCurrentPassphrase("");
@@ -123,9 +135,9 @@ export function SecuritySettings({
           <div>
             <h2>Change passphrase</h2>
             <p>
-              Use at least 15 characters and avoid common names or predictable
-              phrases. Until recovery kits are implemented, forgetting the new
-              passphrase permanently loses access.
+              Use at least {MIN_PASSPHRASE_CHARS} characters and avoid common
+              names or predictable phrases. Until recovery kits are implemented,
+              forgetting the new passphrase permanently loses access.
             </p>
           </div>
           <form onSubmit={submitPassphrase}>
@@ -164,6 +176,12 @@ export function SecuritySettings({
                 }
               />
             </label>
+            {currentPassphraseTooLong && (
+              <p role="alert">
+                The current passphrase is longer than any vault passphrase.
+                Check what you typed.
+              </p>
+            )}
             {newPassphraseConfirmation &&
               newPassphrase !== newPassphraseConfirmation && (
                 <p role="alert">New passphrases do not match.</p>
@@ -171,14 +189,15 @@ export function SecuritySettings({
             {newPassphraseTooLong && (
               <p role="alert">The new passphrase is too long. Shorten it.</p>
             )}
+            {newPassphraseTooShort && newPassphraseConfirmation && (
+              <p role="alert">
+                The new passphrase is too short. Use at least{" "}
+                {MIN_PASSPHRASE_CHARS} characters.
+              </p>
+            )}
             <button
               className="button"
-              disabled={
-                busy ||
-                readOnly ||
-                newPassphraseTooLong ||
-                newPassphrase !== newPassphraseConfirmation
-              }
+              disabled={busy || readOnly || passphraseFormInvalid}
             >
               Change passphrase
             </button>
@@ -204,12 +223,18 @@ export function SecuritySettings({
               New profile name
               <input
                 required
-                maxLength={120}
+                maxLength={NAME_INPUT_MAX_LENGTH}
                 value={profileName}
                 onChange={(event) => setProfileName(event.target.value)}
               />
             </label>
-            <button className="button" disabled={busy || readOnly}>
+            {nameTooLong(profileName) && (
+              <p role="alert">This name is too long. Shorten it.</p>
+            )}
+            <button
+              className="button"
+              disabled={busy || readOnly || nameTooLong(profileName)}
+            >
               Add profile
             </button>
           </form>

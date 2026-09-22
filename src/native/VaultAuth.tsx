@@ -1,6 +1,13 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
+import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+
+// The vault counts a new passphrase's characters (Unicode code points) after
+// NFC normalization, so the same visible text is judged alike from any keyboard.
+export const MIN_PASSPHRASE_CHARS = 15;
+export const tooShortPassphrase = (value: string) =>
+  [...value.normalize("NFC")].length < MIN_PASSPHRASE_CHARS;
 
 export function VaultAuthFrame({
   state,
@@ -87,9 +94,13 @@ export function CreateVault({
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
+  const tooShort = tooShortPassphrase(passphrase);
+  const profileTooLong = nameTooLong(profile);
+  const invalid =
+    profileTooLong || tooLong || tooShort || passphrase !== confirmation;
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (tooLong || passphrase !== confirmation) return;
+    if (invalid) return;
     const secret = passphrase;
     setPassphrase("");
     setConfirmation("");
@@ -113,11 +124,14 @@ export function CreateVault({
             First patient profile
             <input
               required
-              maxLength={120}
+              maxLength={NAME_INPUT_MAX_LENGTH}
               value={profile}
               onChange={(e) => setProfile(e.target.value)}
             />
           </label>
+          {profileTooLong && (
+            <p role="alert">This name is too long. Shorten it.</p>
+          )}
           <label>
             Passphrase
             <input
@@ -130,8 +144,9 @@ export function CreateVault({
             />
           </label>
           <small>
-            Use at least 15 characters. Spaces are allowed; common passwords,
-            names, and predictable patterns are rejected locally.
+            Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
+            common passwords, names, and predictable patterns are rejected
+            locally.
           </small>
           <label>
             Confirm passphrase
@@ -150,11 +165,14 @@ export function CreateVault({
           {tooLong && (
             <p role="alert">This passphrase is too long. Shorten it.</p>
           )}
+          {tooShort && confirmation && (
+            <p role="alert">
+              This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
+              characters.
+            </p>
+          )}
           {notice && <p role="status">{notice}</p>}
-          <button
-            className="button primary"
-            disabled={busy || tooLong || passphrase !== confirmation}
-          >
+          <button className="button primary" disabled={busy || invalid}>
             Create vault
           </button>
         </form>
@@ -177,8 +195,12 @@ export function UnlockVault({
   onReset: (confirmation: string) => Promise<void>;
 }) {
   const [passphrase, setPassphrase] = useState("");
+  // No vault passphrase can be longer, so say so instead of sending it to a
+  // native refusal that can only report invalid input.
+  const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (tooLong) return;
     const secret = passphrase;
     setPassphrase("");
     void onUnlock(secret);
@@ -206,8 +228,13 @@ export function UnlockVault({
               onChange={(e) => setPassphrase(e.target.value)}
             />
           </label>
+          {tooLong && (
+            <p role="alert">
+              This is longer than any vault passphrase. Check what you typed.
+            </p>
+          )}
           {notice && <p role="status">{notice}</p>}
-          <button className="button primary" disabled={busy}>
+          <button className="button primary" disabled={busy || tooLong}>
             Unlock
           </button>
         </form>

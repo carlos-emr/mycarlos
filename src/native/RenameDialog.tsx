@@ -1,6 +1,7 @@
 import { useState, useRef, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import { utf8Length, vaultErrorMessage } from "../vault";
+import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
@@ -27,8 +28,9 @@ export function RenameDialog({
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
   const tooLong =
-    target.kind === "document" &&
-    utf8Length(name.trim()) > MAX_DOCUMENT_NAME_BYTES;
+    target.kind === "document"
+      ? utf8Length(name.trim()) > MAX_DOCUMENT_NAME_BYTES
+      : nameTooLong(name);
   const close = () => {
     if (!saving) onClose();
   };
@@ -68,7 +70,11 @@ export function RenameDialog({
             <input
               id="rename-name"
               required
-              maxLength={target.kind === "folder" ? 120 : 240}
+              maxLength={
+                target.kind === "folder"
+                  ? NAME_INPUT_MAX_LENGTH
+                  : MAX_DOCUMENT_NAME_BYTES
+              }
               value={name}
               disabled={saving || readOnly}
               aria-describedby="rename-help"
