@@ -1088,7 +1088,22 @@ impl VaultStore {
             replacement,
             &unlocked.master_key,
         )?;
-        atomic_json(&header_path(&self.root, first.generation), &first)?;
+        let first_path = header_path(&self.root, first.generation);
+        if let Err(error) = atomic_json(&first_path, &first)
+            .and_then(|()| fail_at_test_boundary("passphrase.after-first-write"))
+        {
+            // The rename can land before a directory sync fails. The new header
+            // is then the newest one, and the current passphrase no longer opens
+            // the vault, so report the change as made, as for a failed second
+            // write, rather than tell the patient to keep the old passphrase.
+            let landed = serde_json::to_vec_pretty(&first)
+                .is_ok_and(|expected| fs::read(&first_path).is_ok_and(|found| found == expected));
+            if !landed {
+                return Err(error);
+            }
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            return Ok(());
+        }
         if atomic_json(&header_path(&self.root, second.generation), &second).is_err() {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
             return Ok(());
@@ -2387,9 +2402,10 @@ fn verify_object<W: Write>(
         }
     })?;
     let mut reader = BufReader::new(file);
-    // An object cut short inside its header, such as the empty file a power
-    // loss can leave, is damaged ciphertext and not a failed storage operation.
-    let mut read_header = |buffer: &mut [u8]| {
+    // An object cut short, such as the empty file a power loss can leave, is
+    // damaged ciphertext. Any other read error is a failed storage operation
+    // that a retry can get past, not damage to the vault.
+    let read_object = |reader: &mut BufReader<File>, buffer: &mut [u8]| {
         reader.read_exact(buffer).map_err(|error| {
             if error.kind() == io::ErrorKind::UnexpectedEof {
                 VaultError::Corrupt
@@ -2398,6 +2414,7 @@ fn verify_object<W: Write>(
             }
         })
     };
+    let mut read_header = |buffer: &mut [u8]| read_object(&mut reader, buffer);
     let mut magic = [0_u8; 5];
     read_header(&mut magic)?;
     if &magic != OBJECT_MAGIC {
@@ -2415,25 +2432,19 @@ fn verify_object<W: Write>(
     let mut index = 0_u64;
     loop {
         let mut length_bytes = [0_u8; 4];
-        reader
-            .read_exact(&mut length_bytes)
-            .map_err(|_| VaultError::Corrupt)?;
+        read_object(&mut reader, &mut length_bytes)?;
         let length = u32::from_be_bytes(length_bytes) as usize;
         if !(16..=CHUNK_SIZE + 16).contains(&length) {
             return Err(VaultError::Corrupt);
         }
         let mut final_byte = [0_u8; 1];
-        reader
-            .read_exact(&mut final_byte)
-            .map_err(|_| VaultError::Corrupt)?;
+        read_object(&mut reader, &mut final_byte)?;
         if final_byte[0] > 1 {
             return Err(VaultError::Corrupt);
         }
         let final_chunk = final_byte[0] == 1;
         let mut ciphertext = vec![0_u8; length];
-        reader
-            .read_exact(&mut ciphertext)
-            .map_err(|_| VaultError::Corrupt)?;
+        read_object(&mut reader, &mut ciphertext)?;
         let mut nonce = [0_u8; 24];
         nonce[..16].copy_from_slice(&nonce_prefix);
         nonce[16..].copy_from_slice(&index.to_be_bytes());
@@ -2984,6 +2995,7 @@ mod tests {
     }
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
+    const PASSPHRASE_REPLACEMENT: &str = "lantern-orbit-willow-cascade-572";
 
     #[derive(Deserialize)]
     struct CorruptObjectRegression {
@@ -3230,11 +3242,14 @@ mod tests {
                 )
                 .map(|_| ()),
             "delete" => store.delete_record(snapshot.records[0].id),
+            "passphrase" => store.change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT),
             _ => panic!("unknown failure-child operation"),
         };
         let committed = matches!(
             std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref(),
-            Ok("manifest.after-first-write" | "delete.after-object-unlink")
+            Ok("manifest.after-first-write"
+                | "delete.after-object-unlink"
+                | "passphrase.after-first-write")
         );
         if committed {
             assert!(outcome.is_ok());
@@ -4164,6 +4179,26 @@ mod tests {
                 usize::from(committed)
             );
         }
+    }
+
+    #[test]
+    fn a_passphrase_change_that_landed_is_reported_as_made() {
+        // The first header write can fail after its rename lands, for example
+        // when the directory sync fails. The replacement then opens the vault,
+        // so the change must not be reported as refused.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        run_failure_child(&root, "passphrase", "passphrase.after-first-write");
+
+        let restarted = VaultStore::new(root);
+        assert!(matches!(
+            restarted.unlock(PASSWORD),
+            Err(VaultError::WrongPassphrase)
+        ));
+        restarted.unlock(PASSPHRASE_REPLACEMENT).unwrap();
     }
 
     #[test]
@@ -5125,6 +5160,31 @@ mod tests {
             store.update_folder(root, Some(child), "Root"),
             Err(VaultError::Invalid)
         ));
+
+        // Folders nest at most 32 deep, on create and on move, and a vault
+        // at that depth still opens.
+        let mut chain = vec![store.create_folder(profile, None, "Level 1", 4).unwrap()];
+        for level in 2..=32 {
+            let parent = *chain.last().unwrap();
+            chain.push(
+                store
+                    .create_folder(profile, Some(parent), &format!("Level {level}"), 4)
+                    .unwrap(),
+            );
+        }
+        assert!(matches!(
+            store.create_folder(profile, Some(chain[31]), "Level 33", 5),
+            Err(VaultError::Invalid)
+        ));
+        // `root` and `child` are two levels, so they fit under level 30, not 31.
+        assert!(matches!(
+            store.update_folder(root, Some(chain[30]), "Root"),
+            Err(VaultError::Invalid)
+        ));
+        store.update_folder(root, Some(chain[29]), "Root").unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().folders.len(), 34);
     }
 
     #[test]
