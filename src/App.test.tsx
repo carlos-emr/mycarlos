@@ -84,6 +84,34 @@ describe("myCarlos Tauri evaluation", () => {
     ).toBeVisible();
   });
 
+  it("can reset a Recent list that opening a document reordered", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+
+    await user.click(screen.getByRole("button", { name: "Recent" }));
+    const firstBefore = screen.getAllByRole("article")[0];
+    await user.click(screen.getByRole("button", { name: "My records" }));
+    // Opening a document moves it to the top of Recent and changes nothing else.
+    await user.click(
+      screen.getByRole("button", {
+        name: "More options for Prescription — ramipril 5mg",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Close document preview" }),
+    );
+
+    await user.click(screen.getByText("Evaluation details"));
+    const reset = screen.getByRole("button", { name: "Reset session" });
+    expect(reset).toBeEnabled();
+    await user.click(reset);
+
+    await user.click(screen.getByRole("button", { name: "Recent" }));
+    expect(screen.getAllByRole("article")[0]).toHaveAccessibleName(
+      firstBefore.getAttribute("aria-label") ?? "",
+    );
+  });
+
   it("searches, filters, and switches record views", async () => {
     const user = userEvent.setup();
     render(<App bridge={bridge()} />);

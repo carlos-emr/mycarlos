@@ -269,6 +269,9 @@ export default function App({ bridge = defaultBridge }: AppProps) {
   const hasSessionChanges =
     documents !== sampleDocuments ||
     folders !== sampleFolders ||
+    // Opening a document reorders Recent and changes nothing else, so reset
+    // must stay available to put that order back.
+    recentIds !== sampleRecentIds ||
     trashItems.length !== sampleTrashItems.length ||
     !cloudBackup ||
     driveBackup ||
