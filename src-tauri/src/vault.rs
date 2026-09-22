@@ -1178,33 +1178,42 @@ struct ObjectContext {
 const MIN_NAME_WORD_CHARS: usize = 4;
 
 fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), VaultError> {
+    // Bound the raw input before any work on it.
+    if passphrase.len() > MAX_PASSPHRASE_BYTES {
+        return Err(VaultError::Invalid);
+    }
+    // Every rule applies to the form the KDF will see. The same visible text
+    // must pass or fail alike whichever composition form a keyboard produced.
+    let passphrase = normalize_passphrase(passphrase);
     if passphrase.chars().count() < MIN_PASSPHRASE_CHARS
         || passphrase.len() > MAX_PASSPHRASE_BYTES
         || passphrase.chars().any(char::is_control)
     {
         return Err(VaultError::Invalid);
     }
+    // Names are normalized before they are split: a combining mark is not
+    // alphanumeric, so splitting first would break "Renée" apart.
+    let context: Vec<Zeroizing<String>> = context
+        .iter()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| normalize_passphrase(value))
+        .collect();
     // The estimator matches a context entry only as a whole string, so a name
     // rearranged or joined with a symbol scores as strong. Any word of a
     // profile name is refused outright instead.
-    let normalized = normalize_passphrase(passphrase).to_lowercase();
+    let lowered = passphrase.to_lowercase();
     let contains_name_word = context
         .iter()
         .flat_map(|value| value.split(|c: char| !c.is_alphanumeric()))
         .filter(|word| word.chars().count() >= MIN_NAME_WORD_CHARS)
-        .any(|word| normalized.contains(&normalize_passphrase(word).to_lowercase()));
+        .any(|word| lowered.contains(&word.to_lowercase()));
     if contains_name_word {
         return Err(VaultError::WeakPassphrase);
     }
 
     let mut user_inputs = vec!["mycarlos", "carlos", "myvitalhistory"];
-    user_inputs.extend(
-        context
-            .iter()
-            .copied()
-            .filter(|value| !value.trim().is_empty()),
-    );
-    if zxcvbn(passphrase, &user_inputs).score() < Score::Three {
+    user_inputs.extend(context.iter().map(|value| value.as_str()));
+    if zxcvbn(&passphrase, &user_inputs).score() < Score::Three {
         Err(VaultError::WeakPassphrase)
     } else {
         Ok(())
@@ -3433,6 +3442,37 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn a_name_word_is_refused_whichever_unicode_form_the_name_was_stored_in() {
+        // "Renée" stored with e + combining acute. A combining mark is not
+        // alphanumeric, so splitting before normalizing would break the name
+        // into "Rene" and "e" and miss "renée" in the passphrase.
+        let names = ["Rene\u{301}e Qvarnstrom"];
+        assert!(matches!(
+            validate_new_passphrase("lantern ren\u{e9}e orbit willow cascade", &names),
+            Err(VaultError::WeakPassphrase)
+        ));
+    }
+
+    #[test]
+    fn passphrase_length_is_counted_in_the_normalized_form() {
+        // 14 visible characters. Typed with a decomposed accent they are 15 code
+        // points, which must not pass a rule the composed form fails.
+        let composed = "caf\u{e9}-orbit-572";
+        let decomposed = "cafe\u{301}-orbit-572";
+        assert_eq!(composed.chars().count(), MIN_PASSPHRASE_CHARS - 1);
+        assert_eq!(decomposed.chars().count(), MIN_PASSPHRASE_CHARS);
+        for passphrase in [composed, decomposed] {
+            assert!(
+                matches!(
+                    validate_new_passphrase(passphrase, &[]),
+                    Err(VaultError::Invalid)
+                ),
+                "{passphrase:?}"
+            );
+        }
     }
 
     #[test]

@@ -1725,6 +1725,45 @@ describe("durable vault UI", () => {
     expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
   });
 
+  it("does not claim the vault accepts changes when removal left it read-only", async () => {
+    const user = userEvent.setup();
+    const lost = {
+      id: "record-lost",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Lost.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: false,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [lost],
+        })
+        // The removal committed, but its redundant write failed.
+        .mockResolvedValue({ ...emptySnapshot, recovery: "writeFailed" }),
+      removeUnavailableRecords: vi.fn().mockResolvedValue(["record-lost"]),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(
+      await screen.findByText(/1 damaged document removed/),
+    ).not.toHaveTextContent(/accepts changes/);
+    expect(screen.getByText(/A write to the vault failed/)).toBeVisible();
+  });
+
   it("offers no removal when recovery is not about missing files", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),

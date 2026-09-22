@@ -20,9 +20,9 @@ privacy, accessibility, or clinical review.
 - [x] Approved 15-character passphrase minimum without arbitrary composition rules, plus local
       common-password/pattern/profile-name screening. A production breach corpus and independent
       threshold review remain patient-pilot gates.
-- [x] Atomic import with committed/degraded outcomes, redundant header and manifest repair,
-      recovery-mode unlock/export, atomic filesystem-path export, restart/unlock, and immediate
-      precommit error-path cleanup.
+- [x] Atomic import with committed or write-failed-recovery outcomes, redundant header and manifest
+      repair, recovery-mode unlock/export, atomic filesystem-path export, restart/unlock, and
+      immediate precommit error-path cleanup.
 - [x] Multiple patient profiles, nested folders, search, sorting, transactional bulk moves,
       drag-and-drop, keyboard folder movement, and folder/imported-document renaming. Renames
       persist in encrypted metadata without modifying document bytes or folder assignments.
@@ -32,8 +32,9 @@ privacy, accessibility, or clinical review.
 - [x] Confirmed passphrase change and typed plus trusted-native-confirmation whole-vault reset.
 - [x] Exclusive OS ownership across app instances for unlocked sessions and lifecycle operations;
       subprocess coverage verifies rejection and fresh-state handoff after ownership release.
-- [x] Interrupted-reset recovery before startup/access/creation, including legacy retired directories,
-      abrupt exit after rename/key removal, retryable cleanup failures, and symlink rejection.
+- [x] Interrupted-reset recovery before startup/access/creation, covering abrupt exit after
+      rename/key removal, retryable cleanup failures, and symlink rejection. Reset directories left
+      by earlier evaluation builds are not recognized; those builds' data is not carried forward.
 - [x] Confirmed individual deletion from the live vault with both manifest slots rewritten without
       the wrapped object key and ciphertext removed between the two durable commits.
 - [x] Abrupt-process-termination recovery matrix after object chunk writes, staging, object rename,

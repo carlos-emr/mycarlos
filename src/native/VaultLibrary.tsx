@@ -36,7 +36,9 @@ export function VaultLibrary({
   notice: string;
   setNotice: (value: string) => void;
   run: (operation: () => Promise<void>) => Promise<void>;
-  refresh: () => Promise<void>;
+  /** Reloads the snapshot and resolves to it, so a caller can report the
+   * state it produced rather than the state it hoped for. */
+  refresh: () => Promise<VaultSnapshot>;
   onLock: () => Promise<void>;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
@@ -298,11 +300,18 @@ export function VaultLibrary({
       setSelectedIds((current) =>
         current.filter((id) => !removed.includes(id)),
       );
-      await refresh();
-      setNotice(
+      const next = await refresh();
+      const outcome =
         removed.length === 0
-          ? "Every file is back on this device. Nothing was removed, and the vault accepts changes again."
-          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} removed. The vault accepts changes again.`,
+          ? "Every file is back on this device. Nothing was removed."
+          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} removed.`;
+      // The removal can commit and still leave the vault read-only, when its
+      // redundant write fails. The banner then says why; only claim the vault
+      // is writable when it is.
+      setNotice(
+        next.recovery === null
+          ? `${outcome} The vault accepts changes again.`
+          : outcome,
       );
     });
   };

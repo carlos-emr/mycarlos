@@ -251,6 +251,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const refresh = async () => {
     const next = await bridge.snapshot();
     if (inSession()) setSnapshot(next);
+    return next;
   };
   const setSessionNotice = (message: string) => {
     if (inSession()) setNotice(message);

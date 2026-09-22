@@ -2,13 +2,17 @@
 
 - **Status:** Implemented for synthetic-data development; security review required
 - **Identifier:** `ca.carlos.mycarlos`
-- **Storage root:** Tauri's machine-local application-data directory, `vault-v1/`. On Windows that
-  is `%LOCALAPPDATA%`, which neither roams nor can be redirected to a network share. Roaming data
-  (`%APPDATA%`) was rejected: a roaming profile copies the vault between machines, where each locks
-  its own copy of the lock file, both may write, and the last upload wins file by file; it can also
-  restore an older authentic state, undoing a passphrase change or a deletion. On every other
-  platform the local and roaming directories are the same. A vault therefore stays on the device
-  it was created on, and the create screen says so.
+- **Storage root:** `vault-home/` in Tauri's machine-local application-data directory. On Windows
+  that is `%LOCALAPPDATA%`, which neither roams nor can be redirected to a network share. Roaming
+  data (`%APPDATA%`) was rejected: a roaming profile copies the vault between machines, where each
+  locks its own copy of the lock file, both may write, and the last upload wins file by file; it can
+  also restore an older authentic state, undoing a passphrase change or a deletion. On every other
+  platform the local and roaming directories are the same. A vault therefore stays on the device it
+  was created on, and the create screen says so.
+- **Earlier evaluation builds:** they kept the vault itself at `<application data>/vault-v1/`. That
+  directory is not migrated, read, or removed; it held synthetic data only and may be deleted by
+  hand. The new home has a different name so that, on macOS and Linux, the new layout never places
+  an old vault's files inside it.
 - **Storage requirement:** the location must confirm directory writes. On Unix-like platforms,
   creation probes a directory fsync and refuses storage that cannot perform one (some network,
   FUSE, and removable filesystems) with `unsupported_storage`. Windows has no equivalent call, so
@@ -43,18 +47,19 @@ refused outright, since the estimator matches a name only as a whole and a rearr
 name would otherwise score as strong. Then local zxcvbn analysis rejects scores below three using
 its common-password/name/pattern data plus myCarlos and the current profile names as context. No
 proposed passphrase leaves the process.
-Unlock remains compatible with a shorter passphrase created by an earlier evaluation build. A
-production breach corpus, independent threshold review, and the patient-held recovery key remain
-patient-pilot work.
+Unlock accepts a passphrase shorter than the current minimum, so a vault whose passphrase was set
+under an earlier rule stays openable; every length, composition, and strength rule applies to the
+normalized form. A production breach corpus, independent threshold review, and the patient-held
+recovery key remain patient-pilot work.
 
 ## Files and transactions
 
 ```text
-vault-v1/                the vault home: holds only what the vault manages; back up as a whole
-  vault.lock             stable OS lock file; never rename or delete while the app is running
-  vault.reset-pending/   retired vault awaiting completion of an already-confirmed reset
-  .create-<uuid>/        a vault being created, renamed into place once complete
-  vault/
+vault-home/               holds only what the vault manages; back up as a whole
+  vault-v1.lock           stable OS lock file; never rename or delete while the app is running
+  vault-v1.reset-pending/ retired vault awaiting completion of an already-confirmed reset
+  .create-<uuid>/         a vault being created, renamed into place once complete
+  vault-v1/
     header-0.json        non-secret KDF configuration, wrapped master key, and keyed integrity tag
     header-1.json        redundant generation-bound wrapped-key and integrity-tag slot
     manifest-0.bin       authenticated encrypted metadata slot
@@ -74,7 +79,7 @@ state or perform cleanup. Locking or closing the owning session releases ownersh
 instance must unlock and load the current manifests. The lock file lives outside the vault so
 reset cannot replace the inode/handle being locked. It contains no secret material.
 
-Whole-vault reset renames the vault to the fixed `vault.reset-pending/` sibling before removing
+Whole-vault reset renames the vault to the fixed `vault-v1.reset-pending/` sibling before removing
 key envelopes and the remaining files. Startup status, creation, unlock, and reset all finish this
 cleanup under the same OS lock before proceeding. A cleanup error is surfaced and blocks access
 and creation until retry succeeds. Symlink/reparse-point reset directories are rejected. Abrupt-exit
@@ -124,7 +129,9 @@ untouched.
 Each header binds its generation into the master-key wrapping operation and carries a separate
 master-key-authenticated tag over the KDF configuration and wrapped envelope. That tag lets unlock
 reject a genuinely newer passphrase generation while recovering from a newer slot whose still-valid
-JSON has been corrupted. Legacy `header.json` data is accepted once and migrated to the two slots.
+JSON has been corrupted. A single `header.json`, the layout before the two slots, is still accepted
+once and migrated; format v1 keeps that path, though no vault from an earlier build is read (see
+the storage root above).
 
 Before a decrypted manifest can drive a filesystem operation, the reader checks format and vault
 identity, unique profile/folder/record/object IDs, folder ownership and acyclic depth, record-folder

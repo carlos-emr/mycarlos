@@ -99,7 +99,7 @@ impl From<VaultError> for PublicError {
             },
             VaultError::UnsupportedStorage => Self {
                 code: "unsupported_storage",
-                message: "This location cannot store the vault safely, because it does not confirm when files are durably written. Choose a local disk.",
+                message: "myCarlos cannot keep a vault safely on this device's storage, because it does not confirm when files are durably written (for example, a network home folder). Use myCarlos on a device with local storage.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -716,16 +716,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
-            // `vault-v1` is the vault home: it holds the vault and only what the
-            // vault manages beside it (lock file, pending reset, create stage).
-            // Back up or restore the whole directory. Machine-local data, because
-            // the Windows roaming profile would copy it between machines, where
-            // each would lock its own copy of the lock file.
+            // `vault-home` holds the vault and only what the vault manages beside
+            // it (lock file, pending reset, create stage). Back up or restore the
+            // whole directory. Machine-local data, because the Windows roaming
+            // profile would copy it between machines, where each would lock its
+            // own copy of the lock file. Earlier evaluation builds kept the vault
+            // at `<data>/vault-v1`; that is left untouched and never read.
             app.manage(Arc::new(VaultStore::new(
                 app.path()
                     .app_local_data_dir()?
-                    .join("vault-v1")
-                    .join("vault"),
+                    .join("vault-home")
+                    .join("vault-v1"),
             )));
             app.manage(Arc::new(PendingPicks::default()));
             Ok(())
@@ -834,6 +835,13 @@ mod tests {
         let root = &setup[..setup.find(")))").unwrap()];
         assert!(root.contains("app_local_data_dir()"), "{root}");
         assert!(!root.contains("app_data_dir()"), "{root}");
+        // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
+        // and on macOS and Linux local and roaming data are one directory. A
+        // home of that name would hold an old vault's files loose beside the new
+        // one, where nothing cleans them up.
+        let home = root.split(".join(\"").nth(1).unwrap();
+        let home = &home[..home.find('"').unwrap()];
+        assert_ne!(home, "vault-v1");
     }
 
     #[test]
