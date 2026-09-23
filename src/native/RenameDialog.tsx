@@ -107,15 +107,14 @@ export function RenameDialog({
                 }
                 value={name}
                 disabled={saving || readOnly}
-                aria-describedby={
-                  extension ? "rename-extension rename-help" : "rename-help"
-                }
+                aria-describedby="rename-help"
                 onChange={(event) => {
                   setName(event.target.value);
                   setError("");
                 }}
               />
-              {extension && <span id="rename-extension">{extension}</span>}
+              {/* The help text names the extension for screen readers. */}
+              {extension && <span aria-hidden="true">{extension}</span>}
             </div>
             <p id="rename-help">
               {target.kind === "folder"
@@ -126,6 +125,9 @@ export function RenameDialog({
                       : ""
                   }`}
             </p>
+            {extension && name.trim() && !stem && (
+              <p role="alert">Enter a name before {extension}.</p>
+            )}
             {tooLong && (
               <p role="alert">This name is too long. Shorten it to save.</p>
             )}

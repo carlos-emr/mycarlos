@@ -652,9 +652,9 @@ describe("durable vault UI", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("too long");
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
 
-    // 78 characters are 234 bytes, 238 with it.
+    // Exactly the limit: 78 characters and "ab" are 236 bytes, 240 with it.
     fireEvent.change(screen.getByLabelText("File name"), {
-      target: { value: "字".repeat(78) },
+      target: { value: `${"字".repeat(78)}ab` },
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save name" })).toBeEnabled();

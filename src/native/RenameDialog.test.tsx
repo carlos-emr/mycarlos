@@ -75,11 +75,22 @@ describe("RenameDialog", () => {
     );
     const input = screen.getByLabelText("File name");
     expect(input).toHaveValue("Results");
-    expect(input).toHaveAccessibleDescription(/\.pdf/);
-    expect(input).toHaveAccessibleDescription(/stays the same/);
+    expect(screen.getByText(".pdf", { exact: true })).toBeVisible();
+    expect(input).toHaveAccessibleDescription(
+      "This changes the name in myCarlos and the suggested export name. The .pdf extension stays the same.",
+    );
 
     fireEvent.change(input, { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+
+    // Only the extension is not a name; say so rather than just disabling Save.
+    for (const value of [".pdf", " .PDF "]) {
+      fireEvent.change(input, { target: { value } });
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Enter a name before .pdf.",
+      );
+      expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    }
     fireEvent.change(input, { target: { value: "  Lab results  " } });
     fireEvent.submit(input.closest("form")!);
     expect(onSave).toHaveBeenCalledWith("Lab results.pdf");
@@ -132,6 +143,44 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("Lab report.pdf");
   });
 
+  it.each([
+    ["Results.pdf", "Lab report .pdf", "Lab report.pdf"],
+    ["Results.pdf", "Report.pdf notes", "Report.pdf notes.pdf"],
+    ["Scan.PDF", "New.pdf", "New.PDF"],
+  ])("renames %j from %j to %j", (original, typed, saved) => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: original }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    fireEvent.change(input, { target: { value: typed } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith(saved);
+  });
+
+  it("locks no extension on a folder, even one with a dot in its name", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "folder", id: "folder-1", name: "Lab.results" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("Folder name");
+    expect(input).toHaveValue("Lab.results");
+    expect(screen.queryByText(".results")).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "Lab results" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Lab results");
+  });
+
   it("keeps a doubled extension that was already part of the name", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -161,6 +210,9 @@ describe("RenameDialog", () => {
     );
     const input = screen.getByLabelText("File name");
     expect(input).toHaveValue("Scan 3.5 notes");
+    expect(input).toHaveAccessibleDescription(
+      "This changes the name in myCarlos and the suggested export name.",
+    );
     // With no extension to keep, the name itself must not end with a dot.
     fireEvent.change(input, { target: { value: "Notes." } });
     expect(screen.getByRole("alert")).toHaveTextContent("cannot contain");

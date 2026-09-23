@@ -80,6 +80,13 @@ describe("fileExtension", () => {
     ["archive.7z", ".7z"],
     ["notes.c", ".c"],
     ["Results.pdf~", ""],
+    ["Results.PDF", ".PDF"],
+    ["a.pdf", ".pdf"],
+    ["x.abcdefghij", ".abcdefghij"],
+    ["x.123456789a", ".123456789a"],
+    ["notes.tar_gz", ""],
+    ["Smith,Jane", ""],
+    ["Results.pdf\nA", ""],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });
