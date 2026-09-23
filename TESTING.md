@@ -1,8 +1,8 @@
 # Testing myCarlos on your own devices
 
 This guide is for anyone who wants to install an evaluation build and try it, without building
-anything. Every change to `main`, and a weekly scheduled run, publishes installable builds for
-Windows, macOS, Android and the iOS Simulator.
+anything. Every change to `main` publishes installable builds for Windows, macOS, Android and the
+iOS Simulator.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
@@ -10,8 +10,9 @@ Windows, macOS, Android and the iOS Simulator.
 
 ## Download a build
 
-1. Open the [myCarlos evaluation workflow runs on `main`](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain).
-   You must be signed in to GitHub to download.
+1. Open the [myCarlos evaluation builds from `main`](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush).
+   You must be signed in to GitHub to download. Use only this link: it lists builds of the
+   project's own code, not builds from other people's copies of it.
 2. Open the newest run. A run can be marked failed because of another platform, so check that the
    job for your platform (the **Job** column below) has a green tick.
 3. Under **Artifacts** at the bottom of the run, download the one for your platform:
@@ -24,7 +25,8 @@ Windows, macOS, Android and the iOS Simulator.
 | iOS | iOS simulator debug build | `myCarlos-iOS-Simulator-Evaluation` | The iOS Simulator on an Apple silicon Mac with Xcode |
 
 Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, and `BUILD.txt`,
-which names the exact source commit. Downloads expire after 30 days, so use the newest run.
+which names the source it was built from. Check that it says
+`Source repository: carlos-emr/mycarlos`; if it names anything else, do not install it. Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
 There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer

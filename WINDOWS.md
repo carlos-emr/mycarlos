@@ -5,7 +5,7 @@ security/privacy/device release gates remain open.
 
 ## Download and install
 
-1. Sign in to GitHub and open the [Windows evaluation builds](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain).
+1. Sign in to GitHub and open the [Windows evaluation builds](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush).
 2. Choose the newest run with a successful **Windows native build** job. In its summary, click **Download Windows x64 evaluation
    installer**, or select **myCarlos-Windows-x64-Evaluation** under **Artifacts**.
 3. Extract the ZIP and run `myCarlos-Evaluation-Windows-x64-setup.exe`.

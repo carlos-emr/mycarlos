@@ -34,7 +34,7 @@ Another job, such as the unsupported Linux compatibility monitor, can fail while
 succeeds; use any run whose Windows native build job succeeded.
 
 Latest builds:
-https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain
+https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush
 
 Installation and signing details:
 https://github.com/carlos-emr/mycarlos/blob/main/WINDOWS.md
