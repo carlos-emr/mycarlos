@@ -4,12 +4,15 @@
 > an encrypted durable-vault vertical slice, but it has not passed the security, privacy, signing,
 > physical-device, or release gates required for PHI. It is not connected to CARLOS EMR.
 
-**[Download the Windows evaluation build](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain)**
+**[Download the Windows evaluation build](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush)**
 — open the newest run with a successful **Windows native build** job and select
 **myCarlos-Windows-x64-Evaluation** under Artifacts
 (GitHub sign-in required). Extract the ZIP, run `myCarlos-Evaluation-Windows-x64-setup.exe`,
 and launch **myCarlos Evaluation** from Start. The download includes sample PDFs.
 See [Windows installation and signing](WINDOWS.md) for details.
+
+**[Testing guide](TESTING.md)** — install on macOS, Android, or the iOS Simulator from the same
+runs, and what to try on every platform, including Windows.
 
 This application began as the framework-selection proof of concept for the patient-held record proposed in
 [`carlos-emr/carlos#3474`](https://github.com/carlos-emr/carlos/issues/3474). It uses one responsive
@@ -172,7 +175,7 @@ npm run tauri android init
 npm run android:secure
 npm run tauri android dev
 # Or create an installed evaluation build:
-npm run tauri android build -- --debug --apk --target aarch64 --ci
+npm run tauri android build -- --debug --apk --target aarch64 x86_64 --ci
 
 # macOS/Xcode only
 npm run tauri ios init
@@ -208,9 +211,9 @@ Development WebSockets use port 1421; only the development CSP permits those con
   reqwest/hyper/hyper-util dependencies. Socket's original package warning has not been
   classified as a false positive. The glib backport is the only local dependency patch;
   see [source provenance and retirement criteria](src-tauri/vendor/README.md).
-- Hosted CI produced a 48 MB Linux debug `.deb`, a 131 MB Android debug APK, and a 92 MB unsigned
-  iOS simulator `.app`. These unoptimized artifacts show the app can be built for each platform;
-  they are not evidence that it runs there, and not release size estimates.
+- Hosted CI produced a 48 MB Linux debug `.deb`, a 322 MB Android debug APK (arm64 and x86_64),
+  and a 101 MB unsigned iOS simulator `.app`. These unoptimized artifacts show the app can be built
+  for each platform; they are not evidence that it runs there, and not release size estimates.
 
 ## Checks
 
