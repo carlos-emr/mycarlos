@@ -76,6 +76,21 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("Lab results.pdf");
   });
 
+  it("saves the name unchanged when nothing was edited", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results .pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Results .pdf");
+  });
+
   it("edits the whole name when it has no extension", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

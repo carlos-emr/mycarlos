@@ -71,7 +71,10 @@ describe("fileExtension", () => {
     ["trailing.", ""],
     ["no extension", ""],
     ["long.abcdefghijk", ""],
-  ])("finds %j in %j", (name, extension) => {
+    // Line and paragraph separators can survive import; Rust's rule sees past them.
+    ["Report\u2028A.pdf", ".pdf"],
+    ["Report\u2029A.pdf", ".pdf"],
+  ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });
 });

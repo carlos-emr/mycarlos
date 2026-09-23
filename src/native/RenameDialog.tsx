@@ -30,13 +30,18 @@ export function RenameDialog({
   // A document keeps its extension; only the name before it is edited.
   const extension =
     target.kind === "document" ? fileExtension(target.name) : "";
-  const [name, setName] = useState(
-    target.name.slice(0, target.name.length - extension.length),
+  const originalStem = target.name.slice(
+    0,
+    target.name.length - extension.length,
   );
+  const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
-  const fullName = name.trim() + extension;
+  // An untouched name is saved exactly as it was: trimming only the stem would
+  // otherwise change a name such as "Results .pdf" that nobody edited.
+  const fullName =
+    name === originalStem ? target.name : name.trim() + extension;
   const tooLong =
     target.kind === "document"
       ? utf8Length(fullName) > MAX_DOCUMENT_NAME_BYTES

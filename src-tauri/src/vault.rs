@@ -3806,6 +3806,24 @@ mod tests {
     }
 
     #[test]
+    fn file_extension_matches_the_rename_dialog() {
+        // The same cases as `fileExtension` in src/native/recordPresentation.test.ts.
+        for (name, extension) in [
+            ("Results.pdf", ".pdf"),
+            ("archive.tar.gz", ".gz"),
+            ("Scan 3.5 notes", ""),
+            (".pdf", ""),
+            ("trailing.", ""),
+            ("no extension", ""),
+            ("long.abcdefghijk", ""),
+            ("Report\u{2028}A.pdf", ".pdf"),
+            ("Report\u{2029}A.pdf", ".pdf"),
+        ] {
+            assert_eq!(file_extension(name), extension, "{name:?}");
+        }
+    }
+
+    #[test]
     fn a_rename_keeps_the_file_extension() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));

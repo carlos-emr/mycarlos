@@ -64,4 +64,5 @@ export const searchKey = (value: string) =>
 // ten ASCII letters or digits, after a non-empty stem. The vault refuses a
 // rename that changes it (vault.rs `file_extension` uses the same rule).
 export const fileExtension = (name: string) =>
-  /^.+(\.[A-Za-z0-9]{1,10})$/.exec(name)?.[1] ?? "";
+  // [\s\S], not ".", so the stem matches line and paragraph separators too.
+  /^[\s\S]+(\.[A-Za-z0-9]{1,10})$/.exec(name)?.[1] ?? "";
