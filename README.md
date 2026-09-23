@@ -11,6 +11,9 @@
 and launch **myCarlos Evaluation** from Start. The download includes sample PDFs.
 See [Windows installation and signing](WINDOWS.md) for details.
 
+**[Test on macOS, Android, or the iOS Simulator](TESTING.md)** — the same runs publish installable
+builds for those platforms. The testing guide covers downloading, installing, and what to try.
+
 This application began as the framework-selection proof of concept for the patient-held record proposed in
 [`carlos-emr/carlos#3474`](https://github.com/carlos-emr/carlos/issues/3474). It uses one responsive
 React/TypeScript web UI with a narrow Rust boundary and Tauri's native document picker. The branch
@@ -172,7 +175,7 @@ npm run tauri android init
 npm run android:secure
 npm run tauri android dev
 # Or create an installed evaluation build:
-npm run tauri android build -- --debug --apk --target aarch64 --ci
+npm run tauri android build -- --debug --apk --target aarch64 x86_64 --ci
 
 # macOS/Xcode only
 npm run tauri ios init
