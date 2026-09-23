@@ -13,9 +13,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: mycarlos-tauri-poc-${{ github.event.pull_request.number || github.ref }}
-  # A newer push supersedes a pull request's run, but builds of main are what
-  # testers download, so a scheduled or manual run must not cancel one.
+  # A newer push supersedes a pull request's run. Every other run (push,
+  # schedule, manual) builds what testers download, so each gets its own
+  # group: a shared group would still replace a queued build of main.
+  group: mycarlos-tauri-poc-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:

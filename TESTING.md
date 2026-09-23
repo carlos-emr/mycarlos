@@ -17,7 +17,8 @@ iOS Simulator.
    job for your platform (the **Job** column below) has a green tick. If it has no downloads (they
    expire after 30 days), use the newest of the [weekly builds of `main`](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Aschedule) instead.
    The top of the run page must say it was triggered via **push** or **schedule** on `main`; if it
-   says **pull request**, it may be someone else's code, so do not install it.
+   says **pull request**, it may be someone else's code, so do not install it. If every build
+   has expired, ask a maintainer to re-run the newest push build, which keeps it a push build.
 3. Under **Artifacts** at the bottom of the run, download the one for your platform:
 
 | Platform | Job | Artifact | Runs on |
