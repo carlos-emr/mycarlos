@@ -59,3 +59,9 @@ export const nameTooLong = (name: string) =>
 // separate mark match the same letter typed precomposed.
 export const searchKey = (value: string) =>
   value.normalize("NFC").toLowerCase();
+
+// The extension of a document name, such as ".pdf": a final dot and one to
+// ten ASCII letters or digits, after a non-empty stem. The vault refuses a
+// rename that changes it (vault.rs `file_extension` uses the same rule).
+export const fileExtension = (name: string) =>
+  /^.+(\.[A-Za-z0-9]{1,10})$/.exec(name)?.[1] ?? "";

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fileExtension,
   formatBytes,
   nameTooLong,
   recordKind,
@@ -57,5 +58,20 @@ describe("searchKey", () => {
 
   it("matches an accent typed either way", () => {
     expect(searchKey("Café")).toBe(searchKey("Café"));
+  });
+});
+
+describe("fileExtension", () => {
+  // The same rule as vault.rs `file_extension`, which enforces it on rename.
+  it.each([
+    ["Results.pdf", ".pdf"],
+    ["archive.tar.gz", ".gz"],
+    ["Scan 3.5 notes", ""],
+    [".pdf", ""],
+    ["trailing.", ""],
+    ["no extension", ""],
+    ["long.abcdefghijk", ""],
+  ])("finds %j in %j", (name, extension) => {
+    expect(fileExtension(name)).toBe(extension);
   });
 });

@@ -619,6 +619,8 @@ h1, h2, p { margin: 0; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
 .native-rename-fields label { font-weight: 700; }
 .native-rename-fields input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; }
+.native-rename-input { display: flex; align-items: center; gap: 6px; }
+.native-rename-input span { color: var(--ink-soft); font-weight: 700; white-space: nowrap; }
 .native-rename-fields p { margin: 0; color: var(--ink-soft); font-size: 13px; }
 .native-rename-fields [role="alert"] { color: var(--ink); font-weight: 700; }
 .native-record-rename { padding: 0 20px 16px; }

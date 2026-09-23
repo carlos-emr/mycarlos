@@ -45,12 +45,7 @@ describe("RenameDialog", () => {
     );
     const input = screen.getByLabelText("File name");
     const save = screen.getByRole("button", { name: "Save name" });
-    for (const name of [
-      "Visit: notes.pdf",
-      "Results?.pdf",
-      "a/b.pdf",
-      "Notes.",
-    ]) {
+    for (const name of ["Visit: notes", "Results?", "a/b", "a\\b"]) {
       fireEvent.change(input, { target: { value: name } });
       expect(screen.getByRole("alert")).toHaveTextContent("cannot contain");
       expect(save).toBeDisabled();
@@ -58,8 +53,43 @@ describe("RenameDialog", () => {
     fireEvent.submit(save.closest("form")!);
     expect(onSave).not.toHaveBeenCalled();
 
-    fireEvent.change(input, { target: { value: "Visit notes.pdf" } });
+    fireEvent.change(input, { target: { value: "Visit notes" } });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(save).toBeEnabled();
+  });
+
+  it("edits only the name before the extension, which stays as it was", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    expect(input).toHaveValue("Results");
+    expect(input).toHaveAccessibleDescription(/\.pdf/);
+    fireEvent.change(input, { target: { value: "  Lab results  " } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Lab results.pdf");
+  });
+
+  it("edits the whole name when it has no extension", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Scan 3.5 notes" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    expect(input).toHaveValue("Scan 3.5 notes");
+    fireEvent.change(input, { target: { value: "Scan notes" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Scan notes");
   });
 });

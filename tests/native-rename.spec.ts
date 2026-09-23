@@ -98,7 +98,8 @@ test("renames native-library folders and documents with accessible dialogs", asy
     .click();
   await page.getByRole("button", { name: "Rename document" }).click();
   const documentDialog = page.getByRole("dialog", { name: "Rename document" });
-  await documentDialog.getByLabel("File name").fill("FAKE Bloodwork.pdf");
+  // The field holds the name before ".pdf", which the rename keeps.
+  await documentDialog.getByLabel("File name").fill("FAKE Bloodwork");
   await documentDialog.getByRole("button", { name: "Save name" }).click();
   await expect(
     page.getByRole("dialog", { name: "FAKE Bloodwork.pdf" }),

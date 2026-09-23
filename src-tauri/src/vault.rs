@@ -708,6 +708,12 @@ impl VaultStore {
                 .iter_mut()
                 .find(|record| record.id == record_id)
                 .ok_or(VaultError::NotFound)?;
+            // The extension says what kind of file an export is; a rename
+            // changes only the name before it.
+            let extension = file_extension(&record.display_name);
+            if !name.ends_with(extension) || name.len() == extension.len() {
+                return Err(VaultError::Invalid);
+            }
             record.display_name = name.to_owned();
             Ok(())
         })
@@ -1257,6 +1263,24 @@ fn validate_name(name: &str) -> Result<(), VaultError> {
         Err(VaultError::Invalid)
     } else {
         Ok(())
+    }
+}
+
+/// The extension of a document name, such as ".pdf": a final dot followed by
+/// one to ten ASCII letters or digits, after a non-empty stem. A name like
+/// "Scan 3.5 notes" has none, and yields "".
+fn file_extension(name: &str) -> &str {
+    match name.rfind('.') {
+        Some(dot)
+            if dot > 0
+                && (2..=11).contains(&(name.len() - dot))
+                && name[dot + 1..]
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric()) =>
+        {
+            &name[dot..]
+        }
+        _ => "",
     }
 }
 
@@ -3779,6 +3803,57 @@ mod tests {
             Err(VaultError::RecoveryMode)
         ));
         assert_eq!(store.snapshot().unwrap().records, before);
+    }
+
+    #[test]
+    fn a_rename_keeps_the_file_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("Results.pdf", b"synthetic pdf"),
+                    source("Scan 3.5 notes", b"synthetic without extension"),
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
+        let (pdf, plain) = (imported[0], imported[1]);
+        let name_of = |id| {
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .into_iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .display_name
+        };
+
+        for name in [
+            "Results",
+            "Results.txt",
+            "Results.PDF",
+            "Results.pdf.txt",
+            ".pdf",
+        ] {
+            assert!(
+                matches!(store.rename_record(pdf, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+            assert_eq!(name_of(pdf), "Results.pdf");
+        }
+        store.rename_record(pdf, "Lab results.pdf").unwrap();
+        assert_eq!(name_of(pdf), "Lab results.pdf");
+
+        // A name without an extension, such as "3.5 notes", has none to keep.
+        store.rename_record(plain, "Scan notes.pdf").unwrap();
+        assert_eq!(name_of(plain), "Scan notes.pdf");
     }
 
     #[test]

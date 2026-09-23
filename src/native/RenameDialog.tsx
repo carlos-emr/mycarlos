@@ -1,7 +1,11 @@
 import { useState, useRef, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import { utf8Length, vaultErrorMessage } from "../vault";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import {
+  NAME_INPUT_MAX_LENGTH,
+  fileExtension,
+  nameTooLong,
+} from "./recordPresentation";
 
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
@@ -23,20 +27,26 @@ export function RenameDialog({
   onSave: (name: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(target.name);
+  // A document keeps its extension; only the name before it is edited.
+  const extension =
+    target.kind === "document" ? fileExtension(target.name) : "";
+  const [name, setName] = useState(
+    target.name.slice(0, target.name.length - extension.length),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
+  const fullName = name.trim() + extension;
   const tooLong =
     target.kind === "document"
-      ? utf8Length(name.trim()) > MAX_DOCUMENT_NAME_BYTES
+      ? utf8Length(fullName) > MAX_DOCUMENT_NAME_BYTES
       : nameTooLong(name);
   // The vault keeps document names usable as file names on every platform, so
   // it refuses these rather than change them. Name them instead of letting the
   // save fail with a generic message.
   const unsafeName =
     target.kind === "document" &&
-    (/[<>:"|?*/\\]/.test(name.trim()) || name.trim().endsWith("."));
+    (/[<>:"|?*/\\]/.test(fullName) || fullName.endsWith("."));
   const invalid = tooLong || unsafeName || !name.trim();
   const close = () => {
     if (!saving) onClose();
@@ -48,7 +58,7 @@ export function RenameDialog({
     setSaving(true);
     setError("");
     try {
-      await onSave(name.trim());
+      await onSave(fullName);
       onClose();
     } catch (failure) {
       setError(vaultErrorMessage(failure));
@@ -74,26 +84,31 @@ export function RenameDialog({
             <label htmlFor="rename-name">
               {target.kind === "folder" ? "Folder name" : "File name"}
             </label>
-            <input
-              id="rename-name"
-              required
-              maxLength={
-                target.kind === "folder"
-                  ? NAME_INPUT_MAX_LENGTH
-                  : MAX_DOCUMENT_NAME_BYTES
-              }
-              value={name}
-              disabled={saving || readOnly}
-              aria-describedby="rename-help"
-              onChange={(event) => {
-                setName(event.target.value);
-                setError("");
-              }}
-            />
+            <div className="native-rename-input">
+              <input
+                id="rename-name"
+                required
+                maxLength={
+                  target.kind === "folder"
+                    ? NAME_INPUT_MAX_LENGTH
+                    : MAX_DOCUMENT_NAME_BYTES
+                }
+                value={name}
+                disabled={saving || readOnly}
+                aria-describedby={
+                  extension ? "rename-extension rename-help" : "rename-help"
+                }
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setError("");
+                }}
+              />
+              {extension && <span id="rename-extension">{extension}</span>}
+            </div>
             <p id="rename-help">
               {target.kind === "folder"
                 ? "The folder and its contents stay in the same location."
-                : "This changes the name in myCarlos and suggested export name. Keep the .pdf extension for PDF files."}
+                : "This changes the name in myCarlos and the suggested export name."}
             </p>
             {tooLong && (
               <p role="alert">This name is too long. Shorten it to save.</p>

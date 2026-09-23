@@ -58,9 +58,9 @@ Choose **Save name** to commit, or **Cancel** / Escape to leave the name unchang
 
 Renames persist in the encrypted vault and update search, sorting, navigation, and the suggested
 export name. Folder locations, document contents, and original files outside myCarlos are unchanged.
-Keep `.pdf` at the end of PDF file names. Empty names are rejected. Document names that contain a
-path or an unsafe Windows file name are rejected and limited to 240 UTF-8 bytes; folder names are
-limited to 120 characters.
+A document keeps its extension, such as `.pdf`: only the name before it can be changed. Empty names
+are rejected. Document names that contain a path or an unsafe Windows file name are rejected and
+limited to 240 UTF-8 bytes, including the extension; folder names are limited to 120 characters.
 Renaming is unavailable while the vault is locked or in read-only recovery mode.
 
 ## Getting a trusted Windows signature
