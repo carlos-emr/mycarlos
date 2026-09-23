@@ -59,7 +59,11 @@ export function RenameDialog({
   const unsafeName =
     target.kind === "document" &&
     (/[<>:"|?*/\\]/.test(fullName) || fullName.endsWith("."));
-  const invalid = tooLong || unsafeName || !stem;
+  // A name without ".pdf" cannot gain it, just as a PDF cannot lose it: the
+  // vault refuses both, and a lock added by mistake could not be undone.
+  const gainsExtension =
+    target.kind === "document" && !extension && fileExtension(fullName) !== "";
+  const invalid = tooLong || unsafeName || gainsExtension || !stem;
   const close = () => {
     if (!saving) onClose();
   };
@@ -127,6 +131,12 @@ export function RenameDialog({
             </p>
             {extension && name.trim() && !stem && (
               <p role="alert">Enter a name before {extension}.</p>
+            )}
+            {gainsExtension && (
+              <p role="alert">
+                This document&apos;s name has no .pdf extension, so it cannot
+                end in .pdf.
+              </p>
             )}
             {tooLong && (
               <p role="alert">This name is too long. Shorten it to save.</p>

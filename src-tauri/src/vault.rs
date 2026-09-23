@@ -709,9 +709,9 @@ impl VaultStore {
                 .find(|record| record.id == record_id)
                 .ok_or(VaultError::NotFound)?;
             // The extension says what kind of file an export is; a rename
-            // changes only the name before it.
-            let extension = file_extension(&record.display_name);
-            if !name.ends_with(extension) || name.len() == extension.len() {
+            // changes only the name before it, and neither removes ".pdf",
+            // changes its case, nor adds it.
+            if file_extension(name) != file_extension(&record.display_name) {
                 return Err(VaultError::Invalid);
             }
             record.display_name = name.to_owned();
@@ -1267,8 +1267,10 @@ fn validate_name(name: &str) -> Result<(), VaultError> {
 }
 
 /// The ".pdf" at the end of a document name, in the case the name uses, after
-/// a non-empty stem; otherwise "". The vault holds only PDFs, so no other
-/// suffix is a file type: "Visit 10.30am" and "Mr.Jones" have no extension.
+/// a non-empty stem; otherwise "". Imports are offered as PDFs, so no other
+/// suffix is treated as a file type: "Visit 10.30am" and "Mr.Jones" have no
+/// extension. A desktop picker can still return another kind of file, which
+/// is why a rename may not add ".pdf" either.
 fn file_extension(name: &str) -> &str {
     let start = name.len().saturating_sub(4);
     match name.get(start..) {
@@ -3878,8 +3880,15 @@ mod tests {
         store.rename_record(plain, "Visit 10.30am").unwrap();
         store.rename_record(plain, "Visit 11am").unwrap();
         assert_eq!(name_of(plain), "Visit 11am");
-        store.rename_record(plain, "Scan notes.pdf").unwrap();
-        assert_eq!(name_of(plain), "Scan notes.pdf");
+        // Nor can a rename add ".pdf": a desktop picker can still return another
+        // kind of file, and a lock added by mistake could never be removed.
+        for name in ["Scan notes.pdf", "Scan notes.PDF"] {
+            assert!(
+                matches!(store.rename_record(plain, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+            assert_eq!(name_of(plain), "Visit 11am");
+        }
     }
 
     #[test]
