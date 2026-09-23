@@ -63,7 +63,9 @@ export function RenameDialog({
   // A name without ".pdf" cannot gain it, just as a PDF cannot lose it: the
   // vault refuses both, and a lock added by mistake could not be undone.
   const gainsExtension =
-    target.kind === "document" && !extension && fileExtension(fullName) !== "";
+    target.kind === "document" &&
+    !extension &&
+    fullName.trim().toLowerCase().endsWith(".pdf");
   const invalid = tooLong || unsafeName || gainsExtension || !stem;
   const close = () => {
     if (!saving) onClose();

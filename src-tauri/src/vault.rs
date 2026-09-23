@@ -712,8 +712,12 @@ impl VaultStore {
             // changes only the name before it, and neither removes ".pdf",
             // changes its case, nor adds it.
             // Both sides are judged trimmed, as `name` already is: an earlier
-            // build could store "X.pdf" followed by a no-break space.
-            if file_extension(name) != file_extension(record.display_name.trim()) {
+            // build could store "X.pdf" followed by a no-break space. A name
+            // without ".pdf" cannot become one ending in it, not even ".pdf".
+            let kept = file_extension(record.display_name.trim());
+            if file_extension(name) != kept
+                || (kept.is_empty() && name.to_ascii_lowercase().ends_with(".pdf"))
+            {
                 return Err(VaultError::Invalid);
             }
             record.display_name = name.to_owned();
@@ -3824,6 +3828,10 @@ mod tests {
             ("Visit 10.30am", ""),
             ("Mr.Jones", ""),
             ("字字", ""),
+            ("photo.jpg", ""),
+            ("Results.txt", ""),
+            (".notes.pdf", ".pdf"),
+            ("..pdf", ".pdf"),
         ] {
             assert_eq!(file_extension(name), extension, "{name:?}");
         }
@@ -3879,12 +3887,13 @@ mod tests {
                 vec![
                     source("Results.pdf", b"synthetic pdf"),
                     source("Scan 3.5 notes", b"synthetic without extension"),
+                    source("photo.jpg", b"synthetic image"),
                 ],
                 2,
             )
             .unwrap()
             .imported;
-        let (pdf, plain) = (imported[0], imported[1]);
+        let (pdf, plain, photo) = (imported[0], imported[1], imported[2]);
         let name_of = |id| {
             store
                 .snapshot()
@@ -3921,7 +3930,10 @@ mod tests {
         assert_eq!(name_of(plain), "Visit 11am");
         // Nor can a rename add ".pdf": a desktop picker can still return another
         // kind of file, and a lock added by mistake could never be removed.
-        for name in ["Scan notes.pdf", "Scan notes.PDF"] {
+        // Only ".pdf" is locked: another extension can change or go.
+        store.rename_record(photo, "photo").unwrap();
+        store.rename_record(photo, "photo.png").unwrap();
+        for name in ["Scan notes.pdf", "Scan notes.PDF", ".pdf", ".PDF"] {
             assert!(
                 matches!(store.rename_record(plain, name), Err(VaultError::Invalid)),
                 "{name:?}"

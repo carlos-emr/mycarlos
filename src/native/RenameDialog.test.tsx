@@ -157,6 +157,9 @@ describe("RenameDialog", () => {
       />,
     );
     expect(screen.getByText(".PDF", { exact: true })).toBeVisible();
+    expect(screen.getByLabelText("File name")).toHaveAccessibleDescription(
+      "This changes the name in myCarlos and the suggested export name. The .PDF extension stays the same.",
+    );
     fireEvent.change(screen.getByLabelText("File name"), {
       target: { value: ".PDF" },
     });
@@ -258,6 +261,24 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("X.pdf\u00a0");
   });
 
+  it("locks no extension other than .pdf", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "photo.jpg" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    expect(input).toHaveValue("photo.jpg");
+    expect(screen.queryByText(".jpg", { exact: true })).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "photo" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("photo");
+  });
+
   it("edits the whole name when it has no extension", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -277,12 +298,15 @@ describe("RenameDialog", () => {
     fireEvent.change(input, { target: { value: "Notes." } });
     expect(screen.getByRole("alert")).toHaveTextContent("cannot contain");
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
-    // A name without ".pdf" cannot gain it, just as a PDF cannot lose it.
-    fireEvent.change(input, { target: { value: "Scan notes.PDF" } });
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "This document's name has no .pdf extension, so it cannot end in .pdf.",
-    );
-    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    // A name without ".pdf" cannot gain it, just as a PDF cannot lose it,
+    // even as a whole name or with a trailing space the vault trims.
+    for (const value of ["Scan notes.PDF", "Scan notes.pdf ", ".pdf"]) {
+      fireEvent.change(input, { target: { value } });
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "This document's name has no .pdf extension, so it cannot end in .pdf.",
+      );
+      expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    }
     fireEvent.change(input, { target: { value: "Scan notes" } });
     fireEvent.submit(input.closest("form")!);
     expect(onSave).toHaveBeenCalledWith("Scan notes");
