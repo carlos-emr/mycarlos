@@ -312,6 +312,23 @@ describe("RenameDialog", () => {
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
   });
 
+  it("saves an unedited name whose stem is .pdf and a space", () => {
+    // ".pdf .pdf" is a valid stored name; left alone it must stay savable.
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: ".pdf .pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith(".pdf .pdf");
+  });
+
   it("refuses an unedited legacy name that is only .pdf and a space", () => {
     render(
       <RenameDialog
