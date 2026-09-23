@@ -24,6 +24,7 @@ Windows, macOS, Android and the iOS Simulator.
 
 Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, and `BUILD.txt`,
 which names the exact source commit. Downloads expire after 30 days; a newer run replaces them.
+These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
 There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer
 account and signing. Linux has an unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`)
@@ -71,8 +72,8 @@ Copy the sample PDFs to the phone as well.
 
 1. Open Xcode's Simulator (`open -a Simulator`) and start an iPhone.
 2. Extract the downloaded ZIP, then double-click `myCarlos-Evaluation-iOS-Simulator.zip` inside it.
-3. Drag the resulting `.app` onto the Simulator window, or install it from Terminal:
-   `xcrun simctl install booted "<path to the .app>"`.
+3. Drag the resulting **myCarlos Evaluation.app** onto the Simulator window, or install it from
+   Terminal: `xcrun simctl install booted "myCarlos Evaluation.app"`.
 4. Drag the sample PDFs onto the Simulator window; they are saved to the Files app.
 
 ## What to try
