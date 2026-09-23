@@ -201,6 +201,9 @@ describe("RenameDialog", () => {
     // trimmed, as the vault trims it.
     ["Scan 3.5 notes", "Scan notespdf", "Scan notespdf"],
     ["Results.pdf", "Lab report\t", "Lab report.pdf"],
+    ["Results.pdf", "Lab\u0085.pdf", "Lab.pdf"],
+    // A soft hyphen is not a control character; the vault accepts it.
+    ["Results.pdf", "Lab\u00adreport", "Lab\u00adreport.pdf"],
   ])("renames %j from %j to %j", (original, typed, saved) => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -296,6 +299,12 @@ describe("RenameDialog", () => {
     ["Results.pdf", "Lab\u0007report"],
     ["Results.pdf", "Lab\u007freport"],
     ["Results.pdf", "Lab\u0080report"],
+    // Zero-width and direction marks, which the vault strips and so refuses.
+    ["Results.pdf", "Lab\u200breport"],
+    ["Results.pdf", "Lab\u202ereport"],
+    ["Results.pdf", "Lab\u2066report"],
+    ["Results.pdf", "Lab\u061creport"],
+    ["Results.pdf", "Lab\ufeffreport"],
   ])("explains why %j cannot be renamed to %j", (original, typed) => {
     render(
       <RenameDialog
@@ -309,6 +318,57 @@ describe("RenameDialog", () => {
       target: { value: typed },
     });
     expect(screen.getByRole("alert")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+  });
+
+  it("names invisible characters in its message", () => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: "Lab\u200breport" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "invisible control characters",
+    );
+  });
+
+  it.each(["<", ">", '"', "|", "*", ":", "?", "/", "\\"])(
+    "refuses %j in a document name with a reason",
+    (character) => {
+      render(
+        <RenameDialog
+          target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+          readOnly={false}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+          onClose={vi.fn()}
+        />,
+      );
+      fireEvent.change(screen.getByLabelText("File name"), {
+        target: { value: `a${character}b` },
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("cannot contain");
+    },
+  );
+
+  it("does not ask for a name before an extension a document does not have", () => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Scan notes" }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: "\u0085" },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
   });
 

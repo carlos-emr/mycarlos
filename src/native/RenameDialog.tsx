@@ -70,8 +70,12 @@ export function RenameDialog({
   const unsafeName =
     target.kind === "document" &&
     (/[<>:"|?*/\\]/.test(fullName) ||
-      // Pasted control characters inside the name, which the vault refuses.
-      /\p{Cc}/u.test(fullName) ||
+      // Pasted control characters inside the name, which the vault refuses,
+      // and the zero-width and direction marks it strips (vault.rs
+      // `sanitize_basename`), which it then refuses as a changed name.
+      /[\p{Cc}\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/u.test(
+        fullName,
+      ) ||
       // Trimmed, as the vault judges it: an earlier build could store "X."
       // followed by a no-break space.
       trimLikeVault(fullName).endsWith("."));
