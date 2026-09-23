@@ -39,9 +39,12 @@ export function RenameDialog({
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
   // Someone who types the extension out of habit means the same name, so a
-  // typed copy of it is dropped rather than doubled.
+  // typed copy of it is dropped rather than doubled, unless the name already
+  // ended with it twice, as in "Report.pdf.pdf".
+  const endsWithExtension = (value: string) =>
+    value.toLowerCase().endsWith(extension.toLowerCase());
   let stem = name.trim();
-  if (extension && stem.toLowerCase().endsWith(extension.toLowerCase()))
+  if (extension && !endsWithExtension(originalStem) && endsWithExtension(stem))
     stem = stem.slice(0, stem.length - extension.length).trimEnd();
   // An untouched name is saved exactly as it was: trimming only the stem would
   // otherwise change a name such as "Results .pdf" that nobody edited.

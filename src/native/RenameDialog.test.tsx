@@ -132,6 +132,23 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("Lab report.pdf");
   });
 
+  it("keeps a doubled extension that was already part of the name", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Report.pdf.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    expect(input).toHaveValue("Report.pdf");
+    fireEvent.change(input, { target: { value: "Final Report.pdf" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Final Report.pdf.pdf");
+  });
+
   it("edits the whole name when it has no extension", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
