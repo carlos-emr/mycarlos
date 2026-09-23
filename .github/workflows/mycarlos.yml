@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: mycarlos-tauri-poc-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A newer push supersedes a pull request's run, but builds of main are what
+  # testers download, so a scheduled or manual run must not cancel one.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:

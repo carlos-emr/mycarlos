@@ -35,6 +35,8 @@ succeeds; use any run whose Windows native build job succeeded.
 
 Latest builds:
 https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush
+Weekly builds, if the latest have expired:
+https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Aschedule
 
 Installation and signing details:
 https://github.com/carlos-emr/mycarlos/blob/main/WINDOWS.md
