@@ -193,6 +193,7 @@ describe("RenameDialog", () => {
     ["Scan.PDF", "New.pdf", "New.PDF"],
     // Only a stem that itself ended in ".pdf" keeps a typed copy.
     ["Report.pdf .pdf", "Lab.pdf", "Lab.pdf"],
+    ["Report.pdf .pdf", "Report.pdf", "Report.pdf"],
     // U+0085 at an edge is trimmed, as the vault trims it, not refused.
     ["Results.pdf", "\u0085Lab", "Lab.pdf"],
     ["Visit notes", "Lab\u0085", "Lab"],
@@ -319,6 +320,38 @@ describe("RenameDialog", () => {
     });
     expect(screen.getByRole("alert")).toBeVisible();
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+  });
+
+  it.each([
+    0x0000, 0x061c, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x202a, 0x202b,
+    0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff,
+  ])("refuses U+%s inside a name, as the vault does", (codePoint) => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: `Lab${String.fromCodePoint(codePoint)}report` },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "invisible control characters",
+    );
+  });
+
+  it("opens a name without an extension exactly as it is stored", () => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Notes " }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("File name")).toHaveValue("Notes ");
   });
 
   it("names invisible characters in its message", () => {

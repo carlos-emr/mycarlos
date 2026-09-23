@@ -10,8 +10,9 @@ import {
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
 
-// JavaScript's trim keeps U+0085 (next line); the vault's trim removes it, so
-// typed names are trimmed the way the vault will trim them.
+// JavaScript's trim keeps U+0085 (next line), which the vault's trim removes,
+// so typed names are trimmed as the vault will trim them. (It also removes a
+// U+FEFF at either end, which the vault would refuse; the name sent is clean.)
 const trimLikeVault = (value: string) =>
   value.replace(/^[\s\u0085]+|[\s\u0085]+$/g, "");
 
