@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Renderer capabilities for the myCarlos native vault",
+  "windows": ["main"],
+  "permissions": [
+    "allow-runtime-info",
+    "allow-vault-status",
+    "allow-vault-create",
+    "allow-vault-unlock",
+    "allow-vault-lock",
+    "allow-vault-snapshot",
+    "allow-vault-change-passphrase",
+    "allow-vault-create-profile",
+    "allow-vault-create-folder",
+    "allow-vault-update-folder",
+    "allow-vault-rename-record",
+    "allow-vault-assign-folders",
+    "allow-vault-assign-folders-batch",
+    "allow-vault-import-pick",
+    "allow-vault-import-picked",
+    "allow-vault-export-pick",
+    "allow-vault-export-picked",
+    "allow-vault-delete-record",
+    "allow-vault-remove-unavailable-records",
+    "allow-vault-reset"
+  ]
+}

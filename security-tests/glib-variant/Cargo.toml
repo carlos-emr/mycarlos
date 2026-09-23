@@ -1,0 +1,11 @@
+[package]
+name = "mycarlos-glib-regression"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+glib = { path = "../../src-tauri/vendor/glib", default-features = false }
+
+# The original defect manifests under optimization, so CI must use --release
+# (Cargo's release profile already builds with opt-level = 3).

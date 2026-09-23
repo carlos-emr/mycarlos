@@ -1,0 +1,90 @@
+# Architecture decision: Tauri v2 application shell
+
+- **Status:** Accepted for the next development phase
+- **Date:** 2026-09-08
+- **Scope:** myCarlos desktop and mobile application framework
+
+## Decision
+
+Use **Tauri v2 with a shared React/TypeScript interface** as the application shell for
+myCarlos. The initial supported platforms are Windows, macOS, Android, and iOS.
+
+Linux is explicitly deferred pending review of the documented `glib` backport and device/release
+validation. Linux compatibility continues to be built in CI, including an optimized regression
+suite for the fix, but those artifacts are evaluation evidence and must not be distributed as
+supported releases.
+
+This replaces Electron plus Capacitor as the active implementation direction. It does not approve
+the current proof of concept for production use and does not establish that the application is safe
+to store personal health information.
+
+Development now continues in this dedicated myCarlos repository. The original
+[CARLOS PR #3544](https://github.com/carlos-emr/carlos/pull/3544) remains historical review evidence
+and is superseded by the import here; it must not be merged into CARLOS. The import remains a
+draft synthetic-data evaluation. [HANDOFF.md](HANDOFF.md) records the exact source revision.
+
+## Basis for the decision
+
+The proof of concept demonstrated, at evaluation depth:
+
+- one responsive React/TypeScript interface running in the browser and packaged for Linux desktop,
+  Android, and iOS (the mobile packages were built, not launched);
+- successful Linux, Android, and unsigned iOS simulator debug builds in hosted CI;
+- a narrow typed TypeScript-to-Rust command boundary;
+- a native PDF picker with narrowly scoped Tauri capabilities;
+- working session-only record-library interactions; and
+- frontend unit, responsive browser, and Rust command tests.
+
+This is enough evidence to choose the shell and avoid maintaining parallel Tauri and
+Electron/Capacitor implementations. It is not evidence for the security or clinical suitability of
+the future product.
+
+## Constraints carried into the new repository
+
+- Keep platform access behind narrow interfaces; React components must not call unrestricted
+  native APIs directly.
+- Grant only the Tauri capabilities needed for a specific workflow.
+- Use synthetic records until the security, privacy, and clinical-safety controls permit otherwise.
+- Do not include Linux in release packaging, distribution, support claims, or production readiness
+  until the `glib` backport documented in the README and the resulting dependency graph pass
+  security review, followed by device and release validation.
+- Complete physical Android and iOS device testing, including file selection, application
+  lifecycle, accessibility, rotation, text scaling, and reduced motion.
+- Treat encrypted storage, key handling and recovery, secure deletion, backup and synchronization,
+  safe PDF rendering, signing, and updating as unproven work requiring separate design and review.
+
+## Local-vault milestone implemented on the staging branch
+
+The staging PR now builds a security-focused local-vault vertical slice using synthetic files:
+
+1. import a PDF through the native picker;
+2. encrypt the document and its metadata before durable storage;
+3. close, restart, and unlock the application;
+4. export an authenticated plaintext copy only after an explicit warning, using atomic replacement
+   when the destination is a filesystem path;
+5. organize records across profiles and nested folders without exposing metadata while locked; and
+6. permanently delete an individual record by durably removing it from one manifest, unlinking its
+   ciphertext, and removing its wrapped object key from the redundant manifest.
+
+The implemented format and key/recovery decisions are recorded in
+[`VAULT_FORMAT.md`](VAULT_FORMAT.md). This is implementation-complete for the scoped slice, not
+security-gate complete: independent review, crash injection, backup/restore and physical-device
+matrices, signing, and release controls remain. The chosen scope still defers secure document
+viewing and deletion propagation to backups or synchronized devices. Cloud synchronization and
+CARLOS integration follow only after the local vault lifecycle passes review.
+
+## Approved patient-pilot direction
+
+The subsequent product decisions are recorded in
+[`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md). The target is a four-platform patient pilot using
+the existing portal identity with MFA/passkeys, patient-held recovery, portable encrypted backups,
+an isolated PDF renderer, full E2EE portal synchronization, signed CARLOS provenance, explicit
+per-document sharing, immediate deletion, minimal server-visible metadata, and signed/enforced
+updates. The current local-vault implementation demonstrates only a prerequisite slice of that
+design and must not be described as implementing those patient-pilot capabilities.
+
+## Superseded direction
+
+Electron plus Capacitor remains useful historical design analysis, but it is no longer the active
+implementation direction for myCarlos. Reconsidering it requires new evidence and a new
+architecture decision.
