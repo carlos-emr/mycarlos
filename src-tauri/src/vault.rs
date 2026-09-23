@@ -1266,23 +1266,13 @@ fn validate_name(name: &str) -> Result<(), VaultError> {
     }
 }
 
-/// The extension of a document name, such as ".pdf": a final dot followed by
-/// one to ten ASCII letters or digits, at least one a letter, after a
-/// non-empty stem. "Scan 3.5 notes" and "Report 2024.03" have none, and yield "".
+/// The ".pdf" at the end of a document name, in the case the name uses, after
+/// a non-empty stem; otherwise "". The vault holds only PDFs, so no other
+/// suffix is a file type: "Visit 10.30am" and "Mr.Jones" have no extension.
 fn file_extension(name: &str) -> &str {
-    match name.rfind('.') {
-        Some(dot)
-            if dot > 0
-                && (2..=11).contains(&(name.len() - dot))
-                && name[dot + 1..]
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric())
-                && name[dot + 1..]
-                    .bytes()
-                    .any(|byte| byte.is_ascii_alphabetic()) =>
-        {
-            &name[dot..]
-        }
+    let start = name.len().saturating_sub(4);
+    match name.get(start..) {
+        Some(tail) if start > 0 && tail.eq_ignore_ascii_case(".pdf") => tail,
         _ => "",
     }
 }
@@ -3813,26 +3803,23 @@ mod tests {
         // The same cases as `fileExtension` in src/native/recordPresentation.test.ts.
         for (name, extension) in [
             ("Results.pdf", ".pdf"),
-            ("archive.tar.gz", ".gz"),
-            ("Scan 3.5 notes", ""),
-            (".pdf", ""),
-            ("trailing.", ""),
-            ("no extension", ""),
-            ("long.abcdefghijk", ""),
-            ("Report\u{2028}A.pdf", ".pdf"),
-            ("Report\u{2029}A.pdf", ".pdf"),
-            ("Report 2024.03", ""),
-            ("Visit v1.2", ""),
-            ("archive.7z", ".7z"),
-            ("notes.c", ".c"),
-            ("Results.pdf~", ""),
             ("Results.PDF", ".PDF"),
+            ("Results.Pdf", ".Pdf"),
             ("a.pdf", ".pdf"),
-            ("x.abcdefghij", ".abcdefghij"),
-            ("x.123456789a", ".123456789a"),
-            ("notes.tar_gz", ""),
-            ("Smith,Jane", ""),
+            ("Report.pdf.pdf", ".pdf"),
+            ("Report\u{2028}A.pdf", ".pdf"),
+            ("字.pdf", ".pdf"),
+            (".pdf", ""),
+            ("pdf", ""),
+            ("Resultspdf", ""),
+            ("Results.pdf~", ""),
             ("Results.pdf\nA", ""),
+            ("archive.tar.gz", ""),
+            ("notes.c", ""),
+            ("Scan 3.5 notes", ""),
+            ("Visit 10.30am", ""),
+            ("Mr.Jones", ""),
+            ("字字", ""),
         ] {
             assert_eq!(file_extension(name), extension, "{name:?}");
         }
@@ -3886,7 +3873,11 @@ mod tests {
         store.rename_record(pdf, "Lab results.pdf").unwrap();
         assert_eq!(name_of(pdf), "Lab results.pdf");
 
-        // A name without an extension, such as "3.5 notes", has none to keep.
+        // Only ".pdf" is locked: the vault holds only PDFs, and a name such as
+        // "Visit 10.30am" or "Mr.Jones" has no file type, so it stays renameable.
+        store.rename_record(plain, "Visit 10.30am").unwrap();
+        store.rename_record(plain, "Visit 11am").unwrap();
+        assert_eq!(name_of(plain), "Visit 11am");
         store.rename_record(plain, "Scan notes.pdf").unwrap();
         assert_eq!(name_of(plain), "Scan notes.pdf");
     }

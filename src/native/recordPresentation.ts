@@ -60,11 +60,10 @@ export const nameTooLong = (name: string) =>
 export const searchKey = (value: string) =>
   value.normalize("NFC").toLowerCase();
 
-// The extension of a document name, such as ".pdf": a final dot and one to
-// ten ASCII letters or digits, at least one a letter, after a non-empty stem. The vault refuses a
-// rename that changes it (vault.rs `file_extension` uses the same rule).
+// The ".pdf" at the end of a document name, in the case the name uses, after
+// a non-empty stem; otherwise "". The vault holds only PDFs, so no other
+// suffix is a file type, and it refuses a rename that changes this one
+// (vault.rs `file_extension` uses the same rule).
 export const fileExtension = (name: string) =>
   // [\s\S], not ".", so the stem matches line and paragraph separators too.
-  /^[\s\S]+(\.(?=[A-Za-z0-9]{0,9}[A-Za-z])[A-Za-z0-9]{1,10})$/.exec(
-    name,
-  )?.[1] ?? "";
+  /^[\s\S]+(\.pdf)$/i.exec(name)?.[1] ?? "";

@@ -62,31 +62,26 @@ describe("searchKey", () => {
 });
 
 describe("fileExtension", () => {
-  // The same rule as vault.rs `file_extension`, which enforces it on rename.
+  // The same cases as `file_extension_matches_the_rename_dialog` in vault.rs.
   it.each([
     ["Results.pdf", ".pdf"],
-    ["archive.tar.gz", ".gz"],
-    ["Scan 3.5 notes", ""],
-    [".pdf", ""],
-    ["trailing.", ""],
-    ["no extension", ""],
-    ["long.abcdefghijk", ""],
-    // Line and paragraph separators can survive import; Rust's rule sees past them.
-    ["Report\u2028A.pdf", ".pdf"],
-    ["Report\u2029A.pdf", ".pdf"],
-    // Digits alone are a version or date, not a file type.
-    ["Report 2024.03", ""],
-    ["Visit v1.2", ""],
-    ["archive.7z", ".7z"],
-    ["notes.c", ".c"],
-    ["Results.pdf~", ""],
     ["Results.PDF", ".PDF"],
+    ["Results.Pdf", ".Pdf"],
     ["a.pdf", ".pdf"],
-    ["x.abcdefghij", ".abcdefghij"],
-    ["x.123456789a", ".123456789a"],
-    ["notes.tar_gz", ""],
-    ["Smith,Jane", ""],
+    ["Report.pdf.pdf", ".pdf"],
+    ["Report\u2028A.pdf", ".pdf"],
+    ["字.pdf", ".pdf"],
+    [".pdf", ""],
+    ["pdf", ""],
+    ["Resultspdf", ""],
+    ["Results.pdf~", ""],
     ["Results.pdf\nA", ""],
+    ["archive.tar.gz", ""],
+    ["notes.c", ""],
+    ["Scan 3.5 notes", ""],
+    ["Visit 10.30am", ""],
+    ["Mr.Jones", ""],
+    ["字字", ""],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });

@@ -75,13 +75,17 @@ describe("RenameDialog", () => {
     );
     const input = screen.getByLabelText("File name");
     expect(input).toHaveValue("Results");
-    expect(screen.getByText(".pdf", { exact: true })).toBeVisible();
+    // Shown beside the field but not announced: the help text names it.
+    const shown = screen.getByText(".pdf", { exact: true });
+    expect(shown).toBeVisible();
+    expect(shown).toHaveAttribute("aria-hidden", "true");
     expect(input).toHaveAccessibleDescription(
       "This changes the name in myCarlos and the suggested export name. The .pdf extension stays the same.",
     );
 
     fireEvent.change(input, { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     // Only the extension is not a name; say so rather than just disabling Save.
     for (const value of [".pdf", " .PDF "]) {
@@ -141,6 +145,25 @@ describe("RenameDialog", () => {
     fireEvent.change(input, { target: { value: "Lab report.PDF" } });
     fireEvent.submit(input.closest("form")!);
     expect(onSave).toHaveBeenCalledWith("Lab report.pdf");
+  });
+
+  it("measures the byte limit on the name it saves, not the typed extension", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    // Typed with ".pdf" it is 244 bytes; saved, the copy is dropped: 240.
+    const exact = `${"字".repeat(78)}ab`;
+    fireEvent.change(input, { target: { value: `${exact}.pdf` } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith(`${exact}.pdf`);
   });
 
   it.each([
