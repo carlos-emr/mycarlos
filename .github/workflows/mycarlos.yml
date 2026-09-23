@@ -324,7 +324,9 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           apps=(src-tauri/target/debug/bundle/macos/*.app)
-          test "${#apps[@]}" -eq 1 && test -d "${apps[0]}"
+          # Separate lines: bash -e ignores a failure on the left of &&.
+          test "${#apps[@]}" -eq 1
+          test -d "${apps[0]}"
           # An ad-hoc signature seals the bundle, so Gatekeeper offers
           # "Open Anyway" for this unsigned build instead of calling it damaged.
           codesign --force --deep --sign - "${apps[0]}"

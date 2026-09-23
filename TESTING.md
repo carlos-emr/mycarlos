@@ -17,7 +17,7 @@ Windows, macOS, Android and the iOS Simulator.
 
 | Platform | Artifact | Runs on |
 | --- | --- | --- |
-| Windows | `myCarlos-Windows-x64-Evaluation` | Windows 10 or 11, x64 |
+| Windows | `myCarlos-Windows-x64-Evaluation` | Windows PCs with an Intel or AMD (x64) processor |
 | macOS | `myCarlos-macOS-AppleSilicon-Evaluation` | Macs with Apple silicon (M1 or later), not Intel Macs |
 | Android | `myCarlos-Android-Evaluation` | Android phones (arm64) and emulators on a PC or Mac |
 | iOS | `myCarlos-iOS-Simulator-Evaluation` | The iOS Simulator on an Apple silicon Mac with Xcode |
@@ -27,8 +27,8 @@ which names the exact source commit. Downloads expire after 30 days; a newer run
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
 There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer
-account and signing. Linux has an unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`)
-for compatibility checks only.
+account and signing. Linux has an unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`,
+kept for 7 days) for compatibility checks only.
 
 ## Install
 

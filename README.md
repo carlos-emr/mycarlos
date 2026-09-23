@@ -211,9 +211,9 @@ Development WebSockets use port 1421; only the development CSP permits those con
   reqwest/hyper/hyper-util dependencies. Socket's original package warning has not been
   classified as a false positive. The glib backport is the only local dependency patch;
   see [source provenance and retirement criteria](src-tauri/vendor/README.md).
-- Hosted CI produced a 48 MB Linux debug `.deb`, a 131 MB Android debug APK, and a 92 MB unsigned
-  iOS simulator `.app`. These unoptimized artifacts show the app can be built for each platform;
-  they are not evidence that it runs there, and not release size estimates.
+- Hosted CI produced a 48 MB Linux debug `.deb`, a 322 MB Android debug APK (arm64 and x86_64),
+  and a 92 MB unsigned iOS simulator `.app`. These unoptimized artifacts show the app can be built
+  for each platform; they are not evidence that it runs there, and not release size estimates.
 
 ## Checks
 
