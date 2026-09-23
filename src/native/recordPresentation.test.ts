@@ -86,6 +86,7 @@ describe("fileExtension", () => {
     ["Results.txt", ""],
     [".notes.pdf", ".pdf"],
     ["..pdf", ".pdf"],
+    ["Results.pdf ", ""],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });

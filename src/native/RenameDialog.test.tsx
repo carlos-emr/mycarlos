@@ -197,6 +197,10 @@ describe("RenameDialog", () => {
     ["Results.pdf", "\u0085Lab", "Lab.pdf"],
     ["Visit notes", "Lab\u0085", "Lab"],
     ["Visit notes", "\u0085Lab", "Lab"],
+    // "pdf" without the dot is part of a name, and a pasted trailing tab is
+    // trimmed, as the vault trims it.
+    ["Scan 3.5 notes", "Scan notespdf", "Scan notespdf"],
+    ["Results.pdf", "Lab report\t", "Lab report.pdf"],
   ])("renames %j from %j to %j", (original, typed, saved) => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -290,6 +294,8 @@ describe("RenameDialog", () => {
     ["Visit 11am", "Scan.pdf\u0085"],
     ["Results.pdf", "\u0085"],
     ["Results.pdf", "Lab\u0007report"],
+    ["Results.pdf", "Lab\u007freport"],
+    ["Results.pdf", "Lab\u0080report"],
   ])("explains why %j cannot be renamed to %j", (original, typed) => {
     render(
       <RenameDialog
