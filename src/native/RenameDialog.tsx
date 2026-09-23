@@ -38,10 +38,14 @@ export function RenameDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
+  // Someone who types the extension out of habit means the same name, so a
+  // typed copy of it is dropped rather than doubled.
+  let stem = name.trim();
+  if (extension && stem.toLowerCase().endsWith(extension.toLowerCase()))
+    stem = stem.slice(0, stem.length - extension.length).trimEnd();
   // An untouched name is saved exactly as it was: trimming only the stem would
   // otherwise change a name such as "Results .pdf" that nobody edited.
-  const fullName =
-    name === originalStem ? target.name : name.trim() + extension;
+  const fullName = name === originalStem ? target.name : stem + extension;
   const tooLong =
     target.kind === "document"
       ? utf8Length(fullName) > MAX_DOCUMENT_NAME_BYTES
@@ -52,7 +56,7 @@ export function RenameDialog({
   const unsafeName =
     target.kind === "document" &&
     (/[<>:"|?*/\\]/.test(fullName) || fullName.endsWith("."));
-  const invalid = tooLong || unsafeName || !name.trim();
+  const invalid = tooLong || unsafeName || !stem;
   const close = () => {
     if (!saving) onClose();
   };
@@ -113,7 +117,11 @@ export function RenameDialog({
             <p id="rename-help">
               {target.kind === "folder"
                 ? "The folder and its contents stay in the same location."
-                : "This changes the name in myCarlos and the suggested export name."}
+                : `This changes the name in myCarlos and the suggested export name.${
+                    extension
+                      ? ` The ${extension} extension stays the same.`
+                      : ""
+                  }`}
             </p>
             {tooLong && (
               <p role="alert">This name is too long. Shorten it to save.</p>

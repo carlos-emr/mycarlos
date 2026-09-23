@@ -56,6 +56,11 @@ describe("RenameDialog", () => {
     fireEvent.change(input, { target: { value: "Visit notes" } });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(save).toBeEnabled();
+
+    // With an extension kept, a name part ending in a dot is still a valid name.
+    fireEvent.change(input, { target: { value: "Visit notes." } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(save).toBeEnabled();
   });
 
   it("edits only the name before the extension, which stays as it was", () => {
@@ -71,6 +76,10 @@ describe("RenameDialog", () => {
     const input = screen.getByLabelText("File name");
     expect(input).toHaveValue("Results");
     expect(input).toHaveAccessibleDescription(/\.pdf/);
+    expect(input).toHaveAccessibleDescription(/stays the same/);
+
+    fireEvent.change(input, { target: { value: "   " } });
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
     fireEvent.change(input, { target: { value: "  Lab results  " } });
     fireEvent.submit(input.closest("form")!);
     expect(onSave).toHaveBeenCalledWith("Lab results.pdf");
@@ -89,6 +98,38 @@ describe("RenameDialog", () => {
     const input = screen.getByLabelText("File name");
     fireEvent.submit(input.closest("form")!);
     expect(onSave).toHaveBeenCalledWith("Results .pdf");
+  });
+
+  it("saves removing a stray space before the extension as an edit", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results .pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    fireEvent.change(input, { target: { value: "Results" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Results.pdf");
+  });
+
+  it("does not double an extension typed out of habit", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    fireEvent.change(input, { target: { value: "Lab report.PDF" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Lab report.pdf");
   });
 
   it("edits the whole name when it has no extension", () => {

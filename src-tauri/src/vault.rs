@@ -3824,6 +3824,8 @@ mod tests {
             ("Report 2024.03", ""),
             ("Visit v1.2", ""),
             ("archive.7z", ".7z"),
+            ("notes.c", ".c"),
+            ("Results.pdf~", ""),
         ] {
             assert_eq!(file_extension(name), extension, "{name:?}");
         }

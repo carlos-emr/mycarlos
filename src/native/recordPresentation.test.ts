@@ -78,6 +78,8 @@ describe("fileExtension", () => {
     ["Report 2024.03", ""],
     ["Visit v1.2", ""],
     ["archive.7z", ".7z"],
+    ["notes.c", ".c"],
+    ["Results.pdf~", ""],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });
