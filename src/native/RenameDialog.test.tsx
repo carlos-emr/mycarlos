@@ -191,6 +191,8 @@ describe("RenameDialog", () => {
     ["Results.pdf", "Lab report .pdf", "Lab report.pdf"],
     ["Results.pdf", "Report.pdf notes", "Report.pdf notes.pdf"],
     ["Scan.PDF", "New.pdf", "New.PDF"],
+    // Only a stem that itself ended in ".pdf" keeps a typed copy.
+    ["Report.pdf .pdf", "Lab.pdf", "Lab.pdf"],
   ])("renames %j from %j to %j", (original, typed, saved) => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -297,6 +299,21 @@ describe("RenameDialog", () => {
       target: { value: typed },
     });
     expect(screen.getByRole("alert")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+  });
+
+  it("refuses an unedited legacy name that is only .pdf and a space", () => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: ".pdf " }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This document's name has no .pdf extension, so it cannot end in .pdf.",
+    );
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
   });
 

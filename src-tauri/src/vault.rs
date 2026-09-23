@@ -3928,11 +3928,12 @@ mod tests {
         store.rename_record(plain, "Visit 10.30am").unwrap();
         store.rename_record(plain, "Visit 11am").unwrap();
         assert_eq!(name_of(plain), "Visit 11am");
-        // Nor can a rename add ".pdf": a desktop picker can still return another
-        // kind of file, and a lock added by mistake could never be removed.
+        // A desktop picker can still return another kind of file, and a
+        // ".pdf" lock added by mistake could never be removed.
         // Only ".pdf" is locked: another extension can change or go.
         store.rename_record(photo, "photo").unwrap();
         store.rename_record(photo, "photo.png").unwrap();
+        // A name without ".pdf" cannot gain it, even as the whole name.
         for name in ["Scan notes.pdf", "Scan notes.PDF", ".pdf", ".PDF"] {
             assert!(
                 matches!(store.rename_record(plain, name), Err(VaultError::Invalid)),
