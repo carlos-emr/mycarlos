@@ -8,6 +8,11 @@ iOS Simulator.
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
 > forgotten one cannot be recovered, only erased with the vault (see [Start over](#start-over)).
 
+**Help improve this guide.** So far these builds have only been tried on Windows, so the steps for
+macOS, Android and the iOS Simulator may be wrong or incomplete. If something does not work or does
+not match what you see, please [report it](#report-what-you-find). Edits to this guide are
+welcome as pull requests.
+
 ## Download a build
 
 1. Open the [myCarlos evaluation builds from `main`](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush).
