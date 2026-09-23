@@ -74,6 +74,10 @@ describe("fileExtension", () => {
     // Line and paragraph separators can survive import; Rust's rule sees past them.
     ["Report\u2028A.pdf", ".pdf"],
     ["Report\u2029A.pdf", ".pdf"],
+    // Digits alone are a version or date, not a file type.
+    ["Report 2024.03", ""],
+    ["Visit v1.2", ""],
+    ["archive.7z", ".7z"],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });

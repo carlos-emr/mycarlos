@@ -1267,8 +1267,8 @@ fn validate_name(name: &str) -> Result<(), VaultError> {
 }
 
 /// The extension of a document name, such as ".pdf": a final dot followed by
-/// one to ten ASCII letters or digits, after a non-empty stem. A name like
-/// "Scan 3.5 notes" has none, and yields "".
+/// one to ten ASCII letters or digits, at least one a letter, after a
+/// non-empty stem. "Scan 3.5 notes" and "Report 2024.03" have none, and yield "".
 fn file_extension(name: &str) -> &str {
     match name.rfind('.') {
         Some(dot)
@@ -1276,7 +1276,10 @@ fn file_extension(name: &str) -> &str {
                 && (2..=11).contains(&(name.len() - dot))
                 && name[dot + 1..]
                     .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric()) =>
+                    .all(|byte| byte.is_ascii_alphanumeric())
+                && name[dot + 1..]
+                    .bytes()
+                    .any(|byte| byte.is_ascii_alphabetic()) =>
         {
             &name[dot..]
         }
@@ -3818,6 +3821,9 @@ mod tests {
             ("long.abcdefghijk", ""),
             ("Report\u{2028}A.pdf", ".pdf"),
             ("Report\u{2029}A.pdf", ".pdf"),
+            ("Report 2024.03", ""),
+            ("Visit v1.2", ""),
+            ("archive.7z", ".7z"),
         ] {
             assert_eq!(file_extension(name), extension, "{name:?}");
         }

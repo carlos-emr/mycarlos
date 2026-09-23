@@ -103,6 +103,10 @@ describe("RenameDialog", () => {
     );
     const input = screen.getByLabelText("File name");
     expect(input).toHaveValue("Scan 3.5 notes");
+    // With no extension to keep, the name itself must not end with a dot.
+    fireEvent.change(input, { target: { value: "Notes." } });
+    expect(screen.getByRole("alert")).toHaveTextContent("cannot contain");
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
     fireEvent.change(input, { target: { value: "Scan notes" } });
     fireEvent.submit(input.closest("form")!);
     expect(onSave).toHaveBeenCalledWith("Scan notes");

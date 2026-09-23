@@ -645,7 +645,14 @@ describe("durable vault UI", () => {
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
     expect(bridge.renameRecord).not.toHaveBeenCalled();
 
-    // The kept ".pdf" counts too: 78 characters are 234 bytes, 238 with it.
+    // The kept ".pdf" counts too: 79 characters are 237 bytes, 241 with it.
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: "字".repeat(79) },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+
+    // 78 characters are 234 bytes, 238 with it.
     fireEvent.change(screen.getByLabelText("File name"), {
       target: { value: "字".repeat(78) },
     });
