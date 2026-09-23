@@ -316,6 +316,36 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
       - run: npm run tauri build -- --debug --bundles app
       - run: git diff --exit-code -- src-tauri/Cargo.lock
+      # upload-artifact drops Unix permissions, which would leave the app's
+      # executable unrunnable, so the bundle travels inside a ditto ZIP.
+      - name: Package macOS evaluation app
+        env:
+          # On a pull request HEAD is a temporary merge commit; name the PR head.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          apps=(src-tauri/target/debug/bundle/macos/*.app)
+          test "${#apps[@]}" -eq 1 && test -d "${apps[0]}"
+          # An ad-hoc signature seals the bundle, so Gatekeeper offers
+          # "Open Anyway" for this unsigned build instead of calling it damaged.
+          codesign --force --deep --sign - "${apps[0]}"
+          mkdir macos-download
+          zip=macos-download/myCarlos-Evaluation-macOS-AppleSilicon.zip
+          ditto -c -k --keepParent "${apps[0]}" "$zip"
+          # The download must unpack to a bundle that still verifies.
+          ditto -x -k "$zip" "$RUNNER_TEMP/macos-check"
+          codesign --verify --deep --strict "$RUNNER_TEMP"/macos-check/*.app
+          cp -R dev-data macos-download/sample-files
+          printf '%s\n' \
+            'myCarlos macOS evaluation (Apple silicon) - unsigned; synthetic data only' \
+            "Source commit: $HEAD_SHA" \
+            "Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > macos-download/BUILD.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: myCarlos-macOS-AppleSilicon-Evaluation
+          path: macos-download/
+          if-no-files-found: error
+          retention-days: 30
 
   android:
     name: Android debug build
@@ -341,7 +371,7 @@ jobs:
       - name: Install pinned Rust toolchain and Android target
         run: >-
           rustup toolchain install 1.98.0 --profile minimal
-          --target aarch64-linux-android
+          --target aarch64-linux-android --target x86_64-linux-android
       - run: npm ci
       - run: npm run tauri android init -- --ci
       - name: Disable Android cloud and device-transfer backup
@@ -351,7 +381,8 @@ jobs:
           grep -q 'android:allowBackup="false"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
           grep -q 'android:dataExtractionRules="@xml/mycarlos_data_extraction_rules"' src-tauri/gen/android/app/src/main/AndroidManifest.xml
           grep -q '<device-transfer>' src-tauri/gen/android/app/src/main/res/xml/mycarlos_data_extraction_rules.xml
-      - run: npm run tauri android build -- --debug --apk --target aarch64 --ci
+      # One APK for phones (arm64) and for emulators on a PC (x86_64).
+      - run: npm run tauri android build -- --debug --apk --target aarch64 x86_64 --ci
       - name: Compile Android mobile development proxy
         run: |
           export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
@@ -360,11 +391,28 @@ jobs:
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Report Android artifact sizes
         run: find src-tauri/gen/android -type f -name '*.apk' -printf '%p %k KB\n' | sort
+      - name: Package Android evaluation APK
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          apk=src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          for abi in arm64-v8a x86_64; do
+            unzip -l "$apk" | grep -q "lib/$abi/" || { echo "APK lacks $abi"; exit 1; }
+          done
+          mkdir android-download
+          cp "$apk" android-download/myCarlos-Evaluation-Android.apk
+          cp -R dev-data android-download/sample-files
+          printf '%s\n' \
+            'myCarlos Android evaluation (arm64 and x86_64) - debug-signed; synthetic data only' \
+            "Source commit: $HEAD_SHA" \
+            "Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > android-download/BUILD.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mycarlos-android-debug
-          path: src-tauri/gen/android/app/build/outputs/apk
-          retention-days: 7
+          name: myCarlos-Android-Evaluation
+          path: android-download/
+          if-no-files-found: error
+          retention-days: 30
 
   ios:
     name: iOS simulator debug build
@@ -391,9 +439,26 @@ jobs:
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Report iOS simulator artifact sizes
         run: find src-tauri/gen/apple/build -type d -name '*.app' -exec du -sh {} \;
+      # As for macOS, a ditto ZIP keeps the executable runnable.
+      - name: Package iOS simulator evaluation app
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          apps=()
+          while IFS= read -r app; do apps+=("$app"); done \
+            < <(find src-tauri/gen/apple/build -type d -name '*.app' -prune)
+          test "${#apps[@]}" -eq 1
+          mkdir ios-download
+          ditto -c -k --keepParent "${apps[0]}" ios-download/myCarlos-Evaluation-iOS-Simulator.zip
+          cp -R dev-data ios-download/sample-files
+          printf '%s\n' \
+            'myCarlos iOS Simulator evaluation (Apple silicon Mac) - unsigned; synthetic data only' \
+            "Source commit: $HEAD_SHA" \
+            "Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > ios-download/BUILD.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mycarlos-ios-simulator-debug
-          path: src-tauri/gen/apple/build/**/*.app
+          name: myCarlos-iOS-Simulator-Evaluation
+          path: ios-download/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
