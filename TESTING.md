@@ -5,8 +5,8 @@ anything. Every change to `main`, and a weekly scheduled run, publishes installa
 Windows, macOS, Android and the iOS Simulator.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
-> or files you make up; never real patient records. Choose a throwaway passphrase: there is no way
-> to recover a forgotten one except erasing the vault.
+> or files you make up; never real patient records. Choose a throwaway passphrase: a forgotten one
+> cannot be recovered, only erased with the vault (see [Start over](#start-over)).
 
 ## Download a build
 
@@ -23,7 +23,7 @@ Windows, macOS, Android and the iOS Simulator.
 | iOS | `myCarlos-iOS-Simulator-Evaluation` | The iOS Simulator on an Apple silicon Mac with Xcode |
 
 Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, and `BUILD.txt`,
-which names the exact source commit. Downloads expire after 30 days; a newer run replaces them.
+which names the exact source commit. Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
 There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer
@@ -40,11 +40,13 @@ unsigned; [WINDOWS.md](WINDOWS.md) explains the warning, checksums and uninstall
 
 ### macOS
 
-1. Extract the downloaded ZIP, then double-click `myCarlos-Evaluation-macOS-AppleSilicon.zip`
-   inside it. This produces **myCarlos Evaluation.app**; move it to Applications.
+1. Extract the downloaded ZIP. (Safari may already have extracted it into a folder; if so, open
+   that folder.) Then double-click `myCarlos-Evaluation-macOS-AppleSilicon.zip` inside it. This
+   produces **myCarlos Evaluation.app**; move it to Applications.
 2. Open it. macOS refuses the first time because the app is not signed by a registered developer.
 3. Open **System Settings → Privacy & Security**, scroll to the message about myCarlos
-   Evaluation, and choose **Open Anyway**. Confirm, and the app opens from then on.
+   Evaluation, and choose **Open Anyway**. Confirm with your Mac's password, and the app opens from
+   then on.
 
 If there is no **Open Anyway** button, remove the download quarantine in Terminal and open the
 app again:
@@ -56,9 +58,10 @@ xattr -dr com.apple.quarantine "/Applications/myCarlos Evaluation.app"
 ### Android emulator (for example, on your Windows PC)
 
 1. In Android Studio, open **Device Manager** and create a device, for example a Pixel with a
-   recent **x86_64** system image. Start it.
+   recent system image: **x86_64** on a Windows or Intel PC, **arm64-v8a** on an Apple silicon
+   Mac. Start it.
 2. Extract the downloaded ZIP and drag `myCarlos-Evaluation-Android.apk` onto the emulator window.
-   It installs as **myCarlos Evaluation**. (Or run `adb install -r myCarlos-Evaluation-Android.apk`.)
+   It installs as **myCarlos Evaluation**.
 3. Drag the PDFs from `sample-files` onto the emulator window. They are saved to the emulator's
    Downloads folder, where the app's file picker can find them.
 
@@ -71,9 +74,12 @@ Copy the sample PDFs to the phone as well.
 ### iOS Simulator (Mac with Xcode)
 
 1. Open Xcode's Simulator (`open -a Simulator`) and start an iPhone.
-2. Extract the downloaded ZIP, then double-click `myCarlos-Evaluation-iOS-Simulator.zip` inside it.
-3. Drag the resulting **myCarlos Evaluation.app** onto the Simulator window, or install it from
-   Terminal: `xcrun simctl install booted "myCarlos Evaluation.app"`.
+2. Extract the downloaded ZIP (Safari may already have done so), then double-click
+   `myCarlos-Evaluation-iOS-Simulator.zip` inside it.
+3. Drag the resulting **myCarlos Evaluation.app** onto the Simulator window. If it will not
+   install, remove the download quarantine and try again; in Terminal, type the command below,
+   then drag the app into the Terminal window to fill in its location, and press Return:
+   `xattr -dr com.apple.quarantine ` (note the trailing space).
 4. Drag the sample PDFs onto the Simulator window; they are saved to the Files app.
 
 ## What to try
@@ -81,8 +87,8 @@ Copy the sample PDFs to the phone as well.
 On every platform:
 
 1. Create a vault with a throwaway passphrase of at least 15 characters.
-2. Press **New** and import the sample PDFs. The `_DUPLICATE` file should be reported as a
-   duplicate and skipped.
+2. Press **New** and import all five sample PDFs. The message should say 4 files were imported and
+   1 duplicate was skipped: the two Bloodwork files are identical.
 3. Create a folder, move a document into it, and rename a document and a folder.
 4. Open a document, choose **Save a copy**, and confirm the copy opens in a PDF viewer.
 5. Lock the vault, quit the app, reopen it, and unlock: everything should still be there.
@@ -107,8 +113,10 @@ interrupted transfers.
 
 ## Start over
 
-To remove everything, open **Security** and use **Erase entire vault**. Uninstalling also removes
-the vault on Android and iOS. On desktop the vault stays until erased; it lives in:
+To remove everything while unlocked, open **Security**, choose **Show reset controls**, type
+`RESET MYCARLOS VAULT`, and choose **Erase entire vault**. If you forgot the passphrase, use
+**Forgot your passphrase?** on the unlock screen instead. Uninstalling also removes the vault on
+Android and iOS. On desktop the vault stays until erased; it lives in:
 
 - Windows: `%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`
 - macOS: `~/Library/Application Support/ca.carlos.mycarlos/vault-home`

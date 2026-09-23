@@ -257,6 +257,10 @@ jobs:
             "Source commit: $commit"
             "Build: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
           ) | Set-Content windows-download/BUILD.txt -Encoding utf8
+          # A pull request builds a temporary merge of its head into the base.
+          if ($env:HEAD_SHA -ne $env:GITHUB_SHA) {
+            "Built as merge commit: $env:GITHUB_SHA" | Add-Content windows-download/BUILD.txt -Encoding utf8
+          }
       - name: Upload Windows installer
         id: windows-download
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -342,6 +346,10 @@ jobs:
             "Source commit: $HEAD_SHA" \
             "Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             > macos-download/BUILD.txt
+          # A pull request builds a temporary merge of its head into the base.
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "Built as merge commit: $GITHUB_SHA" >> macos-download/BUILD.txt
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: myCarlos-macOS-AppleSilicon-Evaluation
@@ -409,6 +417,10 @@ jobs:
             "Source commit: $HEAD_SHA" \
             "Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             > android-download/BUILD.txt
+          # A pull request builds a temporary merge of its head into the base.
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "Built as merge commit: $GITHUB_SHA" >> android-download/BUILD.txt
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: myCarlos-Android-Evaluation
@@ -458,6 +470,10 @@ jobs:
             "Source commit: $HEAD_SHA" \
             "Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             > ios-download/BUILD.txt
+          # A pull request builds a temporary merge of its head into the base.
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "Built as merge commit: $GITHUB_SHA" >> ios-download/BUILD.txt
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: myCarlos-iOS-Simulator-Evaluation
