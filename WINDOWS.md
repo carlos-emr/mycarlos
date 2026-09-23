@@ -5,9 +5,10 @@ security/privacy/device release gates remain open.
 
 ## Download and install
 
-1. Sign in to GitHub and open the [Windows evaluation builds](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain).
+1. Sign in to GitHub and open the [Windows evaluation builds](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush).
 2. Choose the newest run with a successful **Windows native build** job. In its summary, click **Download Windows x64 evaluation
-   installer**, or select **myCarlos-Windows-x64-Evaluation** under **Artifacts**.
+   installer**, or select **myCarlos-Windows-x64-Evaluation** under **Artifacts**. If its downloads
+   have expired, use the newest of the [weekly builds](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Aschedule).
 3. Extract the ZIP and run `myCarlos-Evaluation-Windows-x64-setup.exe`.
 4. Launch **myCarlos Evaluation** from Start. Create a fictional profile and test passphrase,
    then import PDFs from the ZIP's `sample-files` folder.
