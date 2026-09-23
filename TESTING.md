@@ -16,9 +16,11 @@ iOS Simulator.
 2. Open the newest run. A run can be marked failed because of another platform, so check that the
    job for your platform (the **Job** column below) has a green tick. If it has no downloads (they
    expire after 30 days), use the newest of the [weekly builds of `main`](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Aschedule) instead.
-   The top of the run page must say it was triggered via **push** or **schedule** on `main`; if it
-   says **pull request**, it may be someone else's code, so do not install it. If every build
-   has expired, ask a maintainer to re-run the newest push build, which keeps it a push build.
+   The top of the run page must say **Triggered via push**, **Triggered via schedule**,
+   **Re-run triggered** or **Manually triggered**, with `main` as the branch. If it says
+   **pull request**, or names another branch, it may be someone else's code, so do not install it.
+   If every build has expired, ask a maintainer to start a new build of `main` (**Actions →
+   myCarlos evaluation → Run workflow**, branch `main`) and send you the link to that run.
 3. Under **Artifacts** at the bottom of the run, download the one for your platform:
 
 | Platform | Job | Artifact | Runs on |
