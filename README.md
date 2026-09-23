@@ -11,8 +11,8 @@
 and launch **myCarlos Evaluation** from Start. The download includes sample PDFs.
 See [Windows installation and signing](WINDOWS.md) for details.
 
-**[Test on macOS, Android, or the iOS Simulator](TESTING.md)** — the same runs publish installable
-builds for those platforms. The testing guide covers downloading, installing, and what to try.
+**[Testing guide](TESTING.md)** — install on macOS, Android, or the iOS Simulator from the same
+runs, and what to try on every platform, including Windows.
 
 This application began as the framework-selection proof of concept for the patient-held record proposed in
 [`carlos-emr/carlos#3474`](https://github.com/carlos-emr/carlos/issues/3474). It uses one responsive
