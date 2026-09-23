@@ -147,6 +147,24 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("Lab report.pdf");
   });
 
+  it("shows and names an uppercase extension as the name spells it", () => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "Scan.PDF" }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(".PDF", { exact: true })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: ".PDF" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a name before .PDF.",
+    );
+  });
+
   it("measures the byte limit on the name it saves, not the typed extension", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -186,22 +204,23 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith(saved);
   });
 
-  it("locks no extension on a folder, even one with a dot in its name", () => {
+  it("locks no extension on a folder, even one named like a PDF", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <RenameDialog
-        target={{ kind: "folder", id: "folder-1", name: "Lab.results" }}
+        target={{ kind: "folder", id: "folder-1", name: "Scans.pdf" }}
         readOnly={false}
         onSave={onSave}
         onClose={vi.fn()}
       />,
     );
     const input = screen.getByLabelText("Folder name");
-    expect(input).toHaveValue("Lab.results");
-    expect(screen.queryByText(".results")).not.toBeInTheDocument();
-    fireEvent.change(input, { target: { value: "Lab results" } });
+    expect(input).toHaveValue("Scans.pdf");
+    expect(screen.queryByText(".pdf", { exact: true })).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "Old scans.pdf" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.submit(input.closest("form")!);
-    expect(onSave).toHaveBeenCalledWith("Lab results");
+    expect(onSave).toHaveBeenCalledWith("Old scans.pdf");
   });
 
   it("keeps a doubled extension that was already part of the name", () => {
