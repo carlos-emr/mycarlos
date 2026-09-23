@@ -240,6 +240,24 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("Final Report.pdf.pdf");
   });
 
+  it("treats a stored name ending in .pdf and a Unicode space as a PDF", () => {
+    // Earlier builds could store this; the vault judges the trimmed name.
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "X.pdf\u00a0" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("File name");
+    expect(input).toHaveValue("X");
+    expect(screen.getByText(".pdf", { exact: true })).toBeVisible();
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("X.pdf\u00a0");
+  });
+
   it("edits the whole name when it has no extension", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

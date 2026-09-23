@@ -711,7 +711,9 @@ impl VaultStore {
             // The extension says what kind of file an export is; a rename
             // changes only the name before it, and neither removes ".pdf",
             // changes its case, nor adds it.
-            if file_extension(name) != file_extension(&record.display_name) {
+            // Both sides are judged trimmed, as `name` already is: an earlier
+            // build could store "X.pdf" followed by a no-break space.
+            if file_extension(name) != file_extension(record.display_name.trim()) {
                 return Err(VaultError::Invalid);
             }
             record.display_name = name.to_owned();
@@ -3825,6 +3827,43 @@ mod tests {
         ] {
             assert_eq!(file_extension(name), extension, "{name:?}");
         }
+    }
+
+    #[test]
+    fn a_legacy_name_with_trailing_unicode_space_renames_as_the_pdf_it_is() {
+        // Builds before the current sanitizer could store "X.pdf" followed by a
+        // no-break space. Judged after trimming, as renames are, it is a PDF name.
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(profile, vec![], vec![source("X.pdf", b"synthetic pdf")], 2)
+            .unwrap()
+            .imported[0];
+        store
+            .mutate_manifest(|manifest| {
+                manifest.records[0].display_name = "X.pdf\u{a0}".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let name_of = || store.snapshot().unwrap().records[0].display_name.clone();
+
+        // Saved unedited, it is tidied, as it was before extensions were kept.
+        store.rename_record(record, "X.pdf\u{a0}").unwrap();
+        assert_eq!(name_of(), "X.pdf");
+        store
+            .mutate_manifest(|manifest| {
+                manifest.records[0].display_name = "X.pdf\u{3000}".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(
+            store.rename_record(record, "Y"),
+            Err(VaultError::Invalid)
+        ));
+        store.rename_record(record, "Y.pdf").unwrap();
+        assert_eq!(name_of(), "Y.pdf");
     }
 
     #[test]

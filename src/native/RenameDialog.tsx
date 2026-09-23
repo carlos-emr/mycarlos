@@ -27,13 +27,14 @@ export function RenameDialog({
   onSave: (name: string) => Promise<void>;
   onClose: () => void;
 }) {
-  // A document keeps its extension; only the name before it is edited.
+  // A document keeps its extension; only the name before it is edited. The
+  // vault judges names trimmed, and an earlier build could store "X.pdf"
+  // followed by a no-break space, so the extension is found the same way.
   const extension =
-    target.kind === "document" ? fileExtension(target.name) : "";
-  const originalStem = target.name.slice(
-    0,
-    target.name.length - extension.length,
-  );
+    target.kind === "document" ? fileExtension(target.name.trim()) : "";
+  const originalStem = extension
+    ? target.name.trim().slice(0, -extension.length)
+    : target.name;
   const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
