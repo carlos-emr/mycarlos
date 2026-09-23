@@ -59,7 +59,12 @@ export function RenameDialog({
   // save fail with a generic message.
   const unsafeName =
     target.kind === "document" &&
-    (/[<>:"|?*/\\]/.test(fullName) || fullName.endsWith("."));
+    (/[<>:"|?*/\\]/.test(fullName) ||
+      // Pasted control characters: the vault refuses or trims them (U+0085).
+      /\p{Cc}/u.test(fullName) ||
+      // Trimmed, as the vault judges it: an earlier build could store "X."
+      // followed by a no-break space.
+      fullName.trim().endsWith("."));
   // A name without ".pdf" cannot gain it, just as a PDF cannot lose it: the
   // vault refuses both, and a lock added by mistake could not be undone.
   const gainsExtension =
@@ -147,7 +152,7 @@ export function RenameDialog({
             {unsafeName && (
               <p role="alert">
                 Document names cannot contain &lt; &gt; : &quot; | ? * / \ or
-                end with a dot.
+                invisible control characters, or end with a dot.
               </p>
             )}
             {error && <p role="alert">{error}</p>}

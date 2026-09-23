@@ -279,6 +279,41 @@ describe("RenameDialog", () => {
     expect(onSave).toHaveBeenCalledWith("photo");
   });
 
+  it.each([
+    // Pasted control characters, which the vault trims or refuses.
+    ["Visit 11am", "Scan.pdf\u0085"],
+    ["Results.pdf", "\u0085"],
+    ["Results.pdf", "Lab\u0007report"],
+  ])("explains why %j cannot be renamed to %j", (original, typed) => {
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: original }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: typed },
+    });
+    expect(screen.getByRole("alert")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+  });
+
+  it("checks an unedited legacy name for a trailing dot, as before", () => {
+    // Earlier builds could store "X." followed by a no-break space.
+    render(
+      <RenameDialog
+        target={{ kind: "document", id: "record-1", name: "X.\u00a0" }}
+        readOnly={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("end with a dot");
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+  });
+
   it("edits the whole name when it has no extension", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
