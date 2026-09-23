@@ -193,6 +193,10 @@ describe("RenameDialog", () => {
     ["Scan.PDF", "New.pdf", "New.PDF"],
     // Only a stem that itself ended in ".pdf" keeps a typed copy.
     ["Report.pdf .pdf", "Lab.pdf", "Lab.pdf"],
+    // U+0085 at an edge is trimmed, as the vault trims it, not refused.
+    ["Results.pdf", "\u0085Lab", "Lab.pdf"],
+    ["Visit notes", "Lab\u0085", "Lab"],
+    ["Visit notes", "\u0085Lab", "Lab"],
   ])("renames %j from %j to %j", (original, typed, saved) => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

@@ -10,6 +10,11 @@ import {
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
 
+// JavaScript's trim keeps U+0085 (next line); the vault's trim removes it, so
+// typed names are trimmed the way the vault will trim them.
+const trimLikeVault = (value: string) =>
+  value.replace(/^[\s\u0085]+|[\s\u0085]+$/g, "");
+
 export type RenameTarget = {
   kind: "folder" | "document";
   id: string;
@@ -44,9 +49,9 @@ export function RenameDialog({
   // ended with it twice, as in "Report.pdf.pdf".
   const endsWithExtension = (value: string) =>
     value.toLowerCase().endsWith(extension.toLowerCase());
-  let stem = name.trim();
+  let stem = trimLikeVault(name);
   if (extension && !endsWithExtension(originalStem) && endsWithExtension(stem))
-    stem = stem.slice(0, stem.length - extension.length).trimEnd();
+    stem = trimLikeVault(stem.slice(0, stem.length - extension.length));
   // An untouched name is saved exactly as it was: trimming only the stem would
   // otherwise change a name such as "Results .pdf" that nobody edited.
   const fullName = name === originalStem ? target.name : stem + extension;
@@ -60,17 +65,17 @@ export function RenameDialog({
   const unsafeName =
     target.kind === "document" &&
     (/[<>:"|?*/\\]/.test(fullName) ||
-      // Pasted control characters: the vault refuses or trims them (U+0085).
+      // Pasted control characters inside the name, which the vault refuses.
       /\p{Cc}/u.test(fullName) ||
       // Trimmed, as the vault judges it: an earlier build could store "X."
       // followed by a no-break space.
-      fullName.trim().endsWith("."));
+      trimLikeVault(fullName).endsWith("."));
   // A name without ".pdf" cannot gain it, just as a PDF cannot lose it: the
   // vault refuses both, and a lock added by mistake could not be undone.
   const gainsExtension =
     target.kind === "document" &&
     !extension &&
-    fullName.trim().toLowerCase().endsWith(".pdf");
+    trimLikeVault(fullName).toLowerCase().endsWith(".pdf");
   const invalid = tooLong || unsafeName || gainsExtension || !stem;
   const close = () => {
     if (!saving) onClose();
