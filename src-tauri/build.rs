@@ -66,6 +66,8 @@ fn main() {
             "vault_create",
             "vault_unlock",
             "vault_lock",
+            "vault_touch",
+            "vault_set_auto_lock",
             "vault_snapshot",
             "vault_change_passphrase",
             "vault_create_profile",

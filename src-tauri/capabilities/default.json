@@ -9,6 +9,8 @@
     "allow-vault-create",
     "allow-vault-unlock",
     "allow-vault-lock",
+    "allow-vault-touch",
+    "allow-vault-set-auto-lock",
     "allow-vault-snapshot",
     "allow-vault-change-passphrase",
     "allow-vault-create-profile",

@@ -1,3 +1,4 @@
+use crate::idle::IdleDeadline;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -291,11 +292,23 @@ pub struct ImportSource {
 struct CancellableReader {
     inner: Box<dyn Read + Send>,
     cancelled: Arc<AtomicBool>,
+    progress: Option<Arc<IdleDeadline>>,
 }
 
 impl CancellableReader {
     fn new(inner: Box<dyn Read + Send>, cancelled: Arc<AtomicBool>) -> Self {
-        Self { inner, cancelled }
+        Self {
+            inner,
+            cancelled,
+            progress: None,
+        }
+    }
+
+    /// Counts each read that moves data as activity: a transfer that is making
+    /// progress keeps the session unlocked, and one that has stalled does not.
+    fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
+        self.progress = Some(Arc::clone(idle));
+        self
     }
 }
 
@@ -304,18 +317,35 @@ impl Read for CancellableReader {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled_io_error());
         }
-        self.inner.read(buffer)
+        let count = self.inner.read(buffer)?;
+        if count > 0 {
+            if let Some(idle) = &self.progress {
+                idle.touch(Instant::now());
+            }
+        }
+        Ok(count)
     }
 }
 
 struct CancellableWriter<W> {
     inner: W,
     cancelled: Arc<AtomicBool>,
+    progress: Option<Arc<IdleDeadline>>,
 }
 
 impl<W> CancellableWriter<W> {
     fn new(inner: W, cancelled: Arc<AtomicBool>) -> Self {
-        Self { inner, cancelled }
+        Self {
+            inner,
+            cancelled,
+            progress: None,
+        }
+    }
+
+    /// As for `CancellableReader::with_progress`.
+    fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
+        self.progress = Some(Arc::clone(idle));
+        self
     }
 }
 
@@ -324,7 +354,13 @@ impl<W: Write> Write for CancellableWriter<W> {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled_io_error());
         }
-        self.inner.write(buffer)
+        let count = self.inner.write(buffer)?;
+        if count > 0 {
+            if let Some(idle) = &self.progress {
+                idle.touch(Instant::now());
+            }
+        }
+        Ok(count)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -356,6 +392,7 @@ pub struct VaultStore {
     root: PathBuf,
     unlocked: Mutex<Option<UnlockedVault>>,
     cancel_io: Arc<AtomicBool>,
+    idle: Arc<IdleDeadline>,
 }
 
 impl VaultStore {
@@ -364,7 +401,13 @@ impl VaultStore {
             root,
             unlocked: Mutex::new(None),
             cancel_io: Arc::new(AtomicBool::new(false)),
+            idle: Arc::new(IdleDeadline::new(Instant::now())),
         }
+    }
+
+    /// The session's idle deadline, which the app's native timer checks.
+    pub fn idle(&self) -> &Arc<IdleDeadline> {
+        &self.idle
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
@@ -462,6 +505,7 @@ impl VaultStore {
                 recovery: None,
                 unavailable: HashSet::new(),
             });
+            self.idle.arm(Instant::now());
             Ok(())
         })();
         if result.is_err() {
@@ -507,6 +551,7 @@ impl VaultStore {
                 recovery,
                 unavailable,
             });
+            self.idle.arm(Instant::now());
             return Ok(());
         }
         let manifest_healthy = manifest_redundancy_healthy(&slots, &manifest);
@@ -560,12 +605,14 @@ impl VaultStore {
             recovery,
             unavailable,
         });
+        self.idle.arm(Instant::now());
         Ok(())
     }
 
     pub fn lock(&self) {
         self.cancel_io.store(true, Ordering::Release);
         *self.session() = None;
+        self.idle.disarm();
         self.cancel_io.store(false, Ordering::Release);
     }
 
@@ -812,10 +859,10 @@ impl VaultStore {
                 let mut object_key = Zeroizing::new([0_u8; 32]);
                 OsRng.fill_bytes(object_key.as_mut());
                 let encrypted = encrypt_object(
-                    Box::new(CancellableReader::new(
-                        source.reader,
-                        Arc::clone(&self.cancel_io),
-                    )),
+                    Box::new(
+                        CancellableReader::new(source.reader, Arc::clone(&self.cancel_io))
+                            .with_progress(&self.idle),
+                    ),
                     &object_path,
                     ObjectContext {
                         vault_id: unlocked.manifest.vault_id,
@@ -835,7 +882,8 @@ impl VaultStore {
                 }
                 verify_object(
                     &object_path,
-                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io)),
+                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                        .with_progress(&self.idle),
                     unlocked.manifest.vault_id,
                     record_id,
                     &object_key,
@@ -935,7 +983,7 @@ impl VaultStore {
         )?;
         verify_object(
             &self.root.join("objects").join(&record.object_name),
-            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)),
+            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle),
             unlocked.manifest.vault_id,
             record.id,
             &object_key,
@@ -1135,6 +1183,7 @@ impl VaultStore {
             None => acquire_storage_lock(&self.root)?,
         };
         *guard = None;
+        self.idle.disarm();
         let resumed = finish_pending_resets(&self.root)?;
         if !self.root.exists() {
             return if resumed {
@@ -4233,6 +4282,79 @@ mod tests {
             .records
             .iter()
             .all(|record| record.folder_ids == vec![folder]));
+    }
+
+    /// Just past the default delay and the margin after `from`.
+    fn idle_past(from: Instant) -> Instant {
+        from + Duration::from_secs(5 * 60) + crate::idle::MARGIN + Duration::from_secs(1)
+    }
+
+    #[test]
+    fn an_unlocked_session_has_an_idle_deadline_and_a_locked_one_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(store.idle().is_due(idle_past(Instant::now())));
+        store.lock();
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
+        store.unlock(PASSWORD).unwrap();
+        assert!(store.idle().is_due(idle_past(Instant::now())));
+        store.reset().unwrap();
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
+    }
+
+    /// Hands out `size` bytes, a little at a time, pausing between reads.
+    struct SlowReader {
+        left: usize,
+    }
+
+    impl Read for SlowReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            std::thread::sleep(Duration::from_millis(2));
+            let count = buffer.len().min(self.left).min(256 * 1024);
+            buffer[..count].fill(b'x');
+            self.left -= count;
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn a_transfer_making_progress_counts_as_activity() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+
+        // Activity before the import is only the unlock; the import's reads,
+        // after `before`, must move the deadline.
+        std::thread::sleep(Duration::from_millis(5));
+        let before = Instant::now();
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: "Large.pdf".to_owned(),
+                    reader: Box::new(SlowReader {
+                        left: 3 * CHUNK_SIZE,
+                    }),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        // Due exactly the delay and margin after `before` unless there was
+        // activity after it.
+        let due_at = |from: Instant| from + Duration::from_secs(5 * 60) + crate::idle::MARGIN;
+        assert!(!store.idle().is_due(due_at(before)));
+
+        // An export's writes count too.
+        store.idle().arm(before - Duration::from_secs(3600));
+        let before = Instant::now();
+        assert!(store.idle().is_due(due_at(before)));
+        store.export(record, io::sink()).unwrap();
+        assert!(!store.idle().is_due(due_at(before)));
     }
 
     #[test]

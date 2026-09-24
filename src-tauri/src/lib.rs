@@ -1,5 +1,7 @@
+mod idle;
 mod vault;
 
+use idle::IdleDeadline;
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
@@ -461,6 +463,57 @@ async fn vault_lock(
     .await
 }
 
+/// How often the native timer checks the idle deadline.
+const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Locks the vault, exactly as "Lock now" does, once it has been idle past its
+/// deadline. Returns whether it locked. This is the backstop for a renderer
+/// that hung, crashed or was suspended before its own timer could lock.
+fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
+    if !store.idle().is_due(now) {
+        return false;
+    }
+    picks.clear();
+    store.lock();
+    true
+}
+
+/// Counts time in a native picker as activity until it closes, on every path.
+struct PickerOpen<'a>(&'a IdleDeadline);
+
+impl<'a> PickerOpen<'a> {
+    fn new(idle: &'a IdleDeadline) -> Self {
+        idle.picker_opened(Instant::now());
+        Self(idle)
+    }
+}
+
+impl Drop for PickerOpen<'_> {
+    fn drop(&mut self) {
+        self.0.picker_closed(Instant::now());
+    }
+}
+
+/// The renderer reports user input (at most every few seconds), which the
+/// native idle deadline cannot see.
+#[tauri::command]
+fn vault_touch(store: State<'_, Arc<VaultStore>>) {
+    store.idle().touch(Instant::now());
+}
+
+#[derive(Deserialize)]
+struct AutoLockRequest {
+    minutes: u64,
+}
+
+/// The auto-lock setting lives in the renderer; it sends it after every unlock
+/// and change so the native deadline uses the same delay (clamped to 1-15).
+#[tauri::command]
+fn vault_set_auto_lock(store: State<'_, Arc<VaultStore>>, request: AutoLockRequest) {
+    store.idle().set_delay_minutes(request.minutes);
+    store.idle().touch(Instant::now());
+}
+
 /// Runs a vault operation on the blocking thread pool.
 ///
 /// Tauri runs a plain synchronous command on the main thread, and a synchronous
@@ -473,11 +526,17 @@ where
     T: Send + 'static,
     F: FnOnce(&VaultStore) -> Result<T, VaultError> + Send + 'static,
 {
+    // A command is activity when it starts and again when it ends, so a long
+    // one does not leave the deadline where it was before it began.
+    store.idle().touch(Instant::now());
+    let idle = Arc::clone(store.idle());
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || operation(&store))
+    let result = tauri::async_runtime::spawn_blocking(move || operation(&store))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
+        .map_err(Into::into);
+    idle.touch(Instant::now());
+    result
 }
 
 #[tauri::command]
@@ -587,6 +646,7 @@ async fn vault_import_pick(
         store.ensure_import_allowed(profile_id)
     })
     .await?;
+    let _open = PickerOpen::new(store.idle());
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -681,6 +741,7 @@ async fn vault_export_pick(
     let session = picks.session();
     let suggested_name =
         run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
+    let _open = PickerOpen::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -803,6 +864,14 @@ pub fn run() {
                     .join("vault-v1"),
             )));
             app.manage(Arc::new(PendingPicks::default()));
+            let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+            let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            std::thread::Builder::new()
+                .name("vault-idle-lock".into())
+                .spawn(move || loop {
+                    std::thread::sleep(IDLE_CHECK_INTERVAL);
+                    lock_if_idle(&store, &picks, Instant::now());
+                })?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -811,6 +880,8 @@ pub fn run() {
             vault_create,
             vault_unlock,
             vault_lock,
+            vault_touch,
+            vault_set_auto_lock,
             vault_snapshot,
             vault_change_passphrase,
             vault_create_profile,
@@ -931,6 +1002,64 @@ mod tests {
         let home = root.split(".join(\"").nth(1).unwrap();
         let home = &home[..home.find('"').unwrap()];
         assert_ne!(home, "vault-v1");
+    }
+
+    const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
+    /// Just past the default delay and the margin after `from`.
+    fn idle_past(from: Instant) -> Instant {
+        from + Duration::from_secs(5 * 60) + idle::MARGIN + Duration::from_secs(1)
+    }
+
+    #[test]
+    fn the_native_timer_locks_an_idle_vault_as_lock_now_does() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let picks = PendingPicks::default();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let record_id = Uuid::new_v4();
+        let pick_id = picks.store_export(picks.session(), record_id, path());
+
+        assert!(!lock_if_idle(&store, &picks, Instant::now()));
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+
+        assert!(lock_if_idle(&store, &picks, idle_past(Instant::now())));
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        // Picks made in the session are gone, as after "Lock now".
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+        // A locked vault has no deadline, so the timer does not lock it again.
+        assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
+    }
+
+    #[test]
+    fn every_vault_command_counts_as_activity() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let long_ago = Instant::now() - Duration::from_secs(3600);
+        store.idle().arm(long_ago);
+        assert!(store.idle().is_due(Instant::now()));
+        assert!(
+            tauri::async_runtime::block_on(run_blocking(&store, |store| store.snapshot())).is_ok()
+        );
+        assert!(!store.idle().is_due(Instant::now()));
+    }
+
+    #[test]
+    fn an_open_picker_counts_as_activity_until_it_closes() {
+        let idle = IdleDeadline::new(Instant::now());
+        let long_ago = Instant::now() - Duration::from_secs(3600);
+        idle.arm(long_ago);
+        {
+            let _open = PickerOpen::new(&idle);
+            assert!(!idle.is_due(Instant::now()));
+        }
+        // Closed just now, so the delay restarts from here.
+        assert!(!idle.is_due(Instant::now()));
+        assert!(idle.is_due(idle_past(Instant::now())));
     }
 
     #[test]
