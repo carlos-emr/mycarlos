@@ -91,7 +91,8 @@ built, tested, or independently reviewed.
   sensitive operations, with a short grace period except when an actively exploited critical issue
   requires immediate action.
 - Default automatic locking to five minutes and allow a range of one to fifteen minutes. Conceal
-  content immediately when backgrounded.
+  content immediately when backgrounded. An import or export in progress may finish, with content
+  concealed, before an automatic lock; a manual lock cancels it.
 
 ## Consequences and open implementation gates
 

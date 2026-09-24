@@ -15,6 +15,11 @@ import type { ImportOutcome, VaultBridge, VaultSnapshot } from "./vault";
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
 const IOS_PAUSE = "Keep myCarlos open: switching apps pauses this transfer.";
+const PARTIAL_EXPORT = {
+  code: "partial_export",
+  message:
+    "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
+};
 
 const emptySnapshot: VaultSnapshot = {
   profiles: [{ id: "profile-1", displayName: "Jamie", createdAtMs: 1 }],
@@ -791,6 +796,10 @@ describe("durable vault UI", () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       importPickedFiles,
+      // A real lock answers after the import's own result has come back.
+      lock: vi.fn(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 50)),
+      ),
     });
     let visibilityState: DocumentVisibilityState = "visible";
     const visibility = vi
@@ -812,7 +821,7 @@ describe("durable vault UI", () => {
       expect(
         screen.queryByRole("heading", { name: "My records" }),
       ).not.toBeInTheDocument();
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByRole("status")).toHaveTextContent(TRANSFER_HOLD);
 
       await act(async () => {
         visibilityState = "visible";
@@ -824,9 +833,13 @@ describe("durable vault UI", () => {
       await act(async () =>
         finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
       );
-      expect(bridge.lock).toHaveBeenCalledOnce();
       expect(
         await screen.findByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      // Whoever waited on the hidden screen learns how the import went.
+      expect(
+        screen.getByText("Vault locked. 1 file(s) encrypted and imported."),
       ).toBeVisible();
 
       // The held lock is spent: a transfer in the next session does not lock.
@@ -1271,6 +1284,61 @@ describe("durable vault UI", () => {
       visibility.mockRestore();
     }
   });
+
+  it.each([
+    ["the export fails first", 0, 50],
+    ["the lock finishes first", 50, 0],
+  ])(
+    "keeps the partial-copy warning when a held export is cancelled and %s",
+    async (_, exportDelay, lockDelay) => {
+      const user = userEvent.setup();
+      let failExport!: (error: unknown) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
+        exportToPicked: vi.fn(
+          () =>
+            new Promise<void>((_, reject) => {
+              failExport = reject;
+            }),
+        ),
+        lock: vi.fn(async () => {
+          setTimeout(() => failExport(PARTIAL_EXPORT), exportDelay);
+          await new Promise((resolve) => setTimeout(resolve, lockDelay));
+        }),
+      });
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+      try {
+        render(<VaultApp bridge={bridge} />);
+        await user.click(await screen.findByText("FAKE_Results.pdf"));
+        await user.click(
+          screen.getByRole("button", { name: "Save a copy to this computer" }),
+        );
+        await user.click(screen.getByRole("button", { name: "Save a copy" }));
+        await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
+        visibility.mockReturnValue("hidden");
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        visibility.mockReturnValue("visible");
+
+        await user.click(
+          screen.getByRole("button", {
+            name: "Lock now and cancel the transfer",
+          }),
+        );
+        await screen.findByRole("heading", { name: "Unlock your vault" });
+        expect(
+          await screen.findByText(`Vault locked. ${PARTIAL_EXPORT.message}`),
+        ).toBeVisible();
+      } finally {
+        visibility.mockRestore();
+      }
+    },
+  );
 
   it("gives the native deadline the delay and reports activity at most every 10 seconds", async () => {
     vi.useFakeTimers();
@@ -1819,7 +1887,9 @@ describe("durable vault UI", () => {
       await screen.findByRole("heading", { name: "Unlock your vault" }),
     ).toBeVisible();
     expect(
-      screen.getByText("The storage operation could not be completed."),
+      screen.getByText(
+        "Vault locked. The storage operation could not be completed.",
+      ),
     ).toBeVisible();
   });
 

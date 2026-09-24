@@ -114,24 +114,25 @@ export function vaultErrorMessage(error: unknown): string {
   return "The vault operation could not be completed.";
 }
 
-/** True when the native side reports that the vault is locked, for example by
- * its own idle deadline while this screen was not running. */
-export function isLockedError(error: unknown): boolean {
+function hasErrorCode(error: unknown, code: string): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
-    (error as PublicError).code === "locked"
+    (error as PublicError).code === code
   );
 }
 
+/** True when the native side reports that the vault is locked, for example by
+ * its own idle deadline while this screen was not running. */
+export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
+
+/** True when an operation stopped because the vault locked while it ran. */
+export const isCancelledError = (error: unknown) =>
+  hasErrorCode(error, "cancelled");
+
 /** True when the native side reports that there is no vault to unlock or erase. */
-export function isMissingVaultError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as PublicError).code === "missing"
-  );
-}
+export const isMissingVaultError = (error: unknown) =>
+  hasErrorCode(error, "missing");
 
 function isNativeRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

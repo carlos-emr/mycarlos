@@ -3,35 +3,46 @@
 //! been suspended before its own timer could ask for a lock.
 //!
 //! The renderer still hides content at the configured delay and asks for the
-//! lock itself. This deadline fires `MARGIN` later, which covers how often the
-//! renderer reports activity, so the two never race while the renderer works.
+//! lock itself. This deadline fires `MARGIN` (15 s) after the last activity it
+//! hears of, which covers the renderer's 10-second input throttle and the
+//! 2-second native check, so the two never race while the renderer works.
+//!
+//! Locking drops the keys; it cannot clear a hung renderer's screen, which
+//! keeps its last frame until it recovers and runs its own lock.
 
 use std::{
     ops::Add,
-    sync::{Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::{Duration, Instant, SystemTime},
 };
 
-/// How much later than the renderer the native deadline fires.
+/// How long after the last activity the native deadline fires, beyond the delay.
 pub const MARGIN: Duration = Duration::from_secs(15);
-/// Time in a picker the app opened counts as activity for at most this long,
-/// the longest auto-lock delay, as it does in the renderer.
-pub const PICKER_GRACE: Duration = Duration::from_secs(15 * 60);
-/// Until the renderer sends the chosen delay, assume the longest one it offers,
-/// so that a lost update can never make this deadline fire before the
+/// A hold (a picker the app opened, or the opening of the files chosen in one)
+/// counts as activity for at most this long, the longest auto-lock delay, as
+/// a picker does in the renderer. So does a transfer's progress, measured from
+/// when it began, so a source that trickles forever cannot keep the vault open.
+pub const GRACE: Duration = Duration::from_secs(15 * 60);
+/// Until the renderer sends the chosen delay in a session, assume the longest
+/// one it offers, so a lost update cannot make this deadline fire before the
 /// renderer's and lock the vault under a user who is still reading.
 const DEFAULT_DELAY: Duration = Duration::from_secs(15 * 60);
 
-/// A moment on two clocks. `Instant` stops while macOS, iOS or Linux sleeps, so
-/// on its own it would not count a night with the lid closed as idle time. The
-/// wall clock does, as the renderer's deadline does, but it can be set back.
-/// The deadline is due when either clock says so.
+/// A moment on two clocks. `Instant` stops while macOS, iOS, Linux or Android
+/// sleeps, so on its own it would not count a night with the lid closed as idle
+/// time. The wall clock does, as the renderer's deadline does, but it can be
+/// changed: set forward, it fires the deadline early (as it does the
+/// renderer's); set back, the monotonic clock still fires it. The deadline is
+/// due when either clock says so.
 #[derive(Clone, Copy)]
 pub struct Now {
     pub mono: Instant,
     pub wall: SystemTime,
 }
 
+/// Pairs a monotonic time with the wall clock read now. Production code only
+/// converts `Instant::now()`; tests that pass other instants exercise the
+/// monotonic clock, and build a `Now` themselves to exercise the wall clock.
 impl From<Instant> for Now {
     fn from(mono: Instant) -> Self {
         Self {
@@ -47,7 +58,7 @@ struct State {
     /// Only an unlocked session has a deadline.
     armed: bool,
     delay: Duration,
-    pickers_open: usize,
+    holds: usize,
     mono: Times<Instant>,
     wall: Times<SystemTime>,
 }
@@ -56,7 +67,7 @@ struct State {
 #[derive(Clone, Copy)]
 struct Times<T> {
     last_activity: T,
-    picker_since: T,
+    held_since: T,
 }
 
 impl IdleDeadline {
@@ -65,7 +76,7 @@ impl IdleDeadline {
         Self(Mutex::new(State {
             armed: false,
             delay: DEFAULT_DELAY,
-            pickers_open: 0,
+            holds: 0,
             mono: Times::new(now.mono),
             wall: Times::new(now.wall),
         }))
@@ -84,17 +95,26 @@ impl IdleDeadline {
         state.wall.last_activity = now.wall;
     }
 
-    /// A locked vault has nothing to lock.
+    /// A locked vault has nothing to lock. The next session starts from the
+    /// default delay until the renderer sends its own.
     pub fn disarm(&self) {
-        self.state().armed = false;
+        let mut state = self.state();
+        state.armed = false;
+        state.delay = DEFAULT_DELAY;
     }
 
-    pub fn set_delay_minutes(&self, minutes: u64) {
-        self.state().delay = Duration::from_secs(60 * minutes.clamp(1, 15));
+    /// Takes the renderer's delay (clamped to 1-15 minutes). The renderer
+    /// restarts its own deadline when it sends one, so this is activity too.
+    pub fn set_delay_minutes(&self, minutes: u64, now: impl Into<Now>) {
+        let now = now.into();
+        let mut state = self.state();
+        state.delay = Duration::from_secs(60 * minutes.clamp(1, 15));
+        state.mono.touch(now.mono);
+        state.wall.touch(now.wall);
     }
 
-    /// Records activity: a command, the renderer reporting user input, or a
-    /// transfer making progress.
+    /// Records activity: a command, or the renderer reporting user input or
+    /// sending the delay.
     pub fn touch(&self, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
@@ -102,34 +122,63 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
-    /// Starts a stretch that counts as activity until it ends, up to the grace:
-    /// a picker, or opening the files chosen in one.
-    pub fn picker_opened(&self, now: impl Into<Now>) {
-        let now = now.into();
+    /// Records a transfer's progress, which counts as activity only up to the
+    /// grace after the transfer began.
+    fn progressed(&self, now: Now, began: Now) {
         let mut state = self.state();
-        if state.pickers_open == 0 {
-            state.mono.picker_since = now.mono;
-            state.wall.picker_since = now.wall;
-        }
-        state.pickers_open += 1;
+        state.mono.touch(now.mono.min(began.mono + GRACE));
+        state.wall.touch(now.wall.min(began.wall + GRACE));
     }
 
-    pub fn picker_closed(&self, now: impl Into<Now>) {
+    /// Starts a stretch that counts as activity until it ends, up to the grace:
+    /// a picker, or opening the files chosen in one.
+    pub fn hold_started(&self, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
-        let open = state.pickers_open > 0;
-        state.mono.picker_closed(now.mono, open);
-        state.wall.picker_closed(now.wall, open);
-        state.pickers_open = state.pickers_open.saturating_sub(1);
+        if state.holds == 0 {
+            state.mono.held_since = now.mono;
+            state.wall.held_since = now.wall;
+        }
+        state.holds += 1;
+    }
+
+    pub fn hold_ended(&self, now: impl Into<Now>) {
+        let now = now.into();
+        let mut state = self.state();
+        let open = state.holds > 0;
+        state.mono.hold_ended(now.mono, open);
+        state.wall.hold_ended(now.wall, open);
+        state.holds = state.holds.saturating_sub(1);
     }
 
     pub fn is_due(&self, now: impl Into<Now>) -> bool {
         let now = now.into();
         let state = self.state();
-        let open = state.pickers_open > 0;
+        let open = state.holds > 0;
         state.armed
             && (state.mono.is_due(now.mono, open, state.delay)
                 || state.wall.is_due(now.wall, open, state.delay))
+    }
+}
+
+/// Reports one transfer's progress to the deadline. Made once per operation,
+/// so an import of many files has one grace between them.
+#[derive(Clone)]
+pub struct Progress {
+    idle: Arc<IdleDeadline>,
+    began: Now,
+}
+
+impl Progress {
+    pub fn new(idle: &Arc<IdleDeadline>, now: impl Into<Now>) -> Self {
+        Self {
+            idle: Arc::clone(idle),
+            began: now.into(),
+        }
+    }
+
+    pub fn report(&self, now: impl Into<Now>) {
+        self.idle.progressed(now.into(), self.began);
     }
 }
 
@@ -137,7 +186,7 @@ impl<T: Copy + Ord + Add<Duration, Output = T>> Times<T> {
     fn new(now: T) -> Self {
         Self {
             last_activity: now,
-            picker_since: now,
+            held_since: now,
         }
     }
 
@@ -145,23 +194,23 @@ impl<T: Copy + Ord + Add<Duration, Output = T>> Times<T> {
         self.last_activity = self.last_activity.max(now);
     }
 
-    /// Until when an open picker has counted as activity: now, capped at the
-    /// grace. With no picker open, it adds nothing.
-    fn picker_active_until(&self, now: T, open: bool) -> T {
+    /// Until when an open hold has counted as activity: now, capped at the
+    /// grace. With no hold open, it adds nothing.
+    fn held_until(&self, now: T, open: bool) -> T {
         if open {
-            now.min(self.picker_since + PICKER_GRACE)
+            now.min(self.held_since + GRACE)
         } else {
             self.last_activity
         }
     }
 
-    fn picker_closed(&mut self, now: T, open: bool) {
-        let active_until = self.picker_active_until(now, open);
+    fn hold_ended(&mut self, now: T, open: bool) {
+        let active_until = self.held_until(now, open);
         self.touch(active_until);
     }
 
     fn is_due(&self, now: T, open: bool, delay: Duration) -> bool {
-        let last = self.last_activity.max(self.picker_active_until(now, open));
+        let last = self.last_activity.max(self.held_until(now, open));
         now >= last + delay + MARGIN
     }
 }
@@ -175,7 +224,7 @@ mod tests {
     // Armed with a five-minute delay, the renderer's default.
     fn armed(start: impl Into<Now> + Copy) -> IdleDeadline {
         let deadline = IdleDeadline::new(start);
-        deadline.set_delay_minutes(5);
+        deadline.set_delay_minutes(5, start);
         deadline.arm(start);
         deadline
     }
@@ -233,26 +282,30 @@ mod tests {
     fn the_delay_follows_the_setting_clamped_to_one_to_fifteen_minutes() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.set_delay_minutes(1);
+        deadline.set_delay_minutes(1, start);
         assert!(!deadline.is_due(start + MINUTE));
         assert!(deadline.is_due(start + MINUTE + MARGIN));
-        deadline.set_delay_minutes(0);
+        deadline.set_delay_minutes(0, start);
         assert!(deadline.is_due(start + MINUTE + MARGIN));
-        deadline.set_delay_minutes(15);
+        deadline.set_delay_minutes(15, start);
         assert!(!deadline.is_due(start + 15 * MINUTE));
         assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
-        deadline.set_delay_minutes(60);
+        deadline.set_delay_minutes(60, start);
         assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
+        // Sending a delay is activity.
+        deadline.set_delay_minutes(1, start + 20 * MINUTE);
+        assert!(!deadline.is_due(start + 21 * MINUTE));
+        assert!(deadline.is_due(start + 21 * MINUTE + MARGIN));
     }
 
     #[test]
     fn an_open_picker_counts_as_activity_for_at_most_the_grace() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.picker_opened(start + MINUTE);
+        deadline.hold_started(start + MINUTE);
         assert!(!deadline.is_due(start + 14 * MINUTE));
         // After the grace, the ordinary delay runs from its end.
-        let grace_end = start + MINUTE + PICKER_GRACE;
+        let grace_end = start + MINUTE + GRACE;
         assert!(!deadline.is_due(grace_end + 5 * MINUTE));
         assert!(deadline.is_due(grace_end + 5 * MINUTE + MARGIN));
     }
@@ -261,15 +314,15 @@ mod tests {
     fn closing_a_picker_restarts_the_delay_only_within_the_grace() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.picker_opened(start);
-        deadline.picker_closed(start + 10 * MINUTE);
+        deadline.hold_started(start);
+        deadline.hold_ended(start + 10 * MINUTE);
         assert!(!deadline.is_due(start + 15 * MINUTE));
         assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
 
         let deadline = armed(start);
-        deadline.picker_opened(start);
+        deadline.hold_started(start);
         // Left open for an hour: the time counts only up to the grace.
-        deadline.picker_closed(start + 60 * MINUTE);
+        deadline.hold_ended(start + 60 * MINUTE);
         assert!(deadline.is_due(start + 60 * MINUTE));
     }
 
@@ -277,12 +330,12 @@ mod tests {
     fn overlapping_pickers_count_from_the_first() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.picker_opened(start);
-        deadline.picker_opened(start + 10 * MINUTE);
-        deadline.picker_closed(start + 11 * MINUTE);
+        deadline.hold_started(start);
+        deadline.hold_started(start + 10 * MINUTE);
+        deadline.hold_ended(start + 11 * MINUTE);
         // One is still open, from the start.
         assert!(!deadline.is_due(start + 14 * MINUTE));
-        assert!(deadline.is_due(start + PICKER_GRACE + 5 * MINUTE + MARGIN));
+        assert!(deadline.is_due(start + GRACE + 5 * MINUTE + MARGIN));
     }
 
     #[test]
@@ -298,7 +351,7 @@ mod tests {
         assert!(deadline.is_due(woke));
         // An open picker's grace is counted the same way.
         let deadline = armed(Now { mono: start, wall });
-        deadline.picker_opened(Now { mono: start, wall });
+        deadline.hold_started(Now { mono: start, wall });
         assert!(deadline.is_due(woke));
     }
 
@@ -307,15 +360,11 @@ mod tests {
         let start = Instant::now();
         let wall = SystemTime::now();
         let deadline = armed(Now { mono: start, wall });
-        let later = Now {
+        // The monotonic clock still fires it.
+        assert!(deadline.is_due(Now {
             mono: start + 5 * MINUTE + MARGIN,
             wall: wall - 60 * MINUTE,
-        };
-        deadline.touch(Now {
-            mono: start,
-            wall: later.wall,
-        });
-        assert!(deadline.is_due(later));
+        }));
     }
 
     #[test]
@@ -329,13 +378,66 @@ mod tests {
         };
         deadline.touch(at(4));
         assert!(!deadline.is_due(at(9)));
-        deadline.picker_opened(at(9));
+        deadline.hold_started(at(9));
         assert!(!deadline.is_due(at(20)));
-        deadline.picker_closed(at(20));
+        deadline.hold_ended(at(20));
         assert!(!deadline.is_due(at(25)));
         assert!(deadline.is_due(Now {
             mono: start + 25 * MINUTE + MARGIN,
             wall: wall + 25 * MINUTE + MARGIN,
         }));
+    }
+
+    #[test]
+    fn a_transfer_counts_as_activity_for_at_most_the_grace_from_its_start() {
+        let start = Instant::now();
+        let wall = SystemTime::now();
+        let at = |minutes: u32| Now {
+            mono: start + minutes * MINUTE,
+            wall: wall + minutes * MINUTE,
+        };
+        let deadline = Arc::new(armed(at(0)));
+        let progress = Progress::new(&deadline, at(1));
+        progress.report(at(10));
+        assert!(!deadline.is_due(at(14)));
+        // Progress past the grace holds the deadline where the grace ended.
+        progress.report(at(40));
+        assert!(!deadline.is_due(at(20)));
+        assert!(deadline.is_due(Now {
+            mono: start + MINUTE + GRACE + 5 * MINUTE + MARGIN,
+            wall: wall + MINUTE + GRACE + 5 * MINUTE + MARGIN,
+        }));
+        // On either clock.
+        let past_the_grace = MINUTE + GRACE + 5 * MINUTE + MARGIN;
+        let deadline = Arc::new(armed(at(0)));
+        let progress = Progress::new(&deadline, at(1));
+        progress.report(Now {
+            mono: start + 40 * MINUTE,
+            wall: wall + MINUTE,
+        });
+        assert!(deadline.is_due(Now {
+            mono: start + past_the_grace,
+            wall: wall + MINUTE,
+        }));
+        let deadline = Arc::new(armed(at(0)));
+        let progress = Progress::new(&deadline, at(1));
+        progress.report(Now {
+            mono: start + MINUTE,
+            wall: wall + 40 * MINUTE,
+        });
+        assert!(deadline.is_due(Now {
+            mono: start + MINUTE,
+            wall: wall + past_the_grace,
+        }));
+    }
+
+    #[test]
+    fn locking_returns_to_the_default_delay() {
+        let start = Instant::now();
+        let deadline = armed(start);
+        deadline.disarm();
+        deadline.arm(start);
+        assert!(!deadline.is_due(start + 15 * MINUTE));
+        assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
     }
 }

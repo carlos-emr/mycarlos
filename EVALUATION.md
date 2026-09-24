@@ -63,8 +63,10 @@ In a native build, additionally:
 5. Export over an existing synthetic file and confirm a deliberately corrupted record leaves the
    existing destination unchanged.
 6. Permanently delete one record, restart, unlock, and confirm it remains absent.
-7. Background the app during import/export and confirm the UI conceals immediately, the native
-   operation is cancelled at its next I/O boundary, and the vault reaches the locked state.
+7. Background the app during import/export and confirm the UI conceals immediately, the transfer
+   completes, and the vault then reaches the locked state. Repeat, and on the hidden screen choose
+   **Lock now and cancel the transfer**: confirm the native operation is cancelled at its next I/O
+   boundary and the vault locks.
 8. On Android, use a test document provider that fails after accepting some bytes. Confirm the app
    says the destination may contain a partial readable copy, then inspect and delete that
    destination before retrying. A provider-backed destination is not an atomic export.
