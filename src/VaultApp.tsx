@@ -144,14 +144,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       return;
     }
     if (!concealedRef.current) setLockFailed(false);
+    // Set now: the transfer may settle before the next render updates it.
+    lockHeldRef.current = true;
     setConcealed(true);
     setLockHeld(true);
   }, [requestLock]);
-
-  useEffect(() => {
-    if (status === "unlocked")
-      bridge.setAutoLock(autoLockMinutes).catch(() => undefined);
-  }, [autoLockMinutes, bridge, status]);
 
   const platformRef = useRef("");
   useEffect(() => {
@@ -243,9 +240,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     const delayMs = autoLockMinutes * 60 * 1000;
     let deadline = Date.now() + delayMs;
     let timer = 0;
+    // Until the native deadline has the delay, it assumes the longest, so a
+    // failed send is retried on every check rather than given up.
+    let delaySent = false;
+    const sendDelay = () => {
+      bridge.setAutoLock(autoLockMinutes).then(
+        () => {
+          delaySent = true;
+        },
+        () => undefined,
+      );
+    };
     const inPickerGrace = () =>
       Date.now() - pickerOpenedAtRef.current < PICKER_GRACE_MS;
     const check = () => {
+      if (!delaySent) sendDelay();
       // Time spent in a picker the app opened is not idle time: the user is
       // choosing files for this vault. The deadline restarts once it closes.
       if (pickersOpenRef.current > 0 && inPickerGrace())

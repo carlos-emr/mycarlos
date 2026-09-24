@@ -611,8 +611,13 @@ impl VaultStore {
 
     pub fn lock(&self) {
         self.cancel_io.store(true, Ordering::Release);
-        *self.session() = None;
-        self.idle.disarm();
+        {
+            // Disarmed under the session lock, so an unlock cannot slip between
+            // the two and be left unlocked with no deadline.
+            let mut guard = self.session();
+            *guard = None;
+            self.idle.disarm();
+        }
         self.cancel_io.store(false, Ordering::Release);
     }
 
@@ -4286,7 +4291,7 @@ mod tests {
 
     /// Just past the default delay and the margin after `from`.
     fn idle_past(from: Instant) -> Instant {
-        from + Duration::from_secs(5 * 60) + crate::idle::MARGIN + Duration::from_secs(1)
+        from + Duration::from_secs(15 * 60) + crate::idle::MARGIN + Duration::from_secs(1)
     }
 
     #[test]
@@ -4346,7 +4351,7 @@ mod tests {
             .imported[0];
         // Due exactly the delay and margin after `before` unless there was
         // activity after it.
-        let due_at = |from: Instant| from + Duration::from_secs(5 * 60) + crate::idle::MARGIN;
+        let due_at = |from: Instant| from + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
         assert!(!store.idle().is_due(due_at(before)));
 
         // An export's writes count too.

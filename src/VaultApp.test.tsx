@@ -1305,6 +1305,31 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("sends the delay again until the native deadline accepts it", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        setAutoLock: vi
+          .fn()
+          .mockRejectedValueOnce(new Error("IPC unavailable"))
+          .mockResolvedValue(undefined),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      expect(bridge.setAutoLock).toHaveBeenCalledOnce();
+      await act(async () => vi.advanceTimersByTime(10_000));
+      expect(bridge.setAutoLock).toHaveBeenCalledTimes(2);
+      expect(bridge.setAutoLock).toHaveBeenLastCalledWith(5);
+      // Once accepted, it is not sent again.
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(bridge.setAutoLock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("gives the native deadline the delay after an unlock", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();

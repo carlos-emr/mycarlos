@@ -478,17 +478,18 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
     true
 }
 
-/// Counts time in a native picker as activity until it closes, on every path.
-struct PickerOpen<'a>(&'a IdleDeadline);
+/// Counts time until it drops as activity, capped by the picker grace, on every
+/// path: a native picker, or opening the files chosen in one.
+struct ActivityHold<'a>(&'a IdleDeadline);
 
-impl<'a> PickerOpen<'a> {
+impl<'a> ActivityHold<'a> {
     fn new(idle: &'a IdleDeadline) -> Self {
         idle.picker_opened(Instant::now());
         Self(idle)
     }
 }
 
-impl Drop for PickerOpen<'_> {
+impl Drop for ActivityHold<'_> {
     fn drop(&mut self) {
         self.0.picker_closed(Instant::now());
     }
@@ -646,7 +647,7 @@ async fn vault_import_pick(
         store.ensure_import_allowed(profile_id)
     })
     .await?;
-    let _open = PickerOpen::new(store.idle());
+    let _open = ActivityHold::new(store.idle());
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -679,8 +680,13 @@ async fn vault_import_picked(
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
         let mut sources = Vec::with_capacity(paths.len());
-        for path in paths {
-            sources.push(open_import_source(&app, path)?);
+        {
+            // A provider may download a whole document before the open returns,
+            // with no progress to report meanwhile.
+            let _opening = ActivityHold::new(store.idle());
+            for path in paths {
+                sources.push(open_import_source(&app, path)?);
+            }
         }
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
     })
@@ -741,7 +747,7 @@ async fn vault_export_pick(
     let session = picks.session();
     let suggested_name =
         run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
-    let _open = PickerOpen::new(store.idle());
+    let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -784,10 +790,12 @@ async fn vault_export_picked(
     run_blocking(store.inner(), move |store| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
+        let opening = ActivityHold::new(store.idle());
         let mut output = app
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
+        drop(opening);
         Ok(store.export(record_id, &mut output))
     })
     .await?
@@ -1007,7 +1015,7 @@ mod tests {
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
     /// Just past the default delay and the margin after `from`.
     fn idle_past(from: Instant) -> Instant {
-        from + Duration::from_secs(5 * 60) + idle::MARGIN + Duration::from_secs(1)
+        from + Duration::from_secs(15 * 60) + idle::MARGIN + Duration::from_secs(1)
     }
 
     #[test]
@@ -1040,11 +1048,19 @@ mod tests {
         let store = Arc::new(VaultStore::new(temp.path().join("vault")));
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let long_ago = Instant::now() - Duration::from_secs(3600);
+        let run = |operation: fn(&VaultStore) -> Result<bool, VaultError>| {
+            tauri::async_runtime::block_on(run_blocking(&store, operation))
+                .unwrap_or_else(|_| panic!("the command failed"))
+        };
+        // When it starts: the command sees a deadline that is not due.
         store.idle().arm(long_ago);
         assert!(store.idle().is_due(Instant::now()));
-        assert!(
-            tauri::async_runtime::block_on(run_blocking(&store, |store| store.snapshot())).is_ok()
-        );
+        assert!(!run(|store| Ok(store.idle().is_due(Instant::now()))));
+        // And when it ends: one that ran for an hour leaves it not due either.
+        assert!(!run(|store| {
+            store.idle().arm(Instant::now() - Duration::from_secs(3600));
+            Ok(false)
+        }));
         assert!(!store.idle().is_due(Instant::now()));
     }
 
@@ -1054,7 +1070,7 @@ mod tests {
         let long_ago = Instant::now() - Duration::from_secs(3600);
         idle.arm(long_ago);
         {
-            let _open = PickerOpen::new(&idle);
+            let _open = ActivityHold::new(&idle);
             assert!(!idle.is_due(Instant::now()));
         }
         // Closed just now, so the delay restarts from here.
