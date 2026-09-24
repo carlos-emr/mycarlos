@@ -1,7 +1,7 @@
 mod idle;
 mod vault;
 
-use idle::IdleDeadline;
+use idle::{IdleDeadline, Transfer};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
@@ -214,7 +214,8 @@ struct PickedExportRequest {
 /// exported there. Splitting each operation into a pick and a run lets the
 /// renderer tell a picker it opened from a real backgrounding, and lets a
 /// manual lock, or the native idle deadline, during the I/O phase still cancel
-/// the transfer (an automatic lock in the renderer waits for it). Entries are dropped when
+/// the transfer (an automatic or background lock in the renderer waits for
+/// it). Entries are dropped when
 /// used, when the vault locks or resets, and after a bounded time.
 ///
 /// A picker can still be open when the vault locks and return afterwards, so
@@ -468,15 +469,15 @@ async fn vault_lock(
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 /// The renderer reports input at most this often (`TOUCH_THROTTLE_MS`).
 const RENDERER_TOUCH_THROTTLE: Duration = Duration::from_secs(10);
-// The native deadline must not fire while the renderer is working: activity
-// reaches it up to one throttle late, and it is checked one interval late.
-const _: () = assert!(
-    idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs() + IDLE_CHECK_INTERVAL.as_secs()
-);
+// The native deadline must not fire while the renderer is working: input
+// reaches it up to one throttle late, which the margin must cover. The check
+// interval only makes the native lock later.
+const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs());
 
-/// Locks the vault as the `vault_lock` command does, clearing pending picks,
-/// once it has been idle past its deadline. Returns whether it locked. This is the backstop for a renderer
-/// that hung, crashed or was suspended before its own timer could lock.
+/// Locks the vault as the `vault_lock` command does, and clears pending picks,
+/// once it has been idle past its deadline. Returns whether it locked. This is
+/// the backstop for a renderer that hung, crashed or was suspended before its
+/// own timer could lock.
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
@@ -486,8 +487,8 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
 }
 
 /// Counts time until it drops as activity, capped by the grace, on every path:
-/// a native picker, or opening the files chosen in one (a provider may
-/// download a whole document before the open returns).
+/// a native picker, or opening what was chosen in one (the files to import,
+/// which a provider may download first, or the export destination).
 struct ActivityHold<'a>(&'a IdleDeadline);
 
 impl<'a> ActivityHold<'a> {
@@ -507,7 +508,7 @@ impl Drop for ActivityHold<'_> {
 /// at most every 10 seconds.
 #[tauri::command]
 fn vault_touch(store: State<'_, Arc<VaultStore>>) {
-    store.idle().touch(Instant::now());
+    store.idle().user_input(Instant::now());
 }
 
 #[derive(Deserialize)]
@@ -539,16 +540,18 @@ where
     F: FnOnce(&VaultStore) -> Result<T, VaultError> + Send + 'static,
 {
     // A command is activity when it starts and again when it ends, so a long
-    // one does not leave the deadline where it was before it began.
+    // one does not leave the deadline where it was before it began. One the
+    // lock cut off is not: that lock must not be undone by its own cancel.
     let idle = Arc::clone(store.idle());
     idle.touch(Instant::now());
     let store = Arc::clone(store);
     let result = tauri::async_runtime::spawn_blocking(move || operation(&store))
         .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into);
-    idle.touch(Instant::now());
-    result
+        .map_err(|_| PublicError::from(VaultError::Storage))?;
+    if !matches!(result, Err(VaultError::Cancelled)) {
+        idle.touch(Instant::now());
+    }
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -687,6 +690,8 @@ async fn vault_import_picked(
         folder_ids: request.folder_ids.clone(),
     };
     let paths = picks.take_import(request.pick_id, &picked_for)?;
+    // Opening the files and importing them share one grace.
+    let _transfer = Transfer::new(store.idle());
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
@@ -779,6 +784,9 @@ async fn vault_export_picked(
 ) -> CommandResult<()> {
     let record_id = request.record_id;
     let destination = picks.take_export(request.pick_id, record_id)?;
+    // Both passes of a provider export, and opening its document, share one
+    // grace.
+    let _transfer = Transfer::new(store.idle());
 
     if let Ok(destination_path) = destination.clone().into_path() {
         return run_blocking(store.inner(), move |store| {
@@ -1082,6 +1090,22 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    #[test]
+    fn a_command_the_lock_cancelled_is_not_activity_when_it_ends() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let armed_at = Instant::now();
+        std::thread::sleep(Duration::from_millis(2));
+        let result = tauri::async_runtime::block_on(run_blocking(&store, move |store| {
+            // As if it had run since `armed_at`, then been cut off.
+            store.idle().arm(armed_at);
+            Err::<(), _>(VaultError::Cancelled)
+        }));
+        assert!(result.is_err());
+        assert!(store.idle().is_due(due_at(armed_at)));
     }
 
     #[test]

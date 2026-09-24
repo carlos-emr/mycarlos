@@ -39,9 +39,10 @@ const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 // Time in a picker counts as activity for at most this long, the longest
 // auto-lock delay, so a picker left open cannot keep the vault unlocked.
 const PICKER_GRACE_MS = 15 * 60 * 1000;
-// User input is reported to the native idle deadline at most this often. The
-// native deadline fires 15 seconds after the last report and is checked every
-// 2 seconds, so it fires at least 3 seconds after this screen's own deadline.
+// User input is reported to the native idle deadline at most this often, so the
+// last report is less than 10 seconds before the last input. The native
+// deadline fires the delay plus 15 seconds after the last report, so at least
+// 5 seconds after this screen's own deadline (its 2-second check only adds).
 const TOUCH_THROTTLE_MS = 10_000;
 const IOS_TRANSFER_NOTE =
   "Keep myCarlos open: switching apps pauses this transfer.";
@@ -76,9 +77,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setLockHeld(held);
   }, []);
   const transfersRef = useRef(0);
-  // Operations started through `run` and not yet finished. A held lock waits
-  // for the transfer's whole operation, so its outcome is shown first.
+  // Operations started through `run` and not yet finished, and whether one of
+  // them ran a transfer. An automatic lock waits for such an operation to
+  // finish, so the transfer's outcome is shown first.
   const runsRef = useRef(0);
+  const transferRanRef = useRef(false);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
@@ -113,16 +116,6 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
   }, []);
 
-  // Leaves the session: work still in flight from it is ignored from now on.
-  const markLocked = useCallback(() => {
-    sessionRef.current += 1;
-    setSnapshot(null);
-    setConcealed(false);
-    setLockFailed(false);
-    holdLock(false);
-    setStatus("locked");
-  }, [holdLock]);
-
   const lock = useCallback(async () => {
     if (lockingRef.current) return;
     lockingRef.current = true;
@@ -130,7 +123,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     const endsTransfer = lockHeldRef.current || transfersRef.current > 0;
     try {
       await bridge.lock();
-      markLocked();
+      sessionRef.current += 1;
+      setSnapshot(null);
+      setConcealed(false);
+      setLockFailed(false);
+      holdLock(false);
+      setStatus("locked");
       setNotice((current) =>
         endsTransfer ? lockedNotice(current) : "Vault locked.",
       );
@@ -142,7 +140,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } finally {
       lockingRef.current = false;
     }
-  }, [bridge, markLocked]);
+  }, [bridge, holdLock]);
 
   // Read through a ref so that `requestLock` keeps its identity: the automatic
   // lock effect depends on it, and re-running that effect resets its deadline.
@@ -165,8 +163,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Automatic locks: during a transfer, hide content and lock once the
   // operation it belongs to has finished.
   const lockWhenIdle = useCallback(() => {
-    const waiting =
-      transfersRef.current > 0 || (lockHeldRef.current && runsRef.current > 0);
+    const waiting = transfersRef.current > 0 || transferRanRef.current;
     if (!waiting) {
       requestLock(true);
       return;
@@ -238,6 +235,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       transfersRef.current += 1;
+      transferRanRef.current = true;
       // iOS suspends an app in the background, and its transfer with it.
       if (platformRef.current === "ios") setNotice(IOS_TRANSFER_NOTE);
       try {
@@ -359,31 +357,37 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await operation();
     } catch (error) {
+      // The unlock screen is also shown when the startup status check fails,
+      // and after a failed erase. If there is no vault after all, offer to
+      // create one: nothing on the unlock screen can succeed, and only a
+      // restart would otherwise leave it.
+      if (isMissingVaultError(error)) {
+        setStatus((current) => (current === "locked" ? "absent" : current));
+        setNotice(vaultErrorMessage(error));
+        return;
+      }
+      // Failures that only say the vault locked, which is already shown.
+      const lockedOut = isLockedError(error) || isCancelledError(error);
       if (sessionRef.current !== startedIn) {
-        // The vault locked while this ran, which cancelled it. Say so only
-        // when the failure left something to act on, such as a partial copy.
-        if (!isCancelledError(error))
-          setNotice(lockedNotice(vaultErrorMessage(error)));
+        // The vault locked while this ran. Say more only when the failure
+        // left something to act on, such as a partial copy.
+        if (!lockedOut) setNotice(lockedNotice(vaultErrorMessage(error)));
         return;
       }
       // A lock under way cancelled it, and says so itself when it finishes.
       if (lockingRef.current && isCancelledError(error)) return;
-      // The native idle deadline locked the vault, for example while this
-      // screen was suspended. Show that rather than a failure to retry.
-      if (isLockedError(error) && status === "unlocked") {
-        markLocked();
-        setNotice("Vault locked.");
+      if (lockedOut && status === "unlocked") {
+        // The native idle deadline locked the vault, for example while this
+        // screen was suspended: a command then fails as locked, and a transfer
+        // it cut off as cancelled. Lock here too, which also confirms it.
+        requestLock(true);
         return;
       }
-      // The unlock screen is also shown when the startup status check fails. If
-      // there is no vault after all, offer to create one: nothing on the unlock
-      // screen can succeed, and only a restart would otherwise leave it.
-      if (isMissingVaultError(error))
-        setStatus((current) => (current === "locked" ? "absent" : current));
       setNotice(vaultErrorMessage(error));
     } finally {
       setBusy(false);
       runsRef.current -= 1;
+      if (runsRef.current === 0) transferRanRef.current = false;
       if (
         runsRef.current === 0 &&
         transfersRef.current === 0 &&

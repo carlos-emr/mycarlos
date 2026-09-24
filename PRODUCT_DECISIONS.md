@@ -92,7 +92,7 @@ built, tested, or independently reviewed.
   requires immediate action.
 - Default automatic locking to five minutes and allow a range of one to fifteen minutes. Conceal
   content immediately when backgrounded. An import or export in progress may finish, with content
-  concealed, before an automatic lock; a manual lock cancels it.
+  concealed, before an automatic or background lock; a manual lock cancels it.
 
 ## Consequences and open implementation gates
 

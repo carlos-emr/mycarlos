@@ -1,4 +1,4 @@
-use crate::idle::{IdleDeadline, Progress};
+use crate::idle::IdleDeadline;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -292,7 +292,7 @@ pub struct ImportSource {
 struct CancellableReader {
     inner: Box<dyn Read + Send>,
     cancelled: Arc<AtomicBool>,
-    progress: Option<Progress>,
+    progress: Option<Arc<IdleDeadline>>,
 }
 
 impl CancellableReader {
@@ -305,10 +305,10 @@ impl CancellableReader {
     }
 
     /// Counts each read that moves data as activity: a transfer that is making
-    /// progress keeps the session unlocked, up to the grace, and one that has
-    /// stalled does not.
-    fn with_progress(mut self, progress: &Progress) -> Self {
-        self.progress = Some(progress.clone());
+    /// progress keeps the session unlocked, up to the grace of the transfer
+    /// command it belongs to, and one blocked in a read does not.
+    fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
+        self.progress = Some(Arc::clone(idle));
         self
     }
 }
@@ -320,8 +320,8 @@ impl Read for CancellableReader {
         }
         let count = self.inner.read(buffer)?;
         if count > 0 {
-            if let Some(progress) = &self.progress {
-                progress.report(Instant::now());
+            if let Some(idle) = &self.progress {
+                idle.touch(Instant::now());
             }
         }
         Ok(count)
@@ -331,7 +331,7 @@ impl Read for CancellableReader {
 struct CancellableWriter<W> {
     inner: W,
     cancelled: Arc<AtomicBool>,
-    progress: Option<Progress>,
+    progress: Option<Arc<IdleDeadline>>,
 }
 
 impl<W> CancellableWriter<W> {
@@ -344,8 +344,8 @@ impl<W> CancellableWriter<W> {
     }
 
     /// As for `CancellableReader::with_progress`.
-    fn with_progress(mut self, progress: &Progress) -> Self {
-        self.progress = Some(progress.clone());
+    fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
+        self.progress = Some(Arc::clone(idle));
         self
     }
 }
@@ -357,8 +357,8 @@ impl<W: Write> Write for CancellableWriter<W> {
         }
         let count = self.inner.write(buffer)?;
         if count > 0 {
-            if let Some(progress) = &self.progress {
-                progress.report(Instant::now());
+            if let Some(idle) = &self.progress {
+                idle.touch(Instant::now());
             }
         }
         Ok(count)
@@ -636,7 +636,9 @@ impl VaultStore {
 
     /// Cancels any transfer, then clears the session if `due` still holds once
     /// the session lock is taken: an unlock may have started a new session
-    /// while this waited for the lock.
+    /// while this waited for the lock. The cancel must come first, since a
+    /// transfer holds the session lock until it stops; in that rare race it
+    /// can also stop a transfer the new session had just started.
     fn lock_if(&self, due: impl Fn() -> bool) -> bool {
         self.cancel_io.store(true, Ordering::Release);
         let locked = {
@@ -889,7 +891,6 @@ impl VaultStore {
         let mut staged = Vec::new();
         let mut skipped_duplicates = Vec::new();
 
-        let progress = Progress::new(&self.idle, Instant::now());
         let result = (|| {
             for source in sources {
                 let record_id = Uuid::new_v4();
@@ -900,7 +901,7 @@ impl VaultStore {
                 let encrypted = encrypt_object(
                     Box::new(
                         CancellableReader::new(source.reader, Arc::clone(&self.cancel_io))
-                            .with_progress(&progress),
+                            .with_progress(&self.idle),
                     ),
                     &object_path,
                     ObjectContext {
@@ -922,7 +923,7 @@ impl VaultStore {
                 verify_object(
                     &object_path,
                     CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
-                        .with_progress(&progress),
+                        .with_progress(&self.idle),
                     unlocked.manifest.vault_id,
                     record_id,
                     &object_key,
@@ -1022,8 +1023,7 @@ impl VaultStore {
         )?;
         verify_object(
             &self.root.join("objects").join(&record.object_name),
-            CancellableWriter::new(writer, Arc::clone(&self.cancel_io))
-                .with_progress(&Progress::new(&self.idle, Instant::now())),
+            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle),
             unlocked.manifest.vault_id,
             record.id,
             &object_key,
@@ -4427,16 +4427,16 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         // Arms the deadline, runs one transfer step, and says whether the step
         // moved the deadline on.
-        let moved = |step: &dyn Fn(&Progress)| {
+        let moved = |step: &dyn Fn(&Arc<IdleDeadline>)| {
             let before = Instant::now();
             idle.arm(before);
             std::thread::sleep(Duration::from_millis(2));
-            step(&Progress::new(&idle, Instant::now()));
+            step(&idle);
             !idle.is_due(due_at(before))
         };
         let read = |data: &'static [u8]| {
             let cancelled = Arc::clone(&cancelled);
-            move |progress: &Progress| {
+            move |progress: &Arc<IdleDeadline>| {
                 let read =
                     CancellableReader::new(Box::new(Cursor::new(data)), Arc::clone(&cancelled))
                         .with_progress(progress)
@@ -4447,7 +4447,7 @@ mod tests {
         };
         let write = |data: &'static [u8]| {
             let cancelled = Arc::clone(&cancelled);
-            move |progress: &Progress| {
+            move |progress: &Arc<IdleDeadline>| {
                 let written = CancellableWriter::new(io::sink(), Arc::clone(&cancelled))
                     .with_progress(progress)
                     .write(data)

@@ -1356,6 +1356,78 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("waits for a finished transfer's outcome when the lock falls due just after it", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishImport!: (value: ImportOutcome) => void;
+      let finishRefresh!: (value: VaultSnapshot) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockResolvedValueOnce(emptySnapshot)
+          .mockImplementationOnce(
+            () =>
+              new Promise<VaultSnapshot>((resolve) => {
+                finishRefresh = resolve;
+              }),
+          ),
+        importPickedFiles: vi.fn(
+          () =>
+            new Promise<ImportOutcome>((resolve) => {
+              finishImport = resolve;
+            }),
+        ),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      // The transfer finishes before the deadline, and its operation is
+      // still refreshing the library when the deadline passes.
+      await act(async () =>
+        finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+      );
+      await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+
+      await act(async () => finishRefresh(emptySnapshot));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByText("Vault locked. 1 file(s) encrypted and imported."),
+      ).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("locks at once once an operation that ran a transfer has finished", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      expect(bridge.importPickedFiles).toHaveBeenCalledOnce();
+      await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("locks when a transfer settles in the same tick as the lock falls due", async () => {
     const user = userEvent.setup();
     let finishImport!: (value: ImportOutcome) => void;
@@ -1592,6 +1664,56 @@ describe("durable vault UI", () => {
       vi.useRealTimers();
     }
   });
+
+  it.each([
+    ["on screen", false],
+    ["while the lock was held for it", true],
+  ])(
+    "shows the unlock screen when the native deadline cuts off a transfer %s",
+    async (_, held) => {
+      const user = userEvent.setup();
+      let failImport!: (error: unknown) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        importPickedFiles: vi.fn(
+          () =>
+            new Promise<ImportOutcome>((_, reject) => {
+              failImport = reject;
+            }),
+        ),
+      });
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+      try {
+        render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: "Choose files to import" }),
+        );
+        await waitFor(() =>
+          expect(bridge.importPickedFiles).toHaveBeenCalled(),
+        );
+        if (held) {
+          visibility.mockReturnValue("hidden");
+          await act(async () => {
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          visibility.mockReturnValue("visible");
+          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+        }
+
+        await act(async () => failImport(CANCELLED));
+        expect(
+          await screen.findByRole("heading", { name: "Unlock your vault" }),
+        ).toBeVisible();
+        expect(screen.getByText("Vault locked.")).toBeVisible();
+        // A cancel is not proof that the vault locked, so it is locked here.
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        visibility.mockRestore();
+      }
+    },
+  );
 
   it("shows the unlock screen when the vault was locked natively", async () => {
     const user = userEvent.setup();
@@ -2073,6 +2195,58 @@ describe("durable vault UI", () => {
         "Vault locked. The storage operation could not be completed.",
       ),
     ).toBeVisible();
+  });
+
+  it("offers to create a vault when erasing from the library finds none", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      reset: vi.fn().mockRejectedValue({
+        code: "missing",
+        message: "No vault exists on this device.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "My records" });
+    await user.click(screen.getByRole("button", { name: "Security" }));
+    await user.click(screen.getByText("Show reset controls"));
+    await user.type(
+      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+      "RESET MYCARLOS VAULT",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Erase entire vault" }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "Create your encrypted vault",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText("No vault exists on this device.")).toBeVisible();
+  });
+
+  it("says only that the vault locked when a lock beats a command back", async () => {
+    const user = userEvent.setup();
+    let failCreate!: (error: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      createFolder: vi.fn(
+        () =>
+          new Promise<string>((_, reject) => {
+            failCreate = reject;
+          }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: "New folder" }));
+    await user.type(screen.getByLabelText("Folder name"), "Labs");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await act(async () =>
+      failCreate({ code: "locked", message: "Unlock the vault to continue." }),
+    );
+    expect(screen.getByText("Vault locked.")).toBeVisible();
   });
 
   it("keeps a refused profile name in the form and clears an accepted one", async () => {

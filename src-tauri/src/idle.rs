@@ -3,9 +3,11 @@
 //! been suspended before its own timer could ask for a lock.
 //!
 //! The renderer still hides content at the configured delay and asks for the
-//! lock itself. This deadline fires `MARGIN` (15 s) after the last activity it
-//! hears of, which covers the renderer's 10-second input throttle and the
-//! 2-second native check, so the two never race while the renderer works.
+//! lock itself. This deadline fires the delay plus `MARGIN` (15 s) after the
+//! last activity it hears of. The renderer reports input at most every 10
+//! seconds, so this is at least 5 s after the renderer's own deadline, and the
+//! 2-second native check only adds to that: the two never race while the
+//! renderer works.
 //!
 //! Locking drops the keys; it cannot clear a hung renderer's screen, which
 //! keeps its last frame until it recovers and runs its own lock.
@@ -18,10 +20,11 @@ use std::{
 
 /// How long after the last activity the native deadline fires, beyond the delay.
 pub const MARGIN: Duration = Duration::from_secs(15);
-/// A hold (a picker the app opened, or the opening of the files chosen in one)
+/// A hold (a picker the app opened, or opening what was chosen in one)
 /// counts as activity for at most this long, the longest auto-lock delay, as
-/// a picker does in the renderer. So does a transfer's progress, measured from
-/// when it began, so a source that trickles forever cannot keep the vault open.
+/// a picker does in the renderer. While a transfer command runs, nothing but
+/// user input counts past this long after the command began, so a source that
+/// trickles forever, or a transfer in several steps, cannot keep the vault open.
 pub const GRACE: Duration = Duration::from_secs(15 * 60);
 /// Until the renderer sends the chosen delay in a session, assume the longest
 /// one it offers, so a lost update cannot make this deadline fire before the
@@ -59,6 +62,7 @@ struct State {
     armed: bool,
     delay: Duration,
     holds: usize,
+    transfers: usize,
     mono: Times<Instant>,
     wall: Times<SystemTime>,
 }
@@ -68,6 +72,7 @@ struct State {
 struct Times<T> {
     last_activity: T,
     held_since: T,
+    transfer_since: T,
 }
 
 impl IdleDeadline {
@@ -77,6 +82,7 @@ impl IdleDeadline {
             armed: false,
             delay: DEFAULT_DELAY,
             holds: 0,
+            transfers: 0,
             mono: Times::new(now.mono),
             wall: Times::new(now.wall),
         }))
@@ -104,7 +110,7 @@ impl IdleDeadline {
     }
 
     /// Takes the renderer's delay (clamped to 1-15 minutes). The renderer
-    /// restarts its own deadline when it sends one, so this is activity too.
+    /// restarts its own deadline when it sends one, so this is user activity.
     pub fn set_delay_minutes(&self, minutes: u64, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
@@ -113,21 +119,41 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
-    /// Records activity: a command, or the renderer reporting user input or
-    /// sending the delay.
-    pub fn touch(&self, now: impl Into<Now>) {
+    /// Records the user's own input, reported by the renderer. It counts in
+    /// full, even during a transfer: someone is there.
+    pub fn user_input(&self, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
         state.mono.touch(now.mono);
         state.wall.touch(now.wall);
     }
 
-    /// Records a transfer's progress, which counts as activity only up to the
-    /// grace after the transfer began.
-    fn progressed(&self, now: Now, began: Now) {
+    /// Records the app's own activity: a command, or a transfer making
+    /// progress. During a transfer it counts only up to the grace after the
+    /// transfer began.
+    pub fn touch(&self, now: impl Into<Now>) {
+        let now = now.into();
         let mut state = self.state();
-        state.mono.touch(now.mono.min(began.mono + GRACE));
-        state.wall.touch(now.wall.min(began.wall + GRACE));
+        let transferring = state.transfers > 0;
+        state.mono.touch_limited(now.mono, transferring);
+        state.wall.touch_limited(now.wall, transferring);
+    }
+
+    /// Starts a transfer command. Everything it does until it ends shares one
+    /// grace, from now.
+    pub fn transfer_started(&self, now: impl Into<Now>) {
+        let now = now.into();
+        let mut state = self.state();
+        if state.transfers == 0 {
+            state.mono.transfer_since = now.mono;
+            state.wall.transfer_since = now.wall;
+        }
+        state.transfers += 1;
+    }
+
+    pub fn transfer_ended(&self) {
+        let mut state = self.state();
+        state.transfers = state.transfers.saturating_sub(1);
     }
 
     /// Starts a stretch that counts as activity until it ends, up to the grace:
@@ -146,8 +172,9 @@ impl IdleDeadline {
         let now = now.into();
         let mut state = self.state();
         let open = state.holds > 0;
-        state.mono.hold_ended(now.mono, open);
-        state.wall.hold_ended(now.wall, open);
+        let transferring = state.transfers > 0;
+        state.mono.hold_ended(now.mono, open, transferring);
+        state.wall.hold_ended(now.wall, open, transferring);
         state.holds = state.holds.saturating_sub(1);
     }
 
@@ -155,30 +182,27 @@ impl IdleDeadline {
         let now = now.into();
         let state = self.state();
         let open = state.holds > 0;
+        let transferring = state.transfers > 0;
         state.armed
-            && (state.mono.is_due(now.mono, open, state.delay)
-                || state.wall.is_due(now.wall, open, state.delay))
+            && (state.mono.is_due(now.mono, open, transferring, state.delay)
+                || state.wall.is_due(now.wall, open, transferring, state.delay))
     }
 }
 
-/// Reports one transfer's progress to the deadline. Made once per operation,
-/// so an import of many files has one grace between them.
-#[derive(Clone)]
-pub struct Progress {
-    idle: Arc<IdleDeadline>,
-    began: Now,
+/// Marks a transfer command (an import, or an export in one or two passes)
+/// from its start until it is dropped, on every path.
+pub struct Transfer(Arc<IdleDeadline>);
+
+impl Transfer {
+    pub fn new(idle: &Arc<IdleDeadline>) -> Self {
+        idle.transfer_started(Instant::now());
+        Self(Arc::clone(idle))
+    }
 }
 
-impl Progress {
-    pub fn new(idle: &Arc<IdleDeadline>, now: impl Into<Now>) -> Self {
-        Self {
-            idle: Arc::clone(idle),
-            began: now.into(),
-        }
-    }
-
-    pub fn report(&self, now: impl Into<Now>) {
-        self.idle.progressed(now.into(), self.began);
+impl Drop for Transfer {
+    fn drop(&mut self) {
+        self.0.transfer_ended();
     }
 }
 
@@ -187,6 +211,7 @@ impl<T: Copy + Ord + Add<Duration, Output = T>> Times<T> {
         Self {
             last_activity: now,
             held_since: now,
+            transfer_since: now,
         }
     }
 
@@ -194,23 +219,39 @@ impl<T: Copy + Ord + Add<Duration, Output = T>> Times<T> {
         self.last_activity = self.last_activity.max(now);
     }
 
+    /// During a transfer, the app's own activity counts only up to the grace
+    /// after the transfer began.
+    fn limit(&self, at: T, transferring: bool) -> T {
+        if transferring {
+            at.min(self.transfer_since + GRACE)
+        } else {
+            at
+        }
+    }
+
+    fn touch_limited(&mut self, now: T, transferring: bool) {
+        self.touch(self.limit(now, transferring));
+    }
+
     /// Until when an open hold has counted as activity: now, capped at the
     /// grace. With no hold open, it adds nothing.
-    fn held_until(&self, now: T, open: bool) -> T {
+    fn held_until(&self, now: T, open: bool, transferring: bool) -> T {
         if open {
-            now.min(self.held_since + GRACE)
+            self.limit(now.min(self.held_since + GRACE), transferring)
         } else {
             self.last_activity
         }
     }
 
-    fn hold_ended(&mut self, now: T, open: bool) {
-        let active_until = self.held_until(now, open);
+    fn hold_ended(&mut self, now: T, open: bool, transferring: bool) {
+        let active_until = self.held_until(now, open, transferring);
         self.touch(active_until);
     }
 
-    fn is_due(&self, now: T, open: bool, delay: Duration) -> bool {
-        let last = self.last_activity.max(self.held_until(now, open));
+    fn is_due(&self, now: T, open: bool, transferring: bool, delay: Duration) -> bool {
+        let last = self
+            .last_activity
+            .max(self.held_until(now, open, transferring));
         now >= last + delay + MARGIN
     }
 }
@@ -393,46 +434,61 @@ mod tests {
     }
 
     #[test]
-    fn a_transfer_counts_as_activity_for_at_most_the_grace_from_its_start() {
+    fn during_a_transfer_only_user_input_counts_past_the_grace_from_its_start() {
         let start = Instant::now();
         let wall = SystemTime::now();
         let at = |minutes: u32| Now {
             mono: start + minutes * MINUTE,
             wall: wall + minutes * MINUTE,
         };
-        let deadline = Arc::new(armed(at(0)));
-        let progress = Progress::new(&deadline, at(1));
-        progress.report(at(10));
+        let deadline = armed(at(0));
+        deadline.transfer_started(at(1));
+        deadline.touch(at(10));
         assert!(!deadline.is_due(at(14)));
-        // Progress past the grace holds the deadline where the grace ended.
-        progress.report(at(40));
-        assert!(!deadline.is_due(at(20)));
+        // Another transfer overlapping it does not start the grace again.
+        deadline.transfer_started(at(10));
+        deadline.transfer_ended();
+        // Its progress, its commands, and a hold it opens stop counting at
+        // minute 16, the grace after it began.
+        deadline.touch(at(40));
+        deadline.hold_started(at(12));
+        assert!(!deadline.is_due(at(21)));
         assert!(deadline.is_due(Now {
-            mono: start + MINUTE + GRACE + 5 * MINUTE + MARGIN,
-            wall: wall + MINUTE + GRACE + 5 * MINUTE + MARGIN,
+            mono: start + 21 * MINUTE + MARGIN,
+            wall: wall + 21 * MINUTE + MARGIN,
         }));
+        deadline.hold_ended(at(40));
+        assert!(deadline.is_due(at(41)));
+        // The user's own input still counts in full.
+        deadline.user_input(at(40));
+        assert!(!deadline.is_due(at(44)));
+        // Once it has ended, the app's activity counts in full again.
+        deadline.transfer_ended();
+        deadline.touch(at(60));
+        assert!(!deadline.is_due(at(64)));
+
         // On either clock.
         let past_the_grace = MINUTE + GRACE + 5 * MINUTE + MARGIN;
-        let deadline = Arc::new(armed(at(0)));
-        let progress = Progress::new(&deadline, at(1));
-        progress.report(Now {
-            mono: start + 40 * MINUTE,
-            wall: wall + MINUTE,
-        });
-        assert!(deadline.is_due(Now {
-            mono: start + past_the_grace,
-            wall: wall + MINUTE,
-        }));
-        let deadline = Arc::new(armed(at(0)));
-        let progress = Progress::new(&deadline, at(1));
-        progress.report(Now {
-            mono: start + MINUTE,
-            wall: wall + 40 * MINUTE,
-        });
-        assert!(deadline.is_due(Now {
-            mono: start + MINUTE,
-            wall: wall + past_the_grace,
-        }));
+        for (mono, wall_minutes) in [(40, 1), (1, 40)] {
+            let deadline = armed(at(0));
+            deadline.transfer_started(at(1));
+            deadline.touch(Now {
+                mono: start + mono * MINUTE,
+                wall: wall + wall_minutes * MINUTE,
+            });
+            let later = |minutes: u32, extra: Duration| start + minutes * MINUTE + extra;
+            assert!(deadline.is_due(if mono == 40 {
+                Now {
+                    mono: later(0, past_the_grace),
+                    wall: wall + MINUTE,
+                }
+            } else {
+                Now {
+                    mono: later(1, Duration::ZERO),
+                    wall: wall + past_the_grace,
+                }
+            }));
+        }
     }
 
     #[test]

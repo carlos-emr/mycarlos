@@ -89,14 +89,17 @@ privacy, accessibility, or clinical review.
       machine with Android Studio's emulator (see the Android section in `README.md`), then check
       that choosing PDFs imports them, that Save a copy writes the file, and that pressing Home
       while the picker is open locks the vault when the app returns.
-- [x] The native session has its own idle deadline, 15 seconds after the last activity it hears
-      of, so the vault's keys are dropped even if the webview crashes or hangs, or is suspended
-      while the app keeps running. Commands, user input the renderer reports, open pickers, opening
-      the chosen files, and a transfer making progress count as activity; a picker, and a transfer,
-      each count for at most 15 minutes. An automatic lock that falls during a transfer hides the
-      library and waits for the transfer to finish. Limits: a hung webview keeps showing its last
-      screen until it recovers, locking when the app is backgrounded is still the renderer's
-      alone, and a source that blocks inside a single read delays every lock until it returns.
+- [x] The native session has its own idle deadline, the automatic lock delay plus 15 seconds after
+      the last activity it hears of, so the vault's keys are dropped even if the webview crashes or
+      hangs, or is suspended while the app keeps running. Commands, user input the renderer
+      reports, open pickers, opening what was chosen in them, and a transfer making progress count
+      as activity. A picker counts for at most 15 minutes from when it opened, and an import or
+      export command (opening its files, and each pass) for at most 15 minutes from when it began;
+      only the user's own input counts beyond that. An automatic or background lock that falls during a transfer
+      hides the library and waits for the transfer to finish. Limits: a hung webview keeps showing
+      its last screen until it recovers, locking when the app is backgrounded is still the
+      renderer's alone, and a source or destination that blocks inside a single read or write
+      delays every lock until it returns.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.

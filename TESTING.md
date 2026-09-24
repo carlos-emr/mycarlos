@@ -133,11 +133,13 @@ On every platform:
    drive so it takes several seconds). While it is still importing, send the app to the
    background, then come back within a minute. If the import is still running, the screen should
    say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
-   vault should lock by itself when it is done, saying how the import went. Unlock and check that
-   the document is in the library.
+   vault should lock by itself when it is done, saying "Vault locked. 1 file(s) encrypted and
+   imported." Unlock and check that the document is in the library.
    On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
-   importing, and the import continues only when you come back. If you stay away longer than the
-   automatic lock delay, the vault locks when you return and the document is not imported.
+   importing, and the import continues only when you come back. If you come back within the
+   automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
+   does. If you stay away much longer, the vault may instead lock as you return, say "Vault
+   locked.", and leave the document out; either way nothing from the vault is shown meanwhile.
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
