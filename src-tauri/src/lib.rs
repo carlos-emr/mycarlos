@@ -215,8 +215,8 @@ struct PickedExportRequest {
 /// renderer tell a picker it opened from a real backgrounding, and lets a
 /// manual lock, or the native idle deadline, during the I/O phase still cancel
 /// the transfer (an automatic or background lock in the renderer waits for
-/// it). Entries are dropped when
-/// used, when the vault locks or resets, and after a bounded time.
+/// it). Entries are dropped when used, when the vault locks or resets, and
+/// after a bounded time.
 ///
 /// A picker can still be open when the vault locks and return afterwards, so
 /// each pick records the unlocked session its picker opened in and is refused
@@ -505,7 +505,7 @@ impl Drop for ActivityHold<'_> {
 }
 
 /// The renderer reports user input, which the native idle deadline cannot see,
-/// at most every 10 seconds.
+/// at most every 10 seconds. It counts in full, even past a transfer's grace.
 #[tauri::command]
 fn vault_touch(store: State<'_, Arc<VaultStore>>) {
     store.idle().user_input(Instant::now());
@@ -541,7 +541,9 @@ where
 {
     // A command is activity when it starts and again when it ends, so a long
     // one does not leave the deadline where it was before it began. One the
-    // lock cut off is not: that lock must not be undone by its own cancel.
+    // lock cut off (it returns `Cancelled`) is not: that lock must not be
+    // undone by its own cancel. A provider export's write pass reports a
+    // partial copy instead, and is touched; its transfer's grace caps that.
     let idle = Arc::clone(store.idle());
     idle.touch(Instant::now());
     let store = Arc::clone(store);
@@ -1046,9 +1048,12 @@ mod tests {
         let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
         let record_id = Uuid::new_v4();
         let pick_id = picks.store_export(picks.session(), record_id, path());
+        let kept = picks.store_export(picks.session(), record_id, path());
 
         assert!(!lock_if_idle(&store, &picks, Instant::now()));
         assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        // A check that finds the vault not due leaves its picks alone.
+        assert!(picks.take_export(kept, record_id).is_ok());
 
         assert!(lock_if_idle(&store, &picks, idle_past(Instant::now())));
         assert!(matches!(store.status(), Ok(VaultStatus::Locked)));

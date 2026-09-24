@@ -126,7 +126,8 @@ function hasErrorCode(error: unknown, code: string): boolean {
  * its own idle deadline while this screen was not running. */
 export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
 
-/** True when an operation stopped because the vault locked while it ran. */
+/** True when an operation stopped because a lock was requested while it ran
+ * (the vault may still be open if that lock found it no longer due). */
 export const isCancelledError = (error: unknown) =>
   hasErrorCode(error, "cancelled");
 

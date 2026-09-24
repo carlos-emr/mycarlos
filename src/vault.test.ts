@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-import { createVaultBridge } from "./vault";
+import {
+  createVaultBridge,
+  isCancelledError,
+  isLockedError,
+  isMissingVaultError,
+} from "./vault";
 
 describe("native idle deadline bridge", () => {
   beforeEach(() => invoke.mockReset());
@@ -20,5 +25,18 @@ describe("native idle deadline bridge", () => {
     invoke.mockResolvedValue({ platform: "ios", architecture: "arm64" });
     await expect(bridge.platform()).resolves.toBe("ios");
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
+  });
+
+  it("reads error codes only from objects that carry them", () => {
+    for (const check of [
+      isLockedError,
+      isCancelledError,
+      isMissingVaultError,
+    ]) {
+      expect(check(null)).toBe(false);
+      expect(check(undefined)).toBe(false);
+      expect(check("locked")).toBe(false);
+    }
+    expect(isCancelledError({ code: "cancelled" })).toBe(true);
   });
 });

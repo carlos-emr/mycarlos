@@ -22,14 +22,17 @@ use std::{
 pub const MARGIN: Duration = Duration::from_secs(15);
 /// A hold (a picker the app opened, or opening what was chosen in one)
 /// counts as activity for at most this long, the longest auto-lock delay, as
-/// a picker does in the renderer. While a transfer command runs, nothing but
-/// user input counts past this long after the command began, so a source that
-/// trickles forever, or a transfer in several steps, cannot keep the vault open.
-pub const GRACE: Duration = Duration::from_secs(15 * 60);
+/// a picker does in the renderer. While a transfer command runs, only the
+/// user's own input counts past this long after the first running transfer
+/// began, so a source that trickles forever, or a transfer in several steps,
+/// cannot keep the vault open.
+pub const GRACE: Duration = Duration::from_secs(60 * MAX_DELAY_MINUTES);
+/// The longest automatic lock delay the renderer offers.
+const MAX_DELAY_MINUTES: u64 = 15;
 /// Until the renderer sends the chosen delay in a session, assume the longest
 /// one it offers, so a lost update cannot make this deadline fire before the
 /// renderer's and lock the vault under a user who is still reading.
-const DEFAULT_DELAY: Duration = Duration::from_secs(15 * 60);
+const DEFAULT_DELAY: Duration = Duration::from_secs(60 * MAX_DELAY_MINUTES);
 
 /// A moment on two clocks. `Instant` stops while macOS, iOS, Linux or Android
 /// sleeps, so on its own it would not count a night with the lid closed as idle
@@ -114,7 +117,7 @@ impl IdleDeadline {
     pub fn set_delay_minutes(&self, minutes: u64, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
-        state.delay = Duration::from_secs(60 * minutes.clamp(1, 15));
+        state.delay = Duration::from_secs(60 * minutes.clamp(1, MAX_DELAY_MINUTES));
         state.mono.touch(now.mono);
         state.wall.touch(now.wall);
     }
@@ -139,8 +142,8 @@ impl IdleDeadline {
         state.wall.touch_limited(now.wall, transferring);
     }
 
-    /// Starts a transfer command. Everything it does until it ends shares one
-    /// grace, from now.
+    /// Starts a transfer command. Everything the app does until the last
+    /// running transfer ends shares one grace, from when the first began.
     pub fn transfer_started(&self, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
@@ -157,7 +160,7 @@ impl IdleDeadline {
     }
 
     /// Starts a stretch that counts as activity until it ends, up to the grace:
-    /// a picker, or opening the files chosen in one.
+    /// a picker, or opening what was chosen in one.
     pub fn hold_started(&self, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
@@ -341,6 +344,25 @@ mod tests {
     }
 
     #[test]
+    fn sending_a_delay_is_activity_on_the_wall_clock_too() {
+        let start = Instant::now();
+        let wall = SystemTime::now();
+        let deadline = armed(Now { mono: start, wall });
+        // Sent after 20 minutes that passed only on the wall clock (asleep).
+        deadline.set_delay_minutes(
+            1,
+            Now {
+                mono: start,
+                wall: wall + 20 * MINUTE,
+            },
+        );
+        assert!(!deadline.is_due(Now {
+            mono: start,
+            wall: wall + 21 * MINUTE,
+        }));
+    }
+
+    #[test]
     fn an_open_picker_counts_as_activity_for_at_most_the_grace() {
         let start = Instant::now();
         let deadline = armed(start);
@@ -375,8 +397,9 @@ mod tests {
         deadline.hold_started(start);
         deadline.hold_started(start + 10 * MINUTE);
         deadline.hold_ended(start + 11 * MINUTE);
-        // One is still open, from the start.
+        // One is still open, from the start, until the grace ends.
         assert!(!deadline.is_due(start + 14 * MINUTE));
+        assert!(!deadline.is_due(start + GRACE + 5 * MINUTE));
         assert!(deadline.is_due(start + GRACE + 5 * MINUTE + MARGIN));
     }
 

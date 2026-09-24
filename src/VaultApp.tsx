@@ -42,7 +42,8 @@ const PICKER_GRACE_MS = 15 * 60 * 1000;
 // User input is reported to the native idle deadline at most this often, so the
 // last report is less than 10 seconds before the last input. The native
 // deadline fires the delay plus 15 seconds after the last report, so at least
-// 5 seconds after this screen's own deadline (its 2-second check only adds).
+// 5 seconds after this screen's own deadline (the native 2-second check only
+// adds to that).
 const TOUCH_THROTTLE_MS = 10_000;
 const IOS_TRANSFER_NOTE =
   "Keep myCarlos open: switching apps pauses this transfer.";
@@ -66,9 +67,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
-  // An automatic lock owed while a transfer runs waits for it to finish, with
-  // content hidden: locking cancels a transfer, and a large one must not be cut
-  // off by the user switching apps or reading instead of clicking.
+  // An automatic or background lock owed while a transfer runs, or before the
+  // operation that ran it has finished, waits for that operation, with content
+  // hidden: locking cancels a transfer, and a large one must not be cut off by
+  // the user switching apps or reading instead of clicking.
   const [lockHeld, setLockHeld] = useState(false);
   const lockHeldRef = useRef(false);
   // The ref is read by callbacks that run before the next render.
@@ -78,10 +80,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }, []);
   const transfersRef = useRef(0);
   // Operations started through `run` and not yet finished, and whether one of
-  // them ran a transfer. An automatic lock waits for such an operation to
-  // finish, so the transfer's outcome is shown first.
+  // them ran a transfer. An automatic or background lock then waits until all
+  // of them have finished, so the transfer's outcome is shown first.
   const runsRef = useRef(0);
   const transferRanRef = useRef(false);
+  // When the first transfer of those operations began. The native deadline
+  // counts a transfer for at most its first 15 minutes, then the delay, and
+  // locks; a hold does not outlast that.
+  const transferBeganAtRef = useRef(0);
+  // False after a lock attempt failed: the notice then holds its error, not
+  // the transfer's outcome.
+  const outcomeShownRef = useRef(true);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
@@ -120,7 +129,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     if (lockingRef.current) return;
     lockingRef.current = true;
     // A transfer this lock ends, or waited for, reports how it went.
-    const endsTransfer = lockHeldRef.current || transfersRef.current > 0;
+    const endsTransfer =
+      (lockHeldRef.current ||
+        transfersRef.current > 0 ||
+        transferRanRef.current) &&
+      outcomeShownRef.current;
     try {
       await bridge.lock();
       sessionRef.current += 1;
@@ -132,7 +145,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setNotice((current) =>
         endsTransfer ? lockedNotice(current) : "Vault locked.",
       );
+      outcomeShownRef.current = true;
     } catch (error) {
+      outcomeShownRef.current = false;
       // The vault is still unlocked natively. Every caller must learn that,
       // including the concealed screen, which would otherwise claim "Locked".
       setLockFailed(true);
@@ -161,17 +176,23 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   );
 
   // Automatic locks: during a transfer, hide content and lock once the
-  // operation it belongs to has finished.
-  const lockWhenIdle = useCallback(() => {
-    const waiting = transfersRef.current > 0 || transferRanRef.current;
-    if (!waiting) {
-      requestLock(true);
-      return;
-    }
-    if (!concealedRef.current) setLockFailed(false);
-    setConcealed(true);
-    holdLock(true);
-  }, [holdLock, requestLock]);
+  // operation it belongs to has finished, or once the native deadline would
+  // have cut it off, `maxHoldMs` after it began.
+  const lockWhenIdle = useCallback(
+    (maxHoldMs: number) => {
+      const waiting =
+        (transfersRef.current > 0 || transferRanRef.current) &&
+        Date.now() - transferBeganAtRef.current < maxHoldMs;
+      if (!waiting) {
+        requestLock(true);
+        return;
+      }
+      if (!concealedRef.current) setLockFailed(false);
+      setConcealed(true);
+      holdLock(true);
+    },
+    [holdLock, requestLock],
+  );
 
   const platformRef = useRef("");
   useEffect(() => {
@@ -234,6 +255,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }
     };
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
+      if (!transferRanRef.current) transferBeganAtRef.current = Date.now();
       transfersRef.current += 1;
       transferRanRef.current = true;
       // iOS suspends an app in the background, and its transfer with it.
@@ -261,6 +283,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   useEffect(() => {
     if (status !== "unlocked") return;
     const delayMs = autoLockMinutes * 60 * 1000;
+    const maxHoldMs = PICKER_GRACE_MS + delayMs;
     let deadline = Date.now() + delayMs;
     let timer = 0;
     // A failed send is retried on every check: until one is accepted, the
@@ -285,7 +308,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
-      if (remaining <= 0) lockWhenIdle();
+      if (remaining <= 0) lockWhenIdle(maxHoldMs);
       timer = window.setTimeout(
         check,
         remaining > 0 ? Math.min(remaining, LOCK_RECHECK_MS) : LOCK_RECHECK_MS,
@@ -321,7 +344,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // The lock is owed from here on, exactly as if the delay had elapsed:
       // activity cannot postpone it, and the recheck retries it if it fails.
       deadline = 0;
-      lockWhenIdle();
+      lockWhenIdle(maxHoldMs);
     };
     check();
     for (const event of ACTIVITY_EVENTS) {
@@ -366,7 +389,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         setNotice(vaultErrorMessage(error));
         return;
       }
-      // Failures that only say the vault locked, which is already shown.
+      // Failures that only say the vault locked, or that a lock cut the
+      // operation off.
       const lockedOut = isLockedError(error) || isCancelledError(error);
       if (sessionRef.current !== startedIn) {
         // The vault locked while this ran. Say more only when the failure
@@ -377,9 +401,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // A lock under way cancelled it, and says so itself when it finishes.
       if (lockingRef.current && isCancelledError(error)) return;
       if (lockedOut && status === "unlocked") {
-        // The native idle deadline locked the vault, for example while this
-        // screen was suspended: a command then fails as locked, and a transfer
-        // it cut off as cancelled. Lock here too, which also confirms it.
+        // The native idle deadline locked the vault, or tried to, for example
+        // while this screen was suspended: a command then fails as locked, and
+        // a transfer it cut off as cancelled (a provider export's write pass
+        // as a partial copy instead, which is shown). Lock here too, which also
+        // confirms it.
+        if (isCancelledError(error)) setNotice("The transfer did not finish.");
         requestLock(true);
         return;
       }
