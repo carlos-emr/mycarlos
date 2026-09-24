@@ -87,9 +87,12 @@ privacy, accessibility, or clinical review.
       machine with Android Studio's emulator (see the Android section in `README.md`), then check
       that choosing PDFs imports them, that Save a copy writes the file, and that pressing Home
       while the picker is open locks the vault when the app returns.
-- [ ] Give the native session its own idle deadline. Automatic locking runs only as timers and
-      events in the renderer, so if the webview crashes, hangs, or is suspended before its lock
-      request is delivered, the native session keeps the vault unlocked until the app exits.
+- [x] The native session has its own idle deadline, 15 seconds after the renderer's, so the vault
+      locks even if the webview crashes, hangs, or is suspended before its lock request is
+      delivered. Commands, user input the renderer reports, open pickers, and a transfer making
+      progress count as activity. An automatic lock that falls during a transfer hides the
+      library and waits for the transfer to finish. Locking when the app is backgrounded is still
+      the renderer's alone.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.

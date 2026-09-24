@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import App from "./App";
 import {
   createVaultBridge,
+  isLockedError,
   isMissingVaultError,
   vaultErrorMessage,
   type VaultBridge,
@@ -37,6 +38,11 @@ const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 // Time in a picker counts as activity for at most this long, the longest
 // auto-lock delay, so a picker left open cannot keep the vault unlocked.
 const PICKER_GRACE_MS = 15 * 60 * 1000;
+// User input is reported to the native idle deadline at most this often. The
+// native deadline fires 15 seconds after the renderer's, so it never races it.
+const TOUCH_THROTTLE_MS = 10_000;
+const IOS_TRANSFER_NOTE =
+  "Keep myCarlos open: switching apps pauses this transfer.";
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
@@ -50,6 +56,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
+  // An automatic lock owed while a transfer runs waits for it to finish, with
+  // content hidden: locking cancels a transfer, and a large one must not be cut
+  // off by the user switching apps or reading instead of clicking.
+  const [lockHeld, setLockHeld] = useState(false);
+  const lockHeldRef = useRef(false);
+  lockHeldRef.current = lockHeld;
+  const transfersRef = useRef(0);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
@@ -93,6 +106,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setSnapshot(null);
       setConcealed(false);
       setLockFailed(false);
+      setLockHeld(false);
       setStatus("locked");
       setNotice("Vault locked.");
     } catch (error) {
@@ -123,6 +137,36 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     [lock],
   );
 
+  // Automatic locks: during a transfer, hide content and lock once it settles.
+  const lockWhenIdle = useCallback(() => {
+    if (transfersRef.current === 0) {
+      requestLock(true);
+      return;
+    }
+    if (!concealedRef.current) setLockFailed(false);
+    setConcealed(true);
+    setLockHeld(true);
+  }, [requestLock]);
+
+  useEffect(() => {
+    if (status === "unlocked")
+      bridge.setAutoLock(autoLockMinutes).catch(() => undefined);
+  }, [autoLockMinutes, bridge, status]);
+
+  const platformRef = useRef("");
+  useEffect(() => {
+    let active = true;
+    bridge
+      .platform()
+      .then((platform) => {
+        if (active) platformRef.current = platform;
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
   useEffect(() => {
     let active = true;
     bridge
@@ -149,9 +193,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }, [bridge]);
 
   // Pickers this app opened and has not yet heard back from. Only the pick
-  // phase counts: once the paths are chosen, the I/O phase runs under the
-  // ordinary rules, so backgrounding the app during a transfer still locks the
-  // vault and cancels it at the next I/O boundary.
+  // phase counts: once the paths are chosen, the transfer that follows holds
+  // an owed automatic lock until it finishes, with content hidden.
   const pickersOpenRef = useRef(0);
   const pickerOpenedAtRef = useRef(0);
   const trackedBridge = useMemo<VaultBridge>(() => {
@@ -170,14 +213,30 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         document.dispatchEvent(new Event("visibilitychange"));
       }
     };
+    const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
+      transfersRef.current += 1;
+      // iOS suspends an app in the background, and its transfer with it.
+      if (platformRef.current === "ios") setNotice(IOS_TRANSFER_NOTE);
+      try {
+        return await start();
+      } finally {
+        transfersRef.current -= 1;
+        if (transfersRef.current === 0 && lockHeldRef.current)
+          requestLock(true);
+      }
+    };
     return {
       ...bridge,
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
+      importPickedFiles: (pickId, profileId, folderIds) =>
+        transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
+      exportToPicked: (pickId, recordId) =>
+        transfer(() => bridge.exportToPicked(pickId, recordId)),
     };
-  }, [bridge]);
+  }, [bridge, requestLock]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -194,15 +253,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
-      if (remaining <= 0) requestLock(true);
+      if (remaining <= 0) lockWhenIdle();
       timer = window.setTimeout(
         check,
         remaining > 0 ? Math.min(remaining, LOCK_RECHECK_MS) : LOCK_RECHECK_MS,
       );
     };
+    let touchedAt = -Infinity;
     const postpone = () => {
       // Once the delay has elapsed the lock is owed; activity cannot cancel it.
-      if (Date.now() < deadline) deadline = Date.now() + delayMs;
+      if (Date.now() >= deadline) return;
+      deadline = Date.now() + delayMs;
+      // The native deadline cannot see input, so it is told, sparingly.
+      if (Date.now() - touchedAt >= TOUCH_THROTTLE_MS) {
+        touchedAt = Date.now();
+        bridge.touch().catch(() => undefined);
+      }
     };
     // Unlike `postpone`, this also applies after the delay has elapsed: the
     // time since the picker opened was not idle. A lock already owed, shown by
@@ -223,7 +289,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // The lock is owed from here on, exactly as if the delay had elapsed:
       // activity cannot postpone it, and the recheck retries it if it fails.
       deadline = 0;
-      requestLock(true);
+      lockWhenIdle();
     };
     check();
     for (const event of ACTIVITY_EVENTS) {
@@ -240,7 +306,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       document.removeEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [autoLockMinutes, requestLock, status]);
+  }, [autoLockMinutes, bridge, lockWhenIdle, status]);
 
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);
@@ -257,6 +323,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await operation();
     } catch (error) {
+      // The native idle deadline locked the vault, for example while this
+      // screen was suspended. Show that rather than a failure to retry.
+      if (isLockedError(error) && status === "unlocked") {
+        sessionRef.current += 1;
+        setSnapshot(null);
+        setConcealed(false);
+        setLockHeld(false);
+        setStatus("locked");
+        setNotice("Vault locked.");
+        return;
+      }
       // The unlock screen is also shown when the startup status check fails. If
       // there is no vault after all, offer to create one: nothing on the unlock
       // screen can succeed, and only a restart would otherwise leave it.
@@ -342,6 +419,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }
 
   if (concealed) {
+    if (lockHeld && !lockFailed)
+      return (
+        <VaultAuthFrame state="Locking">
+          <p>
+            Vault content is hidden. myCarlos will lock as soon as the transfer
+            finishes.
+          </p>
+          <button
+            className="button"
+            type="button"
+            onClick={() => requestLock(true)}
+          >
+            Lock now and cancel the transfer
+          </button>
+        </VaultAuthFrame>
+      );
     return lockFailed ? (
       <VaultAuthFrame state="Not locked">
         <p role="alert">

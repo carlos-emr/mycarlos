@@ -129,6 +129,10 @@ On every platform:
    keep the screen on), and confirm it locks.
 7. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
    it is locked when you come back.
+8. Import a large PDF (tens of megabytes) and send the app to the background while it is still
+   importing. Come back: the library should be hidden with a note that myCarlos will lock when
+   the transfer finishes, and it should lock once the import is done, with the document imported.
+   On iPhone, a note during the import says that switching apps pauses it.
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 

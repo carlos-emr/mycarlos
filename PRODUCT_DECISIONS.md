@@ -98,7 +98,7 @@ built, tested, or independently reviewed.
 These decisions require new protocols and substantial code beyond this PR: recovery-key envelopes,
 portable backup/restore, enrolled-device key exchange and revocation, encrypted synchronization,
 tombstones, signed CARLOS packages, explicit sharing, encrypted audit history, a sandboxed renderer,
-a native-side idle deadline, platform privacy controls, release signing, and secure updates.
+platform privacy controls, release signing, and secure updates.
 
 Physical-device lifecycle tests, real full-disk and power-loss tests, Argon2id benchmarks,
 accessibility review, privacy/regulatory and clinical-safety approval, and independent security

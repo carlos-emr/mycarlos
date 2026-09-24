@@ -49,6 +49,9 @@ test("renames native-library folders and documents with accessible dialogs", asy
       ) => {
         if (command === "vault_status") return "unlocked";
         if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "runtime_info") return { platform: "windows" };
+        if (command === "vault_touch" || command === "vault_set_auto_lock")
+          return;
         if (
           command === "vault_update_folder" &&
           args?.request.folderId === "folder" &&
