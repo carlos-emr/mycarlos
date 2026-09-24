@@ -3833,6 +3833,13 @@ mod tests {
             (".notes.pdf", ".pdf"),
             ("..pdf", ".pdf"),
             ("Results.pdf ", ""),
+            ("Results.pdx", ""),
+            ("Results.pd", ""),
+            ("Results.pxf", ""),
+            ("Results.xdf", ""),
+            ("Results.df", ""),
+            ("Results.pf", ""),
+            ("Results.pdff", ""),
         ] {
             assert_eq!(file_extension(name), extension, "{name:?}");
         }
@@ -3931,6 +3938,8 @@ mod tests {
         // ".pdf" anywhere but the end.
         store.rename_record(plain, "Visit 11ampdf").unwrap();
         store.rename_record(plain, "Scan.pdf.txt").unwrap();
+        store.rename_record(plain, ".pdf notes").unwrap();
+        store.rename_record(plain, ".PDFx").unwrap();
         store.rename_record(plain, "Visit 11am").unwrap();
         assert_eq!(name_of(plain), "Visit 11am");
         // A desktop picker can still return another kind of file, and a

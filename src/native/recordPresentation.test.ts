@@ -87,6 +87,14 @@ describe("fileExtension", () => {
     [".notes.pdf", ".pdf"],
     ["..pdf", ".pdf"],
     ["Results.pdf ", ""],
+    // Nearly ".pdf" is not ".pdf".
+    ["Results.pdx", ""],
+    ["Results.pd", ""],
+    ["Results.pxf", ""],
+    ["Results.xdf", ""],
+    ["Results.df", ""],
+    ["Results.pf", ""],
+    ["Results.pdff", ""],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
   });
