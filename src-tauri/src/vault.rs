@@ -708,6 +708,18 @@ impl VaultStore {
                 .iter_mut()
                 .find(|record| record.id == record_id)
                 .ok_or(VaultError::NotFound)?;
+            // The extension says what kind of file an export is; a rename
+            // changes only the name before it, and neither removes ".pdf",
+            // changes its case, nor adds it.
+            // Both sides are judged trimmed, as `name` already is: an earlier
+            // build could store "X.pdf" followed by a no-break space. A name
+            // without ".pdf" cannot become one ending in it, not even ".pdf".
+            let kept = file_extension(record.display_name.trim());
+            if file_extension(name) != kept
+                || (kept.is_empty() && name.to_ascii_lowercase().ends_with(".pdf"))
+            {
+                return Err(VaultError::Invalid);
+            }
             record.display_name = name.to_owned();
             Ok(())
         })
@@ -1257,6 +1269,19 @@ fn validate_name(name: &str) -> Result<(), VaultError> {
         Err(VaultError::Invalid)
     } else {
         Ok(())
+    }
+}
+
+/// The ".pdf" at the end of a document name, in the case the name uses, after
+/// a non-empty stem; otherwise "". Imports are offered as PDFs, so no other
+/// suffix is treated as a file type: "Visit 10.30am" and "Mr.Jones" have no
+/// extension. A desktop picker can still return another kind of file, which
+/// is why a rename may not add ".pdf" either.
+fn file_extension(name: &str) -> &str {
+    let start = name.len().saturating_sub(4);
+    match name.get(start..) {
+        Some(tail) if start > 0 && tail.eq_ignore_ascii_case(".pdf") => tail,
+        _ => "",
     }
 }
 
@@ -3779,6 +3804,182 @@ mod tests {
             Err(VaultError::RecoveryMode)
         ));
         assert_eq!(store.snapshot().unwrap().records, before);
+    }
+
+    #[test]
+    fn file_extension_matches_the_rename_dialog() {
+        // The same cases as `fileExtension` in src/native/recordPresentation.test.ts.
+        for (name, extension) in [
+            ("Results.pdf", ".pdf"),
+            ("Results.PDF", ".PDF"),
+            ("Results.Pdf", ".Pdf"),
+            ("a.pdf", ".pdf"),
+            ("Report.pdf.pdf", ".pdf"),
+            ("Report\u{2028}A.pdf", ".pdf"),
+            ("字.pdf", ".pdf"),
+            (".pdf", ""),
+            ("pdf", ""),
+            ("Resultspdf", ""),
+            ("Results.pdf~", ""),
+            ("Results.pdf\nA", ""),
+            ("archive.tar.gz", ""),
+            ("notes.c", ""),
+            ("Scan 3.5 notes", ""),
+            ("Visit 10.30am", ""),
+            ("Mr.Jones", ""),
+            ("字字", ""),
+            ("photo.jpg", ""),
+            ("Results.txt", ""),
+            (".notes.pdf", ".pdf"),
+            ("..pdf", ".pdf"),
+            ("Results.pdf ", ""),
+            ("Results.pdx", ""),
+            ("Results.pd", ""),
+            ("Results.pxf", ""),
+            ("Results.xdf", ""),
+            ("Results.df", ""),
+            ("Results.pf", ""),
+            ("Results.pdff", ""),
+        ] {
+            assert_eq!(file_extension(name), extension, "{name:?}");
+        }
+    }
+
+    #[test]
+    fn a_legacy_name_with_trailing_unicode_space_renames_as_the_pdf_it_is() {
+        // Builds before the current sanitizer could store "X.pdf" followed by a
+        // no-break space. Judged after trimming, as renames are, it is a PDF name.
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(profile, vec![], vec![source("X.pdf", b"synthetic pdf")], 2)
+            .unwrap()
+            .imported[0];
+        store
+            .mutate_manifest(|manifest| {
+                manifest.records[0].display_name = "X.pdf\u{a0}".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let name_of = || store.snapshot().unwrap().records[0].display_name.clone();
+
+        // Saved unedited, it is tidied, as it was before extensions were kept.
+        store.rename_record(record, "X.pdf\u{a0}").unwrap();
+        assert_eq!(name_of(), "X.pdf");
+        store
+            .mutate_manifest(|manifest| {
+                manifest.records[0].display_name = "X.pdf\u{3000}".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(
+            store.rename_record(record, "Y"),
+            Err(VaultError::Invalid)
+        ));
+        store.rename_record(record, "Y.pdf").unwrap();
+        assert_eq!(name_of(), "Y.pdf");
+    }
+
+    #[test]
+    fn a_rename_keeps_an_uppercase_extension_as_it_is() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![source("Results.PDF", b"synthetic pdf")],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        for name in ["Lab.pdf", "Lab.Pdf", "Lab"] {
+            assert!(
+                matches!(store.rename_record(record, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+        }
+        store.rename_record(record, "Lab.PDF").unwrap();
+        assert_eq!(store.snapshot().unwrap().records[0].display_name, "Lab.PDF");
+    }
+
+    #[test]
+    fn a_rename_keeps_the_file_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("Results.pdf", b"synthetic pdf"),
+                    source("Scan 3.5 notes", b"synthetic without extension"),
+                    source("photo.jpg", b"synthetic image"),
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
+        let (pdf, plain, photo) = (imported[0], imported[1], imported[2]);
+        let name_of = |id| {
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .into_iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .display_name
+        };
+
+        for name in [
+            "Results",
+            "Results.txt",
+            "Results.PDF",
+            "Results.pdf.txt",
+            ".pdf",
+        ] {
+            assert!(
+                matches!(store.rename_record(pdf, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+            assert_eq!(name_of(pdf), "Results.pdf");
+        }
+        store.rename_record(pdf, "a.pdf").unwrap();
+        assert_eq!(name_of(pdf), "a.pdf");
+        store.rename_record(pdf, "Lab results.pdf").unwrap();
+        assert_eq!(name_of(pdf), "Lab results.pdf");
+
+        // Only ".pdf" is locked: the vault holds only PDFs, and a name such as
+        // "Visit 10.30am" or "Mr.Jones" has no file type, so it stays renameable.
+        store.rename_record(plain, "Visit 10.30am").unwrap();
+        // "pdf" without the dot is part of a name, not an extension, and so is
+        // ".pdf" anywhere but the end.
+        store.rename_record(plain, "Visit 11ampdf").unwrap();
+        store.rename_record(plain, "Scan.pdf.txt").unwrap();
+        store.rename_record(plain, ".pdf notes").unwrap();
+        store.rename_record(plain, ".PDFx").unwrap();
+        store.rename_record(plain, "Visit 11am").unwrap();
+        assert_eq!(name_of(plain), "Visit 11am");
+        // A desktop picker can still return another kind of file, and a
+        // ".pdf" lock added by mistake could never be removed.
+        // Only ".pdf" is locked: another extension can change or go.
+        store.rename_record(photo, "photo").unwrap();
+        store.rename_record(photo, "photo.png").unwrap();
+        // A name without ".pdf" cannot gain it, even as the whole name.
+        for name in ["Scan notes.pdf", "Scan notes.PDF", ".pdf", ".PDF"] {
+            assert!(
+                matches!(store.rename_record(plain, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+            assert_eq!(name_of(plain), "Visit 11am");
+        }
     }
 
     #[test]

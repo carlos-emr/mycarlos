@@ -542,18 +542,19 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
-    await user.type(screen.getByLabelText("File name"), "FAKE Cancelled.pdf");
+    await user.type(screen.getByLabelText("File name"), "FAKE Cancelled");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(bridge.renameRecord).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "FAKE Old.pdf" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
-    await user.type(screen.getByLabelText("File name"), "FAKE Results.pdf");
+    // The field holds the name before ".pdf", which the rename keeps.
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
     await user.click(screen.getByRole("button", { name: "Save name" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "not enough storage",
     );
-    expect(screen.getByLabelText("File name")).toHaveValue("FAKE Results.pdf");
+    expect(screen.getByLabelText("File name")).toHaveValue("FAKE Results");
     await user.click(screen.getByRole("button", { name: "Save name" }));
     expect(
       await screen.findByRole("dialog", { name: "FAKE Results.pdf" }),
@@ -644,8 +645,16 @@ describe("durable vault UI", () => {
     expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
     expect(bridge.renameRecord).not.toHaveBeenCalled();
 
+    // The kept ".pdf" counts too: 79 characters are 237 bytes, 241 with it.
     fireEvent.change(screen.getByLabelText("File name"), {
-      target: { value: "字".repeat(80) },
+      target: { value: "字".repeat(79) },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+
+    // Exactly the limit: 78 characters and "ab" are 236 bytes, 240 with it.
+    fireEvent.change(screen.getByLabelText("File name"), {
+      target: { value: `${"字".repeat(78)}ab` },
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save name" })).toBeEnabled();

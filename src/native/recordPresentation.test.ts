@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fileExtension,
   formatBytes,
   nameTooLong,
   recordKind,
@@ -57,5 +58,44 @@ describe("searchKey", () => {
 
   it("matches an accent typed either way", () => {
     expect(searchKey("Café")).toBe(searchKey("Café"));
+  });
+});
+
+describe("fileExtension", () => {
+  // The same cases as `file_extension_matches_the_rename_dialog` in vault.rs.
+  it.each([
+    ["Results.pdf", ".pdf"],
+    ["Results.PDF", ".PDF"],
+    ["Results.Pdf", ".Pdf"],
+    ["a.pdf", ".pdf"],
+    ["Report.pdf.pdf", ".pdf"],
+    ["Report\u2028A.pdf", ".pdf"],
+    ["字.pdf", ".pdf"],
+    [".pdf", ""],
+    ["pdf", ""],
+    ["Resultspdf", ""],
+    ["Results.pdf~", ""],
+    ["Results.pdf\nA", ""],
+    ["archive.tar.gz", ""],
+    ["notes.c", ""],
+    ["Scan 3.5 notes", ""],
+    ["Visit 10.30am", ""],
+    ["Mr.Jones", ""],
+    ["字字", ""],
+    ["photo.jpg", ""],
+    ["Results.txt", ""],
+    [".notes.pdf", ".pdf"],
+    ["..pdf", ".pdf"],
+    ["Results.pdf ", ""],
+    // Nearly ".pdf" is not ".pdf".
+    ["Results.pdx", ""],
+    ["Results.pd", ""],
+    ["Results.pxf", ""],
+    ["Results.xdf", ""],
+    ["Results.df", ""],
+    ["Results.pf", ""],
+    ["Results.pdff", ""],
+  ])("gives %j the extension %j", (name, extension) => {
+    expect(fileExtension(name)).toBe(extension);
   });
 });

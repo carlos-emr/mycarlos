@@ -59,3 +59,11 @@ export const nameTooLong = (name: string) =>
 // separate mark match the same letter typed precomposed.
 export const searchKey = (value: string) =>
   value.normalize("NFC").toLowerCase();
+
+// The ".pdf" at the end of a document name, in the case the name uses, after
+// a non-empty stem; otherwise "". Imports are offered as PDFs, so no other
+// suffix is treated as a file type. The vault refuses a rename that removes,
+// recases or adds it (vault.rs `file_extension` uses the same rule).
+export const fileExtension = (name: string) =>
+  // [\s\S], not ".", so the stem matches line and paragraph separators too.
+  /^[\s\S]+(\.pdf)$/i.exec(name)?.[1] ?? "";
