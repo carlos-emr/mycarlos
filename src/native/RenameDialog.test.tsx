@@ -201,6 +201,7 @@ describe("RenameDialog", () => {
     // "pdf" without the dot is part of a name, and a pasted trailing tab is
     // trimmed, as the vault trims it.
     ["Scan 3.5 notes", "Scan notespdf", "Scan notespdf"],
+    ["Visit notes", "Lab.pdf notes", "Lab.pdf notes"],
     ["Results.pdf", "Lab report\t", "Lab report.pdf"],
     ["Results.pdf", "Lab\u0085.pdf", "Lab.pdf"],
     // A soft hyphen is not a control character; the vault accepts it.
@@ -342,6 +343,47 @@ describe("RenameDialog", () => {
     );
   });
 
+  it.each([
+    0x061b, 0x061d, 0x200a, 0x2010, 0x2028, 0x2029, 0x202f, 0x2065, 0x206a,
+    0xfefe,
+  ])(
+    "accepts U+%s just outside the refused ranges, as the vault does",
+    (codePoint) => {
+      const onSave = vi.fn().mockResolvedValue(undefined);
+      render(
+        <RenameDialog
+          target={{ kind: "document", id: "record-1", name: "Results.pdf" }}
+          readOnly={false}
+          onSave={onSave}
+          onClose={vi.fn()}
+        />,
+      );
+      const input = screen.getByLabelText("File name");
+      const typed = `Lab${String.fromCodePoint(codePoint)}report`;
+      fireEvent.change(input, { target: { value: typed } });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      fireEvent.submit(input.closest("form")!);
+      expect(onSave).toHaveBeenCalledWith(`${typed}.pdf`);
+    },
+  );
+
+  it("allows folder names that would be unsafe as file names", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RenameDialog
+        target={{ kind: "folder", id: "folder-1", name: "Labs" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("Folder name");
+    fireEvent.change(input, { target: { value: "Labs: 2024" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.submit(input.closest("form")!);
+    expect(onSave).toHaveBeenCalledWith("Labs: 2024");
+  });
+
   it("opens a name without an extension exactly as it is stored", () => {
     render(
       <RenameDialog
@@ -367,7 +409,7 @@ describe("RenameDialog", () => {
       target: { value: "Lab\u200breport" },
     });
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "invisible control characters",
+      'Document names cannot contain < > : " | ? * / \\ or invisible control characters, or end with a dot.',
     );
   });
 

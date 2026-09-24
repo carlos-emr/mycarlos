@@ -3927,8 +3927,10 @@ mod tests {
         // Only ".pdf" is locked: the vault holds only PDFs, and a name such as
         // "Visit 10.30am" or "Mr.Jones" has no file type, so it stays renameable.
         store.rename_record(plain, "Visit 10.30am").unwrap();
-        // "pdf" without the dot is part of a name, not an extension.
+        // "pdf" without the dot is part of a name, not an extension, and so is
+        // ".pdf" anywhere but the end.
         store.rename_record(plain, "Visit 11ampdf").unwrap();
+        store.rename_record(plain, "Scan.pdf.txt").unwrap();
         store.rename_record(plain, "Visit 11am").unwrap();
         assert_eq!(name_of(plain), "Visit 11am");
         // A desktop picker can still return another kind of file, and a
