@@ -286,6 +286,7 @@ mod tests {
         assert!(!deadline.is_due(start + MINUTE));
         assert!(deadline.is_due(start + MINUTE + MARGIN));
         deadline.set_delay_minutes(0, start);
+        assert!(!deadline.is_due(start + MINUTE));
         assert!(deadline.is_due(start + MINUTE + MARGIN));
         deadline.set_delay_minutes(15, start);
         assert!(!deadline.is_due(start + 15 * MINUTE));
@@ -386,6 +387,9 @@ mod tests {
             mono: start + 25 * MINUTE + MARGIN,
             wall: wall + 25 * MINUTE + MARGIN,
         }));
+        // Arming again, as an unlock does, restarts it on both clocks.
+        deadline.arm(at(60));
+        assert!(!deadline.is_due(at(61)));
     }
 
     #[test]

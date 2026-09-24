@@ -243,14 +243,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       try {
         return await start();
       } finally {
+        // `run` locks once the operation has shown the transfer's outcome.
         transfersRef.current -= 1;
-        // Inside an operation, `run` locks once it has shown the outcome.
-        if (
-          transfersRef.current === 0 &&
-          runsRef.current === 0 &&
-          lockHeldRef.current
-        )
-          requestLock(true);
       }
     };
     return {
@@ -264,7 +258,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       exportToPicked: (pickId, recordId) =>
         transfer(() => bridge.exportToPicked(pickId, recordId)),
     };
-  }, [bridge, requestLock]);
+  }, [bridge]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -372,6 +366,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           setNotice(lockedNotice(vaultErrorMessage(error)));
         return;
       }
+      // A lock under way cancelled it, and says so itself when it finishes.
+      if (lockingRef.current && isCancelledError(error)) return;
       // The native idle deadline locked the vault, for example while this
       // screen was suspended. Show that rather than a failure to retry.
       if (isLockedError(error) && status === "unlocked") {

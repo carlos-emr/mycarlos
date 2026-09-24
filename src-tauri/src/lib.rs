@@ -466,6 +466,13 @@ async fn vault_lock(
 
 /// How often the native timer checks the idle deadline.
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+/// The renderer reports input at most this often (`TOUCH_THROTTLE_MS`).
+const RENDERER_TOUCH_THROTTLE: Duration = Duration::from_secs(10);
+// The native deadline must not fire while the renderer is working: activity
+// reaches it up to one throttle late, and it is checked one interval late.
+const _: () = assert!(
+    idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs() + IDLE_CHECK_INTERVAL.as_secs()
+);
 
 /// Locks the vault as the `vault_lock` command does, clearing pending picks,
 /// once it has been idle past its deadline. Returns whether it locked. This is the backstop for a renderer
@@ -1023,7 +1030,7 @@ mod tests {
     }
 
     #[test]
-    fn the_native_timer_locks_an_idle_vault_as_lock_now_does() {
+    fn lock_if_idle_locks_an_idle_vault_as_lock_now_does() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         store.create(PASSWORD, "Jamie", 1).unwrap();
@@ -1052,7 +1059,7 @@ mod tests {
     }
 
     #[test]
-    fn every_vault_command_counts_as_activity() {
+    fn a_command_counts_as_activity_when_it_starts_and_ends() {
         let temp = tempfile::tempdir().unwrap();
         let store = Arc::new(VaultStore::new(temp.path().join("vault")));
         store.create(PASSWORD, "Jamie", 1).unwrap();
