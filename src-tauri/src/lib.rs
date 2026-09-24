@@ -1098,6 +1098,26 @@ mod tests {
     }
 
     #[test]
+    fn transfer_commands_mark_their_transfer_and_user_input_counts_in_full() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        // Held for the whole command, not dropped at once as `let _ =` would.
+        for command in [
+            "async fn vault_import_picked(",
+            "async fn vault_export_picked(",
+        ] {
+            assert!(
+                body(command).contains("let _transfer = Transfer::new(store.idle());"),
+                "{command}"
+            );
+        }
+        assert!(body("fn vault_touch(").contains(".user_input(Instant::now())"));
+    }
+
+    #[test]
     fn a_command_the_lock_cancelled_is_not_activity_when_it_ends() {
         let temp = tempfile::tempdir().unwrap();
         let store = Arc::new(VaultStore::new(temp.path().join("vault")));

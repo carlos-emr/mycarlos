@@ -457,6 +457,19 @@ mod tests {
     }
 
     #[test]
+    fn a_transfer_guard_caps_the_apps_activity_until_it_is_dropped() {
+        let start = Instant::now();
+        let deadline = Arc::new(armed(start));
+        let transfer = Transfer::new(&deadline);
+        // It began just after `start`, so this counts only until its grace ends.
+        deadline.touch(start + 40 * MINUTE);
+        assert!(deadline.is_due(start + 40 * MINUTE));
+        drop(transfer);
+        deadline.touch(start + 40 * MINUTE);
+        assert!(!deadline.is_due(start + 44 * MINUTE));
+    }
+
+    #[test]
     fn during_a_transfer_only_user_input_counts_past_the_grace_from_its_start() {
         let start = Instant::now();
         let wall = SystemTime::now();
@@ -480,8 +493,9 @@ mod tests {
             mono: start + 21 * MINUTE + MARGIN,
             wall: wall + 21 * MINUTE + MARGIN,
         }));
-        deadline.hold_ended(at(40));
-        assert!(deadline.is_due(at(41)));
+        // Nor does the hold once it closes, though it was open past minute 16.
+        deadline.hold_ended(at(20));
+        assert!(deadline.is_due(at(22)));
         // The user's own input still counts in full.
         deadline.user_input(at(40));
         assert!(!deadline.is_due(at(44)));
