@@ -8,7 +8,6 @@
 export class TransferHold {
   private operations = 0;
   private transferRan = false;
-  private transferBeganAt = 0;
 
   operationStarted() {
     this.operations += 1;
@@ -22,22 +21,16 @@ export class TransferHold {
     return true;
   }
 
-  transferStarted(now: number) {
-    if (!this.transferRan) this.transferBeganAt = now;
+  transferStarted() {
     this.transferRan = true;
   }
 
-  /** Whether an operation that ran a transfer is still under way. */
+  /**
+   * Whether an operation that ran a transfer is still under way. An automatic
+   * lock waits for it however long it takes: a slow connection must not cut
+   * off a large transfer. The native deadline still locks one that stalls.
+   */
   get active(): boolean {
     return this.transferRan;
-  }
-
-  /**
-   * Whether an automatic lock should wait for it at `now`. The native deadline
-   * counts a transfer for at most its first 15 minutes and then the delay, and
-   * locks; `maxHoldMs` keeps a hold from outlasting that.
-   */
-  shouldWait(now: number, maxHoldMs: number): boolean {
-    return this.transferRan && now - this.transferBeganAt < maxHoldMs;
   }
 }

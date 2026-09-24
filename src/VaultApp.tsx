@@ -49,12 +49,11 @@ const TOUCH_THROTTLE_MS = 10_000;
 const IOS_TRANSFER_NOTE =
   "Keep myCarlos open: switching apps pauses this transfer.";
 
-// The unlock screen's notice when a transfer ended with the session, so its
-// outcome (such as a partial readable copy to delete) is not lost.
-const lockedNotice = (outcome: string) =>
-  outcome && outcome !== IOS_TRANSFER_NOTE
-    ? `Vault locked. ${outcome}`
-    : "Vault locked.";
+// A notice worth keeping from a transfer the lock ended, such as a partial
+// readable copy to delete. It is shown after the next unlock, not on the
+// unlock screen, where anyone at the device could read it.
+const transferOutcome = (notice: string) =>
+  notice && notice !== IOS_TRANSFER_NOTE ? notice : null;
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
@@ -86,6 +85,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // The notice a failed lock attempt left, which is not a transfer's outcome,
   // until a later failure replaces it (only failures can share its text).
   const lockErrorRef = useRef<string | null>(null);
+  // The outcome of a transfer the vault locked on, until the next unlock.
+  const pendingOutcomeRef = useRef<string | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
@@ -135,11 +136,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setStatus("locked");
       const lockError = lockErrorRef.current;
       lockErrorRef.current = null;
-      setNotice((current) =>
-        endsTransfer && current !== lockError
-          ? lockedNotice(current)
-          : "Vault locked.",
-      );
+      setNotice((current) => {
+        // Read here, where the latest notice is known; setting the same value
+        // twice, as a strict-mode rerun would, is harmless.
+        const outcome = transferOutcome(current);
+        if (endsTransfer && current !== lockError && outcome)
+          pendingOutcomeRef.current = outcome;
+        return "Vault locked.";
+      });
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
       // including the concealed screen, which would otherwise claim "Locked".
@@ -170,20 +174,16 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   );
 
   // Automatic locks: during a transfer, hide content and lock once the
-  // operation it belongs to has finished, or once the native deadline would
-  // have cut it off, `maxHoldMs` after it began.
-  const lockWhenIdle = useCallback(
-    (maxHoldMs: number) => {
-      if (!transferHold.shouldWait(Date.now(), maxHoldMs)) {
-        requestLock(true);
-        return;
-      }
-      if (!concealedRef.current) setLockFailed(false);
-      setConcealed(true);
-      holdLock(true);
-    },
-    [holdLock, requestLock, transferHold],
-  );
+  // operation it belongs to has finished.
+  const lockWhenIdle = useCallback(() => {
+    if (!transferHold.active) {
+      requestLock(true);
+      return;
+    }
+    if (!concealedRef.current) setLockFailed(false);
+    setConcealed(true);
+    holdLock(true);
+  }, [holdLock, requestLock, transferHold]);
 
   const platformRef = useRef("");
   useEffect(() => {
@@ -247,7 +247,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       // `run` locks once the operation has shown the transfer's outcome.
-      transferHold.transferStarted(Date.now());
+      transferHold.transferStarted();
       // iOS suspends an app in the background, and its transfer with it.
       if (platformRef.current === "ios") setNotice(IOS_TRANSFER_NOTE);
       return start();
@@ -268,7 +268,6 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   useEffect(() => {
     if (status !== "unlocked") return;
     const delayMs = autoLockMinutes * 60 * 1000;
-    const maxHoldMs = PICKER_GRACE_MS + delayMs;
     // A check that runs after this session has locked, before the cleanup
     // below, must not hold a lock for the next one.
     const session = sessionRef.current;
@@ -297,7 +296,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
-      if (remaining <= 0) lockWhenIdle(maxHoldMs);
+      if (remaining <= 0) lockWhenIdle();
       timer = window.setTimeout(
         check,
         remaining > 0 ? Math.min(remaining, LOCK_RECHECK_MS) : LOCK_RECHECK_MS,
@@ -334,7 +333,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // The lock is owed from here on, exactly as if the delay had elapsed:
       // activity cannot postpone it, and the recheck retries it if it fails.
       deadline = 0;
-      lockWhenIdle(maxHoldMs);
+      lockWhenIdle();
     };
     check();
     for (const event of ACTIVITY_EVENTS) {
@@ -385,9 +384,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // operation off.
       const lockedOut = isLockedError(error) || isCancelledError(error);
       if (sessionRef.current !== startedIn) {
-        // The vault locked while this ran. Say more only when the failure
-        // left something to act on, such as a partial copy.
-        if (!lockedOut) setNotice(lockedNotice(vaultErrorMessage(error)));
+        // The vault locked while this ran. Report a failure that left
+        // something to act on: a transfer's, such as a partial copy, after the
+        // next unlock; any other now, as the person who asked for it is here.
+        if (!lockedOut) {
+          if (transferHold.active)
+            pendingOutcomeRef.current = vaultErrorMessage(error);
+          else setNotice(vaultErrorMessage(error));
+        }
         return;
       }
       // A lock under way cancelled it, and says so itself when it finishes.
@@ -462,16 +466,24 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
+            const outcome = pendingOutcomeRef.current;
+            pendingOutcomeRef.current = null;
             setNotice(
-              current.recovery
-                ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
-                : "Vault unlocked.",
+              [
+                current.recovery
+                  ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
+                  : "Vault unlocked.",
+                outcome,
+              ]
+                .filter(Boolean)
+                .join(" "),
             );
           })
         }
         onReset={(confirmation) =>
           run(async () => {
             if (await bridge.reset(confirmation)) {
+              pendingOutcomeRef.current = null;
               setStatus("absent");
               setNotice("");
             } else {

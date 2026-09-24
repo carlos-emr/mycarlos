@@ -29,8 +29,7 @@ privacy, accessibility, or clinical review.
 - [x] Manual/background locking, immediate background visual concealment, and persisted
       one-to-fifteen-minute inactivity configuration with the approved five-minute default. A manual
       lock cancels streaming at the next I/O boundary; an automatic or background lock during an
-      import or export hides content at once and locks when the transfer finishes (within the
-      native deadline's limit, below).
+      import or export hides content at once and locks when the transfer finishes.
 - [x] Confirmed passphrase change and typed plus trusted-native-confirmation whole-vault reset.
 - [x] Exclusive OS ownership across app instances for unlocked sessions and lifecycle operations;
       subprocess coverage verifies rejection and fresh-state handoff after ownership release.
@@ -94,16 +93,16 @@ privacy, accessibility, or clinical review.
       the last activity it hears of, so the vault's keys are dropped even if the webview crashes or
       hangs, or is suspended while the app keeps running. Commands, user input the renderer
       reports, open pickers, opening what was chosen in them, and a transfer making progress count
-      as activity. A picker counts for at most 15 minutes from when it opened, and an import or
-      export command (opening what was chosen, and each pass) for at most 15 minutes from when it
-      began; past that, while it runs, only the user's own input counts. An automatic or
-      background lock that falls during a transfer hides the library and waits for the transfer to
-      finish. Limits: a hung webview keeps showing its last screen until it recovers, locking when
-      the app is backgrounded is still the renderer's alone, a source or destination that blocks
-      inside a single read or write delays every lock until it returns, and a held lock waits at
-      most until the transfer's first 15 minutes and then the delay have passed: the renderer then
-      locks and cancels the transfer, and the native deadline does so 15 seconds later if the
-      renderer cannot.
+      as activity. A picker counts for at most 15 minutes from when it opened. A transfer counts
+      for as long as it makes progress, however slowly, so a large one on a slow computer or
+      connection is not cut off; one that stalls locks after the delay. An automatic or background
+      lock that falls during a transfer hides the library and waits for the transfer to finish; its
+      outcome is shown after the next unlock, not on the unlock screen. Limits: a hung webview
+      keeps showing its last screen until it recovers, locking when the app is backgrounded is
+      still the renderer's alone, a source or destination that blocks inside a single read or
+      write, or a file that never finishes opening, delays every lock until it returns, and a
+      source that keeps trickling data keeps the vault unlocked, with content hidden, for as long
+      as it does.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.

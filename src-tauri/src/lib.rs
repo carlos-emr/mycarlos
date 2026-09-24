@@ -1,7 +1,7 @@
 mod idle;
 mod vault;
 
-use idle::{IdleDeadline, Transfer};
+use idle::{IdleDeadline, Opening};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
@@ -486,9 +486,8 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
     locked
 }
 
-/// Counts time until it drops as activity, capped by the grace, on every path:
-/// a native picker, or opening what was chosen in one (the files to import,
-/// which a provider may download first, or the export destination).
+/// Counts time in a native picker as activity until it closes, capped by the
+/// grace, on every path.
 struct ActivityHold<'a>(&'a IdleDeadline);
 
 impl<'a> ActivityHold<'a> {
@@ -505,10 +504,10 @@ impl Drop for ActivityHold<'_> {
 }
 
 /// The renderer reports user input, which the native idle deadline cannot see,
-/// at most every 10 seconds. It counts in full, even past a transfer's grace.
+/// at most every 10 seconds.
 #[tauri::command]
 fn vault_touch(store: State<'_, Arc<VaultStore>>) {
-    store.idle().user_input(Instant::now());
+    store.idle().touch(Instant::now());
 }
 
 #[derive(Deserialize)]
@@ -542,8 +541,8 @@ where
     // A command is activity when it starts and again when it ends, so a long
     // one does not leave the deadline where it was before it began. One the
     // lock cut off (it returns `Cancelled`) is not: that lock must not be
-    // undone by its own cancel. A provider export's write pass reports a
-    // partial copy instead, and is touched; its transfer's grace caps that.
+    // undone by its own cancel. (A provider export's write pass reports a
+    // partial copy instead, and is touched like any other failure.)
     let idle = Arc::clone(store.idle());
     idle.touch(Instant::now());
     let store = Arc::clone(store);
@@ -692,8 +691,6 @@ async fn vault_import_picked(
         folder_ids: request.folder_ids.clone(),
     };
     let paths = picks.take_import(request.pick_id, &picked_for)?;
-    // Opening the files and importing them share one grace.
-    let _transfer = Transfer::new(store.idle());
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
@@ -701,7 +698,7 @@ async fn vault_import_picked(
         {
             // A provider may download a whole document before the open returns,
             // with no progress to report meanwhile.
-            let _opening = ActivityHold::new(store.idle());
+            let _opening = Opening::new(store.idle());
             for path in paths {
                 sources.push(open_import_source(&app, path)?);
             }
@@ -786,9 +783,6 @@ async fn vault_export_picked(
 ) -> CommandResult<()> {
     let record_id = request.record_id;
     let destination = picks.take_export(request.pick_id, record_id)?;
-    // Both passes of a provider export, and opening its document, share one
-    // grace.
-    let _transfer = Transfer::new(store.idle());
 
     if let Ok(destination_path) = destination.clone().into_path() {
         return run_blocking(store.inner(), move |store| {
@@ -811,7 +805,7 @@ async fn vault_export_picked(
     run_blocking(store.inner(), move |store| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
-        let opening = ActivityHold::new(store.idle());
+        let opening = Opening::new(store.idle());
         let mut output = app
             .fs()
             .open(destination, options)
@@ -1098,23 +1092,21 @@ mod tests {
     }
 
     #[test]
-    fn transfer_commands_mark_their_transfer_and_user_input_counts_in_full() {
+    fn both_transfer_commands_hold_the_deadline_while_opening_what_was_chosen() {
         let source = include_str!("lib.rs");
         let body = |command: &str| {
             let body = source.split(command).nth(1).unwrap();
             body[..body.find("\n}\n").unwrap()].to_owned()
         };
-        // Held for the whole command, not dropped at once as `let _ =` would.
         for command in [
             "async fn vault_import_picked(",
             "async fn vault_export_picked(",
         ] {
             assert!(
-                body(command).contains("let _transfer = Transfer::new(store.idle());"),
+                body(command).contains("Opening::new(store.idle())"),
                 "{command}"
             );
         }
-        assert!(body("fn vault_touch(").contains(".user_input(Instant::now())"));
     }
 
     #[test]

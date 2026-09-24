@@ -305,8 +305,8 @@ impl CancellableReader {
     }
 
     /// Counts each read that moves data as activity: a transfer that is making
-    /// progress keeps the session unlocked, up to the grace of the transfer
-    /// command it belongs to, and one blocked in a read does not.
+    /// progress keeps the session unlocked, however slowly, and one blocked in
+    /// a read does not.
     fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
         self.idle = Some(Arc::clone(idle));
         self
