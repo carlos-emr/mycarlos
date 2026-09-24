@@ -399,6 +399,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         return;
       }
       report(vaultErrorMessage(error));
+      // A transfer failure that is neither "locked" nor "cancelled" can still
+      // mean the native deadline locked the vault (a provider export's partial
+      // copy): confirm, and lock so that the lock keeps it.
+      if (transferHold.active && status === "unlocked") {
+        const now = await bridge.status().catch(() => null);
+        if (now === "locked" && sessionRef.current === startedIn)
+          requestLock(true);
+      }
     } finally {
       setBusy(false);
       if (transferHold.operationEnded() && lockHeldRef.current)
@@ -417,6 +425,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   };
   const setSessionNotice = (message: string) => {
     if (inSession()) report(message);
+    // The lock that ended this transfer has landed: keep its result for
+    // after the next unlock.
+    else if (transferHold.active) pendingOutcomeRef.current = message;
   };
 
   if (status === "loading") {

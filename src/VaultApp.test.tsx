@@ -3149,7 +3149,7 @@ describe("durable vault UI", () => {
           }),
       ),
     });
-    // The lock's notice updater records the outcome; React runs it twice here.
+    // Strict mode runs effects and updates twice; the outcome still shows once.
     render(
       <StrictMode>
         <VaultApp bridge={bridge} />
@@ -3165,8 +3165,7 @@ describe("durable vault UI", () => {
     await expectNothingKeptAfterUnlock();
   });
 
-  // Fails until the kept outcome is cleared when the vault turns out to be
-  // missing (or on create): the old vault's outcome reaches the new vault.
+  // The old vault's outcome must not reach a new one.
   it("does not carry a kept outcome into a vault created after the old one went missing", async () => {
     let finishImport!: (value: ImportOutcome) => void;
     const bridge = nativeBridge({
@@ -3210,7 +3209,6 @@ describe("durable vault UI", () => {
     await expectNothingKeptAfterUnlock();
   });
 
-  // Fails until a failed lock attempt keeps the outcome it replaces on screen.
   it("keeps a transfer's outcome when the first attempt to lock after it fails", async () => {
     let finishImport!: (value: ImportOutcome) => void;
     const bridge = nativeBridge({
@@ -3237,8 +3235,7 @@ describe("durable vault UI", () => {
     await expectOutcomeAfterUnlock("1 file(s) encrypted and imported.");
   });
 
-  // Fails until only the transfer's own outcome is kept: a notice from
-  // something else during the transfer is not how the transfer went.
+  // A notice from something else during the transfer is not how it went.
   it("does not keep an unrelated notice as the outcome of a transfer a manual lock cancels", async () => {
     const user = userEvent.setup();
     let failExport!: (error: unknown) => void;
@@ -3270,8 +3267,7 @@ describe("durable vault UI", () => {
 
   it.each([
     ["", false],
-    // Fails until only the transfer's own outcome is kept: the notice left on
-    // screen replaces the warning when the lock's update is applied after it.
+    // Another notice left on screen must not replace the warning.
     [" and something else left a notice", true],
   ])(
     "keeps the partial-copy warning when an export fails in the same tick as Lock now finishes%s",
@@ -3312,4 +3308,63 @@ describe("durable vault UI", () => {
       await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
     },
   );
+
+  it("keeps a completed export's result that arrives after Lock now has locked", async () => {
+    const user = userEvent.setup();
+    let finishExport!: () => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
+      exportToPicked: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishExport = resolve;
+          }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText("FAKE_Results.pdf");
+    await startExport();
+    await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    // The copy was already written when the cancel arrived.
+    await act(async () => finishExport());
+    await expectOutcomeAfterUnlock(
+      "A readable copy was saved to this computer.",
+    );
+  });
+
+  // A provider export cut off by the native deadline fails as a partial copy,
+  // not as cancelled; the screen checks whether the vault locked.
+  it("keeps the partial-copy warning when the native deadline locks during a provider export", async () => {
+    let failExport!: (error: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
+      exportToPicked: vi.fn(
+        () =>
+          new Promise<void>((_, reject) => {
+            failExport = reject;
+          }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText("FAKE_Results.pdf");
+    await startExport();
+    await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
+    // The native deadline locked the vault (e.g. after a sleep), which cut
+    // off the write pass.
+    vi.mocked(bridge.status).mockResolvedValue("locked");
+    vi.mocked(bridge.snapshot).mockRejectedValue({
+      code: "locked",
+      message: "The vault is locked.",
+    });
+    await act(async () => failExport(PARTIAL_EXPORT));
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
+    await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
+  });
 });

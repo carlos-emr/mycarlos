@@ -62,6 +62,9 @@ struct State {
     delay: Duration,
     holds: usize,
     openings: usize,
+    /// Counts locked sessions, so an opening from an earlier session ending
+    /// late cannot release the current one's.
+    session: u64,
     mono: Times<Instant>,
     wall: Times<SystemTime>,
 }
@@ -81,6 +84,7 @@ impl IdleDeadline {
             delay: DEFAULT_DELAY,
             holds: 0,
             openings: 0,
+            session: 0,
             mono: Times::new(now.mono),
             wall: Times::new(now.wall),
         }))
@@ -107,6 +111,7 @@ impl IdleDeadline {
         state.delay = DEFAULT_DELAY;
         // An opening still under way belongs to the session that ended.
         state.openings = 0;
+        state.session += 1;
     }
 
     /// Takes the renderer's delay (clamped to 1-15 minutes). The renderer
@@ -132,13 +137,19 @@ impl IdleDeadline {
     /// Starts opening the files chosen for a transfer. A provider may download
     /// a whole document before the open returns, with no progress to report,
     /// so the deadline is not due until the opening ends.
-    fn opening_started(&self) {
-        self.state().openings += 1;
+    /// Returns the session it started in, for `opening_ended`.
+    fn opening_started(&self) -> u64 {
+        let mut state = self.state();
+        state.openings += 1;
+        state.session
     }
 
-    fn opening_ended(&self, now: impl Into<Now>) {
+    fn opening_ended(&self, started_in: u64, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();
+        if state.session != started_in {
+            return;
+        }
         state.openings = state.openings.saturating_sub(1);
         state.mono.touch(now.mono);
         state.wall.touch(now.wall);
@@ -178,18 +189,21 @@ impl IdleDeadline {
 
 /// Marks the opening of chosen files, from its start until it is dropped, on
 /// every path.
-pub struct Opening<'a>(&'a IdleDeadline);
+pub struct Opening<'a> {
+    idle: &'a IdleDeadline,
+    started_in: u64,
+}
 
 impl<'a> Opening<'a> {
     pub fn new(idle: &'a IdleDeadline) -> Self {
-        idle.opening_started();
-        Self(idle)
+        let started_in = idle.opening_started();
+        Self { idle, started_in }
     }
 }
 
 impl Drop for Opening<'_> {
     fn drop(&mut self) {
-        self.0.opening_ended(Instant::now());
+        self.idle.opening_ended(self.started_in, Instant::now());
     }
 }
 
@@ -447,8 +461,8 @@ mod tests {
         };
         // A download that takes an hour: the delay runs from its end on
         // either clock.
-        deadline.opening_started();
-        deadline.opening_ended(at(60));
+        let session = deadline.opening_started();
+        deadline.opening_ended(session, at(60));
         assert!(!deadline.is_due(at(64)));
         assert!(deadline.is_due(Now {
             mono: start + 65 * MINUTE + MARGIN,
@@ -465,13 +479,13 @@ mod tests {
     fn an_opening_left_over_from_a_locked_session_does_not_hold_the_next() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.opening_started();
+        let old = deadline.opening_started();
         deadline.disarm();
         deadline.set_delay_minutes(5, start);
         deadline.arm(start);
         assert!(deadline.is_due(start + 5 * MINUTE + MARGIN));
-        // Its guard ending later does not underflow.
-        deadline.opening_ended(start);
+        // Its guard ending later neither underflows nor counts as activity.
+        deadline.opening_ended(old, start + 4 * MINUTE);
         assert!(deadline.is_due(start + 5 * MINUTE + MARGIN));
     }
 
@@ -479,10 +493,10 @@ mod tests {
     fn opening_chosen_files_is_never_cut_off_and_restarts_the_delay() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.opening_started();
+        let session = deadline.opening_started();
         assert!(!deadline.is_due(start + 24 * 60 * MINUTE));
         // Opened at minute 10, so the delay runs from there.
-        deadline.opening_ended(start + 10 * MINUTE);
+        deadline.opening_ended(session, start + 10 * MINUTE);
         assert!(!deadline.is_due(start + 15 * MINUTE));
         assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
         // The guard does the same on every path.
@@ -501,5 +515,19 @@ mod tests {
         deadline.arm(start);
         assert!(!deadline.is_due(start + 15 * MINUTE));
         assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
+    }
+
+    #[test]
+    fn a_stale_opening_ending_does_not_release_the_next_sessions_opening() {
+        let start = Instant::now();
+        let deadline = armed(start);
+        let first = deadline.opening_started(); // session 1, blocked in a provider
+        deadline.disarm();
+        deadline.set_delay_minutes(5, start);
+        deadline.arm(start);
+        deadline.opening_started(); // session 2's own opening
+        deadline.opening_ended(first, start); // session 1's guard finally drops
+                                              // Session 2's opening is still under way.
+        assert!(!deadline.is_due(start + 60 * MINUTE));
     }
 }
