@@ -105,6 +105,8 @@ impl IdleDeadline {
         let mut state = self.state();
         state.armed = false;
         state.delay = DEFAULT_DELAY;
+        // An opening still under way belongs to the session that ended.
+        state.openings = 0;
     }
 
     /// Takes the renderer's delay (clamped to 1-15 minutes). The renderer
@@ -432,6 +434,45 @@ mod tests {
         }
         // Once it stalls, the delay runs from its last progress.
         assert!(deadline.is_due(start + 245 * MINUTE + MARGIN));
+    }
+
+    #[test]
+    fn opening_restarts_the_delay_on_both_clocks_and_its_guard_releases_it() {
+        let start = Instant::now();
+        let wall = SystemTime::now();
+        let deadline = armed(Now { mono: start, wall });
+        let at = |minutes: u32| Now {
+            mono: start + minutes * MINUTE,
+            wall: wall + minutes * MINUTE,
+        };
+        // A download that takes an hour: the delay runs from its end on
+        // either clock.
+        deadline.opening_started();
+        deadline.opening_ended(at(60));
+        assert!(!deadline.is_due(at(64)));
+        assert!(deadline.is_due(Now {
+            mono: start + 65 * MINUTE + MARGIN,
+            wall: wall + 65 * MINUTE + MARGIN,
+        }));
+
+        // Dropping the guard ends the opening, so a stall after it locks.
+        let deadline = armed(Instant::now());
+        drop(Opening::new(&deadline));
+        assert!(deadline.is_due(Instant::now() + 5 * MINUTE + MARGIN));
+    }
+
+    #[test]
+    fn an_opening_left_over_from_a_locked_session_does_not_hold_the_next() {
+        let start = Instant::now();
+        let deadline = armed(start);
+        deadline.opening_started();
+        deadline.disarm();
+        deadline.set_delay_minutes(5, start);
+        deadline.arm(start);
+        assert!(deadline.is_due(start + 5 * MINUTE + MARGIN));
+        // Its guard ending later does not underflow.
+        deadline.opening_ended(start);
+        assert!(deadline.is_due(start + 5 * MINUTE + MARGIN));
     }
 
     #[test]

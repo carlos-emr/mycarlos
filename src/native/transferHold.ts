@@ -1,7 +1,7 @@
 /**
  * Tracks the operations under way and whether one of them ran a transfer, so
  * that an automatic or background lock can wait for the transfer's operation
- * to finish and show its outcome. Read synchronously from callbacks, so it is
+ * to finish and report its outcome. Read synchronously from callbacks, so it is
  * a plain object rather than React state. Every transfer runs inside an
  * operation, which only ends once its transfer has settled.
  */

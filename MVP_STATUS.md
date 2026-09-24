@@ -100,9 +100,9 @@ privacy, accessibility, or clinical review.
       outcome is shown after the next unlock, not on the unlock screen. Limits: a hung webview
       keeps showing its last screen until it recovers, locking when the app is backgrounded is
       still the renderer's alone, a source or destination that blocks inside a single read or
-      write, or a file that never finishes opening, delays every lock until it returns, and a
-      source that keeps trickling data keeps the vault unlocked, with content hidden, for as long
-      as it does.
+      write delays every lock until it returns, and a source that keeps trickling data, or a
+      file that never finishes opening, holds automatic locks (content hidden) for as long as it
+      does; **Lock now** still locks at once while a file is opening.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.

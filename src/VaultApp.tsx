@@ -49,12 +49,6 @@ const TOUCH_THROTTLE_MS = 10_000;
 const IOS_TRANSFER_NOTE =
   "Keep myCarlos open: switching apps pauses this transfer.";
 
-// A notice worth keeping from a transfer the lock ended, such as a partial
-// readable copy to delete. It is shown after the next unlock, not on the
-// unlock screen, where anyone at the device could read it.
-const transferOutcome = (notice: string) =>
-  notice && notice !== IOS_TRANSFER_NOTE ? notice : null;
-
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
   return <NativeVault bridge={bridge} />;
@@ -79,13 +73,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setLockHeld(held);
   }, []);
   // An automatic or background lock waits until every operation started
-  // through `run` has finished if one of them ran a transfer, so the transfer's
-  // outcome is shown first.
+  // through `run` has finished if one of them ran a transfer, so the transfer
+  // has reported its outcome first.
   const [transferHold] = useState(() => new TransferHold());
-  // The notice a failed lock attempt left, which is not a transfer's outcome,
-  // until a later failure replaces it (only failures can share its text).
-  const lockErrorRef = useRef<string | null>(null);
-  // The outcome of a transfer the vault locked on, until the next unlock.
+  // What was last reported since the latest transfer began: its result, or a
+  // partial readable copy to delete. Used only when a lock ends that transfer.
+  const transferOutcomeRef = useRef<string | null>(null);
+  // The outcome of a transfer the vault locked on. It is shown after the next
+  // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<string | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
@@ -134,22 +129,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLockFailed(false);
       holdLock(false);
       setStatus("locked");
-      const lockError = lockErrorRef.current;
-      lockErrorRef.current = null;
-      setNotice((current) => {
-        // Read here, where the latest notice is known; setting the same value
-        // twice, as a strict-mode rerun would, is harmless.
-        const outcome = transferOutcome(current);
-        if (endsTransfer && current !== lockError && outcome)
-          pendingOutcomeRef.current = outcome;
-        return "Vault locked.";
-      });
+      if (endsTransfer && transferOutcomeRef.current)
+        pendingOutcomeRef.current = transferOutcomeRef.current;
+      setNotice("Vault locked.");
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
       // including the concealed screen, which would otherwise claim "Locked".
       setLockFailed(true);
-      lockErrorRef.current = vaultErrorMessage(error);
-      setNotice(lockErrorRef.current);
+      setNotice(vaultErrorMessage(error));
     } finally {
       lockingRef.current = false;
     }
@@ -246,8 +233,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }
     };
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
-      // `run` locks once the operation has shown the transfer's outcome.
+      // `run` locks once the operation has reported the transfer's outcome.
       transferHold.transferStarted();
+      transferOutcomeRef.current = null;
       // iOS suspends an app in the background, and its transfer with it.
       if (platformRef.current === "ios") setNotice(IOS_TRANSFER_NOTE);
       return start();
@@ -361,6 +349,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
   };
 
+  // Shows a notice, and keeps it as the outcome of a transfer under way.
+  const report = (message: string) => {
+    transferOutcomeRef.current = message;
+    setNotice(message);
+  };
+
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
     setNotice("");
@@ -369,8 +363,6 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await operation();
     } catch (error) {
-      // Whatever this sets next is an outcome, not a lock's error.
-      lockErrorRef.current = null;
       // The unlock screen is also shown when the startup status check fails,
       // and after a failed erase. If there is no vault after all, offer to
       // create one: nothing on the unlock screen can succeed, and only a
@@ -402,11 +394,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // a transfer it cut off as cancelled (a provider export's write pass
         // as a partial copy instead, which is shown). Lock here too, which also
         // confirms it.
-        if (isCancelledError(error)) setNotice("The transfer did not finish.");
+        if (isCancelledError(error)) report("The transfer did not finish.");
         requestLock(true);
         return;
       }
-      setNotice(vaultErrorMessage(error));
+      report(vaultErrorMessage(error));
     } finally {
       setBusy(false);
       if (transferHold.operationEnded() && lockHeldRef.current)
@@ -424,7 +416,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     return next;
   };
   const setSessionNotice = (message: string) => {
-    if (inSession()) setNotice(message);
+    if (inSession()) report(message);
   };
 
   if (status === "loading") {
@@ -443,6 +435,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onCreate={(profile, passphrase) =>
           run(async () => {
             setSnapshot(await bridge.create(passphrase, profile));
+            // Nothing from a vault that is gone.
+            pendingOutcomeRef.current = null;
             setConcealed(false);
             setStatus("unlocked");
             setNotice(

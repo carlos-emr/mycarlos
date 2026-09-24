@@ -1098,15 +1098,21 @@ mod tests {
             let body = source.split(command).nth(1).unwrap();
             body[..body.find("\n}\n").unwrap()].to_owned()
         };
-        for command in [
-            "async fn vault_import_picked(",
-            "async fn vault_export_picked(",
-        ] {
-            assert!(
-                body(command).contains("Opening::new(store.idle())"),
-                "{command}"
-            );
-        }
+        // Held across the opens, not dropped at once as `let _ =` would.
+        let import = body("async fn vault_import_picked(");
+        let guard = import
+            .find("let _opening = Opening::new(store.idle());")
+            .unwrap();
+        assert!(guard < import.find("open_import_source(").unwrap());
+        let export = body("async fn vault_export_picked(");
+        let guard = export
+            .find("let opening = Opening::new(store.idle());")
+            .unwrap();
+        let open = export[guard..].find(".open(destination, options)").unwrap() + guard;
+        let dropped = export.find("drop(opening);").unwrap();
+        assert!(guard < open && open < dropped);
+        // User input the renderer reports is activity.
+        assert!(body("fn vault_touch(").contains(".touch(Instant::now())"));
     }
 
     #[test]
