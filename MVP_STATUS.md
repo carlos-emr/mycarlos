@@ -100,10 +100,10 @@ privacy, accessibility, or clinical review.
       background lock that falls during a transfer hides the library and waits for the transfer to
       finish. Limits: a hung webview keeps showing its last screen until it recovers, locking when
       the app is backgrounded is still the renderer's alone, a source or destination that blocks
-      inside a single read or write delays every lock until it returns, and input on the hidden
-      screen is not reported, so a held lock waits only until the native deadline (the delay plus
-      15 seconds after the later of the last input and the transfer's first 15 minutes) cancels
-      the transfer.
+      inside a single read or write delays every lock until it returns, and a held lock waits at
+      most until the transfer's first 15 minutes and then the delay have passed: the renderer then
+      locks and cancels the transfer, and the native deadline does so 15 seconds later if the
+      renderer cannot.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.

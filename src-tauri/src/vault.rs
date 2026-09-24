@@ -637,8 +637,9 @@ impl VaultStore {
     /// Cancels any transfer, then clears the session if `due` still holds once
     /// the session lock is taken: an unlock may have started a new session
     /// while this waited for the lock. The cancel must come first, since a
-    /// transfer holds the session lock until it stops; in that rare race it
-    /// can also stop a transfer the new session had just started.
+    /// transfer holds the session lock until it stops; in the rare race where
+    /// a new session starts, or activity arrives, while it waits, it can stop
+    /// a transfer without locking.
     fn lock_if(&self, due: impl Fn() -> bool) -> bool {
         self.cancel_io.store(true, Ordering::Release);
         let locked = {

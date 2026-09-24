@@ -138,7 +138,7 @@ On every platform:
    On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
    importing, and the import continues only when you come back. If you come back within the
    automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
-   does. If you stay away much longer, the vault may instead lock as you return, say "Vault
+   does. If you stay away longer than that, the vault may instead lock as you return, say "Vault
    locked. The transfer did not finish.", and leave the document out; either way nothing from the
    vault is shown meanwhile.
 
