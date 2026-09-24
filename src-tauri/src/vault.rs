@@ -3883,6 +3883,31 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_keeps_an_uppercase_extension_as_it_is() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![source("Results.PDF", b"synthetic pdf")],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        for name in ["Lab.pdf", "Lab.Pdf", "Lab"] {
+            assert!(
+                matches!(store.rename_record(record, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+        }
+        store.rename_record(record, "Lab.PDF").unwrap();
+        assert_eq!(store.snapshot().unwrap().records[0].display_name, "Lab.PDF");
+    }
+
+    #[test]
     fn a_rename_keeps_the_file_extension() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));

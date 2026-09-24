@@ -202,6 +202,15 @@ describe("RenameDialog", () => {
     // trimmed, as the vault trims it.
     ["Scan 3.5 notes", "Scan notespdf", "Scan notespdf"],
     ["Visit notes", "Lab.pdf notes", "Lab.pdf notes"],
+    // Spaces around a line separator inside the name are kept: only the ends
+    // of the name are trimmed.
+    ["Results.pdf", "Lab \u2028 report", "Lab \u2028 report.pdf"],
+    // Ordinary punctuation is allowed in document names.
+    [
+      "Results.pdf",
+      "Lab #1; (A+B) = 50% & 'x' ~ @ ! $ ^ , {0} [9]",
+      "Lab #1; (A+B) = 50% & 'x' ~ @ ! $ ^ , {0} [9].pdf",
+    ],
     ["Results.pdf", "Lab report\t", "Lab report.pdf"],
     ["Results.pdf", "Lab\u0085.pdf", "Lab.pdf"],
     // A soft hyphen is not a control character; the vault accepts it.
@@ -345,7 +354,7 @@ describe("RenameDialog", () => {
 
   it.each([
     0x061b, 0x061d, 0x200a, 0x2010, 0x2028, 0x2029, 0x202f, 0x2065, 0x206a,
-    0xfefe,
+    0xfefe, 0xff00,
   ])(
     "accepts U+%s just outside the refused ranges, as the vault does",
     (codePoint) => {
