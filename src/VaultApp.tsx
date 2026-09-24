@@ -83,7 +83,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // through `run` has finished if one of them ran a transfer, so the transfer's
   // outcome is shown first.
   const [transferHold] = useState(() => new TransferHold());
-  // The notice a failed lock attempt left, which is not a transfer's outcome.
+  // The notice a failed lock attempt left, which is not a transfer's outcome,
+  // until a later failure replaces it (only failures can share its text).
   const lockErrorRef = useRef<string | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   const lockingRef = useRef(false);
@@ -369,6 +370,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await operation();
     } catch (error) {
+      // Whatever this sets next is an outcome, not a lock's error.
+      lockErrorRef.current = null;
       // The unlock screen is also shown when the startup status check fails,
       // and after a failed erase. If there is no vault after all, offer to
       // create one: nothing on the unlock screen can succeed, and only a
