@@ -84,10 +84,14 @@ fn terminate_at_test_boundary(boundary: &str) {
 #[cfg(not(test))]
 fn terminate_at_test_boundary(_boundary: &str) {}
 
+/// A test's action, and the boundary to run it at.
+#[cfg(test)]
+type TestBoundaryAction = Option<(&'static str, Box<dyn Fn()>)>;
+
 #[cfg(test)]
 thread_local! {
     /// A test's action to run when this thread reaches the named boundary.
-    static AT_TEST_BOUNDARY: std::cell::RefCell<Option<(&'static str, Box<dyn Fn()>)>> =
+    static AT_TEST_BOUNDARY: std::cell::RefCell<TestBoundaryAction> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -2840,9 +2844,10 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
 /// entries. Best effort. The caller holds the storage lock, which keeps out
 /// other processes while a session is open, and exports under way in this
 /// process are skipped; another process can only sweep once this session has
-/// locked, after which an export writes nothing readable. Outside the vault
-/// home it only removes a real directory (not a link) named like our staging
-/// folders. An entry is kept for a later start when it cannot be read, when
+/// locked, after which an export writes nothing readable (a copy it already
+/// wrote but has not yet renamed is removed, and that export fails). Outside
+/// the vault home it only removes a real directory (not a link) named like our
+/// staging folders. An entry is kept for a later start when it cannot be read, when
 /// something else has taken the folder's name, or when the folder's parent is
 /// missing, as when its drive is not connected (a best guess: a drive
 /// remounted elsewhere, or a mount point that stays when the drive is out,

@@ -166,7 +166,8 @@ platform's native encoding (raw bytes on Unix, UTF-16LE on Windows). The entry r
 the user exported to, never the document's name. When an export ends, successfully or not, it
 removes the folder and then its entry, keeping the entry if the folder could not be removed.
 Startup status, creation, unlock and reset remove any folder that a killed process left, then its
-entry, skipping exports still under way in the same process; outside the vault home they only
+entry, skipping exports still under way in the same process (another instance, sweeping after
+this one's session locked, can remove a copy not yet renamed, which fails that export cleanly); outside the vault home they only
 remove a real directory (not a link) with that exact name. An entry is kept for a later start when
 it cannot be read, when something else has taken its folder's name, or when the folder's parent
 is missing, as when its drive is not connected; that last is a best guess, and a drive remounted
