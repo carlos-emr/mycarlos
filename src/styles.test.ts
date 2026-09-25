@@ -1,30 +1,42 @@
 import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
 
-// Declarations of the form `selector { ... font-size: X ... }`, as pairs.
-const fontSizes = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(
-  ([, selector, body]) =>
-    [...body.matchAll(/font-size:\s*([^;}\s]+)/g)].map(([, size]) => ({
-      selector: selector.trim(),
-      size,
-    })),
-);
+const declarations = (property: string) =>
+  [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(([, selector, body]) =>
+    [...body.matchAll(new RegExp(`(?:^|[;\\s])${property}:([^;}]+)`, "g"))].map(
+      ([, value]) => ({ selector: selector.trim(), value: value.trim() }),
+    ),
+  );
+const fontSizes = declarations("font-size");
 
 describe("text sizes", () => {
-  it("scale with the reader's zoom and text-size settings", () => {
+  it("are plain rem values, so zoom and the root text size scale them", () => {
     expect(fontSizes.length).toBeGreaterThan(0);
-    // Pixel sizes ignore a larger default text size; rem sizes follow it.
-    expect(fontSizes.filter(({ size }) => !size.endsWith("rem"))).toEqual([]);
+    expect(
+      fontSizes.filter(({ value }) => !/^\d*\.?\d+rem$/.test(value)),
+    ).toEqual([]);
+  });
+
+  it("are not set through the font shorthand", () => {
+    const fonts = declarations("font");
+    expect(fonts.length).toBeGreaterThan(0);
+    expect(fonts.filter(({ value }) => value !== "inherit")).toEqual([]);
+  });
+
+  it("move to the narrower layout sooner when larger, via em breakpoints", () => {
+    const widths = [...css.matchAll(/@media[^{]*width:\s*([^)\s]+)/g)].map(
+      ([, width]) => width,
+    );
+    expect(widths.length).toBeGreaterThan(0);
+    expect(widths.filter((width) => !width.endsWith("em"))).toEqual([]);
   });
 
   it("are at least 14px at the default text size", () => {
-    // The tick drawn inside a 19px checkbox is decoration, not text.
     const decorative = new Set([".check.checked::after"]);
     expect(
       fontSizes.filter(
-        ({ selector, size }) =>
-          !decorative.has(selector) &&
-          parseFloat(size) * (size.endsWith("rem") ? 16 : 1) < 14,
+        ({ selector, value }) =>
+          !decorative.has(selector) && parseFloat(value) * 16 < 14,
       ),
     ).toEqual([]);
   });

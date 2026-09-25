@@ -206,11 +206,11 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 Then turn the screen reader off and check text size:
 
 - **Windows, macOS:** press Ctrl + plus (Command + plus on a Mac) up to 200%. The text grows,
-  nothing is cut off or overlaps, and the page scrolls only up and down. Ctrl + 0 (Command + 0) resets it.
-  Also try Windows **Settings → Accessibility → Text size** and report whether the app follows
-  it.
-- **Android:** set **Settings → Display → Font size** to the largest and reopen the app. The
-  text should be larger, with nothing cut off.
+  nothing is cut off or overlaps, and the page scrolls only up and down. Ctrl + 0 (Command + 0)
+  resets it. Also try Windows **Settings → Accessibility → Text size** and report whether the app
+  follows it.
+- **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
+  whether the text gets larger, and whether anything is cut off.
 - **iOS:** larger text in Settings is not expected to change the app yet; report what you see.
 
 When you report a problem, name the screen reader and its version, and say what it read out and

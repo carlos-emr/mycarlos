@@ -1040,7 +1040,9 @@ mod tests {
         // browser. Tauri leaves those keys off unless the window enables them.
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        for window in config["app"]["windows"].as_array().unwrap() {
+        let windows = config["app"]["windows"].as_array().unwrap();
+        assert!(!windows.is_empty());
+        for window in windows {
             assert_eq!(window["zoomHotkeysEnabled"], true);
         }
     }
