@@ -164,17 +164,17 @@ authentication and syncing succeeds. That folder is recorded first in `pending-e
 vault home: one file per export, named by its UUID and holding the staging folder's path in the
 platform's native encoding (raw bytes on Unix, UTF-16LE on Windows). The entry reveals the folder
 the user exported to, never the document's name. When an export ends, successfully or not, it
-removes the folder and then its entry, keeping the entry if the folder could not be removed.
-Startup status, creation, unlock and reset remove any folder that a killed process left, then its
-entry, skipping exports still under way in the same process (another instance, sweeping after
-this one's session locked, can remove a copy not yet renamed, which fails that export cleanly); outside the vault home they only
-remove a real directory (not a link) with that exact name. An entry is kept for a later start when
-it cannot be read, when something else has taken its folder's name, or when the folder's parent
-is missing, as when its drive is not connected; that last is a best guess, and a drive remounted
-elsewhere loses its entry. If the entry cannot be written for any reason, as when the vault's disk
-is full, the export still runs, untracked. Content-provider destinations, where atomic rename is
-unavailable, receive a second streaming pass only after a complete authentication pass. The UI
-warns that the exported copy is outside vault protection.
+removes the folder and then its entry, keeping the entry if the folder could not be removed. Startup
+status, creation, unlock and reset remove any folder that a killed process left, then its entry,
+skipping exports still under way in the same process (another instance, sweeping after this one's
+session locked, can remove a copy not yet renamed, which fails that export cleanly); outside the
+vault home they only remove a real directory (not a link) with that exact name. An entry is kept for
+a later start when it cannot be read, when something else has taken its folder's name, or when the
+folder's parent is missing, as when its drive is not connected; that last is a best guess, and a
+drive remounted elsewhere loses its entry. If the entry cannot be written for any reason, as when
+the vault's disk is full, the export still runs, untracked. Content-provider destinations, where
+atomic rename is unavailable, receive a second streaming pass only after a complete authentication
+pass. The UI warns that the exported copy is outside vault protection.
 
 Individual deletion commits a manifest without the record into one slot, unlinks the ciphertext,
 then commits the same state at a newer generation into the other slot. Both live manifests
