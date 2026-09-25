@@ -8,8 +8,8 @@ const UNSAFE =
 const GAINS =
   "This document's name has no .pdf extension, so it cannot end in .pdf.";
 const TOO_LONG = "This name is too long. Shorten it to save.";
-const RESERVED =
-  "Windows reserves that name for a device, so a copy could not be saved under it. Choose another name.";
+const reserved = (word: string) =>
+  `"${word}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.`;
 const cp = (codePoint: number) => String.fromCodePoint(codePoint);
 
 // Renders the dialog for a stored name and returns what a test needs.
@@ -106,6 +106,9 @@ describe("RenameDialog", () => {
     ["Results.pdf", "COM10", "COM10.pdf"],
     ["Results.pdf", `COM${cp(0x2074)}`, `COM${cp(0x2074)}.pdf`],
     ["Results.pdf", "Lab.CON", "Lab.CON.pdf"],
+    // Only ordinary spaces before the dot are ignored, as by the vault.
+    ["Visit notes", `CON${cp(0xa0)}.txt`, `CON${cp(0xa0)}.txt`],
+    ["Visit notes", `NUL${cp(0x3000)}.log`, `NUL${cp(0x3000)}.log`],
     // Case is compared for ASCII letters only, as the vault does: a dotless ı
     // is not an I.
     ["Results.pdf", `con${cp(0x131)}n$`, `con${cp(0x131)}n$.pdf`],
@@ -159,23 +162,6 @@ describe("RenameDialog", () => {
     ["Results.pdf", "字".repeat(79), TOO_LONG],
     // With no extension to keep, the name itself must not end with a dot.
     ["Scan 3.5 notes", "Notes.", UNSAFE],
-    // Names Windows reserves for devices, whatever the case, before any dot,
-    // and with spaces before the dot.
-    ...[
-      "CON",
-      "prn",
-      "Aux",
-      "NUL",
-      "conin$",
-      "CONOUT$",
-      "COM0",
-      "com9",
-      "LPT1",
-      `COM${cp(0xb9)}`,
-      `lpt${cp(0xb3)}`,
-      "CON.backup",
-    ].map((typed) => ["Results.pdf", typed, RESERVED]),
-    ["Visit notes", "AUX .txt", RESERVED],
     // Characters a file name cannot hold on every platform...
     ...["<", ">", '"', "|", "*", ":", "?", "/", "\\"].map((c) => [
       "Results.pdf",
@@ -195,6 +181,49 @@ describe("RenameDialog", () => {
     else expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(save).toBeDisabled();
     submit();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    // Names Windows reserves for devices, in any case of ASCII letters, as the
+    // part before the first dot, and with spaces before the dot.
+    ...[
+      ["CON", "CON"],
+      ["prn", "prn"],
+      ["Aux", "Aux"],
+      ["NUL", "NUL"],
+      ["conin$", "conin$"],
+      ["CONOUT$", "CONOUT$"],
+      ["COM0", "COM0"],
+      ["com9", "com9"],
+      ["LPT1", "LPT1"],
+      [`COM${cp(0xb9)}`, `COM${cp(0xb9)}`],
+      [`lpt${cp(0xb3)}`, `lpt${cp(0xb3)}`],
+      ["CON.backup", "CON"],
+    ].map(([typed, word]) => ["Results.pdf", typed, word]),
+    ["Visit notes", "AUX .txt", "AUX"],
+    ["Visit notes", "AUX   .txt", "AUX"],
+    // Trimmed as the vault trims, U+0085 included.
+    ["Results.pdf", "\u0085CON", "CON"],
+  ])("refuses %j, typed %j, when saved: the word %j", (stored, typed, word) => {
+    const { onSave, save, type, submit } = open(stored);
+    type(typed);
+    // Not while typing: "Con" is on the way to "Consult notes".
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(save).toBeEnabled();
+    submit();
+    expect(screen.getByRole("alert")).toHaveTextContent(reserved(word));
+    expect(onSave).not.toHaveBeenCalled();
+    // Editing the name clears it.
+    type(`${typed}x`);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("refuses an unedited reserved name from an earlier build when saved", () => {
+    const { onSave, submit } = open(" CON.pdf");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    submit();
+    expect(screen.getByRole("alert")).toHaveTextContent(reserved("CON"));
     expect(onSave).not.toHaveBeenCalled();
   });
 
