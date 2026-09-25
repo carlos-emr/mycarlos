@@ -114,10 +114,14 @@ privacy, accessibility, or clinical review.
       roaming profile, which would copy it between machines where each locks its own copy of the
       lock file. The reasoning is in [`VAULT_FORMAT.md`](VAULT_FORMAT.md). Multi-device access is
       the planned E2EE synchronization, not profile roaming.
-- [ ] Handle a desktop export that is interrupted. The atomic-write primitive stages the readable
-      copy in a hidden `.atomicwrite*` directory beside the chosen file, and nothing removes it if
-      the app dies before the rename. Also confirm on iOS and sandboxed macOS that the save
-      picker's folder allows creating that directory at all.
+- [x] A desktop export that is interrupted leaves no readable copy behind for long. It stages the
+      copy in a `.mycarlos-export-<uuid>` folder beside the chosen file, recorded first in a
+      journal in the private vault home; a finished export removes both, and the next start or
+      unlock removes whatever a process that died left. A folder on a drive that is not connected
+      is kept in the journal until it is. Copies staged by earlier builds (`.atomicwrite*` beside
+      an export) are not tracked and are not removed.
+- [ ] Confirm on iOS and sandboxed macOS that the save picker's folder allows creating the export
+      staging folder at all.
 - [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
       refuses every reparse point, not only links and junctions, and cloud-synchronized files may
       carry a reparse tag even when fully downloaded.

@@ -157,8 +157,12 @@ vault-quota policy remain separate concerns. The filter does not validate PDF st
 future renderer safe.
 
 Exports stream authenticated plaintext only into a destination explicitly chosen with the native
-save dialog. Filesystem-path destinations are written to a same-directory temporary file and
-atomically replaced only after authentication and syncing succeeds. Content-provider destinations,
+save dialog. Filesystem-path destinations are written to a temporary file in a
+`.mycarlos-export-<uuid>` folder beside the destination and atomically replaced only after
+authentication and syncing succeeds. That folder is recorded first in `pending-exports/` in the
+vault home, one entry per export naming it; a finished export removes the folder and then its
+entry, and startup, unlock and reset remove any that a killed process left, touching only paths
+with that exact name pattern. Content-provider destinations,
 where atomic rename is unavailable, receive a second streaming pass only after a complete
 authentication pass. The UI warns that the exported copy is outside vault protection.
 
