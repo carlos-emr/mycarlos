@@ -1035,6 +1035,17 @@ mod tests {
     }
 
     #[test]
+    fn the_desktop_window_lets_the_reader_zoom() {
+        // Ctrl/Cmd with plus and minus scale the whole interface, as in a
+        // browser. Tauri leaves those keys off unless the window enables them.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        for window in config["app"]["windows"].as_array().unwrap() {
+            assert_eq!(window["zoomHotkeysEnabled"], true);
+        }
+    }
+
+    #[test]
     fn lock_if_idle_locks_an_idle_vault_as_lock_now_does() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
@@ -1345,11 +1356,21 @@ mod tests {
         // build.rs declares the app commands, so this list is the only thing
         // that lets the renderer call them. It must cover exactly the registered
         // commands and must never grant a plugin (`plugin:permission`) scope.
-        let permissions: Vec<&str> = capability["permissions"]
+        // The one built-in permission is the page setting its own zoom, which
+        // Ctrl/Cmd with plus and minus need on macOS and Linux.
+        const CORE: [&str; 1] = ["core:webview:allow-set-webview-zoom"];
+        let granted: Vec<&str> = capability["permissions"]
             .as_array()
             .unwrap()
             .iter()
             .map(|permission| permission.as_str().unwrap())
+            .collect();
+        for core in CORE {
+            assert!(granted.contains(&core), "{core}");
+        }
+        let permissions: Vec<&str> = granted
+            .into_iter()
+            .filter(|permission| !CORE.contains(permission))
             .collect();
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");

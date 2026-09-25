@@ -4,6 +4,7 @@
   "description": "Renderer capabilities for the myCarlos native vault",
   "windows": ["main"],
   "permissions": [
+    "core:webview:allow-set-webview-zoom",
     "allow-runtime-info",
     "allow-vault-status",
     "allow-vault-create",
