@@ -85,6 +85,28 @@ fn terminate_at_test_boundary(boundary: &str) {
 fn terminate_at_test_boundary(_boundary: &str) {}
 
 #[cfg(test)]
+thread_local! {
+    /// A test's action to run when this thread reaches the named boundary.
+    static AT_TEST_BOUNDARY: std::cell::RefCell<Option<(&'static str, Box<dyn Fn()>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn run_at_test_boundary(boundary: &str) {
+    let action = AT_TEST_BOUNDARY.with(|slot| {
+        slot.borrow_mut()
+            .take_if(|(name, _)| *name == boundary)
+            .map(|(_, action)| action)
+    });
+    if let Some(action) = action {
+        action();
+    }
+}
+
+#[cfg(not(test))]
+fn run_at_test_boundary(_boundary: &str) {}
+
+#[cfg(test)]
 fn fail_at_test_boundary(boundary: &str) -> Result<(), VaultError> {
     if std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref() == Ok(boundary) {
         Err(VaultError::NoSpace)
@@ -1105,6 +1127,7 @@ impl VaultStore {
                 |file| {
                     let written = self.export(record_id, file);
                     terminate_at_test_boundary("export.after-write");
+                    run_at_test_boundary("export.after-write");
                     written
                 },
                 options,
@@ -5297,6 +5320,28 @@ mod tests {
     }
 
     #[test]
+    fn a_sweep_in_the_middle_of_an_export_leaves_it_to_finish() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, home, out) = vault_with_one_export(temp.path());
+        let store = Arc::new(store);
+        // Unlocking the open session sweeps, between the write and the rename.
+        let sweeper = Arc::clone(&store);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "export.after-write",
+                Box::new(move || sweeper.unlock(PASSWORD).unwrap()),
+            ))
+        });
+        store.export_atomic(record, &out.join("copy.pdf")).unwrap();
+        assert_eq!(
+            fs::read(out.join("copy.pdf")).unwrap(),
+            b"synthetic export record"
+        );
+        assert!(leftovers(&out, &["copy.pdf"]).is_empty());
+        assert!(journal_is_empty(&home));
+    }
+
+    #[test]
     fn the_export_sweep_skips_an_export_still_under_way_here() {
         let temp = tempfile::tempdir().unwrap();
         let (store, _, home, out) = vault_with_one_export(temp.path());
@@ -5309,6 +5354,16 @@ mod tests {
         store.unlock(PASSWORD).unwrap();
         assert!(stage.exists());
         assert!(!journal_is_empty(&home));
+    }
+
+    #[test]
+    fn an_export_stops_being_under_way_when_its_marker_is_dropped() {
+        let id = Uuid::new_v4();
+        let entry = Path::new("journal").join(id.to_string());
+        let marker = ExportInFlight::new(id);
+        assert!(export_in_flight(&entry));
+        drop(marker);
+        assert!(!export_in_flight(&entry));
     }
 
     #[test]
