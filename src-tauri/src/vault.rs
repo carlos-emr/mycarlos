@@ -46,7 +46,7 @@ const ATOMIC_WRITE_PREFIX: &str = ".atomicwrite";
 // A desktop export stages its readable copy in a folder with this prefix and a
 // UUID, beside the destination, so the final rename is atomic.
 const EXPORT_STAGE_PREFIX: &str = ".mycarlos-export-";
-// In the vault home: one file per export under way, naming its staging folder,
+// In the vault home: one file per export not yet cleaned up, naming its staging folder,
 // so a readable copy left by a process that died is removed at the next start.
 const EXPORT_JOURNAL: &str = "pending-exports";
 // A journal entry holds one path; anything longer is not one of ours.
@@ -1015,6 +1015,15 @@ impl VaultStore {
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        self.export_from(unlocked, record_id, writer)
+    }
+
+    fn export_from<W: Write>(
+        &self,
+        unlocked: &UnlockedVault,
+        record_id: Uuid,
+        writer: W,
+    ) -> Result<(), VaultError> {
         let record = unlocked
             .manifest
             .records
@@ -1059,21 +1068,33 @@ impl VaultStore {
 
     pub fn export_atomic(&self, record_id: Uuid, destination: &Path) -> Result<(), VaultError> {
         // The vault home holds only entries the vault manages: the vault, its
-        // lock, a pending reset, a create stage. No export may land anywhere in
-        // it, whatever it is called, so the check needs no list of names.
+        // lock, a pending reset, a create stage, the export journal. No export
+        // may land anywhere in it, whatever it is called, so the check needs no
+        // list of names.
         let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
         }
 
+        // Held throughout, so no sweep in this process (an unlock or reset of
+        // the open session) can run between the journal entry and the rename.
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+
         // Record the staging folder before a readable byte is written, so that
-        // if this process dies the next start can remove what it left.
+        // if this process dies the next start can remove what it left. If the
+        // vault's own disk cannot take the entry, as when it is full and the
+        // vault is in recovery mode, the export still runs: it may be the only
+        // way to get a document out, and only a crash during it would leave an
+        // untracked copy, as every export could before.
         let id = Uuid::new_v4();
         let stage = destination_parent.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
-        let entry = journal_export(&self.root, id, &stage)?;
+        let entry = journal_export(&self.root, id, &stage).ok();
         if let Err(error) = create_stage_dir(&stage) {
-            let _ = fs::remove_file(&entry);
+            if let Some(entry) = &entry {
+                let _ = fs::remove_file(entry);
+            }
             return Err(error);
         }
 
@@ -1084,7 +1105,7 @@ impl VaultStore {
         let result = AtomicFile::new_with_tmpdir(destination, AllowOverwrite, &stage)
             .write_with_options(
                 |file| {
-                    let written = self.export(record_id, file);
+                    let written = self.export_from(unlocked, record_id, file);
                     terminate_at_test_boundary("export.after-write");
                     written
                 },
@@ -1095,7 +1116,7 @@ impl VaultStore {
                 AtomicWriteError::User(error) => error,
             });
         terminate_at_test_boundary("export.after-rename");
-        finish_export(&stage, &entry);
+        finish_export(&stage, entry.as_deref());
         result
     }
 
@@ -2633,8 +2654,9 @@ fn read_chunk(reader: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, VaultEr
 }
 
 /// The directory that holds the vault and everything the vault manages beside
-/// it: its lock file, a pending reset, a create stage. Nothing else is ever
-/// written there, which is what lets an export refuse the whole directory.
+/// it: its lock file, a pending reset, a create stage, the export journal.
+/// Nothing else is ever written there, which is what lets an export refuse the
+/// whole directory.
 fn vault_home(root: &Path) -> Result<&Path, VaultError> {
     root.parent().ok_or(VaultError::Storage)
 }
@@ -2704,8 +2726,13 @@ fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
 /// Writes a durable journal entry naming an export's staging folder, in the
 /// vault home, and returns the entry's path.
 fn journal_export(root: &Path, id: Uuid, stage: &Path) -> Result<PathBuf, VaultError> {
-    let journal = vault_home(root)?.join(EXPORT_JOURNAL);
-    create_private_dir_all(&journal)?;
+    let home = vault_home(root)?;
+    let journal = home.join(EXPORT_JOURNAL);
+    if !journal.exists() {
+        create_private_dir_all(&journal)?;
+        // The first entry is only durable once the journal itself is.
+        sync_parent(home);
+    }
     let entry = journal.join(id.to_string());
     let mut file = open_private_new(&entry)?;
     let written = file
@@ -2727,9 +2754,10 @@ fn create_stage_dir(stage: &Path) -> Result<(), VaultError> {
     Ok(())
 }
 
-/// Removes an export's staging folder and then its journal entry. The entry is
-/// kept if the folder could not be removed, so the next start tries again.
-fn finish_export(stage: &Path, entry: &Path) {
+/// Removes an export's staging folder and then its journal entry, whether the
+/// export succeeded or not. The entry is kept if the folder could not be
+/// removed, so the next start tries again.
+fn finish_export(stage: &Path, entry: Option<&Path>) {
     match fs::remove_dir_all(stage) {
         Ok(()) => {
             if let Some(parent) = stage.parent() {
@@ -2739,19 +2767,27 @@ fn finish_export(stage: &Path, entry: &Path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(_) => return,
     }
-    if fs::remove_file(entry).is_ok() {
-        if let Some(journal) = entry.parent() {
-            sync_parent(journal);
+    if let Some(entry) = entry {
+        if fs::remove_file(entry).is_ok() {
+            if let Some(journal) = entry.parent() {
+                sync_parent(journal);
+            }
         }
     }
 }
 
 /// Removes the staging folders of exports that a process which died left
 /// behind, each holding a readable copy of a document, and their journal
-/// entries. Best effort, and only while the caller holds the storage lock, so
-/// no export is under way. A path that is not one of our staging folders is
-/// never touched. A folder whose parent is missing, such as on a drive that is
-/// not plugged in, keeps its entry for a later start.
+/// entries. Best effort. The caller holds the storage lock, which keeps out
+/// other processes, and the session lock, which `export_atomic` holds from its
+/// journal entry to its cleanup, so no export is under way. Outside the vault
+/// home it only removes a real directory (not a link) named like our staging
+/// folders. An entry is kept for a later start when it cannot be read, when
+/// something else has taken the folder's name, or when the folder's parent is
+/// missing, as when its drive is not connected (a best guess: a drive
+/// remounted elsewhere, or a mount point that stays when the drive is out,
+/// loses the entry). Checking a folder on an unreachable network drive can
+/// block until the drive answers.
 fn remove_abandoned_exports(home: &Path) {
     let journal = home.join(EXPORT_JOURNAL);
     if !is_real_dir(&journal) {
@@ -2762,19 +2798,31 @@ fn remove_abandoned_exports(home: &Path) {
     };
     for entry in entries.flatten() {
         let entry_path = entry.path();
-        let stage = read_bounded_regular_file(&entry_path, MAX_EXPORT_JOURNAL_BYTES)
-            .ok()
-            .and_then(|bytes| decode_path(&bytes))
-            .filter(|stage| is_export_stage_name(stage));
+        let bytes = match read_bounded_regular_file(&entry_path, MAX_EXPORT_JOURNAL_BYTES) {
+            Ok(bytes) => bytes,
+            // Not a regular file, or too long to be one of ours.
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                let _ = fs::remove_file(&entry_path);
+                continue;
+            }
+            // Perhaps held open for a moment by a scanner; try at a later start.
+            Err(_) => continue,
+        };
+        let stage =
+            decode_path(&bytes).filter(|stage| stage.is_absolute() && is_export_stage_name(stage));
         let Some(stage) = stage else {
             // Not an entry this app wrote: drop it, and touch nothing it names.
             let _ = fs::remove_file(&entry_path);
             continue;
         };
         let done = match fs::symlink_metadata(&stage) {
-            Ok(_) if is_real_dir(&stage) => fs::remove_dir_all(&stage).is_ok(),
-            // Something else now has that name; it is not ours to remove.
-            Ok(_) => true,
+            // A link or junction is never followed. Other reparse points, such
+            // as OneDrive's on a synced folder, are still real folders.
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                fs::remove_dir_all(&stage).is_ok()
+            }
+            // Something else has that name; it is not ours to remove.
+            Ok(_) => false,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 stage.parent().is_some_and(|parent| parent.exists())
             }
@@ -4863,7 +4911,8 @@ mod tests {
                 Some(TEST_TERMINATION_EXIT_CODE),
                 "{boundary}"
             );
-            // The process died with a readable copy staged beside the destination.
+            // The process died leaving its staging folder beside the destination
+            // (holding the readable copy if it died before the rename).
             assert!(!leftovers(&out, &[&format!("{boundary}.pdf")]).is_empty());
 
             // The next start removes it, without the passphrase.
@@ -4905,6 +4954,51 @@ mod tests {
     }
 
     #[test]
+    fn a_locked_vault_journals_and_stages_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let store = VaultStore::new(home.join("vault-v1"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        let out = temp.path().join("out");
+        fs::create_dir_all(&out).unwrap();
+        assert!(matches!(
+            store.export_atomic(Uuid::new_v4(), &out.join("copy.pdf")),
+            Err(VaultError::Locked)
+        ));
+        assert!(leftovers(&out, &[]).is_empty());
+        assert!(!home.join(EXPORT_JOURNAL).exists());
+    }
+
+    #[test]
+    fn an_export_still_runs_when_its_journal_entry_cannot_be_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let store = VaultStore::new(home.join("vault-v1"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![source("scan.pdf", b"synthetic export record")],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        // Nothing can be written inside a file where the journal should be.
+        fs::write(home.join(EXPORT_JOURNAL), b"").unwrap();
+        let out = temp.path().join("out");
+        fs::create_dir_all(&out).unwrap();
+        store.export_atomic(record, &out.join("copy.pdf")).unwrap();
+        assert_eq!(
+            fs::read(out.join("copy.pdf")).unwrap(),
+            b"synthetic export record"
+        );
+        assert!(leftovers(&out, &["copy.pdf"]).is_empty());
+    }
+
+    #[test]
     fn the_export_sweep_only_removes_its_own_staging_folders() {
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
@@ -4923,7 +5017,7 @@ mod tests {
             encode_path(&important),
         )
         .unwrap();
-        // A staging folder on a drive that is not there now is kept for later.
+        // An entry whose folder's parent (an unplugged drive) is missing is kept.
         let unplugged = temp
             .path()
             .join("unplugged")
@@ -4931,17 +5025,28 @@ mod tests {
         let later = Uuid::new_v4().to_string();
         fs::write(journal.join(&later), encode_path(&unplugged)).unwrap();
 
-        // A link that has taken a staging folder's name is not followed or removed.
+        // A link that has taken a staging folder's name is not followed or
+        // removed, and its entry is kept.
         #[cfg(unix)]
-        let link = {
+        let (link, link_entry) = {
             let link = temp
                 .path()
                 .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
             std::os::unix::fs::symlink(&important, &link).unwrap();
             fs::write(important.join("keep.txt"), b"keep").unwrap();
-            fs::write(journal.join(Uuid::new_v4().to_string()), encode_path(&link)).unwrap();
-            link
+            let link_entry = Uuid::new_v4().to_string();
+            fs::write(journal.join(&link_entry), encode_path(&link)).unwrap();
+            (link, link_entry)
         };
+        // A relative path is never one of ours.
+        fs::write(
+            journal.join(Uuid::new_v4().to_string()),
+            encode_path(Path::new(&format!(
+                "{EXPORT_STAGE_PREFIX}{}",
+                Uuid::new_v4()
+            ))),
+        )
+        .unwrap();
 
         assert_eq!(store.status().unwrap(), VaultStatus::Locked);
         assert!(important.exists());
@@ -4950,11 +5055,17 @@ mod tests {
             assert!(fs::symlink_metadata(&link).is_ok());
             assert!(important.join("keep.txt").exists());
         }
-        let remaining: Vec<_> = fs::read_dir(&journal)
+        let mut remaining: Vec<_> = fs::read_dir(&journal)
             .unwrap()
-            .map(|entry| entry.unwrap().file_name())
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
             .collect();
-        assert_eq!(remaining, vec![std::ffi::OsString::from(later)]);
+        remaining.sort();
+        #[allow(unused_mut)]
+        let mut expected = vec![later];
+        #[cfg(unix)]
+        expected.push(link_entry);
+        expected.sort();
+        assert_eq!(remaining, expected);
     }
 
     #[test]

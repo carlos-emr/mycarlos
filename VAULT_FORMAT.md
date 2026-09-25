@@ -62,6 +62,7 @@ vault-home/               holds only what the vault manages; back up as a whole
   vault-v1.lock           stable OS lock file; never rename or delete while the app is running
   vault-v1.reset-pending/ retired vault awaiting completion of an already-confirmed reset
   .create-<uuid>/         a vault being created, renamed into place once complete
+  pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
   vault-v1/
     header-0.json        non-secret KDF configuration, wrapped master key, and keyed integrity tag
     header-1.json        redundant generation-bound wrapped-key and integrity-tag slot
@@ -160,9 +161,16 @@ Exports stream authenticated plaintext only into a destination explicitly chosen
 save dialog. Filesystem-path destinations are written to a temporary file in a
 `.mycarlos-export-<uuid>` folder beside the destination and atomically replaced only after
 authentication and syncing succeeds. That folder is recorded first in `pending-exports/` in the
-vault home, one entry per export naming it; a finished export removes the folder and then its
-entry, and startup, unlock and reset remove any that a killed process left, touching only paths
-with that exact name pattern. Content-provider destinations,
+vault home: one file per export, named by its UUID and holding the staging folder's path in the
+platform's native encoding (raw bytes on Unix, UTF-16LE on Windows). The entry reveals the folder
+the user exported to, never the document's name. When an export ends, successfully or not, it
+removes the folder and then its entry, keeping the entry if the folder could not be removed.
+Startup status, creation, unlock and reset remove any folder that a killed process left, then its
+entry; outside the vault home they only remove a real directory (not a link) with that exact name.
+An entry whose folder's parent is missing, as when its drive is not connected, is kept for a later
+start; that is a best guess, and a drive remounted elsewhere loses its entry. If the entry cannot
+be written, as when the vault's disk is full, the export still runs untracked. Content-provider
+destinations,
 where atomic rename is unavailable, receive a second streaming pass only after a complete
 authentication pass. The UI warns that the exported copy is outside vault protection.
 
