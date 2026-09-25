@@ -1,5 +1,7 @@
+mod idle;
 mod vault;
 
+use idle::{IdleDeadline, Opening};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
@@ -210,9 +212,11 @@ struct PickedExportRequest {
 /// is hidden. The renderer must not treat that as the app being backgrounded
 /// and lock the vault under the picker, or nothing can ever be imported or
 /// exported there. Splitting each operation into a pick and a run lets the
-/// renderer tell a picker it opened from a real backgrounding, and lets a lock
-/// during the I/O phase still cancel the transfer. Entries are dropped when
-/// used, when the vault locks or resets, and after a bounded time.
+/// renderer tell a picker it opened from a real backgrounding, and lets a
+/// manual lock, or the native idle deadline, during the I/O phase still cancel
+/// the transfer (an automatic or background lock in the renderer waits for
+/// it). Entries are dropped when used, when the vault locks or resets, and
+/// after a bounded time.
 ///
 /// A picker can still be open when the vault locks and return afterwards, so
 /// each pick records the unlocked session its picker opened in and is refused
@@ -461,6 +465,67 @@ async fn vault_lock(
     .await
 }
 
+/// How often the native timer checks the idle deadline.
+const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+/// The renderer reports input at most this often (`TOUCH_THROTTLE_MS`).
+const RENDERER_TOUCH_THROTTLE: Duration = Duration::from_secs(10);
+// The native deadline must not fire while the renderer is working: input
+// reaches it up to one throttle late, which the margin must cover. The check
+// interval only makes the native lock later.
+const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs());
+
+/// Locks the vault as the `vault_lock` command does, and clears pending picks,
+/// once it has been idle past its deadline. Returns whether it locked. This is
+/// the backstop for a renderer that hung, crashed or was suspended before its
+/// own timer could lock.
+fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
+    let locked = store.lock_if_idle(now);
+    if locked {
+        picks.clear();
+    }
+    locked
+}
+
+/// Counts time in a native picker as activity until it closes, capped by the
+/// grace, on every path.
+struct ActivityHold<'a>(&'a IdleDeadline);
+
+impl<'a> ActivityHold<'a> {
+    fn new(idle: &'a IdleDeadline) -> Self {
+        idle.hold_started(Instant::now());
+        Self(idle)
+    }
+}
+
+impl Drop for ActivityHold<'_> {
+    fn drop(&mut self) {
+        self.0.hold_ended(Instant::now());
+    }
+}
+
+/// The renderer reports user input, which the native idle deadline cannot see,
+/// at most every 10 seconds.
+#[tauri::command]
+fn vault_touch(store: State<'_, Arc<VaultStore>>) {
+    store.idle().touch(Instant::now());
+}
+
+#[derive(Deserialize)]
+struct AutoLockRequest {
+    minutes: u64,
+}
+
+/// The auto-lock setting lives in the renderer. It sends it when a session
+/// starts and whenever it changes, retrying until one is accepted, so the
+/// native deadline uses the same delay (clamped to 1-15 minutes). The renderer
+/// restarts its own deadline then, so this counts as activity too.
+#[tauri::command]
+fn vault_set_auto_lock(store: State<'_, Arc<VaultStore>>, request: AutoLockRequest) {
+    store
+        .idle()
+        .set_delay_minutes(request.minutes, Instant::now());
+}
+
 /// Runs a vault operation on the blocking thread pool.
 ///
 /// Tauri runs a plain synchronous command on the main thread, and a synchronous
@@ -473,11 +538,21 @@ where
     T: Send + 'static,
     F: FnOnce(&VaultStore) -> Result<T, VaultError> + Send + 'static,
 {
+    // A command is activity when it starts and again when it ends, so a long
+    // one does not leave the deadline where it was before it began. One the
+    // lock cut off (it returns `Cancelled`) is not: that lock must not be
+    // undone by its own cancel. (A provider export's write pass reports a
+    // partial copy instead, and is touched like any other failure.)
+    let idle = Arc::clone(store.idle());
+    idle.touch(Instant::now());
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || operation(&store))
+    let result = tauri::async_runtime::spawn_blocking(move || operation(&store))
         .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
+        .map_err(|_| PublicError::from(VaultError::Storage))?;
+    if !matches!(result, Err(VaultError::Cancelled)) {
+        idle.touch(Instant::now());
+    }
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -587,6 +662,7 @@ async fn vault_import_pick(
         store.ensure_import_allowed(profile_id)
     })
     .await?;
+    let _open = ActivityHold::new(store.idle());
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -619,8 +695,13 @@ async fn vault_import_picked(
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.inner(), move |store| {
         let mut sources = Vec::with_capacity(paths.len());
-        for path in paths {
-            sources.push(open_import_source(&app, path)?);
+        {
+            // A provider may download a whole document before the open returns,
+            // with no progress to report meanwhile.
+            let _opening = Opening::new(store.idle());
+            for path in paths {
+                sources.push(open_import_source(&app, path)?);
+            }
         }
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
     })
@@ -681,6 +762,7 @@ async fn vault_export_pick(
     let session = picks.session();
     let suggested_name =
         run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
+    let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -723,10 +805,12 @@ async fn vault_export_picked(
     run_blocking(store.inner(), move |store| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
+        let opening = Opening::new(store.idle());
         let mut output = app
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
+        drop(opening);
         Ok(store.export(record_id, &mut output))
     })
     .await?
@@ -803,6 +887,14 @@ pub fn run() {
                     .join("vault-v1"),
             )));
             app.manage(Arc::new(PendingPicks::default()));
+            let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+            let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            std::thread::Builder::new()
+                .name("vault-idle-lock".into())
+                .spawn(move || loop {
+                    std::thread::sleep(IDLE_CHECK_INTERVAL);
+                    lock_if_idle(&store, &picks, Instant::now());
+                })?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -811,6 +903,8 @@ pub fn run() {
             vault_create,
             vault_unlock,
             vault_lock,
+            vault_touch,
+            vault_set_auto_lock,
             vault_snapshot,
             vault_change_passphrase,
             vault_create_profile,
@@ -931,6 +1025,125 @@ mod tests {
         let home = root.split(".join(\"").nth(1).unwrap();
         let home = &home[..home.find('"').unwrap()];
         assert_ne!(home, "vault-v1");
+    }
+
+    const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
+    /// Just past the default delay and the margin after `from`.
+    fn idle_past(from: Instant) -> Instant {
+        from + Duration::from_secs(15 * 60) + idle::MARGIN + Duration::from_secs(1)
+    }
+
+    #[test]
+    fn lock_if_idle_locks_an_idle_vault_as_lock_now_does() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let picks = PendingPicks::default();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let record_id = Uuid::new_v4();
+        let pick_id = picks.store_export(picks.session(), record_id, path());
+        let kept = picks.store_export(picks.session(), record_id, path());
+
+        assert!(!lock_if_idle(&store, &picks, Instant::now()));
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        // A check that finds the vault not due leaves its picks alone.
+        assert!(picks.take_export(kept, record_id).is_ok());
+
+        assert!(lock_if_idle(&store, &picks, idle_past(Instant::now())));
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        // Picks made in the session are gone, as after "Lock now".
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+        // A locked vault has no deadline, so the timer does not lock it again.
+        assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
+    }
+
+    /// When the default delay and the margin after `from` run out, exactly.
+    fn due_at(from: Instant) -> Instant {
+        from + Duration::from_secs(15 * 60) + idle::MARGIN
+    }
+
+    #[test]
+    fn a_command_counts_as_activity_when_it_starts_and_ends() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let armed_at = Instant::now();
+        store.idle().arm(armed_at);
+        assert!(store.idle().is_due(due_at(armed_at)));
+        // So that any later activity is strictly later than `armed_at`.
+        std::thread::sleep(Duration::from_millis(2));
+        let run = |operation: Box<dyn FnOnce(&VaultStore) -> bool + Send>| {
+            tauri::async_runtime::block_on(run_blocking(&store, move |store| Ok(operation(store))))
+                .unwrap_or_else(|_| panic!("the command failed"))
+        };
+        // When it starts: the command already sees a later deadline.
+        assert!(!run(Box::new(move |store| store
+            .idle()
+            .is_due(due_at(armed_at)))));
+        // And when it ends: a command that ran long moves it on again.
+        run(Box::new(move |store| {
+            store.idle().arm(armed_at);
+            false
+        }));
+        assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    #[test]
+    fn both_transfer_commands_hold_the_deadline_while_opening_what_was_chosen() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        // Held across the opens, not dropped at once as `let _ =` would.
+        let import = body("async fn vault_import_picked(");
+        let guard = import
+            .find("let _opening = Opening::new(store.idle());")
+            .unwrap();
+        assert!(guard < import.find("open_import_source(").unwrap());
+        let export = body("async fn vault_export_picked(");
+        let guard = export
+            .find("let opening = Opening::new(store.idle());")
+            .unwrap();
+        let open = export[guard..].find(".open(destination, options)").unwrap() + guard;
+        let dropped = export.find("drop(opening);").unwrap();
+        assert!(guard < open && open < dropped);
+        // User input the renderer reports is activity.
+        assert!(body("fn vault_touch(").contains(".touch(Instant::now())"));
+    }
+
+    #[test]
+    fn a_command_the_lock_cancelled_is_not_activity_when_it_ends() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let armed_at = Instant::now();
+        std::thread::sleep(Duration::from_millis(2));
+        let result = tauri::async_runtime::block_on(run_blocking(&store, move |store| {
+            // As if it had run since `armed_at`, then been cut off.
+            store.idle().arm(armed_at);
+            Err::<(), _>(VaultError::Cancelled)
+        }));
+        assert!(result.is_err());
+        assert!(store.idle().is_due(due_at(armed_at)));
+    }
+
+    #[test]
+    fn an_open_picker_counts_as_activity_until_it_closes() {
+        let armed_at = Instant::now();
+        let idle = IdleDeadline::new(armed_at);
+        idle.arm(armed_at);
+        std::thread::sleep(Duration::from_millis(2));
+        {
+            let _open = ActivityHold::new(&idle);
+            assert!(!idle.is_due(due_at(armed_at)));
+        }
+        // Closed just now, so the delay restarts from here.
+        assert!(!idle.is_due(due_at(armed_at)));
+        assert!(idle.is_due(idle_past(Instant::now())));
     }
 
     #[test]

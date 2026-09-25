@@ -98,8 +98,12 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - Multiple patient profiles, nested folders, transactional bulk folder assignments, manual/background/
   persisted 1–15-minute inactivity locking with a 5-minute default, immediate background
   concealment, passphrase-confirmed rotation, and typed plus trusted-native-confirmation whole-vault
-  reset. Background locking requests cancellation immediately; streaming operations stop at their
-  next I/O boundary before the native key state is cleared.
+  reset. A manual lock requests cancellation immediately, and streaming operations stop at their
+  next I/O boundary before the native key state is cleared. An automatic or background lock during
+  an import or export hides content at once and locks when the transfer finishes, however long it
+  takes while it makes progress (or while a chosen file is still opening). A native idle deadline also drops the keys shortly after the
+  renderer's (the lock delay plus 15 seconds after the last activity it heard of) if the webview
+  stops responding.
 - Confirmed individual record deletion updates one durable manifest, unlinks the encrypted object,
   and then updates the redundant manifest. Both live slots omit the wrapped per-object key when the
   operation succeeds. Old external backups and future synchronized copies remain outside that

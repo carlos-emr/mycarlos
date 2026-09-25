@@ -129,6 +129,19 @@ On every platform:
    keep the screen on), and confirm it locks.
 7. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
    it is locked when you come back.
+8. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+   drive so it takes several seconds). While it is still importing, send the app to the
+   background, then come back within a minute. If the import is still running, the screen should
+   say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
+   vault should lock by itself when it is done, saying only "Vault locked." Unlock: the app should
+   say "Vault unlocked. 1 file(s) encrypted and imported." and the document should be in the
+   library.
+   On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
+   importing, and the import continues only when you come back. If you come back within the
+   automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
+   does. If you stay away longer than that, the vault may instead lock as you return and leave the
+   document out; after you unlock, the app says "The transfer did not finish." Either way nothing
+   from the vault is shown meanwhile.
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 

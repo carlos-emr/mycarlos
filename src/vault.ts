@@ -54,6 +54,12 @@ export interface VaultBridge {
   ): Promise<VaultSnapshot>;
   unlock(passphrase: string): Promise<VaultSnapshot>;
   lock(): Promise<void>;
+  /** Reports user input to the native idle deadline, which cannot see it. */
+  touch(): Promise<void>;
+  /** Gives the native idle deadline the auto-lock delay (1-15 minutes). */
+  setAutoLock(minutes: number): Promise<void>;
+  /** The operating system, such as "windows", "macos", "android" or "ios". */
+  platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
   changePassphrase(
     currentPassphrase: string,
@@ -108,14 +114,26 @@ export function vaultErrorMessage(error: unknown): string {
   return "The vault operation could not be completed.";
 }
 
-/** True when the native side reports that there is no vault to unlock or erase. */
-export function isMissingVaultError(error: unknown): boolean {
+function hasErrorCode(error: unknown, code: string): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
-    (error as PublicError).code === "missing"
+    (error as PublicError).code === code
   );
 }
+
+/** True when the native side reports that the vault is locked, for example by
+ * its own idle deadline while this screen was not running. */
+export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
+
+/** True when an operation stopped because a lock was requested while it ran
+ * (the vault may still be open if that lock found it no longer due). */
+export const isCancelledError = (error: unknown) =>
+  hasErrorCode(error, "cancelled");
+
+/** True when the native side reports that there is no vault to unlock or erase. */
+export const isMissingVaultError = (error: unknown) =>
+  hasErrorCode(error, "missing");
 
 function isNativeRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -133,6 +151,13 @@ export function createVaultBridge(): VaultBridge {
     unlock: (passphrase) =>
       invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
     lock: () => invoke<void>("vault_lock"),
+    touch: () => invoke<void>("vault_touch"),
+    setAutoLock: (minutes) =>
+      invoke<void>("vault_set_auto_lock", { request: { minutes } }),
+    platform: () =>
+      invoke<{ platform: string }>("runtime_info").then(
+        (info) => info.platform,
+      ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {

@@ -46,6 +46,7 @@
 .vault-card h1 { margin: 2px 0 10px; }
 .vault-card > p { color: var(--ink-soft); line-height: 1.55; }
 .vault-card form { display: grid; gap: 12px; margin-top: 20px; }
+.vault-card > .button { margin-top: 20px; }
 .vault-card label {
   display: grid;
   gap: 5px;

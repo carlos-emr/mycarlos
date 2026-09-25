@@ -1,3 +1,4 @@
+use crate::idle::IdleDeadline;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -291,11 +292,24 @@ pub struct ImportSource {
 struct CancellableReader {
     inner: Box<dyn Read + Send>,
     cancelled: Arc<AtomicBool>,
+    idle: Option<Arc<IdleDeadline>>,
 }
 
 impl CancellableReader {
     fn new(inner: Box<dyn Read + Send>, cancelled: Arc<AtomicBool>) -> Self {
-        Self { inner, cancelled }
+        Self {
+            inner,
+            cancelled,
+            idle: None,
+        }
+    }
+
+    /// Counts each read that moves data as activity: a transfer that is making
+    /// progress keeps the session unlocked, however slowly, and one blocked in
+    /// a read does not.
+    fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
+        self.idle = Some(Arc::clone(idle));
+        self
     }
 }
 
@@ -304,18 +318,35 @@ impl Read for CancellableReader {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled_io_error());
         }
-        self.inner.read(buffer)
+        let count = self.inner.read(buffer)?;
+        if count > 0 {
+            if let Some(idle) = &self.idle {
+                idle.touch(Instant::now());
+            }
+        }
+        Ok(count)
     }
 }
 
 struct CancellableWriter<W> {
     inner: W,
     cancelled: Arc<AtomicBool>,
+    idle: Option<Arc<IdleDeadline>>,
 }
 
 impl<W> CancellableWriter<W> {
     fn new(inner: W, cancelled: Arc<AtomicBool>) -> Self {
-        Self { inner, cancelled }
+        Self {
+            inner,
+            cancelled,
+            idle: None,
+        }
+    }
+
+    /// As for `CancellableReader::with_progress`.
+    fn with_progress(mut self, idle: &Arc<IdleDeadline>) -> Self {
+        self.idle = Some(Arc::clone(idle));
+        self
     }
 }
 
@@ -324,7 +355,13 @@ impl<W: Write> Write for CancellableWriter<W> {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled_io_error());
         }
-        self.inner.write(buffer)
+        let count = self.inner.write(buffer)?;
+        if count > 0 {
+            if let Some(idle) = &self.idle {
+                idle.touch(Instant::now());
+            }
+        }
+        Ok(count)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -356,6 +393,7 @@ pub struct VaultStore {
     root: PathBuf,
     unlocked: Mutex<Option<UnlockedVault>>,
     cancel_io: Arc<AtomicBool>,
+    idle: Arc<IdleDeadline>,
 }
 
 impl VaultStore {
@@ -364,7 +402,13 @@ impl VaultStore {
             root,
             unlocked: Mutex::new(None),
             cancel_io: Arc::new(AtomicBool::new(false)),
+            idle: Arc::new(IdleDeadline::new(Instant::now())),
         }
+    }
+
+    /// The session's idle deadline, which the app's native timer checks.
+    pub fn idle(&self) -> &Arc<IdleDeadline> {
+        &self.idle
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
@@ -375,6 +419,7 @@ impl VaultStore {
         self.unlocked.lock().unwrap_or_else(|poisoned| {
             let mut guard = poisoned.into_inner();
             *guard = None;
+            self.idle.disarm();
             self.unlocked.clear_poison();
             guard
         })
@@ -455,13 +500,16 @@ impl VaultStore {
             sync_parent(&stage);
             fs::rename(&stage, &self.root)?;
             sync_parent(parent);
-            *guard = Some(UnlockedVault {
-                storage_lock,
-                master_key,
-                manifest,
-                recovery: None,
-                unavailable: HashSet::new(),
-            });
+            self.open_session(
+                &mut guard,
+                UnlockedVault {
+                    storage_lock,
+                    master_key,
+                    manifest,
+                    recovery: None,
+                    unavailable: HashSet::new(),
+                },
+            );
             Ok(())
         })();
         if result.is_err() {
@@ -500,13 +548,16 @@ impl VaultStore {
         if recovery.is_some() {
             // Leave storage exactly as found: no redundancy repair, no staging or
             // orphan cleanup. The session can only read and export.
-            *guard = Some(UnlockedVault {
-                storage_lock,
-                master_key,
-                manifest,
-                recovery,
-                unavailable,
-            });
+            self.open_session(
+                &mut guard,
+                UnlockedVault {
+                    storage_lock,
+                    master_key,
+                    manifest,
+                    recovery,
+                    unavailable,
+                },
+            );
             return Ok(());
         }
         let manifest_healthy = manifest_redundancy_healthy(&slots, &manifest);
@@ -553,20 +604,57 @@ impl VaultStore {
         remove_staging(&self.root);
         remove_abandoned_atomic_writes(&self.root);
         remove_orphan_objects(&self.root, &manifest);
-        *guard = Some(UnlockedVault {
-            storage_lock,
-            master_key,
-            manifest,
-            recovery,
-            unavailable,
-        });
+        self.open_session(
+            &mut guard,
+            UnlockedVault {
+                storage_lock,
+                master_key,
+                manifest,
+                recovery,
+                unavailable,
+            },
+        );
         Ok(())
     }
 
+    /// Every unlocked session has an idle deadline, started with it under the
+    /// session lock.
+    fn open_session(&self, guard: &mut Option<UnlockedVault>, vault: UnlockedVault) {
+        *guard = Some(vault);
+        self.idle.arm(Instant::now());
+    }
+
     pub fn lock(&self) {
+        self.lock_if(|| true);
+    }
+
+    /// Locks the vault if it has been idle past its deadline at `now`. Returns
+    /// whether it locked.
+    pub fn lock_if_idle(&self, now: Instant) -> bool {
+        self.idle.is_due(now) && self.lock_if(|| self.idle.is_due(now))
+    }
+
+    /// Cancels any transfer, then clears the session if `due` still holds once
+    /// the session lock is taken: an unlock may have started a new session
+    /// while this waited for the lock. The cancel must come first, since a
+    /// transfer holds the session lock until it stops; in the rare race where
+    /// a new session starts, or activity arrives, while it waits, it can stop
+    /// a transfer without locking.
+    fn lock_if(&self, due: impl Fn() -> bool) -> bool {
         self.cancel_io.store(true, Ordering::Release);
-        *self.session() = None;
+        let locked = {
+            let mut guard = self.session();
+            // Disarmed under the session lock, so an unlock cannot slip between
+            // the two and be left unlocked with no deadline.
+            let due = due();
+            if due {
+                *guard = None;
+                self.idle.disarm();
+            }
+            due
+        };
         self.cancel_io.store(false, Ordering::Release);
+        locked
     }
 
     /// Fails unless the vault is unlocked, writable, and owns `profile_id`.
@@ -812,10 +900,10 @@ impl VaultStore {
                 let mut object_key = Zeroizing::new([0_u8; 32]);
                 OsRng.fill_bytes(object_key.as_mut());
                 let encrypted = encrypt_object(
-                    Box::new(CancellableReader::new(
-                        source.reader,
-                        Arc::clone(&self.cancel_io),
-                    )),
+                    Box::new(
+                        CancellableReader::new(source.reader, Arc::clone(&self.cancel_io))
+                            .with_progress(&self.idle),
+                    ),
                     &object_path,
                     ObjectContext {
                         vault_id: unlocked.manifest.vault_id,
@@ -835,7 +923,8 @@ impl VaultStore {
                 }
                 verify_object(
                     &object_path,
-                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io)),
+                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                        .with_progress(&self.idle),
                     unlocked.manifest.vault_id,
                     record_id,
                     &object_key,
@@ -935,7 +1024,7 @@ impl VaultStore {
         )?;
         verify_object(
             &self.root.join("objects").join(&record.object_name),
-            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)),
+            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle),
             unlocked.manifest.vault_id,
             record.id,
             &object_key,
@@ -1135,6 +1224,7 @@ impl VaultStore {
             None => acquire_storage_lock(&self.root)?,
         };
         *guard = None;
+        self.idle.disarm();
         let resumed = finish_pending_resets(&self.root)?;
         if !self.root.exists() {
             return if resumed {
@@ -4235,6 +4325,253 @@ mod tests {
             .all(|record| record.folder_ids == vec![folder]));
     }
 
+    /// Just past the default delay and the margin after `from`.
+    fn idle_past(from: Instant) -> Instant {
+        from + Duration::from_secs(15 * 60) + crate::idle::MARGIN + Duration::from_secs(1)
+    }
+
+    #[test]
+    fn an_unlocked_session_has_an_idle_deadline_and_a_locked_one_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(store.idle().is_due(idle_past(Instant::now())));
+        store.lock();
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
+        store.unlock(PASSWORD).unwrap();
+        assert!(store.idle().is_due(idle_past(Instant::now())));
+        store.reset().unwrap();
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
+    }
+
+    /// Hands out `left` bytes, at most 256 KiB per read, pausing before each.
+    struct SlowReader {
+        left: usize,
+    }
+
+    impl Read for SlowReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            std::thread::sleep(Duration::from_millis(2));
+            let count = buffer.len().min(self.left).min(256 * 1024);
+            buffer[..count].fill(b'x');
+            self.left -= count;
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn the_idle_lock_checks_again_once_it_holds_the_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let due = idle_past(Instant::now());
+        let guard = store.session();
+        let timer = {
+            let store = Arc::clone(&store);
+            std::thread::spawn(move || store.lock_if_idle(due))
+        };
+        // The timer found the session due (it requests cancellation only
+        // then) and waits for the session lock, while a new session starts, as
+        // an unlock would.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !store.cancel_io.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "the timer did not find it due");
+            std::thread::yield_now();
+        }
+        store.idle().arm(due);
+        drop(guard);
+        assert!(!timer.join().unwrap());
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        // The new session's transfers are not left cancelled.
+        assert!(!store.cancel_io.load(Ordering::Acquire));
+        assert!(store.lock_if_idle(idle_past(due)));
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+    }
+
+    #[test]
+    fn an_idle_check_that_is_not_due_leaves_a_transfer_running() {
+        // Runs the native timer's check while the import holds the session,
+        // and waits (briefly) for it to finish before reading on.
+        struct CheckingReader {
+            data: Cursor<Vec<u8>>,
+            store: Option<Arc<VaultStore>>,
+        }
+
+        impl Read for CheckingReader {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if let Some(store) = self.store.take() {
+                    let timer = std::thread::spawn(move || store.lock_if_idle(Instant::now()));
+                    let wait_until = Instant::now() + Duration::from_millis(500);
+                    while !timer.is_finished() && Instant::now() < wait_until {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                }
+                self.data.read(buffer)
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let outcome = store
+            .import(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: "kept.pdf".to_owned(),
+                    reader: Box::new(CheckingReader {
+                        data: Cursor::new(b"synthetic kept import".to_vec()),
+                        store: Some(Arc::clone(&store)),
+                    }),
+                }],
+                2,
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+    }
+
+    #[test]
+    fn an_import_reports_progress_while_reading_and_while_verifying() {
+        let due_at = |from: Instant| from + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        // At the end of its data, notes whether the reads moved the deadline
+        // on, then when reading ended.
+        struct WatchingReader {
+            data: Cursor<Vec<u8>>,
+            idle: Arc<IdleDeadline>,
+            due: Instant,
+            moved_while_reading: Arc<AtomicBool>,
+            reads_ended: Arc<Mutex<Option<Instant>>>,
+        }
+
+        impl Read for WatchingReader {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                let count = self.data.read(buffer)?;
+                let mut reads_ended = self.reads_ended.lock().unwrap();
+                if count == 0 && reads_ended.is_none() {
+                    self.moved_while_reading
+                        .store(!self.idle.is_due(self.due), Ordering::Release);
+                    std::thread::sleep(Duration::from_millis(2));
+                    *reads_ended = Some(Instant::now());
+                }
+                Ok(count)
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = Instant::now();
+        store.idle().arm(before);
+        std::thread::sleep(Duration::from_millis(2));
+        let moved_while_reading = Arc::new(AtomicBool::new(false));
+        let reads_ended = Arc::new(Mutex::new(None));
+        store
+            .import(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: "Watched.pdf".to_owned(),
+                    reader: Box::new(WatchingReader {
+                        data: Cursor::new(b"synthetic watched import".to_vec()),
+                        idle: Arc::clone(store.idle()),
+                        due: due_at(before),
+                        moved_while_reading: Arc::clone(&moved_while_reading),
+                        reads_ended: Arc::clone(&reads_ended),
+                    }),
+                }],
+                2,
+            )
+            .unwrap();
+        assert!(moved_while_reading.load(Ordering::Acquire));
+        // Only the verification's writes come after the reads.
+        let reads_ended = reads_ended.lock().unwrap().unwrap();
+        assert!(!store.idle().is_due(due_at(reads_ended)));
+    }
+
+    #[test]
+    fn a_transfer_making_progress_counts_as_activity() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+
+        // Activity before the import is only the unlock; the import's reads,
+        // after `before`, must move the deadline.
+        std::thread::sleep(Duration::from_millis(5));
+        let before = Instant::now();
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: "Large.pdf".to_owned(),
+                    reader: Box::new(SlowReader {
+                        left: 3 * CHUNK_SIZE,
+                    }),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        // Due exactly the delay and margin after `before` unless there was
+        // activity after it.
+        let due_at = |from: Instant| from + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        assert!(!store.idle().is_due(due_at(before)));
+
+        // An export's writes count too.
+        let before = Instant::now();
+        store.idle().arm(before);
+        assert!(store.idle().is_due(due_at(before)));
+        std::thread::sleep(Duration::from_millis(2));
+        store.export(record, io::sink()).unwrap();
+        assert!(!store.idle().is_due(due_at(before)));
+    }
+
+    #[test]
+    fn each_read_and_write_that_moves_data_reports_progress() {
+        let due_at = |from: Instant| from + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        let idle = Arc::new(IdleDeadline::new(Instant::now()));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        // Arms the deadline, runs one transfer step, and says whether the step
+        // moved the deadline on.
+        let moved = |step: &dyn Fn(&Arc<IdleDeadline>)| {
+            let before = Instant::now();
+            idle.arm(before);
+            std::thread::sleep(Duration::from_millis(2));
+            step(&idle);
+            !idle.is_due(due_at(before))
+        };
+        let read = |data: &'static [u8]| {
+            let cancelled = Arc::clone(&cancelled);
+            move |idle: &Arc<IdleDeadline>| {
+                let read =
+                    CancellableReader::new(Box::new(Cursor::new(data)), Arc::clone(&cancelled))
+                        .with_progress(idle)
+                        .read(&mut [0_u8; 4])
+                        .unwrap();
+                assert_eq!(read, data.len().min(4));
+            }
+        };
+        let write = |data: &'static [u8]| {
+            let cancelled = Arc::clone(&cancelled);
+            move |idle: &Arc<IdleDeadline>| {
+                let written = CancellableWriter::new(io::sink(), Arc::clone(&cancelled))
+                    .with_progress(idle)
+                    .write(data)
+                    .unwrap();
+                assert_eq!(written, data.len());
+            }
+        };
+        assert!(moved(&read(b"synthetic")));
+        assert!(moved(&write(b"synthetic")));
+        // Nothing moved, so nothing is reported.
+        assert!(!moved(&read(b"")));
+        assert!(!moved(&write(b"")));
+    }
+
     #[test]
     fn cancellation_wrappers_stop_at_the_next_io_boundary() {
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -4956,6 +5293,8 @@ mod tests {
         // The interrupted session is not trusted: the vault reports locked.
         assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
         assert!(!store.unlocked.is_poisoned());
+        // And, as after any lock, it has no idle deadline.
+        assert!(!store.idle().is_due(idle_past(Instant::now())));
         store.unlock(PASSWORD).unwrap();
         assert_eq!(store.snapshot().unwrap().profiles.len(), 1);
     }

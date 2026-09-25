@@ -91,14 +91,15 @@ built, tested, or independently reviewed.
   sensitive operations, with a short grace period except when an actively exploited critical issue
   requires immediate action.
 - Default automatic locking to five minutes and allow a range of one to fifteen minutes. Conceal
-  content immediately when backgrounded.
+  content immediately when backgrounded. An import or export in progress may finish, with content
+  concealed, before an automatic or background lock; a manual lock cancels it.
 
 ## Consequences and open implementation gates
 
 These decisions require new protocols and substantial code beyond this PR: recovery-key envelopes,
 portable backup/restore, enrolled-device key exchange and revocation, encrypted synchronization,
 tombstones, signed CARLOS packages, explicit sharing, encrypted audit history, a sandboxed renderer,
-a native-side idle deadline, platform privacy controls, release signing, and secure updates.
+platform privacy controls, release signing, and secure updates.
 
 Physical-device lifecycle tests, real full-disk and power-loss tests, Argon2id benchmarks,
 accessibility review, privacy/regulatory and clinical-safety approval, and independent security

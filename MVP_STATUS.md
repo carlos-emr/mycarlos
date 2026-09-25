@@ -26,9 +26,10 @@ privacy, accessibility, or clinical review.
 - [x] Multiple patient profiles, nested folders, search, sorting, transactional bulk moves,
       drag-and-drop, keyboard folder movement, and folder/imported-document renaming. Renames
       persist in encrypted metadata without modifying document bytes or folder assignments.
-- [x] Manual/background locking with next-I/O-boundary streaming cancellation, immediate background visual
-      concealment, and persisted one-to-fifteen-minute inactivity configuration with the approved
-      five-minute default.
+- [x] Manual/background locking, immediate background visual concealment, and persisted
+      one-to-fifteen-minute inactivity configuration with the approved five-minute default. A manual
+      lock cancels streaming at the next I/O boundary; an automatic or background lock during an
+      import or export hides content at once and locks when the transfer finishes.
 - [x] Confirmed passphrase change and typed plus trusted-native-confirmation whole-vault reset.
 - [x] Exclusive OS ownership across app instances for unlocked sessions and lifecycle operations;
       subprocess coverage verifies rejection and fresh-state handoff after ownership release.
@@ -81,15 +82,27 @@ privacy, accessibility, or clinical review.
       a native pick step, which holds the chosen paths natively, and a run step: the renderer does
       not lock while a picker it opened is in the foreground, treats that time as activity rather
       than inactivity, and locks once the picker closes if the page is still hidden. Backgrounding
-      during the transfer itself still locks and cancels it. This is written against Android's
+      during the transfer itself hides the library at once and locks when the transfer finishes;
+      **Lock now and cancel the transfer** cancels it immediately. This is written against Android's
       documented lifecycle and covered by renderer tests, but it has not been run on Android: the
       development container has no Android SDK or emulator. Run `npm run tauri android dev` from a
       machine with Android Studio's emulator (see the Android section in `README.md`), then check
       that choosing PDFs imports them, that Save a copy writes the file, and that pressing Home
       while the picker is open locks the vault when the app returns.
-- [ ] Give the native session its own idle deadline. Automatic locking runs only as timers and
-      events in the renderer, so if the webview crashes, hangs, or is suspended before its lock
-      request is delivered, the native session keeps the vault unlocked until the app exits.
+- [x] The native session has its own idle deadline, the automatic lock delay plus 15 seconds after
+      the last activity it hears of, so the vault's keys are dropped even if the webview crashes or
+      hangs, or is suspended while the app keeps running. Commands, user input the renderer
+      reports, open pickers, opening what was chosen in them, and a transfer making progress count
+      as activity. A picker counts for at most 15 minutes from when it opened. A transfer counts
+      for as long as it makes progress, however slowly, so a large one on a slow computer or
+      connection is not cut off; one that stalls locks after the delay. An automatic or background
+      lock that falls during a transfer hides the library and waits for the transfer to finish; its
+      outcome is shown after the next unlock, not on the unlock screen. Limits: a hung webview
+      keeps showing its last screen until it recovers, locking when the app is backgrounded is
+      still the renderer's alone, a source or destination that blocks inside a single read or
+      write delays every lock until it returns, and a source that keeps trickling data, or a
+      file that never finishes opening, holds automatic locks (content hidden) for as long as it
+      does; **Lock now** still locks at once while a file is opening.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
       offers to remove the damaged documents after a confirmation that names the backup-restore
       alternative, and any file that has come back is kept.
