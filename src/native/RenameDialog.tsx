@@ -151,7 +151,10 @@ export function RenameDialog({
                 }
                 value={name}
                 disabled={saving || readOnly}
-                aria-describedby="rename-help"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={
+                  error ? "rename-help rename-error" : "rename-help"
+                }
                 onChange={(event) => {
                   setName(event.target.value);
                   setError("");
@@ -188,7 +191,7 @@ export function RenameDialog({
               </p>
             )}
             {error && (
-              <p role="alert" key={refusals}>
+              <p id="rename-error" role="alert" key={refusals}>
                 {error}
               </p>
             )}

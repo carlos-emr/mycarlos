@@ -58,8 +58,8 @@ static EXPORTS_IN_FLIGHT: Mutex<BTreeSet<Uuid>> = Mutex::new(BTreeSet::new());
 // A journal entry holds one path; anything longer is not one of ours.
 const MAX_EXPORT_JOURNAL_BYTES: usize = 64 * 1024;
 // Names Windows reserves for devices. A file whose name before its first dot
-// is one of these, with ASCII letters in any case and any spaces before the
-// dot, cannot be created, so `sanitize_basename` prefixes it. The rename
+// is one of these, with ASCII letters in any case and any ASCII spaces
+// (U+0020) before the dot, cannot be created, so `sanitize_basename` prefixes it. The rename
 // dialog lists the same names (src/native/reservedNames.ts) to say why such a
 // name is refused.
 const RESERVED_DEVICE_NAMES: [&str; 32] = [
@@ -7057,20 +7057,26 @@ mod tests {
 
     #[test]
     fn the_rename_dialog_lists_exactly_the_reserved_device_names() {
-        // The dialog's module lists each name as a quoted literal in one set.
+        // The dialog's module lists each name as a quoted literal in one
+        // frozen array, and its own tests check that each one is refused. This
+        // reads the repository's frontend, so it runs only in a full checkout.
+        const DECLARATION: &str =
+            "export const RESERVED_DEVICE_NAMES: readonly string[] = Object.freeze([";
         let dialog = include_str!("../../src/native/reservedNames.ts");
         let list = dialog
-            .split_once("const RESERVED_DEVICE_NAMES = new Set([")
+            .split_once(DECLARATION)
             .and_then(|(_, rest)| rest.split_once("])"))
             .map(|(list, _)| list)
-            .unwrap();
+            .unwrap_or_else(|| panic!("reservedNames.ts must declare `{DECLARATION}` ... `]);`"));
         let parts: Vec<&str> = list.split('"').collect();
         // Between the quoted names there is only punctuation and space, so no
         // name is written some other way the check below would miss.
-        assert!(parts
-            .iter()
-            .step_by(2)
-            .all(|between| between.chars().all(|c| c == ',' || c.is_whitespace())));
+        for between in parts.iter().step_by(2) {
+            assert!(
+                between.chars().all(|c| c == ',' || c.is_whitespace()),
+                "write each reserved name as a double-quoted literal, not {between:?}"
+            );
+        }
         let mut listed: Vec<&str> = parts.iter().copied().skip(1).step_by(2).collect();
         let mut expected = RESERVED_DEVICE_NAMES.to_vec();
         listed.sort_unstable();
