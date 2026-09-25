@@ -59,8 +59,9 @@ static EXPORTS_IN_FLIGHT: Mutex<BTreeSet<Uuid>> = Mutex::new(BTreeSet::new());
 const MAX_EXPORT_JOURNAL_BYTES: usize = 64 * 1024;
 // Names Windows reserves for devices. A file whose name before its first dot
 // is one of these, with ASCII letters in any case and any spaces before the
-// dot, cannot be created, so `sanitize_basename` prefixes it. The rename dialog lists the same
-// names (src/native/reservedNames.ts) to say why such a name is refused.
+// dot, cannot be created, so `sanitize_basename` prefixes it. The rename
+// dialog lists the same names (src/native/reservedNames.ts) to say why such a
+// name is refused.
 const RESERVED_DEVICE_NAMES: [&str; 32] = [
     "CON",
     "PRN",
