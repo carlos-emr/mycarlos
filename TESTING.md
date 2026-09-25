@@ -180,35 +180,42 @@ VoiceOver.
 With the screen reader on, using only the keyboard (or only swipes on a phone), go through
 [What to try](#what-to-try) and check each of these:
 
-1. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
+1. **Create a vault** (the first screen on a new install). Every field is read with its name.
+   Type two different passphrases: "Passphrases do not match." is read out.
+2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
    wrong passphrase: the reason is read out without you moving focus.
-2. **Create a vault.** Every field is read with its name. Type two different passphrases:
-   "Passphrases do not match." is read out.
 3. **Finding your way.** Jumping by heading reaches the page title (for example **My records**)
    and each section in **Security**. The sidebar is read as the **Record library** navigation;
    on a phone, the **Section** menu is read with that name.
-4. **Documents and folders.** Each is read by its name, followed by "document" or "folder". The
-   extra buttons say what they act on ("More options for" or "Select", then the document's
-   name), and **Select** says whether it is pressed.
+4. **Documents and folders** (in list view). Move through the list with the screen reader's
+   reading keys (arrow keys in NVDA and Narrator, Control + Option + arrows in VoiceOver): each
+   item is read by its name, followed by "document" or "folder". The extra buttons say what
+   they act on ("More options for" or "Select", then the document's name), and **Select** says
+   whether it is pressed.
 5. **Messages.** After an import, a move or a rename, the result (for example "4 file(s)
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
    appear.
-6. **Dialogs.** Opening a document's details, **Rename** or an **Erase** confirmation moves
-   focus into the dialog and reads its title. Tab stays inside the dialog, and Escape closes it
-   and puts you back where you were. In confirmations, focus starts on **Cancel**, so pressing
-   Enter straight away does nothing harmful.
+6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete** or
+   **Save a copy** moves focus into the dialog and reads its title. In confirmations, focus
+   starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
+   Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
+   it (or, from a dialog opened within a document's details, to those details).
 7. **Locking.** After **Lock now**, the reader says "Vault locked." and focus is in the
    **Passphrase** field, not on something left over from the library. Check the same after an
    automatic lock.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
+Known gaps, still worth confirming: the unlock screen's messages (items 2 and 7) and the message
+after renaming a document may appear on screen without being read out, and the passphrase
+requirements on the Create screen are not read with the passphrase field.
+
 Then turn the screen reader off and check text size:
 
 - **Windows, macOS:** press Ctrl + plus (Command + plus on a Mac) up to 200%. The text grows,
   nothing is cut off or overlaps, and the page scrolls only up and down. Ctrl + 0 (Command + 0)
-  resets it. Also try Windows **Settings → Accessibility → Text size** and report whether the app
-  follows it.
+  resets it. Also try Windows **Settings → Accessibility → Text size** and report whether the
+  app follows it.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
   whether the text gets larger, and whether anything is cut off.
 - **iOS:** larger text in Settings is not expected to change the app yet; report what you see.
