@@ -58,8 +58,8 @@ static EXPORTS_IN_FLIGHT: Mutex<BTreeSet<Uuid>> = Mutex::new(BTreeSet::new());
 // A journal entry holds one path; anything longer is not one of ours.
 const MAX_EXPORT_JOURNAL_BYTES: usize = 64 * 1024;
 // Names Windows reserves for devices. A file whose name before its first dot
-// is one of these, in any case and with any spaces before the dot, cannot be
-// created, so `sanitize_basename` prefixes it. The rename dialog lists the same
+// is one of these, with ASCII letters in any case and any spaces before the
+// dot, cannot be created, so `sanitize_basename` prefixes it. The rename dialog lists the same
 // names (src/native/reservedNames.ts) to say why such a name is refused.
 const RESERVED_DEVICE_NAMES: [&str; 32] = [
     "CON",
@@ -7059,11 +7059,18 @@ mod tests {
         // The dialog's module lists each name as a quoted literal in one set.
         let dialog = include_str!("../../src/native/reservedNames.ts");
         let list = dialog
-            .split_once("new Set([")
+            .split_once("const RESERVED_DEVICE_NAMES = new Set([")
             .and_then(|(_, rest)| rest.split_once("])"))
             .map(|(list, _)| list)
             .unwrap();
-        let mut listed: Vec<&str> = list.split('"').skip(1).step_by(2).collect();
+        let parts: Vec<&str> = list.split('"').collect();
+        // Between the quoted names there is only punctuation and space, so no
+        // name is written some other way the check below would miss.
+        assert!(parts
+            .iter()
+            .step_by(2)
+            .all(|between| between.chars().all(|c| c == ',' || c.is_whitespace())));
+        let mut listed: Vec<&str> = parts.iter().copied().skip(1).step_by(2).collect();
         let mut expected = RESERVED_DEVICE_NAMES.to_vec();
         listed.sort_unstable();
         expected.sort_unstable();
@@ -7088,6 +7095,9 @@ mod tests {
             assert!(valid_record_name(&sanitized));
         }
         assert_eq!(sanitize_basename("CONTRACT .pdf"), "CONTRACT .pdf");
+        // Only U+0020 spaces before the dot are ignored.
+        assert_eq!(sanitize_basename("CON\u{a0}.txt"), "CON\u{a0}.txt");
+        assert_eq!(sanitize_basename("NUL\u{3000}.log"), "NUL\u{3000}.log");
         // Case is compared for ASCII letters only: a dotless \u{131} is not an I.
         assert_eq!(sanitize_basename("con\u{131}n$.pdf"), "con\u{131}n$.pdf");
     }

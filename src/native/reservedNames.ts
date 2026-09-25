@@ -1,7 +1,8 @@
 // Names Windows reserves for devices: a file whose name before its first dot is
 // one of these cannot be created, so the vault refuses them as document names.
-// Keep this list the same as RESERVED_DEVICE_NAMES in src-tauri/src/vault.rs; a
-// test there checks that every quoted name here is exactly one of those.
+// Keep this list the same as RESERVED_DEVICE_NAMES in src-tauri/src/vault.rs. A
+// test there reads the quoted names in the set below and checks that both lists
+// hold exactly the same names, so keep each one a double-quoted literal.
 const RESERVED_DEVICE_NAMES = new Set([
   "CON",
   "PRN",
@@ -37,12 +38,11 @@ const RESERVED_DEVICE_NAMES = new Set([
   "LPT9",
 ]);
 
-// As the vault judges it: the name before the first dot, without the spaces
-// Windows ignores before the dot, compared with ASCII letters uppercased.
-export const isReservedDeviceName = (name: string) =>
-  RESERVED_DEVICE_NAMES.has(
-    name
-      .split(".")[0]
-      .replace(/ +$/, "")
-      .replace(/[a-z]/g, (letter) => letter.toUpperCase()),
-  );
+// The word in `name` that Windows reserves, if any, as the vault judges it:
+// the name before the first dot, without the spaces Windows ignores before the
+// dot, compared with ASCII letters uppercased. Returned as typed.
+export const reservedDeviceName = (name: string) => {
+  const word = name.split(".")[0].replace(/ +$/, "");
+  const upper = word.replace(/[a-z]/g, (letter) => letter.toUpperCase());
+  return RESERVED_DEVICE_NAMES.has(upper) ? word : undefined;
+};

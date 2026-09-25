@@ -6,7 +6,7 @@ import {
   fileExtension,
   nameTooLong,
 } from "./recordPresentation";
-import { isReservedDeviceName } from "./reservedNames";
+import { reservedDeviceName } from "./reservedNames";
 
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
@@ -88,10 +88,12 @@ export function RenameDialog({
     !extension &&
     trimLikeVault(fullName).toLowerCase().endsWith(".pdf");
   // Windows cannot create a file under a device name, so the vault refuses it.
-  const reservedName =
-    target.kind === "document" && isReservedDeviceName(trimLikeVault(fullName));
-  const invalid =
-    tooLong || unsafeName || gainsExtension || reservedName || !stem;
+  // Said when saving, not while typing: "Con" is on the way to "Consult".
+  const reservedWord =
+    target.kind === "document"
+      ? reservedDeviceName(trimLikeVault(fullName))
+      : undefined;
+  const invalid = tooLong || unsafeName || gainsExtension || !stem;
   const close = () => {
     if (!saving) onClose();
   };
@@ -99,6 +101,12 @@ export function RenameDialog({
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving || readOnly || invalid) return;
+    if (reservedWord) {
+      setError(
+        `"${reservedWord}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.`,
+      );
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -168,12 +176,6 @@ export function RenameDialog({
             )}
             {tooLong && (
               <p role="alert">This name is too long. Shorten it to save.</p>
-            )}
-            {reservedName && (
-              <p role="alert">
-                Windows reserves that name for a device, so a copy could not be
-                saved under it. Choose another name.
-              </p>
             )}
             {unsafeName && (
               <p role="alert">
