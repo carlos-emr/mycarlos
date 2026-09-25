@@ -4953,6 +4953,250 @@ mod tests {
         assert!(!journal.exists() || fs::read_dir(&journal).unwrap().count() == 0);
     }
 
+    /// A vault with one record, unlocked, and an empty folder outside it.
+    fn vault_with_one_export(temp: &Path) -> (VaultStore, Uuid, PathBuf, PathBuf) {
+        let home = temp.join("home");
+        let store = VaultStore::new(home.join("vault-v1"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![source("scan.pdf", b"synthetic export record")],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let out = temp.join("out");
+        fs::create_dir_all(&out).unwrap();
+        (store, record, home, out)
+    }
+
+    fn journal_is_empty(home: &Path) -> bool {
+        let journal = home.join(EXPORT_JOURNAL);
+        !journal.exists() || fs::read_dir(&journal).unwrap().count() == 0
+    }
+
+    #[test]
+    fn an_export_that_fails_midway_leaves_nothing_beside_it_or_to_sweep() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, home, out) = vault_with_one_export(temp.path());
+        let object_name = {
+            let guard = store.unlocked.lock().unwrap();
+            guard.as_ref().unwrap().manifest.records[0]
+                .object_name
+                .clone()
+        };
+        let object = home.join("vault-v1").join("objects").join(object_name);
+        let mut bytes = fs::read(&object).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        fs::write(object, bytes).unwrap();
+
+        assert!(matches!(
+            store.export_atomic(record, &out.join("copy.pdf")),
+            Err(VaultError::Corrupt)
+        ));
+        assert!(leftovers(&out, &[]).is_empty());
+        assert!(journal_is_empty(&home));
+    }
+
+    #[test]
+    fn an_export_to_a_read_only_folder_fails_and_leaves_no_journal_entry() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, home, out) = vault_with_one_export(temp.path());
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o500)).unwrap();
+        if fs::write(out.join("probe"), b"").is_ok() {
+            // A privileged process ignores folder modes, so the staging folder
+            // could be created; the refusal cannot be exercised here.
+            return;
+        }
+
+        let result = store.export_atomic(record, &out.join("copy.pdf"));
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(result.is_err());
+        assert!(leftovers(&out, &[]).is_empty());
+        assert!(journal_is_empty(&home));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn export_journal_entries_and_staging_folders_are_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let id = Uuid::new_v4();
+        let stage = temp.path().join(format!("{EXPORT_STAGE_PREFIX}{id}"));
+        let entry = journal_export(&home.join("vault-v1"), id, &stage).unwrap();
+        create_stage_dir(&stage).unwrap();
+
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(entry, home.join(EXPORT_JOURNAL).join(id.to_string()));
+        assert_eq!(decode_path(&fs::read(&entry).unwrap()).unwrap(), stage);
+        assert_eq!(mode(&home.join(EXPORT_JOURNAL)), 0o700);
+        assert_eq!(mode(&entry), 0o600);
+        assert_eq!(mode(&stage), 0o700);
+    }
+
+    #[test]
+    fn finishing_an_export_whose_staging_folder_is_gone_drops_its_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let entry = temp.path().join("entry");
+        fs::write(&entry, b"").unwrap();
+        let stage = temp
+            .path()
+            .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        finish_export(&stage, Some(&entry));
+        assert!(!entry.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn finishing_an_export_keeps_its_entry_while_the_staging_folder_remains() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let entry = temp.path().join("entry");
+        fs::write(&entry, b"").unwrap();
+        let out = temp.path().join("out");
+        let stage = out.join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::create_dir_all(&stage).unwrap();
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o500)).unwrap();
+        if fs::write(out.join("probe"), b"").is_ok() {
+            // A privileged process ignores folder modes; nothing to exercise.
+            return;
+        }
+
+        finish_export(&stage, Some(&entry));
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(stage.exists());
+        assert!(entry.exists());
+    }
+
+    #[test]
+    fn the_export_sweep_drops_an_entry_whose_staging_folder_is_already_gone() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let journal = home.join(EXPORT_JOURNAL);
+        fs::create_dir_all(&journal).unwrap();
+        let gone = temp
+            .path()
+            .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::write(journal.join(Uuid::new_v4().to_string()), encode_path(&gone)).unwrap();
+
+        remove_abandoned_exports(&home);
+        assert_eq!(fs::read_dir(&journal).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_export_sweep_keeps_an_entry_it_cannot_check() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let journal = home.join(EXPORT_JOURNAL);
+        fs::create_dir_all(&journal).unwrap();
+        let out = temp.path().join("out");
+        let stage = out.join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::create_dir_all(&stage).unwrap();
+        fs::write(
+            journal.join(Uuid::new_v4().to_string()),
+            encode_path(&stage),
+        )
+        .unwrap();
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::symlink_metadata(&stage).is_ok() {
+            // A privileged process ignores folder modes; nothing to exercise.
+            fs::set_permissions(&out, fs::Permissions::from_mode(0o700)).unwrap();
+            return;
+        }
+
+        remove_abandoned_exports(&home);
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(stage.exists());
+        assert_eq!(fs::read_dir(&journal).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_export_sweep_does_not_enter_a_linked_journal_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let elsewhere = temp.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        fs::write(elsewhere.join("notes.txt"), b"keep").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, home.join(EXPORT_JOURNAL)).unwrap();
+
+        remove_abandoned_exports(&home);
+        assert_eq!(fs::read(elsewhere.join("notes.txt")).unwrap(), b"keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_export_sweep_reads_only_bounded_regular_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let journal = home.join(EXPORT_JOURNAL);
+        fs::create_dir_all(&journal).unwrap();
+        let linked = temp
+            .path()
+            .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        let oversized = temp
+            .path()
+            .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::create_dir_all(&linked).unwrap();
+        fs::create_dir_all(&oversized).unwrap();
+        // An entry that is a link to a file naming a staging folder.
+        let target = temp.path().join("target");
+        fs::write(&target, encode_path(&linked)).unwrap();
+        std::os::unix::fs::symlink(&target, journal.join(Uuid::new_v4().to_string())).unwrap();
+        // An entry past the size limit that still names a staging folder.
+        let mut long = vec![b'/'; MAX_EXPORT_JOURNAL_BYTES];
+        long.extend_from_slice(&encode_path(&oversized));
+        fs::write(journal.join(Uuid::new_v4().to_string()), long).unwrap();
+
+        remove_abandoned_exports(&home);
+        assert!(linked.exists());
+        assert!(oversized.exists());
+        assert_eq!(fs::read_dir(&journal).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn export_stage_names_are_the_prefix_and_a_canonical_uuid() {
+        let id = Uuid::new_v4();
+        let folder = Path::new("out");
+        assert!(is_export_stage_name(
+            &folder.join(format!("{EXPORT_STAGE_PREFIX}{id}"))
+        ));
+        for name in [
+            format!("{id}"),
+            format!("x{EXPORT_STAGE_PREFIX}{id}"),
+            format!("{EXPORT_STAGE_PREFIX}{id}x"),
+            EXPORT_STAGE_PREFIX.to_string(),
+            format!("{EXPORT_STAGE_PREFIX}{}", id.simple()),
+            format!("{EXPORT_STAGE_PREFIX}{}", id.braced()),
+            format!("{EXPORT_STAGE_PREFIX}{}", id.to_string().to_uppercase()),
+        ] {
+            assert!(!is_export_stage_name(&folder.join(&name)), "{name}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_journal_entry_of_odd_length_decodes_to_nothing() {
+        let stage = Path::new(r"C:\out").join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        let mut bytes = encode_path(&stage);
+        assert_eq!(decode_path(&bytes).as_deref(), Some(stage.as_path()));
+        bytes.push(0);
+        assert_eq!(decode_path(&bytes), None);
+    }
+
     #[test]
     fn a_locked_vault_journals_and_stages_nothing() {
         let temp = tempfile::tempdir().unwrap();
