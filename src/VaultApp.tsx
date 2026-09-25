@@ -392,7 +392,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // The native idle deadline locked the vault, or tried to, for example
         // while this screen was suspended: a command then fails as locked, and
         // a transfer it cut off as cancelled (a provider export's write pass
-        // as a partial copy instead, which is shown). Lock here too, which also
+        // as a partial copy instead, handled below). Lock here too, which also
         // confirms it.
         if (isCancelledError(error)) report("The transfer did not finish.");
         requestLock(true);
