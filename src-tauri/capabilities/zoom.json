@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-zoom",
+  "description": "Ctrl/Cmd with plus, minus and 0 zoom the window; on macOS and Linux Tauri implements those keys in the page",
+  "platforms": ["macOS", "linux"],
+  "windows": ["main"],
+  "permissions": ["core:webview:allow-set-webview-zoom"]
+}

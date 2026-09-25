@@ -183,7 +183,7 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 1. **Create a vault** (the first screen on a new install). Every field is read with its name.
    Type two different passphrases: "Passphrases do not match." is read out.
 2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
-   wrong passphrase: the reason is read out without you moving focus.
+   wrong passphrase, and note whether the reason is read out without you moving focus.
 3. **Finding your way.** Jumping by heading reaches the page title (for example **My records**)
    and each section in **Security**. The sidebar is read as the **Record library** navigation;
    on a phone, the **Section** menu is read with that name.
@@ -192,30 +192,30 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    item is read by its name, followed by "document" or "folder". The extra buttons say what
    they act on ("More options for" or "Select", then the document's name), and **Select** says
    whether it is pressed.
-5. **Messages.** After an import, a move or a rename, the result (for example "4 file(s)
+5. **Messages.** After an import, a move or renaming a folder, the result (for example "4 file(s)
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
-   appear.
+   appear. Also rename a document and note whether its result is read out.
 6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete** or
    **Save a copy** moves focus into the dialog and reads its title. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
    it (or, from a dialog opened within a document's details, to those details).
-7. **Locking.** After **Lock now**, the reader says "Vault locked." and focus is in the
-   **Passphrase** field, not on something left over from the library. Check the same after an
-   automatic lock.
+7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
+   over from the library; note whether the reader also says "Vault locked." Check the same after
+   an automatic lock.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
 Known gaps, still worth confirming: the unlock screen's messages (items 2 and 7) and the message
-after renaming a document may appear on screen without being read out, and the passphrase
-requirements on the Create screen are not read with the passphrase field.
+after renaming a document (item 5) may appear on screen without being read out, and the
+passphrase requirements on the Create screen are not read with the passphrase field.
 
 Then turn the screen reader off and check text size:
 
-- **Windows, macOS:** press Ctrl + plus (Command + plus on a Mac) up to 200%. The text grows,
-  nothing is cut off or overlaps, and the page scrolls only up and down. Ctrl + 0 (Command + 0)
-  resets it. Also try Windows **Settings → Accessibility → Text size** and report whether the
-  app follows it.
+- **Windows, macOS:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
+  up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
+  down. Ctrl + 0 (Command + 0) resets it. Also try Windows **Settings → Accessibility → Text
+  size** and report whether the app follows it.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
   whether the text gets larger, and whether anything is cut off.
 - **iOS:** larger text in Settings is not expected to change the app yet; report what you see.

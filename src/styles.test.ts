@@ -39,10 +39,8 @@ describe("text sizes", () => {
     ).toEqual([]);
   });
 
+  // The stylesheet is already on the page: src/test/setup.ts imports it.
   it("of form controls follow the page instead of the browser's fixed size", () => {
-    const style = document.createElement("style");
-    style.textContent = css;
-    document.head.append(style);
     const controls = ["button", "input", "select", "textarea"].map((tag) =>
       document.body.appendChild(document.createElement(tag)),
     );
@@ -54,30 +52,47 @@ describe("text sizes", () => {
     } finally {
       document.documentElement.style.fontSize = "";
       controls.forEach((control) => control.remove());
-      style.remove();
     }
   });
 
-  it("fit the document list's Rename column when enlarged", () => {
-    const style = document.createElement("style");
-    style.textContent = css;
-    document.head.append(style);
+  it("of small print are at least 14px, not the browser's smaller size", () => {
+    const small = document.body.appendChild(document.createElement("small"));
+    try {
+      expect(
+        parseFloat(getComputedStyle(small).fontSize),
+      ).toBeGreaterThanOrEqual(14);
+    } finally {
+      small.remove();
+    }
+  });
+
+  it("fit the document list's Rename label in its column when enlarged", () => {
     const list = document.body.appendChild(document.createElement("div"));
     list.className = "native-filelist";
     list.style.width = "900px";
+    // A wide fallback font, as some Linux desktops have in place of Roboto.
+    list.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
     list.innerHTML =
       '<div class="file-row"><span></span><span></span><span class="column"></span>' +
       '<span class="column"></span><button class="native-rename-button">Rename</button></div>';
     const rename = list.querySelector("button")!;
+    rename.style.fontFamily = "inherit";
+    const label = document.createRange();
+    label.selectNodeContents(rename);
     try {
       for (const size of ["16px", "24px"]) {
         document.documentElement.style.fontSize = size;
-        expect(rename.scrollWidth).toBeLessThanOrEqual(rename.clientWidth);
+        const padding = getComputedStyle(rename);
+        const room =
+          rename.clientWidth -
+          parseFloat(padding.paddingLeft) -
+          parseFloat(padding.paddingRight);
+        // Centred text spills out on both sides, which scrollWidth half hides.
+        expect(label.getBoundingClientRect().width).toBeLessThanOrEqual(room);
       }
     } finally {
       document.documentElement.style.fontSize = "";
       list.remove();
-      style.remove();
     }
   });
 });
