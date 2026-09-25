@@ -16,13 +16,13 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 #[cfg(windows)]
 use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, PoisonError,
     },
     time::{Duration, Instant},
 };
@@ -46,9 +46,15 @@ const ATOMIC_WRITE_PREFIX: &str = ".atomicwrite";
 // A desktop export stages its readable copy in a folder with this prefix and a
 // UUID, beside the destination, so the final rename is atomic.
 const EXPORT_STAGE_PREFIX: &str = ".mycarlos-export-";
-// In the vault home: one file per export not yet cleaned up, naming its staging folder,
-// so a readable copy left by a process that died is removed at the next start.
+// In the vault home: one file per export not yet cleaned up, naming its
+// staging folder, so a readable copy left by a process that died is removed at
+// the next start.
 const EXPORT_JOURNAL: &str = "pending-exports";
+// Exports under way in this process, by id. Plaintext is only written while a
+// session is open, and while it is, only this process can sweep: the sweep
+// skips these rather than every export holding the session throughout, which
+// would keep a lock waiting behind a slow destination's final sync.
+static EXPORTS_IN_FLIGHT: Mutex<BTreeSet<Uuid>> = Mutex::new(BTreeSet::new());
 // A journal entry holds one path; anything longer is not one of ours.
 const MAX_EXPORT_JOURNAL_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 16 * 1024;
@@ -1015,15 +1021,6 @@ impl VaultStore {
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        self.export_from(unlocked, record_id, writer)
-    }
-
-    fn export_from<W: Write>(
-        &self,
-        unlocked: &UnlockedVault,
-        record_id: Uuid,
-        writer: W,
-    ) -> Result<(), VaultError> {
         let record = unlocked
             .manifest
             .records
@@ -1077,10 +1074,10 @@ impl VaultStore {
             return Err(VaultError::Invalid);
         }
 
-        // Held throughout, so no sweep in this process (an unlock or reset of
-        // the open session) can run between the journal entry and the rename.
-        let guard = self.session();
-        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        // Refused before anything is journaled or staged.
+        if self.session().is_none() {
+            return Err(VaultError::Locked);
+        }
 
         // Record the staging folder before a readable byte is written, so that
         // if this process dies the next start can remove what it left. If the
@@ -1089,6 +1086,7 @@ impl VaultStore {
         // way to get a document out, and only a crash during it would leave an
         // untracked copy, as every export could before.
         let id = Uuid::new_v4();
+        let _in_flight = ExportInFlight::new(id);
         let stage = destination_parent.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
         let entry = journal_export(&self.root, id, &stage).ok();
         if let Err(error) = create_stage_dir(&stage) {
@@ -1105,7 +1103,7 @@ impl VaultStore {
         let result = AtomicFile::new_with_tmpdir(destination, AllowOverwrite, &stage)
             .write_with_options(
                 |file| {
-                    let written = self.export_from(unlocked, record_id, file);
+                    let written = self.export(record_id, file);
                     terminate_at_test_boundary("export.after-write");
                     written
                 },
@@ -2723,6 +2721,41 @@ fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
     failure.map_or(Ok(()), |error| Err(error.into()))
 }
 
+/// Marks an export as under way in this process until it is dropped.
+struct ExportInFlight(Uuid);
+
+impl ExportInFlight {
+    fn new(id: Uuid) -> Self {
+        EXPORTS_IN_FLIGHT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id);
+        Self(id)
+    }
+}
+
+impl Drop for ExportInFlight {
+    fn drop(&mut self) {
+        EXPORTS_IN_FLIGHT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.0);
+    }
+}
+
+fn export_in_flight(entry: &Path) -> bool {
+    entry
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| Uuid::parse_str(name).ok())
+        .is_some_and(|id| {
+            EXPORTS_IN_FLIGHT
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .contains(&id)
+        })
+}
+
 /// Writes a durable journal entry naming an export's staging folder, in the
 /// vault home, and returns the entry's path.
 fn journal_export(root: &Path, id: Uuid, stage: &Path) -> Result<PathBuf, VaultError> {
@@ -2747,10 +2780,13 @@ fn journal_export(root: &Path, id: Uuid, stage: &Path) -> Result<PathBuf, VaultE
 }
 
 fn create_stage_dir(stage: &Path) -> Result<(), VaultError> {
-    let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    builder.create(stage)?;
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(stage)?;
+    }
+    #[cfg(not(unix))]
+    fs::create_dir(stage)?;
     Ok(())
 }
 
@@ -2779,8 +2815,9 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
 /// Removes the staging folders of exports that a process which died left
 /// behind, each holding a readable copy of a document, and their journal
 /// entries. Best effort. The caller holds the storage lock, which keeps out
-/// other processes, and the session lock, which `export_atomic` holds from its
-/// journal entry to its cleanup, so no export is under way. Outside the vault
+/// other processes while a session is open, and exports under way in this
+/// process are skipped; another process can only sweep once this session has
+/// locked, after which an export writes nothing readable. Outside the vault
 /// home it only removes a real directory (not a link) named like our staging
 /// folders. An entry is kept for a later start when it cannot be read, when
 /// something else has taken the folder's name, or when the folder's parent is
@@ -2798,6 +2835,10 @@ fn remove_abandoned_exports(home: &Path) {
     };
     for entry in entries.flatten() {
         let entry_path = entry.path();
+        // Still being written by this process: not abandoned.
+        if export_in_flight(&entry_path) {
+            continue;
+        }
         let bytes = match read_bounded_regular_file(&entry_path, MAX_EXPORT_JOURNAL_BYTES) {
             Ok(bytes) => bytes,
             // Not a regular file, or too long to be one of ours.
@@ -5001,6 +5042,7 @@ mod tests {
         assert!(journal_is_empty(&home));
     }
 
+    #[cfg(unix)]
     #[test]
     fn an_export_to_a_read_only_folder_fails_and_leaves_no_journal_entry() {
         use std::os::unix::fs::PermissionsExt as _;
@@ -5195,6 +5237,78 @@ mod tests {
         assert_eq!(decode_path(&bytes).as_deref(), Some(stage.as_path()));
         bytes.push(0);
         assert_eq!(decode_path(&bytes), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_export_sweep_keeps_an_entry_it_cannot_read() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let journal = home.join(EXPORT_JOURNAL);
+        fs::create_dir_all(&journal).unwrap();
+        let stage = temp
+            .path()
+            .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::create_dir_all(&stage).unwrap();
+        let entry = journal.join(Uuid::new_v4().to_string());
+        fs::write(&entry, encode_path(&stage)).unwrap();
+        fs::set_permissions(&entry, fs::Permissions::from_mode(0o000)).unwrap();
+        if File::open(&entry).is_ok() {
+            // A privileged process ignores file modes; nothing to exercise.
+            return;
+        }
+
+        remove_abandoned_exports(&home);
+        fs::set_permissions(&entry, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(entry.exists());
+        assert!(stage.exists());
+    }
+
+    #[test]
+    fn unlock_and_reset_also_remove_an_abandoned_export() {
+        for operation in ["unlock", "reset"] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = temp.path().join("home");
+            let store = VaultStore::new(home.join("vault-v1"));
+            store.create(PASSWORD, "Jamie", 1).unwrap();
+            let stage = temp
+                .path()
+                .join(format!("{EXPORT_STAGE_PREFIX}{}", Uuid::new_v4()));
+            fs::create_dir_all(&stage).unwrap();
+            fs::write(stage.join("copy.pdf"), b"readable").unwrap();
+            let journal = home.join(EXPORT_JOURNAL);
+            fs::create_dir_all(&journal).unwrap();
+            fs::write(
+                journal.join(Uuid::new_v4().to_string()),
+                encode_path(&stage),
+            )
+            .unwrap();
+
+            // Both run with the session still open, as a re-unlock or a reset does.
+            match operation {
+                "unlock" => store.unlock(PASSWORD).unwrap(),
+                _ => store.reset().unwrap(),
+            }
+            assert!(!stage.exists(), "{operation}");
+            assert!(journal_is_empty(&home), "{operation}");
+        }
+    }
+
+    #[test]
+    fn the_export_sweep_skips_an_export_still_under_way_here() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, home, out) = vault_with_one_export(temp.path());
+        let id = Uuid::new_v4();
+        let stage = out.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
+        let _in_flight = ExportInFlight::new(id);
+        journal_export(&home.join("vault-v1"), id, &stage).unwrap();
+        create_stage_dir(&stage).unwrap();
+        // Unlocking the open session sweeps, but this export is still running.
+        store.unlock(PASSWORD).unwrap();
+        assert!(stage.exists());
+        assert!(!journal_is_empty(&home));
     }
 
     #[test]

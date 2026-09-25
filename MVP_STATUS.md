@@ -120,9 +120,9 @@ privacy, accessibility, or clinical review.
       and the next start, unlock or reset removes whatever a process that died left. Limits: a
       folder whose parent folder is missing, as when its drive is not connected, is kept in the
       journal until it returns (a best guess); checking a folder on an unreachable network drive
-      can delay startup; if the vault's own disk cannot take the journal entry, the export runs
-      untracked; and copies staged by earlier builds (`.atomicwrite*` beside an export) are not
-      tracked and are not removed.
+      can delay startup; if the journal entry cannot be written for any reason, such as a full
+      vault disk, the export runs untracked; and copies staged by earlier builds (`.atomicwrite*`
+      beside an export) are not tracked and are not removed.
 - [ ] Confirm on iOS and sandboxed macOS that the save picker's folder allows creating the export
       staging folder at all.
 - [ ] Confirm on Windows that PDFs in a OneDrive Files On-Demand folder can be imported. Import
