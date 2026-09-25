@@ -1045,6 +1045,26 @@ mod tests {
         for window in windows {
             assert_eq!(window["zoomHotkeysEnabled"], true);
         }
+        // On macOS and Linux Tauri implements those keys in the page, which
+        // then needs leave to set its own zoom. Only there, and nothing else:
+        // Windows zooms natively, and mobile has no such command.
+        let zoom: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/zoom.json")).unwrap();
+        assert_eq!(zoom["windows"], serde_json::json!(["main"]));
+        assert_eq!(zoom["platforms"], serde_json::json!(["macOS", "linux"]));
+        assert_eq!(
+            zoom["permissions"],
+            serde_json::json!(["core:webview:allow-set-webview-zoom"])
+        );
+        // Tauri loads every file in capabilities/, so no other may appear
+        // without a test of its own.
+        let mut files: Vec<String> =
+            std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+        files.sort();
+        assert_eq!(files, ["default.json", "zoom.json"]);
     }
 
     #[test]
@@ -1358,21 +1378,11 @@ mod tests {
         // build.rs declares the app commands, so this list is the only thing
         // that lets the renderer call them. It must cover exactly the registered
         // commands and must never grant a plugin (`plugin:permission`) scope.
-        // The one built-in permission is the page setting its own zoom, which
-        // Ctrl/Cmd with plus and minus need on macOS and Linux.
-        const CORE: [&str; 1] = ["core:webview:allow-set-webview-zoom"];
-        let granted: Vec<&str> = capability["permissions"]
+        let permissions: Vec<&str> = capability["permissions"]
             .as_array()
             .unwrap()
             .iter()
             .map(|permission| permission.as_str().unwrap())
-            .collect();
-        for core in CORE {
-            assert!(granted.contains(&core), "{core}");
-        }
-        let permissions: Vec<&str> = granted
-            .into_iter()
-            .filter(|permission| !CORE.contains(permission))
             .collect();
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");
