@@ -23,12 +23,10 @@ describe("text sizes", () => {
     expect(fonts.filter(({ value }) => value !== "inherit")).toEqual([]);
   });
 
-  it("move to the narrower layout sooner when larger, via em breakpoints", () => {
-    const widths = [...css.matchAll(/@media[^{]*width:\s*([^)\s]+)/g)].map(
-      ([, width]) => width,
-    );
-    expect(widths.length).toBeGreaterThan(0);
-    expect(widths.filter((width) => !width.endsWith("em"))).toEqual([]);
+  it("use em breakpoints, so a larger default font gets the narrow layout", () => {
+    const queries = css.match(/@media[^{]*/g) ?? [];
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.filter((query) => /\dpx/.test(query))).toEqual([]);
   });
 
   it("are at least 14px at the default text size", () => {
@@ -39,5 +37,47 @@ describe("text sizes", () => {
           !decorative.has(selector) && parseFloat(value) * 16 < 14,
       ),
     ).toEqual([]);
+  });
+
+  it("of form controls follow the page instead of the browser's fixed size", () => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.append(style);
+    const controls = ["button", "input", "select", "textarea"].map((tag) =>
+      document.body.appendChild(document.createElement(tag)),
+    );
+    try {
+      document.documentElement.style.fontSize = "24px";
+      expect(
+        controls.map((control) => getComputedStyle(control).fontSize),
+      ).toEqual(controls.map(() => getComputedStyle(document.body).fontSize));
+    } finally {
+      document.documentElement.style.fontSize = "";
+      controls.forEach((control) => control.remove());
+      style.remove();
+    }
+  });
+
+  it("fit the document list's Rename column when enlarged", () => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.append(style);
+    const list = document.body.appendChild(document.createElement("div"));
+    list.className = "native-filelist";
+    list.style.width = "900px";
+    list.innerHTML =
+      '<div class="file-row"><span></span><span></span><span class="column"></span>' +
+      '<span class="column"></span><button class="native-rename-button">Rename</button></div>';
+    const rename = list.querySelector("button")!;
+    try {
+      for (const size of ["16px", "24px"]) {
+        document.documentElement.style.fontSize = size;
+        expect(rename.scrollWidth).toBeLessThanOrEqual(rename.clientWidth);
+      }
+    } finally {
+      document.documentElement.style.fontSize = "";
+      list.remove();
+      style.remove();
+    }
   });
 });

@@ -86,7 +86,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--canvas); color: var(--ink); }
-button, input { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .52; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -608,7 +608,7 @@ h1, h2, p { margin: 0; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(210px, 1fr) minmax(125px, 190px) 8rem 52px; }
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(210px, 1fr) minmax(125px, 190px) 8rem 3.75rem; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -623,7 +623,7 @@ h1, h2, p { margin: 0; }
 .native-rename-fields [role="alert"] { color: var(--ink); font-weight: 700; }
 .native-record-rename { padding: 0 20px 16px; }
 @media (max-width: 56.25em) {
-  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) 52px; }
+  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) 3.75rem; }
 }
 .native-dialog-actions label { margin-right: auto; }
 
