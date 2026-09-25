@@ -45,6 +45,9 @@ export function RenameDialog({
   const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Changes on every refusal, so pressing Save again announces it again even
+  // when the message is the same.
+  const [refusals, setRefusals] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
   // Someone who types the extension out of habit means the same name, so a
   // typed copy of it is dropped rather than doubled, unless the name was left
@@ -102,6 +105,7 @@ export function RenameDialog({
     event.preventDefault();
     if (saving || readOnly || invalid) return;
     if (reservedWord) {
+      setRefusals((count) => count + 1);
       setError(
         `"${reservedWord}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.`,
       );
@@ -183,7 +187,11 @@ export function RenameDialog({
                 invisible control characters, or end with a dot.
               </p>
             )}
-            {error && <p role="alert">{error}</p>}
+            {error && (
+              <p role="alert" key={refusals}>
+                {error}
+              </p>
+            )}
           </div>
           <footer className="dialog-actions">
             <button

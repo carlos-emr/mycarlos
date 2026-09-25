@@ -205,27 +205,40 @@ describe("RenameDialog", () => {
     ["Visit notes", "AUX   .txt", "AUX"],
     // Trimmed as the vault trims, U+0085 included.
     ["Results.pdf", "\u0085CON", "CON"],
-  ])("refuses %j, typed %j, when saved: the word %j", (stored, typed, word) => {
-    const { onSave, save, type, submit } = open(stored);
-    type(typed);
-    // Not while typing: "Con" is on the way to "Consult notes".
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(save).toBeEnabled();
-    submit();
-    expect(screen.getByRole("alert")).toHaveTextContent(reserved(word));
-    expect(onSave).not.toHaveBeenCalled();
-    // Editing the name clears it.
-    type(`${typed}x`);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
+  ])(
+    "refuses %j renamed to %j when saved, naming %j",
+    (stored, typed, word) => {
+      const { onSave, save, type, submit } = open(stored);
+      type(typed);
+      // Not while typing: "Con" is on the way to "Consult notes".
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(save).toBeEnabled();
+      submit();
+      expect(screen.getByRole("alert")).toHaveTextContent(reserved(word));
+      expect(onSave).not.toHaveBeenCalled();
+      // Editing the name clears it.
+      type(`${typed}x`);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
 
-  it("refuses an unedited reserved name from an earlier build when saved", () => {
-    const { onSave, submit } = open(" CON.pdf");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    submit();
-    expect(screen.getByRole("alert")).toHaveTextContent(reserved("CON"));
-    expect(onSave).not.toHaveBeenCalled();
-  });
+  // A stored name with a control character such as U+0085 is refused as
+  // unsafe as soon as the dialog opens, so it never reaches this check.
+  it.each([" CON.pdf"])(
+    "refuses an unedited reserved name %j from an earlier build when saved",
+    (stored) => {
+      const { onSave, submit } = open(stored);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      submit();
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent(reserved("CON"));
+      expect(onSave).not.toHaveBeenCalled();
+      // Saving again says so again, for screen readers too.
+      submit();
+      expect(screen.getByRole("alert")).not.toBe(alert);
+      expect(screen.getByRole("alert")).toHaveTextContent(reserved("CON"));
+    },
+  );
 
   it.each([
     // Unedited names from earlier builds that the vault would refuse.
