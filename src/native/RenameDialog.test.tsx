@@ -8,6 +8,8 @@ const UNSAFE =
 const GAINS =
   "This document's name has no .pdf extension, so it cannot end in .pdf.";
 const TOO_LONG = "This name is too long. Shorten it to save.";
+const RESERVED =
+  "Windows reserves that name for a device, so a copy could not be saved under it. Choose another name.";
 const cp = (codePoint: number) => String.fromCodePoint(codePoint);
 
 // Renders the dialog for a stored name and returns what a test needs.
@@ -98,6 +100,15 @@ describe("RenameDialog", () => {
     ["Scan 3.5 notes", "Scan notespdf", "Scan notespdf"],
     // Names without ".pdf" change freely, including other extensions.
     ["Scan 3.5 notes", "Scan notes", "Scan notes"],
+    // Only the whole name before the first dot is reserved, and only these.
+    ["Results.pdf", "CONSOLE", "CONSOLE.pdf"],
+    ["Results.pdf", "My CON", "My CON.pdf"],
+    ["Results.pdf", "COM10", "COM10.pdf"],
+    ["Results.pdf", `COM${cp(0x2074)}`, `COM${cp(0x2074)}.pdf`],
+    ["Results.pdf", "Lab.CON", "Lab.CON.pdf"],
+    // Case is compared for ASCII letters only, as the vault does: a dotless ı
+    // is not an I.
+    ["Results.pdf", `con${cp(0x131)}n$`, `con${cp(0x131)}n$.pdf`],
     ["photo.jpg", "photo", "photo"],
     // With ".pdf" kept, a name part ending in a dot is still a valid name.
     ["Results.pdf", "Visit notes.", "Visit notes..pdf"],
@@ -148,6 +159,23 @@ describe("RenameDialog", () => {
     ["Results.pdf", "字".repeat(79), TOO_LONG],
     // With no extension to keep, the name itself must not end with a dot.
     ["Scan 3.5 notes", "Notes.", UNSAFE],
+    // Names Windows reserves for devices, whatever the case, before any dot,
+    // and with spaces before the dot.
+    ...[
+      "CON",
+      "prn",
+      "Aux",
+      "NUL",
+      "conin$",
+      "CONOUT$",
+      "COM0",
+      "com9",
+      "LPT1",
+      `COM${cp(0xb9)}`,
+      `lpt${cp(0xb3)}`,
+      "CON.backup",
+    ].map((typed) => ["Results.pdf", typed, RESERVED]),
+    ["Visit notes", "AUX .txt", RESERVED],
     // Characters a file name cannot hold on every platform...
     ...["<", ">", '"', "|", "*", ":", "?", "/", "\\"].map((c) => [
       "Results.pdf",
@@ -204,6 +232,7 @@ describe("RenameDialog", () => {
     // Folder names are never file names: no extension lock, no file-name rules.
     ["Scans.pdf", "Old scans.pdf"],
     ["Labs", "Labs: 2024"],
+    ["Labs", "CON"],
   ])("renames folder %j to %j", (stored, typed) => {
     const { input, onSave, type, submit } = open(stored, "folder");
     expect(input).toHaveValue(stored);
