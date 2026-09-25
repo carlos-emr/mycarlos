@@ -875,11 +875,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // `vault-home` holds the vault and only what the vault manages beside
-            // it (lock file, pending reset, create stage). Back up or restore the
-            // whole directory. Machine-local data, because the Windows roaming
-            // profile would copy it between machines, where each would lock its
-            // own copy of the lock file. Earlier evaluation builds kept the vault
-            // at `<data>/vault-v1`; that is left untouched and never read.
+            // it (lock file, pending reset, create stage, export journal). Back
+            // up or restore the whole directory. Machine-local data, because the
+            // Windows roaming profile would copy it between machines, where each
+            // would lock its own copy of the lock file. Earlier evaluation builds
+            // kept the vault at `<data>/vault-v1`; that is left untouched and
+            // never read.
             app.manage(Arc::new(VaultStore::new(
                 app.path()
                     .app_local_data_dir()?
