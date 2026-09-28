@@ -101,8 +101,9 @@ Raised in the original design issue (#3) and not settled for the pilot:
 - Apple Health and Health Connect: whether they are in scope at all. They hold structured data,
   not documents, so they can never receive the PDFs CARLOS sends; any use would be a separate,
   complementary feature.
-- Ingest beyond manual import and the CARLOS handoff: scan or photo capture, and documents from
-  other EMRs.
+- Ingest other than manual import and documents from CARLOS: scan or photo capture, and documents
+  from other EMRs. (For CARLOS documents, signed packages through the portal are decided above; how
+  the emailed PDF reaches myCarlos in the pilot is open in #23.)
 - Organization beyond folders, search and sort: categories, a timeline, tags, and which metadata
   travels with a document (see the mocks in #18).
 - The final product name ("myCarlos" is a working name).
