@@ -182,9 +182,11 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 
 1. **Create a vault** (the first screen on a new install). Every field is read with its name,
    and the **Passphrase** field also with its rules ("Use at least 15 characters…"). Type two
-   different passphrases: "Passphrases do not match." is read out.
+   different passphrases: "Passphrases do not match." is read out. After **Create vault**,
+   "Encrypted vault created…" is read out.
 2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
-   wrong passphrase: the reason is read out without you moving focus.
+   wrong passphrase: the reason is read out without you moving focus. Then unlock: "Vault
+   unlocked." is read out (with a transfer's result, if one finished while the vault was locked).
 3. **Finding your way.** Jumping by heading reaches the page title (for example **My records**)
    and each section in **Security**. The sidebar is read as the **Record library** navigation;
    on a phone, the **Section** menu is read with that name.

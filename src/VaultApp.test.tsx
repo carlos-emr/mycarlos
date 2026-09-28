@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type { ImportOutcome, VaultBridge, VaultSnapshot } from "./vault";
+import { ANNOUNCE_DELAY_MS } from "./native/announce";
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -96,6 +97,17 @@ async function startExport() {
   });
 }
 
+// Messages for a screen or dialog that has just appeared are written after this
+// delay, so that its status line reads them out.
+async function passAnnounceDelay() {
+  if (vi.isFakeTimers())
+    await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+  else
+    await act(
+      () => new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS)),
+    );
+}
+
 // The unlock screen says only that the vault locked; a transfer's outcome is
 // shown after the next unlock, where only the owner sees it.
 async function expectOutcomeAfterUnlock(outcome: string) {
@@ -109,6 +121,7 @@ async function expectOutcomeAfterUnlock(outcome: string) {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
   });
+  await passAnnounceDelay();
   expect(screen.getByText(`Vault unlocked. ${outcome}`)).toBeVisible();
 }
 
@@ -690,40 +703,129 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
     await user.type(screen.getByLabelText("File name"), "FAKE Results");
-    await user.click(screen.getByRole("button", { name: "Save name" }));
-    const details = await screen.findByRole("dialog", {
-      name: "FAKE Results.pdf",
-    });
-    const detailsStatus = within(details).getByRole("status");
-    expect(detailsStatus).toBeEmptyDOMElement();
-    await waitFor(() =>
+    // Fake timers from here, so that nothing is written before it is checked.
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const detailsStatus = within(details).getByRole("status");
+      expect(detailsStatus).toBeEmptyDOMElement();
+      await passAnnounceDelay();
       expect(detailsStatus).toHaveTextContent(
         "Document renamed to FAKE Results.pdf.",
-      ),
-    );
+      );
 
-    // The rename dialog makes the page inert. Its status line is written to
-    // once the dialog has closed.
-    await user.click(
-      screen.getByRole("button", { name: "Close document details" }),
-    );
-    const pageStatus = screen.getByRole("status");
-    await user.click(
-      screen.getByRole("button", { name: "Rename folder FAKE Old folder" }),
-    );
-    const input = screen.getByLabelText("Folder name");
-    await user.clear(input);
-    await user.type(input, "FAKE Lab results{Enter}");
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-    );
-    expect(pageStatus).toBeEmptyDOMElement();
-    await waitFor(() =>
+      // The rename dialog makes the page inert. Its status line is written
+      // to once the dialog has closed.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Close document details" }),
+        );
+      });
+      const pageStatus = screen.getByRole("status");
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "Rename folder FAKE Old folder",
+          }),
+        );
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Folder name"), {
+          target: { value: "FAKE Lab results" },
+        });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(pageStatus).toBeEmptyDOMElement();
+      await passAnnounceDelay();
       expect(pageStatus).toHaveTextContent(
         "Folder renamed to FAKE Lab results.",
-      ),
-    );
+      );
+
+      // A result is not written into another document's details opened
+      // before it was due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "Rename folder FAKE Lab results",
+          }),
+        );
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Folder name"), {
+          target: { value: "FAKE Old folder" },
+        });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "More options for FAKE Results.pdf",
+          }),
+        );
+      });
+      await passAnnounceDelay();
+      const otherDetails = screen.getByRole("dialog", {
+        name: "FAKE Results.pdf",
+      });
+      expect(within(otherDetails).getByRole("status")).not.toHaveTextContent(
+        "Folder renamed",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
+
+  it.each([
+    ["unlocking", "locked", /^Vault unlocked\.$/],
+    ["creating", "absent", /^Encrypted vault created\./],
+  ] as const)(
+    "gives the result of %s to the library's status line once it is on screen",
+    async (_, initial, message) => {
+      vi.useFakeTimers();
+      try {
+        const bridge = nativeBridge({
+          status: vi.fn().mockResolvedValue(initial),
+        });
+        await act(async () => {
+          render(<VaultApp bridge={bridge} />);
+        });
+        await act(async () => {
+          if (initial === "absent")
+            fireEvent.change(screen.getByLabelText("First patient profile"), {
+              target: { value: "FAKE Test Patient" },
+            });
+          for (const field of screen.getAllByLabelText(/passphrase/i))
+            fireEvent.change(field, {
+              target: { value: "river-azimuth-cobalt-sparrow-934" },
+            });
+        });
+        await act(async () => {
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: initial === "absent" ? "Create vault" : "Unlock",
+            }),
+          );
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        const status = screen.getByRole("status");
+        expect(status).toBeEmptyDOMElement();
+        await passAnnounceDelay();
+        expect(status).toHaveTextContent(message);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("starts the selection again when a search could hide selected documents", async () => {
     const user = userEvent.setup();
@@ -1690,6 +1792,7 @@ describe("durable vault UI", () => {
         fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
       });
       // The import's outcome is kept; the failed lock's error is not.
+      await passAnnounceDelay();
       expect(
         screen.getByText("Vault unlocked. 1 file(s) encrypted and imported."),
       ).toBeVisible();
