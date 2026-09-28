@@ -1418,6 +1418,42 @@ impl VaultStore {
         Ok(text)
     }
 
+    /// The recovery kit for the key shown by `begin_recovery_key` and not yet
+    /// confirmed: the key, when it was made and what it is for. It names no
+    /// patient or document, so a kit someone else finds says nothing more.
+    pub fn recovery_kit(&self, now_ms: u64) -> Result<Zeroizing<String>, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let pending = unlocked
+            .pending_recovery_key
+            .as_ref()
+            .ok_or(VaultError::Invalid)?;
+        Ok(recovery_kit_text(
+            &encode_recovery_key(&pending.key),
+            now_ms,
+        ))
+    }
+
+    /// Saves the recovery kit to a file the patient chose, as an export is
+    /// saved: never inside the vault home, private to the user, and replacing
+    /// a link at the destination rather than writing through it.
+    pub fn save_recovery_kit(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
+        let home = fs::canonicalize(vault_home(&self.root)?)?;
+        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
+        if fs::canonicalize(destination_parent)?.starts_with(&home) {
+            return Err(VaultError::Invalid);
+        }
+        let kit = self.recovery_kit(now_ms)?;
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        AtomicFile::new(destination, AllowOverwrite)
+            .write_with_options(|file| file.write_all(kit.as_bytes()), options)
+            .map_err(io::Error::from)?;
+        Ok(())
+    }
+
     /// Forgets a recovery key shown by `begin_recovery_key` without storing it.
     pub fn cancel_recovery_key(&self) {
         if let Some(unlocked) = self.session().as_mut() {
@@ -2283,6 +2319,52 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
         return Err(VaultError::RecoveryKeyTypo);
     }
     Ok(key)
+}
+
+/// The text of a recovery kit. Plain text, so that it prints and opens
+/// anywhere; the date is UTC.
+fn recovery_kit_text(key: &str, now_ms: u64) -> Zeroizing<String> {
+    let (year, month, day) = utc_date(now_ms);
+    Zeroizing::new(format!(
+        "myCarlos recovery kit\n\
+         =====================\n\
+         \n\
+         Recovery key:  {key}\n\
+         Made on:       {year:04}-{month:02}-{day:02}\n\
+         \n\
+         What it is for\n\
+         If you forget your myCarlos passphrase, this key opens your vault on\n\
+         this device and lets you choose a new passphrase.\n\
+         \n\
+         Keep it safe\n\
+         - Keep this kit somewhere private and away from the device, for\n  \
+         example printed and stored with your important papers. Anyone with\n  \
+         this key and a copy of your vault can open it.\n\
+         - If you set up a new recovery key, this one stops working.\n\
+         - Neither your clinic nor the makers of myCarlos can open your vault\n  \
+         for you.\n"
+    ))
+}
+
+/// Year, month and day (UTC) of a time in milliseconds since 1970, by
+/// Howard Hinnant's days-to-civil algorithm.
+fn utc_date(ms: u64) -> (i64, u32, u32) {
+    let days = i64::try_from(ms / 86_400_000).unwrap_or(i64::MAX / 2);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year, month as u32, day as u32)
 }
 
 fn recovery_wrap_key(
@@ -6281,6 +6363,53 @@ mod tests {
             store.recover(&key, PASSPHRASE_REPLACEMENT),
             Err(VaultError::Invalid)
         ));
+    }
+
+    #[test]
+    fn a_recovery_kit_holds_the_pending_key_and_no_names() {
+        let temp = tempfile::tempdir().unwrap();
+        // Its own home, so that the temporary folder itself is outside it.
+        let root = temp.path().join("home").join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(matches!(store.recovery_kit(1), Err(VaultError::Invalid)));
+
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let kit = store.recovery_kit(1_790_553_600_000).unwrap();
+        assert!(kit.contains(&key));
+        assert!(kit.contains("2026-09-28"));
+        assert!(!kit.contains("Jamie"));
+
+        // Saved as an export is: outside the vault home, and private.
+        let outside = temp.path().join("kit.txt");
+        store.save_recovery_kit(&outside, 1).unwrap();
+        let saved = fs::read_to_string(&outside).unwrap();
+        assert!(saved.contains(&key) && saved.contains("1970-01-01"));
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let inside = vault_home(&root).unwrap().join("kit.txt");
+        assert!(matches!(
+            store.save_recovery_kit(&inside, 1),
+            Err(VaultError::Invalid)
+        ));
+        assert!(!inside.exists());
+
+        // Once the key is stored, there is no kit left to save.
+        let groups = recovery_key_groups(&key);
+        store
+            .confirm_recovery_key(&[(0, &groups[0]), (3, &groups[3])], 5)
+            .unwrap();
+        assert!(matches!(store.recovery_kit(1), Err(VaultError::Invalid)));
+    }
+
+    #[test]
+    fn utc_dates_follow_the_calendar() {
+        assert_eq!(utc_date(0), (1970, 1, 1));
+        assert_eq!(utc_date(1_790_553_600_000), (2026, 9, 28));
+        assert_eq!(utc_date(951_868_740_000), (2000, 2, 29));
     }
 
     #[test]

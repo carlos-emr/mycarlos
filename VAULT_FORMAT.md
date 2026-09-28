@@ -21,9 +21,9 @@
   the probe cannot detect such storage there; the local application-data directory is what keeps
   the vault off it.
 - **Implemented recovery:** the patient passphrase, and a patient-held recovery key (header
-  format 2; the screens that set it up and use it follow separately). There is no vendor key.
-- **Approved patient-pilot recovery:** the recovery key with a printable kit, and a portable
-  encrypted backup; the kit screens and the backup are not implemented yet
+  format 2) with a saved or printed kit, set up when a vault is created. There is no vendor key.
+- **Approved patient-pilot recovery:** the recovery key and kit, and a portable encrypted backup;
+  the backup is not implemented yet
 
 This records decisions D-01, D-02, D-03, and D-05 from the [threat model's mandatory design
 decisions](THREAT_MODEL.md#mandatory-design-decisions) for the current local-only vertical slice.
@@ -79,6 +79,13 @@ only secret the native side ever sends to the renderer. `confirm` checks at leas
 as the patient types them back, and only then writes a new pair of header generations carrying the
 envelope, replacing any earlier key. Cancelling, locking, or changing the passphrase first writes
 nothing and forgets the pending key.
+
+While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, the
+UTC date it was made, and what it is for, with no patient or document names. It is written
+natively, only to a file the patient picks, never inside the vault home, private to the user on
+Unix, and replacing a link at the destination rather than writing through it. The kit holds the key
+in plain text by design. A vault is created with its key set up straight away: the passphrase just
+typed authorizes it, and the library stays behind the setup dialog until the key is checked.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for

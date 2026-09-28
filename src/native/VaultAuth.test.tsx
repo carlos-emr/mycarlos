@@ -102,6 +102,7 @@ describe("UnlockVault", () => {
         notice=""
         autoLockMinutes={5}
         onUnlock={onUnlock}
+        onRecover={vi.fn()}
         onReset={vi.fn()}
       />,
     );
@@ -127,17 +128,19 @@ describe("UnlockVault", () => {
       busy: false,
       autoLockMinutes: 5,
       onUnlock: vi.fn(),
+      onRecover: vi.fn(),
       onReset: vi.fn(),
     };
     const { rerender } = render(<UnlockVault {...props} notice="" />);
-    const status = screen.getByRole("status");
+    // The Unlock form's; the other is under "Forgot your passphrase?".
+    const status = screen.getAllByRole("status")[0];
     expect(status).toBeEmptyDOMElement();
     expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute(
       "aria-describedby",
     );
 
     rerender(<UnlockVault {...props} notice="FAKE wrong passphrase." />);
-    expect(screen.getByRole("status")).toBe(status);
+    expect(screen.getAllByRole("status")[0]).toBe(status);
     expect(status).toHaveTextContent("FAKE wrong passphrase.");
   });
 
@@ -148,11 +151,58 @@ describe("UnlockVault", () => {
         notice="Vault locked."
         autoLockMinutes={5}
         onUnlock={vi.fn()}
+        onRecover={vi.fn()}
         onReset={vi.fn()}
       />,
     );
     const passphrase = screen.getByLabelText("Passphrase");
     expect(passphrase).toHaveFocus();
     expect(passphrase).toHaveAccessibleDescription("Vault locked.");
+  });
+
+  it("opens with the recovery key and a new passphrase, and answers there", () => {
+    const onRecover = vi.fn().mockResolvedValue(undefined);
+    const props = {
+      busy: false,
+      autoLockMinutes: 5,
+      onUnlock: vi.fn(),
+      onRecover,
+      onReset: vi.fn(),
+    };
+    const { rerender } = render(<UnlockVault {...props} notice="" />);
+    fireEvent.change(screen.getByLabelText("Recovery key"), {
+      target: { value: "abcd efgh jkmn pqrs tvwx yz01 2345" },
+    });
+    const replacement = screen.getByLabelText("New passphrase");
+    expect(replacement).toHaveAccessibleDescription(
+      /^Use at least 15 characters\./,
+    );
+    fireEvent.change(replacement, {
+      target: { value: "lantern-orbit-willow-cascade-572" },
+    });
+    const open = screen.getByRole("button", { name: "Open with recovery key" });
+    expect(open).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Confirm new passphrase"), {
+      target: { value: "lantern-orbit-willow-cascade-572" },
+    });
+    expect(open).toBeEnabled();
+    fireEvent.click(open);
+    expect(onRecover).toHaveBeenCalledWith(
+      "abcd efgh jkmn pqrs tvwx yz01 2345",
+      "lantern-orbit-willow-cascade-572",
+    );
+
+    // Its answer is next to the recovery key, not by Unlock.
+    rerender(<UnlockVault {...props} notice="FAKE wrong recovery key." />);
+    const [unlockStatus, forgotStatus] = screen.getAllByRole("status");
+    expect(unlockStatus).toBeEmptyDOMElement();
+    expect(forgotStatus).toHaveTextContent("FAKE wrong recovery key.");
+    expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute(
+      "aria-describedby",
+    );
+    // The key is kept, so that a typo in it can be corrected.
+    expect(screen.getByLabelText("Recovery key")).toHaveValue(
+      "abcd efgh jkmn pqrs tvwx yz01 2345",
+    );
   });
 });

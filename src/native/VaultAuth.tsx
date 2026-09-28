@@ -52,9 +52,15 @@ const AUTH_NOTICE_ID = "auth-notice";
 // announced. A message a screen opens with, such as "Vault locked.", is not a
 // change: the unlock screen also gives it as the description of the
 // Passphrase field, which has focus.
-function AuthNotice({ notice }: { notice: string }) {
+function AuthNotice({
+  notice,
+  id = AUTH_NOTICE_ID,
+}: {
+  notice: string;
+  id?: string;
+}) {
   return (
-    <p id={AUTH_NOTICE_ID} role="status">
+    <p id={id} role="status">
       {notice}
     </p>
   );
@@ -204,15 +210,21 @@ export function UnlockVault({
   notice,
   autoLockMinutes,
   onUnlock,
+  onRecover,
   onReset,
 }: {
   busy: boolean;
   notice: string;
   autoLockMinutes: number;
   onUnlock: (passphrase: string) => Promise<void>;
+  onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
   onReset: (confirmation: string) => Promise<void>;
 }) {
   const [passphrase, setPassphrase] = useState("");
+  // Messages go next to the part of the screen they answer: the Unlock form,
+  // or the recovery key and erase controls under "Forgot your passphrase?".
+  const [source, setSource] = useState<"unlock" | "forgot">("unlock");
+  const unlockNotice = source === "unlock" ? notice : "";
   // No vault passphrase can be longer, so say so instead of sending it to a
   // native refusal that can only report invalid input.
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
@@ -221,6 +233,7 @@ export function UnlockVault({
     if (tooLong) return;
     const secret = passphrase;
     setPassphrase("");
+    setSource("unlock");
     void onUnlock(secret);
   };
   return (
@@ -241,7 +254,7 @@ export function UnlockVault({
               required
               type="password"
               autoComplete="current-password"
-              aria-describedby={notice ? AUTH_NOTICE_ID : undefined}
+              aria-describedby={unlockNotice ? AUTH_NOTICE_ID : undefined}
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
             />
@@ -251,24 +264,123 @@ export function UnlockVault({
               This is longer than any vault passphrase. Check what you typed.
             </p>
           )}
-          <AuthNotice notice={notice} />
+          <AuthNotice notice={unlockNotice} />
           <button className="button primary" disabled={busy || tooLong}>
             Unlock
           </button>
         </form>
         <details className="vault-reset">
           <summary>Forgot your passphrase?</summary>
+          <RecoverWithKey
+            busy={busy}
+            notice={source === "forgot" ? notice : ""}
+            onRecover={(recoveryKey, newPassphrase) => {
+              setSource("forgot");
+              return onRecover(recoveryKey, newPassphrase);
+            }}
+          />
+          <h2 className="vault-reset-heading">No recovery key?</h2>
           <p>
-            There is no recovery code. Reset permanently erases this vault so
-            you can start again.
+            Without one, the only way back in is to erase this vault, which
+            permanently deletes everything in it, and start again.
           </p>
           <ResetConfirmation
             busy={busy}
             actionLabel="Erase vault"
-            onReset={onReset}
+            onReset={(confirmation) => {
+              setSource("forgot");
+              return onReset(confirmation);
+            }}
           />
         </details>
       </section>
     </VaultAuthFrame>
+  );
+}
+
+/** Opens the vault with its recovery key and replaces the forgotten
+ * passphrase. */
+function RecoverWithKey({
+  busy,
+  notice,
+  onRecover,
+}: {
+  busy: boolean;
+  notice: string;
+  onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
+}) {
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
+  const tooShort = tooShortPassphrase(passphrase);
+  const invalid =
+    !recoveryKey.trim() || tooLong || tooShort || passphrase !== confirmation;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (invalid) return;
+    const newPassphrase = passphrase;
+    setPassphrase("");
+    setConfirmation("");
+    // The key stays, so that a typo in it can be corrected.
+    void onRecover(recoveryKey, newPassphrase);
+  };
+  return (
+    <form onSubmit={submit}>
+      <p>
+        Use your recovery key to open the vault and choose a new passphrase.
+      </p>
+      <label>
+        Recovery key
+        <input
+          required
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={64}
+          value={recoveryKey}
+          onChange={(e) => setRecoveryKey(e.target.value)}
+        />
+      </label>
+      <label>
+        New passphrase
+        <input
+          required
+          type="password"
+          autoComplete="new-password"
+          aria-describedby="recover-passphrase-rules"
+          value={passphrase}
+          onChange={(e) => setPassphrase(e.target.value)}
+        />
+      </label>
+      <small id="recover-passphrase-rules">
+        Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
+        common passwords, names, and predictable patterns are rejected locally.
+      </small>
+      <label>
+        Confirm new passphrase
+        <input
+          required
+          type="password"
+          autoComplete="new-password"
+          value={confirmation}
+          onChange={(e) => setConfirmation(e.target.value)}
+        />
+      </label>
+      {confirmation && passphrase !== confirmation && (
+        <p role="alert">Passphrases do not match.</p>
+      )}
+      {tooLong && <p role="alert">This passphrase is too long. Shorten it.</p>}
+      {tooShort && confirmation && (
+        <p role="alert">
+          This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
+          characters.
+        </p>
+      )}
+      <AuthNotice id="recover-notice" notice={notice} />
+      <button className="button primary" disabled={busy || invalid}>
+        Open with recovery key
+      </button>
+    </form>
   );
 }

@@ -15,6 +15,7 @@
     "allow-vault-change-passphrase",
     "allow-vault-recovery-key-begin",
     "allow-vault-recovery-key-confirm",
+    "allow-vault-recovery-kit-save",
     "allow-vault-recovery-key-cancel",
     "allow-vault-recover",
     "allow-vault-create-profile",

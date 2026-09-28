@@ -19,6 +19,9 @@ interface SecuritySettingsProps {
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
   onReset: (confirmation: string) => Promise<void>;
+  /** When the recovery key was set up, or null if there is none. */
+  recoveryKeySetAtMs: number | null;
+  onSetUpRecoveryKey: () => void;
 }
 
 export function SecuritySettings({
@@ -31,6 +34,8 @@ export function SecuritySettings({
   onChangePassphrase,
   onCreateProfile,
   onReset,
+  recoveryKeySetAtMs,
+  onSetUpRecoveryKey,
 }: SecuritySettingsProps) {
   const [profileName, setProfileName] = useState("");
   const [currentPassphrase, setCurrentPassphrase] = useState("");
@@ -75,8 +80,8 @@ export function SecuritySettings({
       <div className="purpose-note warning">
         <Icon name="info" />
         <span>
-          <strong>Development build.</strong> Use synthetic files only. Recovery
-          and backup are not implemented.
+          <strong>Development build.</strong> Use synthetic files only. Backup
+          is not implemented.
         </span>
       </div>
       <p className="status-line" role="status" aria-live="polite">
@@ -131,13 +136,43 @@ export function SecuritySettings({
             </button>
           </div>
         </section>
+        <section className="setting-row">
+          <div>
+            <h2>
+              Recovery key{" "}
+              <span className="state-pill">
+                {recoveryKeySetAtMs
+                  ? `Set up ${new Date(recoveryKeySetAtMs).toLocaleDateString()}`
+                  : "Not set up"}
+              </span>
+            </h2>
+            <p>
+              Opens your vault if you forget your passphrase. Only you have it:
+              nobody at your clinic or at myCarlos can open your vault for you.
+              Replacing it stops the old one working.
+            </p>
+          </div>
+          <div>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={onSetUpRecoveryKey}
+            >
+              {recoveryKeySetAtMs
+                ? "Replace recovery key"
+                : "Set up recovery key"}
+            </button>
+          </div>
+        </section>
         <section className="setting-row native-setting-form">
           <div>
             <h2>Change passphrase</h2>
             <p>
               Use at least {MIN_PASSPHRASE_CHARS} characters and avoid common
-              names or predictable phrases. Until recovery kits are implemented,
-              forgetting the new passphrase permanently loses access.
+              names or predictable phrases. Your recovery key, if you have one,
+              keeps working; without one, forgetting the new passphrase means
+              erasing the vault.
             </p>
           </div>
           <form onSubmit={submitPassphrase}>

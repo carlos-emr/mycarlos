@@ -6,7 +6,8 @@ iOS Simulator.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
-> forgotten one cannot be recovered, only erased with the vault (see [Start over](#start-over)).
+> forgotten one can be replaced only with the vault's recovery key, or else erased with the vault
+> (see [Start over](#start-over)).
 
 **Help improve this guide.** So far these builds have only been tried on Windows, so the steps for
 macOS, Android and the iOS Simulator may be wrong or incomplete. If something does not work or does
@@ -114,22 +115,29 @@ On every platform:
 1. Create a vault. For **First patient profile**, type a made-up name such as
    `FAKE Test Patient`. Choose a throwaway passphrase of at least 15 characters; the app rejects
    common or predictable ones.
-2. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
+2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
+   then **Next**, and type the two groups it asks for. Typing a wrong group says so; three wrong
+   tries go back to the key. Check that the saved kit opens and shows the key and no names.
+3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
+   passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
+   **Replace recovery key** asks for the passphrase and makes a new key; the old one then stops
+   working.
+4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:
    the two Bloodwork files are identical.
-3. Create a folder with **New folder**, open a document and use **Move to** to put it in the
+5. Create a folder with **New folder**, open a document and use **Move to** to put it in the
    folder, then rename the document (**Rename document** in its details) and the folder
    (**Rename folder**).
-4. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
+6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
-5. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
+7. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-6. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+8. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
    keep the screen on), and confirm it locks.
-7. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+9. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
    it is locked when you come back.
-8. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+10. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
    drive so it takes several seconds). While it is still importing, send the app to the
    background, then come back within a minute. If the import is still running, the screen should
    say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
@@ -199,8 +207,9 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
    appear. Renaming a document from its details reads out "Document renamed to…" once you are
    back in the details.
-6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete** or
-   **Save a copy** moves focus into the dialog and reads its title. In confirmations, focus
+6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
+   **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
+   group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
    it (or, from a dialog opened within a document's details, to those details).

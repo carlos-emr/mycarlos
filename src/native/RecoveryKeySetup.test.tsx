@@ -1,0 +1,225 @@
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import type { VaultSnapshot } from "../vault";
+import { RecoveryKeySetup } from "./RecoveryKeySetup";
+
+const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
+const GROUPS = KEY.split("-");
+const snapshot: VaultSnapshot = {
+  profiles: [],
+  folders: [],
+  records: [],
+  recovery: null,
+  recoveryKeySetAtMs: 5,
+};
+const typo = {
+  code: "recovery_key_typo",
+  message: "FAKE that doesn't match.",
+};
+
+function setUp(
+  props: Partial<Parameters<typeof RecoveryKeySetup>[0]> = {},
+  bridgeOverrides: Partial<
+    Parameters<typeof RecoveryKeySetup>[0]["bridge"]
+  > = {},
+) {
+  const bridge = {
+    beginRecoveryKey: vi.fn().mockResolvedValue(KEY),
+    confirmRecoveryKey: vi.fn().mockResolvedValue(snapshot),
+    saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
+    ...bridgeOverrides,
+  };
+  const onDone = vi.fn();
+  const onClose = vi.fn();
+  render(
+    <RecoveryKeySetup
+      bridge={bridge}
+      replacing={false}
+      canPrint={false}
+      onDone={onDone}
+      onClose={onClose}
+      {...props}
+    />,
+  );
+  return { bridge, onDone, onClose };
+}
+
+/** The group numbers the check asks for (1-based), from their labels. */
+function askedGroups(): number[] {
+  return screen
+    .getAllByLabelText(/^Group \d$/)
+    .map((input) =>
+      Number(input.closest("label")!.textContent!.match(/Group (\d)/)![1]),
+    );
+}
+
+describe("RecoveryKeySetup", () => {
+  it("asks for the passphrase, then shows the key a group at a time", async () => {
+    const user = userEvent.setup();
+    const { bridge } = setUp();
+    expect(
+      screen.getByRole("heading", { name: "Set up a recovery key" }),
+    ).toBeVisible();
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(bridge.beginRecoveryKey).toHaveBeenCalledWith(
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    const heading = await screen.findByRole("heading", {
+      name: "Your recovery key",
+    });
+    // The step replaces the form that had focus; the reader starts here.
+    expect(heading).toHaveFocus();
+    const list = screen.getByRole("list", { name: "Recovery key" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual(GROUPS);
+    // Read a character at a time, so that 0 and O are not confused.
+    expect(items[5]).toHaveAccessibleName("Group 6: Y Z 0 1");
+  });
+
+  it("says why the passphrase was refused", async () => {
+    const user = userEvent.setup();
+    setUp(
+      {},
+      {
+        beginRecoveryKey: vi.fn().mockRejectedValue({
+          code: "wrong_passphrase",
+          message: "FAKE wrong passphrase.",
+        }),
+      },
+    );
+    await user.type(screen.getByLabelText("Passphrase"), "not-the-passphrase");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "FAKE wrong passphrase.",
+    );
+  });
+
+  it("saves the kit and says so", async () => {
+    const user = userEvent.setup();
+    const { bridge } = setUp({ initialKey: KEY });
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    await user.click(screen.getByRole("button", { name: "Save kit…" }));
+    expect(bridge.saveRecoveryKit).toHaveBeenCalledOnce();
+    expect(status).toHaveTextContent("Recovery kit saved.");
+  });
+
+  it("offers Print only where the platform can print", () => {
+    setUp({ initialKey: KEY, canPrint: true });
+    expect(screen.getByRole("button", { name: "Print" })).toBeVisible();
+  });
+
+  it("stores the key only once two groups are typed back", async () => {
+    const user = userEvent.setup();
+    const { bridge, onDone } = setUp({ initialKey: KEY });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    const asked = askedGroups();
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).not.toBe(asked[1]);
+    const [first, second] = screen.getAllByLabelText(/^Group \d$/);
+    // Case does not matter.
+    await user.type(first, GROUPS[asked[0] - 1].toLowerCase());
+    await user.type(second, GROUPS[asked[1] - 1]);
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith([
+      { index: asked[0] - 1, value: GROUPS[asked[0] - 1].toLowerCase() },
+      { index: asked[1] - 1, value: GROUPS[asked[1] - 1] },
+    ]);
+    expect(onDone).toHaveBeenCalledWith(snapshot);
+  });
+
+  it("goes back to the key after three wrong answers", async () => {
+    const user = userEvent.setup();
+    const { bridge } = setUp(
+      { initialKey: KEY },
+      { confirmRecoveryKey: vi.fn().mockRejectedValue(typo) },
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      for (const input of screen.getAllByLabelText(/^Group \d$/)) {
+        await user.clear(input);
+        await user.type(input, "ZZZZ");
+      }
+      await user.click(screen.getByRole("button", { name: "Check and save" }));
+      if (attempt < 3)
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "FAKE that doesn't match.",
+        );
+    }
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledTimes(3);
+    expect(
+      await screen.findByRole("heading", { name: "Your recovery key" }),
+    ).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "did not match three times",
+    );
+  });
+
+  it("does not count a failure other than a wrong answer as a try", async () => {
+    const user = userEvent.setup();
+    const { bridge } = setUp(
+      { initialKey: KEY },
+      {
+        confirmRecoveryKey: vi
+          .fn()
+          .mockRejectedValue({ code: "storage", message: "FAKE disk full." }),
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      for (const input of screen.getAllByLabelText(/^Group \d$/)) {
+        await user.clear(input);
+        await user.type(input, "ZZZZ");
+      }
+      await user.click(screen.getByRole("button", { name: "Check and save" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "FAKE disk full.",
+      );
+    }
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledTimes(3);
+    expect(
+      screen.getByRole("heading", { name: "Check your recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("cancelling forgets the key", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose } = setUp({ initialKey: KEY });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("has no way out when the key is required", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose } = setUp({ initialKey: KEY, required: true });
+    expect(
+      screen.queryByRole("button", { name: "Cancel" }),
+    ).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Your recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("says when it replaces an existing key", () => {
+    setUp({ replacing: true });
+    expect(
+      screen.getByRole("heading", { name: "Replace your recovery key" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/current recovery key stops working/),
+    ).toBeVisible();
+  });
+});

@@ -38,6 +38,21 @@ export interface VaultSnapshot {
   folders: VaultFolder[];
   records: VaultRecord[];
   recovery: RecoveryReason | null;
+  /** When the vault's recovery key was set up, if it has one. */
+  recoveryKeySetAtMs?: number | null;
+}
+
+/** One group of the recovery key as the patient typed it back, by position. */
+export interface RecoveryKeyGroup {
+  index: number;
+  value: string;
+}
+
+export interface RecoverOutcome {
+  /** False when the vault could only open read-only, leaving the passphrase
+   * unchanged. */
+  passphraseReplaced: boolean;
+  snapshot: VaultSnapshot;
 }
 
 export interface ImportOutcome {
@@ -65,6 +80,17 @@ export interface VaultBridge {
     currentPassphrase: string,
     newPassphrase: string,
   ): Promise<void>;
+  /** Makes a recovery key, authorized by the current passphrase, and returns
+   * it once for the patient to write down. Nothing is stored yet. */
+  beginRecoveryKey(passphrase: string): Promise<string>;
+  /** Stores the key once groups of it are typed back correctly. */
+  confirmRecoveryKey(groups: RecoveryKeyGroup[]): Promise<VaultSnapshot>;
+  /** Saves the kit for the key being set up; false if the picker was
+   * cancelled. */
+  saveRecoveryKit(): Promise<boolean>;
+  cancelRecoveryKey(): Promise<void>;
+  /** Opens a locked vault with its recovery key and a new passphrase. */
+  recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
   createProfile(displayName: string): Promise<string>;
   createFolder(
     profileId: string,
@@ -131,6 +157,11 @@ export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
 export const isCancelledError = (error: unknown) =>
   hasErrorCode(error, "cancelled");
 
+/** True when typed-back groups of a recovery key, or a recovery key, do not
+ * match what was expected. */
+export const isRecoveryKeyTypo = (error: unknown) =>
+  hasErrorCode(error, "recovery_key_typo");
+
 /** True when the native side reports that there is no vault to unlock or erase. */
 export const isMissingVaultError = (error: unknown) =>
   hasErrorCode(error, "missing");
@@ -162,6 +193,18 @@ export function createVaultBridge(): VaultBridge {
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },
+      }),
+    beginRecoveryKey: (passphrase) =>
+      invoke<string>("vault_recovery_key_begin", { request: { passphrase } }),
+    confirmRecoveryKey: (groups) =>
+      invoke<VaultSnapshot>("vault_recovery_key_confirm", {
+        request: { groups },
+      }),
+    saveRecoveryKit: () => invoke<boolean>("vault_recovery_kit_save"),
+    cancelRecoveryKey: () => invoke<void>("vault_recovery_key_cancel"),
+    recover: (recoveryKey, newPassphrase) =>
+      invoke<RecoverOutcome>("vault_recover", {
+        request: { recoveryKey, newPassphrase },
       }),
     createProfile: (displayName) =>
       invoke<string>("vault_create_profile", { request: { displayName } }),

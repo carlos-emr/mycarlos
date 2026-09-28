@@ -81,7 +81,9 @@
 }
 .vault-reset { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
 .vault-reset summary { cursor: pointer; font-weight: 750; }
-.vault-reset label { margin: 12px 0; }
+.vault-reset > label { margin: 12px 0; }
+.vault-reset form { margin-top: 12px; }
+.vault-reset-heading { margin: 22px 0 4px; font-size: 1rem; }
 
 @media (max-width: 47.5em) {
   .vault-card { padding: 24px; }
@@ -629,6 +631,23 @@ h1, h2, p { margin: 0; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
 .native-confirm-message p { margin: 0; overflow-wrap: anywhere; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
+.recovery-key-dialog { max-width: 520px; }
+.recovery-key-dialog .dialog-head h2:focus { outline: none; }
+.recovery-key-body { display: grid; gap: 12px; padding: 16px 20px; }
+.recovery-key-body p { margin: 0; overflow-wrap: anywhere; }
+.recovery-key-body label { display: grid; gap: 5px; font-weight: 700; }
+.recovery-key-body input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; }
+.recovery-key-body [role="alert"] { color: var(--red); }
+.recovery-key-body .dialog-actions { padding: 0; border: 0; flex-wrap: wrap; }
+.recovery-key-groups { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); list-style: none; }
+.recovery-key-groups li { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 1.25rem; font-weight: 700; letter-spacing: .12em; }
+.recovery-kit-print { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  .recovery-kit-print, .recovery-kit-print * { visibility: visible; }
+  .recovery-kit-print { display: block; position: absolute; top: 0; left: 0; width: 100%; color: #000; }
+  .recovery-kit-key { font-family: ui-monospace, Consolas, monospace; font-size: 1.5rem; font-weight: 700; letter-spacing: .12em; }
+}
 .native-rename-fields label { font-weight: 700; }
 .native-rename-fields input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; }
 .native-rename-input { display: flex; align-items: center; gap: 6px; }

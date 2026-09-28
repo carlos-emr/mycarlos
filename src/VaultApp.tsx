@@ -24,6 +24,8 @@ export interface VaultAppProps {
   bridge?: VaultBridge;
 }
 const defaultBridge = createVaultBridge();
+// Platforms with a print dialog for the recovery kit.
+const DESKTOP_PLATFORMS = new Set(["windows", "macos", "linux"]);
 
 // Timers pause while a device sleeps, so the inactivity deadline is kept as a
 // wall-clock time and rechecked at least this often. The same recheck retries a
@@ -63,6 +65,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // show. Its status line reads out only what changes once it is on screen, so
   // the message is written just after (see the effect below).
   const [libraryNotice, setLibraryNotice] = useState("");
+  // The recovery key made with a vault just created. The library opens on it,
+  // and the patient sets it up before anything else.
+  const [newVaultRecoveryKey, setNewVaultRecoveryKey] = useState<string | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -130,6 +137,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       sessionRef.current += 1;
       setSnapshot(null);
+      // A key shown but not set up ended with the session.
+      setNewVaultRecoveryKey(null);
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
@@ -251,6 +260,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
+      saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
       importPickedFiles: (pickId, profileId, folderIds) =>
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
@@ -470,11 +480,19 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(await bridge.create(passphrase, profile));
             // Nothing from a vault that is gone.
             pendingOutcomeRef.current = null;
+            // The passphrase was just typed, so it authorizes the recovery key
+            // at once. If that fails, the library offers to set one up.
+            const recoveryKey = await bridge
+              .beginRecoveryKey(passphrase)
+              .catch(() => null);
+            setNewVaultRecoveryKey(recoveryKey);
             setConcealed(false);
             setStatus("unlocked");
-            setLibraryNotice(
-              "Encrypted vault created. Keep your passphrase safe; it cannot be recovered.",
-            );
+            // With a key to set up, its dialog says what happened instead.
+            if (!recoveryKey)
+              setLibraryNotice(
+                "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+              );
           })
         }
       />
@@ -500,6 +518,27 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 current.recovery
                   ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
                   : "Vault unlocked.",
+                outcome,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            );
+          })
+        }
+        onRecover={(recoveryKey, newPassphrase) =>
+          run(async () => {
+            const { passphraseReplaced, snapshot: current } =
+              await bridge.recover(recoveryKey, newPassphrase);
+            setSnapshot(current);
+            setConcealed(false);
+            setStatus("unlocked");
+            const outcome = pendingOutcomeRef.current;
+            pendingOutcomeRef.current = null;
+            setLibraryNotice(
+              [
+                passphraseReplaced
+                  ? "Vault opened with your recovery key. Use your new passphrase from now on."
+                  : "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
                 outcome,
               ]
                 .filter(Boolean)
@@ -575,6 +614,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onLock={lock}
       autoLockMinutes={autoLockMinutes}
       onAutoLockMinutes={updateAutoLockMinutes}
+      newVaultRecoveryKey={newVaultRecoveryKey}
+      onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
+      canPrint={DESKTOP_PLATFORMS.has(platformRef.current)}
     />
   );
 }

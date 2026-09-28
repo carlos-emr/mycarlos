@@ -652,6 +652,55 @@ async fn vault_recovery_key_confirm(
     .await
 }
 
+/// Saves the kit for the recovery key being set up to a file the patient
+/// picks. Returns false if the picker was cancelled.
+#[tauri::command]
+async fn vault_recovery_kit_save(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<bool> {
+    // Nothing is asked for unless a key is waiting to be confirmed.
+    run_blocking(store.inner(), |store| {
+        store.recovery_kit(now_ms()).map(drop)
+    })
+    .await?;
+    let open = ActivityHold::new(store.idle());
+    let dialog = app.clone();
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        dialog
+            .dialog()
+            .file()
+            .set_file_name("myCarlos recovery kit.txt")
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    drop(open);
+    let Some(destination) = destination else {
+        return Ok(false);
+    };
+    if let Ok(path) = destination.clone().into_path() {
+        return run_blocking(store.inner(), move |store| {
+            store.save_recovery_kit(&path, now_ms()).map(|()| true)
+        })
+        .await;
+    }
+    // Android content providers return a URI rather than a path.
+    run_blocking(store.inner(), move |store| {
+        use std::io::Write as _;
+        let kit = store.recovery_kit(now_ms())?;
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        let mut output = app
+            .fs()
+            .open(destination, options)
+            .map_err(|_| VaultError::Storage)?;
+        output.write_all(kit.as_bytes())?;
+        Ok(true)
+    })
+    .await
+}
+
 #[tauri::command]
 async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
     run_blocking(store.inner(), |store| {
@@ -1022,6 +1071,7 @@ pub fn run() {
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
+            vault_recovery_kit_save,
             vault_recovery_key_cancel,
             vault_recover,
             vault_create_profile,

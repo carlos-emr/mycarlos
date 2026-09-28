@@ -13,6 +13,8 @@ function renderSettings() {
     onChangePassphrase: vi.fn().mockResolvedValue(undefined),
     onCreateProfile: vi.fn().mockResolvedValue(true),
     onReset: vi.fn().mockResolvedValue(undefined),
+    recoveryKeySetAtMs: null,
+    onSetUpRecoveryKey: vi.fn(),
   };
   render(<SecuritySettings {...props} />);
   return props;
