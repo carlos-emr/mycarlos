@@ -1035,6 +1035,39 @@ mod tests {
     }
 
     #[test]
+    fn the_desktop_window_lets_the_reader_zoom() {
+        // Ctrl/Cmd with plus and minus scale the whole interface, as in a
+        // browser. Tauri leaves those keys off unless the window enables them.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows = config["app"]["windows"].as_array().unwrap();
+        assert!(!windows.is_empty());
+        for window in windows {
+            assert_eq!(window["zoomHotkeysEnabled"], true);
+        }
+        // On macOS and Linux Tauri implements those keys in the page, which
+        // then needs leave to set its own zoom. Only there, and nothing else:
+        // Windows zooms natively, and mobile has no such command.
+        let zoom: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/zoom.json")).unwrap();
+        assert_eq!(zoom["windows"], serde_json::json!(["main"]));
+        assert_eq!(zoom["platforms"], serde_json::json!(["macOS", "linux"]));
+        assert_eq!(
+            zoom["permissions"],
+            serde_json::json!(["core:webview:allow-set-webview-zoom"])
+        );
+        // Tauri loads every file in capabilities/, so no other may appear
+        // without a test of its own.
+        let mut files: Vec<String> =
+            std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+        files.sort();
+        assert_eq!(files, ["default.json", "zoom.json"]);
+    }
+
+    #[test]
     fn lock_if_idle_locks_an_idle_vault_as_lock_now_does() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));

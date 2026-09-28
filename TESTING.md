@@ -158,6 +158,71 @@ On the iOS Simulator, also check the items in [issue #5](https://github.com/carl
 Developers can find a fuller checklist, including large files and interrupted transfers, in
 [EVALUATION.md](EVALUATION.md); it needs a development setup.
 
+## Accessibility checks
+
+The automated tests catch missing labels and low contrast, but not whether the app makes sense to
+someone listening to it. These checks need a person. Each screen reader below is free, and all
+but NVDA are built in.
+
+| Platform | Screen reader | Turn it on and off | Move / activate |
+| --- | --- | --- | --- |
+| Windows | Narrator (built in) | Ctrl + Windows + Enter | Tab / Enter or Space |
+| Windows | [NVDA](https://www.nvaccess.org/download/) (free download) | Ctrl + Alt + N to start; Insert + Q to quit | Tab / Enter or Space |
+| macOS | VoiceOver (built in) | Command + F5 | Tab / Control + Option + Space |
+| Android | TalkBack (built in) | Settings → Accessibility → TalkBack | Swipe right or left / double-tap |
+| iOS Simulator | None | VoiceOver does not run in the Simulator; use Xcode's Accessibility Inspector | — |
+
+TalkBack is missing from some Android emulator images; use one whose name includes
+**Google Play**, or a real phone. Screen readers also have a key to jump between headings: H in
+NVDA and in Narrator's scan mode (Caps Lock + Space), or Control + Option + Command + H in
+VoiceOver.
+
+With the screen reader on, using only the keyboard (or only swipes on a phone), go through
+[What to try](#what-to-try) and check each of these:
+
+1. **Create a vault** (the first screen on a new install). Every field is read with its name.
+   Type two different passphrases: "Passphrases do not match." is read out.
+2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
+   wrong passphrase, and note whether the reason is read out without you moving focus.
+3. **Finding your way.** Jumping by heading reaches the page title (for example **My records**)
+   and each section in **Security**. The sidebar is read as the **Record library** navigation;
+   on a phone, the **Section** menu is read with that name.
+4. **Documents and folders** (in list view). Move through the list with the screen reader's
+   reading keys (arrow keys in NVDA and Narrator, Control + Option + arrows in VoiceOver): each
+   item is read by its name, followed by "document" or "folder". The extra buttons say what
+   they act on ("More options for" or "Select", then the document's name), and **Select** says
+   whether it is pressed.
+5. **Messages.** After an import, a move or renaming a folder, the result (for example "4 file(s)
+   encrypted and imported…") is read out without focus moving. Errors are read as soon as they
+   appear. Also rename a document and note whether its result is read out.
+6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete** or
+   **Save a copy** moves focus into the dialog and reads its title. In confirmations, focus
+   starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
+   Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
+   it (or, from a dialog opened within a document's details, to those details).
+7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
+   over from the library; note whether the reader also says "Vault locked." Check the same after
+   an automatic lock.
+8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
+   stuck.
+
+Known gaps, still worth confirming: the unlock screen's messages (items 2 and 7) and the message
+after renaming a document (item 5) may appear on screen without being read out, and the
+passphrase requirements on the Create screen are not read with the passphrase field.
+
+Then turn the screen reader off and check text size:
+
+- **Windows, macOS:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
+  up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
+  down. Ctrl + 0 (Command + 0) resets it. Also try Windows **Settings → Accessibility → Text
+  size** and report whether the app follows it.
+- **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
+  whether the text gets larger, and whether anything is cut off.
+- **iOS:** larger text in Settings is not expected to change the app yet; report what you see.
+
+When you report a problem, name the screen reader and its version, and say what it read out and
+what you expected it to read.
+
 ## Start over
 
 To remove everything while unlocked, open **Security**, choose **Show reset controls**, type
