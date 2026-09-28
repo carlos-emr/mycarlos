@@ -33,6 +33,17 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 const VAULT_FORMAT: u32 = 1;
+/// Header format 2 adds the optional recovery-key envelope. Format 1 headers
+/// are still read; every header written now is format 2, so a vault moves to
+/// format 2 at its next header write. An older build refuses a format 2 header.
+const HEADER_FORMAT: u32 = 2;
+const HEADER_FORMAT_V1: u32 = 1;
+/// A recovery key is 128 random bits. It is shown as 26 Crockford base32
+/// characters plus 2 check characters, in 7 groups of 4.
+const RECOVERY_KEY_BYTES: usize = 16;
+const RECOVERY_KEY_GROUPS: usize = 7;
+const RECOVERY_KEY_GROUP_LEN: usize = 4;
+const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const OBJECT_MAGIC: &[u8; 5] = b"MCVO1";
 const CHUNK_SIZE: usize = 1024 * 1024;
 pub(crate) const MAX_IMPORT_FILES: usize = 100;
@@ -213,6 +224,10 @@ pub enum VaultError {
     RecoveryMode,
     #[error("this storage cannot hold the vault safely")]
     UnsupportedStorage,
+    #[error("the recovery key is not typed correctly")]
+    RecoveryKeyTypo,
+    #[error("the recovery key does not open this vault")]
+    WrongRecoveryKey,
 }
 
 impl From<io::Error> for VaultError {
@@ -264,8 +279,24 @@ struct VaultHeader {
     generation: u64,
     kdf: KdfConfig,
     wrapped_master_key: WrappedSecret,
+    /// The master key wrapped under the patient's recovery key, if one is set
+    /// up. Format 2 only; a format 1 header has none.
+    #[serde(default)]
+    recovery: Option<RecoveryEnvelope>,
     #[serde(default)]
     integrity_tag: String,
+}
+
+/// The master key wrapped under a key derived from the recovery key. It does
+/// not depend on the header generation, so every header write copies it
+/// forward unchanged; the header's integrity tag binds it to each generation.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveryEnvelope {
+    /// Which recovery key this is. Not secret.
+    key_id: Uuid,
+    created_at_ms: u64,
+    wrapped_master_key: WrappedSecret,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -336,6 +367,8 @@ pub struct VaultSnapshot {
     pub records: Vec<VaultRecord>,
     /// Why the session is read-only, if it is.
     pub recovery: Option<RecoveryReason>,
+    /// When the vault's recovery key was set up, if it has one.
+    pub recovery_key_set_at_ms: Option<u64>,
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
@@ -458,8 +491,20 @@ pub struct ImportOutcome {
     pub skipped_duplicates: Vec<String>,
 }
 
+/// A recovery key shown to the patient and not yet confirmed, with the key
+/// derived from the passphrase that authorized it, for the header write.
+struct PendingRecoveryKey {
+    key: Zeroizing<[u8; RECOVERY_KEY_BYTES]>,
+    kdf: KdfConfig,
+    wrapping_key: SecretKey,
+}
+
 struct UnlockedVault {
     master_key: Zeroizing<[u8; 32]>,
+    // When the header's recovery key was set up, if it has one.
+    recovery_key_set_at_ms: Option<u64>,
+    // A recovery key shown to the patient and not yet confirmed.
+    pending_recovery_key: Option<PendingRecoveryKey>,
     manifest: Manifest,
     recovery: Option<RecoveryReason>,
     // Records whose object was missing at unlock. Only populated in recovery mode.
@@ -550,8 +595,9 @@ impl VaultStore {
             let vault_id = Uuid::new_v4();
             let mut master_key = Zeroizing::new([0_u8; 32]);
             OsRng.fill_bytes(master_key.as_mut());
+            let (kdf, wrapping_key) = new_passphrase_key(passphrase)?;
             let (first_header, second_header) =
-                build_header_pair(vault_id, 1, passphrase, &master_key)?;
+                build_header_pair_with_key(vault_id, 1, &kdf, &wrapping_key, &master_key, None)?;
             atomic_json(&header_path(&stage, first_header.generation), &first_header)?;
             atomic_json(
                 &header_path(&stage, second_header.generation),
@@ -584,6 +630,8 @@ impl VaultStore {
                 UnlockedVault {
                     storage_lock,
                     master_key,
+                    recovery_key_set_at_ms: None,
+                    pending_recovery_key: None,
                     manifest,
                     recovery: None,
                     unavailable: HashSet::new(),
@@ -610,6 +658,24 @@ impl VaultStore {
         self.cancel_io.store(false, Ordering::Release);
         let (header, master_key, wrapping_key) =
             read_header_for_passphrase(&self.root, passphrase)?;
+        self.open_with_header(&mut guard, storage_lock, header, master_key, wrapping_key)
+    }
+
+    /// The rest of an unlock, once a header and its keys are authenticated:
+    /// choose the manifest, repair redundancy where that is safe, and open
+    /// the session.
+    fn open_with_header(
+        &self,
+        guard: &mut Option<UnlockedVault>,
+        storage_lock: Arc<File>,
+        header: VaultHeader,
+        master_key: SecretKey,
+        wrapping_key: SecretKey,
+    ) -> Result<(), VaultError> {
+        let recovery_key_set_at_ms = header
+            .recovery
+            .as_ref()
+            .map(|envelope| envelope.created_at_ms);
         let slots = read_manifest_slots(&self.root, &master_key, header.vault_id)?;
         let SelectedManifest {
             manifest,
@@ -628,10 +694,12 @@ impl VaultStore {
             // Leave storage exactly as found: no redundancy repair, no staging or
             // orphan cleanup. The session can only read and export.
             self.open_session(
-                &mut guard,
+                guard,
                 UnlockedVault {
                     storage_lock,
                     master_key,
+                    recovery_key_set_at_ms,
+                    pending_recovery_key: None,
                     manifest,
                     recovery,
                     unavailable,
@@ -684,10 +752,12 @@ impl VaultStore {
         remove_abandoned_atomic_writes(&self.root);
         remove_orphan_objects(&self.root, &manifest);
         self.open_session(
-            &mut guard,
+            guard,
             UnlockedVault {
                 storage_lock,
                 master_key,
+                recovery_key_set_at_ms,
+                pending_recovery_key: None,
                 manifest,
                 recovery,
                 unavailable,
@@ -772,6 +842,7 @@ impl VaultStore {
                 })
                 .collect(),
             recovery: unlocked.recovery,
+            recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
         })
     }
 
@@ -1296,34 +1367,209 @@ impl VaultStore {
             .generation
             .checked_add(1)
             .ok_or(VaultError::Storage)?;
-        let (first, second) = build_header_pair(
+        let (kdf, wrapping_key) = new_passphrase_key(replacement)?;
+        // The recovery key, if any, still opens the vault after the change.
+        let (first, second) = build_header_pair_with_key(
             header.vault_id,
             first_generation,
-            replacement,
+            &kdf,
+            &wrapping_key,
             &unlocked.master_key,
+            header.recovery.as_ref(),
         )?;
-        let first_path = header_path(&self.root, first.generation);
-        if let Err(error) = atomic_json(&first_path, &first)
-            .and_then(|()| fail_at_test_boundary("passphrase.after-first-write"))
-        {
-            // The rename can land before a directory sync fails. The new header
-            // is then the newest one, and the current passphrase no longer opens
-            // the vault, so report the change as made, as for a failed second
-            // write, rather than tell the patient to keep the old passphrase.
-            let landed = serde_json::to_vec_pretty(&first)
-                .is_ok_and(|expected| fs::read(&first_path).is_ok_and(|found| found == expected));
-            if !landed {
-                return Err(error);
-            }
+        let written =
+            write_header_pair(&self.root, &first, &second, "passphrase.after-first-write")?;
+        // A key shown for setup was authorized by the old passphrase.
+        unlocked.pending_recovery_key = None;
+        if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
-            return Ok(());
         }
-        if atomic_json(&header_path(&self.root, second.generation), &second).is_err() {
-            unlocked.recovery = Some(RecoveryReason::WriteFailed);
-            return Ok(());
-        }
-        let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
         Ok(())
+    }
+
+    /// Makes a new recovery key and returns it, once, for the patient to
+    /// write down. The current passphrase authorizes it, as it does a
+    /// passphrase change: a recovery key opens the vault for good. Nothing is
+    /// stored until `confirm_recovery_key` checks that the patient has the
+    /// key; until then the vault keeps any key it already has.
+    pub fn begin_recovery_key(&self, passphrase: &str) -> Result<Zeroizing<String>, VaultError> {
+        if passphrase.len() > MAX_PASSPHRASE_BYTES {
+            return Err(VaultError::Invalid);
+        }
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let (header, verified, wrapping_key) = read_header_for_passphrase(&self.root, passphrase)?;
+        if header.vault_id != unlocked.manifest.vault_id
+            || verified.as_ref() != unlocked.master_key.as_ref()
+        {
+            return Err(VaultError::Corrupt);
+        }
+        let mut key = Zeroizing::new([0_u8; RECOVERY_KEY_BYTES]);
+        OsRng.fill_bytes(key.as_mut());
+        let text = encode_recovery_key(&key);
+        unlocked.pending_recovery_key = Some(PendingRecoveryKey {
+            key,
+            kdf: header.kdf,
+            wrapping_key,
+        });
+        Ok(text)
+    }
+
+    /// Forgets a recovery key shown by `begin_recovery_key` without storing it.
+    pub fn cancel_recovery_key(&self) {
+        if let Some(unlocked) = self.session().as_mut() {
+            unlocked.pending_recovery_key = None;
+        }
+    }
+
+    /// Checks groups of the pending recovery key as the patient typed them
+    /// back (group index and text; at least two different groups), then
+    /// stores the key: a new pair of header generations carries its envelope,
+    /// replacing any earlier recovery key.
+    pub fn confirm_recovery_key(
+        &self,
+        groups: &[(usize, &str)],
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let PendingRecoveryKey {
+            key: pending,
+            kdf,
+            wrapping_key,
+        } = unlocked
+            .pending_recovery_key
+            .as_ref()
+            .ok_or(VaultError::Invalid)?;
+        let distinct: HashSet<usize> = groups.iter().map(|(index, _)| *index).collect();
+        if distinct.len() < 2
+            || distinct.len() != groups.len()
+            || groups.len() > RECOVERY_KEY_GROUPS
+        {
+            return Err(VaultError::Invalid);
+        }
+        let expected = encode_recovery_key(pending);
+        let expected_groups: Vec<&str> = expected.split('-').collect();
+        for (index, typed) in groups {
+            let wanted = expected_groups.get(*index).ok_or(VaultError::Invalid)?;
+            if typed.len() > 64 || !recovery_group_matches(typed, wanted) {
+                return Err(VaultError::RecoveryKeyTypo);
+            }
+        }
+
+        let vault_id = unlocked.manifest.vault_id;
+        let current = newest_authentic_header(&self.root, vault_id, &unlocked.master_key)?;
+        // The passphrase that authorized the key must still open the current
+        // header; otherwise the pair below would wrap the master key under a
+        // passphrase that no longer applies.
+        let opens = &current.kdf == kdf
+            && unwrap_secret(
+                wrapping_key,
+                &current.wrapped_master_key,
+                &header_aad(vault_id, current.generation),
+            )
+            .is_ok_and(|candidate| candidate.as_ref() == unlocked.master_key.as_ref());
+        if !opens {
+            return Err(VaultError::Corrupt);
+        }
+        let envelope = new_recovery_envelope(pending, vault_id, &unlocked.master_key, now_ms)?;
+        let first_generation = current
+            .generation
+            .checked_add(1)
+            .ok_or(VaultError::Storage)?;
+        let (first, second) = build_header_pair_with_key(
+            vault_id,
+            first_generation,
+            kdf,
+            wrapping_key,
+            &unlocked.master_key,
+            Some(&envelope),
+        )?;
+        let written = write_header_pair(
+            &self.root,
+            &first,
+            &second,
+            "recovery-key.after-first-write",
+        )?;
+        unlocked.pending_recovery_key = None;
+        unlocked.recovery_key_set_at_ms = Some(now_ms);
+        if written == HeaderPairWrite::FirstOnly {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+        }
+        Ok(())
+    }
+
+    /// Opens a locked vault with its recovery key and replaces the forgotten
+    /// passphrase with `new_passphrase`. Returns whether the passphrase was
+    /// replaced: a vault that can only open read-only (see `RecoveryReason`)
+    /// is opened read-only with its passphrase unchanged, since nothing on
+    /// disk may be rewritten, so that its documents can still be saved.
+    pub fn recover(&self, recovery_key: &str, new_passphrase: &str) -> Result<bool, VaultError> {
+        if new_passphrase.len() > MAX_PASSPHRASE_BYTES {
+            return Err(VaultError::Invalid);
+        }
+        let key = decode_recovery_key(recovery_key)?;
+        let mut guard = self.session();
+        if guard.is_some() {
+            return Err(VaultError::Invalid);
+        }
+        let storage_lock = acquire_storage_lock(&self.root)?;
+        finish_pending_resets(&self.root)?;
+        self.cancel_io.store(false, Ordering::Release);
+        let (header, master_key) = read_header_for_recovery_key(&self.root, &key)?;
+        let slots = read_manifest_slots(&self.root, &master_key, header.vault_id)?;
+        let selected = select_manifest(&slots)?;
+        if selected.recovery.is_some() || header_slot_unreadable(&self.root) {
+            let recovery = selected.recovery.or(Some(RecoveryReason::UnreadableSlot));
+            self.open_session(
+                &mut guard,
+                UnlockedVault {
+                    storage_lock,
+                    master_key,
+                    recovery_key_set_at_ms: header
+                        .recovery
+                        .as_ref()
+                        .map(|envelope| envelope.created_at_ms),
+                    pending_recovery_key: None,
+                    manifest: selected.manifest,
+                    recovery,
+                    unavailable: selected.unavailable,
+                },
+            );
+            return Ok(false);
+        }
+        let profile_names = selected
+            .manifest
+            .profiles
+            .iter()
+            .map(|profile| profile.display_name.as_str())
+            .collect::<Vec<_>>();
+        validate_new_passphrase(new_passphrase, &profile_names)?;
+        let (kdf, wrapping_key) = new_passphrase_key(new_passphrase)?;
+        let first_generation = header
+            .generation
+            .checked_add(1)
+            .ok_or(VaultError::Storage)?;
+        // The recovery key keeps working: the envelope is carried forward.
+        let (first, second) = build_header_pair_with_key(
+            header.vault_id,
+            first_generation,
+            &kdf,
+            &wrapping_key,
+            &master_key,
+            header.recovery.as_ref(),
+        )?;
+        write_header_pair(&self.root, &first, &second, "recover.after-first-write")?;
+        // Open as an unlock with the new passphrase would. If the second
+        // header write failed, the redundancy repair there rewrites it.
+        self.open_with_header(&mut guard, storage_lock, first, master_key, wrapping_key)?;
+        Ok(true)
     }
 
     pub fn reset(&self) -> Result<(), VaultError> {
@@ -1740,27 +1986,61 @@ fn build_header(
 ) -> Result<VaultHeader, VaultError> {
     let kdf = new_kdf_config();
     let wrapping_key = derive_passphrase_key(passphrase, &kdf)?;
-    build_header_with_key(vault_id, generation, kdf, &wrapping_key, master_key)
+    build_header_with_key(vault_id, generation, kdf, &wrapping_key, master_key, None)
 }
 
+#[cfg(test)]
 fn build_header_pair(
     vault_id: Uuid,
     first_generation: u64,
     passphrase: &str,
     master_key: &[u8; 32],
 ) -> Result<(VaultHeader, VaultHeader), VaultError> {
-    let second_generation = first_generation.checked_add(1).ok_or(VaultError::Storage)?;
+    let (kdf, wrapping_key) = new_passphrase_key(passphrase)?;
+    build_header_pair_with_key(
+        vault_id,
+        first_generation,
+        &kdf,
+        &wrapping_key,
+        master_key,
+        None,
+    )
+}
+
+/// A new passphrase's KDF settings, with a fresh salt, and the key they derive.
+fn new_passphrase_key(passphrase: &str) -> Result<(KdfConfig, SecretKey), VaultError> {
     let kdf = new_kdf_config();
     let wrapping_key = derive_passphrase_key(passphrase, &kdf)?;
+    Ok((kdf, wrapping_key))
+}
+
+/// Two consecutive header generations, for the two slots.
+fn build_header_pair_with_key(
+    vault_id: Uuid,
+    first_generation: u64,
+    kdf: &KdfConfig,
+    wrapping_key: &[u8; 32],
+    master_key: &[u8; 32],
+    recovery: Option<&RecoveryEnvelope>,
+) -> Result<(VaultHeader, VaultHeader), VaultError> {
+    let second_generation = first_generation.checked_add(1).ok_or(VaultError::Storage)?;
     Ok((
         build_header_with_key(
             vault_id,
             first_generation,
             kdf.clone(),
-            &wrapping_key,
+            wrapping_key,
             master_key,
+            recovery.cloned(),
         )?,
-        build_header_with_key(vault_id, second_generation, kdf, &wrapping_key, master_key)?,
+        build_header_with_key(
+            vault_id,
+            second_generation,
+            kdf.clone(),
+            wrapping_key,
+            master_key,
+            recovery.cloned(),
+        )?,
     ))
 }
 
@@ -1770,16 +2050,18 @@ fn build_header_with_key(
     kdf: KdfConfig,
     wrapping_key: &[u8; 32],
     master_key: &[u8; 32],
+    recovery: Option<RecoveryEnvelope>,
 ) -> Result<VaultHeader, VaultError> {
     let wrapped_master_key =
         wrap_secret(wrapping_key, master_key, &header_aad(vault_id, generation))?;
     let mut header = VaultHeader {
         magic: "MYCARLOS-VAULT".to_owned(),
-        format_version: VAULT_FORMAT,
+        format_version: HEADER_FORMAT,
         vault_id,
         generation,
         kdf,
         wrapped_master_key,
+        recovery,
         integrity_tag: String::new(),
     };
     header.integrity_tag = compute_header_integrity_tag(&header, master_key)?;
@@ -1905,6 +2187,135 @@ fn unwrap_secret(
     Ok(value)
 }
 
+/// The recovery key as the patient sees it: 7 groups of 4 characters.
+fn encode_recovery_key(key: &[u8; RECOVERY_KEY_BYTES]) -> Zeroizing<String> {
+    let mut symbols = Zeroizing::new(Vec::with_capacity(RECOVERY_KEY_GROUPS * 4));
+    // 128 bits, then 2 zero bits, make 26 five-bit symbols.
+    let mut bits: u32 = 0;
+    let mut count = 0;
+    for byte in key {
+        bits = (bits << 8) | u32::from(*byte);
+        count += 8;
+        while count >= 5 {
+            count -= 5;
+            symbols.push(CROCKFORD_ALPHABET[((bits >> count) & 31) as usize]);
+        }
+        bits &= (1 << count) - 1;
+    }
+    symbols.push(CROCKFORD_ALPHABET[((bits << (5 - count)) & 31) as usize]);
+    let check = recovery_key_check(key);
+    symbols.push(CROCKFORD_ALPHABET[usize::from(check >> 5)]);
+    symbols.push(CROCKFORD_ALPHABET[usize::from(check & 31)]);
+    let mut text = Zeroizing::new(String::with_capacity(RECOVERY_KEY_GROUPS * 5));
+    for (index, group) in symbols.chunks(RECOVERY_KEY_GROUP_LEN).enumerate() {
+        if index > 0 {
+            text.push('-');
+        }
+        text.extend(group.iter().map(|symbol| char::from(*symbol)));
+    }
+    text
+}
+
+/// Ten check bits from a hash of the key, so a mistyped key is caught as a
+/// typo before any unwrapping is tried.
+fn recovery_key_check(key: &[u8; RECOVERY_KEY_BYTES]) -> u16 {
+    use sha2::Digest;
+    let digest = Sha256::new_with_prefix(b"mycarlos-recovery-key-check-v1:")
+        .chain_update(key)
+        .finalize();
+    (u16::from(digest[0]) << 2) | u16::from(digest[1] >> 6)
+}
+
+/// Reads a recovery key as typed: case, spaces and hyphens do not matter, and
+/// I, L and O are read as 1, 1 and 0, as Crockford base32 allows.
+fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, VaultError> {
+    if text.len() > 256 {
+        return Err(VaultError::RecoveryKeyTypo);
+    }
+    let mut values = Zeroizing::new(Vec::with_capacity(RECOVERY_KEY_GROUPS * 4));
+    for character in text.chars() {
+        if character == '-' || character.is_whitespace() {
+            continue;
+        }
+        let symbol = match character.to_ascii_uppercase() {
+            'I' | 'L' => '1',
+            'O' => '0',
+            other => other,
+        };
+        let value = CROCKFORD_ALPHABET
+            .iter()
+            .position(|candidate| char::from(*candidate) == symbol)
+            .ok_or(VaultError::RecoveryKeyTypo)?;
+        values.push(value as u32);
+    }
+    if values.len() != RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LEN {
+        return Err(VaultError::RecoveryKeyTypo);
+    }
+    let mut key = Zeroizing::new([0_u8; RECOVERY_KEY_BYTES]);
+    let mut bits: u32 = 0;
+    let mut count = 0;
+    let mut index = 0;
+    for value in &values[..26] {
+        bits = (bits << 5) | value;
+        count += 5;
+        if count >= 8 {
+            count -= 8;
+            if index < RECOVERY_KEY_BYTES {
+                key[index] = ((bits >> count) & 0xff) as u8;
+            }
+            index += 1;
+        }
+        bits &= (1 << count) - 1;
+    }
+    // The 2 bits left over are padding and must be zero.
+    if bits != 0 || index != RECOVERY_KEY_BYTES {
+        return Err(VaultError::RecoveryKeyTypo);
+    }
+    let check = ((values[26] << 5) | values[27]) as u16;
+    if check != recovery_key_check(&key) {
+        return Err(VaultError::RecoveryKeyTypo);
+    }
+    Ok(key)
+}
+
+fn recovery_wrap_key(
+    recovery_key: &[u8; RECOVERY_KEY_BYTES],
+    vault_id: Uuid,
+    key_id: Uuid,
+) -> Result<SecretKey, VaultError> {
+    let mut salt = [0_u8; 32];
+    salt[..16].copy_from_slice(vault_id.as_bytes());
+    salt[16..].copy_from_slice(key_id.as_bytes());
+    let hkdf = Hkdf::<Sha256>::new(Some(&salt), recovery_key);
+    let mut key = Zeroizing::new([0_u8; 32]);
+    hkdf.expand(b"mycarlos/recovery-wrap/v1", key.as_mut())
+        .map_err(|_| VaultError::Storage)?;
+    Ok(key)
+}
+
+fn recovery_aad(vault_id: Uuid, key_id: Uuid) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(53);
+    aad.extend_from_slice(b"mycarlos-recovery-v1:");
+    aad.extend_from_slice(vault_id.as_bytes());
+    aad.extend_from_slice(key_id.as_bytes());
+    aad
+}
+
+fn new_recovery_envelope(
+    recovery_key: &[u8; RECOVERY_KEY_BYTES],
+    vault_id: Uuid,
+    master_key: &[u8; 32],
+    now_ms: u64,
+) -> Result<RecoveryEnvelope, VaultError> {
+    let key_id = Uuid::new_v4();
+    let wrap_key = recovery_wrap_key(recovery_key, vault_id, key_id)?;
+    Ok(RecoveryEnvelope {
+        key_id,
+        created_at_ms: now_ms,
+        wrapped_master_key: wrap_secret(&wrap_key, master_key, &recovery_aad(vault_id, key_id))?,
+    })
+}
+
 fn header_aad(vault_id: Uuid, generation: u64) -> Vec<u8> {
     let mut aad = Vec::with_capacity(48);
     aad.extend_from_slice(b"mycarlos-header-v1:");
@@ -1914,14 +2325,20 @@ fn header_aad(vault_id: Uuid, generation: u64) -> Vec<u8> {
 }
 
 fn header_integrity_payload(header: &VaultHeader) -> Result<Vec<u8>, VaultError> {
-    serde_json::to_vec(&(
+    let common = (
         header.magic.as_str(),
         header.format_version,
         header.vault_id,
         header.generation,
         &header.kdf,
         &header.wrapped_master_key,
-    ))
+    );
+    // Format 1's payload is unchanged, so its existing tags still verify.
+    if header.format_version == HEADER_FORMAT_V1 {
+        serde_json::to_vec(&common)
+    } else {
+        serde_json::to_vec(&(common, &header.recovery))
+    }
     .map_err(|_| VaultError::Storage)
 }
 
@@ -1969,8 +2386,15 @@ fn header_path(root: &Path, generation: u64) -> PathBuf {
 }
 
 fn valid_header(header: &VaultHeader) -> bool {
+    let valid_recovery = match (header.format_version, &header.recovery) {
+        (HEADER_FORMAT_V1, None) | (HEADER_FORMAT, None) => true,
+        (HEADER_FORMAT, Some(envelope)) => {
+            !envelope.key_id.is_nil() && valid_wrapped_secret(&envelope.wrapped_master_key)
+        }
+        _ => false,
+    };
     header.magic == "MYCARLOS-VAULT"
-        && header.format_version == VAULT_FORMAT
+        && valid_recovery
         && !header.vault_id.is_nil()
         && valid_kdf_config(&header.kdf)
         && valid_wrapped_secret(&header.wrapped_master_key)
@@ -2019,6 +2443,85 @@ fn read_latest_header(root: &Path) -> Result<VaultHeader, VaultError> {
         return Err(VaultError::Corrupt);
     }
     Ok(selected)
+}
+
+/// Compares a typed group of the recovery key with the expected one, reading
+/// it as `decode_recovery_key` does.
+fn recovery_group_matches(typed: &str, expected: &str) -> bool {
+    let normalized: String = typed
+        .chars()
+        .filter(|character| *character != '-' && !character.is_whitespace())
+        .map(|character| match character.to_ascii_uppercase() {
+            'I' | 'L' => '1',
+            'O' => '0',
+            other => other,
+        })
+        .collect();
+    normalized == expected
+}
+
+/// The newest header slot authenticated by the session's master key.
+fn newest_authentic_header(
+    root: &Path,
+    vault_id: Uuid,
+    master_key: &[u8; 32],
+) -> Result<VaultHeader, VaultError> {
+    read_header_candidates(root)
+        .into_iter()
+        .filter(|header| header.vault_id == vault_id && valid_header_integrity(header, master_key))
+        .max_by_key(|header| header.generation)
+        .ok_or(VaultError::Corrupt)
+}
+
+/// Selects the header a recovery key opens, as `read_header_for_passphrase`
+/// does for a passphrase: the newest one it authenticates, and never an older
+/// one when a newer header for the same master key exists that it does not
+/// open (a replaced recovery key).
+fn read_header_for_recovery_key(
+    root: &Path,
+    recovery_key: &[u8; RECOVERY_KEY_BYTES],
+) -> Result<(VaultHeader, SecretKey), VaultError> {
+    let mut candidates = read_header_candidates(root);
+    if candidates.is_empty() {
+        return Err(if root.exists() {
+            VaultError::Corrupt
+        } else {
+            VaultError::Missing
+        });
+    }
+    candidates.sort_by_key(|header| std::cmp::Reverse(header.generation));
+    let mut selected = None;
+    for header in &candidates {
+        let Some(envelope) = &header.recovery else {
+            continue;
+        };
+        let wrap_key = recovery_wrap_key(recovery_key, header.vault_id, envelope.key_id)?;
+        let Ok(master_key) = unwrap_secret(
+            &wrap_key,
+            &envelope.wrapped_master_key,
+            &recovery_aad(header.vault_id, envelope.key_id),
+        ) else {
+            continue;
+        };
+        if valid_header_integrity(header, &master_key) {
+            selected = Some((header.clone(), master_key));
+            break;
+        }
+    }
+    let (header, master_key) = selected.ok_or(VaultError::WrongRecoveryKey)?;
+    if candidates.iter().any(|candidate| {
+        candidate.generation > header.generation && valid_header_integrity(candidate, &master_key)
+    }) {
+        return Err(VaultError::WrongRecoveryKey);
+    }
+    if candidates.iter().any(|candidate| {
+        candidate.generation == header.generation
+            && candidate != &header
+            && valid_header_integrity(candidate, &master_key)
+    }) {
+        return Err(VaultError::Corrupt);
+    }
+    Ok((header, master_key))
 }
 
 fn read_header_for_passphrase(
@@ -2095,6 +2598,7 @@ fn header_redundancy_healthy(
         && headers.iter().all(|header| {
             header.vault_id == selected.vault_id
                 && header.kdf == selected.kdf
+                && header.recovery == selected.recovery
                 && valid_header_integrity(header, master_key)
                 && unwrap_secret(
                     wrapping_key,
@@ -2103,6 +2607,45 @@ fn header_redundancy_healthy(
                 )
                 .is_ok_and(|candidate| candidate.as_ref() == master_key)
         })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum HeaderPairWrite {
+    Both,
+    /// The first generation is durable, so the change is made, but the
+    /// redundant second write failed.
+    FirstOnly,
+}
+
+/// Writes a new pair of header generations, as a passphrase change does. Once
+/// the first is in place the change is made, even if its write reported an
+/// error after the rename landed; only a first write that did not land is a
+/// refusal. `boundary` names the test boundary after the first write.
+fn write_header_pair(
+    root: &Path,
+    first: &VaultHeader,
+    second: &VaultHeader,
+    boundary: &str,
+) -> Result<HeaderPairWrite, VaultError> {
+    let first_path = header_path(root, first.generation);
+    if let Err(error) =
+        atomic_json(&first_path, first).and_then(|()| fail_at_test_boundary(boundary))
+    {
+        // The rename can land before a directory sync fails. The new header
+        // is then the newest one, and the previous key no longer opens the
+        // vault, so report the change as made rather than refused.
+        let landed = serde_json::to_vec_pretty(first)
+            .is_ok_and(|expected| fs::read(&first_path).is_ok_and(|found| found == expected));
+        if !landed {
+            return Err(error);
+        }
+        return Ok(HeaderPairWrite::FirstOnly);
+    }
+    if atomic_json(&header_path(root, second.generation), second).is_err() {
+        return Ok(HeaderPairWrite::FirstOnly);
+    }
+    let _ = fs::remove_file(root.join(LEGACY_HEADER));
+    Ok(HeaderPairWrite::Both)
 }
 
 /// Rewrites both slots under the wrapping key that unlock already derived for
@@ -2126,6 +2669,7 @@ fn repair_header_redundancy(
         current.kdf.clone(),
         wrapping_key,
         master_key,
+        current.recovery.clone(),
     )?;
     let second = build_header_with_key(
         current.vault_id,
@@ -2133,6 +2677,7 @@ fn repair_header_redundancy(
         current.kdf.clone(),
         wrapping_key,
         master_key,
+        current.recovery.clone(),
     )?;
     atomic_json(&header_path(root, first_generation), &first)?;
     atomic_json(&header_path(root, second.generation), &second)?;
@@ -3644,13 +4189,19 @@ mod tests {
                 .map(|_| ()),
             "delete" => store.delete_record(snapshot.records[0].id),
             "passphrase" => store.change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT),
+            "recovery-key" => {
+                let key = store.begin_recovery_key(PASSWORD).unwrap();
+                let groups = recovery_key_groups(&key);
+                store.confirm_recovery_key(&[(0, &groups[0]), (6, &groups[6])], 7)
+            }
             _ => panic!("unknown failure-child operation"),
         };
         let committed = matches!(
             std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref(),
             Ok("manifest.after-first-write"
                 | "delete.after-object-unlink"
-                | "passphrase.after-first-write")
+                | "passphrase.after-first-write"
+                | "recovery-key.after-first-write")
         );
         if committed {
             assert!(outcome.is_ok());
@@ -5554,6 +6105,302 @@ mod tests {
                 usize::from(committed)
             );
         }
+    }
+
+    fn recovery_key_groups(key: &str) -> Vec<String> {
+        key.split('-').map(str::to_owned).collect()
+    }
+
+    /// Sets up a recovery key in an unlocked store and returns it.
+    fn set_up_recovery_key(store: &VaultStore, now_ms: u64) -> String {
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        store
+            .confirm_recovery_key(&[(1, &groups[1]), (5, &groups[5])], now_ms)
+            .unwrap();
+        key
+    }
+
+    #[test]
+    fn a_recovery_key_reads_back_as_typed_and_a_typo_is_caught() {
+        for _ in 0..64 {
+            let mut key = [0_u8; RECOVERY_KEY_BYTES];
+            rand::RngCore::fill_bytes(&mut OsRng, &mut key);
+            let text = encode_recovery_key(&key);
+            let groups = recovery_key_groups(&text);
+            assert_eq!(groups.len(), RECOVERY_KEY_GROUPS);
+            assert!(groups
+                .iter()
+                .all(|group| group.len() == RECOVERY_KEY_GROUP_LEN));
+            assert_eq!(*decode_recovery_key(&text).unwrap(), key);
+            // Case, spaces and Crockford's look-alike letters don't matter.
+            let relaxed = text
+                .to_lowercase()
+                .replace('-', " ")
+                .replace('0', "o")
+                .replace('1', "l");
+            assert_eq!(*decode_recovery_key(&relaxed).unwrap(), key);
+        }
+        for text in ["", "ABCD", "UUUU-UUUU-UUUU-UUUU-UUUU-UUUU-UUUU"] {
+            assert!(matches!(
+                decode_recovery_key(text),
+                Err(VaultError::RecoveryKeyTypo)
+            ));
+        }
+        // Nearly every single-character slip is caught by the check characters
+        // (a 10-bit check lets about 1 in 1,024 through).
+        let text = encode_recovery_key(&[7_u8; RECOVERY_KEY_BYTES]).replace('-', "");
+        let mut accepted = 0;
+        for position in 0..text.len() {
+            for symbol in CROCKFORD_ALPHABET.iter().map(|symbol| char::from(*symbol)) {
+                if text.chars().nth(position) == Some(symbol) {
+                    continue;
+                }
+                let mut slipped: Vec<char> = text.chars().collect();
+                slipped[position] = symbol;
+                let slipped: String = slipped.into_iter().collect();
+                if decode_recovery_key(&slipped).is_ok() {
+                    accepted += 1;
+                }
+            }
+        }
+        assert!(accepted <= 5, "{accepted} slips accepted");
+    }
+
+    #[test]
+    fn a_recovery_key_replaces_a_forgotten_passphrase_and_keeps_working() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+
+        // Nothing is stored until the patient types groups of the key back.
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        assert!(read_latest_header(&root).unwrap().recovery.is_none());
+        assert!(matches!(
+            store.confirm_recovery_key(&[(1, &groups[1])], 5),
+            Err(VaultError::Invalid)
+        ));
+        assert!(matches!(
+            store.confirm_recovery_key(&[(1, "ZZZZ"), (4, &groups[4])], 5),
+            Err(VaultError::RecoveryKeyTypo)
+        ));
+        assert!(read_latest_header(&root).unwrap().recovery.is_none());
+        let lower = groups[1].to_lowercase();
+        store
+            .confirm_recovery_key(&[(1, &lower), (4, &groups[4])], 5)
+            .unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(5));
+        let header = read_latest_header(&root).unwrap();
+        assert_eq!(header.format_version, HEADER_FORMAT);
+        assert!(header.recovery.is_some());
+        store.lock();
+
+        assert!(matches!(
+            store.recover("ABCD", PASSPHRASE_REPLACEMENT),
+            Err(VaultError::RecoveryKeyTypo)
+        ));
+        let other = encode_recovery_key(&[9_u8; RECOVERY_KEY_BYTES]);
+        assert!(matches!(
+            store.recover(&other, PASSPHRASE_REPLACEMENT),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        // The new passphrase meets the usual rules, and a refusal writes nothing.
+        let before = read_latest_header(&root).unwrap();
+        assert!(matches!(
+            store.recover(&key, "too short"),
+            Err(VaultError::Invalid)
+        ));
+        assert!(read_latest_header(&root).unwrap() == before);
+
+        assert!(store.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(5));
+        store.lock();
+        assert!(matches!(
+            store.unlock(PASSWORD),
+            Err(VaultError::WrongPassphrase)
+        ));
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+
+        // The key survives a passphrase change and a header repair.
+        store
+            .change_passphrase(PASSPHRASE_REPLACEMENT, PASSWORD)
+            .unwrap();
+        store.lock();
+        fs::remove_file(root.join("header-0.json")).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        store.lock();
+        assert!(store.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+    }
+
+    #[test]
+    fn setting_up_a_recovery_key_needs_the_passphrase_and_can_be_cancelled() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        assert!(matches!(
+            store.begin_recovery_key(PASSWORD),
+            Err(VaultError::Locked)
+        ));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        // A recovery key opens the vault for good, so the passphrase is asked
+        // for again, as for a passphrase change.
+        assert!(matches!(
+            store.begin_recovery_key(PASSPHRASE_REPLACEMENT),
+            Err(VaultError::WrongPassphrase)
+        ));
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        store.cancel_recovery_key();
+        assert!(matches!(
+            store.confirm_recovery_key(&[(0, &groups[0]), (1, &groups[1])], 5),
+            Err(VaultError::Invalid)
+        ));
+        // A key shown before a passphrase change was authorized by the old
+        // passphrase, so the change forgets it.
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        assert!(matches!(
+            store.confirm_recovery_key(&[(0, &groups[0]), (1, &groups[1])], 5),
+            Err(VaultError::Invalid)
+        ));
+        assert!(read_latest_header(&root).unwrap().recovery.is_none());
+        // Recovering is for a locked vault.
+        assert!(matches!(
+            store.recover(&key, PASSPHRASE_REPLACEMENT),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn replacing_the_recovery_key_stops_the_old_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let first = set_up_recovery_key(&store, 5);
+        let second = set_up_recovery_key(&store, 6);
+        store.lock();
+        assert!(matches!(
+            store.recover(&first, PASSPHRASE_REPLACEMENT),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        assert!(store.recover(&second, PASSPHRASE_REPLACEMENT).unwrap());
+    }
+
+    #[test]
+    fn a_replacement_key_whose_first_write_landed_stops_the_old_one() {
+        // Only the first header of the replacement is written. The old key
+        // still opens the slot left over, but the newer header outranks it.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let old = set_up_recovery_key(&store, 5);
+        store.lock();
+        run_failure_child(&root, "recovery-key", "recovery-key.after-first-write");
+
+        let restarted = VaultStore::new(root);
+        assert!(matches!(
+            restarted.recover(&old, PASSPHRASE_REPLACEMENT),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        restarted.unlock(PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn the_header_tag_covers_the_recovery_envelope() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        set_up_recovery_key(&store, 5);
+        let header = read_latest_header(&root).unwrap();
+        let master_key = unwrap_master_key(&header, PASSWORD).unwrap();
+        assert!(valid_header_integrity(&header, &master_key));
+
+        let mut changed = header.clone();
+        changed.recovery.as_mut().unwrap().created_at_ms += 1;
+        assert!(!valid_header_integrity(&changed, &master_key));
+        let mut removed = header.clone();
+        removed.recovery = None;
+        assert!(!valid_header_integrity(&removed, &master_key));
+        // A format 1 header cannot carry an envelope.
+        let mut downgraded = header;
+        downgraded.format_version = HEADER_FORMAT_V1;
+        assert!(!valid_header(&downgraded));
+    }
+
+    #[test]
+    fn a_format_1_header_still_opens_and_moves_to_format_2_at_its_next_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let current = read_latest_header(&root).unwrap();
+        let master_key = unwrap_master_key(&current, PASSWORD).unwrap();
+        store.lock();
+
+        // Both slots as an earlier build wrote them: format 1, one KDF salt.
+        let (kdf, wrapping_key) = new_passphrase_key(PASSWORD).unwrap();
+        for generation in [current.generation + 1, current.generation + 2] {
+            let mut header = build_header_with_key(
+                current.vault_id,
+                generation,
+                kdf.clone(),
+                &wrapping_key,
+                &master_key,
+                None,
+            )
+            .unwrap();
+            header.format_version = HEADER_FORMAT_V1;
+            header.integrity_tag = compute_header_integrity_tag(&header, &master_key).unwrap();
+            atomic_json(&header_path(&root, generation), &header).unwrap();
+        }
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            read_latest_header(&root).unwrap().format_version,
+            HEADER_FORMAT_V1
+        );
+
+        set_up_recovery_key(&store, 5);
+        let upgraded = read_latest_header(&root).unwrap();
+        assert_eq!(upgraded.format_version, HEADER_FORMAT);
+        assert!(upgraded.recovery.is_some());
+    }
+
+    #[test]
+    fn a_vault_that_opens_read_only_keeps_its_passphrase_when_recovered() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile_id = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile_id,
+                vec![],
+                vec![source("lost.pdf", b"synthetic record that goes missing")],
+                2,
+            )
+            .unwrap();
+        let key = set_up_recovery_key(&store, 5);
+        store.lock();
+        for entry in fs::read_dir(root.join("objects")).unwrap() {
+            fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+
+        assert!(!store.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
     }
 
     #[test]
@@ -7487,7 +8334,7 @@ mod tests {
 
         let header: VaultHeader =
             serde_json::from_slice(&fs::read(root.join("header-0.json")).unwrap()).unwrap();
-        for version in [0, VAULT_FORMAT + 1] {
+        for version in [0, HEADER_FORMAT + 1] {
             let mut unsupported = header.clone();
             unsupported.format_version = version;
             atomic_json(&root.join("header-0.json"), &unsupported).unwrap();
