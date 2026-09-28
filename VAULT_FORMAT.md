@@ -23,7 +23,7 @@
 - **Implemented recovery:** the patient passphrase, and a patient-held recovery key (header
   format 2) with a saved or printed kit, set up when a vault is created. There is no vendor key.
 - **Approved patient-pilot recovery:** the recovery key and kit, and a portable encrypted backup;
-  the backup is not implemented yet
+  all three are implemented (see [Portable encrypted backup](#portable-encrypted-backup))
 
 This records decisions D-01, D-02, D-03, and D-05 from the [threat model's mandatory design
 decisions](THREAT_MODEL.md#mandatory-design-decisions) for the current local-only vertical slice.
@@ -108,6 +108,8 @@ vault-home/               holds only what the vault manages; back up as a whole
   vault-v1.lock           stable OS lock file; never rename or delete while the app is running
   vault-v1.reset-pending/ retired vault awaiting completion of an already-confirmed reset
   .create-<uuid>/         a vault being created, renamed into place once complete
+  .restore-<uuid>/        a backup being restored, not yet verified; removed at the next start
+  vault-v1.restore-ready/ a verified restore about to replace the vault; finished at the next start
   pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
   vault-v1/
     header-0.json        non-secret KDF configuration, wrapped master key, optional recovery-key
@@ -244,14 +246,55 @@ storage domain from `<cloud-backup>` and `<device-transfer>`. Checked-in build l
 Android build unless those generated-manifest settings and the rules file are present; Android users
 still need a future explicit encrypted export/restore flow and physical OEM transfer testing.
 
-Losing the passphrase means losing access. The only fallback is a typed-confirmation whole-vault
-reset followed by a trusted native confirmation dialog. It permanently removes all local profiles
-and records.
+A forgotten passphrase is replaced with the recovery key, if the patient set one up. Without it, the
+only fallback is a typed-confirmation whole-vault reset followed by a trusted native confirmation
+dialog, which permanently removes all local profiles and records. OS cloud backup is to be excluded
+where the platform permits, now that the portable backup exists; that is separate, per-platform
+work.
 
-The patient-pilot target in [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) replaces this limitation
-with a patient-held recovery kit and portable authenticated encrypted backups. That target is not
-implemented by format v1. OS cloud backup is to be excluded where the platform permits once the
-portable backup flow exists.
+### Portable encrypted backup
+
+A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it:
+
+```text
+"MYCARLOS-BACKUP\n"                      16-byte magic, format 1
+entry*   kind (1 header, 2 manifest, 3 object) | name length (u16) | name | length (u64) | bytes
+         the newest authentic header (JSON), the current manifest slot, then every referenced object
+trailer  0xff | length (u32) | JSON {format, vaultId, manifestGeneration, createdAtMs,
+         entries: [{kind, name, length, sha256}]} | HMAC-SHA-256 tag (32 bytes)
+```
+
+The tag covers the magic and the trailer, under `HKDF-SHA-256(master key, salt = vaultId,
+"mycarlos/backup/v1")`. The trailer lists every entry's length and SHA-256, so the tag covers the
+whole file. Everything in it is already encrypted, so no plaintext is written at any point; the
+header's key envelopes (passphrase and recovery key) are what open it. A read-only vault is not
+backed up, since what it shows may not be what it holds. Saving streams with constant memory, as a
+transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
+replaced atomically only once complete.
+
+Restoring happens while no vault is open. The patient picks the file and gives its passphrase or
+recovery key. An inspect step reads only the header and manifest and reports what restoring would
+replace: nothing, an older or current copy of the same vault, or a different vault. The screen
+spells this out and requires an explicit agreement before an older copy or a different vault is
+replaced, and replacing any vault is then confirmed in a trusted native dialog, as a reset is. The
+restore itself:
+
+1. opens the header with the credential, as unlock would, and checks its integrity tag;
+2. streams every object into `.restore-<uuid>/` in the vault home, hashing each, accepting only the
+   manifest's objects, each once, in order;
+3. checks the trailer's tag, that it lists exactly the entries read, and that nothing follows it;
+4. writes the header and manifest into the stage, opens it as unlock would (it must be complete and
+   writable), and decrypts every object to authenticate it;
+5. renames the verified stage to `vault-v1.restore-ready/`, then retires the live vault to
+   `vault-v1.reset-pending/` and renames the restore into place;
+6. erases the retired vault as a reset does, key envelopes first.
+
+Any failure before step 5 removes the stage and changes nothing else. From step 5 on, each step is
+one rename, and every start repeats whatever is left: status, create, unlock and reset first finish
+an interrupted reset, then activate a waiting restore, then erase the vault it retired. The restored
+vault is left locked; it opens with the passphrase or recovery key it was backed up with. The
+restore always takes the whole backup: an older backup brings back documents deleted since, and
+the screen says so before the patient agrees.
 
 ## Known limits before release
 

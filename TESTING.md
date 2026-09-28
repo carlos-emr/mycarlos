@@ -122,22 +122,29 @@ On every platform:
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and makes a new key; the old one then stops
    working.
-4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
+4. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
+   app's own folder. Import one more document, then lock the vault and choose **Restore from a
+   backup** on the unlock screen: pick the file, open it with the passphrase, and check that the
+   app says the backup is older than the vault on this device and asks you to agree before
+   restoring. After restoring, the vault is locked; unlock it and check that the extra document is
+   gone and the others open. Try a copy of the backup with a few bytes changed: it is refused and
+   nothing changes.
+5. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:
    the two Bloodwork files are identical.
-5. Create a folder with **New folder**, open a document and use **Move to** to put it in the
+6. Create a folder with **New folder**, open a document and use **Move to** to put it in the
    folder, then rename the document (**Rename document** in its details) and the folder
    (**Rename folder**).
-6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
+7. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
-7. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
+8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-8. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+9. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
    keep the screen on), and confirm it locks.
-9. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
    it is locked when you come back.
-10. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+11. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
    drive so it takes several seconds). While it is still importing, send the app to the
    background, then come back within a minute. If the import is still running, the screen should
    say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the

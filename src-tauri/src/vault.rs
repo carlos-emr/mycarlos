@@ -228,6 +228,8 @@ pub enum VaultError {
     RecoveryKeyTypo,
     #[error("the recovery key does not open this vault")]
     WrongRecoveryKey,
+    #[error("the file is not a complete, unchanged myCarlos backup")]
+    BackupUnreadable,
 }
 
 impl From<io::Error> for VaultError {
@@ -1642,6 +1644,227 @@ impl VaultStore {
         }
         terminate_at_test_boundary("reset.after-rename");
         finish_pending_resets(&self.root)?;
+        Ok(())
+    }
+
+    /// Writes a portable backup of the vault: its ciphertext only, as the
+    /// patient sees it now. A read-only vault is not backed up, since what
+    /// it shows may not be what it holds.
+    pub fn backup<W: Write>(&self, writer: W, now_ms: u64) -> Result<(), VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let manifest = &unlocked.manifest;
+        let vault_id = manifest.vault_id;
+        let header = newest_authentic_header(&self.root, vault_id, &unlocked.master_key)?;
+        let header_data = serde_json::to_vec_pretty(&header).map_err(|_| VaultError::Storage)?;
+        let keys = derive_keys(vault_id, &unlocked.master_key)?;
+        let manifest_data = read_bounded_regular_file(
+            &manifest_path(&self.root, manifest.generation),
+            MAX_MANIFEST_BYTES,
+        )?;
+        // The slot must hold the session's state, or the backup would not be
+        // what the patient sees.
+        if decrypt_manifest(&manifest_data, &keys.manifest, vault_id).as_ref() != Some(manifest) {
+            return Err(VaultError::Corrupt);
+        }
+        let writer =
+            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle);
+        let mut backup = BackupWriter::new(writer)?;
+        backup.entry(
+            BACKUP_KIND_HEADER,
+            "header.json",
+            header_data.len() as u64,
+            &mut header_data.as_slice(),
+        )?;
+        backup.entry(
+            BACKUP_KIND_MANIFEST,
+            "manifest.bin",
+            manifest_data.len() as u64,
+            &mut manifest_data.as_slice(),
+        )?;
+        for record in &manifest.records {
+            let mut object =
+                open_regular_read(&self.root.join("objects").join(&record.object_name))?;
+            let length = object.metadata()?.len();
+            backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
+        }
+        backup.finish(&unlocked.master_key, vault_id, manifest.generation, now_ms)
+    }
+
+    /// Saves a backup to a file the patient chose, as an export is saved:
+    /// never inside the vault home, and replacing the destination only once
+    /// the whole backup is written.
+    pub fn backup_atomic(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
+        let home = fs::canonicalize(vault_home(&self.root)?)?;
+        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
+        if fs::canonicalize(destination_parent)?.starts_with(&home) {
+            return Err(VaultError::Invalid);
+        }
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut outcome = Ok(());
+        let written = AtomicFile::new(destination, AllowOverwrite).write_with_options(
+            |file| {
+                outcome = self.backup(BufWriter::new(&mut *file), now_ms);
+                match &outcome {
+                    Ok(()) => file.sync_all(),
+                    Err(_) => Err(io::Error::other("backup failed")),
+                }
+            },
+            options,
+        );
+        outcome?;
+        written.map_err(io::Error::from)?;
+        Ok(())
+    }
+
+    /// Reads a backup's header and manifest with the credential and says what
+    /// restoring it would replace. Nothing changes.
+    pub fn inspect_backup<R: Read>(
+        &self,
+        source: R,
+        credential: RestoreCredential<'_>,
+    ) -> Result<RestorePreview, VaultError> {
+        if self.session().is_some() {
+            return Err(VaultError::Invalid);
+        }
+        let _storage_lock = acquire_storage_lock(&self.root)?;
+        finish_pending_resets(&self.root)?;
+        let (_, header, master_key, manifest, _) = open_backup(source, &credential)?;
+        let (replaces, older_than_this_device) = if !self.root.exists() {
+            (RestoreReplaces::Nothing, false)
+        } else if read_header_candidates(&self.root)
+            .iter()
+            .any(|candidate| candidate.vault_id == header.vault_id)
+        {
+            // The same vault holds the same master key, so its manifests say
+            // how far it has moved on since the backup.
+            let live_generation = read_manifest_slots(&self.root, &master_key, header.vault_id)
+                .ok()
+                .and_then(|slots| {
+                    slots
+                        .iter()
+                        .filter_map(SlotReading::authentic)
+                        .map(|(manifest, _)| manifest.generation)
+                        .max()
+                });
+            (
+                RestoreReplaces::SameVault,
+                live_generation.is_some_and(|live| live > manifest.generation),
+            )
+        } else {
+            (RestoreReplaces::OtherVault, false)
+        };
+        Ok(RestorePreview {
+            replaces,
+            older_than_this_device,
+            document_count: manifest.records.len(),
+        })
+    }
+
+    /// Restores a backup: it is read, authenticated and staged in full, and
+    /// every document decrypted, before anything on this device changes.
+    /// Then it takes the live vault's place, which is erased as a reset
+    /// erases it; `replace` must say the patient agreed to that. The vault
+    /// is left locked: it opens with the passphrase or recovery key it was
+    /// backed up with.
+    pub fn restore<R: Read + Send + 'static>(
+        &self,
+        source: R,
+        credential: RestoreCredential<'_>,
+        replace: bool,
+    ) -> Result<(), VaultError> {
+        if self.session().is_some() {
+            return Err(VaultError::Invalid);
+        }
+        let _storage_lock = acquire_storage_lock(&self.root)?;
+        finish_pending_resets(&self.root)?;
+        if self.root.exists() && !replace {
+            return Err(VaultError::AlreadyExists);
+        }
+        let source = CancellableReader::new(Box::new(source), Arc::clone(&self.cancel_io));
+        let (mut reader, header, master_key, manifest, manifest_data) =
+            open_backup(source, &credential)?;
+        let home = vault_home(&self.root)?;
+        let stage = home.join(format!("{RESTORE_STAGE_PREFIX}{}", Uuid::new_v4()));
+        create_private_dir(&stage)?;
+        let staged = (|| {
+            create_private_dir(&stage.join("objects"))?;
+            create_private_dir(&stage.join("staging"))?;
+            let mut wanted: HashSet<&str> = manifest
+                .records
+                .iter()
+                .map(|record| record.object_name.as_str())
+                .collect();
+            while let Some((kind, name, length)) = reader.next_entry()? {
+                // Only the manifest's objects, each once.
+                if kind != BACKUP_KIND_OBJECT
+                    || !valid_object_name(&name)
+                    || !wanted.remove(name.as_str())
+                {
+                    return Err(VaultError::BackupUnreadable);
+                }
+                let mut file = open_private_new(&stage.join("objects").join(&name))?;
+                reader.copy_entry(kind, &name, length, &mut file)?;
+                file.sync_all()?;
+            }
+            if !wanted.is_empty() {
+                return Err(VaultError::BackupUnreadable);
+            }
+            reader.finish(&master_key, header.vault_id, manifest.generation)?;
+            fail_at_test_boundary("restore.before-verify")?;
+
+            // Authentic as a whole. Lay it out as a vault, open it as unlock
+            // would, and authenticate every document.
+            atomic_json(&header_path(&stage, header.generation), &header)?;
+            atomic_bytes(&manifest_path(&stage, manifest.generation), &manifest_data)?;
+            sync_dir(&stage.join("objects"))?;
+            let slots = read_manifest_slots(&stage, &master_key, header.vault_id)?;
+            let selected = select_manifest(&slots)?;
+            if selected.recovery.is_some() || selected.manifest != manifest {
+                return Err(VaultError::BackupUnreadable);
+            }
+            let keys = derive_keys(header.vault_id, &master_key)?;
+            for record in &manifest.records {
+                let object_key = unwrap_secret(
+                    &keys.object_wrap,
+                    &record.wrapped_object_key,
+                    record.id.as_bytes(),
+                )?;
+                verify_object(
+                    &stage.join("objects").join(&record.object_name),
+                    io::sink(),
+                    header.vault_id,
+                    record.id,
+                    &object_key,
+                    record.plaintext_size,
+                )
+                .map_err(|_| VaultError::BackupUnreadable)?;
+            }
+            sync_dir(&stage)?;
+            Ok(())
+        })();
+        if let Err(error) = staged {
+            if remove_key_envelopes(&stage).is_ok() {
+                sync_parent(&stage);
+            }
+            let _ = fs::remove_dir_all(&stage);
+            sync_parent(home);
+            return Err(error);
+        }
+        // From here a crash finishes the restore at the next start instead of
+        // discarding it: the verified copy takes a fixed name first.
+        let ready = restore_ready_path(&self.root)?;
+        fs::rename(&stage, &ready)?;
+        sync_parent(home);
+        terminate_at_test_boundary("restore.after-ready");
+        activate_restore(&self.root)?;
+        erase_retired_vault(&self.root)?;
         Ok(())
     }
 
@@ -3619,7 +3842,20 @@ fn remove_abandoned_create_stages(parent: &Path) {
 fn finish_pending_resets(root: &Path) -> Result<bool, VaultError> {
     let parent = root.parent().ok_or(VaultError::Storage)?;
     remove_abandoned_create_stages(parent);
+    remove_abandoned_restore_stages(parent);
     remove_abandoned_exports(parent);
+    let mut resumed = erase_retired_vault(root)?;
+    // A restore that was verified but not yet in place takes the live vault's
+    // place now; the vault it retires is erased as a reset's is.
+    if activate_restore(root)? {
+        erase_retired_vault(root)?;
+        resumed = true;
+    }
+    Ok(resumed)
+}
+
+fn erase_retired_vault(root: &Path) -> Result<bool, VaultError> {
+    let parent = root.parent().ok_or(VaultError::Storage)?;
     let pending = reset_path(root)?;
     let mut resumed = false;
     for entry in fs::read_dir(parent)? {
@@ -3993,6 +4229,411 @@ fn subtree_depth(manifest: &Manifest, root: Uuid) -> Result<usize, VaultError> {
         Ok(child_depth + 1)
     }
     visit(manifest, root, &mut HashSet::new())
+}
+
+/// A portable backup is the vault's ciphertext in one file: a magic line, then
+/// length-prefixed entries (the header, the manifest, then every document's
+/// encrypted object), then a trailer listing each entry's length and SHA-256,
+/// authenticated with HMAC-SHA-256 under a key derived from the master key.
+/// Nothing in it is readable without the passphrase or the recovery key.
+const BACKUP_MAGIC: &[u8; 16] = b"MYCARLOS-BACKUP\n";
+const BACKUP_FORMAT: u32 = 1;
+const BACKUP_KIND_HEADER: u8 = 1;
+const BACKUP_KIND_MANIFEST: u8 = 2;
+const BACKUP_KIND_OBJECT: u8 = 3;
+const BACKUP_KIND_TRAILER: u8 = 0xff;
+const MAX_BACKUP_NAME_BYTES: usize = 64;
+const MAX_BACKUP_TRAILER_BYTES: usize = 64 * 1024 * 1024;
+/// A restore being staged in the vault home, removed if a start finds it.
+const RESTORE_STAGE_PREFIX: &str = ".restore-";
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupEntry {
+    kind: u8,
+    name: String,
+    length: u64,
+    sha256: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupTrailer {
+    format: u32,
+    vault_id: Uuid,
+    manifest_generation: u64,
+    created_at_ms: u64,
+    entries: Vec<BackupEntry>,
+}
+
+/// What opens a backup: the passphrase it was made with, or the recovery key.
+pub enum RestoreCredential<'a> {
+    Passphrase(&'a str),
+    RecoveryKey(&'a str),
+}
+
+/// What restoring a backup would replace, so that the patient can decide
+/// before anything changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreReplaces {
+    /// There is no vault on this device.
+    Nothing,
+    /// The vault on this device is the one the backup was made from.
+    SameVault,
+    /// The vault on this device is a different one, which would be erased.
+    OtherVault,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestorePreview {
+    pub replaces: RestoreReplaces,
+    /// The vault on this device is newer than the backup.
+    pub older_than_this_device: bool,
+    pub document_count: usize,
+}
+
+fn backup_key(vault_id: Uuid, master_key: &[u8; 32]) -> Result<SecretKey, VaultError> {
+    let hkdf = Hkdf::<Sha256>::new(Some(vault_id.as_bytes()), master_key);
+    let mut key = Zeroizing::new([0_u8; 32]);
+    hkdf.expand(b"mycarlos/backup/v1", key.as_mut())
+        .map_err(|_| VaultError::Storage)?;
+    Ok(key)
+}
+
+fn backup_tag(key: &[u8; 32], trailer: &[u8]) -> Result<HmacSha256, VaultError> {
+    let mut mac =
+        <HmacSha256 as Mac>::new_from_slice(key.as_ref()).map_err(|_| VaultError::Storage)?;
+    mac.update(BACKUP_MAGIC);
+    mac.update(trailer);
+    Ok(mac)
+}
+
+/// Copies exactly `length` bytes, hashing them. A source that ends early or
+/// has more to give is refused: a backup entry is exactly what was recorded.
+fn copy_hashed(
+    source: &mut impl Read,
+    destination: &mut impl Write,
+    length: u64,
+    short: VaultError,
+) -> Result<String, VaultError> {
+    use sha2::Digest;
+    let mut hasher = Sha256::new();
+    let mut remaining = length;
+    let mut buffer = vec![0_u8; CHUNK_SIZE.min(64 * 1024)];
+    while remaining > 0 {
+        let wanted = usize::try_from(remaining.min(buffer.len() as u64)).unwrap_or(buffer.len());
+        let read = source.read(&mut buffer[..wanted])?;
+        if read == 0 {
+            return Err(short);
+        }
+        hasher.update(&buffer[..read]);
+        destination.write_all(&buffer[..read])?;
+        remaining -= read as u64;
+    }
+    Ok(BASE64.encode(hasher.finalize()))
+}
+
+struct BackupWriter<W: Write> {
+    inner: W,
+    entries: Vec<BackupEntry>,
+}
+
+impl<W: Write> BackupWriter<W> {
+    fn new(mut inner: W) -> Result<Self, VaultError> {
+        inner.write_all(BACKUP_MAGIC)?;
+        Ok(Self {
+            inner,
+            entries: Vec::new(),
+        })
+    }
+
+    fn entry(
+        &mut self,
+        kind: u8,
+        name: &str,
+        length: u64,
+        source: &mut impl Read,
+    ) -> Result<(), VaultError> {
+        let name_length = u16::try_from(name.len()).map_err(|_| VaultError::Storage)?;
+        self.inner.write_all(&[kind])?;
+        self.inner.write_all(&name_length.to_be_bytes())?;
+        self.inner.write_all(name.as_bytes())?;
+        self.inner.write_all(&length.to_be_bytes())?;
+        // A file that changed length while it was copied is not what the
+        // manifest describes.
+        let sha256 = copy_hashed(source, &mut self.inner, length, VaultError::Storage)?;
+        self.entries.push(BackupEntry {
+            kind,
+            name: name.to_owned(),
+            length,
+            sha256,
+        });
+        Ok(())
+    }
+
+    fn finish(
+        mut self,
+        master_key: &[u8; 32],
+        vault_id: Uuid,
+        manifest_generation: u64,
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
+        let trailer = serde_json::to_vec(&BackupTrailer {
+            format: BACKUP_FORMAT,
+            vault_id,
+            manifest_generation,
+            created_at_ms: now_ms,
+            entries: self.entries,
+        })
+        .map_err(|_| VaultError::Storage)?;
+        let tag = backup_tag(&backup_key(vault_id, master_key)?, &trailer)?
+            .finalize()
+            .into_bytes();
+        let length = u32::try_from(trailer.len()).map_err(|_| VaultError::Storage)?;
+        self.inner.write_all(&[BACKUP_KIND_TRAILER])?;
+        self.inner.write_all(&length.to_be_bytes())?;
+        self.inner.write_all(&trailer)?;
+        self.inner.write_all(&tag)?;
+        self.inner.flush()?;
+        Ok(())
+    }
+}
+
+/// Reads a backup in order, recording what it read so that the trailer can
+/// be checked against it. Every format problem is `BackupUnreadable`.
+struct BackupReader<R: Read> {
+    inner: R,
+    entries: Vec<BackupEntry>,
+}
+
+impl<R: Read> BackupReader<R> {
+    fn new(mut inner: R) -> Result<Self, VaultError> {
+        let mut magic = [0_u8; 16];
+        inner
+            .read_exact(&mut magic)
+            .map_err(|_| VaultError::BackupUnreadable)?;
+        if &magic != BACKUP_MAGIC {
+            return Err(VaultError::BackupUnreadable);
+        }
+        Ok(Self {
+            inner,
+            entries: Vec::new(),
+        })
+    }
+
+    fn read_exact_or_unreadable(&mut self, buffer: &mut [u8]) -> Result<(), VaultError> {
+        self.inner.read_exact(buffer).map_err(|error| {
+            if error.kind() == io::ErrorKind::UnexpectedEof {
+                VaultError::BackupUnreadable
+            } else {
+                error.into()
+            }
+        })
+    }
+
+    /// The next entry's kind, name and length, or None at the trailer.
+    fn next_entry(&mut self) -> Result<Option<(u8, String, u64)>, VaultError> {
+        let mut kind = [0_u8; 1];
+        self.read_exact_or_unreadable(&mut kind)?;
+        if kind[0] == BACKUP_KIND_TRAILER {
+            return Ok(None);
+        }
+        let mut name_length = [0_u8; 2];
+        self.read_exact_or_unreadable(&mut name_length)?;
+        let name_length = usize::from(u16::from_be_bytes(name_length));
+        if name_length > MAX_BACKUP_NAME_BYTES {
+            return Err(VaultError::BackupUnreadable);
+        }
+        let mut name = vec![0_u8; name_length];
+        self.read_exact_or_unreadable(&mut name)?;
+        let name = String::from_utf8(name).map_err(|_| VaultError::BackupUnreadable)?;
+        let mut length = [0_u8; 8];
+        self.read_exact_or_unreadable(&mut length)?;
+        Ok(Some((kind[0], name, u64::from_be_bytes(length))))
+    }
+
+    fn copy_entry(
+        &mut self,
+        kind: u8,
+        name: &str,
+        length: u64,
+        destination: &mut impl Write,
+    ) -> Result<(), VaultError> {
+        let sha256 = copy_hashed(
+            &mut self.inner,
+            destination,
+            length,
+            VaultError::BackupUnreadable,
+        )?;
+        self.entries.push(BackupEntry {
+            kind,
+            name: name.to_owned(),
+            length,
+            sha256,
+        });
+        Ok(())
+    }
+
+    /// Reads an entry that must be `kind` and at most `maximum` bytes.
+    fn small_entry(&mut self, kind: u8, maximum: usize) -> Result<Vec<u8>, VaultError> {
+        let (found, name, length) = self.next_entry()?.ok_or(VaultError::BackupUnreadable)?;
+        if found != kind || length > maximum as u64 {
+            return Err(VaultError::BackupUnreadable);
+        }
+        let mut data = Vec::with_capacity(usize::try_from(length).unwrap_or(0));
+        self.copy_entry(kind, &name, length, &mut data)?;
+        Ok(data)
+    }
+
+    /// Checks the trailer, once every entry before it has been read: it must
+    /// be authentic under this vault's backup key, list exactly the entries
+    /// read, and describe this manifest. Nothing may follow it.
+    fn finish(
+        mut self,
+        master_key: &[u8; 32],
+        vault_id: Uuid,
+        manifest_generation: u64,
+    ) -> Result<(), VaultError> {
+        let mut length = [0_u8; 4];
+        self.read_exact_or_unreadable(&mut length)?;
+        let length = u32::from_be_bytes(length) as usize;
+        if length > MAX_BACKUP_TRAILER_BYTES {
+            return Err(VaultError::BackupUnreadable);
+        }
+        let mut trailer = vec![0_u8; length];
+        self.read_exact_or_unreadable(&mut trailer)?;
+        let mut tag = [0_u8; 32];
+        self.read_exact_or_unreadable(&mut tag)?;
+        backup_tag(&backup_key(vault_id, master_key)?, &trailer)?
+            .verify_slice(&tag)
+            .map_err(|_| VaultError::BackupUnreadable)?;
+        let trailer: BackupTrailer =
+            serde_json::from_slice(&trailer).map_err(|_| VaultError::BackupUnreadable)?;
+        if trailer.format != BACKUP_FORMAT
+            || trailer.vault_id != vault_id
+            || trailer.manifest_generation != manifest_generation
+            || trailer.entries != self.entries
+        {
+            return Err(VaultError::BackupUnreadable);
+        }
+        let mut extra = [0_u8; 1];
+        if self.inner.read(&mut extra)? != 0 {
+            return Err(VaultError::BackupUnreadable);
+        }
+        Ok(())
+    }
+}
+
+/// Opens a backup's header with the credential, as unlock would: the master
+/// key, which the header's integrity tag must also accept.
+fn open_backup_header(
+    data: &[u8],
+    credential: &RestoreCredential<'_>,
+) -> Result<(VaultHeader, SecretKey), VaultError> {
+    let header: VaultHeader =
+        serde_json::from_slice(data).map_err(|_| VaultError::BackupUnreadable)?;
+    if !valid_header(&header) || header.generation == 0 {
+        return Err(VaultError::BackupUnreadable);
+    }
+    let master_key = match credential {
+        RestoreCredential::Passphrase(passphrase) => {
+            if passphrase.len() > MAX_PASSPHRASE_BYTES {
+                return Err(VaultError::Invalid);
+            }
+            let wrapping_key = derive_passphrase_key(passphrase, &header.kdf)?;
+            unwrap_master_key_with_wrapping_key(&header, &wrapping_key)?
+        }
+        RestoreCredential::RecoveryKey(text) => {
+            let key = decode_recovery_key(text)?;
+            let envelope = header
+                .recovery
+                .as_ref()
+                .ok_or(VaultError::WrongRecoveryKey)?;
+            let wrap_key = recovery_wrap_key(&key, header.vault_id, envelope.key_id)?;
+            unwrap_secret(
+                &wrap_key,
+                &envelope.wrapped_master_key,
+                &recovery_aad(header.vault_id, envelope.key_id),
+            )
+            .map_err(|_| VaultError::WrongRecoveryKey)?
+        }
+    };
+    if !valid_header_integrity(&header, &master_key) {
+        return Err(VaultError::BackupUnreadable);
+    }
+    Ok((header, master_key))
+}
+
+/// Reads a backup's header and manifest: what inspecting it needs, and the
+/// first part of a restore.
+fn open_backup<R: Read>(
+    source: R,
+    credential: &RestoreCredential<'_>,
+) -> Result<(BackupReader<R>, VaultHeader, SecretKey, Manifest, Vec<u8>), VaultError> {
+    let mut reader = BackupReader::new(source)?;
+    let header_data = reader.small_entry(BACKUP_KIND_HEADER, MAX_HEADER_BYTES)?;
+    let (header, master_key) = open_backup_header(&header_data, credential)?;
+    let manifest_data = reader.small_entry(BACKUP_KIND_MANIFEST, MAX_MANIFEST_BYTES)?;
+    let keys = derive_keys(header.vault_id, &master_key)?;
+    let manifest = decrypt_manifest(&manifest_data, &keys.manifest, header.vault_id)
+        .ok_or(VaultError::BackupUnreadable)?;
+    Ok((reader, header, master_key, manifest, manifest_data))
+}
+
+fn restore_ready_path(root: &Path) -> Result<PathBuf, VaultError> {
+    sibling_path(root, ".restore-ready")
+}
+
+/// Puts a verified restore in place of the live vault. Each step is one
+/// rename, and every start repeats whatever is left: the live vault is
+/// retired as a reset retires it (its key envelopes are erased next), then
+/// the verified copy takes its place.
+fn activate_restore(root: &Path) -> Result<bool, VaultError> {
+    let ready = restore_ready_path(root)?;
+    if !is_real_dir(&ready) {
+        return Ok(false);
+    }
+    let parent = root.parent().ok_or(VaultError::Storage)?;
+    if root.exists() {
+        let retired = reset_path(root)?;
+        // Pending resets finish before this runs, so a retired vault still
+        // here means that could not be done; keep both and report it.
+        if retired.exists() {
+            return Err(VaultError::Storage);
+        }
+        fs::rename(root, &retired)?;
+        sync_parent(parent);
+        terminate_at_test_boundary("restore.after-retire");
+    }
+    fs::rename(&ready, root)?;
+    sync_parent(parent);
+    terminate_at_test_boundary("restore.after-activate");
+    Ok(true)
+}
+
+/// Removes restores that were being staged and never verified.
+fn remove_abandoned_restore_stages(parent: &Path) {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let is_stage = entry.file_name().to_str().is_some_and(|name| {
+            name.strip_prefix(RESTORE_STAGE_PREFIX)
+                .is_some_and(|id| Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == id))
+        });
+        if !is_stage || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let path = entry.path();
+        if remove_key_envelopes(&path).is_ok() {
+            sync_parent(&path);
+        }
+        if fs::remove_dir_all(&path).is_ok() {
+            sync_parent(parent);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -6537,6 +7178,347 @@ mod tests {
         );
         store.lock();
         store.unlock(PASSWORD).unwrap();
+    }
+
+    const CANARY: &[u8] = b"FAKE-CANARY-plaintext-that-must-never-appear";
+
+    /// A vault with two documents and a recovery key, its backup, and the key.
+    fn backed_up_vault(root: &Path) -> (VaultStore, Vec<u8>, String) {
+        let store = VaultStore::new(root.to_path_buf());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("first.pdf", CANARY),
+                    source("second.pdf", b"second synthetic record"),
+                ],
+                2,
+            )
+            .unwrap();
+        let key = set_up_recovery_key(&store, 3);
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 4).unwrap();
+        store.lock();
+        (store, backup, key)
+    }
+
+    fn exported(store: &VaultStore, name: &str) -> Vec<u8> {
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot
+            .records
+            .iter()
+            .find(|record| record.display_name == name)
+            .unwrap();
+        let mut out = Vec::new();
+        store.export(record.id, &mut out).unwrap();
+        out
+    }
+
+    fn leftovers(root: &Path) -> Vec<String> {
+        fs::read_dir(root.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| {
+                name.starts_with(RESTORE_STAGE_PREFIX) || name.ends_with(".restore-ready")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_backup_holds_no_plaintext_and_restores_on_another_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_, backup, key) = backed_up_vault(&temp.path().join("home-a").join("vault"));
+        assert!(backup.starts_with(BACKUP_MAGIC));
+        assert!(!backup.windows(CANARY.len()).any(|window| window == CANARY));
+        assert!(!backup.windows(5).any(|window| window == b"Jamie"));
+
+        // Restored with the passphrase on a device that has no vault.
+        let root = temp.path().join("home-b").join("vault");
+        let fresh = VaultStore::new(root.clone());
+        let preview = fresh
+            .inspect_backup(backup.as_slice(), RestoreCredential::Passphrase(PASSWORD))
+            .unwrap();
+        assert_eq!(preview.replaces, RestoreReplaces::Nothing);
+        assert_eq!(preview.document_count, 2);
+        fresh
+            .restore(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        assert_eq!(fresh.status().unwrap(), VaultStatus::Locked);
+        fresh.unlock(PASSWORD).unwrap();
+        assert_eq!(exported(&fresh, "first.pdf"), CANARY);
+        assert_eq!(fresh.snapshot().unwrap().recovery, None);
+        fresh.lock();
+        // The recovery key opens the restored vault too.
+        assert!(fresh.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        assert!(leftovers(&root).is_empty());
+
+        // And the recovery key alone restores a backup.
+        let other = temp.path().join("home-c").join("vault");
+        let restored = VaultStore::new(other.clone());
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::RecoveryKey(&key),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert_eq!(restored.snapshot().unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn a_wrong_credential_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_, backup, _) = backed_up_vault(&temp.path().join("home-a").join("vault"));
+        let root = temp.path().join("home-b").join("vault");
+        let store = VaultStore::new(root.clone());
+        assert!(matches!(
+            store.restore(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSPHRASE_REPLACEMENT),
+                false
+            ),
+            Err(VaultError::WrongPassphrase)
+        ));
+        let other_key = encode_recovery_key(&[9_u8; RECOVERY_KEY_BYTES]);
+        assert!(matches!(
+            store.restore(
+                Cursor::new(backup),
+                RestoreCredential::RecoveryKey(&other_key),
+                false
+            ),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        assert!(!root.exists());
+        assert!(leftovers(&root).is_empty());
+    }
+
+    #[test]
+    fn a_changed_or_truncated_backup_is_refused_before_anything_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_, backup, _) = backed_up_vault(&temp.path().join("home-a").join("vault"));
+        let root = temp.path().join("home-b").join("vault");
+        let store = VaultStore::new(root.clone());
+        // One changed byte anywhere after the header's key envelope, and every
+        // truncation, is refused. (A changed byte in the header is refused
+        // too, as a wrong passphrase or an unreadable backup.)
+        let header_end = 16 + 1 + 2 + "header.json".len() + 8 + 64;
+        let step = (backup.len() / 41).max(1);
+        for position in (header_end..backup.len()).step_by(step) {
+            let mut changed = backup.clone();
+            changed[position] ^= 0x01;
+            let outcome = store.restore(
+                Cursor::new(changed),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            );
+            assert!(
+                matches!(
+                    outcome,
+                    Err(VaultError::BackupUnreadable | VaultError::WrongPassphrase)
+                ),
+                "byte {position}"
+            );
+        }
+        for length in (0..backup.len()).step_by(step) {
+            let outcome = store.restore(
+                Cursor::new(backup[..length].to_vec()),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            );
+            assert!(outcome.is_err(), "length {length}");
+        }
+        let mut longer = backup.clone();
+        longer.push(0);
+        assert!(matches!(
+            store.restore(
+                Cursor::new(longer),
+                RestoreCredential::Passphrase(PASSWORD),
+                false
+            ),
+            Err(VaultError::BackupUnreadable)
+        ));
+        assert!(!root.exists());
+        assert!(leftovers(&root).is_empty());
+    }
+
+    #[test]
+    fn restoring_replaces_a_vault_only_when_the_patient_agrees() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home-a").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+
+        // The same vault, moved on since the backup.
+        store.unlock(PASSWORD).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("later.pdf", b"later record")],
+                5,
+            )
+            .unwrap();
+        store.lock();
+        let preview = store
+            .inspect_backup(backup.as_slice(), RestoreCredential::Passphrase(PASSWORD))
+            .unwrap();
+        assert_eq!(preview.replaces, RestoreReplaces::SameVault);
+        assert!(preview.older_than_this_device);
+        assert!(matches!(
+            store.restore(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+                false
+            ),
+            Err(VaultError::AlreadyExists)
+        ));
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().records.len(), 3);
+        store.lock();
+
+        store
+            .restore(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+                true,
+            )
+            .unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().records.len(), 2);
+        store.lock();
+        assert!(!reset_path(&root).unwrap().exists());
+        assert!(leftovers(&root).is_empty());
+
+        // A different vault on this device is reported as such.
+        let (other, _, _) = backed_up_vault(&temp.path().join("home-b").join("vault"));
+        drop(other);
+        let other = VaultStore::new(temp.path().join("home-b").join("vault"));
+        assert_eq!(
+            other
+                .inspect_backup(backup.as_slice(), RestoreCredential::Passphrase(PASSWORD))
+                .unwrap()
+                .replaces,
+            RestoreReplaces::OtherVault
+        );
+    }
+
+    #[test]
+    fn a_read_only_vault_is_not_backed_up() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.unlocked.lock().unwrap().as_mut().unwrap().recovery =
+            Some(RecoveryReason::WriteFailed);
+        assert!(matches!(
+            store.backup(Vec::new(), 1),
+            Err(VaultError::RecoveryMode)
+        ));
+    }
+
+    fn run_restore_termination_child(root: &Path, backup: &Path, boundary: &str) {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "vault::tests::restore_termination_child",
+            ])
+            .env("MYCARLOS_TEST_ROOT", root)
+            .env("MYCARLOS_TEST_BACKUP", backup)
+            .env("MYCARLOS_TEST_TERMINATE_AT", boundary)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(
+            status.code(),
+            Some(TEST_TERMINATION_EXIT_CODE),
+            "{boundary}"
+        );
+    }
+
+    #[test]
+    #[ignore = "invoked as an abrupt-termination subprocess by the restore matrix"]
+    fn restore_termination_child() {
+        let (Ok(root), Ok(backup)) = (
+            std::env::var("MYCARLOS_TEST_ROOT"),
+            std::env::var("MYCARLOS_TEST_BACKUP"),
+        ) else {
+            return;
+        };
+        let store = VaultStore::new(PathBuf::from(root));
+        let backup = fs::read(backup).unwrap();
+        let _ = store.restore(
+            Cursor::new(backup),
+            RestoreCredential::Passphrase(PASSWORD),
+            true,
+        );
+    }
+
+    #[test]
+    fn an_interrupted_restore_finishes_at_the_next_start() {
+        for boundary in [
+            "restore.after-ready",
+            "restore.after-retire",
+            "restore.after-activate",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("home").join("vault");
+            let (store, backup, _) = backed_up_vault(&root);
+            // The vault moves on, so that the restored state is told apart.
+            store.unlock(PASSWORD).unwrap();
+            let profile = store.snapshot().unwrap().profiles[0].id;
+            store
+                .import(
+                    profile,
+                    vec![],
+                    vec![source("later.pdf", b"later record")],
+                    5,
+                )
+                .unwrap();
+            store.lock();
+            let file = temp.path().join("backup.mycarlosbackup");
+            fs::write(&file, &backup).unwrap();
+
+            run_restore_termination_child(&root, &file, boundary);
+            let restarted = VaultStore::new(root.clone());
+            assert_eq!(
+                restarted.status().unwrap(),
+                VaultStatus::Locked,
+                "{boundary}"
+            );
+            restarted.unlock(PASSWORD).unwrap();
+            assert_eq!(restarted.snapshot().unwrap().records.len(), 2, "{boundary}");
+            assert!(!reset_path(&root).unwrap().exists(), "{boundary}");
+            assert!(leftovers(&root).is_empty(), "{boundary}");
+        }
+    }
+
+    #[test]
+    fn a_restore_that_failed_before_it_was_verified_leaves_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (_, backup, _) = backed_up_vault(&root);
+        // A stage left by a process that died before verifying is removed at
+        // the next start, and the live vault is untouched.
+        let stage = root
+            .parent()
+            .unwrap()
+            .join(format!("{RESTORE_STAGE_PREFIX}{}", Uuid::new_v4()));
+        fs::create_dir(&stage).unwrap();
+        fs::write(stage.join("header-0.json"), b"{}").unwrap();
+        let store = VaultStore::new(root.clone());
+        assert_eq!(store.status().unwrap(), VaultStatus::Locked);
+        assert!(!stage.exists());
+        drop(backup);
     }
 
     #[test]

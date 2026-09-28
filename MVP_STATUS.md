@@ -144,7 +144,9 @@ privacy, accessibility, or clinical review.
 - [x] State the current evaluation's passphrase-only permanent-loss behavior and the limits of
       readable exports/deletion directly in the UI. The recovery key and its kit are implemented (header format 2: set up when a vault is created
       or from Security, with typed-back verification, a saved or printed kit, replacement, and
-      recovery with a new passphrase from the unlock screen); the portable backup remains open.
+      recovery with a new passphrase from the unlock screen), and so is the portable encrypted backup
+      (save from Security; restore from the create or unlock screen, verified in full before it
+      replaces anything).
 
 ## Required before a patient pilot
 

@@ -48,6 +48,21 @@ export interface RecoveryKeyGroup {
   value: string;
 }
 
+/** What restoring a backup would replace on this device. */
+export type RestoreReplaces = "nothing" | "sameVault" | "otherVault";
+
+export interface RestorePreview {
+  replaces: RestoreReplaces;
+  /** The vault on this device is newer than the backup. */
+  olderThanThisDevice: boolean;
+  documentCount: number;
+}
+
+/** What opens a backup: the passphrase it was made with, or its recovery key. */
+export type RestoreCredential =
+  | { passphrase: string }
+  | { recoveryKey: string };
+
 export interface RecoverOutcome {
   /** False when the vault could only open read-only, leaving the passphrase
    * unchanged. */
@@ -91,6 +106,25 @@ export interface VaultBridge {
   cancelRecoveryKey(): Promise<void>;
   /** Opens a locked vault with its recovery key and a new passphrase. */
   recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
+  /** Asks where to save an encrypted backup; null if the picker was
+   * cancelled. */
+  pickBackupDestination(): Promise<string | null>;
+  saveBackupToPicked(pickId: string): Promise<void>;
+  /** Asks which backup to restore, while no vault is open. */
+  pickRestoreSource(): Promise<string | null>;
+  /** Opens the chosen backup and says what restoring it would replace. */
+  inspectRestore(
+    pickId: string,
+    credential: RestoreCredential,
+  ): Promise<RestorePreview>;
+  /** Restores it. `replace` says the patient agreed to replacing the vault
+   * on this device, which a native dialog then confirms; false if they
+   * cancelled there. The vault is left locked. */
+  restore(
+    pickId: string,
+    credential: RestoreCredential,
+    replace: boolean,
+  ): Promise<boolean>;
   createProfile(displayName: string): Promise<string>;
   createFolder(
     profileId: string,
@@ -205,6 +239,18 @@ export function createVaultBridge(): VaultBridge {
     recover: (recoveryKey, newPassphrase) =>
       invoke<RecoverOutcome>("vault_recover", {
         request: { recoveryKey, newPassphrase },
+      }),
+    pickBackupDestination: () => invoke<string | null>("vault_backup_pick"),
+    saveBackupToPicked: (pickId) =>
+      invoke<void>("vault_backup_picked", { request: { pickId } }),
+    pickRestoreSource: () => invoke<string | null>("vault_restore_pick"),
+    inspectRestore: (pickId, credential) =>
+      invoke<RestorePreview>("vault_restore_inspect", {
+        request: { pickId, ...credential },
+      }),
+    restore: (pickId, credential, replace) =>
+      invoke<boolean>("vault_restore", {
+        request: { pickId, ...credential, replace },
       }),
     createProfile: (displayName) =>
       invoke<string>("vault_create_profile", { request: { displayName } }),

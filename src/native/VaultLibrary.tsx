@@ -382,6 +382,19 @@ export function VaultLibrary({
       : [recordId],
   });
 
+  const saveBackup = () =>
+    run(async () => {
+      const pickId = await bridge.pickBackupDestination();
+      if (!pickId) {
+        setNotice("No location chosen. Nothing changed.");
+        return;
+      }
+      await bridge.saveBackupToPicked(pickId);
+      setNotice(
+        "Encrypted backup saved. Keep it somewhere other than this device.",
+      );
+    });
+
   const exportRecord = (record: VaultRecord) => {
     setConfirmation(null);
     void run(async () => {
@@ -960,6 +973,7 @@ export function VaultLibrary({
                 onCreateProfile={createProfile}
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
+                onSaveBackup={saveBackup}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}

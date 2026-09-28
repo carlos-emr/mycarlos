@@ -59,6 +59,15 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     recover: vi
       .fn()
       .mockResolvedValue({ passphraseReplaced: true, snapshot: emptySnapshot }),
+    pickBackupDestination: vi.fn().mockResolvedValue(null),
+    saveBackupToPicked: vi.fn().mockResolvedValue(undefined),
+    pickRestoreSource: vi.fn().mockResolvedValue(null),
+    inspectRestore: vi.fn().mockResolvedValue({
+      replaces: "nothing",
+      olderThanThisDevice: false,
+      documentCount: 0,
+    }),
+    restore: vi.fn().mockResolvedValue(true),
     createProfile: vi.fn().mockResolvedValue("profile-2"),
     createFolder: vi.fn().mockResolvedValue("folder-1"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -915,6 +924,63 @@ describe("durable vault UI", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("saves an encrypted backup from Security as a transfer", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    expect(
+      await screen.findByText(
+        "Encrypted backup saved. Keep it somewhere other than this device.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("restores a backup on a device with no vault, and leaves it locked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-3"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "nothing",
+        olderThanThisDevice: false,
+        documentCount: 4,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(bridge.restore).toHaveBeenCalledWith(
+      "pick-3",
+      { passphrase: "river-azimuth-cobalt-sparrow-934" },
+      false,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    // The screen opens on it, so the field that takes focus says it.
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /^Backup restored\./,
+    );
   });
 
   it("opens a locked vault with its recovery key and a new passphrase", async () => {

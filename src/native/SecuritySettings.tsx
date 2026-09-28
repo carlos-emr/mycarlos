@@ -22,6 +22,7 @@ interface SecuritySettingsProps {
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   onSetUpRecoveryKey: () => void;
+  onSaveBackup: () => Promise<void>;
 }
 
 export function SecuritySettings({
@@ -36,6 +37,7 @@ export function SecuritySettings({
   onReset,
   recoveryKeySetAtMs,
   onSetUpRecoveryKey,
+  onSaveBackup,
 }: SecuritySettingsProps) {
   const [profileName, setProfileName] = useState("");
   const [currentPassphrase, setCurrentPassphrase] = useState("");
@@ -80,8 +82,7 @@ export function SecuritySettings({
       <div className="purpose-note warning">
         <Icon name="info" />
         <span>
-          <strong>Development build.</strong> Use synthetic files only. Backup
-          is not implemented.
+          <strong>Development build.</strong> Use synthetic files only.
         </span>
       </div>
       <p className="status-line" role="status" aria-live="polite">
@@ -162,6 +163,27 @@ export function SecuritySettings({
               {recoveryKeySetAtMs
                 ? "Replace recovery key"
                 : "Set up recovery key"}
+            </button>
+          </div>
+        </section>
+        <section className="setting-row">
+          <div>
+            <h2>Encrypted backup</h2>
+            <p>
+              One file holding your whole vault, still encrypted. Keep it
+              somewhere other than this device, such as a USB drive. It opens
+              with your passphrase or recovery key. To restore one, lock the
+              vault and choose Restore from a backup.
+            </p>
+          </div>
+          <div>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={() => void onSaveBackup()}
+            >
+              Save encrypted backup…
             </button>
           </div>
         </section>

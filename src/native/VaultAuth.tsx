@@ -2,6 +2,14 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import { RestoreBackup } from "./RestoreBackup";
+import type { VaultBridge } from "../vault";
+
+/** What restoring a backup needs from the bridge. */
+export type RestoreBridge = Pick<
+  VaultBridge,
+  "pickRestoreSource" | "inspectRestore" | "restore"
+>;
 
 // The vault counts a new passphrase's characters (Unicode code points) after
 // NFC normalization, so the same visible text is judged alike from any keyboard.
@@ -106,10 +114,14 @@ export function CreateVault({
   busy,
   notice,
   onCreate,
+  restoreBridge,
+  onRestored,
 }: {
   busy: boolean;
   notice: string;
   onCreate: (profile: string, passphrase: string) => Promise<void>;
+  restoreBridge: RestoreBridge;
+  onRestored: () => void;
 }) {
   const [profile, setProfile] = useState("");
   const [passphrase, setPassphrase] = useState("");
@@ -200,6 +212,10 @@ export function CreateVault({
             Create vault
           </button>
         </form>
+        <details className="vault-reset">
+          <summary>Restore from a backup</summary>
+          <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
+        </details>
       </section>
     </VaultAuthFrame>
   );
@@ -212,6 +228,8 @@ export function UnlockVault({
   onUnlock,
   onRecover,
   onReset,
+  restoreBridge,
+  onRestored,
 }: {
   busy: boolean;
   notice: string;
@@ -219,6 +237,8 @@ export function UnlockVault({
   onUnlock: (passphrase: string) => Promise<void>;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
   onReset: (confirmation: string) => Promise<void>;
+  restoreBridge: RestoreBridge;
+  onRestored: () => void;
 }) {
   const [passphrase, setPassphrase] = useState("");
   // Messages go next to the part of the screen they answer: the Unlock form,
@@ -292,6 +312,10 @@ export function UnlockVault({
               return onReset(confirmation);
             }}
           />
+        </details>
+        <details className="vault-reset">
+          <summary>Restore from a backup</summary>
+          <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
         </details>
       </section>
     </VaultAuthFrame>

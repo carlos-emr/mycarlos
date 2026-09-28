@@ -261,6 +261,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
+      pickBackupDestination: () => track(bridge.pickBackupDestination()),
+      saveBackupToPicked: (pickId) =>
+        transfer(() => bridge.saveBackupToPicked(pickId)),
+      pickRestoreSource: () => track(bridge.pickRestoreSource()),
       importPickedFiles: (pickId, profileId, folderIds) =>
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
@@ -462,6 +466,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     else if (transferHold.active) pendingOutcomeRef.current = message;
   };
 
+  // A restored vault is locked: it opens with its own passphrase or key.
+  const restored = () => {
+    pendingOutcomeRef.current = null;
+    setStatus("locked");
+    setNotice(
+      "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
+    );
+  };
+
   if (status === "loading") {
     return (
       <VaultAuthFrame state="Opening">
@@ -475,6 +488,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <CreateVault
         busy={busy}
         notice={notice}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
         onCreate={(profile, passphrase) =>
           run(async () => {
             setSnapshot(await bridge.create(passphrase, profile));
@@ -504,6 +519,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <UnlockVault
         busy={busy}
         notice={notice}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
         autoLockMinutes={autoLockMinutes}
         onUnlock={(passphrase) =>
           run(async () => {

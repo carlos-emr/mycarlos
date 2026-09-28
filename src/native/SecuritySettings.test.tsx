@@ -15,6 +15,7 @@ function renderSettings() {
     onReset: vi.fn().mockResolvedValue(undefined),
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
+    onSaveBackup: vi.fn().mockResolvedValue(undefined),
   };
   render(<SecuritySettings {...props} />);
   return props;
@@ -73,5 +74,15 @@ describe("SecuritySettings profiles", () => {
 
     fireEvent.change(name, { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+  });
+});
+
+describe("SecuritySettings backup", () => {
+  it("saves an encrypted backup", () => {
+    const props = renderSettings();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledOnce();
   });
 });
