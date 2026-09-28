@@ -674,6 +674,57 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("gives a rename's result to a status line already back on screen", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+
+    // The document's details are replaced while it is renamed. Their status
+    // line comes back empty, and the result is written into it after.
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    await user.click(screen.getByRole("button", { name: "Save name" }));
+    const details = await screen.findByRole("dialog", {
+      name: "FAKE Results.pdf",
+    });
+    const detailsStatus = within(details).getByRole("status");
+    expect(detailsStatus).toBeEmptyDOMElement();
+    await waitFor(() =>
+      expect(detailsStatus).toHaveTextContent(
+        "Document renamed to FAKE Results.pdf.",
+      ),
+    );
+
+    // The rename dialog makes the page inert. Its status line is written to
+    // once the dialog has closed.
+    await user.click(
+      screen.getByRole("button", { name: "Close document details" }),
+    );
+    const pageStatus = screen.getByRole("status");
+    await user.click(
+      screen.getByRole("button", { name: "Rename folder FAKE Old folder" }),
+    );
+    const input = screen.getByLabelText("Folder name");
+    await user.clear(input);
+    await user.type(input, "FAKE Lab results{Enter}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(pageStatus).toBeEmptyDOMElement();
+    await waitFor(() =>
+      expect(pageStatus).toHaveTextContent(
+        "Folder renamed to FAKE Lab results.",
+      ),
+    );
+  });
+
   it("starts the selection again when a search could hide selected documents", async () => {
     const user = userEvent.setup();
     const record = (id: string, displayName: string) => ({
@@ -1039,6 +1090,11 @@ describe("durable vault UI", () => {
         await screen.findByRole("heading", { name: "Unlock your vault" }),
       ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
+      // Not a change to the status line, which is not read out: the field
+      // that takes focus says it.
+      expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+        "Vault locked.",
+      );
     } finally {
       visibility.mockRestore();
     }

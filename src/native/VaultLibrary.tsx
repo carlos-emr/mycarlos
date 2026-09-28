@@ -1,5 +1,5 @@
 import { LibrarySidebar } from "./LibrarySidebar";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import type {
   VaultBridge,
@@ -22,6 +22,10 @@ import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
+
+// Time for a status line that has just come back, with the page or a dialog,
+// to reach screen readers, which then read out text written into it.
+const ANNOUNCE_AFTER_DIALOG_MS = 250;
 
 /** The ids of a folder and of every folder beneath it. */
 function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
@@ -78,6 +82,8 @@ export function VaultLibrary({
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  // A rename's result, given once its dialog has closed (see the effect below).
+  const [renameResult, setRenameResult] = useState("");
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
     action: "delete" | "export";
@@ -172,6 +178,21 @@ export function VaultLibrary({
     setSelectedIds([]);
   }, [query]);
 
+  // A status line reads out only text that changes while it is on the page.
+  // The rename dialog makes the page inert, and replaces a document's details,
+  // whose status line then comes back with it. Give the result once that line
+  // is back and has had time to be seen, or it is shown but never read out.
+  const setNoticeRef = useRef(setNotice);
+  setNoticeRef.current = setNotice;
+  useEffect(() => {
+    if (!renameResult || renameTarget) return;
+    const timer = window.setTimeout(() => {
+      setNoticeRef.current(renameResult);
+      setRenameResult("");
+    }, ANNOUNCE_AFTER_DIALOG_MS);
+    return () => window.clearTimeout(timer);
+  }, [renameResult, renameTarget]);
+
   const renameFolder = (folder: VaultFolder) =>
     setRenameTarget({ kind: "folder", id: folder.id, name: folder.name });
   const saveName = async (name: string) => {
@@ -194,7 +215,9 @@ export function VaultLibrary({
       await bridge.renameRecord(renameTarget.id, name);
     }
     await refresh();
-    setNotice(
+    // Cleared now, so that the result is a change even when it repeats.
+    setNotice("");
+    setRenameResult(
       `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
     );
   };

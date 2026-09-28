@@ -180,10 +180,11 @@ VoiceOver.
 With the screen reader on, using only the keyboard (or only swipes on a phone), go through
 [What to try](#what-to-try) and check each of these:
 
-1. **Create a vault** (the first screen on a new install). Every field is read with its name.
-   Type two different passphrases: "Passphrases do not match." is read out.
+1. **Create a vault** (the first screen on a new install). Every field is read with its name,
+   and the **Passphrase** field also with its rules ("Use at least 15 characters…"). Type two
+   different passphrases: "Passphrases do not match." is read out.
 2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
-   wrong passphrase, and note whether the reason is read out without you moving focus.
+   wrong passphrase: the reason is read out without you moving focus.
 3. **Finding your way.** Jumping by heading reaches the page title (for example **My records**)
    and each section in **Security**. The sidebar is read as the **Record library** navigation;
    on a phone, the **Section** menu is read with that name.
@@ -194,21 +195,18 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    whether it is pressed.
 5. **Messages.** After an import, a move or renaming a folder, the result (for example "4 file(s)
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
-   appear. Also rename a document and note whether its result is read out.
+   appear. Renaming a document from its details reads out "Document renamed to…" once you are
+   back in the details.
 6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete** or
    **Save a copy** moves focus into the dialog and reads its title. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
    it (or, from a dialog opened within a document's details, to those details).
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
-   over from the library; note whether the reader also says "Vault locked." Check the same after
-   an automatic lock.
+   over from the library, and the reader says "Vault locked." with the field. Check the same
+   after an automatic lock.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
-
-Known gaps, still worth confirming: the unlock screen's messages (items 2 and 7) and the message
-after renaming a document (item 5) may appear on screen without being read out, and the
-passphrase requirements on the Create screen are not read with the passphrase field.
 
 Then turn the screen reader off and check text size:
 
