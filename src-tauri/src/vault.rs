@@ -346,9 +346,10 @@ pub enum RecoveryReason {
     /// exported, and `remove_unavailable_records` makes the vault writable
     /// again once the user gives them up (or restores them from a backup).
     LostObjects,
-    /// A manifest or header slot exists but could not be read. It may hold a
-    /// newer state than the one opened, so nothing on disk may be replaced.
-    /// Clears itself on a later unlock once the slot can be read.
+    /// A manifest or header slot exists but could not be read, or a document's
+    /// encrypted file could not be looked up. Either may hold a newer or
+    /// intact state, so nothing on disk may be replaced or removed. Clears
+    /// itself on a later unlock once everything can be read.
     UnreadableSlot,
     /// A redundant write or a repair failed. Storage is not reliable enough
     /// to commit; a later unlock retries the repair.

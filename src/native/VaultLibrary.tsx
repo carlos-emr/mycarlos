@@ -713,11 +713,12 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Read-only recovery mode.</strong> A copy of the
-                      vault's metadata could not be read, and it may be newer
-                      than what is shown. Nothing will be changed on disk. Check
-                      that no other program holds the myCarlos data folder, then
-                      lock and unlock again.
+                      <strong>Read-only recovery mode.</strong> Some of the
+                      vault's files could not be read, and they may be newer or
+                      intact, so nothing will be changed on disk. Check that the
+                      drive holding the myCarlos data folder is connected and
+                      that no other program holds the folder, then lock and
+                      unlock again.
                     </span>
                   </div>
                 )}
