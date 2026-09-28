@@ -913,20 +913,24 @@ export function VaultLibrary({
           )}
           {confirmRemoveDamaged && (
             <ConfirmDialog
-              title={`Remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Remove"
+              title={`Permanently remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Permanently remove"
               danger
               onConfirm={removeDamaged}
               onCancel={() => setConfirmRemoveDamaged(false)}
             >
               <p>
-                The encrypted files for these documents are missing from this
-                device, so their content is already gone from here. Removing
-                them forgets their names and details too. This cannot be undone.
+                Their encrypted files are missing from this device, so their
+                content is already gone from here. Removing them also deletes
+                their names and details from the vault, permanently. This cannot
+                be undone.
               </p>
               <p>
-                If you have a backup of the myCarlos data folder, restore it
-                first: any file that is back is kept, not removed.
+                First check that the files are not just out of reach: if the
+                myCarlos data folder is on a drive that is disconnected, or
+                another program is using it, fix that, then lock and unlock
+                again. If you have a backup of the data folder, restore it
+                first: any file that comes back is kept.
               </p>
             </ConfirmDialog>
           )}

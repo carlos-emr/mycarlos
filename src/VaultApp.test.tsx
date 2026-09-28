@@ -2999,18 +2999,45 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
     const warning = screen.getByRole("alertdialog", {
-      name: "Remove 1 damaged document?",
+      name: "Permanently remove 1 damaged document?",
     });
+    expect(warning).toHaveAccessibleDescription(/permanently/);
     expect(warning).toHaveTextContent(/cannot be undone/);
+    // The files may only be out of reach, which is not the same as gone.
+    expect(warning).toHaveTextContent(/drive that is disconnected/);
     expect(warning).toHaveTextContent(/backup/);
+    // Nothing is removed without an explicit confirmation: Cancel has focus,
+    // and Cancel, Escape and a click outside all leave everything in place.
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // Enter straight away presses Cancel, which has focus.
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: screen.getByRole("alertdialog").parentElement!,
+    });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(removeUnavailableRecords).not.toHaveBeenCalled();
 
     await user.click(
       screen.getByRole("button", { name: "Remove damaged documents" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    const remove = screen.getByRole("button", { name: "Permanently remove" });
+    expect(remove).toHaveClass("danger");
+    await user.click(remove);
     await waitFor(() =>
       expect(removeUnavailableRecords).toHaveBeenCalledOnce(),
     );
@@ -3057,7 +3084,9 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    );
 
     expect(
       await screen.findByText(/1 damaged document removed/),
