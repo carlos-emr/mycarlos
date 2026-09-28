@@ -57,6 +57,45 @@ const EXPORT_JOURNAL: &str = "pending-exports";
 static EXPORTS_IN_FLIGHT: Mutex<BTreeSet<Uuid>> = Mutex::new(BTreeSet::new());
 // A journal entry holds one path; anything longer is not one of ours.
 const MAX_EXPORT_JOURNAL_BYTES: usize = 64 * 1024;
+// Names Windows reserves for devices. A file whose name before its first dot
+// is one of these, with ASCII letters in any case and any ASCII spaces
+// (U+0020) before the dot, cannot be created, so `sanitize_basename` prefixes it. The rename
+// dialog lists the same names (src/native/reservedNames.ts) to say why such a
+// name is refused.
+const RESERVED_DEVICE_NAMES: [&str; 32] = [
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CONIN$",
+    "CONOUT$",
+    "COM\u{b9}",
+    "COM\u{b2}",
+    "COM\u{b3}",
+    "LPT\u{b9}",
+    "LPT\u{b2}",
+    "LPT\u{b3}",
+    "COM0",
+    "LPT0",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+];
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 // The sanitizer caps record names at this many bytes and manifest validation
@@ -1482,41 +1521,7 @@ fn sanitize_basename(value: &str) -> String {
         .next()
         .unwrap_or_default()
         .trim_end_matches(' ');
-    let reserved = matches!(
-        stem.to_ascii_uppercase().as_str(),
-        "CON"
-            | "PRN"
-            | "AUX"
-            | "NUL"
-            | "CONIN$"
-            | "CONOUT$"
-            | "COM\u{b9}"
-            | "COM\u{b2}"
-            | "COM\u{b3}"
-            | "LPT\u{b9}"
-            | "LPT\u{b2}"
-            | "LPT\u{b3}"
-            | "COM0"
-            | "LPT0"
-            | "COM1"
-            | "COM2"
-            | "COM3"
-            | "COM4"
-            | "COM5"
-            | "COM6"
-            | "COM7"
-            | "COM8"
-            | "COM9"
-            | "LPT1"
-            | "LPT2"
-            | "LPT3"
-            | "LPT4"
-            | "LPT5"
-            | "LPT6"
-            | "LPT7"
-            | "LPT8"
-            | "LPT9"
-    );
+    let reserved = RESERVED_DEVICE_NAMES.contains(&stem.to_ascii_uppercase().as_str());
     if reserved {
         cleaned.insert(0, '_');
         // The prefix must not push a maximum-length name past the limit that
@@ -7051,6 +7056,35 @@ mod tests {
     }
 
     #[test]
+    fn the_rename_dialog_lists_exactly_the_reserved_device_names() {
+        // The dialog's module lists each name as a quoted literal in one
+        // frozen array, and its own tests check that each one is refused. This
+        // reads the repository's frontend, so it runs only in a full checkout.
+        const DECLARATION: &str =
+            "export const RESERVED_DEVICE_NAMES: readonly string[] = Object.freeze([";
+        let dialog = include_str!("../../src/native/reservedNames.ts");
+        let list = dialog
+            .split_once(DECLARATION)
+            .and_then(|(_, rest)| rest.split_once("])"))
+            .map(|(list, _)| list)
+            .unwrap_or_else(|| panic!("reservedNames.ts must declare `{DECLARATION}` ... `]);`"));
+        let parts: Vec<&str> = list.split('"').collect();
+        // Between the quoted names there is only punctuation and space, so no
+        // name is written some other way the check below would miss.
+        for between in parts.iter().step_by(2) {
+            assert!(
+                between.chars().all(|c| c == ',' || c.is_whitespace()),
+                "write each reserved name as a double-quoted literal, not {between:?}"
+            );
+        }
+        let mut listed: Vec<&str> = parts.iter().copied().skip(1).step_by(2).collect();
+        let mut expected = RESERVED_DEVICE_NAMES.to_vec();
+        listed.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(listed, expected);
+    }
+
+    #[test]
     fn reserved_device_names_are_prefixed_even_with_a_padded_stem() {
         // Win32 ignores spaces after the stem, so "CON .txt" still opens the console.
         for name in [
@@ -7068,6 +7102,11 @@ mod tests {
             assert!(valid_record_name(&sanitized));
         }
         assert_eq!(sanitize_basename("CONTRACT .pdf"), "CONTRACT .pdf");
+        // Only U+0020 spaces before the dot are ignored.
+        assert_eq!(sanitize_basename("CON\u{a0}.txt"), "CON\u{a0}.txt");
+        assert_eq!(sanitize_basename("NUL\u{3000}.log"), "NUL\u{3000}.log");
+        // Case is compared for ASCII letters only: a dotless \u{131} is not an I.
+        assert_eq!(sanitize_basename("con\u{131}n$.pdf"), "con\u{131}n$.pdf");
     }
 
     #[test]

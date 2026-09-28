@@ -6,6 +6,7 @@ import {
   fileExtension,
   nameTooLong,
 } from "./recordPresentation";
+import { reservedDeviceName } from "./reservedNames";
 
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
@@ -44,6 +45,9 @@ export function RenameDialog({
   const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Changes on every refusal, so pressing Save again announces it again even
+  // when the message is the same.
+  const [refusals, setRefusals] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
   // Someone who types the extension out of habit means the same name, so a
   // typed copy of it is dropped rather than doubled, unless the name was left
@@ -86,6 +90,12 @@ export function RenameDialog({
     target.kind === "document" &&
     !extension &&
     trimLikeVault(fullName).toLowerCase().endsWith(".pdf");
+  // Windows cannot create a file under a device name, so the vault refuses it.
+  // Said when saving, not while typing: "Con" is on the way to "Consult".
+  const reservedWord =
+    target.kind === "document"
+      ? reservedDeviceName(trimLikeVault(fullName))
+      : undefined;
   const invalid = tooLong || unsafeName || gainsExtension || !stem;
   const close = () => {
     if (!saving) onClose();
@@ -94,6 +104,13 @@ export function RenameDialog({
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving || readOnly || invalid) return;
+    if (reservedWord) {
+      setRefusals((count) => count + 1);
+      setError(
+        `"${reservedWord}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.`,
+      );
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -134,7 +151,10 @@ export function RenameDialog({
                 }
                 value={name}
                 disabled={saving || readOnly}
-                aria-describedby="rename-help"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={
+                  error ? "rename-help rename-error" : "rename-help"
+                }
                 onChange={(event) => {
                   setName(event.target.value);
                   setError("");
@@ -170,7 +190,11 @@ export function RenameDialog({
                 invisible control characters, or end with a dot.
               </p>
             )}
-            {error && <p role="alert">{error}</p>}
+            {error && (
+              <p id="rename-error" role="alert" key={refusals}>
+                {error}
+              </p>
+            )}
           </div>
           <footer className="dialog-actions">
             <button

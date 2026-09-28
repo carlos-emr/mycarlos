@@ -8,6 +8,8 @@ const UNSAFE =
 const GAINS =
   "This document's name has no .pdf extension, so it cannot end in .pdf.";
 const TOO_LONG = "This name is too long. Shorten it to save.";
+const reserved = (word: string) =>
+  `"${word}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.`;
 const cp = (codePoint: number) => String.fromCodePoint(codePoint);
 
 // Renders the dialog for a stored name and returns what a test needs.
@@ -98,6 +100,18 @@ describe("RenameDialog", () => {
     ["Scan 3.5 notes", "Scan notespdf", "Scan notespdf"],
     // Names without ".pdf" change freely, including other extensions.
     ["Scan 3.5 notes", "Scan notes", "Scan notes"],
+    // Only the whole name before the first dot is reserved, and only these.
+    ["Results.pdf", "CONSOLE", "CONSOLE.pdf"],
+    ["Results.pdf", "My CON", "My CON.pdf"],
+    ["Results.pdf", "COM10", "COM10.pdf"],
+    ["Results.pdf", `COM${cp(0x2074)}`, `COM${cp(0x2074)}.pdf`],
+    ["Results.pdf", "Lab.CON", "Lab.CON.pdf"],
+    // Only ordinary spaces before the dot are ignored, as by the vault.
+    ["Visit notes", `CON${cp(0xa0)}.txt`, `CON${cp(0xa0)}.txt`],
+    ["Visit notes", `NUL${cp(0x3000)}.log`, `NUL${cp(0x3000)}.log`],
+    // Case is compared for ASCII letters only, as the vault does: a dotless ı
+    // is not an I.
+    ["Results.pdf", `con${cp(0x131)}n$`, `con${cp(0x131)}n$.pdf`],
     ["photo.jpg", "photo", "photo"],
     // With ".pdf" kept, a name part ending in a dot is still a valid name.
     ["Results.pdf", "Visit notes.", "Visit notes..pdf"],
@@ -171,6 +185,66 @@ describe("RenameDialog", () => {
   });
 
   it.each([
+    // Names Windows reserves for devices, in any case of ASCII letters, as the
+    // part before the first dot, and with spaces before the dot.
+    ...[
+      ["CON", "CON"],
+      ["prn", "prn"],
+      ["Aux", "Aux"],
+      ["NUL", "NUL"],
+      ["conin$", "conin$"],
+      ["CONOUT$", "CONOUT$"],
+      ["COM0", "COM0"],
+      ["com9", "com9"],
+      ["LPT1", "LPT1"],
+      [`COM${cp(0xb9)}`, `COM${cp(0xb9)}`],
+      [`lpt${cp(0xb3)}`, `lpt${cp(0xb3)}`],
+      ["CON.backup", "CON"],
+    ].map(([typed, word]) => ["Results.pdf", typed, word]),
+    ["Visit notes", "AUX .txt", "AUX"],
+    ["Visit notes", "AUX   .txt", "AUX"],
+    // Trimmed as the vault trims, U+0085 included.
+    ["Results.pdf", "\u0085CON", "CON"],
+  ])(
+    "refuses %j renamed to %j when saved, naming %j",
+    (stored, typed, word) => {
+      const { input, onSave, save, type, submit } = open(stored);
+      type(typed);
+      // Not while typing: "Con" is on the way to "Consult notes".
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(save).toBeEnabled();
+      submit();
+      expect(screen.getByRole("alert")).toHaveTextContent(reserved(word));
+      expect(onSave).not.toHaveBeenCalled();
+      // Returning to the field says why it was refused.
+      expect(input).toHaveAttribute("aria-invalid", "true");
+      expect(input).toHaveAccessibleDescription(
+        expect.stringContaining(reserved(word)),
+      );
+      // Editing the name clears it.
+      type(`${typed}x`);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(input).not.toHaveAttribute("aria-invalid");
+      expect(input).toHaveAccessibleDescription(expect.stringContaining(HELP));
+    },
+  );
+
+  // A stored name with a control character such as U+0085 is refused as
+  // unsafe as soon as the dialog opens, so it never reaches this check.
+  it("refuses an unedited reserved name from an earlier build when saved", () => {
+    const { onSave, submit } = open(" CON.pdf");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    submit();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(reserved("CON"));
+    expect(onSave).not.toHaveBeenCalled();
+    // Saving again says so again, for screen readers too.
+    submit();
+    expect(screen.getByRole("alert")).not.toBe(alert);
+    expect(screen.getByRole("alert")).toHaveTextContent(reserved("CON"));
+  });
+
+  it.each([
     // Unedited names from earlier builds that the vault would refuse.
     [".pdf ", GAINS],
     ["X. ", UNSAFE],
@@ -204,6 +278,7 @@ describe("RenameDialog", () => {
     // Folder names are never file names: no extension lock, no file-name rules.
     ["Scans.pdf", "Old scans.pdf"],
     ["Labs", "Labs: 2024"],
+    ["Labs", "CON"],
   ])("renames folder %j to %j", (stored, typed) => {
     const { input, onSave, type, submit } = open(stored, "folder");
     expect(input).toHaveValue(stored);
