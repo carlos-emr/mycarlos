@@ -94,6 +94,22 @@ built, tested, or independently reviewed.
   content immediately when backgrounded. An import or export in progress may finish, with content
   concealed, before an automatic or background lock; a manual lock cancels it.
 
+## Not yet decided
+
+Raised in the original design issue (#3) and not settled for the pilot:
+
+- Apple Health and Health Connect: whether they are in scope at all. They hold structured data,
+  not documents, so they can never receive the PDFs CARLOS sends; any use would be a separate,
+  complementary feature.
+- Ingest beyond manual import and the CARLOS handoff: scan or photo capture, and documents from
+  other EMRs.
+- Organization beyond folders, search and sort: categories, a timeline, tags, and which metadata
+  travels with a document (see the mocks in #18).
+- The final product name ("myCarlos" is a working name).
+
+Tracked in their own issues: the CARLOS email handoff (#23), the licence and app-store
+distribution (#24), and the privacy, regulatory and clinical-safety review (#25).
+
 ## Consequences and open implementation gates
 
 These decisions require new protocols and substantial code beyond this PR: recovery-key envelopes,
