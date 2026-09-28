@@ -186,7 +186,10 @@ export function VaultLibrary({
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   useEffect(() => {
-    if (!renameResult || renameTarget) return;
+    // Any dialog open, such as a confirmation opened straight away, hides the
+    // status line too: wait until it closes.
+    if (!renameResult || renameTarget || confirmation || confirmRemoveDamaged)
+      return;
     // A newer message replaces the result, and another document's details
     // opened meanwhile are not where it belongs.
     if (
@@ -201,7 +204,14 @@ export function VaultLibrary({
       setRenameResult(null);
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [activeRecordId, notice, renameResult, renameTarget]);
+  }, [
+    activeRecordId,
+    confirmation,
+    confirmRemoveDamaged,
+    notice,
+    renameResult,
+    renameTarget,
+  ]);
 
   const renameFolder = (folder: VaultFolder) =>
     setRenameTarget({ kind: "folder", id: folder.id, name: folder.name });

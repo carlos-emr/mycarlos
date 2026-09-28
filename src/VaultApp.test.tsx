@@ -783,6 +783,44 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("holds a rename's result while a confirmation opened at once is on screen", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      // The confirmation replaces the details before the result is due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Save a copy to this computer" }),
+        );
+      });
+      await passAnnounceDelay();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      });
+      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const status = within(details).getByRole("status");
+      expect(status).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(status).toHaveTextContent("Document renamed to FAKE Results.pdf.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     ["unlocking", "locked", /^Vault unlocked\.$/],
     ["creating", "absent", /^Encrypted vault created\./],
