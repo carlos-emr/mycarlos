@@ -109,7 +109,7 @@ h1, h2, p { margin: 0; }
   font-size: 0.875rem;
 }
 .evaluation-banner strong { text-transform: uppercase; letter-spacing: .055em; font-size: 0.875rem; }
-.page-wrap { max-width: 1160px; margin: 0 auto; padding: 20px; }
+.page-wrap { max-width: 72.5rem; margin: 0 auto; padding: 20px; }
 
 .app-window {
   overflow: hidden;
@@ -280,7 +280,7 @@ h1, h2, p { margin: 0; }
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
   display: grid;
-  grid-template-columns: 30px minmax(210px, 1fr) minmax(125px, 190px) 8rem 34px;
+  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 34px;
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -370,7 +370,7 @@ h1, h2, p { margin: 0; }
 .purpose-note .icon { margin-top: 2px; }
 .purpose-note strong { font-weight: 800; }
 .purpose-note.warning { border-color: #eccf9d; background: var(--amber-soft); color: #6f4300; }
-.trash-list .file-head, .trash-list .file-row { grid-template-columns: 30px minmax(210px, 1fr) minmax(125px, 190px) 8rem 4.5rem; }
+.trash-list .file-head, .trash-list .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 4.5rem; }
 .trash-marker { display: grid; place-items: center; color: var(--ink-faint); }
 .trash-marker .icon { width: 15px; height: 15px; }
 .countdown { color: var(--amber) !important; font-weight: 700; }
@@ -528,14 +528,25 @@ h1, h2, p { margin: 0; }
 }
 
 @media (max-width: 24.375em) {
+  .main-head { flex-wrap: wrap; }
   .library-main { padding-inline: 14px; }
   .breadcrumb { padding-left: 2px; }
   .main-head { align-items: flex-start; }
   .head-actions .button { width: 44px; padding-inline: 0; }
   .head-actions .button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .head-actions .button.danger { width: auto; padding-inline: 11px; }
   .chip { padding-inline: 10px; }
   .filelist { margin-inline: -2px; }
   .file-grid { grid-template-columns: 1fr; }
+}
+
+/* With large text on a narrow screen, the countdown and Restore columns leave
+   the name only a few characters wide, so they move to a line under it. */
+@media (max-width: 23em) {
+  .trash-list .file-head, .trash-list .file-row { grid-template-columns: 24px minmax(0, 1fr) auto; row-gap: 4px; }
+  .trash-list .file-row .file-name { grid-column: 2 / -1; }
+  .trash-list .file-row .countdown { grid-column: 2; grid-row: 2; }
+  .trash-list .file-row .restore-button { grid-column: 3; grid-row: 2; }
 }
 
 /* The native vault uses the mock-aligned filing-cabinet shell with durable data. */
@@ -609,7 +620,7 @@ h1, h2, p { margin: 0; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(210px, 1fr) minmax(125px, 190px) 8rem 4.5rem; }
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 4.5rem; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }

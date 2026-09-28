@@ -220,3 +220,56 @@ test("carries a record through starred, trash, and restore", async ({
   await openSection("records", "My records");
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 });
+
+test("keeps trash names readable with large text on a phone", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone", "the narrow layout only");
+  // A reader's larger default text, as the em breakpoints see it.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Page.setFontSizes", { fontSizes: { standard: 24 } });
+  await page.goto("/");
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize,
+    ),
+  ).toBe("24px");
+
+  const title = "Prescription — ramipril 5mg";
+  await page.getByRole("button", { name: `More options for ${title}` }).click();
+  await page.getByRole("button", { name: "Move to Trash" }).click();
+  await page.getByRole("combobox", { name: "Section" }).selectOption("trash");
+  await expect(page.getByText(title, { exact: true })).toBeVisible();
+
+  // Each name keeps most of its row instead of breaking after every letter.
+  const shares = await page
+    .locator(".trash-list .file-row")
+    .evaluateAll((rows) =>
+      rows.map(
+        (row) =>
+          row.querySelector(".name-copy strong")!.getBoundingClientRect()
+            .width / row.getBoundingClientRect().width,
+      ),
+    );
+  expect(shares.length).toBeGreaterThan(0);
+  for (const share of shares) expect(share).toBeGreaterThan(0.5);
+
+  // Nothing, "Empty trash" included, runs past the window's edge.
+  const windowBox = await page.locator(".app-window").boundingBox();
+  const emptyTrash = await page
+    .getByRole("button", { name: "Empty trash" })
+    .boundingBox();
+  expect(emptyTrash!.x + emptyTrash!.width).toBeLessThanOrEqual(
+    windowBox!.x + windowBox!.width,
+  );
+  expect(
+    await page.evaluate(() => {
+      const appWindow = document.querySelector(".app-window")!;
+      return appWindow.scrollWidth <= appWindow.clientWidth;
+    }),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("trash-large-text.png"),
+    fullPage: true,
+  });
+});

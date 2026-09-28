@@ -95,4 +95,30 @@ describe("text sizes", () => {
       list.remove();
     }
   });
+
+  it.each(["filelist", "filelist trash-list", "filelist native-filelist"])(
+    "fit the longest date label in the date column of the %s",
+    (className) => {
+      const list = document.body.appendChild(document.createElement("div"));
+      list.className = className;
+      list.style.width = "1000px";
+      list.innerHTML =
+        '<div class="file-row"><span></span><span></span><span class="column"></span>' +
+        '<span class="column">Renamed 2 Aug 2026</span><span></span></div>';
+      const date = list.querySelectorAll(".column")[1];
+      const label = document.createRange();
+      label.selectNodeContents(date);
+      try {
+        for (const size of ["16px", "24px"]) {
+          document.documentElement.style.fontSize = size;
+          expect(label.getBoundingClientRect().width).toBeLessThanOrEqual(
+            date.clientWidth,
+          );
+        }
+      } finally {
+        document.documentElement.style.fontSize = "";
+        list.remove();
+      }
+    },
+  );
 });
