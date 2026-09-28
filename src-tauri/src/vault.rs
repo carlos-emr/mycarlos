@@ -1525,8 +1525,15 @@ impl VaultStore {
         let (header, master_key) = read_header_for_recovery_key(&self.root, &key)?;
         let slots = read_manifest_slots(&self.root, &master_key, header.vault_id)?;
         let selected = select_manifest(&slots)?;
-        if selected.recovery.is_some() || header_slot_unreadable(&self.root) {
-            let recovery = selected.recovery.or(Some(RecoveryReason::UnreadableSlot));
+        let header_unreadable = header_slot_unreadable(&self.root);
+        if selected.recovery.is_some() || header_unreadable {
+            // As in `open_with_header`: an unreadable header slot outranks lost
+            // objects, so the session cannot become writable over it.
+            let recovery = if header_unreadable {
+                Some(RecoveryReason::UnreadableSlot)
+            } else {
+                selected.recovery
+            };
             self.open_session(
                 &mut guard,
                 UnlockedVault {
@@ -6803,6 +6810,39 @@ mod tests {
         // record would make the session writable and let a passphrase change
         // rewrap the key over it.
         store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        assert!(matches!(
+            store.remove_unavailable_records(),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.lock();
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_ranks_an_unreadable_header_slot_above_lost_objects() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, _, objects) = vault_with_records(&root, &["lost"]);
+        store.unlock(PASSWORD).unwrap();
+        let key = set_up_recovery_key(&store, 5);
+        store.lock();
+        fs::remove_file(&objects[0]).unwrap();
+        let slot = root.join(HEADER_SLOTS[0]);
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&slot).is_ok() {
+            // A privileged process ignores file modes, so the unreadable slot
+            // cannot be simulated here.
+            return;
+        }
+
+        // As for an unlock: removing the lost record would make the session
+        // writable over a slot that may hold a newer header.
+        assert!(!store.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
         assert_eq!(
             store.snapshot().unwrap().recovery,
             Some(RecoveryReason::UnreadableSlot)
