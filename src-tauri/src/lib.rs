@@ -728,7 +728,9 @@ async fn vault_recovery_kit_save(
         store.recovery_kit(now_ms()).map(drop)
     })
     .await?;
-    let open = ActivityHold::new(store.idle());
+    // Held until the kit is written, so that the automatic lock cannot fall
+    // between the picker closing and the write.
+    let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
         dialog
@@ -739,7 +741,6 @@ async fn vault_recovery_kit_save(
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
-    drop(open);
     let Some(destination) = destination else {
         return Ok(false);
     };
