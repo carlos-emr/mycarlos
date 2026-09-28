@@ -1240,8 +1240,10 @@ impl VaultStore {
         }
         let mut next = unlocked.manifest.clone();
         let mut removed = Vec::new();
+        // Only an object that is really gone is given up. One that came back,
+        // or that cannot be looked up now, is kept.
         next.records.retain(|record| {
-            if object_is_present(&self.root, record) {
+            if object_presence(&self.root, record) != ObjectPresence::Missing {
                 return true;
             }
             removed.push(record.id);
@@ -1631,8 +1633,26 @@ fn validate_manifest(root: &Path, manifest: &Manifest, vault_id: Uuid) -> Result
 }
 
 fn object_is_present(root: &Path, record: &StoredRecord) -> bool {
-    fs::symlink_metadata(root.join("objects").join(&record.object_name))
-        .is_ok_and(|metadata| metadata.file_type().is_file())
+    object_presence(root, record) == ObjectPresence::Present
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ObjectPresence {
+    Present,
+    /// Not found, or not a regular file: the object is gone.
+    Missing,
+    /// It could not be looked up (a permission, sharing or device error). It
+    /// may be intact, so it must never be treated as gone.
+    Unknown,
+}
+
+fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
+    match fs::symlink_metadata(root.join("objects").join(&record.object_name)) {
+        Ok(metadata) if metadata.file_type().is_file() => ObjectPresence::Present,
+        Ok(_) => ObjectPresence::Missing,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => ObjectPresence::Missing,
+        Err(_) => ObjectPresence::Unknown,
+    }
 }
 
 /// Checks everything about a decrypted manifest except whether its objects
@@ -2269,15 +2289,21 @@ enum SlotReading {
     Unreadable,
     Authentic {
         manifest: Manifest,
-        /// Records whose object is missing or is not a regular file.
+        /// Records whose object is missing, is not a regular file, or could
+        /// not be looked up.
         missing: HashSet<Uuid>,
+        /// Whether any of those could not be looked up. Such an object may be
+        /// intact, so the slot counts as unreadable: nothing may be removed.
+        unknown: bool,
     },
 }
 
 impl SlotReading {
     fn authentic(&self) -> Option<(&Manifest, &HashSet<Uuid>)> {
         match self {
-            Self::Authentic { manifest, missing } => Some((manifest, missing)),
+            Self::Authentic {
+                manifest, missing, ..
+            } => Some((manifest, missing)),
             _ => None,
         }
     }
@@ -2321,13 +2347,25 @@ fn read_manifest_slot_reading(
     let Some(manifest) = decrypt_manifest(&data, manifest_key, vault_id) else {
         return SlotReading::Damaged;
     };
-    let missing = manifest
-        .records
-        .iter()
-        .filter(|record| !object_is_present(root, record))
-        .map(|record| record.id)
-        .collect();
-    SlotReading::Authentic { manifest, missing }
+    let mut missing = HashSet::new();
+    let mut unknown = false;
+    for record in &manifest.records {
+        match object_presence(root, record) {
+            ObjectPresence::Present => {}
+            ObjectPresence::Missing => {
+                missing.insert(record.id);
+            }
+            ObjectPresence::Unknown => {
+                missing.insert(record.id);
+                unknown = true;
+            }
+        }
+    }
+    SlotReading::Authentic {
+        manifest,
+        missing,
+        unknown,
+    }
 }
 
 fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Option<Manifest> {
@@ -2363,9 +2401,14 @@ fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Opt
 /// - If no generation is complete, the newest authentic one is opened
 ///   read-only so its intact records can still be exported.
 fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultError> {
-    let slot_unreadable = slots
-        .iter()
-        .any(|slot| matches!(slot, SlotReading::Unreadable));
+    // An object that could not be looked up counts as an unreadable slot: it
+    // may be intact, so its record must not be offered for removal.
+    let slot_unreadable = slots.iter().any(|slot| {
+        matches!(
+            slot,
+            SlotReading::Unreadable | SlotReading::Authentic { unknown: true, .. }
+        )
+    });
     // An unreadable slot outranks lost objects: removing the lost records would
     // commit over a state that may be newer than the one opened.
     let read_only_selection = |manifest: &Manifest, missing: &HashSet<Uuid>| SelectedManifest {
@@ -6247,6 +6290,86 @@ mod tests {
         assert_eq!(snapshot.records.len(), 1);
     }
 
+    /// Stands in for an objects folder that cannot be searched (a permission
+    /// or device error): with a file in its place, looking up any object fails
+    /// with an error other than "not found", even for root.
+    #[cfg(unix)]
+    fn make_objects_unsearchable(root: &Path, aside: &Path) {
+        fs::rename(root.join("objects"), aside).unwrap();
+        fs::write(root.join("objects"), b"not a folder").unwrap();
+    }
+
+    #[cfg(unix)]
+    fn restore_objects(root: &Path, aside: &Path) {
+        fs::remove_file(root.join("objects")).unwrap();
+        fs::rename(aside, root.join("objects")).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn documents_whose_files_cannot_be_looked_up_are_never_offered_for_removal() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let aside = temp.path().join("objects-aside");
+        let (store, ids, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        make_objects_unsearchable(&root, &aside);
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::UnreadableSlot));
+        assert!(matches!(
+            store.remove_unavailable_records(),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.lock();
+
+        // Once the folder can be read again, nothing was removed or deleted.
+        restore_objects(&root, &aside);
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        let mut found: Vec<Uuid> = snapshot.records.iter().map(|record| record.id).collect();
+        found.sort();
+        let mut expected = ids.clone();
+        expected.sort();
+        assert_eq!(found, expected);
+        assert!(objects.iter().all(|object| object.is_file()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removal_keeps_a_document_whose_file_cannot_be_looked_up_by_then() {
+        // One file is really gone, so "Remove damaged documents" is offered.
+        // Before it runs, the folder becomes unsearchable: the removal must not
+        // take that for the other file being gone too.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let aside = temp.path().join("objects-aside");
+        let (store, ids, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+
+        make_objects_unsearchable(&root, &aside);
+        assert!(store.remove_unavailable_records().is_err());
+        store.lock();
+        restore_objects(&root, &aside);
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
+        let kept = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == ids[1])
+            .unwrap();
+        assert!(kept.available);
+        assert!(objects[1].is_file());
+    }
+
     /// A manifest with `records` named after their objects, all in one profile.
     fn manifest_with(vault_id: Uuid, generation: u64, records: &[&str]) -> Manifest {
         let profile = Uuid::from_u128(1);
@@ -6292,7 +6415,29 @@ mod tests {
             .filter(|record| missing.contains(&record.object_name.trim_end_matches(".mcobj")))
             .map(|record| record.id)
             .collect();
-        SlotReading::Authentic { manifest, missing }
+        SlotReading::Authentic {
+            manifest,
+            missing,
+            unknown: false,
+        }
+    }
+
+    #[test]
+    fn an_object_that_cannot_be_looked_up_makes_the_slot_unreadable_not_lost() {
+        let manifest = manifest_with(Uuid::new_v4(), 2, &["a"]);
+        let SlotReading::Authentic { missing, .. } = authentic(manifest.clone(), &["a"]) else {
+            unreachable!();
+        };
+        let slots = [
+            SlotReading::Authentic {
+                manifest,
+                missing,
+                unknown: true,
+            },
+            SlotReading::Absent,
+        ];
+        let selected = select_manifest(&slots).unwrap();
+        assert_eq!(selected.recovery, Some(RecoveryReason::UnreadableSlot));
     }
 
     #[test]
