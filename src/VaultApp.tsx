@@ -13,6 +13,7 @@ import {
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { VaultLibrary } from "./native/VaultLibrary";
 import { TransferHold } from "./native/transferHold";
+import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
@@ -58,6 +59,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice] = useState("");
+  // A message for the library that unlocking or creating the vault is about to
+  // show. Its status line reads out only what changes once it is on screen, so
+  // the message is written just after (see the effect below).
+  const [libraryNotice, setLibraryNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -340,6 +345,23 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
   }, [autoLockMinutes, bridge, lockWhenIdle, status]);
 
+  const libraryShown = status === "unlocked" && snapshot !== null && !concealed;
+  useEffect(() => {
+    if (!libraryNotice) return;
+    // A newer message, such as the result of an operation started at once,
+    // replaces this one rather than being overwritten by it.
+    if (notice) {
+      setLibraryNotice("");
+      return;
+    }
+    if (!libraryShown) return;
+    const timer = window.setTimeout(() => {
+      setNotice(libraryNotice);
+      setLibraryNotice("");
+    }, ANNOUNCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [libraryNotice, libraryShown, notice]);
+
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);
     setAutoLockMinutes(normalized);
@@ -450,7 +472,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             pendingOutcomeRef.current = null;
             setConcealed(false);
             setStatus("unlocked");
-            setNotice(
+            setLibraryNotice(
               "Encrypted vault created. Keep your passphrase safe; it cannot be recovered.",
             );
           })
@@ -473,7 +495,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setStatus("unlocked");
             const outcome = pendingOutcomeRef.current;
             pendingOutcomeRef.current = null;
-            setNotice(
+            setLibraryNotice(
               [
                 current.recovery
                   ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."

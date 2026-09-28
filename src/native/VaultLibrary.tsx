@@ -1,5 +1,5 @@
 import { LibrarySidebar } from "./LibrarySidebar";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import type {
   VaultBridge,
@@ -18,6 +18,7 @@ import {
   searchKey,
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
+import { ANNOUNCE_DELAY_MS } from "./announce";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -78,6 +79,12 @@ export function VaultLibrary({
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  // A rename's result, given once its dialog has closed (see the effect below),
+  // and the document whose details it was renamed from, if any.
+  const [renameResult, setRenameResult] = useState<{
+    message: string;
+    recordId: string | null;
+  } | null>(null);
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
     action: "delete" | "export";
@@ -172,6 +179,40 @@ export function VaultLibrary({
     setSelectedIds([]);
   }, [query]);
 
+  // A status line reads out only text that changes while it is on the page.
+  // The rename dialog makes the page inert, and replaces a document's details,
+  // whose status line then comes back with it. Give the result once that line
+  // is back and has had time to be seen, or it is shown but never read out.
+  const setNoticeRef = useRef(setNotice);
+  setNoticeRef.current = setNotice;
+  useEffect(() => {
+    // Any dialog open, such as a confirmation opened straight away, hides the
+    // status line too: wait until it closes.
+    if (!renameResult || renameTarget || confirmation || confirmRemoveDamaged)
+      return;
+    // A newer message replaces the result, and another document's details
+    // opened meanwhile are not where it belongs.
+    if (
+      notice ||
+      (activeRecordId !== null && activeRecordId !== renameResult.recordId)
+    ) {
+      setRenameResult(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setNoticeRef.current(renameResult.message);
+      setRenameResult(null);
+    }, ANNOUNCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeRecordId,
+    confirmation,
+    confirmRemoveDamaged,
+    notice,
+    renameResult,
+    renameTarget,
+  ]);
+
   const renameFolder = (folder: VaultFolder) =>
     setRenameTarget({ kind: "folder", id: folder.id, name: folder.name });
   const saveName = async (name: string) => {
@@ -194,9 +235,12 @@ export function VaultLibrary({
       await bridge.renameRecord(renameTarget.id, name);
     }
     await refresh();
-    setNotice(
-      `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
-    );
+    // Cleared now, so that the result is a change even when it repeats.
+    setNotice("");
+    setRenameResult({
+      message: `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
+      recordId: activeRecordId,
+    });
   };
 
   const importFiles = () =>

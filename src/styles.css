@@ -68,6 +68,9 @@
   outline: 2px solid color-mix(in srgb, var(--focus), transparent 70%);
 }
 .vault-card [role="alert"] { color: var(--red); }
+/* Kept on the page while empty, so that its messages are read out, but out of
+   the grid, so that it takes no row or gap. */
+.vault-card form > [role="status"]:empty { position: absolute; }
 .vault-kicker {
   margin: 0;
   color: var(--teal) !important;
@@ -624,7 +627,6 @@ h1, h2, p { margin: 0; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
-.native-dialog-status:empty { display: none; }
 .native-confirm-message p { margin: 0; overflow-wrap: anywhere; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
 .native-rename-fields label { font-weight: 700; }

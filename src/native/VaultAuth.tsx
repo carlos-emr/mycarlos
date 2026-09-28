@@ -45,6 +45,21 @@ export function VaultAuthFrame({
   );
 }
 
+const AUTH_NOTICE_ID = "auth-notice";
+
+// A status line is read out only when its text changes while it is on the
+// page, so this one stays there when empty, and a wrong passphrase is then
+// announced. A message a screen opens with, such as "Vault locked.", is not a
+// change: the unlock screen also gives it as the description of the
+// Passphrase field, which has focus.
+function AuthNotice({ notice }: { notice: string }) {
+  return (
+    <p id={AUTH_NOTICE_ID} role="status">
+      {notice}
+    </p>
+  );
+}
+
 // The native side compares the typed text with this exact phrase again.
 const RESET_CONFIRMATION = "RESET MYCARLOS VAULT";
 
@@ -142,11 +157,12 @@ export function CreateVault({
               required
               type="password"
               autoComplete="new-password"
+              aria-describedby="passphrase-rules"
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
             />
           </label>
-          <small>
+          <small id="passphrase-rules">
             Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
             common passwords, names, and predictable patterns are rejected
             locally.
@@ -173,7 +189,7 @@ export function CreateVault({
               characters.
             </p>
           )}
-          {notice && <p role="status">{notice}</p>}
+          <AuthNotice notice={notice} />
           <button className="button primary" disabled={busy || invalid}>
             Create vault
           </button>
@@ -225,6 +241,7 @@ export function UnlockVault({
               required
               type="password"
               autoComplete="current-password"
+              aria-describedby={notice ? AUTH_NOTICE_ID : undefined}
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
             />
@@ -234,7 +251,7 @@ export function UnlockVault({
               This is longer than any vault passphrase. Check what you typed.
             </p>
           )}
-          {notice && <p role="status">{notice}</p>}
+          <AuthNotice notice={notice} />
           <button className="button primary" disabled={busy || tooLong}>
             Unlock
           </button>
