@@ -268,6 +268,11 @@ test("keeps trash names readable with large text on a phone", async ({
       return appWindow.scrollWidth <= appWindow.clientWidth;
     }),
   ).toBe(true);
+  // The window itself stays on screen: an oversized window has no overflow of its own.
+  expect(windowBox!.x).toBeGreaterThanOrEqual(0);
+  expect(windowBox!.x + windowBox!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
   await page.screenshot({
     path: testInfo.outputPath("trash-large-text.png"),
     fullPage: true,
