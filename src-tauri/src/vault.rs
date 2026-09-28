@@ -1649,7 +1649,10 @@ enum ObjectPresence {
 
 fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
     match fs::symlink_metadata(root.join("objects").join(&record.object_name)) {
-        Ok(metadata) if metadata.file_type().is_file() => ObjectPresence::Present,
+        Ok(metadata) if is_regular_non_reparse(&metadata) => ObjectPresence::Present,
+        // A Windows reparse point that is not a link, such as a cloud
+        // placeholder, is refused when opened but may be intact behind it.
+        Ok(metadata) if metadata.file_type().is_file() => ObjectPresence::Unknown,
         Ok(_) => ObjectPresence::Missing,
         Err(error) if error.kind() == io::ErrorKind::NotFound => ObjectPresence::Missing,
         Err(_) => ObjectPresence::Unknown,
@@ -2270,7 +2273,9 @@ fn repair_manifest_redundancy(
 /// The manifest chosen at unlock and what the session may safely do with it.
 struct SelectedManifest {
     manifest: Manifest,
-    /// Records whose ciphertext object is missing or is not a regular file.
+    /// Records whose ciphertext object is missing, is not a regular file, or
+    /// could not be looked up. The last may be intact, so they are only ever
+    /// removable when the slot is not unreadable (see `SlotReading`).
     unavailable: HashSet<Uuid>,
     /// Set when storage must not be written: repair or orphan cleanup could
     /// destroy a newer manifest or ciphertext that is only temporarily out of reach.
