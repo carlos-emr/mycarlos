@@ -126,7 +126,8 @@ On every platform:
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and makes a new key. After you type two of its
    groups back, a system dialog (not part of the app's own screen) asks **Replace your recovery
-   key?** Choose **Cancel** once: the setup stays open and says the current key still works. Check
+   key?** with the buttons **Keep current key**, **Replace key** and **Cancel**. Choose **Keep
+   current key**, or **Cancel**, once: the setup stays open and says the current key still works. Check
    again and choose **Replace key**: the old key then stops working. The vault does not lock by
    itself while that dialog is open.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
@@ -142,7 +143,8 @@ On every platform:
    app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a
    backup** on the unlock screen: pick the file, open it with the passphrase, and check that the
    app says the vault on this device is not the same as the backup and asks you to agree before
-   restoring. After restoring, the vault is locked; unlock it and check that the extra document is
+   restoring, first on the app's own screen and then in a system dialog (**Keep this vault**,
+   **Replace with backup**, **Cancel**). After restoring, the vault is locked; unlock it and check that the extra document is
    gone and the others open. Try a copy of the backup with a few bytes changed: it is refused and
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
@@ -256,7 +258,32 @@ To remove everything while unlocked, open **Security**, choose **Show reset cont
 `RESET MYCARLOS VAULT`, choose **Erase entire vault**, and confirm **Erase vault** in the dialog
 that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the unlock
 screen, type `RESET MYCARLOS VAULT`, choose **Erase vault**, and confirm **Erase vault** in the
-dialog.
+dialog, whose buttons are **Keep this vault**, **Erase vault** and **Cancel**.
+
+### The "are you sure?" dialogs (please try on Windows, on a Mac and on Linux)
+
+Three things ask in a dialog of the system's own before they happen: erasing the vault (above),
+restoring a backup over a vault (**Keep this vault**, **Replace with backup**, **Cancel**), and
+replacing the recovery key (**Keep current key**, **Replace key**, **Cancel**). The safe button
+is meant to be the one that Enter presses. Nobody has tried that yet. For each of the three, on
+each computer:
+
+1. When the dialog opens, which button is highlighted? It should be the one that starts with
+   **Keep**. Write down the order of the buttons as you see them.
+2. Press Enter. Nothing should change.
+3. Open it again and press Space. Nothing should change.
+4. Open it again and press Escape. Nothing should change.
+5. Open it again and close it with its X, if it has one. Nothing should change.
+6. Each time, the app should say that it was cancelled and that nothing changed.
+7. On a Mac, turn on **Keyboard navigation** in System Settings, then do steps 1 to 4 again, and
+   say which button has the ring around it.
+8. Can the dialog end up behind the app's window? On Windows and on a Mac it should stay in front
+   of it. On Linux it may not.
+9. Last, open it again, press Tab until the button that goes ahead has the focus, and say what
+   Enter and Space do then. They are expected to go ahead: use a vault you can lose.
+
+On a phone: note the order of the buttons, then tap outside the dialog, and press Back on
+Android. Nothing should change.
 
 Uninstalling also removes the vault on Android and iOS. On desktop the vault stays until erased;
 it lives in:
