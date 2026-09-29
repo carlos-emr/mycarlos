@@ -1745,7 +1745,6 @@ mod tests {
         let preview = |replaces, differs| RestorePreview {
             replaces,
             differs_from_this_device: differs,
-            older_than_this_device: differs,
             document_count: 3,
             fingerprint: [0; 32],
         };

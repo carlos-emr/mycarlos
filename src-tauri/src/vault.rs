@@ -1851,8 +1851,8 @@ impl VaultStore {
             manifest_data,
             ..
         } = opened;
-        let (replaces, differs_from_this_device, older_than_this_device) = if !self.root.exists() {
-            (RestoreReplaces::Nothing, false, false)
+        let (replaces, differs_from_this_device) = if !self.root.exists() {
+            (RestoreReplaces::Nothing, false)
         } else if read_header_candidates(&self.root)
             .iter()
             .any(|candidate| candidate.vault_id == header.vault_id)
@@ -1883,21 +1883,16 @@ impl VaultStore {
                 live.generation = manifest.generation;
                 live == *manifest
             });
-            // A vault that holds what the backup holds is not newer than it,
-            // whatever repairs have moved its generation on since.
-            let differs = !(same_keys && same_content);
-            (
-                RestoreReplaces::SameVault,
-                differs,
-                differs && live_manifest.is_some_and(|live| live.generation > manifest.generation),
-            )
+            // Which of the two is the later one is not told: a generation
+            // moves on with repairs, and a vault restored and changed
+            // elsewhere has a lower one than a vault left untouched here.
+            (RestoreReplaces::SameVault, !(same_keys && same_content))
         } else {
-            (RestoreReplaces::OtherVault, false, false)
+            (RestoreReplaces::OtherVault, false)
         };
         Ok(RestorePreview {
             replaces,
             differs_from_this_device,
-            older_than_this_device,
             document_count: manifest.records.len(),
             fingerprint: {
                 let mut hash = <Sha256 as sha2::Digest>::new();
@@ -4561,8 +4556,6 @@ pub struct RestorePreview {
     /// holds: its documents, passphrase or recovery key have changed since,
     /// or it could not be read to tell. Restoring loses those changes.
     pub differs_from_this_device: bool,
-    /// The vault on this device is newer than the backup.
-    pub older_than_this_device: bool,
     pub document_count: usize,
     /// Which backup this describes: a hash of its header and manifest.
     #[serde(skip)]
@@ -7872,7 +7865,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(preview.replaces, RestoreReplaces::SameVault);
-        assert!(preview.older_than_this_device && preview.differs_from_this_device);
+        assert!(preview.differs_from_this_device);
         assert!(matches!(
             store.restore(
                 Cursor::new(backup.clone()),
@@ -7968,7 +7961,7 @@ mod tests {
         };
         let same = preview(&store);
         assert_eq!(same.replaces, RestoreReplaces::SameVault);
-        assert!(!same.differs_from_this_device && !same.older_than_this_device);
+        assert!(!same.differs_from_this_device);
 
         // A passphrase change leaves the documents as they were, but the
         // backup would bring the old passphrase back.
@@ -7979,7 +7972,6 @@ mod tests {
         store.lock();
         let changed = preview(&store);
         assert!(changed.differs_from_this_device);
-        assert!(!changed.older_than_this_device);
 
         // Restored and opened: redundancy repair moves the generations on,
         // and the vault is still what the backup holds.
@@ -7993,7 +7985,7 @@ mod tests {
         store.unlock(PASSWORD).unwrap();
         store.lock();
         let restored = preview(&store);
-        assert!(!restored.differs_from_this_device && !restored.older_than_this_device);
+        assert!(!restored.differs_from_this_device);
 
         // A replaced recovery key differs too.
         store.unlock(PASSWORD).unwrap();

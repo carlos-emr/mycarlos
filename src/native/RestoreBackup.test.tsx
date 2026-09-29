@@ -10,7 +10,6 @@ function setUp(preview: Partial<RestorePreview> = {}, overrides = {}) {
     inspectRestore: vi.fn().mockResolvedValue({
       replaces: "nothing",
       differsFromThisDevice: false,
-      olderThanThisDevice: false,
       documentCount: 2,
       ...preview,
     }),
@@ -73,15 +72,6 @@ describe("RestoreBackup", () => {
       { replaces: "otherVault" as const },
       /erases it, permanently/,
       "Erase the vault on this device and restore the backup",
-    ],
-    [
-      {
-        replaces: "sameVault" as const,
-        differsFromThisDevice: true,
-        olderThanThisDevice: true,
-      },
-      /is not the same as this backup/,
-      "Replace the vault on this device with this backup and lose what changed since",
     ],
     [
       // A changed passphrase or recovery key, with the documents as they were.

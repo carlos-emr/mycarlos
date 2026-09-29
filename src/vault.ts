@@ -58,7 +58,6 @@ export interface RestorePreview {
    * to tell). Restoring loses those changes. */
   differsFromThisDevice: boolean;
   /** The vault on this device is newer than the backup. */
-  olderThanThisDevice: boolean;
   documentCount: number;
 }
 

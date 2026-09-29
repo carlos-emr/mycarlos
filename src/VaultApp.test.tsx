@@ -65,7 +65,6 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     inspectRestore: vi.fn().mockResolvedValue({
       replaces: "nothing",
       differsFromThisDevice: false,
-      olderThanThisDevice: false,
       documentCount: 0,
     }),
     restore: vi.fn().mockResolvedValue(true),
@@ -1008,7 +1007,6 @@ describe("durable vault UI", () => {
       inspectRestore: vi.fn().mockResolvedValue({
         replaces: "nothing",
         differsFromThisDevice: false,
-        olderThanThisDevice: false,
         documentCount: 4,
       }),
     });
@@ -1046,7 +1044,6 @@ describe("durable vault UI", () => {
       inspectRestore: vi.fn().mockResolvedValue({
         replaces: "sameVault",
         differsFromThisDevice: false,
-        olderThanThisDevice: false,
         documentCount: 4,
       }),
     });
