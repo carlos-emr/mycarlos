@@ -671,3 +671,9 @@ h1, h2, p { margin: 0; }
     transition-duration: .01ms !important;
   }
 }
+
+/* The size of the interface, and the buttons that change it. */
+.zoom-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 16px; border-bottom: 1px solid var(--line); background: var(--canvas); color: var(--ink); }
+.zoom-bar p { margin: 0; font-size: 0.875rem; font-weight: 700; }
+.zoom-bar small { color: var(--ink-soft); font-size: 0.875rem; }
+.zoom-bar .button { min-height: 44px; }

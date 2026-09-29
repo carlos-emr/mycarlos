@@ -206,6 +206,17 @@ with a patient-held recovery kit and portable authenticated encrypted backups. T
 implemented by format v1. OS cloud backup is to be excluded where the platform permits once the
 portable backup flow exists.
 
+## Settings kept outside the vault
+
+The app keeps a few settings of the device in the webview's own storage, not in the vault, so that
+they apply before a vault is unlocked. They name no vault, patient or document. Anyone who can read
+the app's files on the device can read them. Erasing the vault does not remove them.
+
+| Setting | Key | What it could tell |
+| --- | --- | --- |
+| Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
+| Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
+
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.
