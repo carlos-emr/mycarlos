@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useModalFocus } from "../useModalFocus";
 import {
+  isLockedError,
   isRecoveryKeyTypo,
   MAX_PASSPHRASE_BYTES,
   utf8Length,
@@ -34,6 +35,7 @@ export function RecoveryKeySetup({
   canPrint,
   onDone,
   onClose,
+  onLocked,
 }: {
   bridge: Pick<
     VaultBridge,
@@ -51,7 +53,11 @@ export function RecoveryKeySetup({
   required?: boolean;
   canPrint: boolean;
   onDone: (snapshot: VaultSnapshot) => void;
-  onClose: () => void;
+  /** `keyShown`: a key was on screen, and may be written down or in a kit,
+   * that will now never open the vault. */
+  onClose: (keyShown: boolean) => void;
+  /** The vault turned out to be locked. */
+  onLocked: () => void;
 }) {
   const [step, setStep] = useState<Step>(initialKey ? "key" : "passphrase");
   const [key, setKey] = useState(initialKey ?? "");
@@ -75,7 +81,14 @@ export function RecoveryKeySetup({
     document.body.classList.add("printing-recovery-kit");
     const done = () => setPrinting(false);
     window.addEventListener("afterprint", done);
-    window.print();
+    try {
+      window.print();
+    } catch {
+      setPrinting(false);
+      setError(
+        "Printing is not available here. Save the kit, or write the key down.",
+      );
+    }
     return () => {
       window.removeEventListener("afterprint", done);
       document.body.classList.remove("printing-recovery-kit");
@@ -85,12 +98,31 @@ export function RecoveryKeySetup({
 
   const leave = () => {
     void bridge.cancelRecoveryKey().catch(() => undefined);
-    onClose();
+    onClose(Boolean(key));
   };
   const cancel = () => {
     if (required || busy) return;
     leave();
   };
+  // A failure that is not a wrong answer. A locked vault is the app's to
+  // show; anything else lets a required setup be left.
+  const failed = (failure: unknown) => {
+    if (isLockedError(failure)) {
+      onLocked();
+      return;
+    }
+    setError(vaultErrorMessage(failure));
+    setCanLeave(true);
+  };
+  // The buttons are disabled while the kit is saved, which drops the focus
+  // that was on one of them.
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const refocusSave = useRef(false);
+  useEffect(() => {
+    if (busy || !refocusSave.current) return;
+    refocusSave.current = false;
+    saveButtonRef.current?.focus();
+  }, [busy]);
   const dialogRef = useRef<HTMLElement | null>(null);
   useModalFocus(true, dialogRef, cancel);
   // Each step replaces the last, and the control that had focus with it. The
@@ -112,13 +144,15 @@ export function RecoveryKeySetup({
       setKey(await bridge.beginRecoveryKey(secret));
       setStep("key");
     } catch (failure) {
-      setError(vaultErrorMessage(failure));
+      if (isLockedError(failure)) onLocked();
+      else setError(vaultErrorMessage(failure));
     } finally {
       setBusy(false);
     }
   };
 
   const saveKit = async () => {
+    refocusSave.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -128,13 +162,17 @@ export function RecoveryKeySetup({
           "Recovery kit saved. The key starts working once you finish the check.",
         );
     } catch (failure) {
-      setError(vaultErrorMessage(failure));
+      failed(failure);
     } finally {
       setBusy(false);
     }
   };
 
   const startCheck = () => {
+    // The kit leaves the page with the key, even if the print never
+    // reported that it had finished.
+    setPrinting(false);
+    setWrongTries(0);
     setAsked(pickGroups(groups.length));
     setAnswers(["", ""]);
     setError("");
@@ -156,8 +194,7 @@ export function RecoveryKeySetup({
     } catch (failure) {
       // Only a wrong answer counts towards going back to the key.
       if (!isRecoveryKeyTypo(failure)) {
-        setError(vaultErrorMessage(failure));
-        setCanLeave(true);
+        failed(failure);
         return;
       }
       const tries = wrongTries + 1;
@@ -188,7 +225,12 @@ export function RecoveryKeySetup({
         : "Check your recovery key";
 
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={cancel}>
+    <div
+      className="dialog-backdrop"
+      role="presentation"
+      // Once a key is on screen, a stray click outside must not end the setup.
+      onMouseDown={key ? undefined : cancel}
+    >
       <section
         ref={dialogRef}
         className="record-dialog recovery-key-dialog"
@@ -264,7 +306,12 @@ export function RecoveryKeySetup({
                 Hidden while the kit is being saved.
               </p>
             ) : (
-              <ol className="recovery-key-groups" aria-label="Recovery key">
+              <ol
+                className="recovery-key-groups"
+                // Kept a list for readers that drop one styled without markers.
+                role="list"
+                aria-label="Recovery key"
+              >
                 {groups.map((group, index) => (
                   <li key={index}>
                     <span aria-hidden="true">{group}</span>
@@ -285,7 +332,18 @@ export function RecoveryKeySetup({
                   Cancel
                 </button>
               )}
+              {required && canLeave && (
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={leave}
+                >
+                  Set up later
+                </button>
+              )}
               <button
+                ref={saveButtonRef}
                 className="button"
                 type="button"
                 disabled={busy}

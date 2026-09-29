@@ -209,6 +209,7 @@ h1, h2, p { margin: 0; }
 .breadcrumb { margin-bottom: 4px; padding: 3px 7px; font-size: 0.875rem; }
 .main-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
 .main-head h1 { font-size: 1.375rem; line-height: 1.25; letter-spacing: -.015em; }
+.main-head h1:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .main-head p { margin-top: 3px; color: var(--ink-soft); font-size: 0.875rem; }
 .head-actions { display: flex; flex: none; gap: 8px; margin-left: auto; }
 .button {
@@ -632,6 +633,7 @@ h1, h2, p { margin: 0; }
 .native-confirm-message p { margin: 0; overflow-wrap: anywhere; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
 .recovery-key-dialog { max-width: 520px; }
+.recovery-key-dialog .button, .recovery-key-dialog input { min-height: 44px; }
 .recovery-key-dialog .dialog-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .recovery-key-body { display: grid; gap: 12px; padding: 16px 20px; }
 .recovery-key-body p { margin: 0; overflow-wrap: anywhere; }

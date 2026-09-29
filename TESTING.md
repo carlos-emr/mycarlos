@@ -213,7 +213,10 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    setup of a new vault is the exception: Escape does not close it. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
-   it (or, from a dialog opened within a document's details, to those details).
+   it (or, from a dialog opened within a document's details, to those details). When that button
+   is gone by then, as after setting up a recovery key from the "No recovery key yet" notice, focus
+   goes to the page's heading. Closing the recovery key setup once a key has been shown says
+   that the key does not work.
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
    over from the library, and the reader says "Vault locked." with the field. Check the same
    after an automatic lock.

@@ -81,7 +81,7 @@ envelope, replacing any earlier key. Cancelling, locking, or changing the passph
 nothing and forgets the pending key.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, the
-UTC date it was made, and what it is for, with no patient or document names. It is written
+UTC date it was saved, and what it is for, with no patient or document names. It is written
 natively, only to a file the patient picks. For a filesystem path it is never inside the vault
 home, is private to the user on Unix, and replaces a link at the destination rather than writing
 through it; a document provider's URI (Android) is written directly, so a failed write can leave a

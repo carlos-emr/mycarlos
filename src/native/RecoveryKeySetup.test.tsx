@@ -33,6 +33,7 @@ function setUp(
   };
   const onDone = vi.fn();
   const onClose = vi.fn();
+  const onLocked = vi.fn();
   render(
     <RecoveryKeySetup
       bridge={bridge}
@@ -40,10 +41,11 @@ function setUp(
       canPrint={false}
       onDone={onDone}
       onClose={onClose}
+      onLocked={onLocked}
       {...props}
     />,
   );
-  return { bridge, onDone, onClose };
+  return { bridge, onDone, onClose, onLocked };
 }
 
 /** The group numbers the check asks for (1-based), from their labels. */
@@ -248,12 +250,77 @@ describe("RecoveryKeySetup", () => {
     ).toBeVisible();
   });
 
-  it("cancelling forgets the key", async () => {
+  it("cancelling forgets the key, and says that one was shown", async () => {
     const user = userEvent.setup();
     const { bridge, onClose } = setUp({ initialKey: KEY });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it("cancelling before a key was made says that none was shown", async () => {
+    const user = userEvent.setup();
+    const { onClose } = setUp();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it("does not end on a click outside once the key is on screen", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose } = setUp({ initialKey: KEY });
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: document.querySelector(".dialog-backdrop")!,
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+  });
+
+  it("hands a locked vault to the app", async () => {
+    const user = userEvent.setup();
+    const { onLocked } = setUp(
+      { initialKey: KEY },
+      {
+        saveRecoveryKit: vi
+          .fn()
+          .mockRejectedValue({ code: "locked", message: "FAKE locked." }),
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Save kit…" }));
+    await vi.waitFor(() => expect(onLocked).toHaveBeenCalledOnce());
+    expect(screen.queryByText("FAKE locked.")).not.toBeInTheDocument();
+  });
+
+  it("offers a way out of a required setup when the kit cannot be saved", async () => {
+    const user = userEvent.setup();
+    const { onClose } = setUp(
+      { initialKey: KEY, required: true },
+      {
+        saveRecoveryKit: vi
+          .fn()
+          .mockRejectedValue({ code: "storage", message: "FAKE no disk." }),
+      },
+    );
+    const save = screen.getByRole("button", { name: "Save kit…" });
+    await user.click(save);
+    expect(await screen.findByText("FAKE no disk.")).toBeVisible();
+    // Focus is back where it was before the buttons were disabled.
+    expect(save).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Set up later" }));
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it("says so when printing is not possible", async () => {
+    const user = userEvent.setup();
+    const print = vi.spyOn(window, "print").mockImplementation(() => {
+      throw new Error("FAKE no printing");
+    });
+    onTestFinished(() => print.mockRestore());
+    setUp({ initialKey: KEY, canPrint: true });
+    await user.click(screen.getByRole("button", { name: "Print" }));
+    expect(await screen.findByText(/Printing is not available/)).toBeVisible();
+    expect(document.querySelector(".recovery-kit-print")).toBeNull();
+    expect(document.body).not.toHaveClass("printing-recovery-kit");
   });
 
   it("has no way out when the key is required", async () => {
