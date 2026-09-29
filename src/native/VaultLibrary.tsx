@@ -1013,6 +1013,7 @@ export function VaultLibrary({
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 onSaveBackup={saveBackup}
+                onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}

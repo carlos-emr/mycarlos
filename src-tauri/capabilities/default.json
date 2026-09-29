@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "allow-runtime-info",
+    "allow-kdf-benchmark",
     "allow-vault-status",
     "allow-vault-create",
     "allow-vault-unlock",

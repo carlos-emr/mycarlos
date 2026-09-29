@@ -548,6 +548,40 @@ fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
 }
 
+/// One speed test at a time: each takes a core and 64 MiB for some seconds.
+#[derive(Default)]
+struct SpeedTest(std::sync::atomic::AtomicBool);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpeedTestReport {
+    #[serde(flatten)]
+    measured: vault::KdfBenchmark,
+    #[serde(flatten)]
+    runtime: RuntimeInfo,
+}
+
+/// Times the passphrase key derivation on this device, for the record in
+/// ARGON2_BENCHMARK.md. It uses a made-up passphrase, reads no vault and
+/// changes nothing, so it needs no unlocked vault.
+#[tauri::command]
+async fn kdf_benchmark(running: State<'_, Arc<SpeedTest>>) -> CommandResult<SpeedTestReport> {
+    use std::sync::atomic::Ordering;
+    if running.0.swap(true, Ordering::AcqRel) {
+        return Err(PublicError {
+            code: "busy",
+            message: "A speed test is already running. Wait for it to finish.",
+        });
+    }
+    let gate = Arc::clone(running.inner());
+    let measured = tauri::async_runtime::spawn_blocking(vault::benchmark_kdf).await;
+    gate.0.store(false, Ordering::Release);
+    Ok(SpeedTestReport {
+        measured: measured.map_err(|_| PublicError::from(VaultError::Storage))??,
+        runtime: current_runtime_info(),
+    })
+}
+
 #[tauri::command]
 async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultStatus> {
     run_blocking(store.inner(), VaultStore::status).await
@@ -1503,6 +1537,7 @@ pub fn run() {
                     .join("vault-v1"),
             )));
             app.manage(Arc::new(PendingPicks::default()));
+            app.manage(Arc::new(SpeedTest::default()));
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             std::thread::Builder::new()
@@ -1515,6 +1550,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            kdf_benchmark,
             vault_status,
             vault_create,
             vault_unlock,

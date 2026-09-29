@@ -78,6 +78,21 @@ export interface ImportOutcome {
   skippedDuplicates: string[];
 }
 
+/** How long this device took to derive a key from a passphrase. */
+export interface SpeedTestReport {
+  memoryKib: number;
+  iterations: number;
+  lanes: number;
+  samplesMs: number[];
+  medianMs: number;
+  maxMs: number;
+  /** False for a development build, whose timings mean nothing. */
+  optimized: boolean;
+  platform: string;
+  architecture: string;
+  appVersion: string;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
@@ -108,6 +123,9 @@ export interface VaultBridge {
   /** Saves the kit for the key being set up; false if the picker was
    * cancelled. */
   saveRecoveryKit(): Promise<boolean>;
+  /** Times the passphrase key derivation on this device, with a made-up
+   * passphrase. Reads no vault and changes nothing. */
+  benchmarkKdf(): Promise<SpeedTestReport>;
   cancelRecoveryKey(): Promise<void>;
   /** Opens a locked vault with its recovery key and a new passphrase. */
   recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
@@ -241,6 +259,7 @@ export function createVaultBridge(): VaultBridge {
         request: { groups },
       }),
     saveRecoveryKit: () => invoke<boolean>("vault_recovery_kit_save"),
+    benchmarkKdf: () => invoke<SpeedTestReport>("kdf_benchmark"),
     cancelRecoveryKey: () => invoke<void>("vault_recovery_key_cancel"),
     recover: (recoveryKey, newPassphrase) =>
       invoke<RecoverOutcome>("vault_recover", {

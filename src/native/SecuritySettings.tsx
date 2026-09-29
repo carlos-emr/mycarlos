@@ -1,6 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
-import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
+import {
+  MAX_PASSPHRASE_BYTES,
+  utf8Length,
+  vaultErrorMessage,
+  type SpeedTestReport,
+} from "../vault";
 import { AUTO_LOCK_OPTIONS } from "./autoLock";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import {
@@ -23,6 +28,20 @@ interface SecuritySettingsProps {
   recoveryKeySetAtMs: number | null;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
+  onSpeedTest: () => Promise<SpeedTestReport>;
+}
+
+/** One line a tester can copy into the benchmark record. */
+export function speedTestLine(report: SpeedTestReport): string {
+  return [
+    `${report.samplesMs.length} runs: ${report.samplesMs.join(", ")} ms.`,
+    `Median ${report.medianMs} ms, longest ${report.maxMs} ms.`,
+    `Argon2id, ${report.memoryKib / 1024} MiB, ${report.iterations} passes, ${report.lanes} lanes.`,
+    `${report.platform} ${report.architecture}, myCarlos ${report.appVersion}.`,
+    report.optimized
+      ? "Release build."
+      : "Development build: do not record these timings.",
+  ].join(" ");
 }
 
 export function SecuritySettings({
@@ -38,7 +57,31 @@ export function SecuritySettings({
   recoveryKeySetAtMs,
   onSetUpRecoveryKey,
   onSaveBackup,
+  onSpeedTest,
 }: SecuritySettingsProps) {
+  const [speedTest, setSpeedTest] = useState<{
+    running: boolean;
+    result: string;
+    failed: string;
+  }>({ running: false, result: "", failed: "" });
+  const runSpeedTest = async () => {
+    if (speedTest.running) return;
+    setSpeedTest({ running: true, result: "", failed: "" });
+    try {
+      const report = await onSpeedTest();
+      setSpeedTest({
+        running: false,
+        result: speedTestLine(report),
+        failed: "",
+      });
+    } catch (error) {
+      setSpeedTest({
+        running: false,
+        result: "",
+        failed: vaultErrorMessage(error),
+      });
+    }
+  };
   const [profileName, setProfileName] = useState("");
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
@@ -266,6 +309,31 @@ export function SecuritySettings({
               Change passphrase
             </button>
           </form>
+        </section>
+        <section className="setting-row native-setting-form">
+          <div>
+            <h2>Speed test, for testers</h2>
+            <p>
+              Measures how long this device takes to check a passphrase. It uses
+              a made-up passphrase, not yours, and changes nothing. It takes a
+              few seconds, longer on an older phone. Close other apps first, and
+              send the result with the device's make and model.
+            </p>
+          </div>
+          <div>
+            <button
+              className="button"
+              type="button"
+              disabled={speedTest.running}
+              onClick={() => void runSpeedTest()}
+            >
+              Run speed test
+            </button>
+            <p className="native-dialog-status" role="status">
+              {speedTest.running ? "Measuring…" : speedTest.result}
+            </p>
+            {speedTest.failed && <p role="alert">{speedTest.failed}</p>}
+          </div>
         </section>
         <section className="setting-row">
           <div>

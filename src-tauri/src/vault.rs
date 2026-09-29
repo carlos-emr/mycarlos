@@ -2697,6 +2697,56 @@ fn normalize_passphrase(passphrase: &str) -> Zeroizing<String> {
     Zeroizing::new(passphrase.nfc().collect())
 }
 
+/// How many times the speed test derives a key.
+pub const KDF_BENCHMARK_SAMPLES: usize = 5;
+
+/// How long this device takes to derive a key from a passphrase, with the
+/// settings every vault uses. See ARGON2_BENCHMARK.md.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KdfBenchmark {
+    pub memory_kib: u32,
+    pub iterations: u32,
+    pub lanes: u32,
+    /// Each derivation, in the order it was run.
+    pub samples_ms: Vec<u64>,
+    pub median_ms: u64,
+    pub max_ms: u64,
+    /// Whether this build is optimized. Timings of one that is not say
+    /// nothing about what patients will get.
+    pub optimized: bool,
+}
+
+/// Derives a key `KDF_BENCHMARK_SAMPLES` times and times each. It uses a
+/// made-up passphrase and salt, reads no vault and keeps nothing.
+pub fn benchmark_kdf() -> Result<KdfBenchmark, VaultError> {
+    let config = KdfConfig {
+        algorithm: "argon2id".to_owned(),
+        version: 19,
+        memory_kib: ARGON_MEMORY_KIB,
+        iterations: ARGON_ITERATIONS,
+        lanes: ARGON_LANES,
+        salt: BASE64.encode([0x5a_u8; 16]),
+    };
+    let mut samples_ms = Vec::with_capacity(KDF_BENCHMARK_SAMPLES);
+    for _ in 0..KDF_BENCHMARK_SAMPLES {
+        let started = Instant::now();
+        derive_passphrase_key("not a passphrase: the myCarlos speed test", &config)?;
+        samples_ms.push(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+    }
+    let mut sorted = samples_ms.clone();
+    sorted.sort_unstable();
+    Ok(KdfBenchmark {
+        memory_kib: ARGON_MEMORY_KIB,
+        iterations: ARGON_ITERATIONS,
+        lanes: ARGON_LANES,
+        median_ms: sorted[sorted.len() / 2],
+        max_ms: sorted[sorted.len() - 1],
+        samples_ms,
+        optimized: !cfg!(debug_assertions),
+    })
+}
+
 fn derive_passphrase_key(passphrase: &str, config: &KdfConfig) -> Result<SecretKey, VaultError> {
     if !valid_kdf_config(config) {
         return Err(VaultError::Corrupt);
@@ -11265,29 +11315,16 @@ mod tests {
     #[test]
     #[ignore = "manual release-mode benchmark for each supported device class"]
     fn benchmark_argon2id_unlock_work_factor() {
-        let config = KdfConfig {
-            algorithm: "argon2id".to_owned(),
-            version: 19,
-            memory_kib: ARGON_MEMORY_KIB,
-            iterations: ARGON_ITERATIONS,
-            lanes: ARGON_LANES,
-            salt: BASE64.encode([0x5a_u8; 16]),
-        };
-        let mut samples = Vec::with_capacity(5);
-        for _ in 0..5 {
-            let started = Instant::now();
-            let output = Zeroizing::new(derive_passphrase_key(PASSWORD, &config).unwrap());
-            samples.push(started.elapsed().as_millis());
-            assert_ne!(output.as_ref(), &[0_u8; 32]);
-        }
-        samples.sort_unstable();
+        let measured = benchmark_kdf().unwrap();
         println!(
-            "mycarlos_argon2id memory_kib={} iterations={} lanes={} samples_ms={samples:?} median_ms={} max_ms={}",
-            ARGON_MEMORY_KIB,
-            ARGON_ITERATIONS,
-            ARGON_LANES,
-            samples[samples.len() / 2],
-            samples.last().unwrap(),
+            "mycarlos_argon2id memory_kib={} iterations={} lanes={} samples_ms={:?} median_ms={} max_ms={} optimized={}",
+            measured.memory_kib,
+            measured.iterations,
+            measured.lanes,
+            measured.samples_ms,
+            measured.median_ms,
+            measured.max_ms,
+            measured.optimized,
         );
     }
 

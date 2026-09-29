@@ -55,6 +55,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    benchmarkKdf: vi
+      .fn()
+      .mockRejectedValue({ code: "busy", message: "FAKE no speed test." }),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
     recover: vi
       .fn()

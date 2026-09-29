@@ -1,6 +1,19 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { SecuritySettings } from "./SecuritySettings";
+import { SecuritySettings, speedTestLine } from "./SecuritySettings";
+
+const speedTest = {
+  memoryKib: 65536,
+  iterations: 3,
+  lanes: 4,
+  samplesMs: [812, 820, 815, 830, 811],
+  medianMs: 815,
+  maxMs: 830,
+  optimized: true,
+  platform: "android",
+  architecture: "aarch64",
+  appVersion: "0.1.0",
+};
 
 function renderSettings() {
   const props = {
@@ -16,6 +29,7 @@ function renderSettings() {
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
+    onSpeedTest: vi.fn().mockResolvedValue(speedTest),
   };
   render(<SecuritySettings {...props} />);
   return props;
@@ -23,6 +37,49 @@ function renderSettings() {
 
 const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+describe("SecuritySettings speed test", () => {
+  it("measures when asked, and gives a line to send", async () => {
+    let finish!: (report: typeof speedTest) => void;
+    const props = renderSettings();
+    props.onSpeedTest.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    const section = button.closest("section")!;
+    const status = within(section).getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(props.onSpeedTest).not.toHaveBeenCalled();
+
+    fireEvent.click(button);
+    expect(status).toHaveTextContent("Measuring…");
+    expect(button).toBeDisabled();
+    await act(async () => finish(speedTest));
+    expect(status).toHaveTextContent(
+      "5 runs: 812, 820, 815, 830, 811 ms. Median 815 ms, longest 830 ms. Argon2id, 64 MiB, 3 passes, 4 lanes. android aarch64, myCarlos 0.1.0. Release build.",
+    );
+    expect(button).toBeEnabled();
+  });
+
+  it("says not to record a development build's timings", () => {
+    expect(speedTestLine({ ...speedTest, optimized: false })).toMatch(
+      /Development build: do not record these timings\.$/,
+    );
+  });
+
+  it("says why it could not measure", async () => {
+    const props = renderSettings();
+    props.onSpeedTest.mockRejectedValueOnce({
+      code: "busy",
+      message: "FAKE already running.",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
+    expect(await screen.findByText("FAKE already running.")).toBeVisible();
+  });
+});
 
 describe("SecuritySettings passphrase change", () => {
   it("says what a new passphrase does not protect, without urging an erase", () => {
