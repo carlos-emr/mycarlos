@@ -1231,7 +1231,10 @@ impl VaultStore {
     ///
     /// Only for the lost-objects reason: with an unreadable slot the commit
     /// could replace a newer state, and after a write failure it would fail.
-    pub fn remove_unavailable_records(&self) -> Result<Vec<Uuid>, VaultError> {
+    ///
+    /// `confirmed` is the set of documents the patient was shown as damaged
+    /// when they agreed. If the session's set differs, nothing is removed.
+    pub fn remove_unavailable_records(&self, confirmed: &[Uuid]) -> Result<Vec<Uuid>, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         match unlocked.recovery {
@@ -1241,12 +1244,15 @@ impl VaultStore {
         }
         // A file that cannot be looked up by now may be intact. Nothing is
         // removed, and the session says why instead of offering removal again.
-        if unlocked
+        let unknown: Vec<Uuid> = unlocked
             .manifest
             .records
             .iter()
-            .any(|record| object_presence(&self.root, record) == ObjectPresence::Unknown)
-        {
+            .filter(|record| object_presence(&self.root, record) == ObjectPresence::Unknown)
+            .map(|record| record.id)
+            .collect();
+        if !unknown.is_empty() {
+            unlocked.unavailable.extend(unknown);
             unlocked.recovery = Some(RecoveryReason::UnreadableSlot);
             return Err(VaultError::RecoveryMode);
         }
@@ -1265,6 +1271,11 @@ impl VaultStore {
             .collect();
         if !newly_missing.is_empty() {
             unlocked.unavailable.extend(newly_missing);
+            return Err(VaultError::Corrupt);
+        }
+        // The screen may not have caught up with an earlier refusal.
+        let confirmed: HashSet<Uuid> = confirmed.iter().copied().collect();
+        if confirmed != unlocked.unavailable {
             return Err(VaultError::Corrupt);
         }
         let mut next = unlocked.manifest.clone();
@@ -3478,6 +3489,17 @@ mod tests {
         },
         time::{Duration, Instant},
     };
+
+    /// Removal as the screen asks for it: confirming the documents the
+    /// session shows as unavailable.
+    fn remove_shown(store: &VaultStore) -> Result<Vec<Uuid>, VaultError> {
+        let shown: Vec<Uuid> = store
+            .session()
+            .as_ref()
+            .map(|unlocked| unlocked.unavailable.iter().copied().collect())
+            .unwrap_or_default();
+        store.remove_unavailable_records(&shown)
+    }
 
     /// Whether two metadata describe the same inode (or, on Windows, the same
     /// file index), so a file was kept rather than replaced under its name.
@@ -5963,7 +5985,7 @@ mod tests {
             Err(VaultError::RecoveryMode)
         ));
 
-        let removed = store.remove_unavailable_records().unwrap();
+        let removed = remove_shown(&store).unwrap();
 
         assert_eq!(removed, vec![imported[1]]);
         let snapshot = store.snapshot().unwrap();
@@ -5993,7 +6015,7 @@ mod tests {
         // The user restored one file from a backup before choosing to remove.
         fs::copy(&backup, &objects[1]).unwrap();
 
-        let removed = store.remove_unavailable_records().unwrap();
+        let removed = remove_shown(&store).unwrap();
 
         assert_eq!(removed, vec![imported[0]]);
         let snapshot = store.snapshot().unwrap();
@@ -6019,7 +6041,7 @@ mod tests {
             Some(RecoveryReason::LostObjects)
         );
 
-        let mut removed = store.remove_unavailable_records().unwrap();
+        let mut removed = remove_shown(&store).unwrap();
         removed.sort();
         let mut expected = imported.clone();
         expected.sort();
@@ -6065,7 +6087,7 @@ mod tests {
             Some(RecoveryReason::UnreadableSlot)
         );
         assert!(matches!(
-            store.remove_unavailable_records(),
+            remove_shown(&store),
             Err(VaultError::RecoveryMode)
         ));
         store.lock();
@@ -6078,14 +6100,11 @@ mod tests {
         let root = temp.path().join("vault");
         let (store, _, _) = vault_with_records(&root, &["a"]);
         store.unlock(PASSWORD).unwrap();
-        assert!(matches!(
-            store.remove_unavailable_records(),
-            Err(VaultError::Invalid)
-        ));
+        assert!(matches!(remove_shown(&store), Err(VaultError::Invalid)));
         for reason in [RecoveryReason::UnreadableSlot, RecoveryReason::WriteFailed] {
             store.unlocked.lock().unwrap().as_mut().unwrap().recovery = Some(reason);
             assert!(matches!(
-                store.remove_unavailable_records(),
+                remove_shown(&store),
                 Err(VaultError::RecoveryMode)
             ));
         }
@@ -6379,7 +6398,7 @@ mod tests {
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.recovery, Some(RecoveryReason::UnreadableSlot));
         assert!(matches!(
-            store.remove_unavailable_records(),
+            remove_shown(&store),
             Err(VaultError::RecoveryMode)
         ));
         store.lock();
@@ -6416,14 +6435,14 @@ mod tests {
 
         make_objects_unsearchable(&root, &aside);
         assert!(matches!(
-            store.remove_unavailable_records(),
+            remove_shown(&store),
             Err(VaultError::RecoveryMode)
         ));
         // The session no longer offers a removal it would refuse.
-        assert_eq!(
-            store.snapshot().unwrap().recovery,
-            Some(RecoveryReason::UnreadableSlot)
-        );
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::UnreadableSlot));
+        // And it shows the file it could not look up as out of reach.
+        assert!(snapshot.records.iter().all(|record| !record.available));
         store.lock();
         restore_objects(&root, &aside);
 
@@ -6557,23 +6576,47 @@ mod tests {
 
         // Another file goes missing after the patient saw "1 damaged".
         fs::remove_file(&objects[1]).unwrap();
-        assert!(matches!(
-            store.remove_unavailable_records(),
-            Err(VaultError::Corrupt)
-        ));
+        assert!(matches!(remove_shown(&store), Err(VaultError::Corrupt)));
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.records.len(), 3);
         assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
         // The session now shows both, and a removal agreed to after that
         // takes both and nothing else.
         assert_eq!(shown_damaged(&store).len(), 2);
-        let mut removed = store.remove_unavailable_records().unwrap();
+        let mut removed = remove_shown(&store).unwrap();
         removed.sort();
         let mut expected = vec![ids[0], ids[1]];
         expected.sort();
         assert_eq!(removed, expected);
         assert_eq!(store.snapshot().unwrap().records.len(), 1);
         assert!(objects[2].is_file());
+    }
+
+    #[test]
+    fn removal_refuses_a_confirmation_for_other_documents_than_those_shown() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, ids, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+
+        // A screen that showed nothing, or more than the vault does.
+        for stale in [vec![], vec![ids[0], ids[1]], vec![ids[1]]] {
+            assert!(matches!(
+                store.remove_unavailable_records(&stale),
+                Err(VaultError::Corrupt)
+            ));
+        }
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 2);
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
+
+        assert_eq!(
+            store.remove_unavailable_records(&[ids[0]]).unwrap(),
+            vec![ids[0]]
+        );
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        assert!(objects[1].is_file());
     }
 
     #[cfg(unix)]
@@ -6614,7 +6657,7 @@ mod tests {
             Some(RecoveryReason::UnreadableSlot)
         );
         assert!(matches!(
-            store.remove_unavailable_records(),
+            remove_shown(&store),
             Err(VaultError::RecoveryMode)
         ));
         store.lock();

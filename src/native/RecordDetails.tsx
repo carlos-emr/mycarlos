@@ -87,8 +87,8 @@ export function RecordDetails({
             <p role="alert">
               {unreadable ? (
                 <>
-                  <strong>This document could not be read.</strong> Its
-                  encrypted file is out of reach for now, so a copy cannot be
+                  <strong>This document is unavailable.</strong> Its encrypted
+                  file is missing or could not be read, so a copy cannot be
                   saved. See the notice in the library for what to check.
                 </>
               ) : (

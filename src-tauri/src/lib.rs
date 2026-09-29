@@ -47,6 +47,22 @@ impl PublicError {
     }
 }
 
+impl PublicError {
+    fn damaged_list_changed() -> Self {
+        Self {
+            code: "corrupt",
+            message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
+        }
+    }
+
+    fn removal_not_possible() -> Self {
+        Self {
+            code: "recovery_mode",
+            message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+        }
+    }
+}
+
 impl From<VaultError> for PublicError {
     fn from(error: VaultError) -> Self {
         match error {
@@ -119,6 +135,11 @@ impl From<VaultError> for PublicError {
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
+}
+
+#[derive(Deserialize)]
+struct RemoveUnavailableRequest {
+    confirmed: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -820,8 +841,17 @@ async fn vault_export_picked(
 #[tauri::command]
 async fn vault_remove_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
+    request: RemoveUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), VaultStore::remove_unavailable_records).await
+    run_blocking(store.inner(), move |store| {
+        store.remove_unavailable_records(&request.confirmed)
+    })
+    .await
+    .map_err(|error| match error.code {
+        "corrupt" => PublicError::damaged_list_changed(),
+        "recovery_mode" => PublicError::removal_not_possible(),
+        _ => error,
+    })
 }
 
 #[tauri::command]

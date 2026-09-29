@@ -3041,6 +3041,8 @@ describe("durable vault UI", () => {
     await waitFor(() =>
       expect(removeUnavailableRecords).toHaveBeenCalledOnce(),
     );
+    // It names the documents that were shown as damaged.
+    expect(removeUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
     expect(
       await screen.findByText(
         "1 damaged document removed. The vault accepts changes again.",
@@ -3161,7 +3163,7 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
-  it("says a document is out of reach, not missing, when files could not be read", async () => {
+  it("does not call a document missing when files could not be read", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
@@ -3184,13 +3186,13 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    expect(await screen.findByText(/File could not be read/)).toBeVisible();
+    expect(await screen.findByText(/File unavailable/)).toBeVisible();
     expect(screen.queryByText(/Damaged: file missing/)).not.toBeInTheDocument();
     expect(screen.getByText(/keeps its files on this device/)).toBeVisible();
     await user.click(screen.getByText("FAKE_Unreadable.pdf"));
     expect(
       within(screen.getByRole("dialog")).getByRole("alert"),
-    ).toHaveTextContent("This document could not be read.");
+    ).toHaveTextContent("This document is unavailable.");
   });
 
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {

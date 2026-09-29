@@ -129,9 +129,11 @@ read it.
 
 An object is **present** when it is a regular file; **missing** when it is not found in a folder
 that could be searched (or the folder is gone), or is a directory or special file; and **unknown**
-when the lookup failed for any other reason (a permission, sharing or device error), when the
-`objects` folder is a link or a file, or when the object is a link or a Windows reparse point such
-as a cloud placeholder. Unknown objects are listed as unavailable but are never offered for removal.
+when the lookup failed for any other reason (a permission, sharing or device error), when it is not
+found but the `objects` folder is a link or a file (so the folder could not be searched for
+certain), or when the object is a link or a Windows reparse point such as a cloud placeholder.
+Unknown objects are listed as unavailable but are never offered for removal. Removal names the
+documents the patient was shown; if the vault's own list differs by then, nothing is removed.
 A vault whose objects stay unknown stays read-only until they can be read: reconnect the drive, fix
 the folder's permissions, or tell the sync tool to keep the files on this device. `writeFailed`: a redundant write or repair failed;
 a later unlock retries the repair.

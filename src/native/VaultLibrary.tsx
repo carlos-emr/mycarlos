@@ -320,15 +320,17 @@ export function VaultLibrary({
     });
   };
 
-  const damagedCount = snapshot.records.filter(
-    (record) => !record.available,
-  ).length;
+  const damagedIds = snapshot.records
+    .filter((record) => !record.available)
+    .map((record) => record.id);
+  const damagedCount = damagedIds.length;
   const removeDamaged = () => {
     setConfirmRemoveDamaged(false);
     void run(async () => {
       let removed: string[];
       try {
-        removed = await bridge.removeUnavailableRecords();
+        // The vault removes only what this screen showed as damaged.
+        removed = await bridge.removeUnavailableRecords(damagedIds);
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -842,7 +844,7 @@ export function VaultLibrary({
                   searching={Boolean(query)}
                   unavailableLabel={
                     snapshot.recovery === "unreadableSlot"
-                      ? "File could not be read"
+                      ? "File unavailable"
                       : "Damaged: file missing"
                   }
                   drag={drag}
