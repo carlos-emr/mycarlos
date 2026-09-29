@@ -20,8 +20,10 @@
   FUSE, and removable filesystems) with `unsupported_storage`. Windows has no equivalent call, so
   the probe cannot detect such storage there; the local application-data directory is what keeps
   the vault off it.
-- **Implemented recovery:** the patient passphrase; there is no vendor key or recovery code
-- **Approved patient-pilot recovery:** a patient-held recovery key; not implemented in format v1
+- **Implemented recovery:** the patient passphrase, and a patient-held recovery key (header
+  format 2; the screens that set it up and use it follow separately). There is no vendor key.
+- **Approved patient-pilot recovery:** the recovery key with a printable kit, and a portable
+  encrypted backup; the kit screens and the backup are not implemented yet
 
 This records decisions D-01, D-02, D-03, and D-05 from the [threat model's mandatory design
 decisions](THREAT_MODEL.md#mandatory-design-decisions) for the current local-only vertical slice.
@@ -55,8 +57,60 @@ its common-password/name/pattern data plus myCarlos and the current profile name
 proposed passphrase leaves the process.
 Unlock accepts a passphrase shorter than the current minimum, so a vault whose passphrase was set
 under an earlier rule stays openable. Input over 1,024 bytes is refused before normalization; every
-other length, composition, and strength rule applies to the normalized form. A production breach corpus, independent threshold review, and the patient-held
-recovery key remain patient-pilot work.
+other length, composition, and strength rule applies to the normalized form. A production breach corpus and independent threshold review remain patient-pilot work.
+
+### Recovery key (header format 2)
+
+A recovery key is 128 random bits from the OS generator, shown once as 26 Crockford base32
+characters plus 2 check characters, in 7 groups of 4 (for example `K7Q2-...`). The check characters
+are 10 bits of a SHA-256 hash of the key, so nearly every mistyped key is reported as a typo before
+any unwrapping. Typing is forgiving: case, spaces and hyphens are ignored, and I, L and O read as 1,
+1 and 0.
+
+The header's optional `recovery` envelope holds a random, non-secret `keyId`, the time the key was
+set up, and the master key wrapped with XChaCha20-Poly1305 under
+`HKDF-SHA-256(ikm = recovery key, salt = vaultId ‖ keyId, info = "mycarlos/recovery-wrap/v1")`, with
+`"mycarlos-recovery-v1:" ‖ vaultId ‖ keyId` as associated data. A 128-bit random key needs no
+memory-hard KDF. The envelope does not depend on the header generation: every header write (a
+passphrase change, redundancy repair, recovery) copies it forward unchanged, and the header's
+integrity tag, which covers it in format 2, binds it to each generation.
+
+Setting up a key is two steps. `begin` takes the current passphrase, as a passphrase change does,
+since a recovery key opens the vault for good; it generates the key, keeps it and the
+passphrase-derived wrapping key in native memory, and returns the key once for display. This is the
+only secret the native side ever sends to the renderer. `confirm` checks at least two of its groups
+as the patient types them back, and only then writes a new pair of header generations carrying the
+envelope, replacing any earlier key. Cancelling, locking, or changing the passphrase first writes
+nothing and forgets the pending key.
+
+`recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
+unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
+the same master key exists that the key does not open (a replaced key). The new passphrase must meet
+the usual rules; then a new header pair wraps the master key under it and carries the envelope
+forward, and the vault opens as an unlock would. If that pair cannot be written at all, as on a full
+disk, the vault opens read-only with its passphrase unchanged. A vault that can only open read-only (see
+recovery mode below) opens read-only with its passphrase unchanged, since nothing may be rewritten,
+so that its documents can still be saved.
+
+**Header formats.** Format 1 headers (no envelope) are still read, with their original integrity
+payload. Every header written now is format 2, so a vault moves to format 2 at its next header write;
+until then it stays format 1. A generation 0 (legacy, untagged) header is always format 1 and never
+carries an envelope. A format 1 header that carries an envelope, or any other version, is invalid.
+
+An earlier build, which knows only format 1, does not read a format 2 header. Once both slots are
+format 2 it reports the vault as damaged and changes nothing. While the slots are mixed (the format 2
+write of one slot landed and the other did not, or a legacy `header.json` is still there), an earlier
+build opens the format 1 header with the earlier passphrase and its repair writes format 1 over the
+format 2 slot, undoing the passphrase change or recovery key that slot carried. Do not go back to an
+earlier build with a vault this build has written to. From this build on, a slot in a header format
+newer than the build knows counts as unreadable: the vault opens read-only and the slot is left alone.
+The format number is read before anything authenticates the slot, so a damaged or altered slot can
+claim a newer format and keep the vault read-only. Nothing is lost by that: documents can still be
+read and exported. The ways out are the build that wrote the slot, or a restored copy of the vault.
+
+Replacing the recovery key, like changing the passphrase, does not change the master key. The
+replaced key no longer opens this vault's current headers, but it still opens any earlier copy of
+them (a backup, a snapshot), and with it the master key. See "Known limits before release".
 
 ## Files and transactions
 
@@ -67,7 +121,8 @@ vault-home/               holds only what the vault manages; back up as a whole
   .create-<uuid>/         a vault being created, renamed into place once complete
   pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
   vault-v1/
-    header-0.json        non-secret KDF configuration, wrapped master key, and keyed integrity tag
+    header-0.json        non-secret KDF configuration, wrapped master key, optional recovery-key
+                         envelope (format 2), and keyed integrity tag
     header-1.json        redundant generation-bound wrapped-key and integrity-tag slot
     manifest-0.bin       authenticated encrypted metadata slot
     manifest-1.bin       authenticated encrypted metadata slot
@@ -224,8 +279,8 @@ portable backup flow exists.
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.
-- Restoring an older valid pair of header slots can restore an older passphrase wrapper for the unchanged
-  master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
+- Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
+  recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.
 - Individual deletion has no backup/synchronization tombstone or verified secure-erasure guarantee
   for storage media, snapshots, exported plaintext, or copies outside the live vault.

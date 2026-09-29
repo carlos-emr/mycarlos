@@ -22,6 +22,19 @@ this document: it also needs format-specific review, fixtures, and interruption 
 5. Version-specific readers are immutable after release except for security fixes that preserve
    their accepted grammar. New output uses a new writer and explicit migration.
 
+## Header-only format changes
+
+A format change confined to the header, such as header format 2's optional recovery-key envelope,
+does not use the staged-copy sequence below. Headers are already written as a pair of consecutive
+generations into two slots, each through the atomic replacement primitive, and unlock selects the
+newest authentic one; a passphrase change relies on the same commit. Writing the new format as the
+next header generation therefore keeps the previous authentic header as the fallback until the new
+one is durable, and rewrites nothing else. Readers accept both header formats (rule 1 still refuses
+unknown ones), and a vault moves to the new format at its next header write. Builds from before the
+change are outside this guarantee while the two slots hold different formats; `VAULT_FORMAT.md`
+("Header formats") says what they do. Manifest and object
+format changes still require the full protocol.
+
 ## Transaction layout
 
 Migration uses sibling directories of the live vault inside `vault-home/`, on the same filesystem:

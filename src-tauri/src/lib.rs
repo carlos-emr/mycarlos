@@ -123,6 +123,14 @@ impl From<VaultError> for PublicError {
                 code: "recovery_mode",
                 message: "The vault is in read-only recovery mode. Export important records and free storage before retrying.",
             },
+            VaultError::RecoveryKeyTypo => Self {
+                code: "recovery_key_typo",
+                message: "That doesn't match the recovery key. Check each group of characters and try again.",
+            },
+            VaultError::WrongRecoveryKey => Self {
+                code: "wrong_recovery_key",
+                message: "That recovery key does not open this vault. If you replaced your recovery key, use the newest one.",
+            },
         }
     }
 }
@@ -142,6 +150,35 @@ struct RemoveUnavailableRequest {
 #[derive(Deserialize)]
 struct PassphraseRequest {
     passphrase: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoverRequest {
+    recovery_key: String,
+    new_passphrase: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoverResponse {
+    /// False when the vault could only open read-only, leaving the passphrase
+    /// unchanged.
+    passphrase_replaced: bool,
+    snapshot: VaultSnapshot,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveryKeyGroup {
+    index: usize,
+    value: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfirmRecoveryKeyRequest {
+    groups: Vec<RecoveryKeyGroup>,
 }
 
 #[derive(Deserialize)]
@@ -592,6 +629,91 @@ async fn vault_change_passphrase(
     .await
 }
 
+/// A recovery key on its way to the renderer, wiped from native memory once
+/// it has been serialized. (The serialized response is Tauri's to free.)
+struct ShownRecoveryKey(zeroize::Zeroizing<String>);
+
+impl Serialize for ShownRecoveryKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+/// The one place a key leaves the native side: the new recovery key, shown
+/// once so that the patient can write it down. The current passphrase
+/// authorizes it, as it does a passphrase change.
+#[tauri::command]
+async fn vault_recovery_key_begin(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: PassphraseRequest,
+) -> CommandResult<ShownRecoveryKey> {
+    run_blocking(store.inner(), move |store| {
+        let result = store
+            .begin_recovery_key(&request.passphrase)
+            .map(ShownRecoveryKey);
+        request.passphrase.zeroize();
+        result
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_recovery_key_confirm(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: ConfirmRecoveryKeyRequest,
+) -> CommandResult<VaultSnapshot> {
+    run_blocking(store.inner(), move |store| {
+        let groups = request
+            .groups
+            .iter()
+            .map(|group| (group.index, group.value.as_str()))
+            .collect::<Vec<_>>();
+        let result = store
+            .confirm_recovery_key(&groups, now_ms())
+            .and_then(|()| store.snapshot());
+        drop(groups);
+        for group in &mut request.groups {
+            group.value.zeroize();
+        }
+        result
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
+    run_blocking(store.inner(), |store| {
+        store.cancel_recovery_key();
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_recover(
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    mut request: RecoverRequest,
+) -> CommandResult<RecoverResponse> {
+    let picks = Arc::clone(picks.inner());
+    run_blocking(store.inner(), move |store| {
+        let result = store
+            .recover(&request.recovery_key, &request.new_passphrase)
+            // As for unlock: a pick from the session that ended stays there.
+            .inspect(|_| picks.clear())
+            .and_then(|passphrase_replaced| {
+                Ok(RecoverResponse {
+                    passphrase_replaced,
+                    snapshot: store.snapshot()?,
+                })
+            });
+        request.recovery_key.zeroize();
+        request.new_passphrase.zeroize();
+        result
+    })
+    .await
+}
+
 #[tauri::command]
 async fn vault_create_profile(
     store: State<'_, Arc<VaultStore>>,
@@ -934,6 +1056,10 @@ pub fn run() {
             vault_set_auto_lock,
             vault_snapshot,
             vault_change_passphrase,
+            vault_recovery_key_begin,
+            vault_recovery_key_confirm,
+            vault_recovery_key_cancel,
+            vault_recover,
             vault_create_profile,
             vault_create_folder,
             vault_update_folder,
@@ -1257,7 +1383,11 @@ mod tests {
             Err(VaultError::NotFound)
         ));
         let source = include_str!("lib.rs");
-        for command in ["async fn vault_unlock(", "async fn vault_create("] {
+        for command in [
+            "async fn vault_unlock(",
+            "async fn vault_create(",
+            "async fn vault_recover(",
+        ] {
             let body = source.split(command).nth(1).unwrap();
             let body = &body[..body.find("\n}\n").unwrap()];
             assert!(body.contains("picks.clear()"), "{command}");
@@ -1436,6 +1566,8 @@ mod tests {
             let _ = serde_json::from_slice::<CreateVaultRequest>(&payload);
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
+            let _ = serde_json::from_slice::<RecoverRequest>(&payload);
+            let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
             let _ = serde_json::from_slice::<NameRequest>(&payload);
             let _ = serde_json::from_slice::<FolderRequest>(&payload);
             let _ = serde_json::from_slice::<UpdateFolderRequest>(&payload);
