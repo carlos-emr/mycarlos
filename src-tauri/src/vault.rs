@@ -1885,17 +1885,23 @@ impl VaultStore {
         let staged = (|| {
             create_private_dir(&stage.join("objects"))?;
             create_private_dir(&stage.join("staging"))?;
-            let mut wanted: HashSet<&str> = manifest
+            let mut wanted: HashMap<&str, u64> = manifest
                 .records
                 .iter()
-                .map(|record| record.object_name.as_str())
+                .map(|record| (record.object_name.as_str(), record.plaintext_size))
                 .collect();
             while let Some((kind, name, length)) = reader.next_entry()? {
-                // Only the manifest's objects, each once.
-                if kind != BACKUP_KIND_OBJECT
-                    || !valid_object_name(&name)
-                    || !wanted.remove(name.as_str())
-                {
+                // Only the manifest's objects, each once, and no larger than
+                // the document the authenticated manifest describes: an
+                // entry's own length is not authenticated until the trailer
+                // is, and must not be able to fill the disk before that.
+                if kind != BACKUP_KIND_OBJECT || !valid_object_name(&name) {
+                    return Err(VaultError::BackupUnreadable);
+                }
+                let plaintext_size = wanted
+                    .remove(name.as_str())
+                    .ok_or(VaultError::BackupUnreadable)?;
+                if length > largest_object_len(plaintext_size) {
                     return Err(VaultError::BackupUnreadable);
                 }
                 let mut file = open_private_new(&stage.join("objects").join(&name))?;
@@ -4747,6 +4753,16 @@ fn open_backup<R: Read>(
         manifest,
         manifest_data,
     })
+}
+
+/// A generous upper limit on an encrypted object's size, from its document's
+/// size: the object's own header, and room for every chunk's nonce, tag and
+/// length several times over.
+fn largest_object_len(plaintext_size: u64) -> u64 {
+    let chunks = plaintext_size / CHUNK_SIZE as u64 + 2;
+    plaintext_size
+        .saturating_add(4096)
+        .saturating_add(chunks.saturating_mul(256))
 }
 
 fn restore_ready_path(root: &Path) -> Result<PathBuf, VaultError> {
@@ -7903,6 +7919,161 @@ mod tests {
         assert!(!reset_path(&root).unwrap().exists());
     }
 
+    /// A backup of `root`'s vault with `entries` as its objects, in that
+    /// order, correctly tagged: what only someone holding the key could make.
+    fn crafted_backup(root: &Path, entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
+        let header = read_latest_header(root).unwrap();
+        let master_key = unwrap_master_key(&header, PASSWORD).unwrap();
+        let manifest = read_latest_manifest(root, &master_key, header.vault_id).unwrap();
+        let header_data = serde_json::to_vec_pretty(&header).unwrap();
+        let manifest_data = fs::read(manifest_path(root, manifest.generation)).unwrap();
+        let mut out = Vec::new();
+        let mut backup = BackupWriter::new(&mut out).unwrap();
+        backup
+            .entry(
+                BACKUP_KIND_HEADER,
+                "header.json",
+                header_data.len() as u64,
+                &mut header_data.as_slice(),
+            )
+            .unwrap();
+        backup
+            .entry(
+                BACKUP_KIND_MANIFEST,
+                "manifest.bin",
+                manifest_data.len() as u64,
+                &mut manifest_data.as_slice(),
+            )
+            .unwrap();
+        for (name, data) in entries {
+            backup
+                .entry(
+                    BACKUP_KIND_OBJECT,
+                    name,
+                    data.len() as u64,
+                    &mut data.as_slice(),
+                )
+                .unwrap();
+        }
+        backup
+            .finish(&master_key, header.vault_id, manifest.generation, 4)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn a_backup_with_the_wrong_objects_is_refused_even_when_correctly_tagged() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("home-a").join("vault");
+        let (_, _, objects) = vault_with_records(&source, &["a.pdf", "b.pdf"]);
+        let named = |path: &PathBuf| {
+            (
+                path.file_name().unwrap().to_str().unwrap().to_owned(),
+                fs::read(path).unwrap(),
+            )
+        };
+        let (a, b) = (named(&objects[0]), named(&objects[1]));
+        let stray = format!("{}.mcobj", Uuid::new_v4());
+        let oversized = vec![0_u8; usize::try_from(largest_object_len(5)).unwrap() + 1];
+        let cases: Vec<(&str, Vec<(&str, Vec<u8>)>)> = vec![
+            (
+                "an object twice",
+                vec![(&a.0, a.1.clone()), (&a.0, a.1.clone())],
+            ),
+            ("an object missing", vec![(&a.0, a.1.clone())]),
+            (
+                "an object the manifest does not name",
+                vec![
+                    (&a.0, a.1.clone()),
+                    (&b.0, b.1.clone()),
+                    (&stray, b.1.clone()),
+                ],
+            ),
+            (
+                "a name that leaves the folder",
+                vec![(&a.0, a.1.clone()), ("../escaped.mcobj", b.1.clone())],
+            ),
+            (
+                "an object larger than its document allows",
+                vec![(&a.0, oversized), (&b.0, b.1.clone())],
+            ),
+        ];
+        let root = temp.path().join("home-b").join("vault");
+        let store = VaultStore::new(root.clone());
+        for (case, entries) in cases {
+            let backup = crafted_backup(&source, &entries);
+            assert!(
+                matches!(
+                    store.restore(
+                        Cursor::new(backup),
+                        RestoreCredential::Passphrase(PASSWORD),
+                        false
+                    ),
+                    Err(VaultError::BackupUnreadable)
+                ),
+                "{case}"
+            );
+            assert!(!root.exists(), "{case}");
+            assert!(restore_leftovers(&root).is_empty(), "{case}");
+            assert!(!temp.path().join("home-b").join("escaped.mcobj").exists());
+        }
+        // The same helper makes a backup that does restore.
+        let good = crafted_backup(&source, &[(&a.0, a.1.clone()), (&b.0, b.1.clone())]);
+        store
+            .restore(
+                Cursor::new(good),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn a_refused_backup_leaves_the_vault_it_would_have_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        store.unlock(PASSWORD).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("later.pdf", b"later record")],
+                5,
+            )
+            .unwrap();
+        store.lock();
+
+        let step = (backup.len() / 23).max(1);
+        let mut refused = Vec::new();
+        for position in (100..backup.len()).step_by(step) {
+            let mut changed = backup.clone();
+            changed[position] ^= 0x01;
+            refused.push(changed);
+        }
+        for length in (0..backup.len()).step_by(step) {
+            refused.push(backup[..length].to_vec());
+        }
+        for (index, bad) in refused.into_iter().enumerate() {
+            assert!(
+                store
+                    .restore(
+                        Cursor::new(bad),
+                        RestoreCredential::Passphrase(PASSWORD),
+                        true
+                    )
+                    .is_err(),
+                "case {index}"
+            );
+        }
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().records.len(), 3);
+        assert_eq!(exported(&store, "later.pdf"), b"later record");
+    }
+
     #[test]
     fn a_read_only_vault_is_not_backed_up() {
         let temp = tempfile::tempdir().unwrap();
@@ -8059,7 +8230,11 @@ mod tests {
 
         assert_eq!(encrypted.plaintext_size, LARGE_FILE_SIZE);
         assert_eq!(largest_request.load(Ordering::Relaxed), CHUNK_SIZE);
-        assert!(fs::metadata(object).unwrap().len() > LARGE_FILE_SIZE);
+        let stored = fs::metadata(object).unwrap().len();
+        assert!(stored > LARGE_FILE_SIZE);
+        // The limit a restore applies has room for a real object of any size.
+        assert!(stored <= largest_object_len(LARGE_FILE_SIZE));
+        assert!(largest_object_len(0) >= 4096);
     }
 
     #[test]
