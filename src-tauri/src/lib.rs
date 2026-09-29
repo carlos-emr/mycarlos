@@ -890,7 +890,7 @@ async fn vault_restore_pick(
 fn open_restore_source(
     app: &tauri::AppHandle,
     source: tauri_plugin_fs::FilePath,
-) -> Result<Box<dyn io::Read + Send>, VaultError> {
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
     if let Ok(path) = source.clone().into_path() {
         return Ok(Box::new(std::io::BufReader::new(std::fs::File::open(
             path,
