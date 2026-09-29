@@ -14,7 +14,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use uuid::Uuid;
 use vault::{
@@ -740,6 +742,44 @@ async fn vault_recovery_key_begin(
     .await
 }
 
+/// The button of a native confirmation that closes it and changes nothing.
+const NATIVE_CANCEL: &str = "Cancel";
+
+/// Asks in a trusted native dialog, which page code cannot press, before
+/// something that cannot be undone. Blocks until it is answered.
+///
+/// The first button keeps things as they are, because on a computer the
+/// first button is the one that Enter presses, and a dialog can appear
+/// while the patient is typing. The button that goes ahead comes second, and
+/// Cancel, which does what the first does, third: it is what Escape and
+/// closing the dialog choose.
+fn confirmed_natively<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    title: &str,
+    message: impl Into<String>,
+    keep: &str,
+    go_ahead: &str,
+) -> bool {
+    let answer = app
+        .dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
+            keep.to_owned(),
+            go_ahead.to_owned(),
+            NATIVE_CANCEL.to_owned(),
+        ))
+        .blocking_show_with_result();
+    agreed_natively(&answer, go_ahead)
+}
+
+/// Only the button that goes ahead counts as agreement: not the first
+/// button, a closed dialog, or an answer the dialog could not give.
+fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
+    matches!(answer, MessageDialogResult::Custom(label) if label == go_ahead)
+}
+
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
 const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working. A kit you saved or printed for it will no longer open this vault. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
@@ -787,16 +827,13 @@ async fn vault_recovery_key_confirm(
     if replaces {
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            dialog_app
-                .dialog()
-                .message(REPLACE_RECOVERY_KEY_WARNING)
-                .title("Replace your recovery key?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Replace key".to_owned(),
-                    "Cancel".to_owned(),
-                ))
-                .blocking_show()
+            confirmed_natively(
+                &dialog_app,
+                "Replace your recovery key?",
+                REPLACE_RECOVERY_KEY_WARNING,
+                "Keep current key",
+                "Replace key",
+            )
         })
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -1087,16 +1124,13 @@ async fn vault_restore(
         }
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            dialog_app
-                .dialog()
-                .message(warning)
-                .title("Replace the vault on this device?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Replace vault".to_owned(),
-                    "Cancel".to_owned(),
-                ))
-                .blocking_show()
+            confirmed_natively(
+                &dialog_app,
+                "Replace the vault on this device?",
+                warning,
+                "Keep vault",
+                "Replace vault",
+            )
         })
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -1404,17 +1438,14 @@ async fn vault_reset(
     }
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app
-            .dialog()
-            .message("This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.")
-            .title("Erase the entire myCarlos vault?")
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Erase vault".to_owned(),
-                "Cancel".to_owned(),
-            ))
-            .blocking_show()
-    })
+            confirmed_natively(
+                &dialog_app,
+                "Erase the entire myCarlos vault?",
+                "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.",
+                "Keep vault",
+                "Erase vault",
+            )
+        })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
     if !confirmed {
@@ -1821,6 +1852,26 @@ mod tests {
             picks.take_export(pick_id, record_id),
             Err(VaultError::NotFound)
         ));
+    }
+
+    #[test]
+    fn only_the_button_that_goes_ahead_counts_as_agreement() {
+        let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
+        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        for answer in [
+            custom("Keep vault"),
+            custom(NATIVE_CANCEL),
+            custom("erase vault"),
+            custom(""),
+            // What the dialog reports when it is closed, or could not be
+            // shown, and what another layout's buttons would report.
+            MessageDialogResult::Cancel,
+            MessageDialogResult::Ok,
+            MessageDialogResult::Yes,
+            MessageDialogResult::No,
+        ] {
+            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+        }
     }
 
     #[test]

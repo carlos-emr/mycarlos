@@ -122,7 +122,8 @@ On every platform:
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and makes a new key. After you type two of its
    groups back, a system dialog (not part of the app's own screen) asks **Replace your recovery
-   key?** Choose **Cancel** once: the setup stays open and says the current key still works. Check
+   key?** Its first button, the one Enter presses on a computer, is **Keep current key**. Choose
+   it, or **Cancel**, once: the setup stays open and says the current key still works. Check
    again and choose **Replace key**: the old key then stops working.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
@@ -251,7 +252,8 @@ To remove everything while unlocked, open **Security**, choose **Show reset cont
 `RESET MYCARLOS VAULT`, choose **Erase entire vault**, and confirm **Erase vault** in the dialog
 that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the unlock
 screen, type `RESET MYCARLOS VAULT`, choose **Erase vault**, and confirm **Erase vault** in the
-dialog.
+dialog. In each of these dialogs the first button, the one Enter presses on a computer, is the
+safe one (**Keep vault**); **Erase vault** is the second.
 
 Uninstalling also removes the vault on Android and iOS. On desktop the vault stays until erased;
 it lives in:
