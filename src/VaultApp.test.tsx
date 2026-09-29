@@ -3140,7 +3140,7 @@ describe("durable vault UI", () => {
           records: [record("a", false), record("b", false)],
         }),
       removeUnavailableRecords: vi.fn().mockRejectedValue({
-        code: "corrupt",
+        code: "removal_changed",
         message: "FAKE the vault changed.",
       }),
     });
@@ -3148,10 +3148,19 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Permanently remove 1 damaged document?",
+      }),
+    ).toBeVisible();
+    const asked = vi.mocked(bridge.snapshot).mock.calls.length;
     await user.click(
       screen.getByRole("button", { name: "Permanently remove" }),
     );
     expect(await screen.findByText("FAKE the vault changed.")).toBeVisible();
+    // The refusal itself made the screen ask the vault again.
+    expect(vi.mocked(bridge.snapshot).mock.calls.length).toBeGreaterThan(asked);
+    expect(bridge.removeUnavailableRecords).toHaveBeenCalledWith(["a"]);
     // The next confirmation counts what is damaged now.
     await user.click(
       screen.getByRole("button", { name: "Remove damaged documents" }),

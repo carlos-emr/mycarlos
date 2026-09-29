@@ -48,13 +48,6 @@ impl PublicError {
 }
 
 impl PublicError {
-    fn damaged_list_changed() -> Self {
-        Self {
-            code: "corrupt",
-            message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
-        }
-    }
-
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
@@ -121,6 +114,10 @@ impl From<VaultError> for PublicError {
             VaultError::UnsupportedStorage => Self {
                 code: "unsupported_storage",
                 message: "myCarlos cannot keep a vault safely on this device's storage, because it does not confirm when files are durably written (for example, a network home folder). Use myCarlos on a device with local storage.",
+            },
+            VaultError::RemovalChanged => Self {
+                code: "removal_changed",
+                message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -848,7 +845,6 @@ async fn vault_remove_unavailable_records(
     })
     .await
     .map_err(|error| match error.code {
-        "corrupt" => PublicError::damaged_list_changed(),
         "recovery_mode" => PublicError::removal_not_possible(),
         _ => error,
     })

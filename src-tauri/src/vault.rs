@@ -211,6 +211,8 @@ pub enum VaultError {
     Cancelled,
     #[error("the vault is in read-only recovery mode")]
     RecoveryMode,
+    #[error("the documents to remove are not the ones that were confirmed")]
+    RemovalChanged,
     #[error("this storage cannot hold the vault safely")]
     UnsupportedStorage,
 }
@@ -1225,8 +1227,8 @@ impl VaultStore {
         Ok(())
     }
 
-    /// Drops every record whose ciphertext is still missing, and returns their
-    /// ids. The vault is then complete again and leaves recovery mode. Files
+    /// Drops the records shown as damaged whose ciphertext is still missing,
+    /// and returns their ids. The vault is then complete again and leaves recovery mode. Files
     /// that have come back since unlock, from a backup restore, are kept.
     ///
     /// Only for the lost-objects reason: with an unreadable slot the commit
@@ -1271,12 +1273,12 @@ impl VaultStore {
             .collect();
         if !newly_missing.is_empty() {
             unlocked.unavailable.extend(newly_missing);
-            return Err(VaultError::Corrupt);
+            return Err(VaultError::RemovalChanged);
         }
         // The screen may not have caught up with an earlier refusal.
         let confirmed: HashSet<Uuid> = confirmed.iter().copied().collect();
         if confirmed != unlocked.unavailable {
-            return Err(VaultError::Corrupt);
+            return Err(VaultError::RemovalChanged);
         }
         let mut next = unlocked.manifest.clone();
         let mut removed = Vec::new();
@@ -1704,8 +1706,11 @@ fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
         // link whose target is away (an unmounted drive), or a file standing
         // in the folder's place, every object reads as not found.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let folder_gone = fs::symlink_metadata(&objects)
-                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound);
+            // A folder that is gone says so only while the vault around it
+            // is there: with its drive removed, nothing is found at all.
+            let folder_gone = is_real_dir(root)
+                && fs::symlink_metadata(&objects)
+                    .is_err_and(|error| error.kind() == io::ErrorKind::NotFound);
             if folder_gone || is_real_dir(&objects) {
                 ObjectPresence::Missing
             } else {
@@ -6576,7 +6581,10 @@ mod tests {
 
         // Another file goes missing after the patient saw "1 damaged".
         fs::remove_file(&objects[1]).unwrap();
-        assert!(matches!(remove_shown(&store), Err(VaultError::Corrupt)));
+        assert!(matches!(
+            remove_shown(&store),
+            Err(VaultError::RemovalChanged)
+        ));
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.records.len(), 3);
         assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
@@ -6592,6 +6600,40 @@ mod tests {
         assert!(objects[2].is_file());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_vault_whose_drive_went_away_is_unreadable_not_empty() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let away = temp.path().join("vault-away");
+        let (store, _, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+
+        // As when the drive is removed while the vault is open.
+        fs::rename(&root, &away).unwrap();
+        assert!(matches!(
+            remove_shown(&store),
+            Err(VaultError::RecoveryMode)
+        ));
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        store.lock();
+        fs::rename(&away, &root).unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
+        assert_eq!(snapshot.records.len(), 2);
+        assert!(objects[1].is_file());
+    }
+
     #[test]
     fn removal_refuses_a_confirmation_for_other_documents_than_those_shown() {
         let temp = tempfile::tempdir().unwrap();
@@ -6604,7 +6646,7 @@ mod tests {
         for stale in [vec![], vec![ids[0], ids[1]], vec![ids[1]]] {
             assert!(matches!(
                 store.remove_unavailable_records(&stale),
-                Err(VaultError::Corrupt)
+                Err(VaultError::RemovalChanged)
             ));
         }
         let snapshot = store.snapshot().unwrap();
