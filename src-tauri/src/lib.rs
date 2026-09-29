@@ -873,16 +873,22 @@ type Origin = (&'static str, &'static str);
 
 /// Where this platform serves the bundled pages from. Windows and Android
 /// cannot use the app's own scheme and use a host name instead.
+///
+/// The app has one window, so its setting is every webview's.
 fn bundled_origin(config: &tauri::Config) -> Origin {
-    if cfg!(windows) || cfg!(target_os = "android") {
-        let https = config
-            .app
-            .windows
-            .first()
-            .is_some_and(|window| window.use_https_scheme);
-        (if https { "https" } else { "http" }, "tauri.localhost")
-    } else {
-        ("tauri", "localhost")
+    let https = config
+        .app
+        .windows
+        .first()
+        .is_some_and(|window| window.use_https_scheme);
+    origin_for(cfg!(windows) || cfg!(target_os = "android"), https)
+}
+
+fn origin_for(uses_host_name: bool, https: bool) -> Origin {
+    match (uses_host_name, https) {
+        (false, _) => ("tauri", "localhost"),
+        (true, false) => ("http", "tauri.localhost"),
+        (true, true) => ("https", "tauri.localhost"),
     }
 }
 
@@ -1093,6 +1099,11 @@ mod tests {
             APP_SCHEME
         };
         assert_eq!(bundled_origin(&config), expected);
+        // The library's own rule, for each kind of platform.
+        assert_eq!(origin_for(false, false), APP_SCHEME);
+        assert_eq!(origin_for(false, true), APP_SCHEME);
+        assert_eq!(origin_for(true, false), HOST_NAME);
+        assert_eq!(origin_for(true, true), SECURE_HOST_NAME);
     }
 
     #[test]
