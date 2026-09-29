@@ -962,7 +962,7 @@ describe("durable vault UI", () => {
     }
   });
 
-  it("opens the recovery key setup when a vault without a key is unlocked", async () => {
+  it("offers a recovery key when a vault without one is unlocked, and shows no key unasked", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
@@ -974,31 +974,62 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
     const dialog = await screen.findByRole("dialog", {
-      name: "Your recovery key",
+      name: "Set up a recovery key",
     });
-    // The passphrase just typed authorizes the key.
-    expect(bridge.beginRecoveryKey).toHaveBeenCalledExactlyOnceWith(
-      "river-azimuth-cobalt-sparrow-934",
+    // It says why it is there, to a screen reader too.
+    expect(dialog).toHaveAccessibleDescription(
+      /Your vault is open\. It has no recovery key yet/,
     );
-    // It says why it is there, and can be left.
-    expect(
-      within(dialog).getByText(
-        /Your vault is unlocked\. It has no recovery key yet/,
-      ),
-    ).toBeVisible();
+    // No key was made, and none is on screen.
+    expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
+    expect(screen.queryByText(RECOVERY_KEY.split("-")[0])).toBeNull();
+
     await user.click(
       within(dialog).getByRole("button", { name: "Set up later" }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
+    // Nothing was shown, so there is nothing to warn about.
+    expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+    expect(screen.queryByText(/setup was not finished/)).toBeNull();
+    // The library still offers it.
+    expect(
+      screen.getByRole("button", { name: "Set up recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("sets up the key offered at unlock once the patient asks for it", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    const offer = await screen.findByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    await user.type(
+      within(offer).getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(within(offer).getByRole("button", { name: "Continue" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Your recovery key",
+    });
+    expect(bridge.beginRecoveryKey).toHaveBeenCalledExactlyOnceWith(
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    // Leaving now is leaving a key that was shown.
+    await user.click(
+      within(dialog).getByRole("button", { name: "Set up later" }),
+    );
     expect(
       await screen.findByText(
         /setup was not finished\. The key you were shown/,
       ),
-    ).toBeVisible();
-    // The library still offers it.
-    expect(
-      screen.getByRole("button", { name: "Set up recovery key" }),
     ).toBeVisible();
   });
 
@@ -1008,7 +1039,6 @@ describe("durable vault UI", () => {
   ])("opens no setup at unlock when the vault %s", async (_, state) => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
-      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
       unlock: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
       snapshot: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
     });
@@ -1021,7 +1051,6 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("heading", { name: "My records" }),
     ).toBeVisible();
-    expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -1276,23 +1305,6 @@ describe("durable vault UI", () => {
       });
       await lockWithHeldOutcome(bridge);
       await expectOutcomeAfterUnlock(HELD_OUTCOME);
-      expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("shows a held transfer outcome at unlock, not the recovery key setup", async () => {
-    vi.useFakeTimers();
-    try {
-      const bridge = nativeBridge({
-        status: vi.fn().mockResolvedValue("unlocked"),
-        beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
-      });
-      await lockWithHeldOutcome(bridge);
-      await expectOutcomeAfterUnlock(HELD_OUTCOME);
-      expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();

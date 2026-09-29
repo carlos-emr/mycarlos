@@ -12,7 +12,7 @@ import {
 } from "./vault";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { VaultLibrary } from "./native/VaultLibrary";
-import type { OpeningRecoveryKey } from "./native/RecoveryKeySetup";
+import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { TransferHold } from "./native/transferHold";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import {
@@ -71,11 +71,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // must reach the patient: it may say a readable copy was left behind.
     outcome: string | null;
   } | null>(null);
-  // A recovery key made as the library opens, which opens on its setup: for
-  // a vault just created, before anything else; for a vault unlocked without
-  // one, as an offer that can be left for later.
-  const [openingRecoveryKey, setOpeningRecoveryKey] =
-    useState<OpeningRecoveryKey | null>(null);
+  // The library opens on the recovery key setup: for a vault just created,
+  // with its key, before anything else; for a vault unlocked without one, as
+  // an offer that can be left for later.
+  const [openingRecoverySetup, setOpeningRecoverySetup] =
+    useState<OpeningRecoverySetup | null>(null);
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -153,7 +153,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       sessionRef.current += 1;
       setSnapshot(null);
       // A key shown but not set up ended with the session.
-      setOpeningRecoveryKey(null);
+      setOpeningRecoverySetup(null);
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
@@ -548,8 +548,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             const recoveryKey = await bridge
               .beginRecoveryKey(passphrase)
               .catch(() => null);
-            setOpeningRecoveryKey(
-              recoveryKey && { key: recoveryKey, vault: "created" },
+            setOpeningRecoverySetup(
+              recoveryKey && { vault: "created", key: recoveryKey },
             );
             setConcealed(false);
             setStatus("unlocked");
@@ -578,19 +578,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             const current = await bridge.unlock(passphrase);
             // A vault without a recovery key is one forgotten passphrase
-            // from being erased. The passphrase was just typed, so it
-            // authorizes a key at once, and the library opens on its setup.
-            // If that fails, the library's notice offers it as before.
-            // Not over the result of a transfer that is waiting to be
-            // shown: that comes first, and the notice still offers the key.
-            const recoveryKey =
+            // from being erased, so the library opens on the offer of one.
+            // No key is made until the patient asks: one shown unasked could
+            // be seen by whoever is looking on. Not on a vault that cannot
+            // store one, and not over the result of a transfer that is
+            // waiting to be shown, which comes first.
+            setOpeningRecoverySetup(
               current.recovery ||
-              current.recoveryKeySetAtMs ||
-              pendingOutcomeRef.current
+                current.recoveryKeySetAtMs ||
+                pendingOutcomeRef.current
                 ? null
-                : await bridge.beginRecoveryKey(passphrase).catch(() => null);
-            setOpeningRecoveryKey(
-              recoveryKey && { key: recoveryKey, vault: "unlocked" },
+                : { vault: "unlocked" },
             );
             setSnapshot(current);
             setConcealed(false);
@@ -690,8 +688,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onLock={lock}
       autoLockMinutes={autoLockMinutes}
       onAutoLockMinutes={updateAutoLockMinutes}
-      openingRecoveryKey={openingRecoveryKey}
-      onOpeningRecoveryKeyShown={() => setOpeningRecoveryKey(null)}
+      openingRecoverySetup={openingRecoverySetup}
+      onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
     />
   );

@@ -13,13 +13,12 @@ import {
 
 type Step = "passphrase" | "key" | "check";
 
-/** A recovery key made as the library opens, and the vault it is for: one
- * just created, which sets it up before anything else, or one unlocked
- * without a recovery key, which is offered it. */
-export type OpeningRecoveryKey = {
-  key: string;
-  vault: "created" | "unlocked";
-};
+/** What the library opens on, when it opens on the recovery key setup: for a
+ * vault just created, the key made with it, to be set up before anything
+ * else; for a vault unlocked without a recovery key, the offer of one. */
+export type OpeningRecoverySetup =
+  | { vault: "created"; key: string }
+  | { vault: "unlocked" };
 
 // After this many wrong answers the check goes back to the key, so that the
 // patient looks at what they wrote down rather than guessing again.
@@ -61,7 +60,8 @@ export function RecoveryKeySetup({
   /** When the vault is new, the key must be set up: there is no way out. */
   required?: boolean;
   /** The setup opened by itself, on a vault unlocked without a recovery key:
-   * it says why it is there, and leaving it is "Set up later". */
+   * it says why it is there, and leaving it is "Set up later". It opens on
+   * the step that asks, and shows no key that was not asked for. */
   offered?: boolean;
   canPrint: boolean;
   onDone: (snapshot: VaultSnapshot) => void;
@@ -264,6 +264,9 @@ export function RecoveryKeySetup({
         role="dialog"
         aria-modal="true"
         aria-labelledby="recovery-key-title"
+        aria-describedby={
+          offered && step === "passphrase" ? "recovery-key-offer" : undefined
+        }
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
@@ -274,10 +277,21 @@ export function RecoveryKeySetup({
 
         {step === "passphrase" && (
           <form className="recovery-key-body" onSubmit={(e) => void begin(e)}>
+            {offered && (
+              <p id="recovery-key-offer">
+                Your vault is open. It has no recovery key yet. Without one, if
+                you forget your passphrase, the only way back in is to erase the
+                vault.
+              </p>
+            )}
             <p>
               A recovery key opens your vault if you forget your passphrase.
               Only you will have it: nobody at your clinic or at myCarlos can
               open your vault for you.
+            </p>
+            <p>
+              Your key is shown next. Go on only when nobody else can see your
+              screen.
             </p>
             {replacing && (
               <p>
@@ -304,7 +318,7 @@ export function RecoveryKeySetup({
             {error && <p role="alert">{error}</p>}
             <footer className="dialog-actions">
               <button className="button" type="button" onClick={cancel}>
-                Cancel
+                {leaveLabel}
               </button>
               <button
                 className="button primary"
@@ -322,13 +336,6 @@ export function RecoveryKeySetup({
 
         {step === "key" && (
           <div className="recovery-key-body">
-            {offered && (
-              <p>
-                Your vault is unlocked. It has no recovery key yet: if you
-                forget your passphrase without one, the only way back in is to
-                erase the vault. This is a new recovery key for it.
-              </p>
-            )}
             <p>
               Write it down, or save or print the kit, and keep it somewhere
               private, away from this device. This is the only time myCarlos
