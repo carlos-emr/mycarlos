@@ -77,8 +77,11 @@ since a recovery key opens the vault for good; it generates the key, keeps it an
 passphrase-derived wrapping key in native memory, and returns the key once for display. This is the
 only secret the native side ever sends to the renderer. `confirm` checks at least two of its groups
 as the patient types them back, and only then writes a new pair of header generations carrying the
-envelope, replacing any earlier key. Cancelling, locking, or changing the passphrase first writes
-nothing and forgets the pending key.
+envelope, replacing any earlier key. When the vault already has a key, the command asks in a
+trusted native dialog before it replaces it, after the typed groups were found right and before
+anything is written; cancelled there, nothing changes and the pending key stays, to be checked
+again or cancelled. A vault's first key is not asked about, as it replaces nothing. Cancelling,
+locking, or changing the passphrase first writes nothing and forgets the pending key.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, the
 UTC date it was saved, and what it is for, with no patient or document names. It is written
