@@ -2288,6 +2288,10 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
             .iter()
             .position(|candidate| char::from(*candidate) == symbol)
             .ok_or(VaultError::RecoveryKeyTypo)?;
+        // Never past its capacity: growing would leave a copy behind.
+        if values.len() == RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LEN {
+            return Err(VaultError::RecoveryKeyTypo);
+        }
         values.push(value as u32);
     }
     if values.len() != RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LEN {
@@ -2496,16 +2500,18 @@ fn read_latest_header(root: &Path) -> Result<VaultHeader, VaultError> {
 /// Compares a typed group of the recovery key with the expected one, reading
 /// it as `decode_recovery_key` does.
 fn recovery_group_matches(typed: &str, expected: &str) -> bool {
-    let normalized: Zeroizing<String> = typed
+    // Sized once, so that no copy is left behind by growing.
+    let mut normalized = Zeroizing::new(String::with_capacity(typed.len()));
+    for character in typed
         .chars()
         .filter(|character| *character != '-' && !character.is_whitespace())
-        .map(|character| match character.to_ascii_uppercase() {
+    {
+        normalized.push(match character.to_ascii_uppercase() {
             'I' | 'L' => '1',
             'O' => '0',
             other => other,
-        })
-        .collect::<String>()
-        .into();
+        });
+    }
     normalized.as_str() == expected
 }
 
@@ -6469,29 +6475,39 @@ mod tests {
 
     #[test]
     fn a_recovery_whose_first_header_landed_has_replaced_the_passphrase() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("vault");
-        let store = VaultStore::new(root.clone());
-        store.create(PASSWORD, "Jamie", 1).unwrap();
-        let key = set_up_recovery_key(&store, 5);
-        store.lock();
-        run_failure_child_with(
-            &root,
-            "recover",
-            "recover.after-first-write",
-            &[("MYCARLOS_TEST_RECOVERY_KEY", key.as_str())],
-        );
+        for left_behind in HEADER_SLOTS {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
+            let store = VaultStore::new(root.clone());
+            store.create(PASSWORD, "Jamie", 1).unwrap();
+            let key = set_up_recovery_key(&store, 5);
+            store.lock();
+            let before = fs::read(root.join(left_behind)).unwrap();
+            run_failure_child_with(
+                &root,
+                "recover",
+                "recover.after-first-write",
+                &[("MYCARLOS_TEST_RECOVERY_KEY", key.as_str())],
+            );
+            // The child repaired the second slot when it opened the vault.
+            // Put back what a power loss would have left there: one slot
+            // with the new passphrase, one still with the old.
+            assert_ne!(fs::read(root.join(left_behind)).unwrap(), before);
+            fs::write(root.join(left_behind), &before).unwrap();
 
-        let restarted = VaultStore::new(root);
-        assert!(matches!(
-            restarted.unlock(PASSWORD),
-            Err(VaultError::WrongPassphrase)
-        ));
-        restarted.unlock(PASSPHRASE_REPLACEMENT).unwrap();
-        assert_eq!(restarted.snapshot().unwrap().recovery, None);
-        restarted.lock();
-        // The key still works, and the repair kept its envelope.
-        assert!(restarted.recover(&key, PASSWORD).unwrap());
+            let restarted = VaultStore::new(root.clone());
+            assert!(matches!(
+                restarted.unlock(PASSWORD),
+                Err(VaultError::WrongPassphrase)
+            ));
+            restarted.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+            assert_eq!(restarted.snapshot().unwrap().recovery, None);
+            restarted.lock();
+            // The unlock repaired the slot left behind.
+            assert_ne!(fs::read(root.join(left_behind)).unwrap(), before);
+            // The key still works, and the repair kept its envelope.
+            assert!(restarted.recover(&key, PASSWORD).unwrap());
+        }
     }
 
     #[test]

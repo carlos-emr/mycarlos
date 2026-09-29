@@ -101,6 +101,9 @@ build opens the format 1 header with the earlier passphrase and its repair write
 format 2 slot, undoing the passphrase change or recovery key that slot carried. Do not go back to an
 earlier build with a vault this build has written to. From this build on, a slot in a header format
 newer than the build knows counts as unreadable: the vault opens read-only and the slot is left alone.
+The format number is read before anything authenticates the slot, so a damaged or altered slot can
+claim a newer format and keep the vault read-only. Nothing is lost by that: documents can still be
+read and exported. The ways out are the build that wrote the slot, or a restored copy of the vault.
 
 Replacing the recovery key, like changing the passphrase, does not change the master key. The
 replaced key no longer opens this vault's current headers, but it still opens any earlier copy of
