@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type { ImportOutcome, VaultBridge, VaultSnapshot } from "./vault";
+import { ANNOUNCE_DELAY_MS } from "./native/announce";
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -96,6 +97,17 @@ async function startExport() {
   });
 }
 
+// Messages for a screen or dialog that has just appeared are written after this
+// delay, so that its status line reads them out.
+async function passAnnounceDelay() {
+  if (vi.isFakeTimers())
+    await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+  else
+    await act(
+      () => new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS)),
+    );
+}
+
 // The unlock screen says only that the vault locked; a transfer's outcome is
 // shown after the next unlock, where only the owner sees it.
 async function expectOutcomeAfterUnlock(outcome: string) {
@@ -109,6 +121,7 @@ async function expectOutcomeAfterUnlock(outcome: string) {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
   });
+  await passAnnounceDelay();
   expect(screen.getByText(`Vault unlocked. ${outcome}`)).toBeVisible();
 }
 
@@ -674,6 +687,319 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("gives a rename's result to a status line already back on screen", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+
+    // The document's details are replaced while it is renamed. Their status
+    // line comes back empty, and the result is written into it after.
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    // Fake timers from here, so that nothing is written before it is checked.
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const detailsStatus = within(details).getByRole("status");
+      expect(detailsStatus).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(detailsStatus).toHaveTextContent(
+        "Document renamed to FAKE Results.pdf.",
+      );
+
+      // The rename dialog makes the page inert. Its status line is written
+      // to once the dialog has closed.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Close document details" }),
+        );
+      });
+      const pageStatus = screen.getByRole("status");
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "Rename folder FAKE Old folder",
+          }),
+        );
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Folder name"), {
+          target: { value: "FAKE Lab results" },
+        });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(pageStatus).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(pageStatus).toHaveTextContent(
+        "Folder renamed to FAKE Lab results.",
+      );
+
+      // A result is not written into another document's details opened
+      // before it was due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "Rename folder FAKE Lab results",
+          }),
+        );
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Folder name"), {
+          target: { value: "FAKE Old folder" },
+        });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "More options for FAKE Results.pdf",
+          }),
+        );
+      });
+      await passAnnounceDelay();
+      const otherDetails = screen.getByRole("dialog", {
+        name: "FAKE Results.pdf",
+      });
+      expect(within(otherDetails).getByRole("status")).toBeEmptyDOMElement();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds a rename's result while a confirmation opened at once is on screen", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      // The confirmation replaces the details before the result is due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Save a copy to this computer" }),
+        );
+      });
+      await passAnnounceDelay();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      });
+      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const status = within(details).getByRole("status");
+      expect(status).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(status).toHaveTextContent("Document renamed to FAKE Results.pdf.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  const HELD_OUTCOME = "1 file(s) encrypted and imported.";
+
+  // Backgrounds the app during an import, so that the vault locks when the
+  // import ends and its outcome is held for the next unlock. Fake timers.
+  async function lockWithHeldOutcome(bridge: VaultBridge) {
+    let finishImport!: (value: ImportOutcome) => void;
+    vi.mocked(bridge.importPickedFiles).mockImplementationOnce(
+      () =>
+        new Promise<ImportOutcome>((resolve) => {
+          finishImport = resolve;
+        }),
+    );
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose files to import" }),
+      );
+    });
+    await act(async () => {
+      visibilityState = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () =>
+      finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+    );
+    await act(async () => {
+      visibilityState = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(screen.getByText("Vault locked.")).toBeVisible();
+  }
+
+  async function unlockWithoutWaiting() {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase"), {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    });
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  }
+
+  it("keeps a held transfer outcome when the vault locks before it was shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      // Locked again inside the delay: only "Vault locked." is on the unlock
+      // screen, now and once the delay has passed.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      await passAnnounceDelay();
+      expect(screen.queryByText(/Vault unlocked/)).not.toBeInTheDocument();
+      // The outcome was kept for the next unlock.
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a held transfer outcome when a message arrives while a lock is under way", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      let finishLock!: () => void;
+      vi.mocked(bridge.lock).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishLock = resolve;
+          }),
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      // Written to the library's line, which the lock is about to replace.
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File(["%PDF-1.7"], "FAKE dropped.pdf", { type: "application/pdf" }),
+      );
+      await act(async () => {
+        fireDragEvent("drop", window, { dataTransfer: transfer });
+      });
+      expect(
+        screen.queryByText(HELD_OUTCOME, { exact: false }),
+      ).not.toBeInTheDocument();
+      await act(async () => finishLock());
+      await passAnnounceDelay();
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds a held transfer outcome to a message that arrives before it was shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickImportFiles: vi
+          .fn()
+          .mockResolvedValueOnce("pick-1")
+          .mockResolvedValue(null),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      // An operation started at once reports first.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await passAnnounceDelay();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `No files selected. Nothing changed. ${HELD_OUTCOME}`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["unlocking", "locked", /^Vault unlocked\.$/],
+    ["creating", "absent", /^Encrypted vault created\./],
+  ] as const)(
+    "gives the result of %s to the library's status line once it is on screen",
+    async (_, initial, message) => {
+      vi.useFakeTimers();
+      try {
+        const bridge = nativeBridge({
+          status: vi.fn().mockResolvedValue(initial),
+        });
+        await act(async () => {
+          render(<VaultApp bridge={bridge} />);
+        });
+        await act(async () => {
+          if (initial === "absent")
+            fireEvent.change(screen.getByLabelText("First patient profile"), {
+              target: { value: "FAKE Test Patient" },
+            });
+          for (const field of screen.getAllByLabelText(/passphrase/i))
+            fireEvent.change(field, {
+              target: { value: "river-azimuth-cobalt-sparrow-934" },
+            });
+        });
+        await act(async () => {
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: initial === "absent" ? "Create vault" : "Unlock",
+            }),
+          );
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        const status = screen.getByRole("status");
+        expect(status).toBeEmptyDOMElement();
+        await passAnnounceDelay();
+        expect(status).toHaveTextContent(message);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("starts the selection again when a search could hide selected documents", async () => {
     const user = userEvent.setup();
     const record = (id: string, displayName: string) => ({
@@ -1039,6 +1365,11 @@ describe("durable vault UI", () => {
         await screen.findByRole("heading", { name: "Unlock your vault" }),
       ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
+      // Not a change to the status line, which is not read out: the field
+      // that takes focus says it.
+      expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+        "Vault locked.",
+      );
     } finally {
       visibility.mockRestore();
     }
@@ -1634,6 +1965,7 @@ describe("durable vault UI", () => {
         fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
       });
       // The import's outcome is kept; the failed lock's error is not.
+      await passAnnounceDelay();
       expect(
         screen.getByText("Vault unlocked. 1 file(s) encrypted and imported."),
       ).toBeVisible();

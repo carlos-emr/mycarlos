@@ -55,6 +55,28 @@ describe("CreateVault", () => {
     expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
   });
 
+  it("reads the passphrase rules with the passphrase field", () => {
+    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /^Use at least 15 characters\./,
+    );
+  });
+
+  it("keeps an empty status line on the page without taking up space", () => {
+    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(status.getBoundingClientRect().height).toBe(0);
+    // The same 12px as between the other fields.
+    const above = screen
+      .getByText("Confirm passphrase")
+      .getBoundingClientRect();
+    const create = screen
+      .getByRole("button", { name: "Create vault" })
+      .getBoundingClientRect();
+    expect(create.top - above.bottom).toBeCloseTo(12, 0);
+  });
+
   it("does not silently shorten a long pasted passphrase", () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
     render(<CreateVault busy={false} notice="" onCreate={onCreate} />);
@@ -98,5 +120,39 @@ describe("UnlockVault", () => {
     fireEvent.change(passphrase, { target: { value: "字".repeat(341) } });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(unlock).toBeEnabled();
+  });
+
+  it("keeps its status line on the page, so that a new message is read out", () => {
+    const props = {
+      busy: false,
+      autoLockMinutes: 5,
+      onUnlock: vi.fn(),
+      onReset: vi.fn(),
+    };
+    const { rerender } = render(<UnlockVault {...props} notice="" />);
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute(
+      "aria-describedby",
+    );
+
+    rerender(<UnlockVault {...props} notice="FAKE wrong passphrase." />);
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status).toHaveTextContent("FAKE wrong passphrase.");
+  });
+
+  it("reads the message it opens with as the focused field's description", () => {
+    render(
+      <UnlockVault
+        busy={false}
+        notice="Vault locked."
+        autoLockMinutes={5}
+        onUnlock={vi.fn()}
+        onReset={vi.fn()}
+      />,
+    );
+    const passphrase = screen.getByLabelText("Passphrase");
+    expect(passphrase).toHaveFocus();
+    expect(passphrase).toHaveAccessibleDescription("Vault locked.");
   });
 });
