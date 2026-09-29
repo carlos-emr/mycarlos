@@ -670,8 +670,9 @@ async fn vault_recovery_kit_save(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<bool> {
     // Nothing is asked for unless a key is waiting to be confirmed.
-    run_blocking(store.inner(), |store| {
-        store.recovery_kit(now_ms()).map(drop)
+    let name = run_blocking(store.inner(), |store| {
+        store.recovery_kit(now_ms())?;
+        store.recovery_kit_name(now_ms())
     })
     .await?;
     // Held until the kit is written, so that the automatic lock cannot fall
@@ -682,7 +683,7 @@ async fn vault_recovery_kit_save(
         dialog
             .dialog()
             .file()
-            .set_file_name("myCarlos recovery kit.txt")
+            .set_file_name(name)
             .blocking_save_file()
     })
     .await

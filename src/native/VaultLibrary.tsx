@@ -59,6 +59,7 @@ export function VaultLibrary({
   onAutoLockMinutes,
   newVaultRecoveryKey = null,
   onNewVaultRecoveryKeyShown,
+  onUnfinishedRecoveryKey,
   canPrint = false,
 }: {
   bridge: VaultBridge;
@@ -76,6 +77,11 @@ export function VaultLibrary({
   /** The recovery key made with a vault just created, to set up first. */
   newVaultRecoveryKey?: string | null;
   onNewVaultRecoveryKeyShown?: () => void;
+  /** Whether a recovery key setup has shown a key and not ended: a lock then
+   * ends it, and the patient is told after the next unlock. */
+  onUnfinishedRecoveryKey?: (
+    unfinished: "first" | "replacement" | null,
+  ) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
 }) {
@@ -989,7 +995,13 @@ export function VaultLibrary({
               replacing={Boolean(snapshot.recoveryKeySetAtMs)}
               required={recoverySetup.required}
               canPrint={canPrint}
+              onKeyShown={() =>
+                onUnfinishedRecoveryKey?.(
+                  snapshot.recoveryKeySetAtMs ? "replacement" : "first",
+                )
+              }
               onDone={() => {
+                onUnfinishedRecoveryKey?.(null);
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
                 const saved = replaced
                   ? "Recovery key replaced. The old one no longer works."
@@ -1013,6 +1025,7 @@ export function VaultLibrary({
                 focusPageIfLost();
               }}
               onClose={(keyShown) => {
+                onUnfinishedRecoveryKey?.(null);
                 setRecoverySetup(null);
                 if (keyShown) {
                   setNotice("");

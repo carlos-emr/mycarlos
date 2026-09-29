@@ -57,6 +57,15 @@ export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   return <NativeVault bridge={bridge} />;
 }
 
+/** What the patient is told after unlocking, when a lock ended a recovery
+ * key setup that had shown a key. */
+const UNFINISHED_KEY = {
+  first:
+    "Recovery key setup ended when the vault locked, so the vault still has no recovery key. The key you were shown does not open it: destroy any kit you saved or printed for it.",
+  replacement:
+    "Your recovery key was not replaced: setup ended when the vault locked. Your earlier key still works. The key you were shown does not open the vault: destroy any kit you saved or printed for it.",
+} as const;
+
 function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
@@ -142,6 +151,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       .join(" ");
   }, []);
 
+  // A recovery key setup that has shown a key and not ended. A lock ends it,
+  // and the key then opens nothing: the patient is told after the next
+  // unlock, as they may have written it down or saved a kit.
+  const unfinishedKeyRef = useRef<"first" | "replacement" | null>(null);
+
   const lock = useCallback(async () => {
     if (lockingRef.current) return;
     lockingRef.current = true;
@@ -159,6 +173,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
+      const unfinished = unfinishedKeyRef.current;
+      unfinishedKeyRef.current = null;
+      if (unfinished) holdForUnlock(UNFINISHED_KEY[unfinished]);
       setNotice("Vault locked.");
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
@@ -655,6 +672,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onAutoLockMinutes={updateAutoLockMinutes}
       newVaultRecoveryKey={newVaultRecoveryKey}
       onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
+      onUnfinishedRecoveryKey={(unfinished) => {
+        unfinishedKeyRef.current = unfinished;
+      }}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
     />
   );

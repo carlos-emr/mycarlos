@@ -495,6 +495,9 @@ pub struct ImportOutcome {
 /// derived from the passphrase that authorized it, for the header write.
 struct PendingRecoveryKey {
     key: Zeroizing<[u8; RECOVERY_KEY_BYTES]>,
+    /// The id its envelope will have: chosen now, so that a kit saved before
+    /// the check can name the key it holds.
+    key_id: Uuid,
     kdf: KdfConfig,
     wrapping_key: SecretKey,
 }
@@ -1412,6 +1415,7 @@ impl VaultStore {
         let text = encode_recovery_key(&key);
         unlocked.pending_recovery_key = Some(PendingRecoveryKey {
             key,
+            key_id: Uuid::new_v4(),
             kdf: header.kdf,
             wrapping_key,
         });
@@ -1430,7 +1434,26 @@ impl VaultStore {
             .ok_or(VaultError::Invalid)?;
         Ok(recovery_kit_text(
             &encode_recovery_key(&pending.key),
+            &recovery_key_label(pending.key_id),
             now_ms,
+        ))
+    }
+
+    /// The name suggested for the kit's file: the date, and the short label
+    /// of the key it holds. A kit for a new key then does not take the place
+    /// of the kit for the key the vault still has, should the new one never
+    /// be set up.
+    pub fn recovery_kit_name(&self, now_ms: u64) -> Result<String, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let pending = unlocked
+            .pending_recovery_key
+            .as_ref()
+            .ok_or(VaultError::Invalid)?;
+        let (year, month, day) = utc_date(now_ms);
+        Ok(format!(
+            "myCarlos recovery kit {year:04}-{month:02}-{day:02} {}.txt",
+            recovery_key_label(pending.key_id)
         ))
     }
 
@@ -1477,6 +1500,7 @@ impl VaultStore {
         }
         let PendingRecoveryKey {
             key: pending,
+            key_id,
             kdf,
             wrapping_key,
         } = unlocked
@@ -1523,7 +1547,8 @@ impl VaultStore {
         if !opens {
             return Err(VaultError::Corrupt);
         }
-        let envelope = new_recovery_envelope(pending, vault_id, &unlocked.master_key, now_ms)?;
+        let envelope =
+            new_recovery_envelope(pending, *key_id, vault_id, &unlocked.master_key, now_ms)?;
         let first_generation = current
             .generation
             .checked_add(1)
@@ -2362,13 +2387,20 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
 
 /// The text of a recovery kit. Plain text, so that it prints and opens
 /// anywhere; the date is UTC.
-fn recovery_kit_text(key: &str, now_ms: u64) -> Zeroizing<String> {
+/// A short name for a recovery key, from its envelope's id, which is not
+/// secret: it tells kits apart, and says nothing about the key.
+fn recovery_key_label(key_id: Uuid) -> String {
+    key_id.simple().to_string()[..4].to_uppercase()
+}
+
+fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
     let (year, month, day) = utc_date(now_ms);
     Zeroizing::new(format!(
         "myCarlos recovery kit\n\
          =====================\n\
          \n\
          Recovery key:  {key}\n\
+         Key label:     {label} (not secret: it tells kits apart)\n\
          Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
          \n\
          What it is for\n\
@@ -2433,11 +2465,11 @@ fn recovery_aad(vault_id: Uuid, key_id: Uuid) -> Vec<u8> {
 
 fn new_recovery_envelope(
     recovery_key: &[u8; RECOVERY_KEY_BYTES],
+    key_id: Uuid,
     vault_id: Uuid,
     master_key: &[u8; 32],
     now_ms: u64,
 ) -> Result<RecoveryEnvelope, VaultError> {
-    let key_id = Uuid::new_v4();
     let wrap_key = recovery_wrap_key(recovery_key, vault_id, key_id)?;
     Ok(RecoveryEnvelope {
         key_id,
@@ -6463,6 +6495,20 @@ mod tests {
         assert!(kit.contains(&key));
         assert!(kit.contains("2026-09-28"));
         assert!(!kit.contains("Jamie"));
+        // Its file is named by the date and the key's label, which the kit
+        // gives too: a kit for a new key does not take the place of another.
+        let name = store.recovery_kit_name(1_790_553_600_000).unwrap();
+        let label = name
+            .strip_prefix("myCarlos recovery kit 2026-09-28 ")
+            .and_then(|rest| rest.strip_suffix(".txt"))
+            .unwrap()
+            .to_owned();
+        assert_eq!(label.len(), 4);
+        assert!(label
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(kit.contains(&format!("Key label:     {label}")));
+        assert!(!name.contains("Jamie"));
 
         // Saved as an export is: outside the vault home, and private.
         let outside = temp.path().join("kit.txt");
@@ -6481,12 +6527,19 @@ mod tests {
         ));
         assert!(!inside.exists());
 
-        // Once the key is stored, there is no kit left to save.
+        // Once the key is stored, there is no kit left to save, and the
+        // stored key has the id whose label the kit gave.
         let groups = recovery_key_groups(&key);
         store
             .confirm_recovery_key(&[(0, &groups[0]), (3, &groups[3])], 5)
             .unwrap();
         assert!(matches!(store.recovery_kit(1), Err(VaultError::Invalid)));
+        assert!(matches!(
+            store.recovery_kit_name(1),
+            Err(VaultError::Invalid)
+        ));
+        let stored = read_latest_header(&root).unwrap().recovery.unwrap();
+        assert_eq!(recovery_key_label(stored.key_id), label);
     }
 
     #[test]

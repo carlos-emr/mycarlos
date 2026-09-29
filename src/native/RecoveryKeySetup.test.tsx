@@ -48,13 +48,11 @@ function setUp(
   return { bridge, onDone, onClose, onLocked };
 }
 
-/** The group numbers the check asks for (1-based), from their labels. */
-function askedGroups(): number[] {
-  return screen
-    .getAllByLabelText(/^Group \d$/)
-    .map((input) =>
-      Number(input.closest("label")!.textContent!.match(/Group (\d)/)![1]),
-    );
+/** Types the whole key back in the check step. */
+async function typeKey(user: ReturnType<typeof userEvent.setup>, key: string) {
+  const field = screen.getByLabelText("Your recovery key");
+  await user.clear(field);
+  await user.type(field, key);
 }
 
 describe("RecoveryKeySetup", () => {
@@ -165,8 +163,7 @@ describe("RecoveryKeySetup", () => {
     expect(
       screen.queryByRole("button", { name: "Set up later" }),
     ).not.toBeInTheDocument();
-    for (const input of screen.getAllByLabelText(/^Group \d$/))
-      await user.type(input, "ZZZZ");
+    await typeKey(user, "ZZZZ".repeat(7));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     await user.click(
       await screen.findByRole("button", { name: "Set up later" }),
@@ -175,25 +172,33 @@ describe("RecoveryKeySetup", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("stores the key only once two groups are typed back", async () => {
+  it("stores the key only once the whole key is typed back", async () => {
     const user = userEvent.setup();
     const { bridge, onDone } = setUp({ initialKey: KEY });
     await user.click(screen.getByRole("button", { name: "Next" }));
-
-    const asked = askedGroups();
-    expect(asked).toHaveLength(2);
-    expect(asked[0]).not.toBe(asked[1]);
-    const [first, second] = screen.getAllByLabelText(/^Group \d$/);
-    // Case does not matter.
-    await user.type(first, GROUPS[asked[0] - 1].toLowerCase());
-    await user.type(second, GROUPS[asked[1] - 1]);
+    const field = screen.getByLabelText("Your recovery key");
+    expect(field).toHaveFocus();
+    expect(field).toHaveAccessibleDescription(/7 groups of 4/);
+    // Case, dashes and spaces do not matter.
+    await typeKey(user, KEY.toLowerCase().replaceAll("-", " "));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
 
-    expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith([
-      { index: asked[0] - 1, value: GROUPS[asked[0] - 1].toLowerCase() },
-      { index: asked[1] - 1, value: GROUPS[asked[1] - 1] },
-    ]);
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith(
+      GROUPS.map((group, index) => ({ index, value: group.toLowerCase() })),
+    );
     expect(onDone).toHaveBeenCalledWith(snapshot);
+  });
+
+  it("says when what was typed is not the length of a key, and asks nothing", async () => {
+    const user = userEvent.setup();
+    const { bridge } = setUp({ initialKey: KEY });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await typeKey(user, GROUPS.slice(0, 6).join("-"));
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That is 24 characters. Your recovery key has 28: 7 groups of 4.",
+    );
+    expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
   });
 
   it("goes back to the key after three wrong answers", async () => {
@@ -204,10 +209,7 @@ describe("RecoveryKeySetup", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      for (const input of screen.getAllByLabelText(/^Group \d$/)) {
-        await user.clear(input);
-        await user.type(input, "ZZZZ");
-      }
+      await typeKey(user, "ZZZZ".repeat(7));
       await user.click(screen.getByRole("button", { name: "Check and save" }));
       if (attempt < 3)
         expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -235,10 +237,7 @@ describe("RecoveryKeySetup", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      for (const input of screen.getAllByLabelText(/^Group \d$/)) {
-        await user.clear(input);
-        await user.type(input, "ZZZZ");
-      }
+      await typeKey(user, "ZZZZ".repeat(7));
       await user.click(screen.getByRole("button", { name: "Check and save" }));
       expect(await screen.findByRole("alert")).toHaveTextContent(
         "FAKE disk full.",
