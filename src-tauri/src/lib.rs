@@ -585,9 +585,11 @@ struct SpeedTestReport {
 /// For testers, in the evaluation builds: to be taken out, with its section
 /// in Security, before a release to patients.
 ///
-/// Only with a vault unlocked, where the screen that asks for it is. Without
-/// that, page code could run it beside an unlock, which would double the
-/// memory the app needs at that moment.
+/// Only with a vault unlocked, where the screen that asks for it is, so that
+/// it is not run beside an unlock, which would double the memory the app
+/// needs at that moment. It can still meet one: the vault can lock while it
+/// runs and be unlocked again, or the passphrase be changed meanwhile. The
+/// screen asks testers to do nothing else until it is done.
 #[tauri::command]
 async fn kdf_benchmark(
     store: State<'_, Arc<VaultStore>>,
@@ -610,7 +612,10 @@ async fn kdf_benchmark(
         vault::benchmark_kdf()
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))??;
+    .map_err(|_| PublicError {
+        code: "speed_test_failed",
+        message: "The speed test stopped before it finished. Nothing was changed. Try again.",
+    })??;
     let RuntimeInfo {
         platform,
         architecture,
@@ -1634,6 +1639,66 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    #[test]
+    fn one_speed_test_at_a_time_and_the_next_when_it_ends() {
+        let gate = Arc::new(SpeedTest::default());
+        let first = SpeedTestRunning::start(&gate).unwrap();
+        assert!(SpeedTestRunning::start(&gate).is_none());
+        drop(first);
+        let second = SpeedTestRunning::start(&gate).unwrap();
+        // Ended by a task that panicked, as by one that returned.
+        let running = std::thread::spawn(move || {
+            let _running = second;
+            panic!("FAKE the derivation failed");
+        })
+        .join();
+        assert!(running.is_err());
+        assert!(SpeedTestRunning::start(&gate).is_some());
+    }
+
+    #[test]
+    fn a_speed_test_report_says_the_platform_and_nothing_else_about_the_device() {
+        let report = SpeedTestReport {
+            measured: vault::KdfBenchmark {
+                memory_kib: 65_536,
+                iterations: 3,
+                lanes: 4,
+                samples_ms: vec![1, 2, 3, 4, 5],
+                median_ms: 3,
+                max_ms: 5,
+                release: false,
+                simulator: false,
+            },
+            platform: "android".to_owned(),
+            architecture: "aarch64".to_owned(),
+            app_version: "0.1.0".to_owned(),
+        };
+        let json = serde_json::to_value(&report).unwrap();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "appVersion",
+                "architecture",
+                "iterations",
+                "lanes",
+                "maxMs",
+                "medianMs",
+                "memoryKib",
+                "platform",
+                "release",
+                "samplesMs",
+                "simulator"
+            ]
+        );
+    }
+
     #[test]
     fn runtime_info_contains_only_non_sensitive_build_data() {
         let info = current_runtime_info();

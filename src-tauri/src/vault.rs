@@ -2712,10 +2712,13 @@ pub struct KdfBenchmark {
     pub samples_ms: Vec<u64>,
     pub median_ms: u64,
     pub max_ms: u64,
-    /// Whether the whole build is optimized, as a release is. The evaluation
-    /// builds are not, though the key derivation in them is (see the dev
-    /// profile in Cargo.toml).
-    pub optimized: bool,
+    /// Whether this is a release build. The evaluation builds are not,
+    /// though the key derivation in them is optimized (see the dev profile
+    /// in Cargo.toml).
+    pub release: bool,
+    /// Whether this is an iOS Simulator build, whose timings are not a
+    /// device's.
+    pub simulator: bool,
 }
 
 /// Derives a key `KDF_BENCHMARK_SAMPLES` times and times each. It uses a
@@ -2732,7 +2735,12 @@ pub fn benchmark_kdf() -> Result<KdfBenchmark, VaultError> {
     let mut samples_ms = Vec::with_capacity(KDF_BENCHMARK_SAMPLES);
     for _ in 0..KDF_BENCHMARK_SAMPLES {
         let started = Instant::now();
-        derive_passphrase_key("not a passphrase: the myCarlos speed test", &config)?;
+        // Kept from the optimizer, which could otherwise drop work whose
+        // result is not used.
+        std::hint::black_box(derive_passphrase_key(
+            std::hint::black_box("not a passphrase: the myCarlos speed test"),
+            &config,
+        )?);
         samples_ms.push(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
     }
     let mut sorted = samples_ms.clone();
@@ -2744,7 +2752,8 @@ pub fn benchmark_kdf() -> Result<KdfBenchmark, VaultError> {
         median_ms: sorted[sorted.len() / 2],
         max_ms: sorted[sorted.len() - 1],
         samples_ms,
-        optimized: !cfg!(debug_assertions),
+        release: !cfg!(debug_assertions),
+        simulator: cfg!(all(target_os = "ios", target_abi = "sim")),
     })
 }
 
@@ -11318,14 +11327,14 @@ mod tests {
     fn benchmark_argon2id_unlock_work_factor() {
         let measured = benchmark_kdf().unwrap();
         println!(
-            "mycarlos_argon2id memory_kib={} iterations={} lanes={} samples_ms={:?} median_ms={} max_ms={} optimized={}",
+            "mycarlos_argon2id memory_kib={} iterations={} lanes={} samples_ms={:?} median_ms={} max_ms={} release={}",
             measured.memory_kib,
             measured.iterations,
             measured.lanes,
             measured.samples_ms,
             measured.median_ms,
             measured.max_ms,
-            measured.optimized,
+            measured.release,
         );
     }
 

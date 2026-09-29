@@ -38,7 +38,7 @@ export function speedTestLine(report: SpeedTestReport): string {
     `Median ${report.medianMs} ms, longest ${report.maxMs} ms.`,
     `Argon2id, ${report.memoryKib / 1024} MiB, ${report.iterations} passes, ${report.lanes} lanes.`,
     `${report.platform} ${report.architecture}, myCarlos ${report.appVersion}.`,
-    report.optimized ? "Release build." : "Evaluation build.",
+    `${report.release ? "Release build" : "Evaluation build"}${report.simulator ? ", Simulator" : ""}.`,
   ].join(" ");
 }
 
@@ -317,7 +317,8 @@ export function SecuritySettings({
               Measures how long this device takes to check a passphrase. It uses
               a made-up passphrase, not yours, and changes nothing. It takes a
               few seconds, longer on an older phone. Close other apps first, and
-              send the result with the device's make and model.
+              stay on this screen until it is done. Send the result with the
+              device's make and model.
             </p>
           </div>
           <div>

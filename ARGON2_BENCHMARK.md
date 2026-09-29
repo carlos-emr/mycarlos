@@ -12,17 +12,22 @@ cargo test --release --manifest-path src-tauri/Cargo.toml \
   benchmark_argon2id_unlock_work_factor -- --ignored --nocapture --test-threads=1
 ```
 
-The harness performs five derivations and reports every sample, the median, and the maximum. Do not
-run it in debug mode, compare virtualized CI timings with physical devices, or record the test
+The harness performs five derivations and reports every sample, the median, and the maximum. Run it
+with `--release` as above (a plain debug build of the harness is not the evaluation build either),
+do not compare virtualized CI timings with physical devices, and do not record the test
 passphrase as though it were a patient credential. Simulator/emulator numbers are supplementary
 only.
 
 ## On the device: the speed test in the app
 
-A test cannot run on a phone, so the app carries the same measurement. It works on every platform
-the app runs on, from an installed evaluation build:
+A test cannot run on a phone, so the app carries the same measurement, on every platform the app
+runs on. The Windows, macOS and Android evaluation downloads install on a device. The iOS
+download runs only in the Simulator, whose lines say "Simulator"; an iPhone needs a build signed
+for it (see `TESTING.md`). An Android emulator's line looks like a phone's, so always name the
+device. Write down the source commit from the download's `BUILD.txt` as well.
 
-1. Close other apps, and let the device cool if it is warm.
+1. Close other apps, and let the device cool if it is warm. Stay on the Security screen while the
+   test runs, and do nothing else in the app: leaving it loses the result.
 2. Open myCarlos, unlock any vault (a throwaway one will do), and open **Security**.
 3. Under **Speed test, for testers**, choose **Run speed test** and wait for the line below it. It
    takes a few seconds, longer on an older phone.
@@ -42,7 +47,8 @@ phone, press and hold it.
 
 **Which build.** The evaluation downloads are debug builds in which the key derivation itself is
 compiled at the same optimization level as in a release (see the `dev` profile in
-`src-tauri/Cargo.toml`), with checks a release leaves out. Their lines end "Evaluation build." and
+`src-tauri/Cargo.toml`), with checks a release leaves out and without a release's link-time
+optimization. Their lines end "Evaluation build." and
 may fill the table below, marked as such. A release build should be no slower, for that reason;
 how much faster has **not been measured**. The runs on the development container (below) differ
 more from one run to the next than from one kind of build to the other, so they cannot tell. To
@@ -52,7 +58,8 @@ settle it, time a release build and an evaluation build on the same idle device.
 **Reading the numbers.** The four lanes are computed one after another, on one thread: the
 Argon2 library the app uses does not run them in parallel. A faster phone with more cores does
 not shorten the wait by its cores, and figures published for Argon2 run in parallel do not
-compare. The first of the five runs includes setting the memory up, and may be the longest.
+compare. Every run sets up its own 64 MiB, as an unlock does; the first may still be slower, with
+the processor and its caches cold, and is as much a result as the others.
 
 What the speed test does not measure, and still has to be watched by hand: the memory the app
 uses at its peak, whether the screen stays responsive during an unlock, and whether the system

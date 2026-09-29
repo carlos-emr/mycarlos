@@ -149,13 +149,14 @@ On every platform:
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-9. In **Security**, under **Speed test, for testers**, choose **Run speed test**, and send the line
-   it gives with the device's make and model. `ARGON2_BENCHMARK.md` says how to record it.
+9. In **Security**, under **Speed test, for testers**, choose **Run speed test** three times, a
+   minute apart, staying on that screen while it runs. Send the three lines it gives with the
+   device's make and model and its system's version. `ARGON2_BENCHMARK.md` says how to record them.
 10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
-   keep the screen on), and confirm it locks.
-10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+    keep the screen on), and confirm it locks.
+11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-11. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the

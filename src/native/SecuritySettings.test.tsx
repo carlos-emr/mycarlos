@@ -9,7 +9,8 @@ const speedTest = {
   samplesMs: [812, 820, 815, 830, 811],
   medianMs: 815,
   maxMs: 830,
-  optimized: true,
+  release: true,
+  simulator: false,
   platform: "android",
   architecture: "aarch64",
   appVersion: "0.1.0",
@@ -65,9 +66,12 @@ describe("SecuritySettings speed test", () => {
   });
 
   it("says which kind of build was timed", () => {
-    expect(speedTestLine({ ...speedTest, optimized: false })).toMatch(
+    expect(speedTestLine({ ...speedTest, release: false })).toMatch(
       /Evaluation build\.$/,
     );
+    expect(
+      speedTestLine({ ...speedTest, release: false, simulator: true }),
+    ).toMatch(/Evaluation build, Simulator\.$/);
   });
 
   it("says why it could not measure", async () => {

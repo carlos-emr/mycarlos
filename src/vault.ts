@@ -88,7 +88,9 @@ export interface SpeedTestReport {
   maxMs: number;
   /** False for an evaluation build, in which the key derivation is
    * optimized and the rest is not. */
-  optimized: boolean;
+  release: boolean;
+  /** An iOS Simulator build: its timings are not a device's. */
+  simulator: boolean;
   platform: string;
   architecture: string;
   appVersion: string;
