@@ -245,6 +245,28 @@ describe("zoom", () => {
     expect(zoom.level()).toBe(1);
   });
 
+  it("keeps a size asked for while the one kept was being refused", async () => {
+    window.localStorage.setItem(KEY, "2");
+    let refuse!: (error: Error) => void;
+    const setZoom = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            refuse = reject;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    press("+");
+    expect(zoom.level()).toBe(2.5);
+    refuse(new Error("FAKE not allowed"));
+    await zoom.ready;
+    await vi.waitFor(() => expect(setZoom).toHaveBeenLastCalledWith(2.5));
+    expect(zoom.level()).toBe(2.5);
+  });
+
   it("applies changes one after another, in order", async () => {
     const order: number[] = [];
     let release!: () => void;

@@ -108,22 +108,26 @@ export function startZoom(
     applying = applying.then(() => setZoom(next)).catch(() => undefined);
     return applying;
   };
+  let requested = false;
   const request = (asked: ZoomRequest) => {
     const next = zoomAfter(level, asked);
     if (next === level) return;
+    requested = true;
     level = next;
     persistZoom(level);
     void apply(level);
     tell();
   };
   // A size kept from last time that the platform refused is not the size
-  // shown: say the ordinary one.
+  // shown: say the ordinary one, unless the patient has asked for another
+  // since, which is then the size.
   const ready =
     level === 1
       ? Promise.resolve()
       : setZoom(level).then(
           () => undefined,
           () => {
+            if (requested) return;
             level = 1;
             tell();
           },
