@@ -25,8 +25,8 @@ decision, not production approval. [`ARCHITECTURE_DECISION.md`](ARCHITECTURE_DEC
 decision and its limits. This is the dedicated myCarlos repository;
 [HANDOFF.md](HANDOFF.md) records the source revision and original review discussion.
 The imported application remains a synthetic-data evaluation. myCarlos is free software
-under the GNU General Public License, version 2 or (at your option) any later version
-(`GPL-2.0-or-later`), like CARLOS; see [LICENSE](LICENSE) and [LICENSE_NOTES.md](LICENSE_NOTES.md).
+under the GNU Affero General Public License, version 3 or (at your option) any later version
+(`AGPL-3.0-or-later`); see [LICENSE](LICENSE) and [LICENSE_NOTES.md](LICENSE_NOTES.md).
 
 [`THREAT_MODEL.md`](THREAT_MODEL.md) defines the assets, trust boundaries, credible threats,
 required controls, and the Secure Vault v0.1 acceptance gate. [`VAULT_FORMAT.md`](VAULT_FORMAT.md)
