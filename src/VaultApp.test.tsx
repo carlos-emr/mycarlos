@@ -905,6 +905,61 @@ describe("durable vault UI", () => {
     expect(
       screen.queryByRole("button", { name: "Set up recovery key" }),
     ).not.toBeInTheDocument();
+    // The button that led here is gone: focus is on the page, not on nothing.
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "My records" })).toHaveFocus(),
+    );
+  });
+
+  it("says that a key shown in a setup that was cancelled does not work", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Set up recovery key" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await screen.findByRole("dialog", { name: "Your recovery key" });
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByText(
+        /setup was not finished\. The key you were shown does not open the vault\. Destroy/,
+      ),
+    ).toBeVisible();
+  });
+
+  it("clears a recovery form left unattended", async () => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        render(<VaultApp bridge={nativeBridge()} />);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText("Forgot your passphrase?"));
+      });
+      const key = screen.getByLabelText("Recovery key");
+      await act(async () => {
+        fireEvent.change(key, { target: { value: RECOVERY_KEY } });
+        fireEvent.click(
+          screen.getByRole("button", { name: "Show recovery key" }),
+        );
+      });
+      expect(key).toHaveAttribute("type", "text");
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+      });
+      expect(key).toHaveValue("");
+      expect(key).toHaveAttribute("type", "password");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("offers a recovery key to a vault that has none", async () => {
@@ -1079,6 +1134,43 @@ describe("durable vault UI", () => {
       await passAnnounceDelay();
       expect(screen.queryByText(/Vault unlocked/)).not.toBeInTheDocument();
       // The outcome was kept for the next unlock.
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a held transfer outcome when a message arrives while a lock is under way", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      let finishLock!: () => void;
+      vi.mocked(bridge.lock).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishLock = resolve;
+          }),
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      // Written to the library's line, which the lock is about to replace.
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File(["%PDF-1.7"], "FAKE dropped.pdf", { type: "application/pdf" }),
+      );
+      await act(async () => {
+        fireDragEvent("drop", window, { dataTransfer: transfer });
+      });
+      expect(
+        screen.queryByText(HELD_OUTCOME, { exact: false }),
+      ).not.toBeInTheDocument();
+      await act(async () => finishLock());
+      await passAnnounceDelay();
       await expectOutcomeAfterUnlock(HELD_OUTCOME);
     } finally {
       vi.useRealTimers();

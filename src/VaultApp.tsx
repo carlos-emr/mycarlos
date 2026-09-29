@@ -133,6 +133,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
   }, []);
 
+  // Results kept for after the next unlock add up: one never replaces
+  // another. `first` puts an older result ahead of what was kept since.
+  const holdForUnlock = useCallback((outcome: string, first = false) => {
+    const held = pendingOutcomeRef.current;
+    pendingOutcomeRef.current = (first ? [outcome, held] : [held, outcome])
+      .filter(Boolean)
+      .join(" ");
+  }, []);
+
   const lock = useCallback(async () => {
     if (lockingRef.current) return;
     lockingRef.current = true;
@@ -149,7 +158,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       holdLock(false);
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
-        pendingOutcomeRef.current = transferOutcomeRef.current;
+        holdForUnlock(transferOutcomeRef.current);
       setNotice("Vault locked.");
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
@@ -159,7 +168,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } finally {
       lockingRef.current = false;
     }
-  }, [bridge, holdLock, transferHold]);
+  }, [bridge, holdForUnlock, holdLock, transferHold]);
 
   // Read through a ref so that `requestLock` keeps its identity: the automatic
   // lock effect depends on it, and re-running that effect resets its deadline.
@@ -375,10 +384,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     const { message, outcome } = libraryNotice;
     // Held again for the next unlock, after anything a later lock kept.
     const holdOutcome = () => {
-      if (outcome)
-        pendingOutcomeRef.current = [outcome, pendingOutcomeRef.current]
-          .filter(Boolean)
-          .join(" ");
+      if (outcome) holdForUnlock(outcome, true);
     };
     // The session ended before the message was written. Nothing of it may
     // reach the unlock screen; a held outcome waits for the next unlock.
@@ -391,7 +397,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // is not overwritten. A held outcome is added to it, or held again while
     // the library is hidden.
     if (notice) {
-      if (outcome && libraryShown) setNotice(`${notice} ${outcome}`);
+      // A lock under way replaces whatever is written now.
+      if (outcome && libraryShown && !lockingRef.current)
+        setNotice(`${notice} ${outcome}`);
       else holdOutcome();
       setLibraryNotice(null);
       return;
@@ -406,7 +414,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLibraryNotice(null);
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [libraryNotice, libraryShown, notice, status]);
+  }, [holdForUnlock, libraryNotice, libraryShown, notice, status]);
 
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);
@@ -448,8 +456,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // something to act on: a transfer's, such as a partial copy, after the
         // next unlock; any other now, as the person who asked for it is here.
         if (!lockedOut) {
-          if (transferHold.active)
-            pendingOutcomeRef.current = vaultErrorMessage(error);
+          if (transferHold.active) holdForUnlock(vaultErrorMessage(error));
           else setNotice(vaultErrorMessage(error));
         }
         return;
@@ -501,7 +508,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     if (inSession()) report(message);
     // The lock that ended this transfer has landed: keep its result for
     // after the next unlock.
-    else if (transferHold.active) pendingOutcomeRef.current = message;
+    else if (transferHold.active) holdForUnlock(message);
   };
 
   // A restored vault is locked: it opens with its own passphrase or key.

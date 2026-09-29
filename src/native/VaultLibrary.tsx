@@ -1,11 +1,12 @@
 import { LibrarySidebar } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
-import type {
-  VaultBridge,
-  VaultFolder,
-  VaultRecord,
-  VaultSnapshot,
+import {
+  vaultErrorMessage,
+  type VaultBridge,
+  type VaultFolder,
+  type VaultRecord,
+  type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
 import { RecoveryKeySetup } from "./RecoveryKeySetup";
@@ -207,6 +208,16 @@ export function VaultLibrary({
   // The rename dialog makes the page inert, and replaces a document's details,
   // whose status line then comes back with it. Give the result once that line
   // is back and has had time to be seen, or it is shown but never read out.
+  // A dialog returns focus to the button that opened it. When that button is
+  // gone by then (the banner that offered the setup, the Create screen), focus
+  // would be left on nothing: put it on the page's heading.
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const focusPageIfLost = () =>
+    window.setTimeout(() => {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body || !focused.isConnected)
+        pageHeadingRef.current?.focus();
+    }, ANNOUNCE_DELAY_MS);
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   useEffect(() => {
@@ -664,7 +675,9 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1>{locationTitle}</h1>
+                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                      {locationTitle}
+                    </h1>
                     <p>
                       {visibleFolders.length} folders · {visibleRecords.length}{" "}
                       documents in this location
@@ -992,17 +1005,41 @@ export function VaultLibrary({
               canPrint={canPrint}
               onDone={() => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
+                const saved = replaced
+                  ? "Recovery key replaced. The old one no longer works."
+                  : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");
-                setDialogResult({
-                  message: replaced
-                    ? "Recovery key replaced. The old one no longer works."
-                    : "Recovery key saved. Keep your kit somewhere safe.",
-                  recordId: activeRecordId,
-                });
-                void refresh().catch(() => undefined);
+                void refresh().then(
+                  () =>
+                    setDialogResult({
+                      message: saved,
+                      recordId: activeRecordId,
+                    }),
+                  // The key is saved, but this screen still shows the vault
+                  // as it was before.
+                  (error: unknown) =>
+                    setDialogResult({
+                      message: `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
+                      recordId: activeRecordId,
+                    }),
+                );
+                focusPageIfLost();
               }}
-              onClose={() => setRecoverySetup(null)}
+              onClose={(keyShown) => {
+                setRecoverySetup(null);
+                if (keyShown) {
+                  setNotice("");
+                  setDialogResult({
+                    message: snapshot.recoveryKeySetAtMs
+                      ? "Recovery key setup was not finished. The key you were shown does not open the vault; your earlier key still does. Destroy any kit saved or printed just now."
+                      : "Recovery key setup was not finished. The key you were shown does not open the vault. Destroy any kit saved or printed just now.",
+                    recordId: activeRecordId,
+                  });
+                }
+                focusPageIfLost();
+              }}
+              onLocked={() => void onLock()}
             />
           )}
           {renameTarget && (

@@ -329,6 +329,9 @@ export function UnlockVault({
   );
 }
 
+// What is typed on the recovery form is cleared after this long untouched.
+export const UNATTENDED_CLEAR_MS = 5 * 60 * 1000;
+
 /** Opens the vault with its recovery key and replaces the forgotten
  * passphrase. */
 function RecoverWithKey({
@@ -358,6 +361,17 @@ function RecoverWithKey({
     return () =>
       document.removeEventListener("visibilitychange", clearWhenHidden);
   }, []);
+  // Nor may it wait on a screen left unattended.
+  useEffect(() => {
+    if (!recoveryKey && !passphrase && !confirmation) return;
+    const timer = window.setTimeout(() => {
+      setRecoveryKey("");
+      setPassphrase("");
+      setConfirmation("");
+      setShown(false);
+    }, UNATTENDED_CLEAR_MS);
+    return () => window.clearTimeout(timer);
+  }, [recoveryKey, passphrase, confirmation]);
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const tooShort = tooShortPassphrase(passphrase);
   const invalid =
@@ -368,7 +382,8 @@ function RecoverWithKey({
     const newPassphrase = passphrase;
     setPassphrase("");
     setConfirmation("");
-    // The key stays, so that a typo in it can be corrected.
+    // The key stays, so that a typo in it can be corrected, but hidden again.
+    setShown(false);
     void onRecover(recoveryKey, newPassphrase);
   };
   return (
