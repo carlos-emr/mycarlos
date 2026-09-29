@@ -759,9 +759,10 @@ const NATIVE_CANCEL: &str = "Cancel";
 /// for the back button and a tap outside. And the third is titled "Cancel"
 /// because that title is what gives a button the Escape key on macOS.
 ///
-/// On a computer the dialog belongs to the app's window: it cannot end up
-/// behind it, and macOS shows it as an alert of the window, whose keys are
-/// the documented ones.
+/// On a computer the dialog is given the app's window. On Windows and
+/// macOS it then cannot end up behind it, and macOS shows it as an alert of
+/// the window, whose keys are the documented ones. The Linux dialogs take
+/// no notice of the window.
 fn confirmed_natively<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     title: &str,
@@ -1450,6 +1451,8 @@ async fn vault_delete_record(
     .await
 }
 
+const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+
 #[tauri::command]
 async fn vault_reset(
     app: tauri::AppHandle,
@@ -1462,14 +1465,14 @@ async fn vault_reset(
     }
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            confirmed_natively(
-                &dialog_app,
-                "Erase the entire myCarlos vault?",
-                "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.",
-                "Keep this vault",
-                "Erase vault",
-            )
-        })
+        confirmed_natively(
+            &dialog_app,
+            "Erase the entire myCarlos vault?",
+            ERASE_VAULT_WARNING,
+            "Keep this vault",
+            "Erase vault",
+        )
+    })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
     if !confirmed {
@@ -1908,7 +1911,10 @@ mod tests {
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
         let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
-        assert!(other.contains("is not the vault this backup was made from") && other.contains("3 documents"));
+        assert!(
+            other.contains("is not the vault this backup was made from")
+                && other.contains("3 documents")
+        );
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("is not the same as") && changed.contains("passphrase"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
