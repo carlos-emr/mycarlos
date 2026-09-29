@@ -3606,21 +3606,50 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
     const warning = screen.getByRole("alertdialog", {
-      name: "Remove 1 damaged document?",
+      name: "Permanently remove 1 damaged document?",
     });
+    expect(warning).toHaveAccessibleDescription(/permanently/);
     expect(warning).toHaveTextContent(/cannot be undone/);
+    // The files may only be out of reach, which is not the same as gone.
+    expect(warning).toHaveTextContent(/drive that is disconnected/);
     expect(warning).toHaveTextContent(/backup/);
+    // Nothing is removed without an explicit confirmation: Cancel has focus,
+    // and Cancel, Escape and a click outside all leave everything in place.
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // Enter straight away presses Cancel, which has focus.
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: screen.getByRole("alertdialog").parentElement!,
+    });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(removeUnavailableRecords).not.toHaveBeenCalled();
 
     await user.click(
       screen.getByRole("button", { name: "Remove damaged documents" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    const remove = screen.getByRole("button", { name: "Permanently remove" });
+    expect(remove).toHaveClass("danger");
+    await user.click(remove);
     await waitFor(() =>
       expect(removeUnavailableRecords).toHaveBeenCalledOnce(),
     );
+    // It names the documents that were shown as damaged.
+    expect(removeUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
     expect(
       await screen.findByText(
         "1 damaged document removed. The vault accepts changes again.",
@@ -3664,7 +3693,9 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    );
 
     expect(
       await screen.findByText(/1 damaged document removed/),
@@ -3685,6 +3716,104 @@ describe("durable vault UI", () => {
     expect(
       screen.queryByRole("button", { name: "Remove damaged documents" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows what the vault reports after a removal was refused", async () => {
+    const user = userEvent.setup();
+    const record = (id: string, available: boolean) => ({
+      id,
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: `FAKE_${id}.pdf`,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available,
+    });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [record("a", false), record("b", true)],
+        })
+        // Another file went missing before the removal ran.
+        .mockResolvedValue({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [record("a", false), record("b", false)],
+        }),
+      removeUnavailableRecords: vi.fn().mockRejectedValue({
+        code: "removal_changed",
+        message: "FAKE the vault changed.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Remove damaged documents" }),
+    );
+    const confirmation = screen.getByRole("alertdialog", {
+      name: "Permanently remove 1 damaged document?",
+    });
+    expect(confirmation).toBeVisible();
+    // It names what would be removed, and nothing else.
+    const named = within(confirmation).getByRole("list", {
+      name: "Documents to remove",
+    });
+    expect(within(named).getAllByRole("listitem")).toHaveLength(1);
+    expect(named).toHaveTextContent("FAKE_a.pdf");
+    const asked = vi.mocked(bridge.snapshot).mock.calls.length;
+    await user.click(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    );
+    expect(await screen.findByText("FAKE the vault changed.")).toBeVisible();
+    // The refusal itself made the screen ask the vault again.
+    expect(vi.mocked(bridge.snapshot).mock.calls.length).toBeGreaterThan(asked);
+    expect(bridge.removeUnavailableRecords).toHaveBeenCalledWith(["a"]);
+    // The next confirmation counts what is damaged now.
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Permanently remove 2 damaged documents?",
+      }),
+    ).toBeVisible();
+  });
+
+  it("does not call a document missing when files could not be read", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        recovery: "unreadableSlot",
+        records: [
+          {
+            id: "record-1",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: "FAKE_Unreadable.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/pdf",
+            plaintextSize: 2048,
+            importedAtMs: 1,
+            available: false,
+          },
+        ],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(await screen.findByText(/File unavailable/)).toBeVisible();
+    expect(screen.queryByText(/Damaged: file missing/)).not.toBeInTheDocument();
+    expect(screen.getByText(/keeps its files on this device/)).toBeVisible();
+    await user.click(screen.getByText("FAKE_Unreadable.pdf"));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("alert"),
+    ).toHaveTextContent("This document is unavailable.");
   });
 
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {
