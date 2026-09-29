@@ -172,8 +172,8 @@ export function SecuritySettings({
             <p>
               One file holding your whole vault, still encrypted. Keep it
               somewhere other than this device, such as a USB drive. It opens
-              with the passphrase or recovery key you have when you save it,
-              and keeps opening with them even after you change them here. To
+              with the passphrase or recovery key you have when you save it, and
+              keeps opening with them even after you change them here. To
               restore one, lock the vault and choose Restore from a backup.
             </p>
           </div>
