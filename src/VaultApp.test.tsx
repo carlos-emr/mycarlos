@@ -1053,7 +1053,7 @@ describe("durable vault UI", () => {
     forgetRecoveryOffer();
     window.localStorage.setItem(
       "mycarlos.recoveryOfferHour.v1",
-      String(hour - 24),
+      String(hour - 25),
     );
     await unlock();
     expect(

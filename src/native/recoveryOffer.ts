@@ -15,24 +15,32 @@ let offeredThisRun: number | null = null;
 const hourOf = (nowMs: number) => Math.floor(nowMs / HOUR_MS);
 
 function lastOfferedHour(): number | null {
+  // What this run did is known for certain, whatever could be stored.
+  if (offeredThisRun !== null) return offeredThisRun;
   try {
     const stored = window.localStorage.getItem(RECOVERY_OFFER_STORAGE_KEY);
     const hour = stored === null ? NaN : Number(stored);
     if (Number.isInteger(hour) && hour >= 0) return hour;
   } catch {
-    // Fall through to what this run remembers.
+    // Nothing can be read: as if never offered.
   }
-  return offeredThisRun;
+  return null;
 }
 
 /** Whether a day has passed since the recovery key setup was last offered.
- * A time in the future (a clock that was set back) counts as never. */
+ *
+ * The hour is kept, not the minute, so more than 24 hours must separate the
+ * two hours for a whole day to lie between the offers: they are then 24 to
+ * 26 hours apart, never less than a day.
+ *
+ * A clock set back a little leaves the last offer in the future: it still
+ * counts. One more than a day ahead is taken for a wrong clock at the time,
+ * and the offer is due. */
 export function recoveryOfferDue(nowMs: number): boolean {
   const last = lastOfferedHour();
-  const now = hourOf(nowMs);
-  return (
-    last === null || last > now || now - last >= RECOVERY_OFFER_EVERY_HOURS
-  );
+  if (last === null) return true;
+  const hours = hourOf(nowMs) - last;
+  return Math.abs(hours) > RECOVERY_OFFER_EVERY_HOURS;
 }
 
 /** Notes that the setup is being offered now. */
