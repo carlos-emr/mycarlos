@@ -124,7 +124,8 @@ On every platform:
    groups back, a system dialog (not part of the app's own screen) asks **Replace your recovery
    key?** Its first button, the one Enter presses on a computer, is **Keep current key**. Choose
    it, or **Cancel**, once: the setup stays open and says the current key still works. Check
-   again and choose **Replace key**: the old key then stops working.
+   again and choose **Replace key**: the old key then stops working. The vault does not lock by
+   itself while that dialog is open.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:
