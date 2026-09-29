@@ -1,4 +1,10 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
@@ -244,6 +250,7 @@ export function UnlockVault({
   // Messages go next to the part of the screen they answer: the Unlock form,
   // or the recovery key and erase controls under "Forgot your passphrase?".
   const [source, setSource] = useState<"unlock" | "forgot">("unlock");
+  const passphraseRef = useRef<HTMLInputElement | null>(null);
   const unlockNotice = source === "unlock" ? notice : "";
   // No vault passphrase can be longer, so say so instead of sending it to a
   // native refusal that can only report invalid input.
@@ -270,6 +277,7 @@ export function UnlockVault({
           <label>
             Passphrase
             <input
+              ref={passphraseRef}
               autoFocus
               required
               type="password"
@@ -318,9 +326,11 @@ export function UnlockVault({
           <RestoreBackup
             bridge={restoreBridge}
             onRestored={() => {
-              // Its message belongs by the Passphrase field, which is next.
+              // Its message belongs by the Passphrase field, which is next,
+              // and the button that had focus is gone.
               setSource("unlock");
               onRestored();
+              passphraseRef.current?.focus();
             }}
           />
         </details>

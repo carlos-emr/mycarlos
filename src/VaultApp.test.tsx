@@ -1038,6 +1038,35 @@ describe("durable vault UI", () => {
     );
   });
 
+  it("restores over a locked vault, and leaves focus in the Passphrase field", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        olderThanThisDevice: false,
+        documentCount: 4,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(await screen.findByText(/^Backup restored\./)).toBeVisible();
+    // The button that was pressed is gone with the form.
+    expect(screen.getByLabelText("Passphrase")).toHaveFocus();
+  });
+
   it("opens a locked vault with its recovery key and a new passphrase", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();

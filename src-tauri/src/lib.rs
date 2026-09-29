@@ -117,6 +117,10 @@ impl From<VaultError> for PublicError {
                 code: "recovery_key_typo",
                 message: "That doesn't match the recovery key. Check each group of characters and try again.",
             },
+            VaultError::BackupChanged => Self {
+                code: "backup_changed",
+                message: "The backup file, or the vault on this device, changed after you chose to restore. Nothing on this device was changed. Choose the backup file again.",
+            },
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
                 message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
@@ -869,6 +873,9 @@ async fn vault_backup_picked(
     // holds only ciphertext, so a partial one left by a failure is not
     // readable, only incomplete, and restoring it is refused.
     run_blocking(store.inner(), move |store| {
+        // Opening the document empties it, and it may be an earlier backup:
+        // find a document that cannot be backed up before that.
+        store.verify_for_backup()?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -965,7 +972,7 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
             "The vault on this device is a different one from the backup's. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device has changed since this backup ({documents}) was made. Restoring permanently replaces it: anything added or changed since is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+            "The vault on this device is not the same as this backup ({documents}). Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
         )),
         RestoreReplaces::SameVault => Some(format!(
             "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
@@ -1027,13 +1034,14 @@ async fn vault_restore(
         .take_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
     run_blocking(store.inner(), move |store| {
-        // A vault that appeared since the preview is refused, not replaced.
-        let replace = preview.replaces != RestoreReplaces::Nothing;
+        // The file is opened again here. Another backup in its place by now,
+        // or a vault that appeared or changed since, is not what the dialog
+        // described, and is refused.
         store
-            .restore(
+            .restore_confirmed(
                 open_restore_source(&app, source)?,
                 request.credential()?,
-                replace,
+                &preview,
             )
             .map(|()| true)
     })
@@ -1739,12 +1747,13 @@ mod tests {
             differs_from_this_device: differs,
             older_than_this_device: differs,
             document_count: 3,
+            fingerprint: [0; 32],
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
         let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
         assert!(other.contains("a different one") && other.contains("3 documents"));
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
-        assert!(changed.contains("has changed since") && changed.contains("passphrase"));
+        assert!(changed.contains("is not the same as") && changed.contains("passphrase"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
         assert!(same.contains("the same 3 documents"));
     }

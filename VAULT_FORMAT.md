@@ -300,15 +300,18 @@ replaced atomically only once complete.
 
 Restoring happens while no vault is open. The patient picks the file and gives its passphrase or
 recovery key. An inspect step reads only the header and manifest and reports what restoring would
-replace: nothing, the same vault unchanged, the same vault changed since the backup (its
+replace: nothing, the same vault unchanged, the same vault differing from the backup (its
 documents, passphrase or recovery key; or it could not be read to tell), or a different vault. The
 screen spells this out and requires an explicit agreement before a changed or different vault is
 replaced. Replacing any vault is then confirmed in a trusted native dialog, as a reset is; the
 native side works the preview out again itself and puts it in the dialog. The restore itself:
 
-1. opens the header with the credential, as unlock would, and checks its integrity tag;
+1. opens the header with the credential, as unlock would, and checks its integrity tag. The file
+   is opened again for this, so the restore works the preview out once more from what it has
+   opened, and refuses if it is not the one the patient confirmed: another backup put in the
+   file's place meanwhile (in a shared or synced folder), or a vault that changed or appeared;
 2. streams every object into `.restore-<uuid>/` in the vault home, hashing each, accepting only the
-   manifest's objects, each once, in order;
+   manifest's objects, each once, in any order;
 3. checks the trailer's tag, that it lists exactly the entries read, and that nothing follows it;
 4. writes the header and manifest into the stage, opens it as unlock would (it must be complete and
    writable), and decrypts every object to authenticate it;
@@ -318,7 +321,8 @@ native side works the preview out again itself and puts it in the dialog. The re
 
 Any failure before step 5 removes the stage and changes nothing else. So does a failure to retire
 the live vault: the verified copy is discarded, so that a restore reported as failed cannot happen
-at a later start. From step 5 on, each step is one rename, and every start repeats whatever is
+at a later start. It is renamed back to a stage's name before it is removed, and a start never
+puts a `restore-ready` directory without a header in place, so a removal cut short cannot either. From step 5 on, each step is one rename, and every start repeats whatever is
 left: status, create, unlock and reset put a waiting restore in place first when the live vault
 is already retired, then finish erasing a retired vault, then activate a restore still waiting.
 A failure to erase the retired vault after the restore is in place is not a failed restore; the

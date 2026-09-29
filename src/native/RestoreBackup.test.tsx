@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RestorePreview } from "../vault";
@@ -80,13 +80,13 @@ describe("RestoreBackup", () => {
         differsFromThisDevice: true,
         olderThanThisDevice: true,
       },
-      /older than the vault on this device/,
+      /is not the same as this backup/,
       "Replace the vault on this device with this backup and lose what changed since",
     ],
     [
       // A changed passphrase or recovery key, with the documents as they were.
       { replaces: "sameVault" as const, differsFromThisDevice: true },
-      /has changed since this backup was made.*passphrase and recovery key/,
+      /is not the same as this backup.*passphrase and recovery key/,
       "Replace the vault on this device with this backup and lose what changed since",
     ],
   ])(
@@ -175,6 +175,56 @@ describe("RestoreBackup", () => {
       screen.queryByLabelText("Backup passphrase"),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("starts again from the file, with focus on it, when a restore fails", async () => {
+    const user = userEvent.setup();
+    setUp(
+      {},
+      {
+        restore: vi.fn().mockRejectedValue({
+          code: "backup_changed",
+          message: "FAKE the backup changed.",
+        }),
+      },
+    );
+    await chooseAndCheck(user);
+    await user.click(screen.getByRole("button", { name: "Show passphrase" }));
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    expect(await screen.findByText("FAKE the backup changed.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    ).toHaveFocus();
+    // The next secret is hidden as typed.
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    expect(await screen.findByLabelText("Backup passphrase")).toHaveAttribute(
+      "type",
+      "password",
+    );
+  });
+
+  it("clears a secret left unattended", async () => {
+    vi.useFakeTimers();
+    try {
+      setUp();
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose backup file…" }),
+        );
+      });
+      const field = screen.getByLabelText("Backup passphrase");
+      await act(async () => {
+        fireEvent.change(field, { target: { value: "FAKE secret typed" } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+      });
+      expect(field).toHaveValue("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says why a backup did not open", async () => {

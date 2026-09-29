@@ -10,6 +10,9 @@ import {
 
 type Method = "passphrase" | "recoveryKey";
 
+// What is typed here is cleared after this long untouched.
+const UNATTENDED_CLEAR_MS = 5 * 60 * 1000;
+
 /** What restoring would do to this device, in plain words. */
 function consequence(preview: RestorePreview): string {
   switch (preview.replaces) {
@@ -18,11 +21,9 @@ function consequence(preview: RestorePreview): string {
     case "sameVault":
       if (!preview.differsFromThisDevice)
         return "The vault on this device holds the same documents. Restoring replaces it with this backup.";
-      return `${
-        preview.olderThanThisDevice
-          ? "This backup is older than the vault on this device."
-          : "The vault on this device has changed since this backup was made."
-      } Restoring replaces the vault with the backup: anything added or changed since is lost, and the passphrase and recovery key become the ones the backup was made with.`;
+      // Which of the two is the later one is not said: the vault may have
+      // been restored and changed elsewhere since.
+      return "The vault on this device is not the same as this backup. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
     case "otherVault":
       return "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.";
   }
@@ -63,6 +64,21 @@ export function RestoreBackup({
     return () =>
       document.removeEventListener("visibilitychange", clearWhenHidden);
   }, []);
+  // Nor may it wait on a screen left unattended.
+  useEffect(() => {
+    if (!secret || busy) return;
+    const timer = window.setTimeout(() => {
+      setSecret("");
+      setShown(false);
+      setPreview(null);
+      setAgreed(false);
+      setStatus("");
+    }, UNATTENDED_CLEAR_MS);
+    return () => window.clearTimeout(timer);
+  }, [secret, busy, agreed, preview]);
+  // The form folds back to this button when a restore fails, taking the
+  // focused control with it.
+  const chooseRef = useRef<HTMLButtonElement | null>(null);
   // A preview belongs to the secret it was checked with.
   const forgetPreview = () => {
     setPreview(null);
@@ -100,7 +116,7 @@ export function RestoreBackup({
     if (!pickId || !secret || busy) return;
     setBusy(true);
     setError("");
-    setStatus("");
+    setStatus("Checking the backup…");
     setAgreed(false);
     try {
       const found = await bridge.inspectRestore(pickId, credential());
@@ -110,6 +126,7 @@ export function RestoreBackup({
       );
     } catch (failure) {
       setPreview(null);
+      setStatus("");
       setError(vaultErrorMessage(failure));
     } finally {
       setBusy(false);
@@ -146,11 +163,13 @@ export function RestoreBackup({
     } catch (failure) {
       setStatus("");
       setError(vaultErrorMessage(failure));
-      // A pick is used up by a restore that failed.
+      // Start again from the file: the pick may be used up.
       setSecret("");
+      setShown(false);
       setPickId(null);
       setPreview(null);
       setAgreed(false);
+      chooseRef.current?.focus();
     } finally {
       working.current = false;
       setBusy(false);
@@ -164,6 +183,7 @@ export function RestoreBackup({
         the vault's recovery key.
       </p>
       <button
+        ref={chooseRef}
         className="button"
         type="button"
         disabled={busy}

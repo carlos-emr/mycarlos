@@ -134,7 +134,7 @@ On every platform:
 7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
    app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a
    backup** on the unlock screen: pick the file, open it with the passphrase, and check that the
-   app says the backup is older than the vault on this device and asks you to agree before
+   app says the vault on this device is not the same as the backup and asks you to agree before
    restoring. After restoring, the vault is locked; unlock it and check that the extra document is
    gone and the others open. Try a copy of the backup with a few bytes changed: it is refused and
    nothing changes.
