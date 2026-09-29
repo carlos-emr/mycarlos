@@ -1072,6 +1072,43 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("keeps a held transfer outcome when a message arrives while a lock is under way", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      let finishLock!: () => void;
+      vi.mocked(bridge.lock).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishLock = resolve;
+          }),
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      // Written to the library's line, which the lock is about to replace.
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File(["%PDF-1.7"], "FAKE dropped.pdf", { type: "application/pdf" }),
+      );
+      await act(async () => {
+        fireDragEvent("drop", window, { dataTransfer: transfer });
+      });
+      expect(
+        screen.queryByText(HELD_OUTCOME, { exact: false }),
+      ).not.toBeInTheDocument();
+      await act(async () => finishLock());
+      await passAnnounceDelay();
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("adds a held transfer outcome to a message that arrives before it was shown", async () => {
     vi.useFakeTimers();
     try {
