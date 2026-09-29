@@ -915,6 +915,7 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
