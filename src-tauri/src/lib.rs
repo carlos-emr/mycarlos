@@ -868,7 +868,24 @@ async fn vault_reset(
     Ok(true)
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// The scheme and host the bundled pages are served from.
+type Origin = (&'static str, &'static str);
+
+/// Where this platform serves the bundled pages from. Windows and Android
+/// cannot use the app's own scheme and use a host name instead.
+fn bundled_origin(config: &tauri::Config) -> Origin {
+    if cfg!(windows) || cfg!(target_os = "android") {
+        let https = config
+            .app
+            .windows
+            .first()
+            .is_some_and(|window| window.use_https_scheme);
+        (if https { "https" } else { "http" }, "tauri.localhost")
+    } else {
+        ("tauri", "localhost")
+    }
+}
+
 /// Whether the app's window may load `url`: only the app's own bundled
 /// pages, and in a development build the development server's.
 ///
@@ -876,29 +893,37 @@ async fn vault_reset(
 /// the network, but it does not govern where the window itself goes. Page
 /// code that went to another site could take what it holds along in the
 /// address, and that site could then imitate the unlock screen.
-fn navigation_allowed(url: &Url, dev_url: Option<&Url>) -> bool {
-    // `tauri://localhost` on macOS, iOS and Linux; `http(s)://tauri.localhost`
-    // on Windows and Android. Neither is served with a port.
-    let bundled = matches!(
-        (url.scheme(), url.host_str()),
-        ("tauri", Some("localhost")) | ("http" | "https", Some("tauri.localhost"))
-    ) && url.port().is_none();
-    bundled || dev_url.is_some_and(|dev| url.origin() == dev.origin())
+///
+/// Only this platform's own origin counts as bundled. Another platform's
+/// would be an address on the network here: `http://tauri.localhost` is
+/// whatever listens on this machine's port 80.
+fn navigation_allowed(url: &Url, bundled: Origin, dev_url: Option<&Url>) -> bool {
+    let (scheme, host) = bundled;
+    let is_bundled = url.scheme() == scheme
+        && url.host_str() == Some(host)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    is_bundled || dev_url.is_some_and(|dev| url.origin() == dev.origin())
 }
 
-/// Applies `navigation_allowed` to every webview the app creates.
+/// `navigation_allowed` for this build: the development server counts only
+/// in a development build, though every build's configuration names it.
+fn may_navigate(config: &tauri::Config, url: &Url) -> bool {
+    let dev_url = tauri::is_dev()
+        .then_some(config.build.dev_url.as_ref())
+        .flatten();
+    navigation_allowed(url, bundled_origin(config), dev_url)
+}
+
+/// Applies the rule to every webview the app creates.
 fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("navigation-guard")
-        .on_navigation(|webview, url| {
-            let config = webview.config();
-            let dev_url = tauri::is_dev()
-                .then_some(config.build.dev_url.as_ref())
-                .flatten();
-            navigation_allowed(url, dev_url)
-        })
+        .on_navigation(|webview, url| may_navigate(webview.config(), url))
         .build()
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -908,6 +933,11 @@ pub fn run() {
             // The window is made here, not by the configuration, so that it
             // can refuse to open others: nothing in the app opens a window,
             // and one opened by page code would load whatever it was given.
+            // (Desktop only: a phone's webview opens no windows.) It also
+            // carries the navigation rule itself, which the library asks
+            // before it looks for plugins, and even if it cannot find the
+            // webview to ask them about.
+            let config = app.config().clone();
             let window = app
                 .config()
                 .app
@@ -916,6 +946,7 @@ pub fn run() {
                 .cloned()
                 .ok_or("the main window is not configured")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+                .on_navigation(move |url| may_navigate(&config, url))
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
             // `vault-home` holds the vault and only what the vault manages beside
@@ -974,33 +1005,94 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    const APP_SCHEME: Origin = ("tauri", "localhost");
+    const HOST_NAME: Origin = ("http", "tauri.localhost");
+    const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
+
     #[test]
     fn the_window_may_only_load_the_apps_own_pages() {
         let url = |text: &str| Url::parse(text).unwrap();
-        for bundled in [
-            "tauri://localhost",
-            "tauri://localhost/index.html",
-            "http://tauri.localhost/",
-            "https://tauri.localhost/assets/index.js",
+        for (origin, pages) in [
+            (
+                APP_SCHEME,
+                ["tauri://localhost", "tauri://localhost/index.html"],
+            ),
+            (
+                HOST_NAME,
+                ["http://tauri.localhost/", "http://tauri.localhost/a.js"],
+            ),
+            (
+                SECURE_HOST_NAME,
+                ["https://tauri.localhost/", "https://tauri.localhost/a.js"],
+            ),
         ] {
-            assert!(navigation_allowed(&url(bundled), None), "{bundled}");
+            for page in pages {
+                assert!(navigation_allowed(&url(page), origin, None), "{page}");
+            }
         }
-        for outside in [
-            "https://example.com/?secret=1",
-            "http://localhost:1420/",
-            "http://localhost/",
-            "https://tauri.localhost.example.com/",
-            "https://tauri.localhost:8443/",
-            "https://user@example.com/tauri.localhost",
-            "tauri://example.com/",
-            "file:///etc/passwd",
-            "data:text/html,<p>x</p>",
-            "about:blank",
-            "javascript:void(0)",
-            "mailto:someone@example.com",
+        for origin in [APP_SCHEME, HOST_NAME, SECURE_HOST_NAME] {
+            for outside in [
+                "https://example.com/?secret=1",
+                "http://localhost:1420/",
+                "http://localhost/",
+                "https://tauri.localhost.example.com/",
+                "https://tauri.localhost./",
+                "https://tauri.localhost:8443/",
+                "http://tauri.localhost:8080/",
+                "http://someone@tauri.localhost/",
+                "tauri://someone@localhost/",
+                "https://user@example.com/tauri.localhost",
+                "tauri://example.com/",
+                "tauri://localhost.example.com/",
+                "file:///etc/passwd",
+                "data:text/html,<p>x</p>",
+                "blob:https://tauri.localhost/0",
+                "about:blank",
+                "javascript:void(0)",
+                "mailto:someone@example.com",
+                "intent://example.com/#Intent;scheme=https;end",
+            ] {
+                assert!(
+                    !navigation_allowed(&url(outside), origin, None),
+                    "{outside} with {origin:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn another_platforms_origin_is_an_outside_address_here() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (origin, elsewhere) in [
+            (
+                APP_SCHEME,
+                ["http://tauri.localhost/", "https://tauri.localhost/"],
+            ),
+            (HOST_NAME, ["tauri://localhost", "https://tauri.localhost/"]),
+            (
+                SECURE_HOST_NAME,
+                ["tauri://localhost", "http://tauri.localhost/"],
+            ),
         ] {
-            assert!(!navigation_allowed(&url(outside), None), "{outside}");
+            for page in elsewhere {
+                assert!(
+                    !navigation_allowed(&url(page), origin, None),
+                    "{page} with {origin:?}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn this_platform_serves_its_pages_where_the_library_says() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let expected = if cfg!(windows) || cfg!(target_os = "android") {
+            HOST_NAME
+        } else {
+            APP_SCHEME
+        };
+        assert_eq!(bundled_origin(&config), expected);
     }
 
     #[test]
@@ -1009,15 +1101,23 @@ mod tests {
         let dev = url("http://localhost:1420");
         assert!(navigation_allowed(
             &url("http://localhost:1420/src/main.tsx"),
+            APP_SCHEME,
             Some(&dev)
         ));
-        assert!(navigation_allowed(&url("tauri://localhost"), Some(&dev)));
+        assert!(navigation_allowed(
+            &url("tauri://localhost"),
+            APP_SCHEME,
+            Some(&dev)
+        ));
         for outside in [
             "http://localhost:1421/",
             "https://localhost:1420/",
             "http://example.com:1420/",
         ] {
-            assert!(!navigation_allowed(&url(outside), Some(&dev)), "{outside}");
+            assert!(
+                !navigation_allowed(&url(outside), APP_SCHEME, Some(&dev)),
+                "{outside}"
+            );
         }
     }
 
