@@ -626,6 +626,7 @@ h1, h2, p { margin: 0; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
 .native-dialog-status:empty { display: none; }
 .native-confirm-message p { margin: 0; overflow-wrap: anywhere; }
+.native-confirm-list { max-height: 9.5em; margin: 0; padding: 8px 8px 8px 28px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
 .native-rename-fields label { font-weight: 700; }
 .native-rename-fields input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; }

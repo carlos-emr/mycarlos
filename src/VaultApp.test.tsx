@@ -3148,11 +3148,16 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
-    expect(
-      screen.getByRole("alertdialog", {
-        name: "Permanently remove 1 damaged document?",
-      }),
-    ).toBeVisible();
+    const confirmation = screen.getByRole("alertdialog", {
+      name: "Permanently remove 1 damaged document?",
+    });
+    expect(confirmation).toBeVisible();
+    // It names what would be removed, and nothing else.
+    const named = within(confirmation).getByRole("list", {
+      name: "Documents to remove",
+    });
+    expect(within(named).getAllByRole("listitem")).toHaveLength(1);
+    expect(named).toHaveTextContent("FAKE_a.pdf");
     const asked = vi.mocked(bridge.snapshot).mock.calls.length;
     await user.click(
       screen.getByRole("button", { name: "Permanently remove" }),

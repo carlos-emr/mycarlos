@@ -320,10 +320,14 @@ export function VaultLibrary({
     });
   };
 
-  const damagedIds = snapshot.records
-    .filter((record) => !record.available)
-    .map((record) => record.id);
+  // Every damaged document in the vault, not only those in view: removal
+  // takes them all, so the confirmation names them all.
+  const damaged = snapshot.records.filter((record) => !record.available);
+  const damagedIds = damaged.map((record) => record.id);
   const damagedCount = damagedIds.length;
+  const profileName = (id: string) =>
+    snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
+    "";
   const removeDamaged = () => {
     setConfirmRemoveDamaged(false);
     void run(async () => {
@@ -937,6 +941,18 @@ export function VaultLibrary({
               onConfirm={removeDamaged}
               onCancel={() => setConfirmRemoveDamaged(false)}
             >
+              <ul
+                className="native-confirm-list"
+                aria-label="Documents to remove"
+              >
+                {damaged.map((record) => (
+                  <li key={record.id}>
+                    {record.displayName}
+                    {snapshot.profiles.length > 1 &&
+                      ` (${profileName(record.profileId)})`}
+                  </li>
+                ))}
+              </ul>
               <p>
                 Their encrypted files are missing from this device, so their
                 content is already gone from here. Removing them also deletes
