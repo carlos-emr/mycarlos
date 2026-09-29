@@ -19,8 +19,9 @@ runs on the patient's device, so this matters mainly for any server part built l
 written as a separate program is under the licence its authors choose: talking to the app over a
 network does not by itself make it part of myCarlos. One that contains myCarlos code, or is
 combined with it in another way (linked to it, for example), is a different case, to be checked
-against the licence's terms when it arises. Sharing with CARLOS now goes one way: myCarlos code can go into CARLOS
-under CARLOS's own licence only if its author offers it under that licence as well.
+against the licence's terms when it arises. Sharing with CARLOS now goes one way: myCarlos code
+can go into CARLOS under CARLOS's own licence only if its author offers it under that licence as
+well.
 
 ## The libraries the apps are built with
 
