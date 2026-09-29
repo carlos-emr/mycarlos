@@ -82,24 +82,41 @@ nothing and forgets the pending key.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, the
 UTC date it was made, and what it is for, with no patient or document names. It is written
-natively, only to a file the patient picks, never inside the vault home, private to the user on
-Unix, and replacing a link at the destination rather than writing through it. The kit holds the key
-in plain text by design. A vault is created with its key set up straight away: the passphrase just
-typed authorizes it, and the library stays behind the setup dialog until the key is checked.
+natively, only to a file the patient picks. For a filesystem path it is never inside the vault
+home, is private to the user on Unix, and replaces a link at the destination rather than writing
+through it; a document provider's URI (Android) is written directly, so a failed write can leave a
+partial kit there. The kit holds the key in plain text by design, and says that the key works only
+once the check is finished: a kit saved for a setup that was then cancelled, or ended by a lock,
+holds a key that opens nothing. Setup is the first thing a new vault shows: the passphrase just
+typed authorizes it, and the dialog cannot be dismissed. A lock ends it all the same (on a phone,
+switching apps locks), and so does a failure to make the key; the vault then has no recovery key
+and says so in a banner until one is set up.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
 the same master key exists that the key does not open (a replaced key). The new passphrase must meet
 the usual rules; then a new header pair wraps the master key under it and carries the envelope
-forward, and the vault opens as an unlock would. A vault that can only open read-only (see
+forward, and the vault opens as an unlock would. If that pair cannot be written at all, as on a full
+disk, the vault opens read-only with its passphrase unchanged. A vault that can only open read-only (see
 recovery mode below) opens read-only with its passphrase unchanged, since nothing may be rewritten,
 so that its documents can still be saved.
 
 **Header formats.** Format 1 headers (no envelope) are still read, with their original integrity
 payload. Every header written now is format 2, so a vault moves to format 2 at its next header write;
-until then it stays format 1. A build that only knows format 1 refuses a format 2 header without
-changing anything (`MIGRATIONS.md`, rule 1). A format 1 header that carries an envelope, or any other
-version, is invalid.
+until then it stays format 1. A generation 0 (legacy, untagged) header is always format 1 and never
+carries an envelope. A format 1 header that carries an envelope, or any other version, is invalid.
+
+An earlier build, which knows only format 1, does not read a format 2 header. Once both slots are
+format 2 it reports the vault as damaged and changes nothing. While the slots are mixed (the format 2
+write of one slot landed and the other did not, or a legacy `header.json` is still there), an earlier
+build opens the format 1 header with the earlier passphrase and its repair writes format 1 over the
+format 2 slot, undoing the passphrase change or recovery key that slot carried. Do not go back to an
+earlier build with a vault this build has written to. From this build on, a slot in a header format
+newer than the build knows counts as unreadable: the vault opens read-only and the slot is left alone.
+
+Replacing the recovery key, like changing the passphrase, does not change the master key. The
+replaced key no longer opens this vault's current headers, but it still opens any earlier copy of
+them (a backup, a snapshot), and with it the master key. See "Known limits before release".
 
 ## Files and transactions
 

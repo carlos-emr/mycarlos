@@ -1492,13 +1492,22 @@ impl VaultStore {
         {
             return Err(VaultError::Invalid);
         }
+        // Every index is checked before any group is compared, so that the
+        // answer never depends on how far the comparison got.
+        if groups
+            .iter()
+            .any(|(index, typed)| *index >= RECOVERY_KEY_GROUPS || typed.len() > 64)
+        {
+            return Err(VaultError::Invalid);
+        }
         let expected = encode_recovery_key(pending);
         let expected_groups: Vec<&str> = expected.split('-').collect();
-        for (index, typed) in groups {
-            let wanted = expected_groups.get(*index).ok_or(VaultError::Invalid)?;
-            if typed.len() > 64 || !recovery_group_matches(typed, wanted) {
-                return Err(VaultError::RecoveryKeyTypo);
-            }
+        let matched = groups
+            .iter()
+            .filter(|(index, typed)| recovery_group_matches(typed, expected_groups[*index]))
+            .count();
+        if matched != groups.len() {
+            return Err(VaultError::RecoveryKeyTypo);
         }
 
         let vault_id = unlocked.manifest.vault_id;
@@ -1610,9 +1619,35 @@ impl VaultStore {
             &master_key,
             header.recovery.as_ref(),
         )?;
-        write_header_pair(&self.root, &first, &second, "recover.after-first-write")?;
+        match write_header_pair(&self.root, &first, &second, "recover.after-first-write") {
+            Ok(_) => {}
+            // Nothing was written, as on a full disk. The patient still gets
+            // in, read-only and with the passphrase unchanged, so that their
+            // documents can be saved.
+            Err(VaultError::NoSpace | VaultError::Storage) => {
+                self.open_session(
+                    &mut guard,
+                    UnlockedVault {
+                        storage_lock,
+                        master_key,
+                        recovery_key_set_at_ms: header
+                            .recovery
+                            .as_ref()
+                            .map(|envelope| envelope.created_at_ms),
+                        pending_recovery_key: None,
+                        manifest: selected.manifest,
+                        recovery: Some(RecoveryReason::WriteFailed),
+                        unavailable: selected.unavailable,
+                    },
+                );
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        }
         // Open as an unlock with the new passphrase would. If the second
-        // header write failed, the redundancy repair there rewrites it.
+        // header write failed, the redundancy repair there rewrites it. An
+        // error from here on is reported although the passphrase is already
+        // replaced; the recovery key still opens the vault.
         self.open_with_header(&mut guard, storage_lock, first, master_key, wrapping_key)?;
         Ok(true)
     }
@@ -2633,17 +2668,19 @@ fn recovery_kit_text(key: &str, now_ms: u64) -> Zeroizing<String> {
          =====================\n\
          \n\
          Recovery key:  {key}\n\
-         Made on:       {year:04}-{month:02}-{day:02}\n\
+         Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
          \n\
          What it is for\n\
          If you forget your myCarlos passphrase, this key opens your vault on\n\
-         this device and lets you choose a new passphrase.\n\
+         this device and lets you choose a new passphrase. It works once you\n\
+         have finished the check in myCarlos that follows saving this kit.\n\
          \n\
          Keep it safe\n\
          - Keep this kit somewhere private and away from the device, for\n  \
          example printed and stored with your important papers. Anyone with\n  \
          this key and a copy of your vault can open it.\n\
-         - If you set up a new recovery key, this one stops working.\n\
+         - If you set up a new recovery key, this one no longer opens the\n  \
+         vault on this device.\n\
          - Neither your clinic nor the makers of myCarlos can open your vault\n  \
          for you.\n"
     ))
@@ -2778,10 +2815,16 @@ fn header_path(root: &Path, generation: u64) -> PathBuf {
 }
 
 fn valid_header(header: &VaultHeader) -> bool {
+    // A generation 0 header is the legacy one, written before integrity tags
+    // existed: it is format 1 and has no envelope. Accepting format 2 there
+    // would let an envelope in that no tag covers.
     let valid_recovery = match (header.format_version, &header.recovery) {
-        (HEADER_FORMAT_V1, None) | (HEADER_FORMAT, None) => true,
+        (HEADER_FORMAT_V1, None) => true,
+        (HEADER_FORMAT, None) => header.generation >= 1,
         (HEADER_FORMAT, Some(envelope)) => {
-            !envelope.key_id.is_nil() && valid_wrapped_secret(&envelope.wrapped_master_key)
+            header.generation >= 1
+                && !envelope.key_id.is_nil()
+                && valid_wrapped_secret(&envelope.wrapped_master_key)
         }
         _ => false,
     };
@@ -2840,7 +2883,7 @@ fn read_latest_header(root: &Path) -> Result<VaultHeader, VaultError> {
 /// Compares a typed group of the recovery key with the expected one, reading
 /// it as `decode_recovery_key` does.
 fn recovery_group_matches(typed: &str, expected: &str) -> bool {
-    let normalized: String = typed
+    let normalized: Zeroizing<String> = typed
         .chars()
         .filter(|character| *character != '-' && !character.is_whitespace())
         .map(|character| match character.to_ascii_uppercase() {
@@ -2848,8 +2891,9 @@ fn recovery_group_matches(typed: &str, expected: &str) -> bool {
             'O' => '0',
             other => other,
         })
-        .collect();
-    normalized == expected
+        .collect::<String>()
+        .into();
+    normalized.as_str() == expected
 }
 
 /// The newest header slot authenticated by the session's master key.
@@ -3398,10 +3442,26 @@ fn manifest_redundancy_healthy(slots: &[SlotReading; 2], selected: &Manifest) ->
 
 /// A header slot that exists but cannot be read may hold a newer passphrase
 /// generation, so repair must not rewrap the key over it.
+///
+/// The same goes for a slot written in a header format newer than this build
+/// knows: a newer build put it there, so it is not damage to repair over.
 fn header_slot_unreadable(root: &Path) -> bool {
-    HEADER_SLOTS
-        .iter()
-        .any(|name| file_unreadable(&root.join(name), MAX_HEADER_BYTES))
+    HEADER_SLOTS.iter().any(|name| {
+        let path = root.join(name);
+        file_unreadable(&path, MAX_HEADER_BYTES) || header_from_newer_build(&path)
+    })
+}
+
+fn header_from_newer_build(path: &Path) -> bool {
+    let Ok(data) = read_bounded_regular_file(path, MAX_HEADER_BYTES) else {
+        return false;
+    };
+    serde_json::from_slice::<serde_json::Value>(&data).is_ok_and(|header| {
+        header["magic"] == "MYCARLOS-VAULT"
+            && header["formatVersion"]
+                .as_u64()
+                .is_some_and(|version| version > u64::from(HEADER_FORMAT))
+    })
 }
 
 fn file_unreadable(path: &Path, maximum: usize) -> bool {
@@ -4937,8 +4997,18 @@ mod tests {
     }
 
     fn run_failure_child(root: &Path, operation: &str, boundary: &str) {
+        run_failure_child_with(root, operation, boundary, &[]);
+    }
+
+    fn run_failure_child_with(
+        root: &Path,
+        operation: &str,
+        boundary: &str,
+        environment: &[(&str, &str)],
+    ) {
         let status = Command::new(std::env::current_exe().unwrap())
             .args(["--ignored", "--exact", "vault::tests::failure_child"])
+            .envs(environment.iter().copied())
             .env("MYCARLOS_TEST_ROOT", root)
             .env("MYCARLOS_TEST_OPERATION", operation)
             .env("MYCARLOS_TEST_FAIL_AT", boundary)
@@ -5001,6 +5071,14 @@ mod tests {
             assert!(matches!(store.reset(), Err(VaultError::NoSpace)));
             assert!(!store.root.exists());
             assert!(reset_path(&store.root).unwrap().exists());
+            return;
+        }
+        if operation == "recover" {
+            // The first header landed, so the passphrase is replaced, and
+            // opening the vault repairs the second slot.
+            let key = std::env::var("MYCARLOS_TEST_RECOVERY_KEY").unwrap();
+            assert!(store.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+            assert_eq!(store.snapshot().unwrap().recovery, None);
             return;
         }
         store.unlock(PASSWORD).unwrap();
@@ -7159,6 +7237,141 @@ mod tests {
         assert_eq!(utc_date(0), (1970, 1, 1));
         assert_eq!(utc_date(1_790_553_600_000), (2026, 9, 28));
         assert_eq!(utc_date(951_868_740_000), (2000, 2, 29));
+    }
+
+    #[test]
+    fn a_legacy_header_cannot_carry_an_envelope_or_claim_format_2() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        set_up_recovery_key(&store, 5);
+        let header = read_latest_header(&root).unwrap();
+        assert!(valid_header(&header));
+
+        // Generation 0 has no integrity tag, so nothing would cover these.
+        let mut legacy = header.clone();
+        legacy.generation = 0;
+        legacy.integrity_tag = String::new();
+        assert!(!valid_header(&legacy));
+        legacy.recovery = None;
+        assert!(!valid_header(&legacy));
+        legacy.format_version = HEADER_FORMAT_V1;
+        assert!(valid_header(&legacy));
+    }
+
+    #[test]
+    fn a_header_slot_from_a_newer_build_is_not_repaired_over() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        let slot = root.join(HEADER_SLOTS[0]);
+        let mut newer: serde_json::Value =
+            serde_json::from_slice(&fs::read(&slot).unwrap()).unwrap();
+        newer["formatVersion"] = serde_json::json!(HEADER_FORMAT + 1);
+        let written = serde_json::to_vec_pretty(&newer).unwrap();
+        fs::write(&slot, &written).unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        store.lock();
+        assert_eq!(fs::read(&slot).unwrap(), written);
+    }
+
+    #[test]
+    fn the_format_1_integrity_payload_is_the_one_earlier_builds_wrote() {
+        // Built here field by field, not through `header_integrity_payload`,
+        // so that a change to the format 1 payload fails this test.
+        let master_key = [7_u8; 32];
+        let (kdf, wrapping_key) = new_passphrase_key(PASSWORD).unwrap();
+        let mut header =
+            build_header_with_key(Uuid::new_v4(), 3, kdf, &wrapping_key, &master_key, None)
+                .unwrap();
+        header.format_version = HEADER_FORMAT_V1;
+        let payload = serde_json::to_vec(&(
+            "MYCARLOS-VAULT",
+            1_u32,
+            header.vault_id,
+            header.generation,
+            &header.kdf,
+            &header.wrapped_master_key,
+        ))
+        .unwrap();
+        let key = header_integrity_key(header.vault_id, &master_key).unwrap();
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(key.as_ref()).unwrap();
+        mac.update(&payload);
+        assert_eq!(
+            compute_header_integrity_tag(&header, &master_key).unwrap(),
+            BASE64.encode(mac.finalize().into_bytes())
+        );
+    }
+
+    #[test]
+    fn typed_back_groups_are_checked_by_position_and_a_lock_forgets_the_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        // An index out of range, a repeated index and too many groups are
+        // refused as invalid whether or not the other groups match.
+        for request in [
+            vec![(0, groups[0].as_str()), (7, "ZZZZ")],
+            vec![(0, "ZZZZ"), (7, "ZZZZ")],
+            vec![(2, groups[2].as_str()), (2, groups[2].as_str())],
+            (0..8).map(|index| (index % 7, "ZZZZ")).collect(),
+        ] {
+            assert!(
+                matches!(
+                    store.confirm_recovery_key(&request, 5),
+                    Err(VaultError::Invalid)
+                ),
+                "{request:?}"
+            );
+        }
+        // I is read as 1, as L is.
+        assert!(recovery_group_matches("i0l-", "101"));
+
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(matches!(
+            store.confirm_recovery_key(&[(0, &groups[0]), (1, &groups[1])], 5),
+            Err(VaultError::Invalid)
+        ));
+        assert!(read_latest_header(&root).unwrap().recovery.is_none());
+    }
+
+    #[test]
+    fn a_recovery_whose_first_header_landed_has_replaced_the_passphrase() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 5);
+        store.lock();
+        run_failure_child_with(
+            &root,
+            "recover",
+            "recover.after-first-write",
+            &[("MYCARLOS_TEST_RECOVERY_KEY", key.as_str())],
+        );
+
+        let restarted = VaultStore::new(root);
+        assert!(matches!(
+            restarted.unlock(PASSWORD),
+            Err(VaultError::WrongPassphrase)
+        ));
+        restarted.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().recovery, None);
+        restarted.lock();
+        // The key still works, and the repair kept its envelope.
+        assert!(restarted.recover(&key, PASSWORD).unwrap());
     }
 
     #[test]

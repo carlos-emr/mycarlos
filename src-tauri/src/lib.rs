@@ -686,6 +686,16 @@ async fn vault_change_passphrase(
     .await
 }
 
+/// A recovery key on its way to the renderer, wiped from native memory once
+/// it has been serialized. (The serialized response is Tauri's to free.)
+struct ShownRecoveryKey(zeroize::Zeroizing<String>);
+
+impl Serialize for ShownRecoveryKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
 /// The one place a key leaves the native side: the new recovery key, shown
 /// once so that the patient can write it down. The current passphrase
 /// authorizes it, as it does a passphrase change.
@@ -693,11 +703,11 @@ async fn vault_change_passphrase(
 async fn vault_recovery_key_begin(
     store: State<'_, Arc<VaultStore>>,
     mut request: PassphraseRequest,
-) -> CommandResult<String> {
+) -> CommandResult<ShownRecoveryKey> {
     run_blocking(store.inner(), move |store| {
         let result = store
             .begin_recovery_key(&request.passphrase)
-            .map(|key| key.to_string());
+            .map(ShownRecoveryKey);
         request.passphrase.zeroize();
         result
     })

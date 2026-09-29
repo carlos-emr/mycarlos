@@ -798,9 +798,7 @@ describe("durable vault UI", () => {
       const otherDetails = screen.getByRole("dialog", {
         name: "FAKE Results.pdf",
       });
-      expect(within(otherDetails).getByRole("status")).not.toHaveTextContent(
-        "Folder renamed",
-      );
+      expect(within(otherDetails).getByRole("status")).toBeEmptyDOMElement();
     } finally {
       vi.useRealTimers();
     }
@@ -1012,6 +1010,106 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(/^Vault opened with your recovery key\./),
     ).toBeVisible();
+  });
+
+  const HELD_OUTCOME = "1 file(s) encrypted and imported.";
+
+  // Backgrounds the app during an import, so that the vault locks when the
+  // import ends and its outcome is held for the next unlock. Fake timers.
+  async function lockWithHeldOutcome(bridge: VaultBridge) {
+    let finishImport!: (value: ImportOutcome) => void;
+    vi.mocked(bridge.importPickedFiles).mockImplementationOnce(
+      () =>
+        new Promise<ImportOutcome>((resolve) => {
+          finishImport = resolve;
+        }),
+    );
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose files to import" }),
+      );
+    });
+    await act(async () => {
+      visibilityState = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () =>
+      finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+    );
+    await act(async () => {
+      visibilityState = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(screen.getByText("Vault locked.")).toBeVisible();
+  }
+
+  async function unlockWithoutWaiting() {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase"), {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    });
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  }
+
+  it("keeps a held transfer outcome when the vault locks before it was shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      // Locked again inside the delay: only "Vault locked." is on the unlock
+      // screen, now and once the delay has passed.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      await passAnnounceDelay();
+      expect(screen.queryByText(/Vault unlocked/)).not.toBeInTheDocument();
+      // The outcome was kept for the next unlock.
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds a held transfer outcome to a message that arrives before it was shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickImportFiles: vi
+          .fn()
+          .mockResolvedValueOnce("pick-1")
+          .mockResolvedValue(null),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      // An operation started at once reports first.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await passAnnounceDelay();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `No files selected. Nothing changed. ${HELD_OUTCOME}`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([

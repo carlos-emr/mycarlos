@@ -31,7 +31,9 @@ generations into two slots, each through the atomic replacement primitive, and u
 newest authentic one; a passphrase change relies on the same commit. Writing the new format as the
 next header generation therefore keeps the previous authentic header as the fallback until the new
 one is durable, and rewrites nothing else. Readers accept both header formats (rule 1 still refuses
-unknown ones), and a vault moves to the new format at its next header write. Manifest and object
+unknown ones), and a vault moves to the new format at its next header write. Builds from before the
+change are outside this guarantee while the two slots hold different formats; `VAULT_FORMAT.md`
+("Header formats") says what they do. Manifest and object
 format changes still require the full protocol.
 
 ## Transaction layout

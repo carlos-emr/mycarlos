@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
@@ -341,8 +341,23 @@ function RecoverWithKey({
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
 }) {
   const [recoveryKey, setRecoveryKey] = useState("");
+  const [shown, setShown] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  // Nothing locks this screen, so what was typed here is cleared when the app
+  // is hidden: it must not wait on screen, or in an app switcher's picture.
+  useEffect(() => {
+    const clearWhenHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      setRecoveryKey("");
+      setPassphrase("");
+      setConfirmation("");
+      setShown(false);
+    };
+    document.addEventListener("visibilitychange", clearWhenHidden);
+    return () =>
+      document.removeEventListener("visibilitychange", clearWhenHidden);
+  }, []);
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const tooShort = tooShortPassphrase(passphrase);
   const invalid =
@@ -365,7 +380,9 @@ function RecoverWithKey({
         Recovery key
         <input
           required
+          type={shown ? "text" : "password"}
           autoComplete="off"
+          autoCorrect="off"
           autoCapitalize="characters"
           spellCheck={false}
           maxLength={64}
@@ -373,6 +390,14 @@ function RecoverWithKey({
           onChange={(e) => setRecoveryKey(e.target.value)}
         />
       </label>
+      <button
+        className="button"
+        type="button"
+        aria-pressed={shown}
+        onClick={() => setShown((current) => !current)}
+      >
+        Show recovery key
+      </button>
       <label>
         New passphrase
         <input
