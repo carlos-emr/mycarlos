@@ -3477,6 +3477,53 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lets a long list of damaged documents be scrolled from the keyboard", async () => {
+    const user = userEvent.setup();
+    const records = Array.from({ length: 30 }, (_, index) => ({
+      id: `record-${index}`,
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: `FAKE_lost_${index}.pdf`,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: false,
+    }));
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        recovery: "lostObjects",
+        records,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const opener = await screen.findByRole("button", {
+      name: "Remove damaged documents",
+    });
+    await user.click(opener);
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Permanently remove 30 damaged documents?",
+    });
+    const list = within(dialog).getByRole("list", {
+      name: "Documents to remove",
+    });
+    // It overflows, and a region that scrolls must be reachable by keyboard.
+    expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
+    const results = await axe.run(dialog, {
+      runOnly: {
+        type: "tag",
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+      },
+    });
+    expect(results.violations).toEqual([]);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
   it("shows what the vault reports after a removal was refused", async () => {
     const user = userEvent.setup();
     const record = (id: string, available: boolean) => ({

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useModalFocus } from "../useModalFocus";
 
 // Destructive and plaintext-exposing actions are confirmed here rather than with
@@ -26,12 +26,9 @@ export function ConfirmDialog({
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
-  useModalFocus(true, dialogRef, onCancel);
   // Cancel takes the first focus even when something before it can take
   // focus too, such as a list that scrolls.
-  useEffect(() => {
-    cancelRef.current?.focus();
-  }, []);
+  useModalFocus(true, dialogRef, onCancel, cancelRef);
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onCancel}>
       <section
