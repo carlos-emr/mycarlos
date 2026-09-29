@@ -110,7 +110,8 @@ describe("CreateVault", () => {
         onCreate={vi.fn()}
       />,
     );
-    const status = screen.getByRole("status");
+    // The Create form's; the other is under "Restore from a backup".
+    const status = screen.getAllByRole("status")[0];
     expect(status).toBeEmptyDOMElement();
     expect(status.getBoundingClientRect().height).toBe(0);
     // The same 12px as between the other fields.

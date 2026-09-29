@@ -1735,7 +1735,12 @@ impl VaultStore {
         }
         let _storage_lock = acquire_storage_lock(&self.root)?;
         finish_pending_resets(&self.root)?;
-        let (_, header, master_key, manifest, _) = open_backup(source, &credential)?;
+        let OpenedBackup {
+            header,
+            master_key,
+            manifest,
+            ..
+        } = open_backup(source, &credential)?;
         let (replaces, older_than_this_device) = if !self.root.exists() {
             (RestoreReplaces::Nothing, false)
         } else if read_header_candidates(&self.root)
@@ -1788,8 +1793,13 @@ impl VaultStore {
             return Err(VaultError::AlreadyExists);
         }
         let source = CancellableReader::new(Box::new(source), Arc::clone(&self.cancel_io));
-        let (mut reader, header, master_key, manifest, manifest_data) =
-            open_backup(source, &credential)?;
+        let OpenedBackup {
+            mut reader,
+            header,
+            master_key,
+            manifest,
+            manifest_data,
+        } = open_backup(source, &credential)?;
         let home = vault_home(&self.root)?;
         let stage = home.join(format!("{RESTORE_STAGE_PREFIX}{}", Uuid::new_v4()));
         create_private_dir(&stage)?;
@@ -4388,7 +4398,7 @@ impl<W: Write> BackupWriter<W> {
             entries: self.entries,
         })
         .map_err(|_| VaultError::Storage)?;
-        let tag = backup_tag(&backup_key(vault_id, master_key)?, &trailer)?
+        let tag = backup_tag(&*backup_key(vault_id, master_key)?, &trailer)?
             .finalize()
             .into_bytes();
         let length = u32::try_from(trailer.len()).map_err(|_| VaultError::Storage)?;
@@ -4506,7 +4516,7 @@ impl<R: Read> BackupReader<R> {
         self.read_exact_or_unreadable(&mut trailer)?;
         let mut tag = [0_u8; 32];
         self.read_exact_or_unreadable(&mut tag)?;
-        backup_tag(&backup_key(vault_id, master_key)?, &trailer)?
+        backup_tag(&*backup_key(vault_id, master_key)?, &trailer)?
             .verify_slice(&tag)
             .map_err(|_| VaultError::BackupUnreadable)?;
         let trailer: BackupTrailer =
@@ -4566,12 +4576,22 @@ fn open_backup_header(
     Ok((header, master_key))
 }
 
+/// A backup opened as far as its manifest, with the reader positioned at the
+/// first object.
+struct OpenedBackup<R: Read> {
+    reader: BackupReader<R>,
+    header: VaultHeader,
+    master_key: SecretKey,
+    manifest: Manifest,
+    manifest_data: Vec<u8>,
+}
+
 /// Reads a backup's header and manifest: what inspecting it needs, and the
 /// first part of a restore.
 fn open_backup<R: Read>(
     source: R,
     credential: &RestoreCredential<'_>,
-) -> Result<(BackupReader<R>, VaultHeader, SecretKey, Manifest, Vec<u8>), VaultError> {
+) -> Result<OpenedBackup<R>, VaultError> {
     let mut reader = BackupReader::new(source)?;
     let header_data = reader.small_entry(BACKUP_KIND_HEADER, MAX_HEADER_BYTES)?;
     let (header, master_key) = open_backup_header(&header_data, credential)?;
@@ -4579,7 +4599,13 @@ fn open_backup<R: Read>(
     let keys = derive_keys(header.vault_id, &master_key)?;
     let manifest = decrypt_manifest(&manifest_data, &keys.manifest, header.vault_id)
         .ok_or(VaultError::BackupUnreadable)?;
-    Ok((reader, header, master_key, manifest, manifest_data))
+    Ok(OpenedBackup {
+        reader,
+        header,
+        master_key,
+        manifest,
+        manifest_data,
+    })
 }
 
 fn restore_ready_path(root: &Path) -> Result<PathBuf, VaultError> {
@@ -7217,7 +7243,7 @@ mod tests {
         out
     }
 
-    fn leftovers(root: &Path) -> Vec<String> {
+    fn restore_leftovers(root: &Path) -> Vec<String> {
         fs::read_dir(root.parent().unwrap())
             .unwrap()
             .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
@@ -7257,7 +7283,7 @@ mod tests {
         fresh.lock();
         // The recovery key opens the restored vault too.
         assert!(fresh.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
-        assert!(leftovers(&root).is_empty());
+        assert!(restore_leftovers(&root).is_empty());
 
         // And the recovery key alone restores a backup.
         let other = temp.path().join("home-c").join("vault");
@@ -7297,7 +7323,7 @@ mod tests {
             Err(VaultError::WrongRecoveryKey)
         ));
         assert!(!root.exists());
-        assert!(leftovers(&root).is_empty());
+        assert!(restore_leftovers(&root).is_empty());
     }
 
     #[test]
@@ -7346,7 +7372,7 @@ mod tests {
             Err(VaultError::BackupUnreadable)
         ));
         assert!(!root.exists());
-        assert!(leftovers(&root).is_empty());
+        assert!(restore_leftovers(&root).is_empty());
     }
 
     #[test]
@@ -7395,7 +7421,7 @@ mod tests {
         assert_eq!(store.snapshot().unwrap().records.len(), 2);
         store.lock();
         assert!(!reset_path(&root).unwrap().exists());
-        assert!(leftovers(&root).is_empty());
+        assert!(restore_leftovers(&root).is_empty());
 
         // A different vault on this device is reported as such.
         let (other, _, _) = backed_up_vault(&temp.path().join("home-b").join("vault"));
@@ -7498,7 +7524,7 @@ mod tests {
             restarted.unlock(PASSWORD).unwrap();
             assert_eq!(restarted.snapshot().unwrap().records.len(), 2, "{boundary}");
             assert!(!reset_path(&root).unwrap().exists(), "{boundary}");
-            assert!(leftovers(&root).is_empty(), "{boundary}");
+            assert!(restore_leftovers(&root).is_empty(), "{boundary}");
         }
     }
 

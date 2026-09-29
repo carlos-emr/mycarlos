@@ -875,10 +875,12 @@ async fn vault_restore_pick(
     })
     .await?;
     let source = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .add_filter("myCarlos backups", &["mycarlosbackup"])
-            .blocking_pick_file()
+        let picker = app.dialog().file();
+        // Phone pickers filter by file type, and a backup has none they know,
+        // so a filter there could hide every file.
+        #[cfg(desktop)]
+        let picker = picker.add_filter("myCarlos backups", &["mycarlosbackup"]);
+        picker.blocking_pick_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
