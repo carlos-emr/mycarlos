@@ -209,7 +209,8 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    back in the details.
 6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
    **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
-   group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). In confirmations, focus
+   group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). The recovery key
+   setup of a new vault is the exception: Escape does not close it. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
    it (or, from a dialog opened within a document's details, to those details).

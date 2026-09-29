@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { VaultSnapshot } from "../vault";
 import { RecoveryKeySetup } from "./RecoveryKeySetup";
 
@@ -78,9 +78,16 @@ describe("RecoveryKeySetup", () => {
     expect(heading).toHaveFocus();
     const list = screen.getByRole("list", { name: "Recovery key" });
     const items = within(list).getAllByRole("listitem");
-    expect(items.map((item) => item.textContent)).toEqual(GROUPS);
-    // Read a character at a time, so that 0 and O are not confused.
-    expect(items[5]).toHaveAccessibleName("Group 6: Y Z 0 1");
+    expect(
+      items.map(
+        (item) => item.querySelector('[aria-hidden="true"]')?.textContent,
+      ),
+    ).toEqual(GROUPS);
+    // Read a character at a time, so that 0 and O are not confused: the
+    // group as shown is hidden from the reader, which gets this instead.
+    expect(items[5].querySelector(".sr-only")).toHaveTextContent(
+      "Group 6: Y Z 0 1",
+    );
   });
 
   it("says why the passphrase was refused", async () => {
@@ -108,12 +115,62 @@ describe("RecoveryKeySetup", () => {
     expect(status).toBeEmptyDOMElement();
     await user.click(screen.getByRole("button", { name: "Save kit…" }));
     expect(bridge.saveRecoveryKit).toHaveBeenCalledOnce();
-    expect(status).toHaveTextContent("Recovery kit saved.");
+    expect(status).toHaveTextContent(
+      "Recovery kit saved. The key starts working once you finish the check.",
+    );
   });
 
   it("offers Print only where the platform can print", () => {
+    setUp({ initialKey: KEY });
+    expect(
+      screen.queryByRole("button", { name: "Print" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("puts the kit in the page only while it prints", async () => {
+    const user = userEvent.setup();
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+    onTestFinished(() => print.mockRestore());
     setUp({ initialKey: KEY, canPrint: true });
-    expect(screen.getByRole("button", { name: "Print" })).toBeVisible();
+    expect(document.querySelector(".recovery-kit-print")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Print" }));
+    expect(print).toHaveBeenCalledOnce();
+    expect(document.body).toHaveClass("printing-recovery-kit");
+    const kit = document.querySelector("body > .recovery-kit-print");
+    expect(kit).toHaveTextContent(KEY);
+    // On screen it takes no part.
+    expect(kit).not.toBeVisible();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    expect(document.querySelector(".recovery-kit-print")).toBeNull();
+    expect(document.body).not.toHaveClass("printing-recovery-kit");
+  });
+
+  it("offers a way out of a required setup once it cannot succeed", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose } = setUp(
+      { initialKey: KEY, required: true },
+      {
+        confirmRecoveryKey: vi
+          .fn()
+          .mockRejectedValue({ code: "no_space", message: "FAKE disk full." }),
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.queryByRole("button", { name: "Set up later" }),
+    ).not.toBeInTheDocument();
+    for (const input of screen.getAllByLabelText(/^Group \d$/))
+      await user.type(input, "ZZZZ");
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Set up later" }),
+    );
+    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("stores the key only once two groups are typed back", async () => {

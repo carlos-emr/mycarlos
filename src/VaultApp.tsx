@@ -187,12 +187,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }, [holdLock, requestLock, transferHold]);
 
   const platformRef = useRef("");
+  // Also kept as state, for what is rendered from it.
+  const [platform, setPlatform] = useState("");
   useEffect(() => {
     let active = true;
     bridge
       .platform()
       .then((platform) => {
-        if (active) platformRef.current = platform;
+        if (active) {
+          platformRef.current = platform;
+          setPlatform(platform);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -616,7 +621,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onAutoLockMinutes={updateAutoLockMinutes}
       newVaultRecoveryKey={newVaultRecoveryKey}
       onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
-      canPrint={DESKTOP_PLATFORMS.has(platformRef.current)}
+      canPrint={DESKTOP_PLATFORMS.has(platform)}
     />
   );
 }

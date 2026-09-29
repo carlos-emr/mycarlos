@@ -205,4 +205,36 @@ describe("UnlockVault", () => {
       "abcd efgh jkmn pqrs tvwx yz01 2345",
     );
   });
+
+  it("hides the recovery key as typed, and clears it when the app is hidden", () => {
+    render(
+      <UnlockVault
+        busy={false}
+        notice=""
+        autoLockMinutes={5}
+        onUnlock={vi.fn()}
+        onRecover={vi.fn()}
+        onReset={vi.fn()}
+      />,
+    );
+    const field = screen.getByLabelText("Recovery key");
+    expect(field).toHaveAttribute("type", "password");
+    fireEvent.change(field, { target: { value: "ABCD-EFGH" } });
+    const show = screen.getByRole("button", { name: "Show recovery key" });
+    expect(show).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(show);
+    expect(field).toHaveAttribute("type", "text");
+    expect(show).toHaveAttribute("aria-pressed", "true");
+
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      fireEvent(document, new Event("visibilitychange"));
+    } finally {
+      visibility.mockRestore();
+    }
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("type", "password");
+  });
 });

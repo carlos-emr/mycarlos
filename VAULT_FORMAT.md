@@ -82,10 +82,15 @@ nothing and forgets the pending key.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, the
 UTC date it was made, and what it is for, with no patient or document names. It is written
-natively, only to a file the patient picks, never inside the vault home, private to the user on
-Unix, and replacing a link at the destination rather than writing through it. The kit holds the key
-in plain text by design. A vault is created with its key set up straight away: the passphrase just
-typed authorizes it, and the library stays behind the setup dialog until the key is checked.
+natively, only to a file the patient picks. For a filesystem path it is never inside the vault
+home, is private to the user on Unix, and replaces a link at the destination rather than writing
+through it; a document provider's URI (Android) is written directly, so a failed write can leave a
+partial kit there. The kit holds the key in plain text by design, and says that the key works only
+once the check is finished: a kit saved for a setup that was then cancelled, or ended by a lock,
+holds a key that opens nothing. Setup is the first thing a new vault shows: the passphrase just
+typed authorizes it, and the dialog cannot be dismissed. A lock ends it all the same (on a phone,
+switching apps locks), and so does a failure to make the key; the vault then has no recovery key
+and says so in a banner until one is set up.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for

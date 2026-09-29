@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useModalFocus } from "../useModalFocus";
 import {
   isRecoveryKeyTypo,
@@ -61,12 +62,34 @@ export function RecoveryKeySetup({
   const [asked, setAsked] = useState<[number, number]>([0, 1]);
   const [answers, setAnswers] = useState(["", ""]);
   const [wrongTries, setWrongTries] = useState(0);
+  // A required setup has no Cancel. Once something other than a wrong answer
+  // has failed (a full disk, a vault that locked), it offers a way out, or
+  // the patient would be left with a dialog that cannot succeed or close.
+  const [canLeave, setCanLeave] = useState(false);
+  // The kit is in the page only while it prints.
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    if (!printing) return;
+    // Print styles hide everything but the kit while this class is set, so
+    // printing anything else in the app is unaffected.
+    document.body.classList.add("printing-recovery-kit");
+    const done = () => setPrinting(false);
+    window.addEventListener("afterprint", done);
+    window.print();
+    return () => {
+      window.removeEventListener("afterprint", done);
+      document.body.classList.remove("printing-recovery-kit");
+    };
+  }, [printing]);
   const groups = key ? key.split("-") : [];
 
-  const cancel = () => {
-    if (required || busy) return;
+  const leave = () => {
     void bridge.cancelRecoveryKey().catch(() => undefined);
     onClose();
+  };
+  const cancel = () => {
+    if (required || busy) return;
+    leave();
   };
   const dialogRef = useRef<HTMLElement | null>(null);
   useModalFocus(true, dialogRef, cancel);
@@ -100,7 +123,10 @@ export function RecoveryKeySetup({
     setError("");
     setNotice("");
     try {
-      if (await bridge.saveRecoveryKit()) setNotice("Recovery kit saved.");
+      if (await bridge.saveRecoveryKit())
+        setNotice(
+          "Recovery kit saved. The key starts working once you finish the check.",
+        );
     } catch (failure) {
       setError(vaultErrorMessage(failure));
     } finally {
@@ -131,6 +157,7 @@ export function RecoveryKeySetup({
       // Only a wrong answer counts towards going back to the key.
       if (!isRecoveryKeyTypo(failure)) {
         setError(vaultErrorMessage(failure));
+        setCanLeave(true);
         return;
       }
       const tries = wrongTries + 1;
@@ -231,16 +258,23 @@ export function RecoveryKeySetup({
               private, away from this device. This is the only time myCarlos
               shows it. Next, you type two parts of it to check.
             </p>
-            <ol className="recovery-key-groups" aria-label="Recovery key">
-              {groups.map((group, index) => (
-                <li
-                  key={index}
-                  aria-label={`Group ${index + 1}: ${spoken(group)}`}
-                >
-                  {group}
-                </li>
-              ))}
-            </ol>
+            {busy ? (
+              // Not left on screen under a save picker.
+              <p className="recovery-key-groups">
+                Hidden while the kit is being saved.
+              </p>
+            ) : (
+              <ol className="recovery-key-groups" aria-label="Recovery key">
+                {groups.map((group, index) => (
+                  <li key={index}>
+                    <span aria-hidden="true">{group}</span>
+                    <span className="sr-only">
+                      Group {index + 1}: {spoken(group)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
             <p className="native-dialog-status" role="status">
               {notice}
             </p>
@@ -264,7 +298,9 @@ export function RecoveryKeySetup({
                   className="button"
                   type="button"
                   disabled={busy}
-                  onClick={() => window.print()}
+                  onClick={() =>
+                    printing ? window.print() : setPrinting(true)
+                  }
                 >
                   Print
                 </button>
@@ -278,20 +314,25 @@ export function RecoveryKeySetup({
                 Next
               </button>
             </footer>
-            {/* Printed on its own: the rest of the page is hidden in print. */}
-            <div className="recovery-kit-print" aria-hidden="true">
-              <h1>myCarlos recovery kit</h1>
-              <p className="recovery-kit-key">{key}</p>
-              <p>
-                If you forget your myCarlos passphrase, this key opens your
-                vault on this device and lets you choose a new passphrase.
-              </p>
-              <p>
-                Keep it somewhere private and away from the device. Anyone with
-                this key and a copy of your vault can open it. If you set up a
-                new recovery key, this one stops working.
-              </p>
-            </div>
+            {printing &&
+              createPortal(
+                <div className="recovery-kit-print" aria-hidden="true">
+                  <h1>myCarlos recovery kit</h1>
+                  <p className="recovery-kit-key">{key}</p>
+                  <p>
+                    If you forget your myCarlos passphrase, this key opens your
+                    vault on this device and lets you choose a new passphrase.
+                    It works once you have finished the check in myCarlos.
+                  </p>
+                  <p>
+                    Keep it somewhere private and away from the device. Anyone
+                    with this key and a copy of your vault can open it. If you
+                    set up a new recovery key, this one no longer opens the
+                    vault on this device.
+                  </p>
+                </div>,
+                document.body,
+              )}
           </div>
         )}
 
@@ -304,6 +345,7 @@ export function RecoveryKeySetup({
                 <input
                   autoFocus={slot === 0}
                   autoComplete="off"
+                  autoCorrect="off"
                   autoCapitalize="characters"
                   spellCheck={false}
                   maxLength={16}
@@ -320,6 +362,16 @@ export function RecoveryKeySetup({
             ))}
             {error && <p role="alert">{error}</p>}
             <footer className="dialog-actions">
+              {required && canLeave && (
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={leave}
+                >
+                  Set up later
+                </button>
+              )}
               <button
                 className="button"
                 type="button"

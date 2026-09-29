@@ -632,7 +632,7 @@ h1, h2, p { margin: 0; }
 .native-confirm-message p { margin: 0; overflow-wrap: anywhere; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
 .recovery-key-dialog { max-width: 520px; }
-.recovery-key-dialog .dialog-head h2:focus { outline: none; }
+.recovery-key-dialog .dialog-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .recovery-key-body { display: grid; gap: 12px; padding: 16px 20px; }
 .recovery-key-body p { margin: 0; overflow-wrap: anywhere; }
 .recovery-key-body label { display: grid; gap: 5px; font-weight: 700; }
@@ -641,11 +641,12 @@ h1, h2, p { margin: 0; }
 .recovery-key-body .dialog-actions { padding: 0; border: 0; flex-wrap: wrap; }
 .recovery-key-groups { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); list-style: none; }
 .recovery-key-groups li { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 1.25rem; font-weight: 700; letter-spacing: .12em; }
+/* The kit is added to <body> only while it prints, and only then is the rest
+   of the page left out of the print. */
 .recovery-kit-print { display: none; }
 @media print {
-  body * { visibility: hidden; }
-  .recovery-kit-print, .recovery-kit-print * { visibility: visible; }
-  .recovery-kit-print { display: block; position: absolute; top: 0; left: 0; width: 100%; color: #000; }
+  body.printing-recovery-kit > :not(.recovery-kit-print) { display: none; }
+  body.printing-recovery-kit > .recovery-kit-print { display: block; color: #000; }
   .recovery-kit-key { font-family: ui-monospace, Consolas, monospace; font-size: 1.5rem; font-weight: 700; letter-spacing: .12em; }
 }
 .native-rename-fields label { font-weight: 700; }

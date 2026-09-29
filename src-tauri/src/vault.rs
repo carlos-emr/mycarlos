@@ -2330,17 +2330,19 @@ fn recovery_kit_text(key: &str, now_ms: u64) -> Zeroizing<String> {
          =====================\n\
          \n\
          Recovery key:  {key}\n\
-         Made on:       {year:04}-{month:02}-{day:02}\n\
+         Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
          \n\
          What it is for\n\
          If you forget your myCarlos passphrase, this key opens your vault on\n\
-         this device and lets you choose a new passphrase.\n\
+         this device and lets you choose a new passphrase. It works once you\n\
+         have finished the check in myCarlos that follows saving this kit.\n\
          \n\
          Keep it safe\n\
          - Keep this kit somewhere private and away from the device, for\n  \
          example printed and stored with your important papers. Anyone with\n  \
          this key and a copy of your vault can open it.\n\
-         - If you set up a new recovery key, this one stops working.\n\
+         - If you set up a new recovery key, this one no longer opens the\n  \
+         vault on this device.\n\
          - Neither your clinic nor the makers of myCarlos can open your vault\n  \
          for you.\n"
     ))
