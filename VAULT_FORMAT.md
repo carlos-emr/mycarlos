@@ -190,8 +190,10 @@ generation: the passphrase just used may be one that it has replaced (a change w
 did not land leaves the earlier passphrase in the other slot, and that passphrase still opens the
 vault, read-only). Whether a slot could be read is taken from the same reading that chose the
 header, so that a slot held for a moment by another program is not missed by one and seen by the
-other. While the vault is open and writable, a change of passphrase or a new recovery key is
-refused if a header slot cannot be read by then.
+other. While the vault is open and writable, a change of passphrase, a new recovery key (when it
+is made and when it is confirmed) and a backup are refused if a header slot cannot be read by
+then; documents can still be added and changed, which does not touch the headers. A legacy
+`header.json` that cannot be read does not make the vault read-only: the slots supersede it.
 
 A vault that cannot be opened is reported as damaged only when every file that holds its state
 could be read. If no header opens with what was typed, or no manifest is authentic, and a header
