@@ -13,7 +13,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{Manager, State};
+use tauri::{Manager, State, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use uuid::Uuid;
@@ -869,11 +869,55 @@ async fn vault_reset(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Whether the app's window may load `url`: only the app's own bundled
+/// pages, and in a development build the development server's.
+///
+/// The content security policy keeps page code from sending anything over
+/// the network, but it does not govern where the window itself goes. Page
+/// code that went to another site could take what it holds along in the
+/// address, and that site could then imitate the unlock screen.
+fn navigation_allowed(url: &Url, dev_url: Option<&Url>) -> bool {
+    // `tauri://localhost` on macOS, iOS and Linux; `http(s)://tauri.localhost`
+    // on Windows and Android. Neither is served with a port.
+    let bundled = matches!(
+        (url.scheme(), url.host_str()),
+        ("tauri", Some("localhost")) | ("http" | "https", Some("tauri.localhost"))
+    ) && url.port().is_none();
+    bundled || dev_url.is_some_and(|dev| url.origin() == dev.origin())
+}
+
+/// Applies `navigation_allowed` to every webview the app creates.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|webview, url| {
+            let config = webview.config();
+            let dev_url = tauri::is_dev()
+                .then_some(config.build.dev_url.as_ref())
+                .flatten();
+            navigation_allowed(url, dev_url)
+        })
+        .build()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(navigation_guard())
         .setup(|app| {
+            // The window is made here, not by the configuration, so that it
+            // can refuse to open others: nothing in the app opens a window,
+            // and one opened by page code would load whatever it was given.
+            let window = app
+                .config()
+                .app
+                .windows
+                .first()
+                .cloned()
+                .ok_or("the main window is not configured")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
             // `vault-home` holds the vault and only what the vault manages beside
             // it (lock file, pending reset, create stage, export journal). Back
             // up or restore the whole directory. Machine-local data, because the
@@ -930,6 +974,64 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    #[test]
+    fn the_window_may_only_load_the_apps_own_pages() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        for bundled in [
+            "tauri://localhost",
+            "tauri://localhost/index.html",
+            "http://tauri.localhost/",
+            "https://tauri.localhost/assets/index.js",
+        ] {
+            assert!(navigation_allowed(&url(bundled), None), "{bundled}");
+        }
+        for outside in [
+            "https://example.com/?secret=1",
+            "http://localhost:1420/",
+            "http://localhost/",
+            "https://tauri.localhost.example.com/",
+            "https://tauri.localhost:8443/",
+            "https://user@example.com/tauri.localhost",
+            "tauri://example.com/",
+            "file:///etc/passwd",
+            "data:text/html,<p>x</p>",
+            "about:blank",
+            "javascript:void(0)",
+            "mailto:someone@example.com",
+        ] {
+            assert!(!navigation_allowed(&url(outside), None), "{outside}");
+        }
+    }
+
+    #[test]
+    fn a_development_build_may_also_load_its_development_server() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        let dev = url("http://localhost:1420");
+        assert!(navigation_allowed(
+            &url("http://localhost:1420/src/main.tsx"),
+            Some(&dev)
+        ));
+        assert!(navigation_allowed(&url("tauri://localhost"), Some(&dev)));
+        for outside in [
+            "http://localhost:1421/",
+            "https://localhost:1420/",
+            "http://example.com:1420/",
+        ] {
+            assert!(!navigation_allowed(&url(outside), Some(&dev)), "{outside}");
+        }
+    }
+
+    #[test]
+    fn the_configuration_leaves_the_window_to_the_app() {
+        // A window the configuration made would have no guard against
+        // opening others.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows = config["app"]["windows"].as_array().unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0]["create"], false);
+    }
+
     #[test]
     fn runtime_info_contains_only_non_sensitive_build_data() {
         let info = current_runtime_info();
