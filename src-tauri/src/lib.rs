@@ -122,6 +122,10 @@ impl From<VaultError> for PublicError {
                 code: "removal_changed",
                 message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
             },
+            VaultError::Unreadable => Self {
+                code: "unreadable",
+                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not erase the vault. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
                 message: "The vault is in read-only recovery mode. Export important records and free storage before retrying.",

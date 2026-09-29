@@ -843,11 +843,12 @@ export function VaultLibrary({
                     <span>
                       <strong>Read-only recovery mode.</strong> Some of the
                       vault's files could not be read, and they may be newer or
-                      intact, so nothing will be changed on disk. Check that the
-                      drive holding the myCarlos data folder is connected, that
-                      no other program holds the folder, and that a cloud sync
-                      tool keeps its files on this device, then lock and unlock
-                      again.
+                      intact, so nothing can be changed for now, including your
+                      passphrase and recovery key. Your documents can still be
+                      opened and saved as copies. Check that the drive holding
+                      the myCarlos data folder is connected, that no other
+                      program holds the folder, and that a cloud sync tool keeps
+                      its files on this device, then lock and unlock again.
                     </span>
                   </div>
                 )}
