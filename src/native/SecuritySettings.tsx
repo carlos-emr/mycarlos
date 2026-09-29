@@ -199,16 +199,12 @@ export function SecuritySettings({
             </p>
             <p>
               Changing your passphrase keeps out someone who only knows the old
-              one. It does not help if they also have a copy of your vault, such
-              as a backup of this device or a saved backup file: the old
-              passphrase still opens that copy and the documents in it, and
-              would open a newer copy they got later.
-            </p>
-            <p>
-              To stop that you need a new vault. Save a copy of each document
-              somewhere safe first, then erase this vault, create a new one and
-              import the documents again. Do not restore an earlier backup into
-              it.
+              one. If they may also have a copy of your vault, such as a backup
+              of this device or a saved backup file, a new passphrase is not
+              enough: the old one still opens that copy, and with that copy they
+              could open a newer one they got later. Shutting them out takes a
+              new vault, and care not to lose documents on the way. Ask for help
+              before you erase anything.
             </p>
           </div>
           <form onSubmit={submitPassphrase}>

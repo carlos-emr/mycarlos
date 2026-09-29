@@ -25,20 +25,15 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe("SecuritySettings passphrase change", () => {
-  it("says what a new passphrase does not protect, and what would", () => {
+  it("says what a new passphrase does not protect, without urging an erase", () => {
     renderSettings();
-    expect(
-      screen.getByText(
-        /does not help if they also have a copy of your vault.*still opens that copy and the documents in it/s,
-      ),
-    ).toBeVisible();
-    // Erasing comes after saving the documents, never before.
-    const remedy = screen.getByText(/you need a new vault/).textContent ?? "";
-    expect(remedy.indexOf("Save a copy of each document")).toBeGreaterThan(-1);
-    expect(remedy.indexOf("Save a copy of each document")).toBeLessThan(
-      remedy.indexOf("erase this vault"),
-    );
-    expect(remedy).toMatch(/Do not restore an earlier backup into it/);
+    const limit =
+      screen.getByText(/a new passphrase\s+is not enough/).textContent ?? "";
+    expect(limit).toMatch(/the old one still opens that copy/);
+    expect(limit).toMatch(/Ask for help before you erase anything/);
+    // The steps are in the documents, not here: nothing on this screen
+    // tells a patient to erase.
+    expect(limit).not.toMatch(/erase this vault/);
   });
 
   it("refuses a replacement under the minimum length before sending it", () => {

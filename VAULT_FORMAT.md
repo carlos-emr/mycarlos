@@ -341,9 +341,14 @@ in place of what that document held.
 - Changing the passphrase or replacing the recovery key does not change the master key. Someone who
   has the earlier passphrase or key, and any earlier copy of a header (a device backup, a copied
   folder, a saved backup file), has the master key, which decrypts the vault as it is now and
-  later, whenever they get a copy of it. Rotating the master key is not implemented: the only
-  remedy is a new vault (save the documents, erase, create, import again), and restoring an earlier
-  backup into it brings the earlier master key back.
+  later, whenever they get a copy of it. Rotating the master key is not implemented. The
+  only remedy is a new vault, which the app does not guide: save a readable copy of every document
+  (one at a time, in every profile; a damaged document cannot be saved), check that each copy
+  opens, erase the vault, create a new one and import the copies. Folders, profiles and the dates
+  added are not kept, the saved copies are not encrypted while they wait, and the recovery key and
+  earlier backups belong to the earlier vault: restoring one brings the earlier master key back.
+  The earlier passphrase does not itself open a later copy of the vault; the master key taken from
+  the earlier copy does.
 - Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
   recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.
