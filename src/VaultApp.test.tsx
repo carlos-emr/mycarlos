@@ -929,6 +929,40 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("waits for an operation started at once before giving the unlock result", async () => {
+    vi.useFakeTimers();
+    try {
+      let choose!: (pick: string | null) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      vi.mocked(bridge.pickImportFiles).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            choose = resolve;
+          }),
+      );
+      await unlockWithoutWaiting();
+      // A picker opened at once, before the result was written.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await passAnnounceDelay();
+      // Nothing is written behind the picker.
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+      await act(async () => choose(null));
+      await passAnnounceDelay();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `No files selected. Nothing changed. ${HELD_OUTCOME}`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("adds a held transfer outcome to a message that arrives before it was shown", async () => {
     vi.useFakeTimers();
     try {
@@ -3490,6 +3524,18 @@ describe("durable vault UI", () => {
     });
     expect(within(named).getAllByRole("listitem")).toHaveLength(1);
     expect(named).toHaveTextContent("FAKE_a.pdf");
+    // It can be scrolled with the keyboard, but Cancel has the first focus,
+    // and the names are not read out with the dialog.
+    expect(named).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(named).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(confirmation).toHaveAccessibleDescription(
+      /Their encrypted files are missing/,
+    );
+    expect(confirmation).not.toHaveAccessibleDescription(/FAKE_a\.pdf/);
     const asked = vi.mocked(bridge.snapshot).mock.calls.length;
     await user.click(
       screen.getByRole("button", { name: "Permanently remove" }),
