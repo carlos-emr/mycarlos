@@ -108,24 +108,25 @@ and Linux passes device/release validation.
 
 ## Not yet decided
 
-Nothing in this section is an approved decision. These questions were raised in the original design
-issue (#3) and are not settled for the pilot:
+The questions in this section are not approved decisions. Where an approved decision is restated
+for context, it is unchanged. They were raised in the original design issue (#3) and are not
+settled for the pilot:
 
-- Apple Health and Health Connect: whether they are in scope at all. They are built around
+- Apple Health and Android Health Connect: whether they are in scope at all. They are built around
   structured health data rather than a document vault, and anything written to them leaves
-  myCarlos's vault protection; any use would be a separate, complementary feature.
+  myCarlos's vault protection; if used at all, they would be a separate feature, not vault storage.
 - Ingest other than manual import and documents from CARLOS: scan or photo capture, and documents
-  from other EMRs. (A verified CARLOS document requires the signed package decided above. How the
-  encrypted PDF that CARLOS emails reaches myCarlos in the pilot is open in #23; without a signed
-  package it stays **Patient imported · Unverified**.)
+  from other EMRs. (A verified CARLOS document requires the signed package decided above. CARLOS
+  can also email a patient an encrypted PDF; how that file reaches myCarlos in the pilot is open in
+  #23, and imported without a signed package it is labelled **Patient imported · Unverified**.)
 - Organization beyond what is built (folders, search and sort; see `MVP_STATUS.md`): categories, a
   timeline, tags, and which descriptive metadata, beyond the signed-package fields above, travels
-  with a document. The decision that titles, types, providers, dates and folders stay encrypted
-  from the portal stands. The mocks in #18 predate these decisions; where they differ, this record
-  governs.
+  with a document. The decision that titles, types, providers, dates, profiles and folders stay
+  encrypted from the portal stands. The mocks in #18 predate the approved decisions above; where
+  they differ, this record governs.
 - The final product name. "myCarlos" is the working name for now; the mocks in #18 use
   "MyVitalHistory".
 
-Tracked in their own issues: the CARLOS email handoff (#23), the licence, store and signing
-logistics (#24), and the questions for the mandatory privacy, regulatory and clinical-safety
-review (#25).
+Also open, and tracked in their own issues: the CARLOS email handoff (#23), the licence, store and
+signing logistics (#24), and the questions for the mandatory privacy, regulatory and clinical-safety
+approval (#25).
