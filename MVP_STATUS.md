@@ -30,7 +30,7 @@ privacy, accessibility, or clinical review.
       one-to-fifteen-minute inactivity configuration with the approved five-minute default. A manual
       lock cancels streaming at the next I/O boundary; an automatic or background lock during an
       import or export hides content at once and locks when the transfer finishes.
-- [x] Confirmed passphrase change and typed plus trusted-native-confirmation whole-vault reset.
+- [x] Passphrase change (current passphrase required) and typed plus trusted-native-confirmation whole-vault reset.
 - [x] Exclusive OS ownership across app instances for unlocked sessions and lifecycle operations;
       subprocess coverage verifies rejection and fresh-state handoff after ownership release.
 - [x] Interrupted-reset recovery before startup/access/creation, covering abrupt exit after

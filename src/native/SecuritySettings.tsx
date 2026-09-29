@@ -198,11 +198,17 @@ export function SecuritySettings({
               erasing the vault.
             </p>
             <p>
-              A new passphrase protects this vault from now on. If someone has
-              learned your passphrase and may also have a copy of your vault,
-              such as a backup of this device or a saved backup file, the old
-              passphrase still opens that copy, and what they find there also
-              opens later copies. Only a new vault shuts them out for good.
+              Changing your passphrase keeps out someone who only knows the old
+              one. It does not help if they also have a copy of your vault, such
+              as a backup of this device or a saved backup file: the old
+              passphrase still opens that copy and the documents in it, and
+              would open a newer copy they got later.
+            </p>
+            <p>
+              To stop that you need a new vault. Save a copy of each document
+              somewhere safe first, then erase this vault, create a new one and
+              import the documents again. Do not restore an earlier backup into
+              it.
             </p>
           </div>
           <form onSubmit={submitPassphrase}>
