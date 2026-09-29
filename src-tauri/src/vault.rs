@@ -7070,14 +7070,12 @@ mod tests {
         // As for an unlock: removing the lost record would make the session
         // writable over a slot that may hold a newer header.
         assert!(!store.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        // In that state a removal is refused, which
+        // `damaged_records_are_not_removed_in_other_recovery_states` covers.
         assert_eq!(
             store.snapshot().unwrap().recovery,
             Some(RecoveryReason::UnreadableSlot)
         );
-        assert!(matches!(
-            store.remove_unavailable_records(),
-            Err(VaultError::RecoveryMode)
-        ));
         store.lock();
         fs::set_permissions(&slot, fs::Permissions::from_mode(0o600)).unwrap();
     }
