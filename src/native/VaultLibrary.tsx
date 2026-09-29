@@ -326,7 +326,15 @@ export function VaultLibrary({
   const removeDamaged = () => {
     setConfirmRemoveDamaged(false);
     void run(async () => {
-      const removed = await bridge.removeUnavailableRecords();
+      let removed: string[];
+      try {
+        removed = await bridge.removeUnavailableRecords();
+      } catch (error) {
+        // A refusal can change what the vault reports (more documents
+        // damaged, or files that cannot be read): show that, then the reason.
+        await refresh().catch(() => undefined);
+        throw error;
+      }
       setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !removed.includes(id)),
@@ -716,9 +724,10 @@ export function VaultLibrary({
                       <strong>Read-only recovery mode.</strong> Some of the
                       vault's files could not be read, and they may be newer or
                       intact, so nothing will be changed on disk. Check that the
-                      drive holding the myCarlos data folder is connected and
-                      that no other program holds the folder, then lock and
-                      unlock again.
+                      drive holding the myCarlos data folder is connected, that
+                      no other program holds the folder, and that a cloud sync
+                      tool keeps its files on this device, then lock and unlock
+                      again.
                     </span>
                   </div>
                 )}
@@ -831,6 +840,11 @@ export function VaultLibrary({
                   selectedIds={selectedIds}
                   disabled={busy || readOnly}
                   searching={Boolean(query)}
+                  unavailableLabel={
+                    snapshot.recovery === "unreadableSlot"
+                      ? "File could not be read"
+                      : "Damaged: file missing"
+                  }
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
@@ -876,6 +890,7 @@ export function VaultLibrary({
               folders={folders}
               busy={busy}
               readOnly={readOnly}
+              unreadable={snapshot.recovery === "unreadableSlot"}
               notice={notice}
               onClose={() => setActiveRecordId(null)}
               onRename={() =>

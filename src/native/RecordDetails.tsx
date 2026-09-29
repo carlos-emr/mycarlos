@@ -9,6 +9,9 @@ interface RecordDetailsProps {
   folders: VaultFolder[];
   busy: boolean;
   readOnly: boolean;
+  /** The vault's files could not be read, so an unavailable document may be
+   * intact rather than missing. */
+  unreadable: boolean;
   /** Result of the last operation. The page behind this modal is inert, so its
    * own status line is neither announced nor reliably visible from here. */
   notice: string;
@@ -23,6 +26,7 @@ export function RecordDetails({
   folders,
   busy,
   readOnly,
+  unreadable,
   notice,
   onClose,
   onRename,
@@ -81,9 +85,20 @@ export function RecordDetails({
             </p>
           ) : (
             <p role="alert">
-              <strong>This document is damaged.</strong> Its encrypted file is
-              missing from this device, so a copy cannot be saved. Restoring the
-              myCarlos data folder from a backup may recover it.
+              {unreadable ? (
+                <>
+                  <strong>This document could not be read.</strong> Its
+                  encrypted file is out of reach for now, so a copy cannot be
+                  saved. See the notice in the library for what to check.
+                </>
+              ) : (
+                <>
+                  <strong>This document is damaged.</strong> Its encrypted file
+                  is missing from this device, so a copy cannot be saved.
+                  Restoring the myCarlos data folder from a backup may recover
+                  it.
+                </>
+              )}
             </p>
           )}
         </div>

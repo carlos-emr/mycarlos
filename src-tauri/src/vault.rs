@@ -1239,12 +1239,43 @@ impl VaultStore {
             Some(_) => return Err(VaultError::RecoveryMode),
             None => return Err(VaultError::Invalid),
         }
+        // A file that cannot be looked up by now may be intact. Nothing is
+        // removed, and the session says why instead of offering removal again.
+        if unlocked
+            .manifest
+            .records
+            .iter()
+            .any(|record| object_presence(&self.root, record) == ObjectPresence::Unknown)
+        {
+            unlocked.recovery = Some(RecoveryReason::UnreadableSlot);
+            return Err(VaultError::RecoveryMode);
+        }
+        // Only documents the patient was shown as damaged may go. One that has
+        // gone missing since is added to what the session shows, and nothing
+        // is removed: the count the patient agreed to did not include it.
+        let newly_missing: Vec<Uuid> = unlocked
+            .manifest
+            .records
+            .iter()
+            .filter(|record| {
+                !unlocked.unavailable.contains(&record.id)
+                    && object_presence(&self.root, record) == ObjectPresence::Missing
+            })
+            .map(|record| record.id)
+            .collect();
+        if !newly_missing.is_empty() {
+            unlocked.unavailable.extend(newly_missing);
+            return Err(VaultError::Corrupt);
+        }
         let mut next = unlocked.manifest.clone();
         let mut removed = Vec::new();
-        // Only an object that is really gone is given up. One that came back,
-        // or that cannot be looked up now, is kept.
+        // Of those, only an object that is really gone is given up. One that
+        // came back is kept.
+        let shown = &unlocked.unavailable;
         next.records.retain(|record| {
-            if object_presence(&self.root, record) != ObjectPresence::Missing {
+            if !shown.contains(&record.id)
+                || object_presence(&self.root, record) != ObjectPresence::Missing
+            {
                 return true;
             }
             removed.push(record.id);
@@ -1648,13 +1679,28 @@ enum ObjectPresence {
 }
 
 fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
-    match fs::symlink_metadata(root.join("objects").join(&record.object_name)) {
+    let objects = root.join("objects");
+    match fs::symlink_metadata(objects.join(&record.object_name)) {
         Ok(metadata) if is_regular_non_reparse(&metadata) => ObjectPresence::Present,
-        // A Windows reparse point that is not a link, such as a cloud
-        // placeholder, is refused when opened but may be intact behind it.
-        Ok(metadata) if metadata.file_type().is_file() => ObjectPresence::Unknown,
+        // A link, or a Windows reparse point such as a cloud placeholder, is
+        // refused when opened, but the content may be intact behind it.
+        Ok(metadata) if metadata.file_type().is_file() || metadata.file_type().is_symlink() => {
+            ObjectPresence::Unknown
+        }
         Ok(_) => ObjectPresence::Missing,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => ObjectPresence::Missing,
+        // "Not found" is only an answer when the folder itself could be
+        // searched: it is a real folder, or it is gone altogether. Behind a
+        // link whose target is away (an unmounted drive), or a file standing
+        // in the folder's place, every object reads as not found.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let folder_gone = fs::symlink_metadata(&objects)
+                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound);
+            if folder_gone || is_real_dir(&objects) {
+                ObjectPresence::Missing
+            } else {
+                ObjectPresence::Unknown
+            }
+        }
         Err(_) => ObjectPresence::Unknown,
     }
 }
@@ -2298,9 +2344,9 @@ enum SlotReading {
         /// Records whose object is missing, is not a regular file, or could
         /// not be looked up.
         missing: HashSet<Uuid>,
-        /// Whether any of those could not be looked up. Such an object may be
+        /// Those of them that could not be looked up. Such an object may be
         /// intact, so the slot counts as unreadable: nothing may be removed.
-        unknown: bool,
+        unknown: HashSet<Uuid>,
     },
 }
 
@@ -2354,7 +2400,7 @@ fn read_manifest_slot_reading(
         return SlotReading::Damaged;
     };
     let mut missing = HashSet::new();
-    let mut unknown = false;
+    let mut unknown = HashSet::new();
     for record in &manifest.records {
         match object_presence(root, record) {
             ObjectPresence::Present => {}
@@ -2363,7 +2409,7 @@ fn read_manifest_slot_reading(
             }
             ObjectPresence::Unknown => {
                 missing.insert(record.id);
-                unknown = true;
+                unknown.insert(record.id);
             }
         }
     }
@@ -2409,11 +2455,10 @@ fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Opt
 fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultError> {
     // An object that could not be looked up counts as an unreadable slot: it
     // may be intact, so its record must not be offered for removal.
-    let slot_unreadable = slots.iter().any(|slot| {
-        matches!(
-            slot,
-            SlotReading::Unreadable | SlotReading::Authentic { unknown: true, .. }
-        )
+    let slot_unreadable = slots.iter().any(|slot| match slot {
+        SlotReading::Unreadable => true,
+        SlotReading::Authentic { unknown, .. } => !unknown.is_empty(),
+        _ => false,
     });
     // An unreadable slot outranks lost objects: removing the lost records would
     // commit over a state that may be newer than the one opened.
@@ -2437,16 +2482,26 @@ fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultEr
         .iter()
         .map(|record| record.object_name.as_str())
         .collect();
+    // An object that could not be looked up counts as intact here: passing
+    // its generation over would drop its document from the list.
     let newer_with_intact_object = slots
         .iter()
-        .filter_map(SlotReading::authentic)
-        .filter(|(manifest, _)| manifest.generation > selected.generation)
-        .find(|(manifest, missing)| {
+        .filter_map(|slot| match slot {
+            SlotReading::Authentic {
+                manifest,
+                missing,
+                unknown,
+            } => Some((manifest, missing, unknown)),
+            _ => None,
+        })
+        .filter(|(manifest, _, _)| manifest.generation > selected.generation)
+        .find(|(manifest, missing, unknown)| {
             manifest.records.iter().any(|record| {
-                !kept.contains(record.object_name.as_str()) && !missing.contains(&record.id)
+                !kept.contains(record.object_name.as_str())
+                    && (!missing.contains(&record.id) || unknown.contains(&record.id))
             })
         });
-    if let Some((manifest, missing)) = newer_with_intact_object {
+    if let Some((manifest, missing, _)) = newer_with_intact_object {
         return Ok(read_only_selection(manifest, missing));
     }
     Ok(SelectedManifest {
@@ -6360,7 +6415,15 @@ mod tests {
         );
 
         make_objects_unsearchable(&root, &aside);
-        assert!(store.remove_unavailable_records().is_err());
+        assert!(matches!(
+            store.remove_unavailable_records(),
+            Err(VaultError::RecoveryMode)
+        ));
+        // The session no longer offers a removal it would refuse.
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
         store.lock();
         restore_objects(&root, &aside);
 
@@ -6424,7 +6487,7 @@ mod tests {
         SlotReading::Authentic {
             manifest,
             missing,
-            unknown: false,
+            unknown: HashSet::new(),
         }
     }
 
@@ -6437,13 +6500,132 @@ mod tests {
         let slots = [
             SlotReading::Authentic {
                 manifest,
+                unknown: missing.clone(),
                 missing,
-                unknown: true,
             },
             SlotReading::Absent,
         ];
         let selected = select_manifest(&slots).unwrap();
         assert_eq!(selected.recovery, Some(RecoveryReason::UnreadableSlot));
+    }
+
+    #[test]
+    fn a_newer_generation_is_not_passed_over_for_objects_that_cannot_be_looked_up() {
+        // Generation 6 adds "b", which cannot be looked up; generation 5 is
+        // complete. Opening 5 would drop "b" from the list though it may be
+        // intact, so 6 is opened, read-only.
+        let vault_id = Uuid::new_v4();
+        let newer = manifest_with(vault_id, 6, &["a", "b"]);
+        let unknown: HashSet<Uuid> = newer
+            .records
+            .iter()
+            .filter(|record| record.object_name == "b.mcobj")
+            .map(|record| record.id)
+            .collect();
+        let slots = [
+            SlotReading::Authentic {
+                manifest: newer,
+                missing: unknown.clone(),
+                unknown: unknown.clone(),
+            },
+            authentic(manifest_with(vault_id, 5, &["a"]), &[]),
+        ];
+        let selected = select_manifest(&slots).unwrap();
+        assert_eq!(selected.manifest.generation, 6);
+        assert_eq!(selected.recovery, Some(RecoveryReason::UnreadableSlot));
+        assert_eq!(selected.unavailable, unknown);
+    }
+
+    #[test]
+    fn removal_takes_only_the_documents_that_were_shown_as_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, ids, objects) = vault_with_records(&root, &["a.pdf", "b.pdf", "c.pdf"]);
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        let shown_damaged = |store: &VaultStore| -> Vec<Uuid> {
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .filter(|record| !record.available)
+                .map(|record| record.id)
+                .collect()
+        };
+        assert_eq!(shown_damaged(&store), vec![ids[0]]);
+
+        // Another file goes missing after the patient saw "1 damaged".
+        fs::remove_file(&objects[1]).unwrap();
+        assert!(matches!(
+            store.remove_unavailable_records(),
+            Err(VaultError::Corrupt)
+        ));
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 3);
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
+        // The session now shows both, and a removal agreed to after that
+        // takes both and nothing else.
+        assert_eq!(shown_damaged(&store).len(), 2);
+        let mut removed = store.remove_unavailable_records().unwrap();
+        removed.sort();
+        let mut expected = vec![ids[0], ids[1]];
+        expected.sort();
+        assert_eq!(removed, expected);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert!(objects[2].is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_documents_folder_that_may_not_be_searched_is_unreadable() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, ids, _) = vault_with_records(&root, &["a.pdf"]);
+        let folder = root.join("objects");
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read_dir(&folder).is_ok() {
+            // A privileged process ignores folder modes.
+            fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+            return;
+        }
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::UnreadableSlot));
+        assert_eq!(snapshot.records.len(), ids.len());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_documents_folder_behind_a_broken_link_is_unreadable_not_empty() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let aside = temp.path().join("objects-aside");
+        let (store, ids, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        // As when the drive the folder links to is not connected.
+        fs::rename(root.join("objects"), &aside).unwrap();
+        std::os::unix::fs::symlink(temp.path().join("not-connected"), root.join("objects"))
+            .unwrap();
+
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        assert!(matches!(
+            store.remove_unavailable_records(),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.lock();
+
+        fs::remove_file(root.join("objects")).unwrap();
+        fs::rename(&aside, root.join("objects")).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        assert_eq!(snapshot.records.len(), ids.len());
+        assert!(objects.iter().all(|object| object.is_file()));
     }
 
     #[test]
