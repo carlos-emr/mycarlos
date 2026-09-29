@@ -151,7 +151,7 @@ On every platform:
    there.
 9. In **Security**, under **Speed test, for testers**, choose **Run speed test**, and send the line
    it gives with the device's make and model. `ARGON2_BENCHMARK.md` says how to record it.
-9. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
    keep the screen on), and confirm it locks.
 10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.

@@ -34,11 +34,25 @@ The line looks like this:
 
 ```text
 5 runs: 812, 820, 815, 830, 811 ms. Median 815 ms, longest 830 ms. Argon2id, 64 MiB, 3 passes,
-4 lanes. android aarch64, myCarlos 0.1.0. Release build.
+4 lanes. android aarch64, myCarlos 0.1.0. Evaluation build.
 ```
 
-It uses a made-up passphrase and salt, reads no vault and changes nothing. A line that ends
-"Development build: do not record these timings" comes from a build that is not optimized.
+It uses a made-up passphrase and salt, reads no vault and changes nothing. To copy the line on a
+phone, press and hold it.
+
+**Which build.** The evaluation downloads are debug builds in which the key derivation itself is
+compiled at the same optimization level as in a release (see the `dev` profile in
+`src-tauri/Cargo.toml`), with checks a release leaves out. Their lines end "Evaluation build." and
+may fill the table below, marked as such. A release build should be no slower, for that reason;
+how much faster has **not been measured**. The runs on the development container (below) differ
+more from one run to the next than from one kind of build to the other, so they cannot tell. To
+settle it, time a release build and an evaluation build on the same idle device. A line ending
+"Release build." comes from a release build.
+
+**Reading the numbers.** The four lanes are computed one after another, on one thread: the
+Argon2 library the app uses does not run them in parallel. A faster phone with more cores does
+not shorten the wait by its cores, and figures published for Argon2 run in parallel do not
+compare. The first of the five runs includes setting the memory up, and may be the longest.
 
 What the speed test does not measure, and still has to be watched by hand: the memory the app
 uses at its peak, whether the screen stays responsive during an unlock, and whether the system
@@ -65,6 +79,8 @@ gives.
 | Where | Build and toolchain | Samples (ms) | Median/max | Notes |
 | --- | --- | --- | --- | --- |
 | Development container (Linux under WSL2, virtualized; Intel Core i7-12700H, 6 cores given) | release, rustc 1.98.0 | 156, 143, 155, 161, 154 | 155 / 161 | 2026-09-29, test harness; the machine was running other builds |
+| The same | as the evaluation builds (debug, key derivation optimized), rustc 1.98.0 | 209, 183, 162, 172, 180 | 180 / 209 | the same day, the same conditions |
+| The same | release, rustc 1.98.0, a second run | 258, 258, 241, 352, 304 | 258 / 352 | the same day; slower than the first release run, which shows how much the machine's other work weighs |
 
 ## Decision gate
 

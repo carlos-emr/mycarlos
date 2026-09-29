@@ -552,33 +552,76 @@ fn runtime_info() -> RuntimeInfo {
 #[derive(Default)]
 struct SpeedTest(std::sync::atomic::AtomicBool);
 
+/// Lets the next speed test start when this one ends, however it ends.
+struct SpeedTestRunning(Arc<SpeedTest>);
+
+impl SpeedTestRunning {
+    fn start(gate: &Arc<SpeedTest>) -> Option<Self> {
+        use std::sync::atomic::Ordering;
+        (!gate.0.swap(true, Ordering::AcqRel)).then(|| Self(Arc::clone(gate)))
+    }
+}
+
+impl Drop for SpeedTestRunning {
+    fn drop(&mut self) {
+        self.0 .0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SpeedTestReport {
     #[serde(flatten)]
     measured: vault::KdfBenchmark,
-    #[serde(flatten)]
-    runtime: RuntimeInfo,
+    platform: String,
+    architecture: String,
+    app_version: String,
 }
 
 /// Times the passphrase key derivation on this device, for the record in
 /// ARGON2_BENCHMARK.md. It uses a made-up passphrase, reads no vault and
-/// changes nothing, so it needs no unlocked vault.
+/// changes nothing.
+///
+/// For testers, in the evaluation builds: to be taken out, with its section
+/// in Security, before a release to patients.
+///
+/// Only with a vault unlocked, where the screen that asks for it is. Without
+/// that, page code could run it beside an unlock, which would double the
+/// memory the app needs at that moment.
 #[tauri::command]
-async fn kdf_benchmark(running: State<'_, Arc<SpeedTest>>) -> CommandResult<SpeedTestReport> {
-    use std::sync::atomic::Ordering;
-    if running.0.swap(true, Ordering::AcqRel) {
+async fn kdf_benchmark(
+    store: State<'_, Arc<VaultStore>>,
+    gate: State<'_, Arc<SpeedTest>>,
+) -> CommandResult<SpeedTestReport> {
+    run_blocking(store.inner(), |store| match store.status()? {
+        VaultStatus::Unlocked => Ok(()),
+        _ => Err(VaultError::Locked),
+    })
+    .await?;
+    let Some(running) = SpeedTestRunning::start(gate.inner()) else {
         return Err(PublicError {
             code: "busy",
             message: "A speed test is already running. Wait for it to finish.",
         });
-    }
-    let gate = Arc::clone(running.inner());
-    let measured = tauri::async_runtime::spawn_blocking(vault::benchmark_kdf).await;
-    gate.0.store(false, Ordering::Release);
+    };
+    let measured = tauri::async_runtime::spawn_blocking(move || {
+        // Held by the work itself, so that it ends with it.
+        let _running = running;
+        vault::benchmark_kdf()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))??;
+    let RuntimeInfo {
+        platform,
+        architecture,
+        app_version,
+        ..
+    } = current_runtime_info();
     Ok(SpeedTestReport {
-        measured: measured.map_err(|_| PublicError::from(VaultError::Storage))??,
-        runtime: current_runtime_info(),
+        measured,
+        platform,
+        architecture,
+        app_version,
     })
 }
 

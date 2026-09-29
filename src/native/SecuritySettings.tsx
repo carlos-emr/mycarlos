@@ -38,9 +38,7 @@ export function speedTestLine(report: SpeedTestReport): string {
     `Median ${report.medianMs} ms, longest ${report.maxMs} ms.`,
     `Argon2id, ${report.memoryKib / 1024} MiB, ${report.iterations} passes, ${report.lanes} lanes.`,
     `${report.platform} ${report.architecture}, myCarlos ${report.appVersion}.`,
-    report.optimized
-      ? "Release build."
-      : "Development build: do not record these timings.",
+    report.optimized ? "Release build." : "Evaluation build.",
   ].join(" ");
 }
 
@@ -310,6 +308,8 @@ export function SecuritySettings({
             </button>
           </form>
         </section>
+        {/* For testers, in the evaluation builds: to be taken out, with its
+            command, before a release to patients. */}
         <section className="setting-row native-setting-form">
           <div>
             <h2>Speed test, for testers</h2>

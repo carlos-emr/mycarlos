@@ -64,9 +64,9 @@ describe("SecuritySettings speed test", () => {
     expect(button).toBeEnabled();
   });
 
-  it("says not to record a development build's timings", () => {
+  it("says which kind of build was timed", () => {
     expect(speedTestLine({ ...speedTest, optimized: false })).toMatch(
-      /Development build: do not record these timings\.$/,
+      /Evaluation build\.$/,
     );
   });
 

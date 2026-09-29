@@ -2712,8 +2712,9 @@ pub struct KdfBenchmark {
     pub samples_ms: Vec<u64>,
     pub median_ms: u64,
     pub max_ms: u64,
-    /// Whether this build is optimized. Timings of one that is not say
-    /// nothing about what patients will get.
+    /// Whether the whole build is optimized, as a release is. The evaluation
+    /// builds are not, though the key derivation in them is (see the dev
+    /// profile in Cargo.toml).
     pub optimized: bool,
 }
 

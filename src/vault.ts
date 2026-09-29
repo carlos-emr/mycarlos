@@ -86,7 +86,8 @@ export interface SpeedTestReport {
   samplesMs: number[];
   medianMs: number;
   maxMs: number;
-  /** False for a development build, whose timings mean nothing. */
+  /** False for an evaluation build, in which the key derivation is
+   * optimized and the rest is not. */
   optimized: boolean;
   platform: string;
   architecture: string;
