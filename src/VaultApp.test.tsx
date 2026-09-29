@@ -64,6 +64,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     pickRestoreSource: vi.fn().mockResolvedValue(null),
     inspectRestore: vi.fn().mockResolvedValue({
       replaces: "nothing",
+      differsFromThisDevice: false,
       olderThanThisDevice: false,
       documentCount: 0,
     }),
@@ -952,6 +953,7 @@ describe("durable vault UI", () => {
       pickRestoreSource: vi.fn().mockResolvedValue("pick-3"),
       inspectRestore: vi.fn().mockResolvedValue({
         replaces: "nothing",
+        differsFromThisDevice: false,
         olderThanThisDevice: false,
         documentCount: 4,
       }),

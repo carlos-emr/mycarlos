@@ -154,8 +154,11 @@ privacy, accessibility, or clinical review.
       E2EE portal synchronization, sharing, privacy, and updates; see
       [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md). Implementation and review remain open.
 - [ ] Design and test an isolated hostile-PDF viewer with no vault or network capability.
-- [ ] Implement the approved portable encrypted backup, E2EE synchronization, device enrollment,
-      rollback protection, immediate deletion, and resurrection-prevention tombstones.
+- [x] Implement the approved portable encrypted backup (one authenticated file of ciphertext;
+      restore verifies all of it before replacing anything, and warns before an older or different
+      copy replaces the vault).
+- [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
+      and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
 - [ ] Add signing, notarization, app-store packaging, updater security, and release operations.

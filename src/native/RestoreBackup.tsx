@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   MAX_PASSPHRASE_BYTES,
   utf8Length,
@@ -16,9 +16,13 @@ function consequence(preview: RestorePreview): string {
     case "nothing":
       return "Restoring puts this vault on this device.";
     case "sameVault":
-      return preview.olderThanThisDevice
-        ? "This backup is older than the vault on this device. Restoring it replaces the vault with the older copy: anything added or changed since the backup is lost."
-        : "Restoring replaces the vault on this device with this backup.";
+      if (!preview.differsFromThisDevice)
+        return "The vault on this device holds the same documents. Restoring replaces it with this backup.";
+      return `${
+        preview.olderThanThisDevice
+          ? "This backup is older than the vault on this device."
+          : "The vault on this device has changed since this backup was made."
+      } Restoring replaces the vault with the backup: anything added or changed since is lost, and the passphrase and recovery key become the ones the backup was made with.`;
     case "otherVault":
       return "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.";
   }
@@ -42,13 +46,37 @@ export function RestoreBackup({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const [shown, setShown] = useState(false);
+  // State is a render behind: two clicks in one tick must not both restore.
+  const working = useRef(false);
+  // Nothing locks this screen, so a secret typed here is cleared when the app
+  // is hidden.
+  useEffect(() => {
+    const clearWhenHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      setSecret("");
+      setShown(false);
+      setPreview(null);
+      setAgreed(false);
+    };
+    document.addEventListener("visibilitychange", clearWhenHidden);
+    return () =>
+      document.removeEventListener("visibilitychange", clearWhenHidden);
+  }, []);
+  // A preview belongs to the secret it was checked with.
+  const forgetPreview = () => {
+    setPreview(null);
+    setAgreed(false);
+    setStatus("");
+    setError("");
+  };
 
   const credential = (): RestoreCredential =>
     method === "passphrase" ? { passphrase: secret } : { recoveryKey: secret };
   // Replacing an older copy, or another vault, loses something for good.
   const needsAgreement =
     preview !== null &&
-    (preview.replaces === "otherVault" || preview.olderThanThisDevice);
+    (preview.replaces === "otherVault" || preview.differsFromThisDevice);
 
   const choose = async () => {
     setBusy(true);
@@ -90,6 +118,8 @@ export function RestoreBackup({
 
   const restore = async () => {
     if (!pickId || !preview || busy || (needsAgreement && !agreed)) return;
+    if (working.current) return;
+    working.current = true;
     setBusy(true);
     setError("");
     setStatus("Restoring the backup. This can take a while for a large vault…");
@@ -104,15 +134,25 @@ export function RestoreBackup({
         setStatus("Restore cancelled. Nothing changed.");
         return;
       }
+      // Back to the start: the pick is used up, and the unlock screen this
+      // may stay on must not offer it again.
       setSecret("");
+      setShown(false);
+      setPickId(null);
+      setPreview(null);
+      setAgreed(false);
+      setStatus("");
       onRestored();
     } catch (failure) {
       setStatus("");
       setError(vaultErrorMessage(failure));
       // A pick is used up by a restore that failed.
+      setSecret("");
       setPickId(null);
       setPreview(null);
+      setAgreed(false);
     } finally {
+      working.current = false;
       setBusy(false);
     }
   };
@@ -143,7 +183,8 @@ export function RestoreBackup({
                 onChange={() => {
                   setMethod("passphrase");
                   setSecret("");
-                  setPreview(null);
+                  setShown(false);
+                  forgetPreview();
                 }}
               />
               Its passphrase
@@ -156,7 +197,8 @@ export function RestoreBackup({
                 onChange={() => {
                   setMethod("recoveryKey");
                   setSecret("");
-                  setPreview(null);
+                  setShown(false);
+                  forgetPreview();
                 }}
               />
               Its recovery key
@@ -166,16 +208,25 @@ export function RestoreBackup({
             {method === "passphrase" ? "Backup passphrase" : "Recovery key"}
             <input
               required
-              type={method === "passphrase" ? "password" : "text"}
+              type={shown ? "text" : "password"}
               autoComplete="off"
+              autoCorrect="off"
               spellCheck={false}
               value={secret}
               onChange={(event) => {
                 setSecret(event.target.value);
-                setPreview(null);
+                forgetPreview();
               }}
             />
           </label>
+          <button
+            className="button"
+            type="button"
+            aria-pressed={shown}
+            onClick={() => setShown((current) => !current)}
+          >
+            {method === "passphrase" ? "Show passphrase" : "Show recovery key"}
+          </button>
           {utf8Length(secret) > MAX_PASSPHRASE_BYTES && (
             <p role="alert">This is too long. Check what you typed.</p>
           )}
@@ -204,7 +255,7 @@ export function RestoreBackup({
               />
               {preview.replaces === "otherVault"
                 ? "Erase the vault on this device and restore the backup"
-                : "Replace the vault on this device with the older backup"}
+                : "Replace the vault on this device with this backup and lose what changed since"}
             </label>
           )}
           <button

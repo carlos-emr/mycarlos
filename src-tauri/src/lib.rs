@@ -18,8 +18,8 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use uuid::Uuid;
 use vault::{
-    ImportSource, RestoreCredential, RestorePreview, VaultError, VaultSnapshot, VaultStatus,
-    VaultStore,
+    ImportSource, RestoreCredential, RestorePreview, RestoreReplaces, VaultError, VaultSnapshot,
+    VaultStatus, VaultStore,
 };
 use zeroize::Zeroize;
 
@@ -177,6 +177,14 @@ impl RestoreRequest {
     }
 }
 
+// Wiped however the command ends, including the early returns that never
+// reach the vault.
+impl Drop for RestoreRequest {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RecoverRequest {
@@ -318,6 +326,9 @@ const PICK_TTL: Duration = Duration::from_secs(120);
 // A backup to restore is chosen, then its passphrase or recovery key typed,
 // then what it replaces confirmed: long enough to read that warning.
 const RESTORE_PICK_TTL: Duration = Duration::from_secs(15 * 60);
+// What storing a pick prunes by: the longest any kind of pick may live. Each
+// kind's own limit is applied when the pick is used.
+const LONGEST_PICK_TTL: Duration = RESTORE_PICK_TTL;
 
 /// One kind of pending pick, keyed by the id handed to the renderer.
 struct PickTable<T>(Mutex<HashMap<Uuid, PickEntry<T>>>);
@@ -340,7 +351,7 @@ impl<T> PickTable<T> {
 
     fn store(&self, session: u64, value: T) -> Uuid {
         let mut entries = self.entries();
-        entries.retain(|_, (picked_at, _, _)| picked_at.elapsed() < PICK_TTL);
+        entries.retain(|_, (picked_at, _, _)| picked_at.elapsed() < LONGEST_PICK_TTL);
         let pick_id = Uuid::new_v4();
         entries.insert(pick_id, (Instant::now(), session, value));
         pick_id
@@ -892,8 +903,10 @@ fn open_restore_source(
     source: tauri_plugin_fs::FilePath,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
     if let Ok(path) = source.clone().into_path() {
-        return Ok(Box::new(std::io::BufReader::new(std::fs::File::open(
-            path,
+        // As for imports: a regular file, opened without following a link or
+        // waiting on a pipe or device.
+        return Ok(Box::new(std::io::BufReader::new(vault::open_regular_read(
+            &path,
         )?)));
     }
     let mut options = OpenOptions::new();
@@ -928,28 +941,63 @@ async fn vault_restore_inspect(
     .await
 }
 
+/// What the native confirmation says before a restore replaces a vault. It
+/// is worked out here from the backup and the vault themselves, never taken
+/// from the renderer.
+fn restore_warning(preview: &RestorePreview) -> Option<String> {
+    let documents = match preview.document_count {
+        1 => "1 document".to_owned(),
+        count => format!("{count} documents"),
+    };
+    match preview.replaces {
+        RestoreReplaces::Nothing => None,
+        RestoreReplaces::OtherVault => Some(format!(
+            "The vault on this device is a different one from the backup's. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+        )),
+        RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
+            "The vault on this device has changed since this backup ({documents}) was made. Restoring permanently replaces it: anything added or changed since is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+        )),
+        RestoreReplaces::SameVault => Some(format!(
+            "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
+        )),
+    }
+}
+
 /// Restores the chosen backup. Replacing a vault erases it, so, as for a
-/// reset, a trusted native dialog confirms that first; the renderer's own
-/// agreement is not enough. Returns false if the patient cancelled there.
+/// reset, a trusted native dialog confirms that first, and says what would be
+/// lost; the renderer's own agreement is not enough. Returns false if the
+/// patient cancelled there.
 #[tauri::command]
 async fn vault_restore(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    mut request: RestoreRequest,
+    request: RestoreRequest,
 ) -> CommandResult<bool> {
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
-    picks
+    let source = picks
         .restores
         .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
-    if request.replace {
+    let request = Arc::new(request);
+    let preview = {
+        let (app, request) = (app.clone(), Arc::clone(&request));
+        run_blocking(store.inner(), move |store| {
+            store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
+        })
+        .await?
+    };
+    if let Some(warning) = restore_warning(&preview) {
+        // The renderer must have asked for a replacement too.
+        if !request.replace {
+            return Err(PublicError::from(VaultError::AlreadyExists));
+        }
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
             dialog_app
                 .dialog()
-                .message("Restoring the backup permanently erases the vault now on this device and puts the backup in its place. This cannot be undone.")
+                .message(warning)
                 .title("Replace the vault on this device?")
                 .kind(MessageDialogKind::Warning)
                 .buttons(MessageDialogButtons::OkCancelCustom(
@@ -961,7 +1009,6 @@ async fn vault_restore(
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
         if !confirmed {
-            request.zeroize();
             return Ok(false);
         }
     }
@@ -970,12 +1017,15 @@ async fn vault_restore(
         .take_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
     run_blocking(store.inner(), move |store| {
-        let replace = request.replace;
-        let result = request.credential().and_then(|credential| {
-            store.restore(open_restore_source(&app, source)?, credential, replace)
-        });
-        request.zeroize();
-        result.map(|()| true)
+        // A vault that appeared since the preview is refused, not replaced.
+        let replace = preview.replaces != RestoreReplaces::Nothing;
+        store
+            .restore(
+                open_restore_source(&app, source)?,
+                request.credential()?,
+                replace,
+            )
+            .map(|()| true)
     })
     .await
 }
@@ -1670,6 +1720,23 @@ mod tests {
             picks.take_export(pick_id, record_id),
             Err(VaultError::NotFound)
         ));
+    }
+
+    #[test]
+    fn the_restore_confirmation_says_what_would_be_lost() {
+        let preview = |replaces, differs| RestorePreview {
+            replaces,
+            differs_from_this_device: differs,
+            older_than_this_device: differs,
+            document_count: 3,
+        };
+        assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
+        let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
+        assert!(other.contains("a different one") && other.contains("3 documents"));
+        let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
+        assert!(changed.contains("has changed since") && changed.contains("passphrase"));
+        let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
+        assert!(same.contains("the same 3 documents"));
     }
 
     #[test]

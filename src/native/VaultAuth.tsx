@@ -315,7 +315,14 @@ export function UnlockVault({
         </details>
         <details className="vault-reset">
           <summary>Restore from a backup</summary>
-          <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
+          <RestoreBackup
+            bridge={restoreBridge}
+            onRestored={() => {
+              // Its message belongs by the Passphrase field, which is next.
+              setSource("unlock");
+              onRestored();
+            }}
+          />
         </details>
       </section>
     </VaultAuthFrame>

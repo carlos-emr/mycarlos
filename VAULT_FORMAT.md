@@ -244,7 +244,7 @@ promised and the generated Android application manifest is configured in CI with
 both for device-to-device transfer, so the same step writes data extraction rules that exclude every
 storage domain from `<cloud-backup>` and `<device-transfer>`. Checked-in build logic rejects an
 Android build unless those generated-manifest settings and the rules file are present; Android users
-still need a future explicit encrypted export/restore flow and physical OEM transfer testing.
+move a vault with the portable encrypted backup below, and physical OEM transfer testing remains.
 
 A forgotten passphrase is replaced with the recovery key, if the patient set one up. Without it, the
 only fallback is a typed-confirmation whole-vault reset followed by a trusted native confirmation
@@ -254,7 +254,9 @@ work.
 
 ### Portable encrypted backup
 
-A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it:
+A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it. Every
+document is authenticated as it is copied, so a damaged one fails the backup, naming the problem
+while the vault is still there, rather than the restore.
 
 ```text
 "MYCARLOS-BACKUP\n"                      16-byte magic, format 1
@@ -266,18 +268,23 @@ trailer  0xff | length (u32) | JSON {format, vaultId, manifestGeneration, create
 
 The tag covers the magic and the trailer, under `HKDF-SHA-256(master key, salt = vaultId,
 "mycarlos/backup/v1")`. The trailer lists every entry's length and SHA-256, so the tag covers the
-whole file. Everything in it is already encrypted, so no plaintext is written at any point; the
-header's key envelopes (passphrase and recovery key) are what open it. A read-only vault is not
+whole file. Document content, names and details are already encrypted, so no plaintext of them is
+written at any point; the header's key envelopes (passphrase and recovery key) are what open it.
+Readable in the file: the vault id, the header and manifest generations, the backup's time, the
+KDF salt, the recovery key's id and set-up time, and each object's opaque name, length and hash,
+so the number of documents and their sizes. Whoever holds a backup can try passphrases against it
+at the cost of Argon2id per try, as with a copy of the vault. A read-only vault is not
 backed up, since what it shows may not be what it holds. Saving streams with constant memory, as a
 transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
 replaced atomically only once complete.
 
 Restoring happens while no vault is open. The patient picks the file and gives its passphrase or
 recovery key. An inspect step reads only the header and manifest and reports what restoring would
-replace: nothing, an older or current copy of the same vault, or a different vault. The screen
-spells this out and requires an explicit agreement before an older copy or a different vault is
-replaced, and replacing any vault is then confirmed in a trusted native dialog, as a reset is. The
-restore itself:
+replace: nothing, the same vault unchanged, the same vault changed since the backup (its
+documents, passphrase or recovery key; or it could not be read to tell), or a different vault. The
+screen spells this out and requires an explicit agreement before a changed or different vault is
+replaced. Replacing any vault is then confirmed in a trusted native dialog, as a reset is; the
+native side works the preview out again itself and puts it in the dialog. The restore itself:
 
 1. opens the header with the credential, as unlock would, and checks its integrity tag;
 2. streams every object into `.restore-<uuid>/` in the vault home, hashing each, accepting only the
@@ -289,12 +296,19 @@ restore itself:
    `vault-v1.reset-pending/` and renames the restore into place;
 6. erases the retired vault as a reset does, key envelopes first.
 
-Any failure before step 5 removes the stage and changes nothing else. From step 5 on, each step is
-one rename, and every start repeats whatever is left: status, create, unlock and reset first finish
-an interrupted reset, then activate a waiting restore, then erase the vault it retired. The restored
+Any failure before step 5 removes the stage and changes nothing else. So does a failure to retire
+the live vault: the verified copy is discarded, so that a restore reported as failed cannot happen
+at a later start. From step 5 on, each step is one rename, and every start repeats whatever is
+left: status, create, unlock and reset put a waiting restore in place first when the live vault
+is already retired, then finish erasing a retired vault, then activate a restore still waiting.
+A failure to erase the retired vault after the restore is in place is not a failed restore; the
+erasing is retried at every start. The restored
 vault is left locked; it opens with the passphrase or recovery key it was backed up with. The
 restore always takes the whole backup: an older backup brings back documents deleted since, and
-the screen says so before the patient agrees.
+the passphrase and recovery key it was made with, and the screen and the native dialog say so
+before the patient agrees. On Android a backup is written straight to the document the provider
+returns, so a failed or cancelled save leaves an incomplete file there (which a restore refuses)
+in place of what that document held.
 
 ## Known limits before release
 

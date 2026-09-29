@@ -9,6 +9,7 @@ function setUp(preview: Partial<RestorePreview> = {}, overrides = {}) {
     pickRestoreSource: vi.fn().mockResolvedValue("pick-1"),
     inspectRestore: vi.fn().mockResolvedValue({
       replaces: "nothing",
+      differsFromThisDevice: false,
       olderThanThisDevice: false,
       documentCount: 2,
       ...preview,
@@ -74,9 +75,19 @@ describe("RestoreBackup", () => {
       "Erase the vault on this device and restore the backup",
     ],
     [
-      { replaces: "sameVault" as const, olderThanThisDevice: true },
+      {
+        replaces: "sameVault" as const,
+        differsFromThisDevice: true,
+        olderThanThisDevice: true,
+      },
       /older than the vault on this device/,
-      "Replace the vault on this device with the older backup",
+      "Replace the vault on this device with this backup and lose what changed since",
+    ],
+    [
+      // A changed passphrase or recovery key, with the documents as they were.
+      { replaces: "sameVault" as const, differsFromThisDevice: true },
+      /has changed since this backup was made.*passphrase and recovery key/,
+      "Replace the vault on this device with this backup and lose what changed since",
     ],
   ])(
     "asks for agreement before losing anything (%o)",
@@ -97,12 +108,12 @@ describe("RestoreBackup", () => {
     },
   );
 
-  it("replaces the same vault's newer copy only when it is not older", async () => {
+  it("asks for no agreement when the vault holds what the backup holds", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ replaces: "sameVault" });
     await chooseAndCheck(user);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Restoring replaces the vault on this device with this backup.",
+      "The vault on this device holds the same documents. Restoring replaces it with this backup.",
     );
     await user.click(screen.getByRole("button", { name: "Restore backup" }));
     expect(bridge.restore).toHaveBeenCalledWith(
@@ -128,6 +139,42 @@ describe("RestoreBackup", () => {
     expect(
       screen.getByRole("button", { name: "Restore backup" }),
     ).toBeEnabled();
+  });
+
+  it("hides the secret as typed and forgets a preview when it changes", async () => {
+    const user = userEvent.setup();
+    setUp();
+    await chooseAndCheck(user);
+    expect(
+      screen.getByRole("button", { name: "Restore backup" }),
+    ).toBeVisible();
+    const field = screen.getByLabelText("Backup passphrase");
+    expect(field).toHaveAttribute("type", "password");
+    await user.click(screen.getByRole("button", { name: "Show passphrase" }));
+    expect(field).toHaveAttribute("type", "text");
+
+    // The preview was for what was typed before.
+    await user.type(field, "x");
+    expect(
+      screen.queryByRole("button", { name: "Restore backup" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("starts again after a restore, with nothing left to press twice", async () => {
+    const user = userEvent.setup();
+    const { bridge, onRestored } = setUp();
+    await chooseAndCheck(user);
+    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    expect(onRestored).toHaveBeenCalledOnce();
+    expect(bridge.restore).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "Restore backup" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Backup passphrase"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("says why a backup did not open", async () => {

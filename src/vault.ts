@@ -53,6 +53,10 @@ export type RestoreReplaces = "nothing" | "sameVault" | "otherVault";
 
 export interface RestorePreview {
   replaces: RestoreReplaces;
+  /** The vault on this device is the backup's, and its documents,
+   * passphrase or recovery key have changed since (or it could not be read
+   * to tell). Restoring loses those changes. */
+  differsFromThisDevice: boolean;
   /** The vault on this device is newer than the backup. */
   olderThanThisDevice: boolean;
   documentCount: number;
