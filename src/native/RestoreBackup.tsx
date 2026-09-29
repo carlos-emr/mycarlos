@@ -79,6 +79,13 @@ export function RestoreBackup({
   // The form folds back to this button when a restore fails, taking the
   // focused control with it.
   const chooseRef = useRef<HTMLButtonElement | null>(null);
+  const focusChoose = useRef(false);
+  useEffect(() => {
+    // Once it is enabled again.
+    if (busy || !focusChoose.current) return;
+    focusChoose.current = false;
+    chooseRef.current?.focus();
+  }, [busy]);
   // A preview belongs to the secret it was checked with.
   const forgetPreview = () => {
     setPreview(null);
@@ -169,7 +176,7 @@ export function RestoreBackup({
       setPickId(null);
       setPreview(null);
       setAgreed(false);
-      chooseRef.current?.focus();
+      focusChoose.current = true;
     } finally {
       working.current = false;
       setBusy(false);

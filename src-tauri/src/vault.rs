@@ -1843,10 +1843,7 @@ impl VaultStore {
 
     /// What restoring an opened backup would do to this device. The caller
     /// holds the session and the storage lock.
-    fn preview_of<R: Read>(
-        &self,
-        opened: &OpenedBackup<R>,
-    ) -> Result<RestorePreview, VaultError> {
+    fn preview_of<R: Read>(&self, opened: &OpenedBackup<R>) -> Result<RestorePreview, VaultError> {
         let OpenedBackup {
             header,
             master_key,
@@ -1886,10 +1883,13 @@ impl VaultStore {
                 live.generation = manifest.generation;
                 live == *manifest
             });
+            // A vault that holds what the backup holds is not newer than it,
+            // whatever repairs have moved its generation on since.
+            let differs = !(same_keys && same_content);
             (
                 RestoreReplaces::SameVault,
-                !(same_keys && same_content),
-                live_manifest.is_some_and(|live| live.generation > manifest.generation),
+                differs,
+                differs && live_manifest.is_some_and(|live| live.generation > manifest.generation),
             )
         } else {
             (RestoreReplaces::OtherVault, false, false)
@@ -1900,13 +1900,13 @@ impl VaultStore {
             older_than_this_device,
             document_count: manifest.records.len(),
             fingerprint: {
-                let mut hash = <Sha256 as Digest>::new();
-                Digest::update(
+                let mut hash = <Sha256 as sha2::Digest>::new();
+                sha2::Digest::update(
                     &mut hash,
                     serde_json::to_vec(header).map_err(|_| VaultError::Storage)?,
                 );
-                Digest::update(&mut hash, manifest_data);
-                hash.finalize().into()
+                sha2::Digest::update(&mut hash, manifest_data);
+                sha2::Digest::finalize(hash).into()
             },
         })
     }
@@ -1936,6 +1936,7 @@ impl VaultStore {
     /// erases it; `replace` must say the patient agreed to that. The vault
     /// is left locked: it opens with the passphrase or recovery key it was
     /// backed up with.
+    #[cfg(test)]
     pub fn restore<R: Read + Send + 'static>(
         &self,
         source: R,
@@ -8206,7 +8207,8 @@ mod tests {
         let (a, b) = (named(&objects[0]), named(&objects[1]));
         let stray = format!("{}.mcobj", Uuid::new_v4());
         let oversized = vec![0_u8; usize::try_from(largest_object_len(5)).unwrap() + 1];
-        let cases: Vec<(&str, Vec<(&str, Vec<u8>)>)> = vec![
+        type Entries<'a> = Vec<(&'a str, Vec<u8>)>;
+        let cases: Vec<(&str, Entries)> = vec![
             (
                 "an object twice",
                 vec![(&a.0, a.1.clone()), (&a.0, a.1.clone())],
