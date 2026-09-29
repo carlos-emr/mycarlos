@@ -358,8 +358,13 @@ describe("RecoveryKeySetup", () => {
       );
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(status).toHaveTextContent(
-      "Not replaced. Your current recovery key still works.",
+      "Your recovery key was not changed. Your current key still works.",
     );
+    // Both ways on from here are on this step, and focus is on one.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Check and save" }),
+    ).toHaveFocus();
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();

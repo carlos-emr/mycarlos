@@ -1543,10 +1543,6 @@ impl VaultStore {
         }
     }
 
-    /// Checks groups of the pending recovery key as the patient typed them
-    /// back (group index and text; at least two different groups), then
-    /// stores the key: a new pair of header generations carries its envelope,
-    /// replacing any earlier recovery key.
     /// Checks the typed groups against the key being set up, as
     /// `confirm_recovery_key` will, and says whether confirming would replace
     /// a recovery key the vault already has. Nothing changes. For the
@@ -1559,6 +1555,10 @@ impl VaultStore {
         Ok(unlocked.recovery_key_set_at_ms.is_some())
     }
 
+    /// Checks groups of the pending recovery key as the patient typed them
+    /// back (group index and text; at least two different groups), then
+    /// stores the key: a new pair of header generations carries its envelope,
+    /// replacing any earlier recovery key.
     pub fn confirm_recovery_key(
         &self,
         groups: &[(usize, &str)],

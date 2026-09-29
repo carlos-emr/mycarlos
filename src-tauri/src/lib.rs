@@ -742,7 +742,7 @@ async fn vault_recovery_key_begin(
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key stops working as soon as the new one is saved. A kit saved or printed for the current key will no longer open this vault. Make sure you have written down or saved the new key first.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working. A kit you saved or printed for it will no longer open this vault. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -780,6 +780,10 @@ async fn vault_recovery_key_confirm(
         })
         .await?
     };
+    // Held until the key is stored, so that the automatic lock cannot fall
+    // while the dialog is read: it would forget the key being set up, and
+    // the patient would press "Replace key" to a vault that had locked.
+    let _open = ActivityHold::new(store.idle());
     if replaces {
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
