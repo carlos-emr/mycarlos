@@ -15,11 +15,12 @@ Source files carry no licence headers; these declarations cover them.
 ## Why "or any later version" matters
 
 The source is offered under version 2 or any later version. The **built apps** can only be passed
-on under **version 3 or later**, because some libraries that Tauri brings in are under the Apache
-License 2.0 alone: `tao` (its window layer) and `dpi` in every build, and `sync_wrapper` in the
-Android and iOS builds. (`dpi` declares "Apache-2.0 AND MIT"; as built here, with its standard
-library feature, its code is under Apache-2.0 alone.) Apache-2.0 is compatible with version 3 of
-the GPL and not with version 2. "Or any later version" is what lets the built apps meet both
+on under **version 3 or later**, because some libraries that Tauri brings in carry the terms of
+the Apache License 2.0 with no GPL-compatible alternative: `tao` (its window layer), under
+Apache-2.0 alone, in every build; `dpi`, which declares "Apache-2.0 AND MIT", so that both sets of
+terms apply, in every build; and `sync_wrapper`, under Apache-2.0 alone, in the Android and iOS
+builds. Apache-2.0 is compatible with version 3 of the GPL and not with version 2.
+"Or any later version" is what lets the built apps meet both
 licences.
 
 The other dependencies that were checked are under permissive licences (MIT, Apache-2.0 offered
