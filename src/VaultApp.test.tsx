@@ -9,6 +9,12 @@ import {
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  forgetRecoveryOffer,
+  recordRecoveryOffer,
+} from "./native/recoveryOffer";
+
+const offerIsDue = () => forgetRecoveryOffer();
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type { ImportOutcome, VaultBridge, VaultSnapshot } from "./vault";
@@ -271,6 +277,11 @@ function renameBridge() {
 describe("durable vault UI", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    // Most tests here are not about the recovery key offer, which opens
+    // over the library when a vault without a key is unlocked: for them it
+    // was made earlier today. Those that are start with `offerIsDue()`.
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
   });
 
   it("says a vault stays on the device it was created on", async () => {
@@ -963,6 +974,7 @@ describe("durable vault UI", () => {
   });
 
   it("offers a recovery key when a vault without one is unlocked, and shows no key unasked", async () => {
+    offerIsDue();
     const user = userEvent.setup();
     const bridge = nativeBridge({
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
@@ -978,8 +990,14 @@ describe("durable vault UI", () => {
     });
     // It says why it is there, to a screen reader too.
     expect(dialog).toHaveAccessibleDescription(
-      /Your vault is open\. It has no recovery key yet/,
+      /Your vault is open\. It has no recovery key yet.*Type your passphrase again to make your recovery key.*only when nobody else can see your screen/s,
     );
+    // A press meant for Unlock that lands outside the dialog leaves it open.
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: document.querySelector(".dialog-backdrop")!,
+    });
+    expect(dialog).toBeInTheDocument();
     // No key was made, and none is on screen.
     expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
     expect(screen.queryByText(RECOVERY_KEY.split("-")[0])).toBeNull();
@@ -997,7 +1015,54 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("offers a recovery key at unlock once a day, and the notice the rest of the time", async () => {
+    offerIsDue();
+    const user = userEvent.setup();
+    render(<VaultApp bridge={nativeBridge()} />);
+    const unlock = async () => {
+      await user.type(
+        await screen.findByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      await screen.findByRole("heading", { name: "My records" });
+    };
+    const lock = () =>
+      user.click(screen.getByRole("button", { name: /Lock now/ }));
+
+    await unlock();
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Set up later",
+      }),
+    );
+    await lock();
+
+    // Again the same day: the library opens, with its notice and no dialog.
+    await unlock();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Set up recovery key" }),
+    ).toBeVisible();
+    await lock();
+
+    // A day later it is offered again.
+    const hour = Number(
+      window.localStorage.getItem("mycarlos.recoveryOfferHour.v1"),
+    );
+    forgetRecoveryOffer();
+    window.localStorage.setItem(
+      "mycarlos.recoveryOfferHour.v1",
+      String(hour - 24),
+    );
+    await unlock();
+    expect(
+      await screen.findByRole("dialog", { name: "Set up a recovery key" }),
+    ).toBeVisible();
+  });
+
   it("sets up the key offered at unlock once the patient asks for it", async () => {
+    offerIsDue();
     const user = userEvent.setup();
     const bridge = nativeBridge({
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
@@ -1037,6 +1102,7 @@ describe("durable vault UI", () => {
     ["has a recovery key", { recoveryKeySetAtMs: 5 }],
     ["opened read-only", { recovery: "writeFailed" as const }],
   ])("opens no setup at unlock when the vault %s", async (_, state) => {
+    offerIsDue();
     const user = userEvent.setup();
     const bridge = nativeBridge({
       unlock: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
@@ -1299,6 +1365,7 @@ describe("durable vault UI", () => {
   it("shows a held transfer outcome at unlock, not the recovery key setup", async () => {
     vi.useFakeTimers();
     try {
+      offerIsDue();
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
         beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),

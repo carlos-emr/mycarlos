@@ -76,7 +76,8 @@ export function VaultLibrary({
   onLock: () => Promise<void>;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
-  /** The recovery key made with a vault just created, to set up first. */
+  /** What the library opens on, when it opens on the recovery key setup: a
+   * new vault's key, to set up first, or the offer of one at unlock. */
   openingRecoverySetup?: OpeningRecoverySetup | null;
   onOpeningRecoverySetupShown?: () => void;
   /** Whether this platform can print the recovery kit. */
@@ -1058,7 +1059,15 @@ export function VaultLibrary({
                 focusPageIfLost();
               }}
               onClose={(keyShown) => {
+                const offered = recoverySetup.offered;
                 setRecoverySetup(null);
+                // An offer that was left before any key was shown: the
+                // unlock's own result, which waited for the dialog.
+                if (offered && !keyShown)
+                  setDialogResult({
+                    message: "Vault unlocked.",
+                    recordId: activeRecordId,
+                  });
                 if (keyShown) {
                   setNotice("");
                   setDialogResult({

@@ -13,6 +13,7 @@ import {
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
+import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import {
@@ -549,7 +550,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               .beginRecoveryKey(passphrase)
               .catch(() => null);
             setOpeningRecoverySetup(
-              recoveryKey && { vault: "created", key: recoveryKey },
+              recoveryKey ? { vault: "created", key: recoveryKey } : null,
             );
             setConcealed(false);
             setStatus("unlocked");
@@ -578,23 +579,28 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             const current = await bridge.unlock(passphrase);
             // A vault without a recovery key is one forgotten passphrase
-            // from being erased, so the library opens on the offer of one.
-            // No key is made until the patient asks: one shown unasked could
-            // be seen by whoever is looking on. Not on a vault that cannot
-            // store one, and not over the result of a transfer that is
-            // waiting to be shown, which comes first.
-            setOpeningRecoverySetup(
-              current.recovery ||
-                current.recoveryKeySetAtMs ||
-                pendingOutcomeRef.current
-                ? null
-                : { vault: "unlocked" },
-            );
+            // from being erased, so the library opens on the offer of one,
+            // at most once a day. No key is made until the patient asks: one
+            // shown unasked could be seen by whoever is looking on. Not on a
+            // vault that cannot store one, and not over the result of a
+            // transfer that is waiting to be shown, which comes first.
+            const offer =
+              !current.recovery &&
+              !current.recoveryKeySetAtMs &&
+              !pendingOutcomeRef.current &&
+              recoveryOfferDue(Date.now());
+            if (offer) recordRecoveryOffer(Date.now());
+            setOpeningRecoverySetup(offer ? { vault: "unlocked" } : null);
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
             const outcome = pendingOutcomeRef.current;
             pendingOutcomeRef.current = null;
+            // With the offer open, its dialog says that the vault is open,
+            // and the library gives the result when the dialog closes: one
+            // written under the dialog would not be read out, and would
+            // take the place of what the dialog has to say on closing.
+            if (offer) return;
             setLibraryNotice({
               message: current.recovery
                 ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
@@ -607,6 +613,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             const { passphraseReplaced, snapshot: current } =
               await bridge.recover(recoveryKey, newPassphrase);
+            // A vault opened with its recovery key has one.
+            setOpeningRecoverySetup(null);
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");

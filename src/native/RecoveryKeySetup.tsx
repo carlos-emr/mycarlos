@@ -255,8 +255,10 @@ export function RecoveryKeySetup({
     <div
       className="dialog-backdrop"
       role="presentation"
-      // Once a key is on screen, a stray click outside must not end the setup.
-      onMouseDown={key ? undefined : cancel}
+      // Once a key is on screen, a stray click outside must not end the
+      // setup. Nor may one end an offer that opened by itself, before it was
+      // read: a second press meant for Unlock would land here.
+      onMouseDown={key || offered ? undefined : cancel}
     >
       <section
         ref={dialogRef}
@@ -265,7 +267,7 @@ export function RecoveryKeySetup({
         aria-modal="true"
         aria-labelledby="recovery-key-title"
         aria-describedby={
-          offered && step === "passphrase" ? "recovery-key-offer" : undefined
+          step === "passphrase" ? "recovery-key-about" : undefined
         }
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -277,28 +279,31 @@ export function RecoveryKeySetup({
 
         {step === "passphrase" && (
           <form className="recovery-key-body" onSubmit={(e) => void begin(e)}>
-            {offered && (
-              <p id="recovery-key-offer">
-                Your vault is open. It has no recovery key yet. Without one, if
-                you forget your passphrase, the only way back in is to erase the
-                vault.
-              </p>
-            )}
-            <p>
-              A recovery key opens your vault if you forget your passphrase.
-              Only you will have it: nobody at your clinic or at myCarlos can
-              open your vault for you.
-            </p>
-            <p>
-              Your key is shown next. Go on only when nobody else can see your
-              screen.
-            </p>
-            {replacing && (
+            <div id="recovery-key-about" className="recovery-key-about">
+              {offered && (
+                <p>
+                  Your vault is open. It has no recovery key yet. Without one,
+                  if you forget your passphrase, the only way back in is to
+                  erase the vault.
+                </p>
+              )}
               <p>
-                Your current recovery key stops working once you have checked
-                the new one.
+                A recovery key opens your vault if you forget your passphrase.
+                Only you will have it: nobody at your clinic or at myCarlos can
+                open your vault for you.
               </p>
-            )}
+              {replacing && (
+                <p>
+                  Your current recovery key stops working once you have checked
+                  the new one.
+                </p>
+              )}
+              <p>
+                Type your passphrase{offered ? " again" : ""} to make your{" "}
+                {replacing ? "new " : ""}recovery key. It is shown next: choose
+                Continue only when nobody else can see your screen.
+              </p>
+            </div>
             <label>
               Passphrase
               <input
