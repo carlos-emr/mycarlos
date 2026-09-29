@@ -94,23 +94,6 @@ built, tested, or independently reviewed.
   content immediately when backgrounded. An import or export in progress may finish, with content
   concealed, before an automatic or background lock; a manual lock cancels it.
 
-## Not yet decided
-
-Raised in the original design issue (#3) and not settled for the pilot:
-
-- Apple Health and Health Connect: whether they are in scope at all. They hold structured data,
-  not documents, so they can never receive the PDFs CARLOS sends; any use would be a separate,
-  complementary feature.
-- Ingest other than manual import and documents from CARLOS: scan or photo capture, and documents
-  from other EMRs. (For CARLOS documents, signed packages through the portal are decided above; how
-  the emailed PDF reaches myCarlos in the pilot is open in #23.)
-- Organization beyond folders, search and sort: categories, a timeline, tags, and which metadata
-  travels with a document (see the mocks in #18).
-- The final product name ("myCarlos" is a working name).
-
-Tracked in their own issues: the CARLOS email handoff (#23), the licence and app-store
-distribution (#24), and the privacy, regulatory and clinical-safety review (#25).
-
 ## Consequences and open implementation gates
 
 These decisions require new protocols and substantial code beyond this PR: recovery-key envelopes,
@@ -122,3 +105,27 @@ Physical-device lifecycle tests, real full-disk and power-loss tests, Argon2id b
 accessibility review, privacy/regulatory and clinical-safety approval, and independent security
 review remain mandatory. Linux remains unsupported until the documented `glib` backport is reviewed
 and Linux passes device/release validation.
+
+## Not yet decided
+
+Nothing in this section is an approved decision. These questions were raised in the original design
+issue (#3) and are not settled for the pilot:
+
+- Apple Health and Health Connect: whether they are in scope at all. They are built around
+  structured health data rather than a document vault, and anything written to them leaves
+  myCarlos's vault protection; any use would be a separate, complementary feature.
+- Ingest other than manual import and documents from CARLOS: scan or photo capture, and documents
+  from other EMRs. (A verified CARLOS document requires the signed package decided above. How the
+  encrypted PDF that CARLOS emails reaches myCarlos in the pilot is open in #23; without a signed
+  package it stays **Patient imported · Unverified**.)
+- Organization beyond what is built (folders, search and sort; see `MVP_STATUS.md`): categories, a
+  timeline, tags, and which descriptive metadata, beyond the signed-package fields above, travels
+  with a document. The decision that titles, types, providers, dates and folders stay encrypted
+  from the portal stands. The mocks in #18 predate these decisions; where they differ, this record
+  governs.
+- The final product name. "myCarlos" is the working name for now; the mocks in #18 use
+  "MyVitalHistory".
+
+Tracked in their own issues: the CARLOS email handoff (#23), the licence, store and signing
+logistics (#24), and the questions for the mandatory privacy, regulatory and clinical-safety
+review (#25).
