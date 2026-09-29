@@ -13,6 +13,14 @@ import {
 
 type Step = "passphrase" | "key" | "check";
 
+/** A recovery key made as the library opens, and the vault it is for: one
+ * just created, which sets it up before anything else, or one unlocked
+ * without a recovery key, which is offered it. */
+export type OpeningRecoveryKey = {
+  key: string;
+  vault: "created" | "unlocked";
+};
+
 // After this many wrong answers the check goes back to the key, so that the
 // patient looks at what they wrote down rather than guessing again.
 const TRIES_BEFORE_REVIEW = 3;
@@ -32,6 +40,7 @@ export function RecoveryKeySetup({
   initialKey,
   replacing,
   required = false,
+  offered = false,
   canPrint,
   onDone,
   onClose,
@@ -51,6 +60,9 @@ export function RecoveryKeySetup({
   replacing: boolean;
   /** When the vault is new, the key must be set up: there is no way out. */
   required?: boolean;
+  /** The setup opened by itself, on a vault unlocked without a recovery key:
+   * it says why it is there, and leaving it is "Set up later". */
+  offered?: boolean;
   canPrint: boolean;
   onDone: (snapshot: VaultSnapshot) => void;
   /** `keyShown`: a key was on screen, and may be written down or in a kit,
@@ -229,6 +241,7 @@ export function RecoveryKeySetup({
     }
   };
 
+  const leaveLabel = offered ? "Set up later" : "Cancel";
   const title =
     step === "passphrase"
       ? replacing
@@ -309,6 +322,13 @@ export function RecoveryKeySetup({
 
         {step === "key" && (
           <div className="recovery-key-body">
+            {offered && (
+              <p>
+                Your vault is unlocked. It has no recovery key yet: if you
+                forget your passphrase without one, the only way back in is to
+                erase the vault. This is a new recovery key for it.
+              </p>
+            )}
             <p>
               Write it down, or save or print the kit, and keep it somewhere
               private, away from this device. This is the only time myCarlos
@@ -343,7 +363,7 @@ export function RecoveryKeySetup({
             <footer className="dialog-actions">
               {!required && (
                 <button className="button" type="button" onClick={cancel}>
-                  Cancel
+                  {leaveLabel}
                 </button>
               )}
               {required && canLeave && (
@@ -444,7 +464,7 @@ export function RecoveryKeySetup({
                   disabled={busy}
                   onClick={cancel}
                 >
-                  Cancel
+                  {leaveLabel}
                 </button>
               )}
               {required && canLeave && (

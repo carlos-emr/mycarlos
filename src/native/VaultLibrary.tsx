@@ -9,7 +9,7 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
-import { RecoveryKeySetup } from "./RecoveryKeySetup";
+import { RecoveryKeySetup, type OpeningRecoveryKey } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -57,8 +57,8 @@ export function VaultLibrary({
   onLock,
   autoLockMinutes,
   onAutoLockMinutes,
-  newVaultRecoveryKey = null,
-  onNewVaultRecoveryKeyShown,
+  openingRecoveryKey = null,
+  onOpeningRecoveryKeyShown,
   canPrint = false,
 }: {
   bridge: VaultBridge;
@@ -74,8 +74,8 @@ export function VaultLibrary({
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
   /** The recovery key made with a vault just created, to set up first. */
-  newVaultRecoveryKey?: string | null;
-  onNewVaultRecoveryKeyShown?: () => void;
+  openingRecoveryKey?: OpeningRecoveryKey | null;
+  onOpeningRecoveryKeyShown?: () => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
 }) {
@@ -103,17 +103,23 @@ export function VaultLibrary({
   } | null>(null);
   const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
   // Setting up a recovery key. A vault just created starts with its key, which
-  // must be set up before the library can be used.
+  // must be set up before the library can be used. A vault unlocked without
+  // one is offered a key, which can be left for later.
   const [recoverySetup, setRecoverySetup] = useState<{
     initialKey?: string;
     required: boolean;
+    offered?: boolean;
   } | null>(() =>
-    newVaultRecoveryKey
-      ? { initialKey: newVaultRecoveryKey, required: true }
+    openingRecoveryKey
+      ? {
+          initialKey: openingRecoveryKey.key,
+          required: openingRecoveryKey.vault === "created",
+          offered: openingRecoveryKey.vault === "unlocked",
+        }
       : null,
   );
   useEffect(() => {
-    if (newVaultRecoveryKey) onNewVaultRecoveryKeyShown?.();
+    if (openingRecoveryKey) onOpeningRecoveryKeyShown?.();
     // Only the key the library opened with.
   }, []);
   const [showFolderForm, setShowFolderForm] = useState(false);
@@ -1024,6 +1030,7 @@ export function VaultLibrary({
               initialKey={recoverySetup.initialKey}
               replacing={Boolean(snapshot.recoveryKeySetAtMs)}
               required={recoverySetup.required}
+              offered={recoverySetup.offered}
               canPrint={canPrint}
               onDone={() => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
