@@ -188,7 +188,15 @@ export function VaultLibrary({
   useEffect(() => {
     // Any dialog open, such as a confirmation opened straight away, hides the
     // status line too: wait until it closes.
-    if (!renameResult || renameTarget || confirmation || confirmRemoveDamaged)
+    // The same goes while an operation runs: its own result comes next, and
+    // a result written during a transfer would be taken for that transfer's.
+    if (
+      !renameResult ||
+      renameTarget ||
+      confirmation ||
+      confirmRemoveDamaged ||
+      busy
+    )
       return;
     // A newer message replaces the result, and another document's details
     // opened meanwhile are not where it belongs.
@@ -206,6 +214,7 @@ export function VaultLibrary({
     return () => window.clearTimeout(timer);
   }, [
     activeRecordId,
+    busy,
     confirmation,
     confirmRemoveDamaged,
     notice,

@@ -62,7 +62,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // A message for the library that unlocking or creating the vault is about to
   // show. Its status line reads out only what changes once it is on screen, so
   // the message is written just after (see the effect below).
-  const [libraryNotice, setLibraryNotice] = useState("");
+  const [libraryNotice, setLibraryNotice] = useState<{
+    message: string;
+    // The result of a transfer that a lock ended, held for this unlock. It
+    // must reach the patient: it may say a readable copy was left behind.
+    outcome: string | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -348,19 +353,41 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const libraryShown = status === "unlocked" && snapshot !== null && !concealed;
   useEffect(() => {
     if (!libraryNotice) return;
+    const { message, outcome } = libraryNotice;
+    // Held again for the next unlock, after anything a later lock kept.
+    const holdOutcome = () => {
+      if (outcome)
+        pendingOutcomeRef.current = [outcome, pendingOutcomeRef.current]
+          .filter(Boolean)
+          .join(" ");
+    };
+    // The session ended before the message was written. Nothing of it may
+    // reach the unlock screen; a held outcome waits for the next unlock.
+    if (status !== "unlocked") {
+      if (status === "locked") holdOutcome();
+      setLibraryNotice(null);
+      return;
+    }
     // A newer message, such as the result of an operation started at once,
-    // replaces this one rather than being overwritten by it.
+    // is not overwritten. A held outcome is added to it, or held again while
+    // the library is hidden.
     if (notice) {
-      setLibraryNotice("");
+      if (outcome && libraryShown) setNotice(`${notice} ${outcome}`);
+      else holdOutcome();
+      setLibraryNotice(null);
       return;
     }
     if (!libraryShown) return;
+    const armedIn = sessionRef.current;
     const timer = window.setTimeout(() => {
-      setNotice(libraryNotice);
-      setLibraryNotice("");
+      // A lock that has landed, or is under way, but is not rendered yet:
+      // leave the message for the branches above.
+      if (sessionRef.current !== armedIn || lockingRef.current) return;
+      setNotice([message, outcome].filter(Boolean).join(" "));
+      setLibraryNotice(null);
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [libraryNotice, libraryShown, notice]);
+  }, [libraryNotice, libraryShown, notice, status]);
 
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);
@@ -446,6 +473,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     return next;
   };
   const setSessionNotice = (message: string) => {
+    // Clearing the line is not a result: it must not replace a transfer's
+    // outcome, shown or held.
+    if (!message) {
+      if (inSession()) setNotice("");
+      return;
+    }
     if (inSession()) report(message);
     // The lock that ended this transfer has landed: keep its result for
     // after the next unlock.
@@ -472,9 +505,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             pendingOutcomeRef.current = null;
             setConcealed(false);
             setStatus("unlocked");
-            setLibraryNotice(
-              "Encrypted vault created. Keep your passphrase safe; it cannot be recovered.",
-            );
+            setLibraryNotice({
+              message:
+                "Encrypted vault created. Keep your passphrase safe; it cannot be recovered.",
+              outcome: null,
+            });
           })
         }
       />
@@ -495,16 +530,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setStatus("unlocked");
             const outcome = pendingOutcomeRef.current;
             pendingOutcomeRef.current = null;
-            setLibraryNotice(
-              [
-                current.recovery
-                  ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
-                  : "Vault unlocked.",
-                outcome,
-              ]
-                .filter(Boolean)
-                .join(" "),
-            );
+            setLibraryNotice({
+              message: current.recovery
+                ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
+                : "Vault unlocked.",
+              outcome,
+            });
           })
         }
         onReset={(confirmation) =>
