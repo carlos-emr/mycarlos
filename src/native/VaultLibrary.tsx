@@ -21,6 +21,7 @@ import {
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -79,9 +80,7 @@ export function VaultLibrary({
   onNewVaultRecoveryKeyShown?: () => void;
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
-  onUnfinishedRecoveryKey?: (
-    unfinished: "first" | "replacement" | null,
-  ) => void;
+  onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
 }) {
@@ -996,9 +995,9 @@ export function VaultLibrary({
               required={recoverySetup.required}
               canPrint={canPrint}
               onKeyShown={() =>
-                onUnfinishedRecoveryKey?.(
-                  snapshot.recoveryKeySetAtMs ? "replacement" : "first",
-                )
+                onUnfinishedRecoveryKey?.({
+                  setAtMs: snapshot.recoveryKeySetAtMs ?? null,
+                })
               }
               onDone={() => {
                 onUnfinishedRecoveryKey?.(null);

@@ -15,6 +15,11 @@ import { VaultLibrary } from "./native/VaultLibrary";
 import { TransferHold } from "./native/transferHold";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import {
+  rememberUnfinishedRecoveryKey,
+  takeUnfinishedRecoveryKey,
+  unfinishedRecoveryKeyMessage,
+} from "./native/unfinishedRecoveryKey";
+import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
   persistAutoLockMinutes,
@@ -56,15 +61,6 @@ export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
   return <NativeVault bridge={bridge} />;
 }
-
-/** What the patient is told after unlocking, when a lock ended a recovery
- * key setup that had shown a key. */
-const UNFINISHED_KEY = {
-  first:
-    "Recovery key setup ended when the vault locked, so the vault still has no recovery key. The key you were shown does not open it: destroy any kit you saved or printed for it.",
-  replacement:
-    "Your recovery key was not replaced: setup ended when the vault locked. Your earlier key still works. The key you were shown does not open the vault: destroy any kit you saved or printed for it.",
-} as const;
 
 function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
@@ -151,10 +147,19 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       .join(" ");
   }, []);
 
-  // A recovery key setup that has shown a key and not ended. A lock ends it,
-  // and the key then opens nothing: the patient is told after the next
-  // unlock, as they may have written it down or saved a kit.
-  const unfinishedKeyRef = useRef<"first" | "replacement" | null>(null);
+  // Taken as a vault opens: what happened while it was locked, and how a
+  // recovery key setup that a lock or closing ended actually ended.
+  const takeHeldOutcome = (setAtMsNow: number | null) => {
+    const unfinished = takeUnfinishedRecoveryKey();
+    const outcome = [
+      pendingOutcomeRef.current,
+      unfinished && unfinishedRecoveryKeyMessage(unfinished, setAtMsNow),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    pendingOutcomeRef.current = null;
+    return outcome || null;
+  };
 
   const lock = useCallback(async () => {
     if (lockingRef.current) return;
@@ -173,9 +178,6 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
-      const unfinished = unfinishedKeyRef.current;
-      unfinishedKeyRef.current = null;
-      if (unfinished) holdForUnlock(UNFINISHED_KEY[unfinished]);
       setNotice("Vault locked.");
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
@@ -542,6 +544,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(await bridge.create(passphrase, profile));
             // Nothing from a vault that is gone.
             pendingOutcomeRef.current = null;
+            takeUnfinishedRecoveryKey();
             // The passphrase was just typed, so it authorizes the recovery key
             // at once. If that fails, the library offers to set one up.
             const recoveryKey = await bridge
@@ -575,8 +578,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
-            const outcome = pendingOutcomeRef.current;
-            pendingOutcomeRef.current = null;
+            const outcome = takeHeldOutcome(current.recoveryKeySetAtMs ?? null);
             setLibraryNotice({
               message: current.recovery
                 ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
@@ -592,8 +594,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
-            const outcome = pendingOutcomeRef.current;
-            pendingOutcomeRef.current = null;
+            const outcome = takeHeldOutcome(current.recoveryKeySetAtMs ?? null);
             setLibraryNotice({
               message: passphraseReplaced
                 ? "Vault opened with your recovery key. Use your new passphrase from now on."
@@ -606,6 +607,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             if (await bridge.reset(confirmation)) {
               pendingOutcomeRef.current = null;
+              takeUnfinishedRecoveryKey();
               setStatus("absent");
               setNotice("");
             } else {
@@ -672,9 +674,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onAutoLockMinutes={updateAutoLockMinutes}
       newVaultRecoveryKey={newVaultRecoveryKey}
       onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
-      onUnfinishedRecoveryKey={(unfinished) => {
-        unfinishedKeyRef.current = unfinished;
-      }}
+      onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
     />
   );

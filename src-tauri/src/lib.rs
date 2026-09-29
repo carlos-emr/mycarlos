@@ -650,9 +650,7 @@ async fn vault_recovery_key_confirm(
             .iter()
             .map(|group| (group.index, group.value.as_str()))
             .collect::<Vec<_>>();
-        let result = store
-            .confirm_recovery_key(&groups, now_ms())
-            .and_then(|()| store.snapshot());
+        let result = store.confirm_recovery_key(&groups, now_ms());
         drop(groups);
         for group in &mut request.groups {
             group.value.zeroize();
@@ -670,11 +668,7 @@ async fn vault_recovery_kit_save(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<bool> {
     // Nothing is asked for unless a key is waiting to be confirmed.
-    let name = run_blocking(store.inner(), |store| {
-        store.recovery_kit(now_ms())?;
-        store.recovery_kit_name(now_ms())
-    })
-    .await?;
+    let name = run_blocking(store.inner(), |store| store.recovery_kit_name(now_ms())).await?;
     // Held until the kit is written, so that the automatic lock cannot fall
     // between the picker closing and the write.
     let _open = ActivityHold::new(store.idle());

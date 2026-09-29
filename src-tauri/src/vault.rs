@@ -824,8 +824,11 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        Ok(VaultSnapshot {
+        Ok(Self::snapshot_of(guard.as_ref().ok_or(VaultError::Locked)?))
+    }
+
+    fn snapshot_of(unlocked: &UnlockedVault) -> VaultSnapshot {
+        VaultSnapshot {
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
             records: unlocked
@@ -846,7 +849,7 @@ impl VaultStore {
                 .collect(),
             recovery: unlocked.recovery,
             recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
-        })
+        }
     }
 
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
@@ -1485,14 +1488,15 @@ impl VaultStore {
     }
 
     /// Checks groups of the pending recovery key as the patient typed them
-    /// back (group index and text; at least two different groups), then
-    /// stores the key: a new pair of header generations carries its envelope,
-    /// replacing any earlier recovery key.
+    /// back (group index and text; at least two different groups, and the
+    /// app sends all seven), then stores the key: a new pair of header
+    /// generations carries its envelope, replacing any earlier recovery key.
+    /// Returns the vault as it then is.
     pub fn confirm_recovery_key(
         &self,
         groups: &[(usize, &str)],
         now_ms: u64,
-    ) -> Result<(), VaultError> {
+    ) -> Result<VaultSnapshot, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.recovery.is_some() {
@@ -1572,7 +1576,10 @@ impl VaultStore {
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
-        Ok(())
+        // Taken under the same session guard: a lock that came between the
+        // key being stored and a snapshot taken apart would report a key
+        // that was stored as a failure.
+        Ok(Self::snapshot_of(unlocked))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -2337,7 +2344,8 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
     }
     let mut values = Zeroizing::new(Vec::with_capacity(RECOVERY_KEY_GROUPS * 4));
     for character in text.chars() {
-        if character == '-' || character.is_whitespace() {
+        // Dashes, spaces and any other punctuation only separate groups.
+        if !character.is_alphanumeric() {
             continue;
         }
         let symbol = match character.to_ascii_uppercase() {
@@ -2385,14 +2393,14 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
     Ok(key)
 }
 
-/// The text of a recovery kit. Plain text, so that it prints and opens
-/// anywhere; the date is UTC.
 /// A short name for a recovery key, from its envelope's id, which is not
 /// secret: it tells kits apart, and says nothing about the key.
 fn recovery_key_label(key_id: Uuid) -> String {
     key_id.simple().to_string()[..4].to_uppercase()
 }
 
+/// The text of a recovery kit. Plain text, so that it prints and opens
+/// anywhere; the date is UTC.
 fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
     let (year, month, day) = utc_date(now_ms);
     Zeroizing::new(format!(
@@ -2620,7 +2628,7 @@ fn recovery_group_matches(typed: &str, expected: &str) -> bool {
     let mut normalized = Zeroizing::new(String::with_capacity(typed.len()));
     for character in typed
         .chars()
-        .filter(|character| *character != '-' && !character.is_whitespace())
+        .filter(|character| character.is_alphanumeric())
     {
         normalized.push(match character.to_ascii_uppercase() {
             'I' | 'L' => '1',
@@ -6345,6 +6353,11 @@ mod tests {
                 .replace('0', "o")
                 .replace('1', "l");
             assert_eq!(*decode_recovery_key(&relaxed).unwrap(), key);
+            // Nor does other punctuation, which some keyboards put in.
+            for separator in [". ", "_", "\u{2013}"] {
+                let punctuated = text.replace('-', separator);
+                assert_eq!(*decode_recovery_key(&punctuated).unwrap(), key);
+            }
         }
         for text in ["", "ABCD", "UUUU-UUUU-UUUU-UUUU-UUUU-UUUU-UUUU"] {
             assert!(matches!(
@@ -6370,6 +6383,27 @@ mod tests {
             }
         }
         assert!(accepted <= 5, "{accepted} slips accepted");
+    }
+
+    #[test]
+    fn the_whole_key_typed_back_is_stored_and_opens_the_vault() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        let typed: Vec<(usize, &str)> = groups
+            .iter()
+            .enumerate()
+            .map(|(index, group)| (index, group.as_str()))
+            .collect();
+        // The vault it leaves is returned with it, from the same session.
+        let snapshot = store.confirm_recovery_key(&typed, 5).unwrap();
+        assert_eq!(snapshot.recovery_key_set_at_ms, Some(5));
+        store.lock();
+        assert!(store
+            .recover(&key.replace('-', ". "), PASSPHRASE_REPLACEMENT)
+            .unwrap());
     }
 
     #[test]

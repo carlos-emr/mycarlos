@@ -196,7 +196,7 @@ describe("RecoveryKeySetup", () => {
     await typeKey(user, GROUPS.slice(0, 6).join("-"));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "That is 24 characters. Your recovery key has 28: 7 groups of 4.",
+      "You typed 24 letters and digits. Your recovery key has 28 letters and digits: 7 groups of 4.",
     );
     expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
   });

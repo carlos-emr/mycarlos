@@ -71,6 +71,14 @@ export function RecoveryKeySetup({
   useEffect(() => {
     if (key) keyShownRef.current?.();
   }, [key]);
+  // A lock closes this setup, and can do so while the key is being stored.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [wrongTries, setWrongTries] = useState(0);
   // A required setup has no Cancel. Once something other than a wrong answer
   // has failed (a full disk, a vault that locked), it offers a way out, or
@@ -187,10 +195,11 @@ export function RecoveryKeySetup({
     event.preventDefault();
     if (busy || !typed.trim()) return;
     // The whole key, typed back: as its groups, which the vault checks.
-    const symbols = typed.replace(/[\s-]/g, "");
+    // Anything but a letter or digit only separates groups, as natively.
+    const symbols = typed.replace(/[^\p{L}\p{N}]/gu, "");
     if (symbols.length !== KEY_SYMBOLS) {
       setError(
-        `That is ${symbols.length} character${symbols.length === 1 ? "" : "s"}. Your recovery key has ${KEY_SYMBOLS}: 7 groups of 4. Check what you wrote.`,
+        `You typed ${symbols.length === 1 ? "1 letter or digit" : `${symbols.length} letters and digits`}. Your recovery key has ${KEY_SYMBOLS} letters and digits: 7 groups of 4. Check what you wrote.`,
       );
       return;
     }
@@ -203,6 +212,10 @@ export function RecoveryKeySetup({
           value: symbols.slice(index * 4, index * 4 + 4),
         })),
       );
+      // Stored after a lock had closed this: the patient never saw it end,
+      // so the setup stays unfinished, and the next unlock, finding the key
+      // changed, says it was saved.
+      if (!mountedRef.current) return;
       onDone(snapshot);
     } catch (failure) {
       // Only a wrong answer counts towards going back to the key.
@@ -421,12 +434,18 @@ export function RecoveryKeySetup({
                 maxLength={64}
                 aria-describedby="recovery-key-check-hint"
                 value={typed}
-                onChange={(event) => setTyped(event.target.value)}
+                onChange={(event) => {
+                  setTyped(event.target.value);
+                  // So that the same error, after another try, is read out
+                  // again.
+                  setError("");
+                }}
               />
             </label>
             <p id="recovery-key-check-hint">
               Type your whole recovery key, as you wrote it down or saved it: 7
-              groups of 4 letters and digits. Dashes and spaces do not matter.
+              groups of 4 letters and digits. Dashes, spaces and other
+              punctuation do not matter.
             </p>
             {error && <p role="alert">{error}</p>}
             <footer className="dialog-actions">

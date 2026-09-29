@@ -376,8 +376,8 @@ function RecoverWithKey({
         />
       </label>
       <small id="recover-key-format">
-        28 letters and digits, in 7 groups of 4, as on your kit. Dashes and
-        spaces do not matter.
+        28 letters and digits, in 7 groups of 4, as on your kit or as you wrote
+        it down. Dashes, spaces and other punctuation do not matter.
       </small>
       <button
         className="button"
