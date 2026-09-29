@@ -214,7 +214,9 @@ Then turn the screen reader off and check text size:
 
 - **Windows, macOS:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
   up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
-  down. Ctrl + 0 (Command + 0) resets it. Also try Windows **Settings → Accessibility → Text
+  down. Ctrl + 0 (Command + 0) resets it. Ctrl with the mouse wheel does the same. Then close
+  the app at a size other than the ordinary one and open it again: it should open at the size
+  you left it, and the next Ctrl + plus should go one step on from there, not jump. Also try Windows **Settings → Accessibility → Text
   size** and report whether the app follows it.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
   whether the text gets larger, and whether anything is cut off.

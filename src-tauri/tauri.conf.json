@@ -20,7 +20,7 @@
         "minHeight": 620,
         "resizable": true,
         "dragDropEnabled": false,
-        "zoomHotkeysEnabled": true
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {
