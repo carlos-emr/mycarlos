@@ -101,8 +101,10 @@ export interface VaultBridge {
   /** Makes a recovery key, authorized by the current passphrase, and returns
    * it once for the patient to write down. Nothing is stored yet. */
   beginRecoveryKey(passphrase: string): Promise<string>;
-  /** Stores the key once groups of it are typed back correctly. */
-  confirmRecoveryKey(groups: RecoveryKeyGroup[]): Promise<VaultSnapshot>;
+  /** Stores the key once groups of it are typed back correctly. Replacing a
+   * key the vault already has is confirmed in a native dialog first;
+   * resolves to null if the patient cancelled there, with nothing changed. */
+  confirmRecoveryKey(groups: RecoveryKeyGroup[]): Promise<VaultSnapshot | null>;
   /** Saves the kit for the key being set up; false if the picker was
    * cancelled. */
   saveRecoveryKit(): Promise<boolean>;
@@ -234,7 +236,7 @@ export function createVaultBridge(): VaultBridge {
     beginRecoveryKey: (passphrase) =>
       invoke<string>("vault_recovery_key_begin", { request: { passphrase } }),
     confirmRecoveryKey: (groups) =>
-      invoke<VaultSnapshot>("vault_recovery_key_confirm", {
+      invoke<VaultSnapshot | null>("vault_recovery_key_confirm", {
         request: { groups },
       }),
     saveRecoveryKit: () => invoke<boolean>("vault_recovery_kit_save"),

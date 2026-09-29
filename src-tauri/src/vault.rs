@@ -1479,6 +1479,18 @@ impl VaultStore {
     /// back (group index and text; at least two different groups), then
     /// stores the key: a new pair of header generations carries its envelope,
     /// replacing any earlier recovery key.
+    /// Checks the typed groups against the key being set up, as
+    /// `confirm_recovery_key` will, and says whether confirming would replace
+    /// a recovery key the vault already has. Nothing changes. For the
+    /// confirmation asked of the patient before a key is replaced, which
+    /// should not be asked over a mistyped answer.
+    pub fn check_recovery_key(&self, groups: &[(usize, &str)]) -> Result<bool, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        matching_pending_key(unlocked, groups)?;
+        Ok(unlocked.recovery_key_set_at_ms.is_some())
+    }
+
     pub fn confirm_recovery_key(
         &self,
         groups: &[(usize, &str)],
@@ -1486,41 +1498,11 @@ impl VaultStore {
     ) -> Result<(), VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
-        if unlocked.recovery.is_some() {
-            return Err(VaultError::RecoveryMode);
-        }
         let PendingRecoveryKey {
             key: pending,
             kdf,
             wrapping_key,
-        } = unlocked
-            .pending_recovery_key
-            .as_ref()
-            .ok_or(VaultError::Invalid)?;
-        let distinct: HashSet<usize> = groups.iter().map(|(index, _)| *index).collect();
-        if distinct.len() < 2
-            || distinct.len() != groups.len()
-            || groups.len() > RECOVERY_KEY_GROUPS
-        {
-            return Err(VaultError::Invalid);
-        }
-        // Every index is checked before any group is compared, so that the
-        // answer never depends on how far the comparison got.
-        if groups
-            .iter()
-            .any(|(index, typed)| *index >= RECOVERY_KEY_GROUPS || typed.len() > 64)
-        {
-            return Err(VaultError::Invalid);
-        }
-        let expected = encode_recovery_key(pending);
-        let expected_groups: Vec<&str> = expected.split('-').collect();
-        let matched = groups
-            .iter()
-            .filter(|(index, typed)| recovery_group_matches(typed, expected_groups[*index]))
-            .count();
-        if matched != groups.len() {
-            return Err(VaultError::RecoveryKeyTypo);
-        }
+        } = matching_pending_key(unlocked, groups)?;
 
         let vault_id = unlocked.manifest.vault_id;
         let current = newest_authentic_header(&self.root, vault_id, &unlocked.master_key)?;
@@ -3009,6 +2991,42 @@ fn recovery_group_matches(typed: &str, expected: &str) -> bool {
         });
     }
     normalized.as_str() == expected
+}
+
+/// The key being set up, once the typed groups match it.
+fn matching_pending_key<'a>(
+    unlocked: &'a UnlockedVault,
+    groups: &[(usize, &str)],
+) -> Result<&'a PendingRecoveryKey, VaultError> {
+    if unlocked.recovery.is_some() {
+        return Err(VaultError::RecoveryMode);
+    }
+    let pending = unlocked
+        .pending_recovery_key
+        .as_ref()
+        .ok_or(VaultError::Invalid)?;
+    let distinct: HashSet<usize> = groups.iter().map(|(index, _)| *index).collect();
+    if distinct.len() < 2 || distinct.len() != groups.len() || groups.len() > RECOVERY_KEY_GROUPS {
+        return Err(VaultError::Invalid);
+    }
+    // Every index is checked before any group is compared, so that the
+    // answer never depends on how far the comparison got.
+    if groups
+        .iter()
+        .any(|(index, typed)| *index >= RECOVERY_KEY_GROUPS || typed.len() > 64)
+    {
+        return Err(VaultError::Invalid);
+    }
+    let expected = encode_recovery_key(&pending.key);
+    let expected_groups: Vec<&str> = expected.split('-').collect();
+    let matched = groups
+        .iter()
+        .filter(|(index, typed)| recovery_group_matches(typed, expected_groups[*index]))
+        .count();
+    if matched != groups.len() {
+        return Err(VaultError::RecoveryKeyTypo);
+    }
+    Ok(pending)
 }
 
 /// The newest header slot authenticated by the session's master key.
@@ -7516,6 +7534,55 @@ mod tests {
             // The key still works, and the repair kept its envelope.
             assert!(restarted.recover(&key, PASSWORD).unwrap());
         }
+    }
+
+    #[test]
+    fn checking_a_recovery_key_changes_nothing_and_says_if_one_would_be_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let headers = || HEADER_SLOTS.map(|name| fs::read(root.join(name)).unwrap());
+
+        // Nothing is being set up.
+        assert!(matches!(
+            store.check_recovery_key(&[(0, "AAAA"), (1, "AAAA")]),
+            Err(VaultError::Invalid)
+        ));
+        let first = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&first);
+        let before = headers();
+        assert!(matches!(
+            store.check_recovery_key(&[(1, "ZZZZ"), (5, &groups[5])]),
+            Err(VaultError::RecoveryKeyTypo)
+        ));
+        // The vault has no key yet, so none would be replaced.
+        assert!(!store
+            .check_recovery_key(&[(1, &groups[1]), (5, &groups[5])])
+            .unwrap());
+        assert_eq!(headers(), before);
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, None);
+        store
+            .confirm_recovery_key(&[(1, &groups[1]), (5, &groups[5])], 5)
+            .unwrap();
+
+        let second = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&second);
+        let before = headers();
+        assert!(store
+            .check_recovery_key(&[(1, &groups[1]), (5, &groups[5])])
+            .unwrap());
+        assert_eq!(headers(), before);
+        // Until it is confirmed, the first key is the vault's.
+        store.lock();
+        assert!(matches!(
+            store.recover(&second, PASSPHRASE_REPLACEMENT),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        assert!(matches!(
+            store.check_recovery_key(&[(1, &groups[1]), (5, &groups[5])]),
+            Err(VaultError::Locked)
+        ));
     }
 
     #[test]

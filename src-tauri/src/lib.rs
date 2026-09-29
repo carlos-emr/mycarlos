@@ -718,25 +718,74 @@ async fn vault_recovery_key_begin(
     .await
 }
 
-#[tauri::command]
-async fn vault_recovery_key_confirm(
-    store: State<'_, Arc<VaultStore>>,
-    mut request: ConfirmRecoveryKeyRequest,
-) -> CommandResult<VaultSnapshot> {
-    run_blocking(store.inner(), move |store| {
-        let groups = request
-            .groups
+/// What the native confirmation says before a new recovery key takes the
+/// place of the one the vault has.
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key stops working as soon as the new one is saved. A kit saved or printed for the current key will no longer open this vault. Make sure you have written down or saved the new key first.";
+
+impl ConfirmRecoveryKeyRequest {
+    fn groups(&self) -> Vec<(usize, &str)> {
+        self.groups
             .iter()
             .map(|group| (group.index, group.value.as_str()))
-            .collect::<Vec<_>>();
-        let result = store
-            .confirm_recovery_key(&groups, now_ms())
-            .and_then(|()| store.snapshot());
-        drop(groups);
-        for group in &mut request.groups {
+            .collect()
+    }
+}
+
+impl Drop for ConfirmRecoveryKeyRequest {
+    fn drop(&mut self) {
+        for group in &mut self.groups {
             group.value.zeroize();
         }
-        result
+    }
+}
+
+/// Makes the recovery key being set up the vault's. Replacing a key the
+/// vault already has shuts the earlier one out, so, as for a reset, a
+/// trusted native dialog confirms that first; the renderer's own check of
+/// the key is not enough. Returns nothing if the patient cancelled there.
+#[tauri::command]
+async fn vault_recovery_key_confirm(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    request: ConfirmRecoveryKeyRequest,
+) -> CommandResult<Option<VaultSnapshot>> {
+    let request = Arc::new(request);
+    // A mistyped answer is refused before anything is asked.
+    let replaces = {
+        let request = Arc::clone(&request);
+        run_blocking(store.inner(), move |store| {
+            store.check_recovery_key(&request.groups())
+        })
+        .await?
+    };
+    if replaces {
+        let dialog_app = app.clone();
+        let confirmed = tauri::async_runtime::spawn_blocking(move || {
+            dialog_app
+                .dialog()
+                .message(REPLACE_RECOVERY_KEY_WARNING)
+                .title("Replace your recovery key?")
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Replace key".to_owned(),
+                    "Cancel".to_owned(),
+                ))
+                .blocking_show()
+        })
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?;
+        if !confirmed {
+            return Ok(None);
+        }
+    }
+    run_blocking(store.inner(), move |store| {
+        // Checked again with the change: the key being set up, or the
+        // vault, may not be what it was before the dialog.
+        if store.check_recovery_key(&request.groups())? != replaces {
+            return Err(VaultError::Invalid);
+        }
+        store.confirm_recovery_key(&request.groups(), now_ms())?;
+        store.snapshot().map(Some)
     })
     .await
 }

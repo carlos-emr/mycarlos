@@ -337,6 +337,37 @@ describe("RecoveryKeySetup", () => {
     ).toBeVisible();
   });
 
+  it("keeps the setup open when replacing was cancelled in the native confirmation", async () => {
+    const user = userEvent.setup();
+    const { bridge, onDone, onClose } = setUp(
+      { initialKey: KEY, replacing: true },
+      {
+        confirmRecoveryKey: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(snapshot),
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    for (const position of askedGroups())
+      await user.type(
+        screen.getByLabelText(`Group ${position}`),
+        GROUPS[position - 1],
+      );
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(status).toHaveTextContent(
+      "Not replaced. Your current recovery key still works.",
+    );
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+    // The answers are still there, and agreeing the second time saves it.
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(onDone).toHaveBeenCalledWith(snapshot);
+  });
+
   it("says when it replaces an existing key", () => {
     setUp({ replacing: true });
     expect(

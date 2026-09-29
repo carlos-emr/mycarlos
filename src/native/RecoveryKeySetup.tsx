@@ -185,12 +185,19 @@ export function RecoveryKeySetup({
     if (busy || answers.some((answer) => !answer.trim())) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const snapshot = await bridge.confirmRecoveryKey([
         { index: asked[0], value: answers[0] },
         { index: asked[1], value: answers[1] },
       ]);
-      onDone(snapshot);
+      if (snapshot) onDone(snapshot);
+      // Cancelled in the native confirmation: the key is still being set
+      // up, and can be checked again.
+      else
+        setNotice(
+          "Not replaced. Your current recovery key still works. Check again to replace it, or cancel.",
+        );
     } catch (failure) {
       // Only a wrong answer counts towards going back to the key.
       if (!isRecoveryKeyTypo(failure)) {
@@ -418,6 +425,9 @@ export function RecoveryKeySetup({
                 />
               </label>
             ))}
+            <p className="native-dialog-status" role="status">
+              {notice}
+            </p>
             {error && <p role="alert">{error}</p>}
             <footer className="dialog-actions">
               {required && canLeave && (
