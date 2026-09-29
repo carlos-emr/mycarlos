@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ZOOM_LEVELS, zoomPercent, type Zoom } from "./zoom";
 
 /**
@@ -11,31 +11,75 @@ import { ZOOM_LEVELS, zoomPercent, type Zoom } from "./zoom";
 export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   const level = useSyncExternalStore(zoom.subscribe, zoom.level);
   const modifier = mac ? "Command" : "Ctrl";
+  const smallest = level === ZOOM_LEVELS[0];
+  const largest = level === ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
+  const bar = useRef<HTMLElement | null>(null);
+  const larger = useRef<HTMLButtonElement | null>(null);
+  const refocus = useRef(false);
+
+  // The screens below fill the window less the bar's height.
+  useEffect(() => {
+    const element = bar.current;
+    if (!element) return;
+    const root = document.documentElement;
+    const measure = () =>
+      root.style.setProperty(
+        "--zoom-bar-height",
+        `${element.getBoundingClientRect().height}px`,
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--zoom-bar-height");
+    };
+  }, []);
+
+  // "Back to normal size" goes when it is pressed: focus is not left on
+  // nothing.
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    larger.current?.focus();
+  }, [level]);
+
   return (
-    <aside className="zoom-bar" aria-label="Text size">
-      <p role="status">Text size {zoomPercent(level)}</p>
+    <aside ref={bar} className="zoom-bar" aria-label="Text size">
+      <p role="status" aria-atomic="true">
+        {`Text size ${zoomPercent(level)}`}
+      </p>
+      {/* Not disabled at either end, which would drop the focus on it. */}
       <button
         className="button"
         type="button"
-        disabled={level === ZOOM_LEVELS[0]}
-        onClick={() => zoom.request("out")}
+        aria-disabled={smallest}
+        onClick={() => {
+          if (!smallest) zoom.request("out");
+        }}
       >
-        Smaller
+        Smaller text
       </button>
       <button
+        ref={larger}
         className="button"
         type="button"
-        disabled={level === ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
-        onClick={() => zoom.request("in")}
+        aria-disabled={largest}
+        onClick={() => {
+          if (!largest) zoom.request("in");
+        }}
       >
-        Larger
+        Larger text
       </button>
       {level !== 1 && (
         <>
           <button
             className="button"
             type="button"
-            onClick={() => zoom.request("reset")}
+            onClick={() => {
+              refocus.current = true;
+              zoom.request("reset");
+            }}
           >
             Back to normal size
           </button>

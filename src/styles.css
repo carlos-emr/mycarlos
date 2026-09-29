@@ -25,11 +25,13 @@
   --shadow: 0 1px 2px rgb(18 33 31 / 6%), 0 8px 24px rgb(18 33 31 / 6%);
   --shadow-sm: 0 1px 3px rgb(18 33 31 / 8%);
   --focus: #0b62d6;
+  /* The height of the text size bar above the app (ZoomBar), or 0. */
+  --zoom-bar-height: 0px;
 }
 
 /* Durable vault screens. The browser preview continues to use the evaluation UI below. */
 .vault-auth {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--zoom-bar-height));
   display: grid;
   place-items: center;
   padding: 24px;
@@ -95,7 +97,7 @@ h1, h2, p { margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .icon { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
-.evaluation-page { min-height: 100vh; }
+.evaluation-page { min-height: calc(100vh - var(--zoom-bar-height)); }
 .evaluation-banner {
   display: flex;
   justify-content: center;
@@ -551,11 +553,11 @@ h1, h2, p { margin: 0; }
 
 /* The native vault uses the mock-aligned filing-cabinet shell with durable data. */
 .native-vault-page .page-wrap { max-width: 1440px; }
-.native-vault-page .app-window { min-height: calc(100vh - 76px); }
-.native-vault-page .app-body { min-height: calc(100vh - 122px); }
+.native-vault-page .app-window { min-height: calc(100vh - var(--zoom-bar-height) - 76px); }
+.native-vault-page .app-body { min-height: calc(100vh - var(--zoom-bar-height) - 122px); }
 .native-auth-wrap { max-width: 760px !important; }
-.native-auth-window { min-height: calc(100vh - 76px); }
-.native-auth-window .vault-auth { min-height: calc(100vh - 123px); }
+.native-auth-window { min-height: calc(100vh - var(--zoom-bar-height) - 76px); }
+.native-auth-window .vault-auth { min-height: calc(100vh - var(--zoom-bar-height) - 123px); }
 .native-auth-state { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
 .native-auth-state .icon { width: 15px; height: 15px; color: var(--teal); }
 .native-lock-button { cursor: pointer; font: inherit; }
@@ -641,8 +643,8 @@ h1, h2, p { margin: 0; }
 
 @media (max-width: 56.25em) {
   .native-vault-page .page-wrap { padding: 12px; }
-  .native-vault-page .app-window { min-height: calc(100vh - 60px); }
-  .native-vault-page .app-body { min-height: calc(100vh - 150px); }
+  .native-vault-page .app-window { min-height: calc(100vh - var(--zoom-bar-height) - 60px); }
+  .native-vault-page .app-body { min-height: calc(100vh - var(--zoom-bar-height) - 150px); }
 }
 
 @media (max-width: 40em) {
@@ -677,3 +679,8 @@ h1, h2, p { margin: 0; }
 .zoom-bar p { margin: 0; font-size: 0.875rem; font-weight: 700; }
 .zoom-bar small { color: var(--ink-soft); font-size: 0.875rem; }
 .zoom-bar .button { min-height: 44px; }
+.zoom-bar .button[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+/* At the largest sizes the window is narrow: the buttons matter, the hint less. */
+@media (max-width: 40em) {
+  .zoom-bar small { display: none; }
+}

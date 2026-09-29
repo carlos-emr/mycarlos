@@ -17,6 +17,8 @@ export const ZOOM_LEVELS = [
 /** How far the wheel turns for one step: one notch of an ordinary mouse. A
  * touchpad sends many small turns, which add up to a step. */
 const WHEEL_STEP = 100;
+/** A pause after which turns of the wheel start adding up again. */
+const WHEEL_PAUSE_MS = 1000;
 
 /** The size there is that is nearest to `value`; the ordinary one for
  * anything that is not a size. */
@@ -95,17 +97,38 @@ export function startZoom(
 ): Zoom {
   let level = readZoom();
   let turned = 0;
+  let turnedAt = 0;
   const listeners = new Set<() => void>();
+  const tell = () => {
+    for (const listener of listeners) listener();
+  };
+  // One change at a time, in order: each is a command of its own.
+  let applying: Promise<void> = Promise.resolve();
+  const apply = (next: number) => {
+    applying = applying.then(() => setZoom(next)).catch(() => undefined);
+    return applying;
+  };
   const request = (asked: ZoomRequest) => {
     const next = zoomAfter(level, asked);
     if (next === level) return;
     level = next;
     persistZoom(level);
-    void setZoom(level).catch(() => undefined);
-    for (const listener of listeners) listener();
+    void apply(level);
+    tell();
   };
+  // A size kept from last time that the platform refused is not the size
+  // shown: say the ordinary one.
   const ready =
-    level === 1 ? Promise.resolve() : setZoom(level).catch(() => undefined);
+    level === 1
+      ? Promise.resolve()
+      : setZoom(level).then(
+          () => undefined,
+          () => {
+            level = 1;
+            tell();
+          },
+        );
+  applying = ready;
 
   const onKey = (event: KeyboardEvent) => {
     const asked = zoomRequestOfKey(event, mac);
@@ -116,9 +139,17 @@ export function startZoom(
   const onWheel = (event: WheelEvent) => {
     if (!event.ctrlKey || event.deltaY === 0) return;
     event.preventDefault();
-    // A turn the other way starts again.
-    if (Math.sign(turned) !== Math.sign(event.deltaY)) turned = 0;
-    turned += event.deltaY;
+    // A turn the other way, or after a pause, starts again.
+    const now = Date.now();
+    if (
+      Math.sign(turned) !== Math.sign(event.deltaY) ||
+      now - turnedAt > WHEEL_PAUSE_MS
+    )
+      turned = 0;
+    turnedAt = now;
+    // The page reports the wheel in its own pixels, which shrink as it is
+    // zoomed: counted in the screen's, a notch is the same at every size.
+    turned += event.deltaY * level;
     if (Math.abs(turned) < WHEEL_STEP) return;
     request(turned < 0 ? "in" : "out");
     turned = 0;

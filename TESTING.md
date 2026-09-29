@@ -215,7 +215,7 @@ Then turn the screen reader off and check text size:
 - **Windows, macOS:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
   up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
   down. Ctrl + 0 (Command + 0) resets it. The line at the top of the window says the size and
-  has **Smaller** and **Larger** buttons that do the same. Also try Windows **Settings →
+  has **Smaller text** and **Larger text** buttons that do the same. Also try Windows **Settings →
   Accessibility → Text size** and report whether the app follows it.
 - **Windows, macOS, the size is remembered (new, and not yet tried by anyone):**
   1. Press Ctrl + plus once. Does the size change by one step, or by two? It should be one.
@@ -228,7 +228,11 @@ Then turn the screen reader off and check text size:
      never jump to the largest. On a touch screen, pinching is not expected to zoom any more; use
      the buttons.
   5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
-  6. With a screen reader on, press **Larger**: it should say the new size.
+  6. With a screen reader on, press **Larger text**: it should say the new size. Press **Back to
+     normal size**: the focus should move to **Larger text**, not be lost.
+  7. At 200% and at 400%, hold Ctrl and turn the wheel one notch: one step each time, as at 100%.
+  8. On every screen at 100%, is there a scroll bar that was not there before? The line at the top
+     should not push the rest of the window past its bottom edge.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
   whether the text gets larger, and whether anything is cut off.
 - **iOS:** larger text in Settings is not expected to change the app yet; report what you see.

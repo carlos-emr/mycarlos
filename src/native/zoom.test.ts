@@ -34,6 +34,9 @@ const press = (
   return event;
 };
 
+// Changes are applied one after another, each once the one before settles.
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 const wheel = (deltaY: number, ctrlKey = true) => {
   const event = new WheelEvent("wheel", {
     deltaY,
@@ -122,6 +125,7 @@ describe("zoom", () => {
     const { setZoom } = start();
     expect(press("+").defaultPrevented).toBe(true);
     press("+");
+    await settled();
     expect(setZoom.mock.calls).toEqual([[1.1], [1.25]]);
     expect(window.localStorage.getItem(KEY)).toBe("1.25");
 
@@ -131,6 +135,7 @@ describe("zoom", () => {
     expect(next.setZoom.mock.calls).toEqual([[1.25]]);
     expect(next.zoom.level()).toBe(1.25);
     next.zoom.request("in");
+    await settled();
     expect(next.setZoom).toHaveBeenLastCalledWith(1.5);
   });
 
@@ -178,24 +183,89 @@ describe("zoom", () => {
     expect(setZoom).not.toHaveBeenCalled();
   });
 
-  it("takes one notch of the wheel for one step, and scrolls without Ctrl", () => {
+  it("takes one notch of the wheel for one step, and scrolls without Ctrl", async () => {
     const { setZoom } = start();
     expect(wheel(-100).defaultPrevented).toBe(true);
     expect(wheel(100).defaultPrevented).toBe(true);
     expect(wheel(100, false).defaultPrevented).toBe(false);
+    await settled();
     expect(setZoom.mock.calls).toEqual([[1.1], [1]]);
   });
 
-  it("does not race to the largest size on a touchpad", () => {
+  it("does not race to the largest size on a touchpad", async () => {
     const { setZoom } = start();
     // A pinch or a two-finger scroll: many small turns.
     for (let turn = 0; turn < 30; turn += 1) wheel(-4);
+    await settled();
     expect(setZoom.mock.calls).toEqual([[1.1]]);
     // A turn the other way starts again, and does not undo at once.
     wheel(60);
     wheel(-60);
     wheel(60);
+    await settled();
     expect(setZoom.mock.calls).toEqual([[1.1]]);
+  });
+
+  it("takes one notch for one step at every size", async () => {
+    window.localStorage.setItem(KEY, "2");
+    const { setZoom, zoom } = start();
+    await zoom.ready;
+    // At 200% the page reports a notch as half as many of its pixels.
+    wheel(-50);
+    await settled();
+    expect(setZoom).toHaveBeenLastCalledWith(2.5);
+  });
+
+  it("starts adding the wheel up again after a pause", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { setZoom } = start();
+    wheel(-60);
+    vi.advanceTimersByTime(1500);
+    wheel(-60);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setZoom).not.toHaveBeenCalled();
+    // Without the pause the two add up to a step.
+    wheel(-60);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setZoom).toHaveBeenCalledOnce();
+  });
+
+  it("shows the ordinary size when the platform refuses the one kept", async () => {
+    window.localStorage.setItem(KEY, "2");
+    const setZoom = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("FAKE not allowed"))
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    await zoom.ready;
+    expect(zoom.level()).toBe(1);
+  });
+
+  it("applies changes one after another, in order", async () => {
+    const order: number[] = [];
+    let release!: () => void;
+    const setZoom = vi.fn((level: number) => {
+      order.push(level);
+      return level === 1.1
+        ? new Promise<void>((resolve) => {
+            release = resolve;
+          })
+        : Promise.resolve();
+    });
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    zoom.request("in");
+    zoom.request("in");
+    await vi.waitFor(() => expect(order).toEqual([1.1]));
+    // The second waits for the first.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual([1.1]);
+    release();
+    await vi.waitFor(() => expect(order).toEqual([1.1, 1.25]));
   });
 
   it("leaves Ctrl with the wheel to the system on a Mac", () => {
@@ -229,10 +299,12 @@ describe("zoom", () => {
     const zoom = startZoom(setZoom, false);
     onTestFinished(zoom.stop);
     await zoom.ready;
+    // Refused: the ordinary size is shown, and the keys go on from it.
     press("+");
     press("+");
-    await Promise.resolve();
-    expect(setZoom.mock.calls).toEqual([[1.5], [1.75], [2]]);
+    await vi.waitFor(() =>
+      expect(setZoom.mock.calls).toEqual([[1.5], [1.1], [1.25]]),
+    );
   });
 
   it("handles nothing once it is stopped", () => {
