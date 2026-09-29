@@ -277,6 +277,8 @@ describe("UnlockVault", () => {
         autoLockMinutes={5}
         onUnlock={vi.fn()}
         onRecover={vi.fn()}
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
         onReset={vi.fn()}
       />,
     );
