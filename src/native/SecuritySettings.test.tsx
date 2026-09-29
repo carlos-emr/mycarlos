@@ -25,6 +25,16 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe("SecuritySettings passphrase change", () => {
+  it("says what a new passphrase does not protect", () => {
+    renderSettings();
+    expect(
+      screen.getByText(/the old passphrase still opens that copy/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Only a new vault shuts them out for good/),
+    ).toBeVisible();
+  });
+
   it("refuses a replacement under the minimum length before sending it", () => {
     const props = renderSettings();
     change("Current passphrase", "river-azimuth-cobalt-sparrow-934");

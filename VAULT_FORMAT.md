@@ -338,6 +338,10 @@ in place of what that document held.
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.
+- Changing the passphrase or replacing the recovery key does not change the master key. Someone who
+  has the earlier passphrase or key, and any earlier copy of a header (a device backup, a copied
+  folder, a saved backup file), has the master key, which decrypts the vault as it is now and
+  later, whenever they get a copy of it. Rotating the master key is not implemented.
 - Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
   recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.

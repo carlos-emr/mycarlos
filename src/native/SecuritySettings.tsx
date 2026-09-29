@@ -197,6 +197,13 @@ export function SecuritySettings({
               keeps working; without one, forgetting the new passphrase means
               erasing the vault.
             </p>
+            <p>
+              A new passphrase protects this vault from now on. If someone has
+              learned your passphrase and may also have a copy of your vault,
+              such as a backup of this device or a saved backup file, the old
+              passphrase still opens that copy, and what they find there also
+              opens later copies. Only a new vault shuts them out for good.
+            </p>
           </div>
           <form onSubmit={submitPassphrase}>
             <label>
