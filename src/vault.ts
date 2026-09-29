@@ -95,9 +95,10 @@ export interface VaultBridge {
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
   deleteRecord(recordId: string): Promise<void>;
-  /** Drops every record whose encrypted file is still missing, so the vault
-   * leaves recovery mode. Resolves to the ids removed. */
-  removeUnavailableRecords(): Promise<string[]>;
+  /** Drops the records in `confirmed`, those shown as damaged, whose
+   * encrypted file is still missing, so the vault leaves recovery mode.
+   * Refused when the vault's own list differs. Resolves to the ids removed. */
+  removeUnavailableRecords(confirmed: string[]): Promise<string[]>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -197,8 +198,10 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
-    removeUnavailableRecords: () =>
-      invoke<string[]>("vault_remove_unavailable_records"),
+    removeUnavailableRecords: (confirmed) =>
+      invoke<string[]>("vault_remove_unavailable_records", {
+        request: { confirmed },
+      }),
     reset: (confirmation) =>
       invoke<boolean>("vault_reset", { request: { confirmation } }),
   };

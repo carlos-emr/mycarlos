@@ -10,6 +10,9 @@ interface LibraryItemsProps {
   selectedIds: string[];
   disabled: boolean;
   searching: boolean;
+  /** What is said of a document whose file is not available: missing, or
+   * only out of reach. */
+  unavailableLabel: string;
   drag: VaultDragDrop;
   recordDragItem: (recordId: string) => DragItem;
   folderCount: (folderId: string) => number;
@@ -42,6 +45,7 @@ export function LibraryItems({
   selectedIds,
   disabled,
   searching,
+  unavailableLabel,
   drag,
   recordDragItem,
   folderCount,
@@ -142,7 +146,7 @@ export function LibraryItems({
                 </button>
                 <small>
                   {formatBytes(record.plaintextSize)} · {kind.label}
-                  {!record.available && " · Damaged: file missing"}
+                  {!record.available && ` · ${unavailableLabel}`}
                 </small>
               </span>
             </div>
@@ -243,7 +247,7 @@ export function LibraryItems({
                   <strong>{record.displayName}</strong>
                   <small>
                     {new Date(record.importedAtMs).toLocaleDateString()}
-                    {!record.available && " · Damaged: file missing"}
+                    {!record.available && ` · ${unavailableLabel}`}
                   </small>
                 </span>
               </span>
