@@ -118,6 +118,10 @@ On every platform:
 2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
    then **Next**, and type the two groups it asks for. Typing a wrong group says so; three wrong
    tries go back to the key. Check that the saved kit opens and shows the key and no names.
+   If a lock ends the setup (or you leave it with **Set up later**, which it offers after an
+   error), the vault has no recovery key: lock and unlock, and the setup opens by itself, at most once a
+   day (the rest of the time only the notice offers it). It shows no key until you type your
+   passphrase and choose **Continue**; **Set up later** closes it.
 3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and makes a new key. After you type two of its

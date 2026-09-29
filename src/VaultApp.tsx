@@ -12,6 +12,8 @@ import {
 } from "./vault";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { VaultLibrary } from "./native/VaultLibrary";
+import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
+import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import {
@@ -70,11 +72,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // must reach the patient: it may say a readable copy was left behind.
     outcome: string | null;
   } | null>(null);
-  // The recovery key made with a vault just created. The library opens on it,
-  // and the patient sets it up before anything else.
-  const [newVaultRecoveryKey, setNewVaultRecoveryKey] = useState<string | null>(
-    null,
-  );
+  // The library opens on the recovery key setup: for a vault just created,
+  // with its key, before anything else; for a vault unlocked without one, as
+  // an offer that can be left for later.
+  const [openingRecoverySetup, setOpeningRecoverySetup] =
+    useState<OpeningRecoverySetup | null>(null);
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -152,7 +154,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       sessionRef.current += 1;
       setSnapshot(null);
       // A key shown but not set up ended with the session.
-      setNewVaultRecoveryKey(null);
+      setOpeningRecoverySetup(null);
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
@@ -547,7 +549,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             const recoveryKey = await bridge
               .beginRecoveryKey(passphrase)
               .catch(() => null);
-            setNewVaultRecoveryKey(recoveryKey);
+            setOpeningRecoverySetup(
+              recoveryKey ? { vault: "created", key: recoveryKey } : null,
+            );
             setConcealed(false);
             setStatus("unlocked");
             // With a key to set up, its dialog says what happened instead.
@@ -574,11 +578,29 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onUnlock={(passphrase) =>
           run(async () => {
             const current = await bridge.unlock(passphrase);
+            // A vault without a recovery key is one forgotten passphrase
+            // from being erased, so the library opens on the offer of one,
+            // at most once a day. No key is made until the patient asks: one
+            // shown unasked could be seen by whoever is looking on. Not on a
+            // vault that cannot store one, and not over the result of a
+            // transfer that is waiting to be shown, which comes first.
+            const offer =
+              !current.recovery &&
+              !current.recoveryKeySetAtMs &&
+              !pendingOutcomeRef.current &&
+              recoveryOfferDue(Date.now());
+            if (offer) recordRecoveryOffer(Date.now());
+            setOpeningRecoverySetup(offer ? { vault: "unlocked" } : null);
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
             const outcome = pendingOutcomeRef.current;
             pendingOutcomeRef.current = null;
+            // With the offer open, its dialog says that the vault is open,
+            // and the library gives the result when the dialog closes: one
+            // written under the dialog would not be read out, and would
+            // take the place of what the dialog has to say on closing.
+            if (offer) return;
             setLibraryNotice({
               message: current.recovery
                 ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
@@ -591,6 +613,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             const { passphraseReplaced, snapshot: current } =
               await bridge.recover(recoveryKey, newPassphrase);
+            // A vault opened with its recovery key has one.
+            setOpeningRecoverySetup(null);
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
@@ -672,8 +696,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onLock={lock}
       autoLockMinutes={autoLockMinutes}
       onAutoLockMinutes={updateAutoLockMinutes}
-      newVaultRecoveryKey={newVaultRecoveryKey}
-      onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
+      openingRecoverySetup={openingRecoverySetup}
+      onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
     />
   );
