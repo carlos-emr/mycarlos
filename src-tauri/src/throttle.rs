@@ -10,7 +10,12 @@
 //! the app's folder can remove it, which only undoes the wait.
 
 use serde::{Deserialize, Serialize};
-use std::{fs, io::Write as _, path::PathBuf, sync::Mutex};
+use std::{
+    fs,
+    io::Write as _,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 /// How a try went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,8 +216,9 @@ impl AttemptThrottle {
     }
 
     /// Written beside and renamed over, so that a torn write never leaves a
-    /// file that reads as no wrong tries. A failure to write keeps the
-    /// counts for this run only.
+    /// file that reads as no wrong tries, and the folder synced, so that a
+    /// power cut does not bring back an earlier count. A failure to write
+    /// keeps the counts for this run only.
     fn keep(&self, counts: &Counts) {
         let Some(path) = &self.path else {
             return;
@@ -225,12 +231,26 @@ impl AttemptThrottle {
             file.write_all(&data)?;
             file.sync_all()
         });
-        if written.is_ok() {
-            let _ = fs::rename(&staged, path);
-        } else {
+        if written.is_err() {
             let _ = fs::remove_file(&staged);
+            return;
+        }
+        if fs::rename(&staged, path).is_ok() {
+            if let Some(folder) = path.parent() {
+                sync_folder(folder);
+            }
         }
     }
+}
+
+/// Makes a rename into `folder` last through a power cut, where the system
+/// can sync a folder; Windows cannot open one this way and relies on its
+/// filesystem journal, as the vault's own writes do.
+fn sync_folder(folder: &Path) {
+    #[cfg(unix)]
+    let _ = fs::File::open(folder).and_then(|folder| folder.sync_all());
+    #[cfg(not(unix))]
+    let _ = folder;
 }
 
 #[cfg(test)]

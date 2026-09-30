@@ -142,12 +142,13 @@ the wait is refused before any work, with how long is left, and the screen says 
 anyone guessing and that what was typed was not checked; a refused try adds nothing to the count.
 Each try is counted as it starts, under the same lock as the check, so that tries sent together
 cannot all pass, and is taken back off, with the time of the wrong try before it unless another try
-has counted since, if it turns out neither right nor wrong; a try the app is killed during stays counted, so that killing it is no way
-round the count. The right secret clears the count (opening the vault either way clears both of its
-counts), and creating, erasing or restoring a vault clears them too, as they were about the vault it
-replaces. The counts, and when the last wrong try was, are kept in `attempts.json` beside the vault
-(written as `attempts.json.new` and renamed over it), so that closing and reopening myCarlos does
-not clear them; before a vault home exists they last for that run only. A clock set back behind the
+has counted since, if it turns out neither right nor wrong; a try the app is killed during stays
+counted, so that killing it is no way round the count. The right secret clears the count (opening
+the vault either way clears both of its counts), and creating, erasing or restoring a vault clears
+them too, as they were about the vault it replaces. The counts, and when the last wrong try was,
+are kept in `attempts.json` beside the vault (written as `attempts.json.new`, renamed over it, and
+its folder synced), so that closing and reopening myCarlos, or a power cut, does not clear them;
+before a vault home exists they last for that run only. A clock set back behind the
 last wrong try counts the wait from then, rather than never, and a file that does not read starts
 from nothing. This slows only guessing through the app on this device: a copy of the vault, or a
 backup, can be guessed at elsewhere without it, where only the cost of the key derivation stands in
