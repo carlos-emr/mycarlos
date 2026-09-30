@@ -2145,10 +2145,14 @@ impl VaultStore {
                 } else {
                     // Its header goes first: without one, nothing puts it in
                     // place, however much of the rest a removal leaves.
-                    let _ = fail_at_test_boundary("restore.before-envelope-removal")
+                    let removed = fail_at_test_boundary("restore.before-envelope-removal")
                         .and_then(|()| remove_key_envelopes(&ready));
                     sync_parent(&ready);
-                    if HEADER_SLOTS.iter().any(|slot| ready.join(slot).is_file()) {
+                    let header_gone = HEADER_SLOTS.iter().all(|slot| {
+                        fs::symlink_metadata(ready.join(slot))
+                            .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+                    });
+                    if removed.is_err() && !header_gone {
                         // A header that cannot be removed (a file held open,
                         // say) leaves the verified copy whole, and the next
                         // start puts it in place: that is what to report.

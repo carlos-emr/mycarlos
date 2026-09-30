@@ -1103,7 +1103,7 @@ describe("durable vault UI", () => {
       }),
       restore: vi.fn().mockRejectedValue({
         code: "restore_unfinished",
-        message: "The backup was checked but has not replaced your vault yet.",
+        message: "The backup was checked, but restoring it has not finished.",
       }),
     });
     const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
@@ -1122,7 +1122,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Restore backup" }),
     );
     expect(
-      await screen.findByText(/has not replaced your vault yet/),
+      await screen.findByText(/restoring it has not finished/),
     ).toBeVisible();
     // The vault it was told of is the one the next start replaces.
     expect(window.localStorage.getItem(unfinished)).toBeNull();

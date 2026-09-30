@@ -162,7 +162,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::RestoreUnfinished => Self {
                 code: "restore_unfinished",
-                message: "The backup was checked but has not replaced your vault yet. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
+                message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
             },
         }
     }
