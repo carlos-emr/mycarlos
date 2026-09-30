@@ -84,6 +84,9 @@ describe("SecuritySettings speed test", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
     expect(await screen.findByText("FAKE already running.")).toBeVisible();
+  });
+});
+
 describe("SecuritySettings recovery key", () => {
   it("shows the current key's label and date, so the current kit can be told", () => {
     const setAt = Date.UTC(2026, 8, 30, 12);
