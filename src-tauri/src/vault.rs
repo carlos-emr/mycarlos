@@ -3267,6 +3267,7 @@ fn read_headers(root: &Path, names: &[&str]) -> Vec<VaultHeader> {
         .collect()
 }
 
+#[cfg(test)]
 fn read_header_candidates(root: &Path) -> Vec<VaultHeader> {
     read_headers(root, &[HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER])
 }
