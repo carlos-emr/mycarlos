@@ -24,7 +24,7 @@ export const OLD_BACKUPS_KEEP =
  * patient chose or saw. */
 export type OldBackupsGuide =
   | { step: "save" }
-  | { step: "delete"; keep: string | null };
+  | { step: "delete"; keep: string | null; savedAtMs: number };
 
 const STORAGE_KEY = "mycarlos.oldBackupsGuide.v1";
 
@@ -37,10 +37,18 @@ export function readOldBackupsGuide(): OldBackupsGuide | null {
     return null;
   }
   if (typeof stored !== "object" || stored === null) return null;
-  const { step, keep } = stored as { step?: unknown; keep?: unknown };
+  const { step, keep, savedAtMs } = stored as {
+    step?: unknown;
+    keep?: unknown;
+    savedAtMs?: unknown;
+  };
   if (step === "save") return { step };
-  if (step === "delete" && (typeof keep === "string" || keep === null))
-    return { step, keep };
+  if (
+    step === "delete" &&
+    (typeof keep === "string" || keep === null) &&
+    typeof savedAtMs === "number"
+  )
+    return { step, keep, savedAtMs };
   return null;
 }
 

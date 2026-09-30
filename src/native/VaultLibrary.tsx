@@ -442,9 +442,14 @@ export function VaultLibrary({
       } catch (error) {
         throw namedDamage(error, snapshot);
       }
-      // After a key replacement, the file written is the one to keep.
-      if (oldBackupsGuide?.step === "save") {
-        setOldBackupsGuide({ step: "delete", keep: savedAs });
+      // After a key replacement, the file written last is the one to keep,
+      // named, or when the platform gives no name, by when it was saved.
+      if (oldBackupsGuide) {
+        setOldBackupsGuide({
+          step: "delete",
+          keep: savedAs,
+          savedAtMs: Date.now(),
+        });
         setNotice(
           "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
         );

@@ -69,6 +69,7 @@ describe("SecuritySettings recovery key", () => {
       oldBackupsGuide: {
         step: "delete",
         keep: "myCarlos backup 2026-09-30 7F3A",
+        savedAtMs: 1,
       },
       onOldBackupsGuideDone,
     });
@@ -83,12 +84,18 @@ describe("SecuritySettings recovery key", () => {
   });
 
   it("names no file when the platform does not say it", () => {
-    renderSettings({ oldBackupsGuide: { step: "delete", keep: null } });
+    const savedAtMs = Date.UTC(2026, 8, 30, 14, 31);
+    renderSettings({
+      oldBackupsGuide: { step: "delete", keep: null, savedAtMs },
+    });
+    // It is told apart by when it was saved.
     expect(
       within(
         screen.getByRole("region", { name: "Your older backups" }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent("Keep the backup you just saved.");
+    ).toHaveTextContent(
+      `Keep the backup you just saved, on ${printedDate(new Date(savedAtMs))} at ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+    );
   });
 
   it("says a new backup waits for a vault that accepts changes", () => {
