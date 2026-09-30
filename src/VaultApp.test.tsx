@@ -893,13 +893,10 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Next" }));
-    const groups = RECOVERY_KEY.split("-");
-    for (const input of within(dialog).getAllByLabelText(/^Group \d$/)) {
-      const position = Number(
-        input.closest("label")!.textContent!.match(/Group (\d)/)![1],
-      );
-      await user.type(input, groups[position - 1]);
-    }
+    await user.type(
+      within(dialog).getByLabelText("Your recovery key"),
+      RECOVERY_KEY,
+    );
     await user.click(
       within(dialog).getByRole("button", { name: "Check and save" }),
     );
@@ -1010,6 +1007,32 @@ describe("durable vault UI", () => {
     expect(await screen.findByText("Vault unlocked.")).toBeVisible();
     expect(screen.queryByText(/setup was not finished/)).toBeNull();
     // The library still offers it.
+    expect(
+      screen.getByRole("button", { name: "Set up recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("says how a key setup ended before it offers another", async () => {
+    offerIsDue();
+    // A first key's setup that a lock ended after the key was shown.
+    window.localStorage.setItem(
+      "mycarlos.unfinishedRecoveryKey.v1",
+      JSON.stringify({ setAtMs: null }),
+    );
+    const user = userEvent.setup();
+    render(<VaultApp bridge={nativeBridge()} />);
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(
+        /Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+      ),
+    ).toBeVisible();
+    // The offer waits: a dialog would hide what was just said.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Set up recovery key" }),
     ).toBeVisible();
@@ -1157,6 +1180,31 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("names the damaged document that stopped a backup", async () => {
+    const user = userEvent.setup();
+    const recordId = snapshotWithRecord.records[0].id;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "damaged_document",
+        message: "A document in the vault is damaged.",
+        recordId,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(
+      await screen.findByText(
+        /^No backup was saved: the document "FAKE_Results\.pdf" \(added [^)]+\) is damaged and can no longer be read/,
+      ),
+    ).toBeVisible();
+  });
+
   it("restores a backup on a device with no vault, and leaves it locked", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -1205,6 +1253,9 @@ describe("durable vault UI", () => {
         documentCount: 4,
       }),
     });
+    // A key setup the last lock ended, in the vault being replaced.
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
     render(<VaultApp bridge={bridge} />);
     await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
@@ -1221,6 +1272,210 @@ describe("durable vault UI", () => {
     expect(await screen.findByText(/^Backup restored\./)).toBeVisible();
     // The button that was pressed is gone with the form.
     expect(screen.getByLabelText("Passphrase")).toHaveFocus();
+    // Its outcome would be told of the restored vault, wrongly.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
+  });
+
+  it("forgets a key setup's outcome when a restore will finish at the next start", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+      restore: vi.fn().mockRejectedValue({
+        code: "restore_unfinished",
+        message: "The backup was checked, but restoring it has not finished.",
+      }),
+    });
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(
+      await screen.findByText(/restoring it has not finished/),
+    ).toBeVisible();
+    // The vault it was told of is the one the next start replaces.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
+  });
+
+  // Opens recovery key setup from Security, as far as the key step, in a
+  // vault whose recovery key was set up at `setAtMs`. The app can then be
+  // hidden, which locks it, and unlocked again.
+  async function showKeyInSetup(
+    setAtMs: number | null,
+    overrides: Partial<VaultBridge> = {},
+  ) {
+    const user = userEvent.setup();
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: setAtMs };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(vault),
+      unlock: vi.fn().mockResolvedValue(vault),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      ...overrides,
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    const view = render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: setAtMs ? "Replace recovery key" : "Set up recovery key",
+      }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Your recovery key" }),
+    ).toHaveTextContent("leaving or locking cancels this key");
+    const hide = async () => {
+      await act(async () => {
+        visibilityState = "hidden";
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => {
+        visibilityState = "visible";
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    };
+    const unlock = async () => {
+      await user.type(
+        await screen.findByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+    };
+    const typeKeyBack = async () => {
+      const keyStep = screen.getByRole("dialog", { name: "Your recovery key" });
+      await user.click(within(keyStep).getByRole("button", { name: "Next" }));
+      await user.type(
+        within(keyStep).getByLabelText("Your recovery key"),
+        RECOVERY_KEY,
+      );
+      await user.click(
+        within(keyStep).getByRole("button", { name: "Check and save" }),
+      );
+    };
+    return { user, bridge, view, hide, unlock, typeKeyBack };
+  }
+
+  it.each([
+    [
+      "first",
+      null,
+      /^Vault unlocked\. Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+    ],
+    [
+      "replacement",
+      5,
+      /^Vault unlocked\. Your recovery key was not replaced: setup ended when the vault locked or myCarlos closed, and your earlier key still works\./,
+    ],
+  ])(
+    "says after the next unlock that a lock ended a %s key's setup",
+    async (_, setAtMs, said) => {
+      const { hide, unlock } = await showKeyInSetup(setAtMs);
+      // The app is hidden, which locks it, with the key on screen.
+      await hide();
+      await unlock();
+      expect(await screen.findByText(said)).toBeVisible();
+    },
+  );
+
+  it("says the key was saved when its reply was lost to the lock", async () => {
+    // The key was stored, but the lock's reply came first: the setup never
+    // heard. The next unlock sees the key changed, and must not say to
+    // destroy the one kit that works.
+    let answer: (snapshot: VaultSnapshot) => void = () => undefined;
+    const { bridge, hide, unlock, typeKeyBack } = await showKeyInSetup(5, {
+      confirmRecoveryKey: vi.fn(
+        () =>
+          new Promise<VaultSnapshot>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+    });
+    await typeKeyBack();
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+    await hide();
+    const saved = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    await act(async () => answer(saved));
+    vi.mocked(bridge.unlock).mockResolvedValue(saved);
+    await unlock();
+    expect(
+      await screen.findByText(
+        /^Vault unlocked\. The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it\. Your earlier recovery key no longer works\.$/,
+      ),
+    ).toBeVisible();
+  });
+
+  it.each([
+    ["saved", true],
+    ["cancelled", false],
+  ])(
+    "says nothing after the next unlock about a setup %s before the lock",
+    async (_, saved) => {
+      const after = { ...emptySnapshot, recoveryKeySetAtMs: saved ? 9 : 5 };
+      const { user, bridge, hide, unlock, typeKeyBack } = await showKeyInSetup(
+        5,
+        { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+      );
+      if (saved) await typeKeyBack();
+      else
+        await user.click(
+          within(
+            screen.getByRole("dialog", { name: "Your recovery key" }),
+          ).getByRole("button", { name: "Cancel" }),
+        );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      vi.mocked(bridge.unlock).mockResolvedValue(after);
+      await hide();
+      await unlock();
+      expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+    },
+  );
+
+  it("says so after unlocking when myCarlos closed with a key on screen", async () => {
+    const { view } = await showKeyInSetup(5);
+    // Closed, not locked: the next start finds the vault locked.
+    view.unmount();
+    const user = userEvent.setup();
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: 5 };
+    render(
+      <VaultApp
+        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(/Your recovery key was not replaced/),
+    ).toBeVisible();
   });
 
   it("opens a locked vault with its recovery key and a new passphrase", async () => {

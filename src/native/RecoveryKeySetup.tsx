@@ -24,12 +24,8 @@ export type OpeningRecoverySetup =
 // patient looks at what they wrote down rather than guessing again.
 const TRIES_BEFORE_REVIEW = 3;
 
-/** Two different group positions to type back, in order. */
-function pickGroups(count: number): [number, number] {
-  const first = Math.floor(Math.random() * count);
-  const second = (first + 1 + Math.floor(Math.random() * (count - 1))) % count;
-  return first < second ? [first, second] : [second, first];
-}
+/** Letters and digits in a recovery key: 7 groups of 4. */
+const KEY_SYMBOLS = 28;
 
 /** Read one character at a time, so that 0 and O, or 1 and I, are clear. */
 const spoken = (group: string) => group.split("").join(" ");
@@ -44,6 +40,7 @@ export function RecoveryKeySetup({
   onDone,
   onClose,
   onLocked,
+  onKeyShown,
 }: {
   bridge: Pick<
     VaultBridge,
@@ -70,6 +67,8 @@ export function RecoveryKeySetup({
   onClose: (keyShown: boolean) => void;
   /** The vault turned out to be locked. */
   onLocked: () => void;
+  /** A key is on screen, and may now be written down or saved. */
+  onKeyShown?: () => void;
 }) {
   const [step, setStep] = useState<Step>(initialKey ? "key" : "passphrase");
   const [key, setKey] = useState(initialKey ?? "");
@@ -77,8 +76,21 @@ export function RecoveryKeySetup({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [asked, setAsked] = useState<[number, number]>([0, 1]);
-  const [answers, setAnswers] = useState(["", ""]);
+  const [typed, setTyped] = useState("");
+  // Said once, when a key is first on screen.
+  const keyShownRef = useRef(onKeyShown);
+  keyShownRef.current = onKeyShown;
+  useEffect(() => {
+    if (key) keyShownRef.current?.();
+  }, [key]);
+  // A lock closes this setup, and can do so while the key is being stored.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [wrongTries, setWrongTries] = useState(0);
   // A required setup has no Cancel. Once something other than a wrong answer
   // has failed (a full disk, a vault that locked), it offers a way out, or
@@ -118,11 +130,20 @@ export function RecoveryKeySetup({
   };
   // A failure that is not a wrong answer. A locked vault is the app's to
   // show; anything else lets a required setup be left.
+  // An error about what was typed goes as the patient types again, so that
+  // the same error after another try is read out again. Others, such as why
+  // "Set up later" appeared, stay.
+  const typedWrongRef = useRef(false);
+  const typedWrong = (message: string) => {
+    typedWrongRef.current = true;
+    setError(message);
+  };
   const failed = (failure: unknown) => {
     if (isLockedError(failure)) {
       onLocked();
       return;
     }
+    typedWrongRef.current = false;
     setError(vaultErrorMessage(failure));
     setCanLeave(true);
   };
@@ -190,8 +211,7 @@ export function RecoveryKeySetup({
     // reported that it had finished.
     setPrinting(false);
     setWrongTries(0);
-    setAsked(pickGroups(groups.length));
-    setAnswers(["", ""]);
+    setTyped("");
     setError("");
     setNotice("");
     setStep("check");
@@ -199,15 +219,30 @@ export function RecoveryKeySetup({
 
   const check = async (event: FormEvent) => {
     event.preventDefault();
-    if (busy || answers.some((answer) => !answer.trim())) return;
+    if (busy || !typed.trim()) return;
+    // The whole key, typed back: as its groups, which the vault checks.
+    // Anything but a letter or digit only separates groups, as natively.
+    const symbols = typed.replace(/[^\p{L}\p{N}]/gu, "");
+    if (symbols.length !== KEY_SYMBOLS) {
+      typedWrong(
+        `You typed ${symbols.length === 1 ? "1 letter or digit" : `${symbols.length} letters and digits`}. Your recovery key has ${KEY_SYMBOLS} letters and digits: 7 groups of 4. Check what you wrote.`,
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const snapshot = await bridge.confirmRecoveryKey([
-        { index: asked[0], value: answers[0] },
-        { index: asked[1], value: answers[1] },
-      ]);
+      const snapshot = await bridge.confirmRecoveryKey(
+        Array.from({ length: KEY_SYMBOLS / 4 }, (_, index) => ({
+          index,
+          value: symbols.slice(index * 4, index * 4 + 4),
+        })),
+      );
+      // Stored after a lock had closed this: the patient never saw it end,
+      // so the setup stays unfinished, and the next unlock, finding the key
+      // changed, says it was saved.
+      if (!mountedRef.current) return;
       if (snapshot) onDone(snapshot);
       // Cancelled in the native confirmation: the key is still being set
       // up, and can be checked again.
@@ -218,6 +253,8 @@ export function RecoveryKeySetup({
         );
       }
     } catch (failure) {
+      // A lock closed this: it says so itself.
+      if (!mountedRef.current) return;
       // Only a wrong answer counts towards going back to the key.
       if (!isRecoveryKeyTypo(failure)) {
         failed(failure);
@@ -234,7 +271,7 @@ export function RecoveryKeySetup({
         );
       } else {
         setWrongTries(tries);
-        setError(vaultErrorMessage(failure));
+        typedWrong(vaultErrorMessage(failure));
       }
     } finally {
       setBusy(false);
@@ -344,7 +381,8 @@ export function RecoveryKeySetup({
             <p>
               Write it down, or save or print the kit, and keep it somewhere
               private, away from this device. This is the only time myCarlos
-              shows it. Next, you type two parts of it to check.
+              shows it. Next, you type it all back to check it. Stay in myCarlos
+              until the check is done: leaving or locking cancels this key.
             </p>
             {busy ? (
               // Not left on screen under a save picker.
@@ -442,28 +480,31 @@ export function RecoveryKeySetup({
 
         {step === "check" && (
           <form className="recovery-key-body" onSubmit={(e) => void check(e)}>
-            <p>Type these two groups of your recovery key.</p>
-            {asked.map((position, slot) => (
-              <label key={position}>
-                Group {position + 1}
-                <input
-                  autoFocus={slot === 0}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  maxLength={16}
-                  value={answers[slot]}
-                  onChange={(event) =>
-                    setAnswers((current) =>
-                      current.map((answer, index) =>
-                        index === slot ? event.target.value : answer,
-                      ),
-                    )
+            <label>
+              Your recovery key
+              <input
+                autoFocus
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={64}
+                aria-describedby="recovery-key-check-hint"
+                value={typed}
+                onChange={(event) => {
+                  setTyped(event.target.value);
+                  if (typedWrongRef.current) {
+                    typedWrongRef.current = false;
+                    setError("");
                   }
-                />
-              </label>
-            ))}
+                }}
+              />
+            </label>
+            <p id="recovery-key-check-hint">
+              Type your whole recovery key, as you wrote it down or saved it: 7
+              groups of 4 letters and digits. Dashes, spaces and other
+              punctuation do not matter.
+            </p>
             <p className="native-dialog-status" role="status">
               {notice}
             </p>
@@ -504,7 +545,7 @@ export function RecoveryKeySetup({
               <button
                 ref={checkButtonRef}
                 className="button primary"
-                disabled={busy || answers.some((answer) => !answer.trim())}
+                disabled={busy || !typed.trim()}
               >
                 Check and save
               </button>

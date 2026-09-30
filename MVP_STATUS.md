@@ -155,8 +155,8 @@ privacy, accessibility, or clinical review.
       [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md). Implementation and review remain open.
 - [ ] Design and test an isolated hostile-PDF viewer with no vault or network capability.
 - [x] Implement the approved portable encrypted backup (one authenticated file of ciphertext;
-      restore verifies all of it before replacing anything, and warns before an older or different
-      copy replaces the vault).
+      restore verifies all of it before replacing anything, and asks for agreement before it
+      replaces a vault that is a different one, cannot be read, or differs from the backup).
 - [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
       and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
