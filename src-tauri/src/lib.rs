@@ -69,20 +69,21 @@ impl PublicError {
     /// being saved decides what may be left there.
     fn of_backup(self, destination: BackupDestination) -> Self {
         // The base message, and what it adds for an Android document
-        // provider's document: before it is opened, the picker may have
-        // made an empty one, or the patient may have chosen an older backup
-        // to save over, which is still whole; once opened, it was emptied.
+        // provider's document. Nothing is written to it before it is open,
+        // so until then it is whole or empty (the provider may empty it as
+        // it opens, even if the open then fails); once opened, it may be
+        // empty or incomplete.
         macro_rules! at {
             ($base:literal) => {
                 match destination {
                     BackupDestination::Path => $base,
                     BackupDestination::ProviderUntouched => concat!(
                         $base,
-                        " If you gave it a new name, an empty file may be left there: you can delete that one. If you chose to save over an older backup, that one is unchanged: keep it."
+                        " An empty file (0 bytes) may be left where you chose to save: you can delete it. Keep any backup that is not empty."
                     ),
                     BackupDestination::ProviderEmptied => concat!(
                         $base,
-                        " An empty or incomplete file may be left where you chose to save: delete that one, not your other backups."
+                        " The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups."
                     ),
                 }
             };
@@ -1679,10 +1680,12 @@ mod tests {
                     .to_lowercase()
                     .contains("no backup was saved"));
                 assert!(failed.message.contains("Keep your older backups."));
-                // A document not yet opened may be an older backup chosen
-                // to save over: it is still whole, and kept.
+                // A document not yet opened is whole or empty: only an empty
+                // one is to go.
                 assert_eq!(
-                    failed.message.contains("that one is unchanged: keep it"),
+                    failed
+                        .message
+                        .contains("Keep any backup that is not empty."),
                     destination == BackupDestination::ProviderUntouched,
                     "{} {destination:?}",
                     plain.code

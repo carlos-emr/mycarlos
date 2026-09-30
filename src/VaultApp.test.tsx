@@ -1446,6 +1446,60 @@ describe("durable vault UI", () => {
     );
   });
 
+  it("asks for a new backup again when a save over the one to keep failed", async () => {
+    // Android names no file, so the patient may have saved over the one to
+    // keep, which a failure after opening it leaves empty.
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({ step: "delete", keep: null, savedAtMs: 1 }),
+    );
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-3"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "storage",
+        message: "The backup could not be saved there. No backup was saved.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    await screen.findByText(/No backup was saved/);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Save a new backup now");
+  });
+
+  it("keeps the backup saved last when another is saved while the steps are open", async () => {
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({
+        step: "delete",
+        keep: "first.mycarlosbackup",
+        savedAtMs: 1,
+      }),
+    );
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-4"),
+      saveBackupToPicked: vi.fn().mockResolvedValue("second.mycarlosbackup"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(
+      await screen.findByText(/Keep your new backup, “second\.mycarlosbackup”/),
+    ).toBeVisible();
+  });
+
   it("shows the steps for old backups after an unlock reports an exposed key replaced", async () => {
     window.localStorage.setItem(
       "mycarlos.unfinishedRecoveryKey.v1",

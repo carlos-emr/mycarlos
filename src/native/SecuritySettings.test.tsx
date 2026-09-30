@@ -94,7 +94,7 @@ describe("SecuritySettings recovery key", () => {
         screen.getByRole("region", { name: "Your older backups" }),
       ).getAllByRole("listitem")[0],
     ).toHaveTextContent(
-      `Keep the backup you just saved, on ${printedDate(new Date(savedAtMs))} at ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+      `Keep the backup you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
     );
   });
 

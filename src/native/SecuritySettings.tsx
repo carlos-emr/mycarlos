@@ -239,7 +239,7 @@ export function SecuritySettings({
                             &rdquo;.
                           </>
                         ) : (
-                          `Keep the backup you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}: your files app shows when each file was saved.`
+                          `Keep the backup you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}: your files app shows when each file was saved.`
                         )}
                       </li>
                       <li>

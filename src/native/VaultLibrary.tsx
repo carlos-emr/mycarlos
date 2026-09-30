@@ -440,6 +440,11 @@ export function VaultLibrary({
       try {
         savedAs = (await bridge.saveBackupToPicked(pickId)) ?? null;
       } catch (error) {
+        // On Android the steps may name no file, and this save may have been
+        // over the one they say to keep, now emptied: a new backup comes
+        // first again. (A save to a path leaves nothing when it fails.)
+        if (oldBackupsGuide?.step === "delete" && oldBackupsGuide.keep === null)
+          setOldBackupsGuide({ step: "save" });
         throw namedDamage(error, snapshot);
       }
       // After a key replacement, the file written last is the one to keep,

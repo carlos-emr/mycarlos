@@ -371,9 +371,11 @@ and the label of the vault's recovery key, if it has one (`myCarlos backup 2026-
 7F3A.mycarlosbackup`), so that backups from different days or keys do not take each other's place.
 A backup that fails says that none was saved and to keep the older ones. On Android, the picker
 makes a new document or hands back an older one the patient chose to save over, and opening it
-empties it: a failure before it is opened says that a new, empty file may be left there to delete,
-and that an older backup chosen to save over is unchanged, to keep; a failure after says that the
-file there may be empty or incomplete, and to delete that one, not the other backups.
+empties it (the provider may empty it as it opens, even if the open then fails): a failure before
+myCarlos has it open says that an empty file may be left there to delete, and to keep any backup
+that is not empty; a failure after says that the file there may be empty or incomplete, and emptied
+if it was an older backup, and to delete that one, not the other backups. When the steps for older
+backups name no file (Android), such a failure takes them back to saving a new backup first.
 
 A backup opens with the passphrase, and the recovery key if it had one, that the vault had when it
 was saved, not with any set up since; a restore that is refused for either says so in those words,
