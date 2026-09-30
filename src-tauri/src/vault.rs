@@ -4634,7 +4634,7 @@ fn erase_retired_vault(root: &Path) -> Result<bool, VaultError> {
     Ok(resumed)
 }
 
-fn read_bounded_regular_file(path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+pub(crate) fn read_bounded_regular_file(path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
     let file = open_regular_read(path)?;
     let metadata = file.metadata()?;
     if metadata.len() > maximum as u64 {
@@ -4705,7 +4705,7 @@ fn atomic_json(path: &Path, value: &impl Serialize) -> Result<(), VaultError> {
     atomic_bytes(path, &data)
 }
 
-fn atomic_bytes(path: &Path, data: &[u8]) -> Result<(), VaultError> {
+pub(crate) fn atomic_bytes(path: &Path, data: &[u8]) -> Result<(), VaultError> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]

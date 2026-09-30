@@ -1417,7 +1417,7 @@ describe("durable vault UI", () => {
     ).getAllByRole("listitem");
     expect(next[0]).toHaveTextContent(
       // The test platform is Windows, whose Explorer counts in 1024s.
-      `Your new backup is “${written}” (4 KB, 4,096 bytes). Keep it, or a copy of it, somewhere other than this device`,
+      `Your new backup is “${written}” (4 KB, ${(4096).toLocaleString()} bytes). Keep it, or a copy of it, somewhere other than this device`,
     );
     expect(next[1]).toHaveTextContent("other than the new one and its copies");
     expect(next[2]).toHaveTextContent("that file is now your new backup");
@@ -1644,6 +1644,32 @@ describe("durable vault UI", () => {
       ),
     ).toBeVisible();
     expect(screen.queryByText(/Security shows the steps/)).toBeNull();
+  });
+
+  it("says plainly why the next try must wait, after several wrong ones", async () => {
+    const user = userEvent.setup();
+    render(
+      <VaultApp
+        bridge={nativeBridge({
+          unlock: vi.fn().mockRejectedValue({
+            code: "too_many_attempts",
+            message:
+              "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
+            retryAfterMs: 30_000,
+          }),
+        })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(
+        /To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked\. Try again in 30 seconds\./,
+      ),
+    ).toBeVisible();
   });
 
   it("opens a locked vault with its recovery key and a new passphrase", async () => {

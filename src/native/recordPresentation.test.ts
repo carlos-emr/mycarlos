@@ -104,10 +104,16 @@ describe("fileExtension", () => {
 describe("formatFileSize", () => {
   it("counts as the platform's file app does, with the exact bytes", () => {
     // Android Files, macOS Finder and Linux file managers count in 1000s.
-    expect(formatFileSize(600_000, false)).toBe("600 kB, 600,000 bytes");
-    expect(formatFileSize(2_500_000, false)).toBe("2.5 MB, 2,500,000 bytes");
+    expect(formatFileSize(600_000, false)).toBe(
+      `600 kB, ${(600000).toLocaleString()} bytes`,
+    );
+    expect(formatFileSize(2_500_000, false)).toBe(
+      `2.5 MB, ${(2500000).toLocaleString()} bytes`,
+    );
     // Windows Explorer counts in 1024s.
-    expect(formatFileSize(600_000, true)).toBe("586 KB, 600,000 bytes");
+    expect(formatFileSize(600_000, true)).toBe(
+      `586 KB, ${(600000).toLocaleString()} bytes`,
+    );
     // An empty or tiny file shows only its bytes.
     expect(formatFileSize(0, false)).toBe("0 bytes");
     expect(formatFileSize(999, true)).toBe("999 bytes");
