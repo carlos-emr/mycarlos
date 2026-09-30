@@ -1194,15 +1194,14 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: "Your recovery key" }),
     ).toHaveTextContent("leaving or locking cancels this key");
+    const setVisibility = (state: DocumentVisibilityState) =>
+      act(async () => {
+        visibilityState = state;
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
     const hide = async () => {
-      await act(async () => {
-        visibilityState = "hidden";
-        document.dispatchEvent(new Event("visibilitychange"));
-      });
-      await act(async () => {
-        visibilityState = "visible";
-        document.dispatchEvent(new Event("visibilitychange"));
-      });
+      await setVisibility("hidden");
+      await setVisibility("visible");
     };
     const unlock = async () => {
       await user.type(
@@ -1222,7 +1221,7 @@ describe("durable vault UI", () => {
         within(keyStep).getByRole("button", { name: "Check and save" }),
       );
     };
-    return { user, bridge, view, hide, unlock, typeKeyBack };
+    return { user, bridge, view, hide, setVisibility, unlock, typeKeyBack };
   }
 
   it.each([
@@ -1247,31 +1246,36 @@ describe("durable vault UI", () => {
     },
   );
 
-  it("says the key was saved when its reply was lost to the lock", async () => {
-    // The key was stored, but the lock's reply came first: the setup never
-    // heard. The next unlock sees the key changed, and must not say to
-    // destroy the one kit that works.
+  it("never says a key stored as the vault locked was lost", async () => {
+    // Hiding the app while the native confirmation may be open does not lock
+    // it; the lock comes as the confirmation ends, and its reply and the
+    // key's can fall either way. The next unlock must not say to destroy
+    // the one kit that works.
     let answer: (snapshot: VaultSnapshot) => void = () => undefined;
-    const { bridge, hide, unlock, typeKeyBack } = await showKeyInSetup(5, {
-      confirmRecoveryKey: vi.fn(
-        () =>
-          new Promise<VaultSnapshot>((resolve) => {
-            answer = resolve;
-          }),
-      ),
-    });
+    const { bridge, setVisibility, unlock, typeKeyBack } = await showKeyInSetup(
+      5,
+      {
+        confirmRecoveryKey: vi.fn(
+          () =>
+            new Promise<VaultSnapshot>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    );
     await typeKeyBack();
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
-    await hide();
+    await setVisibility("hidden");
+    expect(bridge.lock).not.toHaveBeenCalled();
     const saved = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
     await act(async () => answer(saved));
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalled());
+    await setVisibility("visible");
     vi.mocked(bridge.unlock).mockResolvedValue(saved);
     await unlock();
-    expect(
-      await screen.findByText(
-        /^Vault unlocked\. The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it\. Your earlier recovery key no longer works\.$/,
-      ),
-    ).toBeVisible();
+    expect(await screen.findByText(/^Vault unlocked\./)).toBeVisible();
+    expect(screen.queryByText(/was not replaced/)).toBeNull();
+    expect(screen.queryByText(/destroy it/)).toBeNull();
   });
 
   it.each([

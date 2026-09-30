@@ -307,6 +307,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
+      // A native confirmation may be open for as long as a picker.
+      confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),
       pickBackupDestination: () => track(bridge.pickBackupDestination()),
       saveBackupToPicked: (pickId) =>
         transfer(() => bridge.saveBackupToPicked(pickId)),

@@ -25,6 +25,17 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe("SecuritySettings passphrase change", () => {
+  it("says what a new passphrase does not protect, without urging an erase", () => {
+    renderSettings();
+    const limit =
+      screen.getByText(/a new passphrase\s+is not enough/).textContent ?? "";
+    expect(limit).toMatch(/the old one still opens that copy/);
+    expect(limit).toMatch(/Ask for help before you erase anything/);
+    // The steps are in the documents, not here: nothing on this screen
+    // tells a patient to erase.
+    expect(limit).not.toMatch(/erase this vault/);
+  });
+
   it("refuses a replacement under the minimum length before sending it", () => {
     const props = renderSettings();
     change("Current passphrase", "river-azimuth-cobalt-sparrow-934");

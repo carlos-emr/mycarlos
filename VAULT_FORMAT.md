@@ -81,11 +81,18 @@ passphrase-derived wrapping key in native memory, and returns the key once for d
 only secret the native side ever sends to the renderer. `confirm` checks at least two of its groups
 as the patient types them back (the app asks for the whole key, all seven), and only then writes a
 new pair of header generations carrying the envelope, replacing any earlier key; it returns the
-vault as it then is, from the same session, so that a lock cannot fall between the two. The
-envelope's id is chosen when the key is made, so that a kit saved before the check can name it.
-Cancelling, locking, or changing the passphrase first writes nothing and forgets the pending key.
-Wherever a key is typed, case, Crockford's look-alike letters and anything in it other than a
-letter or digit (dashes, spaces, other punctuation) do not matter.
+vault as it then is, from the same session, so that a lock cannot fall between the two. When the
+vault already has a key, the command asks in a trusted native dialog before it replaces it, after
+the typed groups were found right and before anything is written; cancelled there, nothing changes
+and the pending key stays, to be checked again or cancelled. The dialog also says that backups
+saved before then still open only with the key being replaced (or their passphrase), not the new
+one, and to save a new backup afterwards; the app says so again once the key is replaced. The key
+is then stored only if the typed groups still match and whether it replaces a key is still what
+the patient was asked about (a vault that had none may have gained one, or the reverse), checked
+as it is stored. A vault's first key is not asked about, as it replaces nothing. The envelope's id is chosen when the key is made, so that a kit
+saved before the check can name it. Cancelling, locking, or changing the passphrase first writes
+nothing and forgets the pending key. Wherever a key is typed, case, Crockford's look-alike letters
+and anything in it other than a letter or digit (dashes, spaces, other punctuation) do not matter.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
 four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
@@ -399,6 +406,17 @@ or change that comes between the check and the writing, can leave it emptied.
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.
+- Changing the passphrase or replacing the recovery key does not change the master key. Someone who
+  has the earlier passphrase or key, and any earlier copy of a header (a device backup, a copied
+  folder, a saved backup file), has the master key, which decrypts the vault as it is now and
+  later, whenever they get a copy of it. Rotating the master key is not implemented. The
+  only remedy is a new vault, which the app does not guide: save a readable copy of every document
+  (one at a time, in every profile; a damaged document cannot be saved), check that each copy
+  opens, erase the vault, create a new one and import the copies. Folders, profiles and the dates
+  added are not kept, the saved copies are not encrypted while they wait, and the recovery key and
+  earlier backups belong to the earlier vault: restoring one brings the earlier master key back.
+  The earlier passphrase does not itself open a later copy of the vault; the master key taken from
+  the earlier copy does.
 - Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
   recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.

@@ -139,10 +139,15 @@ export function RecoveryKeySetup({
   // that was on one of them.
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const refocusSave = useRef(false);
+  // The same after a replacement was cancelled in the native confirmation.
+  const checkButtonRef = useRef<HTMLButtonElement | null>(null);
+  const refocusCheck = useRef(false);
   useEffect(() => {
-    if (busy || !refocusSave.current) return;
+    if (busy) return;
+    if (refocusSave.current) saveButtonRef.current?.focus();
+    if (refocusCheck.current) checkButtonRef.current?.focus();
     refocusSave.current = false;
-    saveButtonRef.current?.focus();
+    refocusCheck.current = false;
   }, [busy]);
   const dialogRef = useRef<HTMLElement | null>(null);
   useModalFocus(true, dialogRef, cancel);
@@ -214,6 +219,7 @@ export function RecoveryKeySetup({
     }
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const snapshot = await bridge.confirmRecoveryKey(
         Array.from({ length: KEY_SYMBOLS / 4 }, (_, index) => ({
@@ -225,7 +231,15 @@ export function RecoveryKeySetup({
       // so the setup stays unfinished, and the next unlock, finding the key
       // changed, says it was saved.
       if (!mountedRef.current) return;
-      onDone(snapshot);
+      if (snapshot) onDone(snapshot);
+      // Cancelled in the native confirmation: the key is still being set
+      // up, and can be checked again.
+      else {
+        refocusCheck.current = true;
+        setNotice(
+          "Your recovery key was not changed. Your current key still works. To change it, press Check and save again.",
+        );
+      }
     } catch (failure) {
       // A lock closed this: it says so itself.
       if (!mountedRef.current) return;
@@ -459,8 +473,21 @@ export function RecoveryKeySetup({
               groups of 4 letters and digits. Dashes, spaces and other
               punctuation do not matter.
             </p>
+            <p className="native-dialog-status" role="status">
+              {notice}
+            </p>
             {error && <p role="alert">{error}</p>}
             <footer className="dialog-actions">
+              {!required && (
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={cancel}
+                >
+                  Cancel
+                </button>
+              )}
               {required && canLeave && (
                 <button
                   className="button"
@@ -477,12 +504,14 @@ export function RecoveryKeySetup({
                 disabled={busy}
                 onClick={() => {
                   setError("");
+                  setNotice("");
                   setStep("key");
                 }}
               >
                 Back
               </button>
               <button
+                ref={checkButtonRef}
                 className="button primary"
                 disabled={busy || !typed.trim()}
               >

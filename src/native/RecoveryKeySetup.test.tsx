@@ -359,6 +359,38 @@ describe("RecoveryKeySetup", () => {
     ).toBeVisible();
   });
 
+  it("keeps the setup open when replacing was cancelled in the native confirmation", async () => {
+    const user = userEvent.setup();
+    const { bridge, onDone, onClose } = setUp(
+      { initialKey: KEY, replacing: true },
+      {
+        confirmRecoveryKey: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(snapshot),
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    await typeKey(user, KEY);
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(status).toHaveTextContent(
+      "Your recovery key was not changed. Your current key still works.",
+    );
+    // Both ways on from here are on this step, and focus is on one.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Check and save" }),
+    ).toHaveFocus();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+    // The key typed is still there, and agreeing the second time saves it.
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(onDone).toHaveBeenCalledWith(snapshot);
+  });
+
   it("says when it replaces an existing key", () => {
     setUp({ replacing: true });
     expect(

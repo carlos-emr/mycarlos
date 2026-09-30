@@ -1053,7 +1053,7 @@ export function VaultLibrary({
               onDone={() => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
                 const saved = replaced
-                  ? "Recovery key replaced. The old one no longer works."
+                  ? "Recovery key replaced. The old one no longer opens this vault, but backups saved before now still need it (or their passphrase): save a new backup."
                   : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");
