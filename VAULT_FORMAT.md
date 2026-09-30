@@ -41,7 +41,10 @@ key. Changing the passphrase therefore rewraps the master key without rewriting 
 The parameters and algorithm identifiers are stored in the non-secret header. They need target
 device benchmarking and independent cryptographic review before release. Raw keys never cross IPC;
 Rust zeroizes passphrase request strings and long-lived secret-key buffers where the libraries make
-that practical.
+that practical. The vault's own copies of a passphrase (its normalized form, and the lower-case
+form the name check reads) are sized once and wiped. Copies it does not control are not, among them those the
+strength estimator makes while it scores a new passphrase, the normalizer's working buffers, and
+the request as the IPC layer parsed it.
 
 New and replacement passphrases must contain at least 15 Unicode characters, contain no control
 characters, and encode to no more than 1,024 bytes. There are no composition rules. A passphrase is

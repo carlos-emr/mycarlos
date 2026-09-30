@@ -2361,12 +2361,12 @@ fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), Vau
     // The estimator matches a context entry only as a whole string, so a name
     // rearranged or joined with a symbol scores as strong. Any word of a
     // profile name is refused outright instead.
-    let lowered = passphrase.to_lowercase();
+    let lowered = lowercase(passphrase.as_str());
     let contains_name_word = context
         .iter()
         .flat_map(|value| value.split(|c: char| !c.is_alphanumeric()))
         .filter(|word| word.chars().count() >= MIN_NAME_WORD_CHARS)
-        .any(|word| lowered.contains(&word.to_lowercase()));
+        .any(|word| lowered.contains(lowercase(word).as_str()));
     if contains_name_word {
         return Err(VaultError::WeakPassphrase);
     }
@@ -2823,8 +2823,50 @@ fn unwrap_master_key_with_wrapping_key(
 /// The passphrase as key material. The same visible text can arrive in
 /// different Unicode forms from different keyboards and input methods, and the
 /// passphrase is the only way into the vault, so it is normalized (NFC) first.
+///
+/// The copy is sized once for the longest form NFC can give. Collecting into
+/// a string that grows would free each shorter buffer, with the start of the
+/// passphrase in it, without wiping it.
 fn normalize_passphrase(passphrase: &str) -> Zeroizing<String> {
-    Zeroizing::new(passphrase.nfc().collect())
+    let mut normalized = wiped_with_room(passphrase.len() * MAX_NFC_EXPANSION);
+    for character in passphrase.nfc() {
+        push_wiped(&mut normalized, character);
+    }
+    normalized
+}
+
+/// NFC makes UTF-8 text at most three times as long.
+const MAX_NFC_EXPANSION: usize = 3;
+/// Lower case makes UTF-8 text at most one and a half times as long; room
+/// for twice is kept.
+const MAX_LOWERCASE_EXPANSION: usize = 2;
+
+fn wiped_with_room(bytes: usize) -> Zeroizing<String> {
+    Zeroizing::new(String::with_capacity(bytes))
+}
+
+/// Adds a character without ever leaving an unwiped buffer behind. The room
+/// kept is enough for today's Unicode tables; should later ones need more,
+/// the text moves to a larger buffer and the smaller one is wiped.
+fn push_wiped(text: &mut Zeroizing<String>, character: char) {
+    if text.len() + character.len_utf8() > text.capacity() {
+        let mut larger = wiped_with_room((text.capacity() * 2).max(8));
+        larger.push_str(text);
+        *text = larger;
+    }
+    text.push(character);
+}
+
+/// Lower case, one character at a time, into a copy that is wiped and never
+/// grows. Both sides of a comparison go through it, and a final sigma, which
+/// whole-text lowercasing writes by its position, is written as any other
+/// sigma, so that a name is found wherever it stands.
+fn lowercase(text: &str) -> Zeroizing<String> {
+    let mut lowered = wiped_with_room(text.len() * MAX_LOWERCASE_EXPANSION);
+    for character in text.chars().flat_map(char::to_lowercase) {
+        push_wiped(&mut lowered, if character == 'ς' { 'σ' } else { character });
+    }
+    lowered
 }
 
 fn derive_passphrase_key(passphrase: &str, config: &KdfConfig) -> Result<SecretKey, VaultError> {
@@ -5953,6 +5995,74 @@ mod tests {
         validate_new_passphrase("lantern orbit willow cascade 572", &["Al Lee"]).unwrap();
         // A word that merely shares letters is not the name.
         validate_new_passphrase("lantern orbit willow cascade 572", &["Cascadia Orbital"]).unwrap();
+        // A name ending in sigma is found wherever it stands, however the
+        // sigma was written.
+        for (passphrase, name) in [
+            ("lanternΝΙΚΟΣorbit-willow-572", "ΝΙΚΟΣ"),
+            ("lantern νικος orbit-willow-572", "ΝΙΚΟΣ"),
+            ("lantern-orbit-willow-572 ΝΙΚΟΣ", "νικος"),
+            ("lanternνικοσorbit-willow-572", "νικος"),
+        ] {
+            assert!(
+                matches!(
+                    validate_new_passphrase(passphrase, &[name]),
+                    Err(VaultError::WeakPassphrase)
+                ),
+                "{passphrase} / {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn passphrase_copies_never_outgrow_their_first_buffer() {
+        // A buffer that grows leaves its shorter self behind, unwiped. These
+        // are the longest forms: characters that NFC takes apart, and ones
+        // whose lower case is longer than they are.
+        for text in [
+            "lantern orbit willow cascade 572".to_owned(),
+            "\u{1D15E}\u{1D15F}\u{1D160}".repeat(40),
+            "\u{FB2C}\u{FB2D}\u{0958}\u{2ADC}".repeat(40),
+            "\u{0130}\u{023A}\u{023E}\u{1E9E}".repeat(40),
+            "e\u{0301}\u{0327}".repeat(40),
+        ] {
+            let normalized = normalize_passphrase(&text);
+            assert_eq!(normalized.capacity(), text.len() * MAX_NFC_EXPANSION);
+            // What the KDF is given must never change, or vaults stop opening.
+            assert_eq!(normalized.as_str(), text.nfc().collect::<String>());
+            let lowered = lowercase(&text);
+            assert_eq!(lowered.capacity(), text.len() * MAX_LOWERCASE_EXPANSION);
+        }
+    }
+
+    #[test]
+    fn no_character_needs_more_room_than_is_kept() {
+        // Every character there is, so that new Unicode tables that break
+        // either bound are noticed here.
+        for character in (0..=char::MAX as u32).filter_map(char::from_u32) {
+            let mut buffer = [0_u8; 4];
+            let text: &str = character.encode_utf8(&mut buffer);
+            let normalized: usize = text.nfc().map(char::len_utf8).sum();
+            assert!(
+                normalized <= text.len() * MAX_NFC_EXPANSION,
+                "NFC of U+{:04X}",
+                character as u32
+            );
+            let lowered: usize = character.to_lowercase().map(char::len_utf8).sum();
+            assert!(
+                lowered <= text.len() * MAX_LOWERCASE_EXPANSION,
+                "lower case of U+{:04X}",
+                character as u32
+            );
+        }
+    }
+
+    #[test]
+    fn a_copy_that_needs_more_room_moves_without_losing_anything() {
+        let mut text = wiped_with_room(2);
+        for character in "lantern \u{1D160}".chars() {
+            push_wiped(&mut text, character);
+        }
+        assert_eq!(text.as_str(), "lantern \u{1D160}");
     }
 
     #[cfg(unix)]
