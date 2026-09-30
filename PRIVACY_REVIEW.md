@@ -5,13 +5,14 @@ assessment (PIA) of myCarlos. It describes what the app does today, in this repo
 what it does not do yet. It names no people, clinics or patients. Where a point needs a decision
 or a check, it is listed under "Open questions" at the end.
 
-**Status today.** myCarlos is an evaluation build. It is for synthetic (made-up) test data only
-and is not approved for real patient information or a pilot (`README.md`, `MVP_STATUS.md`,
+**Status today.** myCarlos is an evaluation build. It is for synthetic (made-up) test data only and
+is not approved for real patient information or a pilot (`README.md`, `MVP_STATUS.md`,
 `SECURITY.md`). Nobody has yet run this version of the app by hand on any computer or phone, so
 everything this pack says about how the app behaves comes from its code and documents, not from
 watching it run; the Android and iPhone versions have never even been started (the iPhone build is
-made only for Apple's simulator). The test builds are not signed by the publisher (see section 4).
-There has been no independent security or privacy review yet. This pack is meant to help start one.
+made only for Apple's simulator, a stand-in for a phone that runs on a Mac). The test builds are not
+signed by the publisher (see section 4). There has been no independent security or privacy review
+yet. This pack is meant to help start one.
 
 ## 1. What myCarlos is
 
@@ -55,8 +56,9 @@ or a backup file:
   document someone else also has, for example a standard form, could be recognised by its size;
 - in the vault's folder on the device, the file dates, which show when documents were added and
   when the vault last changed;
-- a counter in the vault's header, in the vault and in a backup, that shows roughly how many
-  changes have been made;
+- a counter in the vault's header, readable in the vault and in a backup, that shows roughly how
+  often the passphrase or recovery key has changed; a backup also shows a second counter, of
+  roughly how many changes of any kind have been made;
 - when a backup was made;
 - while a readable copy is being saved, the folder it is being saved to. This note is removed when
   the save ends; if the app is stopped during a save, it stays until the app next starts and can
@@ -118,10 +120,11 @@ saved (for example some network folders), on the systems where it can tell.
   the window is minimised, or on a phone when the app goes to the background, myCarlos hides its
   content at once, and locks as soon as any import, save or backup under way has finished.
   Switching to another window on a computer without minimising leaves the list on screen until
-  the automatic lock. While a file window or system confirmation that myCarlos opened is showing,
-  the automatic lock waits, for up to 15 more minutes, and on a computer the list stays visible
-  behind that window; on a phone, going to the background with such a window open hides and locks
-  only once it closes. The app does not block screenshots (a recorded product decision,
+  the automatic lock. While a file window, or the system window confirming a new recovery key,
+  that myCarlos opened is showing, the automatic lock waits, for up to 15 more minutes, and on a
+  computer the list stays visible behind that window. Minimising the window, or on a phone going
+  to the background, with such a window open hides and locks when it closes, or at the automatic
+  lock if that comes first. The app does not block screenshots (a recorded product decision,
   `PRODUCT_DECISIONS.md`: blocking works differently on each system).
 - The app **cannot protect** records on a device whose operating system is already compromised
   (for example, by malware that records the screen or the keyboard).
@@ -171,12 +174,14 @@ leaves depends on the system:
 - On a computer, part of the readable copy is left in a `.mycarlos-export-…` folder beside the
   chosen place (hidden on macOS and Linux, visible on Windows) until the app next starts and
   removes it. If that place's drive is not connected then, it is removed only once the drive is
-  back.
-- On Android, the copy is written straight to the place chosen, so a failed save leaves part of a
-  readable copy there. The app tells the patient to delete it, but if the app is stopped during
+  back. In two rare cases it is never removed: when the save could not be recorded first (for
+  example because the disk is full), and for folders left by earlier test builds.
+- On Android, the copy is written straight to the place chosen, so a failed save can leave part of
+  a readable copy there. The app tells the patient to delete it, but if the app is stopped during
   the save, nothing removes it.
-- On iPhone and on Macs where the app is sandboxed, whether the staging folder can be made at all
-  has not been confirmed.
+- On iPhone, and on Macs where the app runs in Apple's app sandbox (as App Store apps do), it has
+  not been confirmed that the app may create that folder; if it may not, saving a readable copy
+  fails there.
 
 ## 7. What leaves the device
 
@@ -215,10 +220,11 @@ where the patient puts it.
   used methods; how myCarlos uses them has not been independently reviewed.
 - Passphrases must be at least 15 characters, and a check on the device refuses ones that are easy
   to guess (see section 5 for how strong that makes them).
-- The app locks after 1 to 15 minutes without use (5 by default); a file window or system
-  confirmation it opened extends that by up to 15 more minutes. When its window is minimised or,
-  on a phone, when it goes to the background, it hides its content at once and locks as soon as
-  any import, save or backup under way has finished (see section 4 for the details).
+- The app locks after 1 to 15 minutes without use (5 by default); a file window, or the system
+  window confirming a new recovery key, that it opened extends that by up to 15 more minutes. When
+  its window is minimised or, on a phone, when it goes to the background, it hides its content at
+  once and locks as soon as any import, save or backup under way has finished (see section 4 for the
+  details).
 - Erasing the vault, restoring a backup over it and replacing the recovery key each need a second
   confirmation in a window drawn by the operating system rather than by the app's own screens,
   which makes it harder for a fault in those screens to skip it. Setting up the first recovery
@@ -239,8 +245,9 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
   while a file window it opened is showing) and the passphrase.
-- **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files and its
-  settings in place until the vault is erased; the app's instructions say to erase it first. On
+- **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place
+  until the vault is erased, and some app files, such as the lock-delay setting, even after; the
+  app's instructions say to erase the vault first. On
   Android and iPhone, removing the app removes the vault too (as the platforms' guides say; not
   yet seen on a device).
 - **Rolling back the vault's files from outside the app** (for example restoring older copies of
@@ -260,8 +267,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Guessing on the device.** A wait after repeated wrong passphrases or recovery keys is being
   added in a change still under review (none for the first five, then a little longer each time,
   up to a minute). It slows guessing only through the app on the device, not against a copied
-  vault or backup, and whoever can change or delete that file, or set the device clock forward,
-  can undo it.
+  vault or backup, and whoever can change or delete the file where the app counts wrong tries, or
+  set the device clock forward, can undo it.
 - **Not yet checked:** system logs, crash files, the app-switcher preview images, "recent files"
   lists, memory the system writes to disk, notifications, the clipboard (including clipboards that
   sync between devices, such as Windows' cloud clipboard and Apple's Universal Clipboard) and
