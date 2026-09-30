@@ -23,6 +23,14 @@ pub enum Outcome {
     Neither,
 }
 
+/// A try under way, as `begin` counted it: when the wrong try before it
+/// was, and when it began.
+#[derive(Clone, Copy, Debug)]
+pub struct Try {
+    before: u64,
+    at: u64,
+}
+
 /// What a secret was tried for. Each is counted apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Attempt {
@@ -103,22 +111,27 @@ impl AttemptThrottle {
     /// wrong at once, under the same lock as the check, so that tries sent
     /// together cannot all pass the check before any is counted. `settle`
     /// then says how it went.
-    pub fn begin(&self, attempt: Attempt, now_ms: u64) -> Result<(), u64> {
+    pub fn begin(&self, attempt: Attempt, now_ms: u64) -> Result<Try, u64> {
         let mut counts = self.lock();
         if let Some(left) = self.left(&mut counts, attempt, now_ms) {
             return Err(left);
         }
         let count = counts.of(attempt);
+        let started = Try {
+            before: count.last_failure_ms,
+            at: now_ms,
+        };
         count.failures = count.failures.saturating_add(1);
         count.last_failure_ms = now_ms;
         self.keep(&counts);
-        Ok(())
+        Ok(started)
     }
 
     /// How a try started by `begin` went: a wrong secret stays counted, the
     /// right one clears the count, and anything else (a typo, a storage
-    /// error) is taken back off it.
-    pub fn settle(&self, attempt: Attempt, outcome: Outcome) {
+    /// error) is taken back off it, with the time of the wrong try before
+    /// it, unless a later try has counted since.
+    pub fn settle(&self, attempt: Attempt, started: Try, outcome: Outcome) {
         match outcome {
             Outcome::Wrong => {}
             Outcome::Right => self.succeeded(attempt),
@@ -126,6 +139,9 @@ impl AttemptThrottle {
                 let mut counts = self.lock();
                 let count = counts.of(attempt);
                 count.failures = count.failures.saturating_sub(1);
+                if count.last_failure_ms == started.at {
+                    count.last_failure_ms = started.before;
+                }
                 self.keep(&counts);
             }
         }
@@ -264,15 +280,29 @@ mod tests {
     fn tries_sent_together_are_each_counted_before_they_run() {
         let throttle = AttemptThrottle::new(None);
         // Five begun at once, none settled yet: the sixth must wait.
+        let mut begun = Vec::new();
         for _ in 0..FREE_TRIES {
-            assert!(throttle.begin(Attempt::Unlock, 1_000).is_ok());
+            begun.push(throttle.begin(Attempt::Unlock, 1_000).unwrap());
         }
-        assert_eq!(throttle.begin(Attempt::Unlock, 1_000), Err(5_000));
+        assert!(matches!(throttle.begin(Attempt::Unlock, 1_000), Err(5_000)));
         // A try that was neither right nor wrong is taken back off.
-        throttle.settle(Attempt::Unlock, Outcome::Neither);
-        assert!(throttle.begin(Attempt::Unlock, 1_000).is_ok());
-        throttle.settle(Attempt::Unlock, Outcome::Right);
+        throttle.settle(Attempt::Unlock, begun[0], Outcome::Neither);
+        let right = throttle.begin(Attempt::Unlock, 1_000).unwrap();
+        throttle.settle(Attempt::Unlock, right, Outcome::Right);
         assert_eq!(throttle.wait(Attempt::Unlock, 1_000), None);
+    }
+
+    #[test]
+    fn a_try_neither_right_nor_wrong_does_not_start_the_wait_again() {
+        let throttle = AttemptThrottle::new(None);
+        for _ in 0..FREE_TRIES {
+            throttle.failed(Attempt::RecoveryKey, 1_000);
+        }
+        // The wait ends at 6 seconds; a typo at 7 must not start another.
+        assert_eq!(throttle.wait(Attempt::RecoveryKey, 7_000), None);
+        let typo = throttle.begin(Attempt::RecoveryKey, 7_000).unwrap();
+        throttle.settle(Attempt::RecoveryKey, typo, Outcome::Neither);
+        assert_eq!(throttle.wait(Attempt::RecoveryKey, 7_000), None);
     }
 
     #[test]

@@ -276,6 +276,13 @@ struct CreateVaultRequest {
     initial_profile_name: String,
 }
 
+// Wiped however the command ends.
+impl Drop for CreateVaultRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
+}
+
 #[derive(Deserialize)]
 struct RemoveUnavailableRequest {
     confirmed: Vec<Uuid>,
@@ -1131,12 +1138,15 @@ async fn tried<T>(
     attempt: Attempt,
     command: impl std::future::Future<Output = CommandResult<T>>,
 ) -> CommandResult<T> {
-    throttle
+    // A try the app is killed during stays counted: that must not be a way
+    // round the count.
+    let started = throttle
         .begin(attempt, now_ms())
         .map_err(PublicError::wait)?;
     let result = command.await;
     throttle.settle(
         attempt,
+        started,
         match &result {
             Ok(_) => Outcome::Right,
             Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
@@ -1980,6 +1990,16 @@ mod tests {
             let body = &body[..body.find("\n}\n").unwrap()];
             assert!(body.contains("tried("), "{command}");
             assert!(body.contains(attempt), "{command}");
+        }
+        // A new, erased or restored vault starts its counts again.
+        for command in [
+            "async fn vault_create(",
+            "async fn vault_reset(",
+            "async fn vault_restore(",
+        ] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            assert!(body.contains("forget_vault()"), "{command}");
         }
     }
 
