@@ -1132,7 +1132,8 @@ impl<W: std::io::Write> std::io::Write for Counted<W> {
 /// before it runs, so that tries sent together cannot all pass; a wrong
 /// passphrase or recovery key then stays counted, the right one clears the
 /// count, and anything else (a key mistyped in its check characters, a
-/// storage error) is taken back off it.
+/// storage error) is taken back off it, with the time of the wrong try
+/// before it, unless another try has counted since.
 async fn tried<T>(
     throttle: &AttemptThrottle,
     attempt: Attempt,
@@ -1991,16 +1992,39 @@ mod tests {
             assert!(body.contains("tried("), "{command}");
             assert!(body.contains(attempt), "{command}");
         }
-        // A new, erased or restored vault starts its counts again.
-        for command in [
-            "async fn vault_create(",
-            "async fn vault_reset(",
-            "async fn vault_restore(",
+        // A new, erased or restored vault starts its counts again, and only
+        // once it is: a create refused because a vault exists, or a restore
+        // cancelled or failed, must not clear the counts of the one there.
+        // The code is read without its comments, one line after another.
+        for (command, clears) in [
+            (
+                "async fn vault_create(",
+                "if created.is_ok() { throttle.forget_vault(); }",
+            ),
+            (
+                "async fn vault_reset(",
+                "VaultStore::reset).await?; throttle.forget_vault(); Ok(true)",
+            ),
+            (
+                "async fn vault_restore(",
+                ".map_err(PublicError::of_restore) .inspect(|_| throttle.forget_vault())",
+            ),
         ] {
             let body = source.split(command).nth(1).unwrap();
             let body = &body[..body.find("\n}\n").unwrap()];
-            assert!(body.contains("forget_vault()"), "{command}");
+            let code = body
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.starts_with("//"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(code.matches("forget_vault()").count(), 1, "{command}");
+            assert!(code.contains(clears), "{command}");
         }
+        // The restore clears them at its very end, past every early return.
+        let restore = source.split("async fn vault_restore(").nth(1).unwrap();
+        let restore = &restore[..restore.find("\n}\n").unwrap()];
+        assert!(restore.ends_with(".inspect(|_| throttle.forget_vault())"));
     }
 
     #[test]

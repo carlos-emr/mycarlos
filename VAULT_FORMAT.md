@@ -141,8 +141,8 @@ waits 5 seconds, and each further wrong one adds 5 seconds, to a minute at most.
 the wait is refused before any work, with how long is left, and the screen says it is to slow down
 anyone guessing and that what was typed was not checked; a refused try adds nothing to the count.
 Each try is counted as it starts, under the same lock as the check, so that tries sent together
-cannot all pass, and is taken back off, with the time of the wrong try before it, if it turns out
-neither right nor wrong; a try the app is killed during stays counted, so that killing it is no way
+cannot all pass, and is taken back off, with the time of the wrong try before it unless another try
+has counted since, if it turns out neither right nor wrong; a try the app is killed during stays counted, so that killing it is no way
 round the count. The right secret clears the count (opening the vault either way clears both of its
 counts), and creating, erasing or restoring a vault clears them too, as they were about the vault it
 replaces. The counts, and when the last wrong try was, are kept in `attempts.json` beside the vault
