@@ -116,7 +116,7 @@ On every platform:
    `FAKE Test Patient`. Choose a throwaway passphrase of at least 15 characters; the app rejects
    common or predictable ones.
 2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
-   then **Next**, and type the two groups it asks for. Typing a wrong group says so; three wrong
+   then **Next**, and type the whole key back. Typing it wrong says so; three wrong
    tries go back to the key. Check that the saved kit opens and shows the key and no names.
    If a lock ends the setup (or you leave it with **Set up later**, which it offers after an
    error), the vault has no recovery key: lock and unlock, and the setup opens by itself, at most once a

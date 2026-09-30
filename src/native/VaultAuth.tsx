@@ -411,10 +411,15 @@ function RecoverWithKey({
           autoCapitalize="characters"
           spellCheck={false}
           maxLength={64}
+          aria-describedby="recover-key-format"
           value={recoveryKey}
           onChange={(e) => setRecoveryKey(e.target.value)}
         />
       </label>
+      <small id="recover-key-format">
+        28 letters and digits, in 7 groups of 4, as on your kit or as you wrote
+        it down. Dashes, spaces and other punctuation do not matter.
+      </small>
       <button
         className="button"
         type="button"

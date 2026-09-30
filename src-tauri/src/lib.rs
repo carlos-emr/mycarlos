@@ -39,29 +39,63 @@ struct RuntimeInfo {
 struct PublicError {
     code: &'static str,
     message: &'static str,
+    /// The document a failure is about, for the renderer to name: a name is
+    /// never put in an error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_id: Option<Uuid>,
+}
+
+/// What an error says, whatever it is about.
+struct PublicText {
+    code: &'static str,
+    message: &'static str,
 }
 
 type CommandResult<T> = Result<T, PublicError>;
 
 impl PublicError {
+    /// A failure to save a backup, said of the backup: nothing was typed
+    /// for it to check.
+    fn of_backup(self) -> Self {
+        if self.code != "unreadable" {
+            return self;
+        }
+        Self {
+            message: "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            ..self
+        }
+    }
+
     fn partial_export() -> Self {
         Self {
             code: "partial_export",
             message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
+            record_id: None,
         }
     }
-}
 
-impl PublicError {
+    /// A failure to open a backup, said of the backup: a backup opens with
+    /// the credentials its vault had when it was saved, which need not be
+    /// the ones the vault has now.
+    fn of_restore(self) -> Self {
+        let message = match self.code {
+            "wrong_recovery_key" => "That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved (not a key set up or replaced since), or with the passphrase it was made with.",
+            "wrong_passphrase" => "That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved.",
+            _ => return self,
+        };
+        Self { message, ..self }
+    }
+
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
             message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            record_id: None,
         }
     }
 }
 
-impl From<VaultError> for PublicError {
+impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
             VaultError::AlreadyExists => Self {
@@ -148,6 +182,33 @@ impl From<VaultError> for PublicError {
                 code: "wrong_recovery_key",
                 message: "That recovery key does not open this vault. If you replaced your recovery key, use the newest one.",
             },
+            VaultError::BackupNotOpened => Self {
+                code: "backup_not_opened",
+                message: "myCarlos could not open that file. If it is in a cloud or shared folder, copy it to a folder on this device and choose it there. Nothing on this device was changed.",
+            },
+            VaultError::DamagedDocument(_) => Self {
+                code: "damaged_document",
+                message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
+            },
+            VaultError::RestoreUnfinished => Self {
+                code: "restore_unfinished",
+                message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
+            },
+        }
+    }
+}
+
+impl From<VaultError> for PublicError {
+    fn from(error: VaultError) -> Self {
+        let record_id = match error {
+            VaultError::DamagedDocument(id) => Some(id),
+            _ => None,
+        };
+        let PublicText { code, message } = PublicText::from(error);
+        Self {
+            code,
+            message,
+            record_id,
         }
     }
 }
@@ -888,7 +949,7 @@ fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved. A kit you saved or printed for it will no longer open this vault. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Keep current key.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open only with your current key (or the passphrase they were made with), not the new one, so save a new backup once this is done. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Keep current key.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -917,47 +978,44 @@ async fn vault_recovery_key_confirm(
     store: State<'_, Arc<VaultStore>>,
     request: ConfirmRecoveryKeyRequest,
 ) -> CommandResult<Option<VaultSnapshot>> {
-    let request = Arc::new(request);
-    // A mistyped answer is refused before anything is asked.
-    let replaces = {
-        let request = Arc::clone(&request);
-        run_blocking(store.inner(), move |store| {
-            store.check_recovery_key(&request.groups())
-        })
-        .await?
-    };
-    // Held until the key is stored, for as long as a hold lasts, so that
-    // the automatic lock does not fall while the dialog is read: it would
-    // forget the key being set up, and the patient would press "Replace
-    // key" to a vault that had locked.
-    let _open = ActivityHold::new(store.idle());
-    if replaces {
-        let dialog_app = app.clone();
-        let confirmed = tauri::async_runtime::spawn_blocking(move || {
+    run_blocking(store.inner(), move |store| {
+        confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
             confirmed_natively(
-                &dialog_app,
+                &app,
                 "Replace your recovery key?",
                 REPLACE_RECOVERY_KEY_WARNING,
                 "Keep current key",
                 "Replace key",
             )
         })
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?;
-        if !confirmed {
-            return Ok(None);
-        }
-    }
-    run_blocking(store.inner(), move |store| {
-        // Checked again with the change: the key being set up, or the
-        // vault, may not be what it was before the dialog.
-        if store.check_recovery_key(&request.groups())? != replaces {
-            return Err(VaultError::Invalid);
-        }
-        store.confirm_recovery_key(&request.groups(), now_ms())?;
-        store.snapshot().map(Some)
     })
     .await
+}
+
+/// What `vault_recovery_key_confirm` decides, apart from the dialog, which
+/// `confirm` shows: whether it answered yes.
+fn confirm_recovery_key_asking(
+    store: &VaultStore,
+    groups: &[(usize, &str)],
+    now_ms: impl FnOnce() -> u64,
+    confirm: impl FnOnce() -> bool,
+) -> Result<Option<VaultSnapshot>, VaultError> {
+    // A mistyped answer is refused before anything is asked.
+    let replaces = store.check_recovery_key(groups)?;
+    // Held until the key is stored, for as long as a hold lasts, so that
+    // the automatic lock does not fall while the dialog is read: it would
+    // forget the key being set up, and the patient would press "Replace
+    // key" to a vault that had locked.
+    let _open = ActivityHold::new(store.idle());
+    // A vault's first key replaces nothing, and is not asked about.
+    if replaces && !confirm() {
+        return Ok(None);
+    }
+    // Stored only if the key being set up, and whether it replaces one, are
+    // still what the patient was asked about.
+    store
+        .confirm_recovery_key_replacing(groups, now_ms(), replaces)
+        .map(Some)
 }
 
 /// Saves the kit for the recovery key being set up to a file the patient
@@ -968,10 +1026,7 @@ async fn vault_recovery_kit_save(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<bool> {
     // Nothing is asked for unless a key is waiting to be confirmed.
-    run_blocking(store.inner(), |store| {
-        store.recovery_kit(now_ms()).map(drop)
-    })
-    .await?;
+    let name = run_blocking(store.inner(), |store| store.recovery_kit_name(now_ms())).await?;
     // Held until the kit is written, so that the automatic lock cannot fall
     // between the picker closing and the write.
     let _open = ActivityHold::new(store.idle());
@@ -980,7 +1035,7 @@ async fn vault_recovery_kit_save(
         dialog
             .dialog()
             .file()
-            .set_file_name("myCarlos recovery kit.txt")
+            .set_file_name(name)
             .blocking_save_file()
     })
     .await
@@ -1086,7 +1141,8 @@ async fn vault_backup_picked(
         return run_blocking(store.inner(), move |store| {
             store.backup_atomic(&path, now_ms())
         })
-        .await;
+        .await
+        .map_err(PublicError::of_backup);
     }
     // Android content providers return a URI rather than a path. A backup
     // holds only ciphertext, so a partial one left by a failure is not
@@ -1106,6 +1162,7 @@ async fn vault_backup_picked(
         store.backup(std::io::BufWriter::new(output), now_ms())
     })
     .await
+    .map_err(PublicError::of_backup)
 }
 
 /// Asks which backup to restore. Only while no vault is open.
@@ -1138,19 +1195,21 @@ fn open_restore_source(
     app: &tauri::AppHandle,
     source: tauri_plugin_fs::FilePath,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    // Said of the file, and that nothing changed: a restore that cannot
+    // start from it has not touched the vault.
     if let Ok(path) = source.clone().into_path() {
         // As for imports: a regular file, opened without following a link or
         // waiting on a pipe or device.
-        return Ok(Box::new(std::io::BufReader::new(vault::open_regular_read(
-            &path,
-        )?)));
+        return Ok(Box::new(std::io::BufReader::new(
+            vault::open_regular_read(&path).map_err(|_| VaultError::BackupNotOpened)?,
+        )));
     }
     let mut options = OpenOptions::new();
     options.read(true);
     let file = app
         .fs()
         .open(source, options)
-        .map_err(|_| VaultError::Storage)?;
+        .map_err(|_| VaultError::BackupNotOpened)?;
     Ok(Box::new(std::io::BufReader::new(file)))
 }
 
@@ -1175,6 +1234,7 @@ async fn vault_restore_inspect(
         result
     })
     .await
+    .map_err(PublicError::of_restore)
 }
 
 /// What the native confirmation says before a restore replaces a vault. It
@@ -1189,6 +1249,9 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
             "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+        )),
+        RestoreReplaces::Unreadable => Some(format!(
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
             "The vault on this device is not the same as this backup ({documents}). Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
@@ -1222,7 +1285,8 @@ async fn vault_restore(
         run_blocking(store.inner(), move |store| {
             store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
         })
-        .await?
+        .await
+        .map_err(PublicError::of_restore)?
     };
     if let Some(warning) = restore_warning(&preview) {
         // The renderer must have asked for a replacement too.
@@ -1262,6 +1326,7 @@ async fn vault_restore(
             .map(|()| true)
     })
     .await
+    .map_err(PublicError::of_restore)
 }
 
 #[tauri::command]
@@ -1723,6 +1788,19 @@ mod tests {
         ));
     }
     #[test]
+    fn a_backup_that_could_not_read_the_vault_asks_nothing_to_be_checked() {
+        let backup = PublicError::from(VaultError::Unreadable).of_backup();
+        assert_eq!(backup.code, "unreadable");
+        assert!(backup.message.contains("no backup was saved"));
+        assert!(!backup.message.contains("typed"));
+        let other = PublicError::from(VaultError::Corrupt).of_backup();
+        assert_eq!(
+            other.message,
+            PublicError::from(VaultError::Corrupt).message
+        );
+    }
+
+    #[test]
     fn public_errors_do_not_expose_internal_details() {
         let error = PublicError::from(VaultError::Storage);
         assert_eq!(error.code, "storage");
@@ -1741,6 +1819,38 @@ mod tests {
         assert_eq!(partial.code, "partial_export");
         assert!(partial.message.contains("partial readable copy"));
         assert!(partial.message.contains("Delete"));
+    }
+
+    #[test]
+    fn a_damaged_document_is_named_by_id_only() {
+        let id = Uuid::new_v4();
+        let value =
+            serde_json::to_value(PublicError::from(VaultError::DamagedDocument(id))).unwrap();
+        assert_eq!(value["code"], "damaged_document");
+        assert_eq!(value["recordId"], id.to_string());
+        // Every other error leaves the field out.
+        let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
+        assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_backup_that_does_not_open_is_not_said_to_be_the_vault() {
+        // A backup opens with what its vault had when it was saved, not with
+        // a key or passphrase set since.
+        let key = PublicError::from(VaultError::WrongRecoveryKey).of_restore();
+        assert_eq!(key.code, "wrong_recovery_key");
+        assert!(key.message.contains("does not open this backup"));
+        assert!(key.message.contains("when it was saved"));
+        assert!(!key.message.contains("newest"));
+        let passphrase = PublicError::from(VaultError::WrongPassphrase).of_restore();
+        assert_eq!(passphrase.code, "wrong_passphrase");
+        assert!(passphrase.message.contains("does not open this backup"));
+        // Anything else is said as it is everywhere.
+        let other = PublicError::from(VaultError::BackupUnreadable).of_restore();
+        assert_eq!(
+            other.message,
+            PublicError::from(VaultError::BackupUnreadable).message
+        );
     }
 
     #[test]
@@ -1834,6 +1944,118 @@ mod tests {
                 .collect();
         files.sort();
         assert_eq!(files, ["default.json", "zoom.json"]);
+    }
+
+    /// A vault with a recovery key being set up, and that key's groups as
+    /// typed back; with `replacing`, the vault has a key already, set up at 2.
+    fn key_being_set_up(root: &std::path::Path, replacing: bool) -> (VaultStore, Vec<String>) {
+        let store = VaultStore::new(root.to_path_buf());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let groups = |store: &VaultStore| -> Vec<String> {
+            let key = store.begin_recovery_key(PASSWORD).unwrap();
+            key.split('-').map(str::to_owned).collect()
+        };
+        if replacing {
+            let first = groups(&store);
+            store.confirm_recovery_key(&typed_back(&first), 2).unwrap();
+        }
+        let pending = groups(&store);
+        (store, pending)
+    }
+
+    fn typed_back(groups: &[String]) -> Vec<(usize, &str)> {
+        groups.iter().map(String::as_str).enumerate().collect()
+    }
+
+    /// Every file directly in the vault folder, as it is.
+    fn vault_files(root: &std::path::Path) -> Vec<(std::ffi::OsString, Vec<u8>)> {
+        let mut files: Vec<_> = std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_file())
+            .map(|entry| (entry.file_name(), std::fs::read(entry.path()).unwrap()))
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn a_first_recovery_key_is_stored_without_asking() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, groups) = key_being_set_up(&temp.path().join("vault"), false);
+        let stored = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 5,
+            || panic!("a first key replaces nothing, and is not asked about"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(stored.recovery_key_set_at_ms, Some(5));
+    }
+
+    #[test]
+    fn replacing_a_recovery_key_is_asked_and_a_no_writes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, groups) = key_being_set_up(&root, true);
+        let before = vault_files(&root);
+        let mut asked = 0;
+        let outcome = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 5,
+            || {
+                asked += 1;
+                false
+            },
+        )
+        .unwrap();
+        assert_eq!(asked, 1);
+        assert!(outcome.is_none());
+        assert_eq!(vault_files(&root), before);
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(2));
+        // The key is still being set up, and a yes stores it.
+        let stored = confirm_recovery_key_asking(&store, &typed_back(&groups), || 6, || true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.recovery_key_set_at_ms, Some(6));
+    }
+
+    #[test]
+    fn a_mistyped_key_is_refused_before_anything_is_asked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, mut groups) = key_being_set_up(&temp.path().join("vault"), true);
+        groups[3] = "ZZZZ".to_owned();
+        assert!(matches!(
+            confirm_recovery_key_asking(
+                &store,
+                &typed_back(&groups),
+                || 5,
+                || { panic!("nothing is asked over a mistyped key") }
+            ),
+            Err(VaultError::RecoveryKeyTypo)
+        ));
+    }
+
+    #[test]
+    fn a_key_that_changed_while_the_dialog_was_open_is_not_stored() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, groups) = key_being_set_up(&root, true);
+        let before = vault_files(&root);
+        // Cancelled from elsewhere while the patient read the dialog.
+        let outcome = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 5,
+            || {
+                store.cancel_recovery_key();
+                true
+            },
+        );
+        assert!(matches!(outcome, Err(VaultError::Invalid)));
+        assert_eq!(vault_files(&root), before);
     }
 
     #[test]
@@ -2059,6 +2281,8 @@ mod tests {
             other.contains("is not the vault this backup was made from")
                 && other.contains("3 documents")
         );
+        let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
+        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("is not the same as") && changed.contains("passphrase"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
