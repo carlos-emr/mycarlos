@@ -1170,19 +1170,25 @@ export function VaultLibrary({
               danger
               onConfirm={removeDamaged}
               onCancel={() => setConfirmRemoveDamaged(false)}
+              details={
+                // It scrolls when it is long, so it takes focus, to be
+                // scrolled with the keyboard. It is not read out with the
+                // dialog: the title counts the documents.
+                <ul
+                  className="native-confirm-list"
+                  aria-label="Documents to remove"
+                  tabIndex={0}
+                >
+                  {damaged.map((record) => (
+                    <li key={record.id}>
+                      {record.displayName}
+                      {snapshot.profiles.length > 1 &&
+                        ` (${profileName(record.profileId)})`}
+                    </li>
+                  ))}
+                </ul>
+              }
             >
-              <ul
-                className="native-confirm-list"
-                aria-label="Documents to remove"
-              >
-                {damaged.map((record) => (
-                  <li key={record.id}>
-                    {record.displayName}
-                    {snapshot.profiles.length > 1 &&
-                      ` (${profileName(record.profileId)})`}
-                  </li>
-                ))}
-              </ul>
               <p>
                 Their encrypted files are missing from this device, so their
                 content is already gone from here. Removing them also deletes
