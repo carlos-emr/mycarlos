@@ -31,8 +31,9 @@ transfer GitHub review comments or original commit IDs into the new PR.
   advisories remain visible through identity-preserving audit; see `src-tauri/vendor/README.md`.
 - Security reporting retains the existing private CARLOS intake while dedicated private reporting
   is not enabled here. See [SECURITY.md](SECURITY.md).
-- The destination's existing AGPL license and upstream GPL notices are preserved; see
-  [LICENSE_NOTES.md](LICENSE_NOTES.md) for the licensing review item.
+- myCarlos is licensed AGPL-3.0-or-later, whose text this repository's `LICENSE` held from the
+  start; see [LICENSE_NOTES.md](LICENSE_NOTES.md). The application was declared GPL-2.0-or-later
+  in CARLOS, and its author relicensed it; the upstream notices are preserved.
 
 This remains an unsigned synthetic-data evaluation. Moving repositories does not approve patient
 use, signing, publication of a supported release, or any of the outstanding gates in
