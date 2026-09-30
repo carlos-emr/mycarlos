@@ -229,6 +229,11 @@ export const isCancelledError = (error: unknown) =>
 export const isRecoveryKeyTypo = (error: unknown) =>
   hasErrorCode(error, "recovery_key_typo");
 
+/** True when a restore was checked but has not yet replaced the vault: the
+ * next start puts it in place. */
+export const isRestoreUnfinished = (error: unknown) =>
+  hasErrorCode(error, "restore_unfinished");
+
 /** True when the native side reports that there is no vault to unlock or erase. */
 export const isMissingVaultError = (error: unknown) =>
   hasErrorCode(error, "missing");

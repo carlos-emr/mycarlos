@@ -2137,17 +2137,25 @@ impl VaultStore {
                 // Under a stage's name first, in one step: a removal cut
                 // short must not leave half a vault under the name that the
                 // next start puts in place.
-                if fs::rename(&ready, &stage).is_ok() {
+                let unstaged = fail_at_test_boundary("restore.before-unstage")
+                    .and_then(|()| fs::rename(&ready, &stage).map_err(VaultError::from));
+                if unstaged.is_ok() {
                     sync_parent(home);
                     discard(&stage);
                 } else {
-                    discard(&ready);
-                    // What cannot be removed (a file held open, say) is put
-                    // in place at the next start, so the failure is not the
-                    // one to report.
+                    // Its header goes first: without one, nothing puts it in
+                    // place, however much of the rest a removal leaves.
+                    let _ = fail_at_test_boundary("restore.before-envelope-removal")
+                        .and_then(|()| remove_key_envelopes(&ready));
+                    sync_parent(&ready);
                     if HEADER_SLOTS.iter().any(|slot| ready.join(slot).is_file()) {
+                        // A header that cannot be removed (a file held open,
+                        // say) leaves the verified copy whole, and the next
+                        // start puts it in place: that is what to report.
                         return Err(VaultError::RestoreUnfinished);
                     }
+                    let _ = fs::remove_dir_all(&ready);
+                    sync_parent(home);
                 }
             }
             return Err(error);
@@ -8279,6 +8287,59 @@ mod tests {
         assert!(!reset_path(&root).unwrap().exists());
         restarted.unlock(PASSWORD).unwrap();
         assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn a_restore_whose_copy_could_not_be_moved_aside_is_still_discarded() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup) = changed_since_its_backup(&root);
+        {
+            let _failing = FailAt::all(&["restore.before-activate", "restore.before-unstage"]);
+            assert!(matches!(
+                store.restore(
+                    Cursor::new(backup),
+                    RestoreCredential::Passphrase(PASSWORD),
+                    true
+                ),
+                Err(VaultError::NoSpace)
+            ));
+        }
+        // Removed where it was, header first: reported as failed, and
+        // nothing waits for a start.
+        assert!(restore_leftovers(&root).is_empty());
+        let restarted = VaultStore::new(root);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 3);
+    }
+
+    #[test]
+    fn a_restore_whose_copy_could_not_be_removed_finishes_at_the_next_start() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup) = changed_since_its_backup(&root);
+        {
+            let _failing = FailAt::all(&[
+                "restore.before-activate",
+                "restore.before-unstage",
+                "restore.before-envelope-removal",
+            ]);
+            assert!(matches!(
+                store.restore(
+                    Cursor::new(backup),
+                    RestoreCredential::Passphrase(PASSWORD),
+                    true
+                ),
+                Err(VaultError::RestoreUnfinished)
+            ));
+        }
+        // The copy is left whole, not half removed, and the next start puts
+        // it in place, as the patient was told.
+        assert_eq!(restore_leftovers(&root).len(), 1);
+        let restarted = VaultStore::new(root.clone());
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
+        assert!(restore_leftovers(&root).is_empty());
     }
 
     #[test]

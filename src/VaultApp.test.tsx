@@ -1092,6 +1092,42 @@ describe("durable vault UI", () => {
     expect(window.localStorage.getItem(unfinished)).toBeNull();
   });
 
+  it("forgets a key setup's outcome when a restore will finish at the next start", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+      restore: vi.fn().mockRejectedValue({
+        code: "restore_unfinished",
+        message: "The backup was checked but has not replaced your vault yet.",
+      }),
+    });
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(
+      await screen.findByText(/has not replaced your vault yet/),
+    ).toBeVisible();
+    // The vault it was told of is the one the next start replaces.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
+  });
+
   // Opens recovery key setup from Security, as far as the key step, in a
   // vault whose recovery key was set up at `setAtMs`. The app can then be
   // hidden, which locks it, and unlocked again.

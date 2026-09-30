@@ -5,6 +5,7 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isRestoreUnfinished,
   vaultErrorMessage,
   type VaultBridge,
   type VaultSnapshot,
@@ -303,6 +304,16 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       saveBackupToPicked: (pickId) =>
         transfer(() => bridge.saveBackupToPicked(pickId)),
       pickRestoreSource: () => track(bridge.pickRestoreSource()),
+      restore: async (pickId, credential, replace) => {
+        try {
+          return await bridge.restore(pickId, credential, replace);
+        } catch (error) {
+          // Put in place at the next start: like a restore that finished, it
+          // replaces the vault a key setup's outcome would be told about.
+          if (isRestoreUnfinished(error)) rememberUnfinishedRecoveryKey(null);
+          throw error;
+        }
+      },
       importPickedFiles: (pickId, profileId, folderIds) =>
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>

@@ -346,9 +346,10 @@ a failure to retire the live vault, or to rename the restore into place once it 
 which case the retired vault is renamed back first. The verified copy is then discarded, so that a
 restore reported as failed cannot happen at a later start. It is renamed back to a stage's name
 before it is removed, and a start never puts a `restore-ready` directory without a header in
-place, so a removal cut short cannot either. Only if the retired vault cannot be renamed back, or
-the verified copy cannot be removed, is it kept (as the one vault left, or as what the next start
-puts in place): the patient is told to close and reopen myCarlos to finish the restore, and then to
+place, so a removal cut short cannot either; where it cannot be renamed, its header is removed
+first, for the same reason. Only if the retired vault cannot be renamed back, or the verified
+copy's header cannot be removed, is the copy kept whole (as the one vault left, or as what the next
+start puts in place): the patient is told to close and reopen myCarlos to finish the restore, and then to
 open the vault with the backup's passphrase or recovery key. From step 5 on, each step is one rename, and every start repeats whatever is
 left: status, create, unlock and reset put a waiting restore in place first when the live vault
 is already retired, then finish erasing a retired vault, then activate a restore still waiting.
