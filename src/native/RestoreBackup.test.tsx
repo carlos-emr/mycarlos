@@ -82,7 +82,7 @@ describe("RestoreBackup", () => {
     [
       // A changed passphrase or recovery key, with the documents as they were.
       { replaces: "sameVault" as const, differsFromThisDevice: true },
-      /is not the same as this backup.*passphrase and recovery key/,
+      /may not be the same as this backup.*could not be read.*passphrase and recovery key/,
       "Replace the vault on this device with this backup and lose what changed since",
     ],
   ])(

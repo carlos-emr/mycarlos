@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
 
 const speedTest = {
@@ -16,7 +17,7 @@ const speedTest = {
   appVersion: "0.1.0",
 };
 
-function renderSettings() {
+function renderSettings(overrides: Record<string, unknown> = {}) {
   const props = {
     busy: false,
     readOnly: false,
@@ -31,6 +32,7 @@ function renderSettings() {
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
     onSpeedTest: vi.fn().mockResolvedValue(speedTest),
+    ...overrides,
   };
   render(<SecuritySettings {...props} />);
   return props;
@@ -82,6 +84,111 @@ describe("SecuritySettings speed test", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
     expect(await screen.findByText("FAKE already running.")).toBeVisible();
+describe("SecuritySettings recovery key", () => {
+  it("shows the current key's label and date, so the current kit can be told", () => {
+    const setAt = Date.UTC(2026, 8, 30, 12);
+    renderSettings({ recoveryKeySetAtMs: setAt, recoveryKeyLabel: "7F3A" });
+    const line = screen.getByText(/Your current key has the label/);
+    // Shown as printed, and spelled out to a screen reader.
+    expect(within(line).getByText("7F3A")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(within(line).getByText("7 F 3 A")).toHaveClass("sr-only");
+    expect(line).toHaveTextContent(/one with another label does not open/);
+    // A kit or note from before labels has none, and may still work.
+    expect(line).toHaveTextContent(
+      `one without a label may still be this key, set up on ${printedDate(new Date(setAt))}.`,
+    );
+    // The date it was set up is beside the heading.
+    expect(
+      screen.getByText(`Set up ${printedDate(new Date(setAt))}`),
+    ).toBeVisible();
+  });
+
+  it("shows the steps for older backups: a new one first", () => {
+    const props = renderSettings({ oldBackupsGuide: { step: "save" } });
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    const steps = within(guide).getAllByRole("listitem");
+    expect(steps[0]).toHaveTextContent("Save a new backup now");
+    // A patient with no older backups is not held to the steps.
+    expect(
+      within(guide).getByRole("button", { name: "I have no older backups" }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledOnce();
+  });
+
+  it("names the new backup to keep, then lets the steps be closed", () => {
+    const onOldBackupsGuideDone = vi.fn();
+    renderSettings({
+      oldBackupsGuide: {
+        step: "delete",
+        keep: "myCarlos backup 2026-09-30 7F3A",
+        savedAtMs: 1,
+        bytes: 2048,
+      },
+      onOldBackupsGuideDone,
+    });
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    // Kept, with a copy away from this device; the rest are older.
+    const steps = within(guide).getAllByRole("listitem");
+    expect(steps[0]).toHaveTextContent(
+      "Your new backup is “myCarlos backup 2026-09-30 7F3A” (2 kB, 2,048 bytes). Keep it, or a copy of it, somewhere other than this device",
+    );
+    expect(steps[1]).toHaveTextContent("other than the new one and its copies");
+    fireEvent.click(
+      within(guide).getByRole("button", { name: "Done with older backups" }),
+    );
+    expect(onOldBackupsGuideDone).toHaveBeenCalledOnce();
+  });
+
+  it("gives the size as Windows Explorer counts it, on Windows", () => {
+    renderSettings({
+      sizesIn1024s: true,
+      oldBackupsGuide: {
+        step: "delete",
+        keep: "myCarlos backup 2026-09-30 7F3A",
+        savedAtMs: 1,
+        bytes: 600_000,
+      },
+    });
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("(586 KB, 600,000 bytes)");
+  });
+
+  it("names no file when the platform does not say it", () => {
+    const savedAtMs = Date.UTC(2026, 8, 30, 14, 31);
+    renderSettings({
+      oldBackupsGuide: { step: "delete", keep: null, savedAtMs, bytes: 0 },
+    });
+    // It is told apart by when it was saved.
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent(
+      `Your new backup is the one you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} (0 bytes)`,
+    );
+  });
+
+  it("says a new backup waits for a vault that accepts changes", () => {
+    renderSettings({ readOnly: true, oldBackupsGuide: { step: "save" } });
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Once the vault accepts changes again");
+  });
+
+  it("names no label for a vault without a key", () => {
+    renderSettings({ recoveryKeyLabel: null });
+    expect(screen.queryByText(/Your current key has the label/)).toBeNull();
   });
 });
 

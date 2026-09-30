@@ -393,6 +393,8 @@ pub struct VaultSnapshot {
     pub recovery: Option<RecoveryReason>,
     /// When the vault's recovery key was set up, if it has one.
     pub recovery_key_set_at_ms: Option<u64>,
+    /// Its short label, which its kit shows (not secret), if it has one.
+    pub recovery_key_label: Option<String>,
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
@@ -531,6 +533,8 @@ struct UnlockedVault {
     master_key: Zeroizing<[u8; 32]>,
     // When the header's recovery key was set up, if it has one.
     recovery_key_set_at_ms: Option<u64>,
+    // Its envelope's id, from which its label comes.
+    recovery_key_id: Option<Uuid>,
     // A recovery key shown to the patient and not yet confirmed.
     pending_recovery_key: Option<PendingRecoveryKey>,
     manifest: Manifest,
@@ -659,6 +663,7 @@ impl VaultStore {
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms: None,
+                    recovery_key_id: None,
                     pending_recovery_key: None,
                     manifest,
                     recovery: None,
@@ -713,6 +718,7 @@ impl VaultStore {
             .recovery
             .as_ref()
             .map(|envelope| envelope.created_at_ms);
+        let recovery_key_id = header.recovery.as_ref().map(|envelope| envelope.key_id);
         let slots = read_manifest_slots(&self.root, &master_key, header.vault_id)?;
         let SelectedManifest {
             manifest,
@@ -740,6 +746,7 @@ impl VaultStore {
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms,
+                    recovery_key_id,
                     pending_recovery_key: None,
                     manifest,
                     recovery,
@@ -794,6 +801,7 @@ impl VaultStore {
                 storage_lock,
                 master_key,
                 recovery_key_set_at_ms,
+                recovery_key_id,
                 pending_recovery_key: None,
                 manifest,
                 recovery,
@@ -883,6 +891,7 @@ impl VaultStore {
                 .collect(),
             recovery: unlocked.recovery,
             recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
+            recovery_key_label: unlocked.recovery_key_id.map(recovery_key_label),
         }
     }
 
@@ -1530,6 +1539,18 @@ impl VaultStore {
         ))
     }
 
+    /// The short label of the key being set up, which its kits show. Not
+    /// secret: it tells kits apart, and says nothing about the key.
+    pub fn pending_recovery_key_label(&self) -> Result<String, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let pending = unlocked
+            .pending_recovery_key
+            .as_ref()
+            .ok_or(VaultError::Invalid)?;
+        Ok(recovery_key_label(pending.key_id))
+    }
+
     /// The name suggested for the kit's file: the date, and the short label
     /// of the key it holds. A kit for a new key then does not take the place
     /// of the kit for the key the vault still has, should the new one never
@@ -1546,6 +1567,23 @@ impl VaultStore {
             "myCarlos recovery kit {year:04}-{month:02}-{day:02} {}.txt",
             recovery_key_label(pending.key_id)
         ))
+    }
+
+    /// The name suggested for a backup's file: the date it is saved, as the
+    /// patient's own calendar gives it (`YYYY-MM-DD`, already checked; the
+    /// caller falls back to the UTC date), and the label of the vault's
+    /// recovery key, if it has one. Backups saved on different days, or
+    /// under different keys, then do not take each other's place.
+    pub fn backup_file_name(&self, date: &str) -> Result<String, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        Ok(match unlocked.recovery_key_id {
+            Some(key_id) => format!(
+                "myCarlos backup {date} {}.mycarlosbackup",
+                recovery_key_label(key_id)
+            ),
+            None => format!("myCarlos backup {date}.mycarlosbackup"),
+        })
     }
 
     /// Saves the recovery kit to a file the patient chose, as an export is
@@ -1588,11 +1626,10 @@ impl VaultStore {
     }
 
     /// Checks groups of the pending recovery key as the patient typed them
-    /// back (group index and text; at least two different groups, and the
-    /// app sends all seven), then stores the key: a new pair of header
-    /// generations carries its envelope, replacing any earlier recovery key.
-    /// Returns the vault as it then is. The app confirms through
-    /// `confirm_recovery_key_replacing`.
+    /// back (group index and text; all seven, each once), then stores the
+    /// key: a new pair of header generations carries its envelope, replacing
+    /// any earlier recovery key. Returns the vault as it then is. The app
+    /// confirms through `confirm_recovery_key_replacing`.
     #[cfg(test)]
     pub fn confirm_recovery_key(
         &self,
@@ -1648,8 +1685,14 @@ impl VaultStore {
         if !opens {
             return Err(VaultError::Corrupt);
         }
-        let envelope =
-            new_recovery_envelope(pending, *key_id, vault_id, &unlocked.master_key, now_ms)?;
+        let stored_key_id = *key_id;
+        let envelope = new_recovery_envelope(
+            pending,
+            stored_key_id,
+            vault_id,
+            &unlocked.master_key,
+            now_ms,
+        )?;
         let first_generation = current
             .generation
             .checked_add(1)
@@ -1670,6 +1713,7 @@ impl VaultStore {
         )?;
         unlocked.pending_recovery_key = None;
         unlocked.recovery_key_set_at_ms = Some(now_ms);
+        unlocked.recovery_key_id = Some(stored_key_id);
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
@@ -1718,6 +1762,7 @@ impl VaultStore {
                         .recovery
                         .as_ref()
                         .map(|envelope| envelope.created_at_ms),
+                    recovery_key_id: header.recovery.as_ref().map(|envelope| envelope.key_id),
                     pending_recovery_key: None,
                     manifest: selected.manifest,
                     recovery,
@@ -1762,6 +1807,7 @@ impl VaultStore {
                             .recovery
                             .as_ref()
                             .map(|envelope| envelope.created_at_ms),
+                        recovery_key_id: header.recovery.as_ref().map(|envelope| envelope.key_id),
                         pending_recovery_key: None,
                         manifest: selected.manifest,
                         recovery: Some(RecoveryReason::WriteFailed),
@@ -3143,6 +3189,12 @@ fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
     ))
 }
 
+/// The UTC date of `ms`, as `YYYY-MM-DD`.
+pub(crate) fn utc_date_text(ms: u64) -> String {
+    let (year, month, day) = utc_date(ms);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 /// Year, month and day (UTC) of a time in milliseconds since 1970, by
 /// Howard Hinnant's days-to-civil algorithm.
 fn utc_date(ms: u64) -> (i64, u32, u32) {
@@ -3409,8 +3461,13 @@ fn matching_pending_key<'a>(
         .pending_recovery_key
         .as_ref()
         .ok_or(VaultError::Invalid)?;
+    // The whole key, every group once: typing it all back is what shows it
+    // was written down whole.
+    if groups.len() != RECOVERY_KEY_GROUPS {
+        return Err(VaultError::Invalid);
+    }
     let distinct: HashSet<usize> = groups.iter().map(|(index, _)| *index).collect();
-    if distinct.len() < 2 || distinct.len() != groups.len() || groups.len() > RECOVERY_KEY_GROUPS {
+    if distinct.len() != RECOVERY_KEY_GROUPS {
         return Err(VaultError::Invalid);
     }
     // Every index is checked before any group is compared, so that the
@@ -5765,7 +5822,7 @@ mod tests {
                 let key = store.begin_recovery_key(PASSWORD).unwrap();
                 let groups = recovery_key_groups(&key);
                 store
-                    .confirm_recovery_key(&[(0, &groups[0]), (6, &groups[6])], 7)
+                    .confirm_recovery_key(&typed_back(&groups), 7)
                     .map(|_| ())
             }
             _ => panic!("unknown failure-child operation"),
@@ -7753,12 +7810,17 @@ mod tests {
         key.split('-').map(str::to_owned).collect()
     }
 
+    /// Every group of a key, by position, as the app sends them back.
+    fn typed_back(groups: &[String]) -> Vec<(usize, &str)> {
+        groups.iter().map(String::as_str).enumerate().collect()
+    }
+
     /// Sets up a recovery key in an unlocked store and returns it.
     fn set_up_recovery_key(store: &VaultStore, now_ms: u64) -> String {
         let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
         let groups = recovery_key_groups(&key);
         store
-            .confirm_recovery_key(&[(1, &groups[1]), (5, &groups[5])], now_ms)
+            .confirm_recovery_key(&typed_back(&groups), now_ms)
             .unwrap();
         key
     }
@@ -7846,19 +7908,26 @@ mod tests {
         let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
         let groups = recovery_key_groups(&key);
         assert!(read_latest_header(&root).unwrap().recovery.is_none());
+        // Only the whole key: one group, or all but one, is refused.
         assert!(matches!(
             store.confirm_recovery_key(&[(1, &groups[1])], 5),
             Err(VaultError::Invalid)
         ));
         assert!(matches!(
-            store.confirm_recovery_key(&[(1, "ZZZZ"), (4, &groups[4])], 5),
+            store.confirm_recovery_key(&typed_back(&groups)[..6], 5),
+            Err(VaultError::Invalid)
+        ));
+        let mut typo = typed_back(&groups);
+        typo[1].1 = "ZZZZ";
+        assert!(matches!(
+            store.confirm_recovery_key(&typo, 5),
             Err(VaultError::RecoveryKeyTypo)
         ));
         assert!(read_latest_header(&root).unwrap().recovery.is_none());
         let lower = groups[1].to_lowercase();
-        store
-            .confirm_recovery_key(&[(1, &lower), (4, &groups[4])], 5)
-            .unwrap();
+        let mut typed = typed_back(&groups);
+        typed[1].1 = &lower;
+        store.confirm_recovery_key(&typed, 5).unwrap();
         assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(5));
         let header = read_latest_header(&root).unwrap();
         assert_eq!(header.format_version, HEADER_FORMAT);
@@ -7922,7 +7991,7 @@ mod tests {
         let groups = recovery_key_groups(&key);
         store.cancel_recovery_key();
         assert!(matches!(
-            store.confirm_recovery_key(&[(0, &groups[0]), (1, &groups[1])], 5),
+            store.confirm_recovery_key(&typed_back(&groups), 5),
             Err(VaultError::Invalid)
         ));
         // A key shown before a passphrase change was authorized by the old
@@ -7933,7 +8002,7 @@ mod tests {
             .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
             .unwrap();
         assert!(matches!(
-            store.confirm_recovery_key(&[(0, &groups[0]), (1, &groups[1])], 5),
+            store.confirm_recovery_key(&typed_back(&groups), 5),
             Err(VaultError::Invalid)
         ));
         assert!(read_latest_header(&root).unwrap().recovery.is_none());
@@ -7942,6 +8011,45 @@ mod tests {
             store.recover(&key, PASSPHRASE_REPLACEMENT),
             Err(VaultError::Invalid)
         ));
+    }
+
+    #[test]
+    fn a_backup_is_named_by_its_date_and_the_key_it_opens_with() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(matches!(
+            store.backup_file_name("2026-09-28"),
+            Err(VaultError::Locked)
+        ));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert_eq!(
+            store.backup_file_name("2026-09-28").unwrap(),
+            "myCarlos backup 2026-09-28.mycarlosbackup"
+        );
+        set_up_recovery_key(&store, 2);
+        let label = store.snapshot().unwrap().recovery_key_label.unwrap();
+        assert_eq!(
+            store.backup_file_name("2026-09-28").unwrap(),
+            format!("myCarlos backup 2026-09-28 {label}.mycarlosbackup")
+        );
+        assert_eq!(utc_date_text(1_790_553_600_000), "2026-09-28");
+    }
+
+    #[test]
+    fn a_keys_label_stays_through_a_passphrase_change_and_a_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        let label = store.snapshot().unwrap().recovery_key_label;
+        assert!(label.is_some());
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery_key_label, label);
+        store.lock();
+        assert!(store.recover(&key, PASSWORD).unwrap());
+        assert_eq!(store.snapshot().unwrap().recovery_key_label, label);
     }
 
     #[test]
@@ -7972,6 +8080,8 @@ mod tests {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
         assert!(kit.contains(&format!("Key label:     {label}")));
         assert!(!name.contains("Jamie"));
+        // The page asks for it to print it on the kit.
+        assert_eq!(store.pending_recovery_key_label().unwrap(), label);
 
         // Saved as an export is: outside the vault home, and private.
         let outside = temp.path().join("kit.txt");
@@ -7993,9 +8103,7 @@ mod tests {
         // Once the key is stored, there is no kit left to save, and the
         // stored key has the id whose label the kit gave.
         let groups = recovery_key_groups(&key);
-        store
-            .confirm_recovery_key(&[(0, &groups[0]), (3, &groups[3])], 5)
-            .unwrap();
+        store.confirm_recovery_key(&typed_back(&groups), 5).unwrap();
         assert!(matches!(store.recovery_kit(1), Err(VaultError::Invalid)));
         assert!(matches!(
             store.recovery_kit_name(1),
@@ -8003,6 +8111,22 @@ mod tests {
         ));
         let stored = read_latest_header(&root).unwrap().recovery.unwrap();
         assert_eq!(recovery_key_label(stored.key_id), label);
+        // The vault's key has that label too, as Security shows it, after
+        // the next unlock as well.
+        assert_eq!(
+            store.snapshot().unwrap().recovery_key_label.as_deref(),
+            Some(label.as_str())
+        );
+        assert!(matches!(
+            store.pending_recovery_key_label(),
+            Err(VaultError::Invalid)
+        ));
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery_key_label.as_deref(),
+            Some(label.as_str())
+        );
     }
 
     #[test]
@@ -8094,10 +8218,16 @@ mod tests {
         let groups = recovery_key_groups(&key);
         // An index out of range, a repeated index and too many groups are
         // refused as invalid whether or not the other groups match.
+        let mut out_of_range = typed_back(&groups);
+        out_of_range[6].0 = 7;
+        let mut repeated = typed_back(&groups);
+        repeated[2].0 = 1;
+        let mut too_many = typed_back(&groups);
+        too_many.push((0, groups[0].as_str()));
         for request in [
-            vec![(0, groups[0].as_str()), (7, "ZZZZ")],
-            vec![(0, "ZZZZ"), (7, "ZZZZ")],
-            vec![(2, groups[2].as_str()), (2, groups[2].as_str())],
+            out_of_range,
+            repeated,
+            too_many,
             (0..8).map(|index| (index % 7, "ZZZZ")).collect(),
         ] {
             assert!(
@@ -8114,7 +8244,7 @@ mod tests {
         store.lock();
         store.unlock(PASSWORD).unwrap();
         assert!(matches!(
-            store.confirm_recovery_key(&[(0, &groups[0]), (1, &groups[1])], 5),
+            store.confirm_recovery_key(&typed_back(&groups), 5),
             Err(VaultError::Invalid)
         ));
         assert!(read_latest_header(&root).unwrap().recovery.is_none());
@@ -8167,32 +8297,28 @@ mod tests {
 
         // Nothing is being set up.
         assert!(matches!(
-            store.check_recovery_key(&[(0, "AAAA"), (1, "AAAA")]),
+            store.check_recovery_key(&[(0, "AAAA"); RECOVERY_KEY_GROUPS]),
             Err(VaultError::Invalid)
         ));
         let first = store.begin_recovery_key(PASSWORD).unwrap().to_string();
         let groups = recovery_key_groups(&first);
         let before = headers();
+        let mut typo = typed_back(&groups);
+        typo[1].1 = "ZZZZ";
         assert!(matches!(
-            store.check_recovery_key(&[(1, "ZZZZ"), (5, &groups[5])]),
+            store.check_recovery_key(&typo),
             Err(VaultError::RecoveryKeyTypo)
         ));
         // The vault has no key yet, so none would be replaced.
-        assert!(!store
-            .check_recovery_key(&[(1, &groups[1]), (5, &groups[5])])
-            .unwrap());
+        assert!(!store.check_recovery_key(&typed_back(&groups)).unwrap());
         assert_eq!(headers(), before);
         assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, None);
-        store
-            .confirm_recovery_key(&[(1, &groups[1]), (5, &groups[5])], 5)
-            .unwrap();
+        store.confirm_recovery_key(&typed_back(&groups), 5).unwrap();
 
         let second = store.begin_recovery_key(PASSWORD).unwrap().to_string();
         let groups = recovery_key_groups(&second);
         let before = headers();
-        assert!(store
-            .check_recovery_key(&[(1, &groups[1]), (5, &groups[5])])
-            .unwrap());
+        assert!(store.check_recovery_key(&typed_back(&groups)).unwrap());
         assert_eq!(headers(), before);
         // Until it is confirmed, the first key is the vault's.
         store.lock();
@@ -8201,7 +8327,7 @@ mod tests {
             Err(VaultError::WrongRecoveryKey)
         ));
         assert!(matches!(
-            store.check_recovery_key(&[(1, &groups[1]), (5, &groups[5])]),
+            store.check_recovery_key(&typed_back(&groups)),
             Err(VaultError::Locked)
         ));
     }
@@ -10918,7 +11044,7 @@ mod tests {
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
         let groups = recovery_key_groups(&key);
-        let answers = [(1, groups[1].as_ref()), (5, groups[5].as_ref())];
+        let answers = typed_back(&groups);
         let slot = root.join(HEADER_SLOTS[1]);
         let before = fs::read(&slot).unwrap();
         // While the patient writes the key down.

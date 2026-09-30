@@ -10,6 +10,7 @@ import {
   type VaultBridge,
   type VaultSnapshot,
 } from "../vault";
+import { KeyLabel, printedDate, spoken } from "./KeyLabel";
 
 type Step = "passphrase" | "key" | "check";
 
@@ -26,9 +27,6 @@ const TRIES_BEFORE_REVIEW = 3;
 
 /** Letters and digits in a recovery key: 7 groups of 4. */
 const KEY_SYMBOLS = 28;
-
-/** Read one character at a time, so that 0 and O, or 1 and I, are clear. */
-const spoken = (group: string) => group.split("").join(" ");
 
 export function RecoveryKeySetup({
   bridge,
@@ -47,6 +45,7 @@ export function RecoveryKeySetup({
     | "beginRecoveryKey"
     | "confirmRecoveryKey"
     | "saveRecoveryKit"
+    | "recoveryKeyLabel"
     | "cancelRecoveryKey"
   >;
   /** A key already made (right after the vault was created). Otherwise the
@@ -61,14 +60,16 @@ export function RecoveryKeySetup({
    * the step that asks, and shows no key that was not asked for. */
   offered?: boolean;
   canPrint: boolean;
-  onDone: (snapshot: VaultSnapshot) => void;
+  /** `exposed`: when replacing, the old key's kit may have been lost or
+   * seen, as the patient said. */
+  onDone: (snapshot: VaultSnapshot, how: { exposed: boolean }) => void;
   /** `keyShown`: a key was on screen, and may be written down or in a kit,
    * that will now never open the vault. */
   onClose: (keyShown: boolean) => void;
   /** The vault turned out to be locked. */
   onLocked: () => void;
   /** A key is on screen, and may now be written down or saved. */
-  onKeyShown?: () => void;
+  onKeyShown?: (how: { exposed: boolean }) => void;
 }) {
   const [step, setStep] = useState<Step>(initialKey ? "key" : "passphrase");
   const [key, setKey] = useState(initialKey ?? "");
@@ -77,12 +78,41 @@ export function RecoveryKeySetup({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [typed, setTyped] = useState("");
+  // Why a key is being replaced: whether its kit may have been lost or seen
+  // decides what the patient is told to do with older backups.
+  const [exposed, setExposed] = useState<boolean | null>(null);
+  const exposedRef = useRef(exposed);
+  exposedRef.current = exposed;
   // Said once, when a key is first on screen.
   const keyShownRef = useRef(onKeyShown);
   keyShownRef.current = onKeyShown;
   useEffect(() => {
-    if (key) keyShownRef.current?.();
+    if (key) keyShownRef.current?.({ exposed: exposedRef.current === true });
   }, [key]);
+  // The key's short label, which tells its kits apart: shown with the key
+  // and printed on the kit. Not secret.
+  const [label, setLabel] = useState<string | null>(null);
+  // Print waits until the label is known, or known to be missing.
+  const [labelSettled, setLabelSettled] = useState(false);
+  useEffect(() => {
+    if (!key) return;
+    let current = true;
+    bridge
+      .recoveryKeyLabel()
+      .then(
+        (found) => {
+          if (current) setLabel(found);
+        },
+        // Only the label is missing: the key and its kit still work.
+        () => undefined,
+      )
+      .finally(() => {
+        if (current) setLabelSettled(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [key, bridge]);
   // A lock closes this setup, and can do so while the key is being stored.
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -174,6 +204,10 @@ export function RecoveryKeySetup({
   const begin = async (event: FormEvent) => {
     event.preventDefault();
     if (busy || !passphrase) return;
+    if (replacing && exposed === null) {
+      setError("Choose why you are replacing your recovery key.");
+      return;
+    }
     const secret = passphrase;
     setPassphrase("");
     setBusy(true);
@@ -243,7 +277,7 @@ export function RecoveryKeySetup({
       // so the setup stays unfinished, and the next unlock, finding the key
       // changed, says it was saved.
       if (!mountedRef.current) return;
-      if (snapshot) onDone(snapshot);
+      if (snapshot) onDone(snapshot, { exposed: exposed === true });
       // Cancelled in the native confirmation: the key is still being set
       // up, and can be checked again.
       else {
@@ -341,6 +375,38 @@ export function RecoveryKeySetup({
                 Continue only when nobody else can see your screen.
               </p>
             </div>
+            {replacing && (
+              <fieldset>
+                <legend>Why are you replacing it?</legend>
+                <p className="field-hint">
+                  If you are not sure, choose the first.
+                </p>
+                <label className="restore-choice">
+                  <input
+                    type="radio"
+                    name="replace-reason"
+                    checked={exposed === true}
+                    onChange={() => {
+                      setExposed(true);
+                      setError("");
+                    }}
+                  />
+                  Its kit or note may have been lost, or seen by someone else
+                </label>
+                <label className="restore-choice">
+                  <input
+                    type="radio"
+                    name="replace-reason"
+                    checked={exposed === false}
+                    onChange={() => {
+                      setExposed(false);
+                      setError("");
+                    }}
+                  />
+                  I just want a new key: its kit is safe
+                </label>
+              </fieldset>
+            )}
             <label>
               Passphrase
               <input
@@ -406,6 +472,13 @@ export function RecoveryKeySetup({
                 ))}
               </ol>
             )}
+            {label && (
+              <p>
+                Key label: <KeyLabel label={label} />. Write it next to the key.
+                It is not secret: in Security, myCarlos shows the label of the
+                key that works, so you can tell which kit is current.
+              </p>
+            )}
             <p className="native-dialog-status" role="status">
               {notice}
             </p>
@@ -439,7 +512,7 @@ export function RecoveryKeySetup({
                 <button
                   className="button"
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !labelSettled}
                   onClick={() =>
                     printing ? window.print() : setPrinting(true)
                   }
@@ -461,6 +534,17 @@ export function RecoveryKeySetup({
                 <div className="recovery-kit-print" aria-hidden="true">
                   <h1>myCarlos recovery kit</h1>
                   <p className="recovery-kit-key">{key}</p>
+                  <p>
+                    {label ? `Key label: ${label} · ` : ""}Printed{" "}
+                    {printedDate(new Date())}
+                  </p>
+                  {label && (
+                    <p>
+                      The label is not secret. In Security, myCarlos shows the
+                      label of the recovery key that works now: a kit with a
+                      different label no longer opens the vault.
+                    </p>
+                  )}
                   <p>
                     If you forget your myCarlos passphrase, this key opens your
                     vault on this device and lets you choose a new passphrase.

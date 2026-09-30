@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   fileExtension,
   formatBytes,
+  formatFileSize,
   nameTooLong,
   recordKind,
   searchKey,
@@ -97,5 +98,18 @@ describe("fileExtension", () => {
     ["Results.pdff", ""],
   ])("gives %j the extension %j", (name, extension) => {
     expect(fileExtension(name)).toBe(extension);
+  });
+});
+
+describe("formatFileSize", () => {
+  it("counts as the platform's file app does, with the exact bytes", () => {
+    // Android Files, macOS Finder and Linux file managers count in 1000s.
+    expect(formatFileSize(600_000, false)).toBe("600 kB, 600,000 bytes");
+    expect(formatFileSize(2_500_000, false)).toBe("2.5 MB, 2,500,000 bytes");
+    // Windows Explorer counts in 1024s.
+    expect(formatFileSize(600_000, true)).toBe("586 KB, 600,000 bytes");
+    // An empty or tiny file shows only its bytes.
+    expect(formatFileSize(0, false)).toBe("0 bytes");
+    expect(formatFileSize(999, true)).toBe("999 bytes");
   });
 });
