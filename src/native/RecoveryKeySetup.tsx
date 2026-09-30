@@ -39,6 +39,7 @@ export function RecoveryKeySetup({
     | "beginRecoveryKey"
     | "confirmRecoveryKey"
     | "saveRecoveryKit"
+    | "recoveryKeyLabel"
     | "cancelRecoveryKey"
   >;
   /** A key already made (right after the vault was created). Otherwise the
@@ -71,6 +72,23 @@ export function RecoveryKeySetup({
   useEffect(() => {
     if (key) keyShownRef.current?.();
   }, [key]);
+  // The key's short label, which tells its kits apart: shown with the key
+  // and printed on the kit. Not secret.
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!key) return;
+    let current = true;
+    bridge.recoveryKeyLabel().then(
+      (found) => {
+        if (current) setLabel(found);
+      },
+      // Only the label is missing: the key and its kit still work.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [key, bridge]);
   // A lock closes this setup, and can do so while the key is being stored.
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -374,6 +392,13 @@ export function RecoveryKeySetup({
                 ))}
               </ol>
             )}
+            {label && (
+              <p>
+                Key label: <strong>{label}</strong>. Write it next to the key.
+                It is not secret: in Security, myCarlos shows the label of the
+                key that works, so you can tell which kit is current.
+              </p>
+            )}
             <p className="native-dialog-status" role="status">
               {notice}
             </p>
@@ -429,6 +454,15 @@ export function RecoveryKeySetup({
                 <div className="recovery-kit-print" aria-hidden="true">
                   <h1>myCarlos recovery kit</h1>
                   <p className="recovery-kit-key">{key}</p>
+                  <p>
+                    Key label: {label ?? "not available"} · Printed{" "}
+                    {new Date().toLocaleDateString()}
+                  </p>
+                  <p>
+                    The label is not secret. In Security, myCarlos shows the
+                    label of the recovery key that works now: a kit with a
+                    different label no longer opens the vault.
+                  </p>
                   <p>
                     If you forget your myCarlos passphrase, this key opens your
                     vault on this device and lets you choose a new passphrase.

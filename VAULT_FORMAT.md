@@ -78,42 +78,48 @@ integrity tag, which covers it in format 2, binds it to each generation.
 Setting up a key is two steps. `begin` takes the current passphrase, as a passphrase change does,
 since a recovery key opens the vault for good; it generates the key, keeps it and the
 passphrase-derived wrapping key in native memory, and returns the key once for display. This is the
-only secret the native side ever sends to the renderer. `confirm` checks at least two of its groups
-as the patient types them back (the app asks for the whole key, all seven), and only then writes a
-new pair of header generations carrying the envelope, replacing any earlier key; it returns the
-vault as it then is, from the same session, so that a lock cannot fall between the two. When the
-vault already has a key, the command asks in a trusted native dialog before it replaces it, after
-the typed groups were found right and before anything is written; cancelled there, nothing changes
-and the pending key stays, to be checked again or cancelled. The dialog also says that backups
-saved before then still open only with the key being replaced (or their passphrase), not the new
-one, and to save a new backup afterwards; the app says so again once the key is replaced. The key
-is then stored only if the typed groups still match and whether it replaces a key is still what
-the patient was asked about (a vault that had none may have gained one, or the reverse), checked
-as it is stored. A vault's first key is not asked about, as it replaces nothing. The envelope's id is chosen when the key is made, so that a kit
-saved before the check can name it. Cancelling, locking, or changing the passphrase first writes
-nothing and forgets the pending key. Wherever a key is typed, case, Crockford's look-alike letters
-and anything in it other than a letter or digit (dashes, spaces, other punctuation) do not matter.
+only secret the native side ever sends to the renderer. `confirm` checks the whole key as the
+patient types it back, all seven groups (fewer are refused), and only then writes a new pair of
+header generations carrying the envelope, replacing any earlier key; it returns the vault as it then
+is, from the same session, so that a lock cannot fall between the two. When the vault already has a
+key, the command asks in a trusted native dialog before it replaces it, after the typed groups were
+found right and before anything is written; cancelled there, nothing changes and the pending key
+stays, to be checked again or cancelled. The dialog also says that backups saved before then still
+open with the key being replaced, so a lost kit could still open them, and that they should be
+deleted and a new backup saved. Once the key is replaced, the app says how: the backup files are
+named "myCarlos backup" (ending in .mycarlosbackup), wherever the patient saved them (a folder, a
+USB stick, or on a phone the Files app or a cloud drive; myCarlos does not know where), and a new
+one is saved from Security. The key is then stored only if the typed groups still match and whether
+it replaces a key is still what the patient was asked about (a vault that had none may have gained
+one, or the reverse), checked as it is stored. A vault's first key is not asked about, as it
+replaces nothing. The envelope's id is chosen when the key is made, so that a kit saved before the
+check can name it. Cancelling, locking, or changing the passphrase first writes nothing and forgets
+the pending key. Wherever a key is typed, case, Crockford's look-alike letters and anything in it
+other than a letter or digit (dashes, spaces, other punctuation) do not matter.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
 four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
-for, with no patient or document names. The name suggested for its file carries the date and the
-label, so that a kit for a new key does not take the place of the kit for the key the vault still
-has, should the new one never be set up. It is written natively, only to a file the patient picks.
-For a filesystem path it is never inside the vault home, is private to the user on Unix, and
-replaces a link at the destination rather than writing through it; a document provider's URI
-(Android) is written directly, so a failed write can leave a partial kit there. The kit holds the
-key in plain text by design, and says that the key works only once the check is finished: a kit
-saved for a setup that was then cancelled, or ended by a lock before the check finished, holds a
-key that opens nothing. The key step says so. If a lock, or myCarlos closing, ends a setup after
-the key was shown and before the patient saw it finish, the next unlock says how it ended: from when
-the vault's recovery key was set up, before and after, it tells a key never stored from one stored
-just as the lock came (whose reply the setup never saw). A marker in webview storage carries this
-over a restart; it holds only that time, never the key, and creating, erasing or restoring a vault
-forgets it. Setup is the first thing a new vault shows: the passphrase just typed authorizes it,
-and the dialog has no Cancel and ignores Escape. It offers "Set up later" once something other than
-a wrong answer has failed. A lock ends it all the same (on a phone, switching
-apps locks), and so does a failure to make the key; the vault then has no recovery key and says so
-in a banner until one is set up.
+for, with no patient or document names. The key step shows the label beside the key, and a printed
+kit carries it with the date it was printed; the page asks for it with `recovery_key_label`, which
+returns only that label. Security shows the label and set-up date of the key the vault has (the
+snapshot carries the label, from the header's envelope), so that the patient can tell the kit that
+works from any other. The name suggested for its file carries the date and the label, so that a kit
+for a new key does not take the place of the kit for the key the vault still has, should the new one
+never be set up. It is written natively, only to a file the patient picks. For a filesystem path it
+is never inside the vault home, is private to the user on Unix, and replaces a link at the
+destination rather than writing through it; a document provider's URI (Android) is written directly,
+so a failed write can leave a partial kit there. The kit holds the key in plain text by design, and
+says that the key works only once the check is finished: a kit saved for a setup that was then
+cancelled, or ended by a lock before the check finished, holds a key that opens nothing. The key
+step says so. If a lock, or myCarlos closing, ends a setup after the key was shown and before the
+patient saw it finish, the next unlock says how it ended: from when the vault's recovery key was set
+up, before and after, it tells a key never stored from one stored just as the lock came (whose reply
+the setup never saw). A marker in webview storage carries this over a restart; it holds only that
+time, never the key, and creating, erasing or restoring a vault forgets it. Setup is the first thing
+a new vault shows: the passphrase just typed authorizes it, and the dialog has no Cancel and ignores
+Escape. It offers "Set up later" once something other than a wrong answer has failed. A lock ends it
+all the same (on a phone, switching apps locks), and so does a failure to make the key; the vault
+then has no recovery key and says so in a banner until one is set up.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
@@ -351,8 +357,9 @@ backed up, since what it shows may not be what it holds. Saving streams with con
 transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
 replaced atomically only once complete.
 
-A backup opens with the passphrase and recovery key the vault had when it was saved, not with any
-set up since; a restore that is refused for either says so in those words, not the unlock screen's.
+A backup opens with the passphrase, and the recovery key if it had one, that the vault had when it
+was saved, not with any set up since; a restore that is refused for either says so in those words,
+not the unlock screen's.
 A backup file that cannot be opened at all (for example, one a cloud folder has not brought to
 the device) is refused with advice to copy it to a local folder first, and nothing changes.
 

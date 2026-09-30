@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SecuritySettings } from "./SecuritySettings";
 
-function renderSettings() {
+function renderSettings(overrides: Record<string, unknown> = {}) {
   const props = {
     busy: false,
     readOnly: false,
@@ -16,6 +16,7 @@ function renderSettings() {
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
   };
   render(<SecuritySettings {...props} />);
   return props;
@@ -23,6 +24,23 @@ function renderSettings() {
 
 const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+describe("SecuritySettings recovery key", () => {
+  it("shows the current key's label and date, so the current kit can be told", () => {
+    const setAt = Date.UTC(2026, 8, 30, 12);
+    renderSettings({ recoveryKeySetAtMs: setAt, recoveryKeyLabel: "7F3A" });
+    const line = screen.getByText(/Your current key has the label/);
+    expect(line).toHaveTextContent(
+      `Your current key has the label 7F3A and was set up on ${new Date(setAt).toLocaleDateString()}.`,
+    );
+    expect(line).toHaveTextContent(/one with another label does not open/);
+  });
+
+  it("names no label for a vault without a key", () => {
+    renderSettings({ recoveryKeyLabel: null });
+    expect(screen.queryByText(/Your current key has the label/)).toBeNull();
+  });
+});
 
 describe("SecuritySettings passphrase change", () => {
   it("says what a new passphrase does not protect, without urging an erase", () => {

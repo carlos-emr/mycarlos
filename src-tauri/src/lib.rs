@@ -77,8 +77,8 @@ impl PublicError {
     /// the ones the vault has now.
     fn of_restore(self) -> Self {
         let message = match self.code {
-            "wrong_recovery_key" => "That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved (not a key set up or replaced since), or with the passphrase it was made with.",
-            "wrong_passphrase" => "That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved.",
+            "wrong_recovery_key" => "That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved, if it had one (not a key set up or replaced since), or with the passphrase it was made with.",
+            "wrong_passphrase" => "That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved, if it had one.",
             _ => return self,
         };
         Self { message, ..self }
@@ -803,7 +803,7 @@ async fn vault_recovery_key_begin(
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now will not open with the new key. They still need your current key, or the passphrase they were saved with, so save a new backup once this is done. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with your current key, so a lost kit could still open them: once this is done, delete those older backups and save a new one (myCarlos says how). Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -872,6 +872,13 @@ fn confirm_recovery_key_asking(
     store
         .confirm_recovery_key_replacing(groups, now_ms(), replaces)
         .map(Some)
+}
+
+/// The short label of the recovery key being set up, for the kit the page
+/// prints. Not secret.
+#[tauri::command]
+async fn vault_recovery_key_label(store: State<'_, Arc<VaultStore>>) -> CommandResult<String> {
+    run_blocking(store.inner(), VaultStore::pending_recovery_key_label).await
 }
 
 /// Saves the kit for the recovery key being set up to a file the patient
@@ -1110,7 +1117,7 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
             "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device is not the same as this backup ({documents}). Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+            "The vault on this device may not be the same as this backup ({documents}): it has changed since, or part of it could not be read. Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
         )),
         RestoreReplaces::SameVault => Some(format!(
             "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
@@ -1533,6 +1540,7 @@ pub fn run() {
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
             vault_recovery_kit_save,
+            vault_recovery_key_label,
             vault_recovery_key_cancel,
             vault_recover,
             vault_backup_pick,
@@ -2059,7 +2067,8 @@ mod tests {
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
         assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
-        assert!(changed.contains("is not the same as") && changed.contains("passphrase"));
+        assert!(changed.contains("may not be the same as") && changed.contains("passphrase"));
+        assert!(changed.contains("could not be read"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
         assert!(same.contains("the same 3 documents"));
     }

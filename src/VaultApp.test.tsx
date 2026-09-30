@@ -55,6 +55,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
     recover: vi
       .fn()
@@ -1299,6 +1300,13 @@ describe("durable vault UI", () => {
       await waitFor(() =>
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
+      // A replaced key says what to do with backups the old key opens.
+      if (saved)
+        expect(
+          await screen.findByText(
+            /^Recovery key replaced\. .*Delete them: they are the files named "myCarlos backup".*choose Save encrypted backup\.$/,
+          ),
+        ).toBeVisible();
       vi.mocked(bridge.unlock).mockResolvedValue(after);
       await hide();
       await unlock();

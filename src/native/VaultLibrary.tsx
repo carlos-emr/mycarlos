@@ -23,6 +23,7 @@ import {
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { ANNOUNCE_DELAY_MS } from "./announce";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
+import { OLD_BACKUPS_ADVICE } from "./oldBackups";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -72,7 +73,9 @@ export function VaultLibrary({
   run: (operation: () => Promise<void>) => Promise<void>;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
-  refresh: () => Promise<VaultSnapshot>;
+  /** Shows the vault as it is now: `known` if a command just returned it,
+   * or as the native side says. */
+  refresh: (known?: VaultSnapshot) => Promise<VaultSnapshot>;
   onLock: () => Promise<void>;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
@@ -1032,6 +1035,7 @@ export function VaultLibrary({
                 onCreateProfile={createProfile}
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
+                recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 onSaveBackup={saveBackup}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
@@ -1050,10 +1054,10 @@ export function VaultLibrary({
                   setAtMs: snapshot.recoveryKeySetAtMs ?? null,
                 })
               }
-              onDone={() => {
+              onDone={(stored) => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
                 const saved = replaced
-                  ? "Recovery key replaced. The old one no longer opens this vault, but backups saved before now still need it (or their passphrase): save a new backup."
+                  ? `Recovery key replaced. The old one no longer opens this vault. ${OLD_BACKUPS_ADVICE}`
                   : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");
@@ -1065,7 +1069,10 @@ export function VaultLibrary({
                   onUnfinishedRecoveryKey?.(null);
                   setDialogResult({ message, recordId: activeRecordId });
                 };
-                void refresh().then(
+                // As the confirmation returned it: so that what this screen
+                // shows, and the next setup's record of the key it would
+                // replace, is the vault with this key.
+                void refresh(stored).then(
                   () => tell(saved),
                   // The key is saved, but this screen still shows the vault
                   // as it was before.

@@ -534,8 +534,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // still in flight then belongs to a finished session and is ignored.
   const session = sessionRef.current;
   const inSession = () => sessionRef.current === session;
-  const refresh = async () => {
-    const next = await bridge.snapshot();
+  // `known` is the vault as a command that changed it returned it, taken
+  // under the same guard as the change: nothing to ask again.
+  const refresh = async (known?: VaultSnapshot) => {
+    const next = known ?? (await bridge.snapshot());
     if (inSession()) setSnapshot(next);
     return next;
   };

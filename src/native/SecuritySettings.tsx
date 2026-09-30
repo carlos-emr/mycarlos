@@ -21,6 +21,8 @@ interface SecuritySettingsProps {
   onReset: (confirmation: string) => Promise<void>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
+  /** Its short label, which its kit shows. */
+  recoveryKeyLabel?: string | null;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
 }
@@ -36,6 +38,7 @@ export function SecuritySettings({
   onCreateProfile,
   onReset,
   recoveryKeySetAtMs,
+  recoveryKeyLabel = null,
   onSetUpRecoveryKey,
   onSaveBackup,
 }: SecuritySettingsProps) {
@@ -152,6 +155,15 @@ export function SecuritySettings({
               nobody at your clinic or at myCarlos can open your vault for you.
               Replacing it stops the old one working.
             </p>
+            {recoveryKeySetAtMs && recoveryKeyLabel && (
+              <p>
+                Your current key has the label{" "}
+                <strong>{recoveryKeyLabel}</strong> and was set up on{" "}
+                {new Date(recoveryKeySetAtMs).toLocaleDateString()}. The kit or
+                note with this label is the one that works; one with another
+                label does not open this vault.
+              </p>
+            )}
           </div>
           <div>
             <button

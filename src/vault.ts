@@ -40,6 +40,8 @@ export interface VaultSnapshot {
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
   recoveryKeySetAtMs?: number | null;
+  /** Its short label, which its kit shows (not secret), if it has one. */
+  recoveryKeyLabel?: string | null;
 }
 
 /** One group of the recovery key as the patient typed it back, by position. */
@@ -113,6 +115,9 @@ export interface VaultBridge {
   /** Saves the kit for the key being set up; false if the picker was
    * cancelled. */
   saveRecoveryKit(): Promise<boolean>;
+  /** The short label of the key being set up, which its kits show. Not
+   * secret. */
+  recoveryKeyLabel(): Promise<string>;
   cancelRecoveryKey(): Promise<void>;
   /** Opens a locked vault with its recovery key and a new passphrase. */
   recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
@@ -276,6 +281,7 @@ export function createVaultBridge(): VaultBridge {
         request: { groups },
       }),
     saveRecoveryKit: () => invoke<boolean>("vault_recovery_kit_save"),
+    recoveryKeyLabel: () => invoke<string>("vault_recovery_key_label"),
     cancelRecoveryKey: () => invoke<void>("vault_recovery_key_cancel"),
     recover: (recoveryKey, newPassphrase) =>
       invoke<RecoverOutcome>("vault_recover", {

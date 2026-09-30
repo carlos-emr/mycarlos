@@ -1,3 +1,5 @@
+import { OLD_BACKUPS_ADVICE } from "./oldBackups";
+
 // A recovery key setup that has shown a key and not ended. A lock ends it,
 // and so does myCarlos closing, and the key it showed then opens nothing; the
 // patient may have written it down or saved a kit, so the next unlock says
@@ -53,5 +55,5 @@ export function unfinishedRecoveryKeyMessage(
       ? "Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key. If you saved or wrote down the key it showed, destroy it: that key does not open the vault."
       : "Your recovery key was not replaced: setup ended when the vault locked or myCarlos closed, and your earlier key still works. If you saved or wrote down the new key it showed, destroy it: that key does not open the vault.";
   if (setAtMsNow === null) return null;
-  return `The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it.${unfinished.setAtMs === null ? "" : " Your earlier recovery key no longer opens this vault, but backups saved before now still need it (or their passphrase): save a new backup."}`;
+  return `The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it.${unfinished.setAtMs === null ? "" : ` Your earlier recovery key no longer opens this vault. ${OLD_BACKUPS_ADVICE}`}`;
 }

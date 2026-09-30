@@ -117,13 +117,16 @@ On every platform:
    common or predictable ones.
 2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
    then **Next**, and type the whole key back. Typing it wrong says so; three wrong
-   tries go back to the key. Check that the saved kit opens and shows the key and no names.
+   tries go back to the key. Check that the saved kit opens and shows the key and no names, and
+   that the key's label shown beside the key is on the saved and the printed kit, and in
+   **Security** once the key is set up.
 3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
-   **Replace recovery key** asks for the passphrase and makes a new key. After you type two of its
-   groups back, a system dialog (not part of the app's own screen) asks **Replace your recovery
-   key?** Choose **Cancel** once: the setup stays open and says the current key still works. Check
-   again and choose **Replace key**: the old key then stops working. The vault does not lock by
+   **Replace recovery key** asks for the passphrase and makes a new key. After you type it back, a
+   system dialog (not part of the app's own screen) asks **Replace your recovery key?** and says to
+   delete older backups afterwards. Choose **Cancel** once: the setup stays open and says the
+   current key still works. Check again and choose **Replace key**: the old key then stops working,
+   and the app says where older backups are and how to save a new one. The vault does not lock by
    itself while that dialog is open.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap

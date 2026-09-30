@@ -28,6 +28,7 @@ function setUp(
     beginRecoveryKey: vi.fn().mockResolvedValue(KEY),
     confirmRecoveryKey: vi.fn().mockResolvedValue(snapshot),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
     ...bridgeOverrides,
   };
@@ -120,6 +121,21 @@ describe("RecoveryKeySetup", () => {
     );
   });
 
+  it("shows the key's label with the key", async () => {
+    const { bridge } = setUp({ initialKey: KEY });
+    expect(await screen.findByText("7F3A")).toBeVisible();
+    expect(bridge.recoveryKeyLabel).toHaveBeenCalledOnce();
+  });
+
+  it("shows the key without its label when the label cannot be had", async () => {
+    setUp(
+      { initialKey: KEY },
+      { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "locked" }) },
+    );
+    expect(await screen.findByText(GROUPS[0])).toBeVisible();
+    expect(screen.queryByText(/Key label/)).toBeNull();
+  });
+
   it("offers Print only where the platform can print", () => {
     setUp({ initialKey: KEY });
     expect(
@@ -139,6 +155,10 @@ describe("RecoveryKeySetup", () => {
     expect(document.body).toHaveClass("printing-recovery-kit");
     const kit = document.querySelector("body > .recovery-kit-print");
     expect(kit).toHaveTextContent(KEY);
+    // Its label and the date, so that kits can be told apart.
+    expect(kit).toHaveTextContent(
+      `Key label: 7F3A · Printed ${new Date().toLocaleDateString()}`,
+    );
     // On screen it takes no part.
     expect(kit).not.toBeVisible();
 
