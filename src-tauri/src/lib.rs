@@ -71,6 +71,14 @@ impl PublicError {
         };
         Self { message, ..self }
     }
+
+    fn removal_not_possible() -> Self {
+        Self {
+            code: "recovery_mode",
+            message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            record_id: None,
+        }
+    }
 }
 
 impl From<VaultError> for PublicText {
@@ -132,6 +140,10 @@ impl From<VaultError> for PublicText {
                 code: "unsupported_storage",
                 message: "myCarlos cannot keep a vault safely on this device's storage, because it does not confirm when files are durably written (for example, a network home folder). Use myCarlos on a device with local storage.",
             },
+            VaultError::RemovalChanged => Self {
+                code: "removal_changed",
+                message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
+            },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
                 message: "The vault is in read-only recovery mode. Export important records and free storage before retrying.",
@@ -188,6 +200,11 @@ impl From<VaultError> for PublicError {
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
+}
+
+#[derive(Deserialize)]
+struct RemoveUnavailableRequest {
+    confirmed: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -1347,8 +1364,16 @@ async fn vault_export_picked(
 #[tauri::command]
 async fn vault_remove_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
+    request: RemoveUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), VaultStore::remove_unavailable_records).await
+    run_blocking(store.inner(), move |store| {
+        store.remove_unavailable_records(&request.confirmed)
+    })
+    .await
+    .map_err(|error| match error.code {
+        "recovery_mode" => PublicError::removal_not_possible(),
+        _ => error,
+    })
 }
 
 #[tauri::command]
@@ -2043,6 +2068,7 @@ mod tests {
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
+            let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
     }
