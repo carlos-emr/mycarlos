@@ -37,29 +37,63 @@ struct RuntimeInfo {
 struct PublicError {
     code: &'static str,
     message: &'static str,
+    /// The document a failure is about, for the renderer to name: a name is
+    /// never put in an error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_id: Option<Uuid>,
+}
+
+/// What an error says, whatever it is about.
+struct PublicText {
+    code: &'static str,
+    message: &'static str,
 }
 
 type CommandResult<T> = Result<T, PublicError>;
 
 impl PublicError {
+    /// A failure to save a backup, said of the backup: nothing was typed
+    /// for it to check.
+    fn of_backup(self) -> Self {
+        if self.code != "unreadable" {
+            return self;
+        }
+        Self {
+            message: "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            ..self
+        }
+    }
+
     fn partial_export() -> Self {
         Self {
             code: "partial_export",
             message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
+            record_id: None,
         }
     }
-}
 
-impl PublicError {
+    /// A failure to open a backup, said of the backup: a backup opens with
+    /// the credentials its vault had when it was saved, which need not be
+    /// the ones the vault has now.
+    fn of_restore(self) -> Self {
+        let message = match self.code {
+            "wrong_recovery_key" => "That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved (not a key set up or replaced since), or with the passphrase it was made with.",
+            "wrong_passphrase" => "That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved.",
+            _ => return self,
+        };
+        Self { message, ..self }
+    }
+
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
             message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            record_id: None,
         }
     }
 }
 
-impl From<VaultError> for PublicError {
+impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
             VaultError::AlreadyExists => Self {
@@ -146,6 +180,33 @@ impl From<VaultError> for PublicError {
                 code: "wrong_recovery_key",
                 message: "That recovery key does not open this vault. If you replaced your recovery key, use the newest one.",
             },
+            VaultError::BackupNotOpened => Self {
+                code: "backup_not_opened",
+                message: "myCarlos could not open that file. If it is in a cloud or shared folder, copy it to a folder on this device and choose it there. Nothing on this device was changed.",
+            },
+            VaultError::DamagedDocument(_) => Self {
+                code: "damaged_document",
+                message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
+            },
+            VaultError::RestoreUnfinished => Self {
+                code: "restore_unfinished",
+                message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
+            },
+        }
+    }
+}
+
+impl From<VaultError> for PublicError {
+    fn from(error: VaultError) -> Self {
+        let record_id = match error {
+            VaultError::DamagedDocument(id) => Some(id),
+            _ => None,
+        };
+        let PublicText { code, message } = PublicText::from(error);
+        Self {
+            code,
+            message,
+            record_id,
         }
     }
 }
@@ -825,10 +886,7 @@ async fn vault_recovery_kit_save(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<bool> {
     // Nothing is asked for unless a key is waiting to be confirmed.
-    run_blocking(store.inner(), |store| {
-        store.recovery_kit(now_ms()).map(drop)
-    })
-    .await?;
+    let name = run_blocking(store.inner(), |store| store.recovery_kit_name(now_ms())).await?;
     // Held until the kit is written, so that the automatic lock cannot fall
     // between the picker closing and the write.
     let _open = ActivityHold::new(store.idle());
@@ -837,7 +895,7 @@ async fn vault_recovery_kit_save(
         dialog
             .dialog()
             .file()
-            .set_file_name("myCarlos recovery kit.txt")
+            .set_file_name(name)
             .blocking_save_file()
     })
     .await
@@ -943,7 +1001,8 @@ async fn vault_backup_picked(
         return run_blocking(store.inner(), move |store| {
             store.backup_atomic(&path, now_ms())
         })
-        .await;
+        .await
+        .map_err(PublicError::of_backup);
     }
     // Android content providers return a URI rather than a path. A backup
     // holds only ciphertext, so a partial one left by a failure is not
@@ -963,6 +1022,7 @@ async fn vault_backup_picked(
         store.backup(std::io::BufWriter::new(output), now_ms())
     })
     .await
+    .map_err(PublicError::of_backup)
 }
 
 /// Asks which backup to restore. Only while no vault is open.
@@ -995,19 +1055,21 @@ fn open_restore_source(
     app: &tauri::AppHandle,
     source: tauri_plugin_fs::FilePath,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    // Said of the file, and that nothing changed: a restore that cannot
+    // start from it has not touched the vault.
     if let Ok(path) = source.clone().into_path() {
         // As for imports: a regular file, opened without following a link or
         // waiting on a pipe or device.
-        return Ok(Box::new(std::io::BufReader::new(vault::open_regular_read(
-            &path,
-        )?)));
+        return Ok(Box::new(std::io::BufReader::new(
+            vault::open_regular_read(&path).map_err(|_| VaultError::BackupNotOpened)?,
+        )));
     }
     let mut options = OpenOptions::new();
     options.read(true);
     let file = app
         .fs()
         .open(source, options)
-        .map_err(|_| VaultError::Storage)?;
+        .map_err(|_| VaultError::BackupNotOpened)?;
     Ok(Box::new(std::io::BufReader::new(file)))
 }
 
@@ -1032,6 +1094,7 @@ async fn vault_restore_inspect(
         result
     })
     .await
+    .map_err(PublicError::of_restore)
 }
 
 /// What the native confirmation says before a restore replaces a vault. It
@@ -1046,6 +1109,9 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
             "The vault on this device is a different one from the backup's. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+        )),
+        RestoreReplaces::Unreadable => Some(format!(
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
             "The vault on this device is not the same as this backup ({documents}). Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
@@ -1079,7 +1145,8 @@ async fn vault_restore(
         run_blocking(store.inner(), move |store| {
             store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
         })
-        .await?
+        .await
+        .map_err(PublicError::of_restore)?
     };
     if let Some(warning) = restore_warning(&preview) {
         // The renderer must have asked for a replacement too.
@@ -1122,6 +1189,7 @@ async fn vault_restore(
             .map(|()| true)
     })
     .await
+    .map_err(PublicError::of_restore)
 }
 
 #[tauri::command]
@@ -1522,6 +1590,19 @@ mod tests {
         ));
     }
     #[test]
+    fn a_backup_that_could_not_read_the_vault_asks_nothing_to_be_checked() {
+        let backup = PublicError::from(VaultError::Unreadable).of_backup();
+        assert_eq!(backup.code, "unreadable");
+        assert!(backup.message.contains("no backup was saved"));
+        assert!(!backup.message.contains("typed"));
+        let other = PublicError::from(VaultError::Corrupt).of_backup();
+        assert_eq!(
+            other.message,
+            PublicError::from(VaultError::Corrupt).message
+        );
+    }
+
+    #[test]
     fn public_errors_do_not_expose_internal_details() {
         let error = PublicError::from(VaultError::Storage);
         assert_eq!(error.code, "storage");
@@ -1540,6 +1621,38 @@ mod tests {
         assert_eq!(partial.code, "partial_export");
         assert!(partial.message.contains("partial readable copy"));
         assert!(partial.message.contains("Delete"));
+    }
+
+    #[test]
+    fn a_damaged_document_is_named_by_id_only() {
+        let id = Uuid::new_v4();
+        let value =
+            serde_json::to_value(PublicError::from(VaultError::DamagedDocument(id))).unwrap();
+        assert_eq!(value["code"], "damaged_document");
+        assert_eq!(value["recordId"], id.to_string());
+        // Every other error leaves the field out.
+        let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
+        assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_backup_that_does_not_open_is_not_said_to_be_the_vault() {
+        // A backup opens with what its vault had when it was saved, not with
+        // a key or passphrase set since.
+        let key = PublicError::from(VaultError::WrongRecoveryKey).of_restore();
+        assert_eq!(key.code, "wrong_recovery_key");
+        assert!(key.message.contains("does not open this backup"));
+        assert!(key.message.contains("when it was saved"));
+        assert!(!key.message.contains("newest"));
+        let passphrase = PublicError::from(VaultError::WrongPassphrase).of_restore();
+        assert_eq!(passphrase.code, "wrong_passphrase");
+        assert!(passphrase.message.contains("does not open this backup"));
+        // Anything else is said as it is everywhere.
+        let other = PublicError::from(VaultError::BackupUnreadable).of_restore();
+        assert_eq!(
+            other.message,
+            PublicError::from(VaultError::BackupUnreadable).message
+        );
     }
 
     #[test]
@@ -1835,6 +1948,8 @@ mod tests {
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
         let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
         assert!(other.contains("a different one") && other.contains("3 documents"));
+        let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
+        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("is not the same as") && changed.contains("passphrase"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();

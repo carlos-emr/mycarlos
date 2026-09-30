@@ -2,6 +2,7 @@ import { LibrarySidebar } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  namedDamage,
   vaultErrorMessage,
   type VaultBridge,
   type VaultFolder,
@@ -21,6 +22,7 @@ import {
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -59,6 +61,7 @@ export function VaultLibrary({
   onAutoLockMinutes,
   newVaultRecoveryKey = null,
   onNewVaultRecoveryKeyShown,
+  onUnfinishedRecoveryKey,
   canPrint = false,
 }: {
   bridge: VaultBridge;
@@ -76,11 +79,23 @@ export function VaultLibrary({
   /** The recovery key made with a vault just created, to set up first. */
   newVaultRecoveryKey?: string | null;
   onNewVaultRecoveryKeyShown?: () => void;
+  /** Whether a recovery key setup has shown a key and not ended: a lock then
+   * ends it, and the patient is told after the next unlock. */
+  onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
+  // Gone once the vault locks: what a reply that comes later would show is
+  // then not seen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<NativeView>("list");
@@ -404,7 +419,11 @@ export function VaultLibrary({
         setNotice("No location chosen. Nothing changed.");
         return;
       }
-      await bridge.saveBackupToPicked(pickId);
+      try {
+        await bridge.saveBackupToPicked(pickId);
+      } catch (error) {
+        throw namedDamage(error, snapshot);
+      }
       setNotice(
         "Encrypted backup saved. Keep it somewhere other than this device.",
       );
@@ -845,10 +864,11 @@ export function VaultLibrary({
                       vault's files could not be read, and they may be newer or
                       intact, so nothing can be changed for now, including your
                       passphrase and recovery key. Your documents can still be
-                      opened and saved as copies. Check that the drive holding
-                      the myCarlos data folder is connected, that no other
-                      program holds the folder, and that a cloud sync tool keeps
-                      its files on this device, then lock and unlock again.
+                      opened and saved as copies, except any marked “File
+                      unavailable”. Check that the drive holding the myCarlos
+                      data folder is connected, that no other program holds the
+                      folder, and that a cloud sync tool keeps its files on this
+                      device, then lock and unlock again.
                     </span>
                   </div>
                 )}
@@ -1025,6 +1045,11 @@ export function VaultLibrary({
               replacing={Boolean(snapshot.recoveryKeySetAtMs)}
               required={recoverySetup.required}
               canPrint={canPrint}
+              onKeyShown={() =>
+                onUnfinishedRecoveryKey?.({
+                  setAtMs: snapshot.recoveryKeySetAtMs ?? null,
+                })
+              }
               onDone={() => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
                 const saved = replaced
@@ -1032,23 +1057,27 @@ export function VaultLibrary({
                   : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");
+                // The setup is finished once the patient is told so. Until
+                // then a lock leaves it unfinished, and the next unlock says
+                // the key was saved.
+                const tell = (message: string) => {
+                  if (!mountedRef.current) return;
+                  onUnfinishedRecoveryKey?.(null);
+                  setDialogResult({ message, recordId: activeRecordId });
+                };
                 void refresh().then(
-                  () =>
-                    setDialogResult({
-                      message: saved,
-                      recordId: activeRecordId,
-                    }),
+                  () => tell(saved),
                   // The key is saved, but this screen still shows the vault
                   // as it was before.
                   (error: unknown) =>
-                    setDialogResult({
-                      message: `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
-                      recordId: activeRecordId,
-                    }),
+                    tell(
+                      `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
+                    ),
                 );
                 focusPageIfLost();
               }}
               onClose={(keyShown) => {
+                onUnfinishedRecoveryKey?.(null);
                 setRecoverySetup(null);
                 if (keyShown) {
                   setNotice("");
