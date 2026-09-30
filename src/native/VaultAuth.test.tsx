@@ -2,10 +2,24 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CreateVault, UnlockVault } from "./VaultAuth";
 
+const restoreBridge = {
+  pickRestoreSource: vi.fn().mockResolvedValue(null),
+  inspectRestore: vi.fn(),
+  restore: vi.fn(),
+};
+
 describe("CreateVault", () => {
   it("refuses a passphrase under the minimum as the vault counts it", () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
-    render(<CreateVault busy={false} notice="" onCreate={onCreate} />);
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={onCreate}
+      />,
+    );
     fireEvent.change(screen.getByLabelText("First patient profile"), {
       target: { value: "Jamie" },
     });
@@ -31,7 +45,15 @@ describe("CreateVault", () => {
   });
 
   it("accepts a profile name of 120 characters that need two UTF-16 units each", () => {
-    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    );
     const profile = screen.getByLabelText("First patient profile");
     fireEvent.change(profile, { target: { value: "\u{1F332}".repeat(120) } });
     expect(profile).toHaveValue("\u{1F332}".repeat(120));
@@ -44,7 +66,15 @@ describe("CreateVault", () => {
   });
 
   it("refuses a profile name of only spaces, which the vault would refuse", () => {
-    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    );
     fireEvent.change(screen.getByLabelText("First patient profile"), {
       target: { value: "   " },
     });
@@ -56,15 +86,32 @@ describe("CreateVault", () => {
   });
 
   it("reads the passphrase rules with the passphrase field", () => {
-    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    );
     expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
       /^Use at least 15 characters\./,
     );
   });
 
   it("keeps an empty status line on the page without taking up space", () => {
-    render(<CreateVault busy={false} notice="" onCreate={vi.fn()} />);
-    const status = screen.getByRole("status");
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    );
+    // The Create form's; the other is under "Restore from a backup".
+    const status = screen.getAllByRole("status")[0];
     expect(status).toBeEmptyDOMElement();
     expect(status.getBoundingClientRect().height).toBe(0);
     // The same 12px as between the other fields.
@@ -79,7 +126,15 @@ describe("CreateVault", () => {
 
   it("does not silently shorten a long pasted passphrase", () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
-    render(<CreateVault busy={false} notice="" onCreate={onCreate} />);
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={onCreate}
+      />,
+    );
     fireEvent.change(screen.getByLabelText("First patient profile"), {
       target: { value: "Jamie" },
     });
@@ -103,6 +158,8 @@ describe("UnlockVault", () => {
         autoLockMinutes={5}
         onUnlock={onUnlock}
         onRecover={vi.fn()}
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
         onReset={vi.fn()}
       />,
     );
@@ -129,6 +186,8 @@ describe("UnlockVault", () => {
       autoLockMinutes: 5,
       onUnlock: vi.fn(),
       onRecover: vi.fn(),
+      restoreBridge,
+      onRestored: vi.fn(),
       onReset: vi.fn(),
     };
     const { rerender } = render(<UnlockVault {...props} notice="" />);
@@ -152,6 +211,8 @@ describe("UnlockVault", () => {
         autoLockMinutes={5}
         onUnlock={vi.fn()}
         onRecover={vi.fn()}
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
         onReset={vi.fn()}
       />,
     );
@@ -168,6 +229,8 @@ describe("UnlockVault", () => {
       onUnlock: vi.fn(),
       onRecover,
       onReset: vi.fn(),
+      restoreBridge,
+      onRestored: vi.fn(),
     };
     const { rerender } = render(<UnlockVault {...props} notice="" />);
     fireEvent.change(screen.getByLabelText("Recovery key"), {
@@ -214,6 +277,8 @@ describe("UnlockVault", () => {
         autoLockMinutes={5}
         onUnlock={vi.fn()}
         onRecover={vi.fn()}
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
         onReset={vi.fn()}
       />,
     );

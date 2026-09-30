@@ -48,6 +48,29 @@ export interface RecoveryKeyGroup {
   value: string;
 }
 
+/** What restoring a backup would replace on this device: "unreadable" is a
+ * vault that could not be read to tell whether it is the backup's. */
+export type RestoreReplaces =
+  | "nothing"
+  | "sameVault"
+  | "otherVault"
+  | "unreadable";
+
+export interface RestorePreview {
+  replaces: RestoreReplaces;
+  /** The vault on this device is the backup's, and its documents,
+   * passphrase or recovery key have changed since (or it could not be read
+   * to tell). Restoring loses those changes. */
+  differsFromThisDevice: boolean;
+  /** How many documents the backup holds. */
+  documentCount: number;
+}
+
+/** What opens a backup: the passphrase it was made with, or its recovery key. */
+export type RestoreCredential =
+  | { passphrase: string }
+  | { recoveryKey: string };
+
 export interface RecoverOutcome {
   /** False when the vault could only open read-only, leaving the passphrase
    * unchanged. */
@@ -91,6 +114,25 @@ export interface VaultBridge {
   cancelRecoveryKey(): Promise<void>;
   /** Opens a locked vault with its recovery key and a new passphrase. */
   recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
+  /** Asks where to save an encrypted backup; null if the picker was
+   * cancelled. */
+  pickBackupDestination(): Promise<string | null>;
+  saveBackupToPicked(pickId: string): Promise<void>;
+  /** Asks which backup to restore, while no vault is open. */
+  pickRestoreSource(): Promise<string | null>;
+  /** Opens the chosen backup and says what restoring it would replace. */
+  inspectRestore(
+    pickId: string,
+    credential: RestoreCredential,
+  ): Promise<RestorePreview>;
+  /** Restores it. `replace` says the patient agreed to replacing the vault
+   * on this device, which a native dialog then confirms; false if they
+   * cancelled there. The vault is left locked. */
+  restore(
+    pickId: string,
+    credential: RestoreCredential,
+    replace: boolean,
+  ): Promise<boolean>;
   createProfile(displayName: string): Promise<string>;
   createFolder(
     profileId: string,
@@ -131,6 +173,8 @@ export interface VaultBridge {
 interface PublicError {
   code?: string;
   message?: string;
+  /** The document a failure is about, if it is about one. */
+  recordId?: string;
 }
 
 export function vaultErrorMessage(error: unknown): string {
@@ -139,6 +183,29 @@ export function vaultErrorMessage(error: unknown): string {
     if (typeof message === "string") return message;
   }
   return "The vault operation could not be completed.";
+}
+
+/** A backup refused over one document that no longer reads, named: the
+ * native side gives only its id. Any other error is returned as it is. */
+export function namedDamage(
+  error: unknown,
+  vault: Pick<VaultSnapshot, "profiles" | "records">,
+): unknown {
+  if (!hasErrorCode(error, "damaged_document")) return error;
+  const id = (error as PublicError).recordId;
+  const record = vault.records.find((candidate) => candidate.id === id);
+  if (!record) return error;
+  // Two documents can share a name: when it was added, and whose records
+  // hold it if there is more than one person's, tell them apart.
+  const profile =
+    vault.profiles.length > 1
+      ? vault.profiles.find((candidate) => candidate.id === record.profileId)
+      : undefined;
+  const where = `added ${new Date(record.importedAtMs).toLocaleDateString()}${profile ? `, in ${profile.displayName}'s records` : ""}`;
+  return {
+    code: "damaged_document",
+    message: `No backup was saved: the document "${record.displayName}" (${where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+  };
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -162,6 +229,11 @@ export const isCancelledError = (error: unknown) =>
  * match what was expected. */
 export const isRecoveryKeyTypo = (error: unknown) =>
   hasErrorCode(error, "recovery_key_typo");
+
+/** True when a restore was checked but has not yet replaced the vault: the
+ * next start puts it in place. */
+export const isRestoreUnfinished = (error: unknown) =>
+  hasErrorCode(error, "restore_unfinished");
 
 /** True when the native side reports that there is no vault to unlock or erase. */
 export const isMissingVaultError = (error: unknown) =>
@@ -206,6 +278,18 @@ export function createVaultBridge(): VaultBridge {
     recover: (recoveryKey, newPassphrase) =>
       invoke<RecoverOutcome>("vault_recover", {
         request: { recoveryKey, newPassphrase },
+      }),
+    pickBackupDestination: () => invoke<string | null>("vault_backup_pick"),
+    saveBackupToPicked: (pickId) =>
+      invoke<void>("vault_backup_picked", { request: { pickId } }),
+    pickRestoreSource: () => invoke<string | null>("vault_restore_pick"),
+    inspectRestore: (pickId, credential) =>
+      invoke<RestorePreview>("vault_restore_inspect", {
+        request: { pickId, ...credential },
+      }),
+    restore: (pickId, credential, replace) =>
+      invoke<boolean>("vault_restore", {
+        request: { pickId, ...credential, replace },
       }),
     createProfile: (displayName) =>
       invoke<string>("vault_create_profile", { request: { displayName } }),

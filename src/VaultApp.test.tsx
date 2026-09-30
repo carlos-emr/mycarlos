@@ -59,6 +59,15 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     recover: vi
       .fn()
       .mockResolvedValue({ passphraseReplaced: true, snapshot: emptySnapshot }),
+    pickBackupDestination: vi.fn().mockResolvedValue(null),
+    saveBackupToPicked: vi.fn().mockResolvedValue(undefined),
+    pickRestoreSource: vi.fn().mockResolvedValue(null),
+    inspectRestore: vi.fn().mockResolvedValue({
+      replaces: "nothing",
+      differsFromThisDevice: false,
+      documentCount: 0,
+    }),
+    restore: vi.fn().mockResolvedValue(true),
     createProfile: vi.fn().mockResolvedValue("profile-2"),
     createFolder: vi.fn().mockResolvedValue("folder-1"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -995,6 +1004,157 @@ describe("durable vault UI", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("saves an encrypted backup from Security as a transfer", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    expect(
+      await screen.findByText(
+        "Encrypted backup saved. Keep it somewhere other than this device.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("names the damaged document that stopped a backup", async () => {
+    const user = userEvent.setup();
+    const recordId = snapshotWithRecord.records[0].id;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "damaged_document",
+        message: "A document in the vault is damaged.",
+        recordId,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(
+      await screen.findByText(
+        /^No backup was saved: the document "FAKE_Results\.pdf" \(added [^)]+\) is damaged and can no longer be read/,
+      ),
+    ).toBeVisible();
+  });
+
+  it("restores a backup on a device with no vault, and leaves it locked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-3"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "nothing",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(bridge.restore).toHaveBeenCalledWith(
+      "pick-3",
+      { passphrase: "river-azimuth-cobalt-sparrow-934" },
+      false,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    // The screen opens on it, so the field that takes focus says it.
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /^Backup restored\./,
+    );
+  });
+
+  it("restores over a locked vault, and leaves focus in the Passphrase field", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+    });
+    // A key setup the last lock ended, in the vault being replaced.
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(await screen.findByText(/^Backup restored\./)).toBeVisible();
+    // The button that was pressed is gone with the form.
+    expect(screen.getByLabelText("Passphrase")).toHaveFocus();
+    // Its outcome would be told of the restored vault, wrongly.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
+  });
+
+  it("forgets a key setup's outcome when a restore will finish at the next start", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+      restore: vi.fn().mockRejectedValue({
+        code: "restore_unfinished",
+        message: "The backup was checked, but restoring it has not finished.",
+      }),
+    });
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(
+      await screen.findByText(/restoring it has not finished/),
+    ).toBeVisible();
+    // The vault it was told of is the one the next start replaces.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
   });
 
   // Opens recovery key setup from Security, as far as the key step, in a

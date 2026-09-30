@@ -131,25 +131,32 @@ On every platform:
    (**Rename folder**).
 6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
-7. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
+7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
+   app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a
+   backup** on the unlock screen: pick the file, open it with the passphrase, and check that the
+   app says the vault on this device is not the same as the backup and asks you to agree before
+   restoring. After restoring, the vault is locked; unlock it and check that the extra document is
+   gone and the others open. Try a copy of the backup with a few bytes changed: it is refused and
+   nothing changes.
+8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-8. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+9. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
    keep the screen on), and confirm it locks.
-9. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
-   it is locked when you come back.
-10. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
-   drive so it takes several seconds). While it is still importing, send the app to the
-   background, then come back within a minute. If the import is still running, the screen should
-   say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
-   vault should lock by itself when it is done, saying only "Vault locked." Unlock: the app should
-   say "Vault unlocked. 1 file(s) encrypted and imported." and the document should be in the
-   library.
-   On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
-   importing, and the import continues only when you come back. If you come back within the
-   automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
-   does. If you stay away longer than that, the vault may instead lock as you return and leave the
-   document out; after you unlock, the app says "The transfer did not finish." Either way nothing
-   from the vault is shown meanwhile.
+10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+    it is locked when you come back.
+11. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+    drive so it takes several seconds). While it is still importing, send the app to the
+    background, then come back within a minute. If the import is still running, the screen should
+    say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
+    vault should lock by itself when it is done, saying only "Vault locked." Unlock: the app should
+    say "Vault unlocked. 1 file(s) encrypted and imported." and the document should be in the
+    library.
+    On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
+    importing, and the import continues only when you come back. If you come back within the
+    automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
+    does. If you stay away longer than that, the vault may instead lock as you return and leave the
+    document out; after you unlock, the app says "The transfer did not finish." Either way nothing
+    from the vault is shown meanwhile.
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
@@ -191,7 +198,7 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 1. **Create a vault** (the first screen on a new install). Every field is read with its name,
    and the **Passphrase** field also with its rules ("Use at least 15 characters…"). Type two
    different passphrases: "Passphrases do not match." is read out. After **Create vault**,
-   "Encrypted vault created…" is read out.
+   the recovery key setup opens and its title is read out.
 2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
    wrong passphrase: the reason is read out without you moving focus. Then unlock: "Vault
    unlocked." is read out (with a transfer's result, if one finished while the vault was locked).

@@ -84,6 +84,10 @@
 .vault-reset > label { margin: 12px 0; }
 .vault-reset form { margin-top: 12px; }
 .vault-reset-heading { margin: 22px 0 4px; font-size: 1rem; }
+.restore-backup fieldset { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
+.restore-backup legend { margin-bottom: 4px; font-weight: 700; }
+.vault-card .restore-choice { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.vault-card .restore-choice input { min-height: 0; }
 
 @media (max-width: 47.5em) {
   .vault-card { padding: 24px; }

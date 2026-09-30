@@ -17,7 +17,10 @@ use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use uuid::Uuid;
-use vault::{ImportSource, VaultError, VaultSnapshot, VaultStatus, VaultStore};
+use vault::{
+    ImportSource, RestoreCredential, RestorePreview, RestoreReplaces, VaultError, VaultSnapshot,
+    VaultStatus, VaultStore,
+};
 use zeroize::Zeroize;
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -34,6 +37,16 @@ struct RuntimeInfo {
 struct PublicError {
     code: &'static str,
     message: &'static str,
+    /// The document a failure is about, for the renderer to name: a name is
+    /// never put in an error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_id: Option<Uuid>,
+}
+
+/// What an error says, whatever it is about.
+struct PublicText {
+    code: &'static str,
+    message: &'static str,
 }
 
 type CommandResult<T> = Result<T, PublicError>;
@@ -43,20 +56,32 @@ impl PublicError {
         Self {
             code: "partial_export",
             message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
+            record_id: None,
         }
     }
-}
 
-impl PublicError {
+    /// A failure to open a backup, said of the backup: a backup opens with
+    /// the credentials its vault had when it was saved, which need not be
+    /// the ones the vault has now.
+    fn of_restore(self) -> Self {
+        let message = match self.code {
+            "wrong_recovery_key" => "That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved (not a key set up or replaced since), or with the passphrase it was made with.",
+            "wrong_passphrase" => "That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved.",
+            _ => return self,
+        };
+        Self { message, ..self }
+    }
+
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
             message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            record_id: None,
         }
     }
 }
 
-impl From<VaultError> for PublicError {
+impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
             VaultError::AlreadyExists => Self {
@@ -127,10 +152,45 @@ impl From<VaultError> for PublicError {
                 code: "recovery_key_typo",
                 message: "That doesn't match the recovery key. Check each group of characters and try again.",
             },
+            VaultError::BackupChanged => Self {
+                code: "backup_changed",
+                message: "The backup file, or the vault on this device, changed after you chose to restore. Nothing on this device was changed. Choose the backup file again.",
+            },
+            VaultError::BackupUnreadable => Self {
+                code: "backup_unreadable",
+                message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
+            },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
                 message: "That recovery key does not open this vault. If you replaced your recovery key, use the newest one.",
             },
+            VaultError::BackupNotOpened => Self {
+                code: "backup_not_opened",
+                message: "myCarlos could not open that file. If it is in a cloud or shared folder, copy it to a folder on this device and choose it there. Nothing on this device was changed.",
+            },
+            VaultError::DamagedDocument(_) => Self {
+                code: "damaged_document",
+                message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
+            },
+            VaultError::RestoreUnfinished => Self {
+                code: "restore_unfinished",
+                message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
+            },
+        }
+    }
+}
+
+impl From<VaultError> for PublicError {
+    fn from(error: VaultError) -> Self {
+        let record_id = match error {
+            VaultError::DamagedDocument(id) => Some(id),
+            _ => None,
+        };
+        let PublicText { code, message } = PublicText::from(error);
+        Self {
+            code,
+            message,
+            record_id,
         }
     }
 }
@@ -150,6 +210,50 @@ struct RemoveUnavailableRequest {
 #[derive(Deserialize)]
 struct PassphraseRequest {
     passphrase: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickRequest {
+    pick_id: Uuid,
+}
+
+/// The passphrase a backup was made with, or its recovery key: exactly one.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreRequest {
+    pick_id: Uuid,
+    passphrase: Option<String>,
+    recovery_key: Option<String>,
+    #[serde(default)]
+    replace: bool,
+}
+
+impl RestoreRequest {
+    fn credential(&self) -> Result<RestoreCredential<'_>, VaultError> {
+        match (&self.passphrase, &self.recovery_key) {
+            (Some(passphrase), None) => Ok(RestoreCredential::Passphrase(passphrase)),
+            (None, Some(key)) => Ok(RestoreCredential::RecoveryKey(key)),
+            _ => Err(VaultError::Invalid),
+        }
+    }
+
+    fn zeroize(&mut self) {
+        if let Some(passphrase) = &mut self.passphrase {
+            passphrase.zeroize();
+        }
+        if let Some(key) = &mut self.recovery_key {
+            key.zeroize();
+        }
+    }
+}
+
+// Wiped however the command ends, including the early returns that never
+// reach the vault.
+impl Drop for RestoreRequest {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 #[derive(Deserialize)]
@@ -283,11 +387,19 @@ struct PendingPicks {
     session: AtomicU64,
     imports: PickTable<(ImportRequest, Vec<tauri_plugin_fs::FilePath>)>,
     exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
+    backups: PickTable<tauri_plugin_fs::FilePath>,
+    restores: PickTable<tauri_plugin_fs::FilePath>,
 }
 
 // Long enough to cover the renderer's round trip after the picker closes, and
 // short enough that a stale choice cannot be used much later.
 const PICK_TTL: Duration = Duration::from_secs(120);
+// A backup to restore is chosen, then its passphrase or recovery key typed,
+// then what it replaces confirmed: long enough to read that warning.
+const RESTORE_PICK_TTL: Duration = Duration::from_secs(15 * 60);
+// What storing a pick prunes by: the longest any kind of pick may live. Each
+// kind's own limit is applied when the pick is used.
+const LONGEST_PICK_TTL: Duration = RESTORE_PICK_TTL;
 
 /// One kind of pending pick, keyed by the id handed to the renderer.
 struct PickTable<T>(Mutex<HashMap<Uuid, PickEntry<T>>>);
@@ -310,7 +422,7 @@ impl<T> PickTable<T> {
 
     fn store(&self, session: u64, value: T) -> Uuid {
         let mut entries = self.entries();
-        entries.retain(|_, (picked_at, _, _)| picked_at.elapsed() < PICK_TTL);
+        entries.retain(|_, (picked_at, _, _)| picked_at.elapsed() < LONGEST_PICK_TTL);
         let pick_id = Uuid::new_v4();
         entries.insert(pick_id, (Instant::now(), session, value));
         pick_id
@@ -319,8 +431,22 @@ impl<T> PickTable<T> {
     /// Removes the pick whether or not it is still usable: a stale one, or one
     /// from an earlier session, is never used.
     fn take(&self, pick_id: Uuid, session: u64) -> Option<T> {
+        self.take_within(pick_id, session, PICK_TTL)
+    }
+
+    fn take_within(&self, pick_id: Uuid, session: u64, ttl: Duration) -> Option<T> {
         let (picked_at, picked_in, value) = self.entries().remove(&pick_id)?;
-        (picked_at.elapsed() < PICK_TTL && picked_in == session).then_some(value)
+        (picked_at.elapsed() < ttl && picked_in == session).then_some(value)
+    }
+
+    /// The pick, left in place for a later `take_within`.
+    fn peek_within(&self, pick_id: Uuid, session: u64, ttl: Duration) -> Option<T>
+    where
+        T: Clone,
+    {
+        let entries = self.entries();
+        let (picked_at, picked_in, value) = entries.get(&pick_id)?;
+        (picked_at.elapsed() < ttl && *picked_in == session).then(|| value.clone())
     }
 
     fn clear(&self) {
@@ -390,6 +516,8 @@ impl PendingPicks {
         self.session.fetch_add(1, Ordering::SeqCst);
         self.imports.clear();
         self.exports.clear();
+        self.backups.clear();
+        self.restores.clear();
     }
 }
 
@@ -759,6 +887,237 @@ async fn vault_recover(
     .await
 }
 
+/// Asks where to save an encrypted backup. The backup itself is written by
+/// `vault_backup_picked`, so that the renderer can treat it as a transfer.
+#[tauri::command]
+async fn vault_backup_pick(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+) -> CommandResult<Option<Uuid>> {
+    let session = picks.session();
+    // Nothing is asked for unless there is a writable vault to back up.
+    run_blocking(store.inner(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_file_name("myCarlos backup.mycarlosbackup")
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(destination.map(|destination| picks.backups.store(session, destination)))
+}
+
+#[tauri::command]
+async fn vault_backup_picked(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickRequest,
+) -> CommandResult<()> {
+    let destination = picks
+        .backups
+        .take(request.pick_id, picks.session())
+        .ok_or(VaultError::NotFound)?;
+    if let Ok(path) = destination.clone().into_path() {
+        return run_blocking(store.inner(), move |store| {
+            store.backup_atomic(&path, now_ms())
+        })
+        .await;
+    }
+    // Android content providers return a URI rather than a path. A backup
+    // holds only ciphertext, so a partial one left by a failure is not
+    // readable, only incomplete, and restoring it is refused.
+    run_blocking(store.inner(), move |store| {
+        // Opening the document empties it, and it may be an earlier backup:
+        // find a document that cannot be backed up before that.
+        store.verify_for_backup()?;
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        let opening = Opening::new(store.idle());
+        let output = app
+            .fs()
+            .open(destination, options)
+            .map_err(|_| VaultError::Storage)?;
+        drop(opening);
+        store.backup(std::io::BufWriter::new(output), now_ms())
+    })
+    .await
+}
+
+/// Asks which backup to restore. Only while no vault is open.
+#[tauri::command]
+async fn vault_restore_pick(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+) -> CommandResult<Option<Uuid>> {
+    let session = picks.session();
+    run_blocking(store.inner(), |store| match store.status()? {
+        VaultStatus::Unlocked => Err(VaultError::Invalid),
+        _ => Ok(()),
+    })
+    .await?;
+    let source = tauri::async_runtime::spawn_blocking(move || {
+        let picker = app.dialog().file();
+        // Phone pickers filter by file type, and a backup has none they know,
+        // so a filter there could hide every file.
+        #[cfg(desktop)]
+        let picker = picker.add_filter("myCarlos backups", &["mycarlosbackup"]);
+        picker.blocking_pick_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(source.map(|source| picks.restores.store(session, source)))
+}
+
+fn open_restore_source(
+    app: &tauri::AppHandle,
+    source: tauri_plugin_fs::FilePath,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    // Said of the file, and that nothing changed: a restore that cannot
+    // start from it has not touched the vault.
+    if let Ok(path) = source.clone().into_path() {
+        // As for imports: a regular file, opened without following a link or
+        // waiting on a pipe or device.
+        return Ok(Box::new(std::io::BufReader::new(
+            vault::open_regular_read(&path).map_err(|_| VaultError::BackupNotOpened)?,
+        )));
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    let file = app
+        .fs()
+        .open(source, options)
+        .map_err(|_| VaultError::BackupNotOpened)?;
+    Ok(Box::new(std::io::BufReader::new(file)))
+}
+
+/// Opens the chosen backup with its credential and says what restoring it
+/// would replace. The pick stays for `vault_restore`.
+#[tauri::command]
+async fn vault_restore_inspect(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    mut request: RestoreRequest,
+) -> CommandResult<RestorePreview> {
+    let source = picks
+        .restores
+        .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
+        .ok_or(VaultError::NotFound)?;
+    run_blocking(store.inner(), move |store| {
+        let result = request.credential().and_then(|credential| {
+            store.inspect_backup(open_restore_source(&app, source)?, credential)
+        });
+        request.zeroize();
+        result
+    })
+    .await
+    .map_err(PublicError::of_restore)
+}
+
+/// What the native confirmation says before a restore replaces a vault. It
+/// is worked out here from the backup and the vault themselves, never taken
+/// from the renderer.
+fn restore_warning(preview: &RestorePreview) -> Option<String> {
+    let documents = match preview.document_count {
+        1 => "1 document".to_owned(),
+        count => format!("{count} documents"),
+    };
+    match preview.replaces {
+        RestoreReplaces::Nothing => None,
+        RestoreReplaces::OtherVault => Some(format!(
+            "The vault on this device is a different one from the backup's. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+        )),
+        RestoreReplaces::Unreadable => Some(format!(
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+        )),
+        RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
+            "The vault on this device is not the same as this backup ({documents}). Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+        )),
+        RestoreReplaces::SameVault => Some(format!(
+            "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
+        )),
+    }
+}
+
+/// Restores the chosen backup. Replacing a vault erases it, so, as for a
+/// reset, a trusted native dialog confirms that first, and says what would be
+/// lost; the renderer's own agreement is not enough. Returns false if the
+/// patient cancelled there.
+#[tauri::command]
+async fn vault_restore(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: RestoreRequest,
+) -> CommandResult<bool> {
+    // Checked before the dialog, and taken only after it, so that a cancelled
+    // dialog leaves the pick for another try.
+    let source = picks
+        .restores
+        .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let request = Arc::new(request);
+    let preview = {
+        let (app, request) = (app.clone(), Arc::clone(&request));
+        run_blocking(store.inner(), move |store| {
+            store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
+        })
+        .await
+        .map_err(PublicError::of_restore)?
+    };
+    if let Some(warning) = restore_warning(&preview) {
+        // The renderer must have asked for a replacement too.
+        if !request.replace {
+            return Err(PublicError::from(VaultError::AlreadyExists));
+        }
+        let dialog_app = app.clone();
+        let confirmed = tauri::async_runtime::spawn_blocking(move || {
+            dialog_app
+                .dialog()
+                .message(warning)
+                .title("Replace the vault on this device?")
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Replace vault".to_owned(),
+                    "Cancel".to_owned(),
+                ))
+                .blocking_show()
+        })
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?;
+        if !confirmed {
+            return Ok(false);
+        }
+    }
+    let source = picks
+        .restores
+        .take_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
+        .ok_or(VaultError::NotFound)?;
+    run_blocking(store.inner(), move |store| {
+        // The file is opened again here. Another backup in its place by now,
+        // or a vault that appeared or changed since, is not what the dialog
+        // described, and is refused.
+        store
+            .restore_confirmed(
+                open_restore_source(&app, source)?,
+                request.credential()?,
+                &preview,
+            )
+            .map(|()| true)
+    })
+    .await
+    .map_err(PublicError::of_restore)
+}
+
 #[tauri::command]
 async fn vault_create_profile(
     store: State<'_, Arc<VaultStore>>,
@@ -1106,6 +1465,11 @@ pub fn run() {
             vault_recovery_kit_save,
             vault_recovery_key_cancel,
             vault_recover,
+            vault_backup_pick,
+            vault_backup_picked,
+            vault_restore_pick,
+            vault_restore_inspect,
+            vault_restore,
             vault_create_profile,
             vault_create_folder,
             vault_update_folder,
@@ -1170,6 +1534,38 @@ mod tests {
         assert_eq!(partial.code, "partial_export");
         assert!(partial.message.contains("partial readable copy"));
         assert!(partial.message.contains("Delete"));
+    }
+
+    #[test]
+    fn a_damaged_document_is_named_by_id_only() {
+        let id = Uuid::new_v4();
+        let value =
+            serde_json::to_value(PublicError::from(VaultError::DamagedDocument(id))).unwrap();
+        assert_eq!(value["code"], "damaged_document");
+        assert_eq!(value["recordId"], id.to_string());
+        // Every other error leaves the field out.
+        let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
+        assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_backup_that_does_not_open_is_not_said_to_be_the_vault() {
+        // A backup opens with what its vault had when it was saved, not with
+        // a key or passphrase set since.
+        let key = PublicError::from(VaultError::WrongRecoveryKey).of_restore();
+        assert_eq!(key.code, "wrong_recovery_key");
+        assert!(key.message.contains("does not open this backup"));
+        assert!(key.message.contains("when it was saved"));
+        assert!(!key.message.contains("newest"));
+        let passphrase = PublicError::from(VaultError::WrongPassphrase).of_restore();
+        assert_eq!(passphrase.code, "wrong_passphrase");
+        assert!(passphrase.message.contains("does not open this backup"));
+        // Anything else is said as it is everywhere.
+        let other = PublicError::from(VaultError::BackupUnreadable).of_restore();
+        assert_eq!(
+            other.message,
+            PublicError::from(VaultError::BackupUnreadable).message
+        );
     }
 
     #[test]
@@ -1455,6 +1851,54 @@ mod tests {
     }
 
     #[test]
+    fn the_restore_confirmation_says_what_would_be_lost() {
+        let preview = |replaces, differs| RestorePreview {
+            replaces,
+            differs_from_this_device: differs,
+            document_count: 3,
+            fingerprint: [0; 32],
+        };
+        assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
+        let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
+        assert!(other.contains("a different one") && other.contains("3 documents"));
+        let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
+        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
+        let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
+        assert!(changed.contains("is not the same as") && changed.contains("passphrase"));
+        let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
+        assert!(same.contains("the same 3 documents"));
+    }
+
+    #[test]
+    fn a_restore_pick_can_be_checked_before_it_is_used() {
+        let picks = PendingPicks::default();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.mycarlosbackup".into());
+        let pick = picks.restores.store(picks.session(), path());
+        // Inspecting leaves it for the restore; the restore uses it up.
+        for _ in 0..2 {
+            assert!(picks
+                .restores
+                .peek_within(pick, picks.session(), RESTORE_PICK_TTL)
+                .is_some());
+        }
+        assert!(picks
+            .restores
+            .take_within(pick, picks.session(), RESTORE_PICK_TTL)
+            .is_some());
+        assert!(picks
+            .restores
+            .peek_within(pick, picks.session(), RESTORE_PICK_TTL)
+            .is_none());
+        // An unlock or a lock in between ends it.
+        let pick = picks.restores.store(picks.session(), path());
+        picks.clear();
+        assert!(picks
+            .restores
+            .take_within(pick, picks.session(), RESTORE_PICK_TTL)
+            .is_none());
+    }
+
+    #[test]
     fn a_pick_is_only_used_for_the_request_it_was_opened_for() {
         let picks = PendingPicks::default();
         let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
@@ -1613,6 +2057,8 @@ mod tests {
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
+            let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
             let _ = serde_json::from_slice::<NameRequest>(&payload);
             let _ = serde_json::from_slice::<FolderRequest>(&payload);

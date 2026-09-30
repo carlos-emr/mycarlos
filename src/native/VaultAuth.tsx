@@ -1,7 +1,21 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import { RestoreBackup } from "./RestoreBackup";
+import type { VaultBridge } from "../vault";
+
+/** What restoring a backup needs from the bridge. */
+export type RestoreBridge = Pick<
+  VaultBridge,
+  "pickRestoreSource" | "inspectRestore" | "restore"
+>;
 
 // The vault counts a new passphrase's characters (Unicode code points) after
 // NFC normalization, so the same visible text is judged alike from any keyboard.
@@ -106,10 +120,14 @@ export function CreateVault({
   busy,
   notice,
   onCreate,
+  restoreBridge,
+  onRestored,
 }: {
   busy: boolean;
   notice: string;
   onCreate: (profile: string, passphrase: string) => Promise<void>;
+  restoreBridge: RestoreBridge;
+  onRestored: () => void;
 }) {
   const [profile, setProfile] = useState("");
   const [passphrase, setPassphrase] = useState("");
@@ -200,6 +218,10 @@ export function CreateVault({
             Create vault
           </button>
         </form>
+        <details className="vault-reset">
+          <summary>Restore from a backup</summary>
+          <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
+        </details>
       </section>
     </VaultAuthFrame>
   );
@@ -212,6 +234,8 @@ export function UnlockVault({
   onUnlock,
   onRecover,
   onReset,
+  restoreBridge,
+  onRestored,
 }: {
   busy: boolean;
   notice: string;
@@ -219,11 +243,14 @@ export function UnlockVault({
   onUnlock: (passphrase: string) => Promise<void>;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
   onReset: (confirmation: string) => Promise<void>;
+  restoreBridge: RestoreBridge;
+  onRestored: () => void;
 }) {
   const [passphrase, setPassphrase] = useState("");
   // Messages go next to the part of the screen they answer: the Unlock form,
   // or the recovery key and erase controls under "Forgot your passphrase?".
   const [source, setSource] = useState<"unlock" | "forgot">("unlock");
+  const passphraseRef = useRef<HTMLInputElement | null>(null);
   const unlockNotice = source === "unlock" ? notice : "";
   // No vault passphrase can be longer, so say so instead of sending it to a
   // native refusal that can only report invalid input.
@@ -250,6 +277,7 @@ export function UnlockVault({
           <label>
             Passphrase
             <input
+              ref={passphraseRef}
               autoFocus
               required
               type="password"
@@ -290,6 +318,19 @@ export function UnlockVault({
             onReset={(confirmation) => {
               setSource("forgot");
               return onReset(confirmation);
+            }}
+          />
+        </details>
+        <details className="vault-reset">
+          <summary>Restore from a backup</summary>
+          <RestoreBackup
+            bridge={restoreBridge}
+            onRestored={() => {
+              // Its message belongs by the Passphrase field, which is next,
+              // and the button that had focus is gone.
+              setSource("unlock");
+              onRestored();
+              passphraseRef.current?.focus();
             }}
           />
         </details>

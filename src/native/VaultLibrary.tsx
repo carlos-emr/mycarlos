@@ -2,6 +2,7 @@ import { LibrarySidebar } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  namedDamage,
   vaultErrorMessage,
   type VaultBridge,
   type VaultFolder,
@@ -410,6 +411,23 @@ export function VaultLibrary({
       ? selectedRecords.map((record) => record.id)
       : [recordId],
   });
+
+  const saveBackup = () =>
+    run(async () => {
+      const pickId = await bridge.pickBackupDestination();
+      if (!pickId) {
+        setNotice("No location chosen. Nothing changed.");
+        return;
+      }
+      try {
+        await bridge.saveBackupToPicked(pickId);
+      } catch (error) {
+        throw namedDamage(error, snapshot);
+      }
+      setNotice(
+        "Encrypted backup saved. Keep it somewhere other than this device.",
+      );
+    });
 
   const exportRecord = (record: VaultRecord) => {
     setConfirmation(null);
@@ -1012,6 +1030,7 @@ export function VaultLibrary({
                 onCreateProfile={createProfile}
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
+                onSaveBackup={saveBackup}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}

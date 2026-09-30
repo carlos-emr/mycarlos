@@ -144,7 +144,9 @@ privacy, accessibility, or clinical review.
 - [x] State the current evaluation's passphrase-only permanent-loss behavior and the limits of
       readable exports/deletion directly in the UI. The recovery key and its kit are implemented (header format 2: set up when a vault is created
       or from Security, with typed-back verification, a saved or printed kit, replacement, and
-      recovery with a new passphrase from the unlock screen); the portable backup remains open.
+      recovery with a new passphrase from the unlock screen), and so is the portable encrypted backup
+      (save from Security; restore from the create or unlock screen, verified in full before it
+      replaces anything).
 
 ## Required before a patient pilot
 
@@ -152,8 +154,11 @@ privacy, accessibility, or clinical review.
       E2EE portal synchronization, sharing, privacy, and updates; see
       [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md). Implementation and review remain open.
 - [ ] Design and test an isolated hostile-PDF viewer with no vault or network capability.
-- [ ] Implement the approved portable encrypted backup, E2EE synchronization, device enrollment,
-      rollback protection, immediate deletion, and resurrection-prevention tombstones.
+- [x] Implement the approved portable encrypted backup (one authenticated file of ciphertext;
+      restore verifies all of it before replacing anything, and asks for agreement before it
+      replaces a vault that is a different one, cannot be read, or differs from the backup).
+- [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
+      and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
 - [ ] Add signing, notarization, app-store packaging, updater security, and release operations.

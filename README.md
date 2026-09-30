@@ -84,7 +84,8 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - A synthetic document preview and connected Recent → Starred → Trash → Restore workflow. Actions
   update all affected library sections in memory until refresh, close, or reset.
 - Browser-only Security & backup and Health data concept screens, alongside a native Security
-  screen for the implemented vault lock, passphrase, profile, and reset operations.
+  screen for the implemented vault lock, passphrase, recovery key, encrypted backup, profile, and
+  reset operations.
 - Typed vault commands crossing from TypeScript to Rust; the browser preview uses no native picker APIs.
 - Native multi-file import and explicit export dialogs owned by Rust; filesystem paths and file
   bytes are never accepted from or returned to React.
@@ -92,7 +93,8 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   one transaction's duration. Individual file size is not capped: encryption remains
   constant-memory by streaming 1 MiB chunks, whose plaintext buffers are zeroized on success and
   error paths.
-- A passphrase-unlocked, XChaCha20-Poly1305 encrypted local vault with an Argon2id key wrapper,
+- A passphrase-unlocked, XChaCha20-Poly1305 encrypted local vault (with a patient-held recovery
+  key and a portable encrypted backup) with an Argon2id key wrapper,
   encrypted metadata, chunked files, per-object keys, atomic manifest generations, and keyed
   duplicate detection.
 - Multiple patient profiles, nested folders, transactional bulk folder assignments, manual/background/
@@ -126,7 +128,7 @@ It deliberately does **not** implement an in-app document viewer, accounts, sync
 Android cloud backup, CARLOS integration, verified provenance, HealthKit/Health Connect, release
 signing, or app-store packaging. Deletion does not yet propagate tombstones to backups or other
 devices. Apple OS backup may carry the encrypted app-data vault, but restore still requires the
-patient passphrase. A successful build and test run is not evidence that the app is ready to hold
+patient passphrase or recovery key. A successful build and test run is not evidence that the app is ready to hold
 PHI.
 
 ## Responsive UI evidence

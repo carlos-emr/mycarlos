@@ -5,6 +5,7 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isRestoreUnfinished,
   vaultErrorMessage,
   type VaultBridge,
   type VaultSnapshot,
@@ -146,6 +147,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       .filter(Boolean)
       .join(" ");
   }, []);
+
+  // Nothing held for the next unlock is about a vault a restore replaces:
+  // not a transfer's outcome, nor how a key setup ended.
+  const forgetReplacedVault = () => {
+    pendingOutcomeRef.current = null;
+    rememberUnfinishedRecoveryKey(null);
+  };
 
   // Taken as a vault opens: what happened while it was locked, and how a
   // recovery key setup that a lock or closing ended actually ended.
@@ -299,6 +307,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
+      pickBackupDestination: () => track(bridge.pickBackupDestination()),
+      saveBackupToPicked: (pickId) =>
+        transfer(() => bridge.saveBackupToPicked(pickId)),
+      pickRestoreSource: () => track(bridge.pickRestoreSource()),
+      restore: async (pickId, credential, replace) => {
+        try {
+          return await bridge.restore(pickId, credential, replace);
+        } catch (error) {
+          // Put in place at the next start: like a restore that finished, it
+          // replaces the vault that what is held for the next unlock is about.
+          if (isRestoreUnfinished(error)) forgetReplacedVault();
+          throw error;
+        }
+      },
       importPickedFiles: (pickId, profileId, folderIds) =>
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
@@ -528,6 +550,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     else if (transferHold.active) holdForUnlock(message);
   };
 
+  // A restored vault is locked: it opens with its own passphrase or key.
+  const restored = () => {
+    forgetReplacedVault();
+    setStatus("locked");
+    setNotice(
+      "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
+    );
+  };
+
   if (status === "loading") {
     return (
       <VaultAuthFrame state="Opening">
@@ -541,6 +572,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <CreateVault
         busy={busy}
         notice={notice}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
         onCreate={(profile, passphrase) =>
           run(async () => {
             setSnapshot(await bridge.create(passphrase, profile));
@@ -585,6 +618,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <UnlockVault
         busy={busy}
         notice={notice}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
         autoLockMinutes={autoLockMinutes}
         onUnlock={(passphrase) =>
           run(async () => {
