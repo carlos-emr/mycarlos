@@ -24,8 +24,9 @@ patient pilot or production application.
 decision, not production approval. [`ARCHITECTURE_DECISION.md`](ARCHITECTURE_DECISION.md) records the
 decision and its limits. This is the dedicated myCarlos repository;
 [HANDOFF.md](HANDOFF.md) records the source revision and original review discussion.
-The imported application remains a synthetic-data evaluation. See [LICENSE_NOTES.md](LICENSE_NOTES.md)
-for the existing repository license and preserved upstream application license declarations.
+The imported application remains a synthetic-data evaluation. myCarlos is free software
+under the GNU Affero General Public License, version 3 or (at your option) any later version
+(`AGPL-3.0-or-later`); see [LICENSE](LICENSE) and [LICENSE_NOTES.md](LICENSE_NOTES.md).
 
 [`THREAT_MODEL.md`](THREAT_MODEL.md) defines the assets, trust boundaries, credible threats,
 required controls, and the Secure Vault v0.1 acceptance gate. [`VAULT_FORMAT.md`](VAULT_FORMAT.md)
@@ -84,7 +85,8 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - A synthetic document preview and connected Recent → Starred → Trash → Restore workflow. Actions
   update all affected library sections in memory until refresh, close, or reset.
 - Browser-only Security & backup and Health data concept screens, alongside a native Security
-  screen for the implemented vault lock, passphrase, profile, and reset operations.
+  screen for the implemented vault lock, passphrase, recovery key, encrypted backup, profile, and
+  reset operations.
 - Typed vault commands crossing from TypeScript to Rust; the browser preview uses no native picker APIs.
 - Native multi-file import and explicit export dialogs owned by Rust; filesystem paths and file
   bytes are never accepted from or returned to React.
@@ -92,12 +94,14 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   one transaction's duration. Individual file size is not capped: encryption remains
   constant-memory by streaming 1 MiB chunks, whose plaintext buffers are zeroized on success and
   error paths.
-- A passphrase-unlocked, XChaCha20-Poly1305 encrypted local vault with an Argon2id key wrapper,
+- A passphrase-unlocked, XChaCha20-Poly1305 encrypted local vault (with a patient-held recovery
+  key and a portable encrypted backup) with an Argon2id key wrapper,
   encrypted metadata, chunked files, per-object keys, atomic manifest generations, and keyed
   duplicate detection.
 - Multiple patient profiles, nested folders, transactional bulk folder assignments, manual/background/
   persisted 1–15-minute inactivity locking with a 5-minute default, immediate background
-  concealment, passphrase-confirmed rotation, and typed plus trusted-native-confirmation whole-vault
+  concealment, passphrase change (the current passphrase is required; the master key itself is not
+  changed), and typed plus trusted-native-confirmation whole-vault
   reset. A manual lock requests cancellation immediately, and streaming operations stop at their
   next I/O boundary before the native key state is cleared. An automatic or background lock during
   an import or export hides content at once and locks when the transfer finishes, however long it
@@ -126,7 +130,7 @@ It deliberately does **not** implement an in-app document viewer, accounts, sync
 Android cloud backup, CARLOS integration, verified provenance, HealthKit/Health Connect, release
 signing, or app-store packaging. Deletion does not yet propagate tombstones to backups or other
 devices. Apple OS backup may carry the encrypted app-data vault, but restore still requires the
-patient passphrase. A successful build and test run is not evidence that the app is ready to hold
+patient passphrase or recovery key. A successful build and test run is not evidence that the app is ready to hold
 PHI.
 
 ## Responsive UI evidence

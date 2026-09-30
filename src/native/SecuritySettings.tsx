@@ -8,6 +8,9 @@ import {
   ResetConfirmation,
   tooShortPassphrase,
 } from "./VaultAuth";
+import { KeyLabel, printedDate } from "./KeyLabel";
+import type { OldBackupsGuide } from "./oldBackups";
+import { formatFileSize } from "./recordPresentation";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -19,7 +22,24 @@ interface SecuritySettingsProps {
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
   onReset: (confirmation: string) => Promise<void>;
+  /** When the recovery key was set up, or null if there is none. */
+  recoveryKeySetAtMs: number | null;
+  /** Its short label, which its kit shows. */
+  recoveryKeyLabel?: string | null;
+  /** The steps for older backups after a key whose kit may have been lost
+   * or seen was replaced, if any are left. */
+  oldBackupsGuide?: OldBackupsGuide | null;
+  onOldBackupsGuideDone?: () => void;
+  /** Whether this platform's file app counts sizes in 1024s (Windows). */
+  sizesIn1024s?: boolean;
+  onSetUpRecoveryKey: () => void;
+  onSaveBackup: () => Promise<void>;
 }
+
+/** The size of a saved backup, which tells it from an empty or partial one,
+ * as the platform's file app counts it. */
+const savedSize = (bytes: number | null, in1024s: boolean) =>
+  bytes === null ? "" : ` (${formatFileSize(bytes, in1024s)})`;
 
 export function SecuritySettings({
   busy,
@@ -31,6 +51,13 @@ export function SecuritySettings({
   onChangePassphrase,
   onCreateProfile,
   onReset,
+  recoveryKeySetAtMs,
+  recoveryKeyLabel = null,
+  oldBackupsGuide = null,
+  onOldBackupsGuideDone,
+  sizesIn1024s = false,
+  onSetUpRecoveryKey,
+  onSaveBackup,
 }: SecuritySettingsProps) {
   const [profileName, setProfileName] = useState("");
   const [currentPassphrase, setCurrentPassphrase] = useState("");
@@ -75,8 +102,7 @@ export function SecuritySettings({
       <div className="purpose-note warning">
         <Icon name="info" />
         <span>
-          <strong>Development build.</strong> Use synthetic files only. Recovery
-          and backup are not implemented.
+          <strong>Development build.</strong> Use synthetic files only.
         </span>
       </div>
       <p className="status-line" role="status" aria-live="polite">
@@ -131,13 +157,159 @@ export function SecuritySettings({
             </button>
           </div>
         </section>
+        <section className="setting-row">
+          <div>
+            <h2>
+              Recovery key{" "}
+              <span className="state-pill">
+                {recoveryKeySetAtMs
+                  ? `Set up ${printedDate(new Date(recoveryKeySetAtMs))}`
+                  : "Not set up"}
+              </span>
+            </h2>
+            <p>
+              Opens your vault if you forget your passphrase. Only you have it:
+              nobody at your clinic or at myCarlos can open your vault for you.
+              Replacing it stops the old one working.
+            </p>
+            {recoveryKeySetAtMs && recoveryKeyLabel && (
+              <p>
+                Your current key has the label{" "}
+                <KeyLabel label={recoveryKeyLabel} />. A kit or note with this
+                label is the one that works; one with another label does not
+                open this vault. Kits and notes made before labels were shown
+                have none: one without a label may still be this key, set up on{" "}
+                {printedDate(new Date(recoveryKeySetAtMs))}.
+              </p>
+            )}
+          </div>
+          <div>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={onSetUpRecoveryKey}
+            >
+              {recoveryKeySetAtMs
+                ? "Replace recovery key"
+                : "Set up recovery key"}
+            </button>
+          </div>
+        </section>
+        <section className="setting-row">
+          <div>
+            <h2>Encrypted backup</h2>
+            <p>
+              One file holding your whole vault, still encrypted. Keep it
+              somewhere other than this device, such as a USB drive. It opens
+              with the passphrase or recovery key you have when you save it, and
+              keeps opening with them even after you change them here. To
+              restore one, lock the vault and choose Restore from a backup.
+            </p>
+            {oldBackupsGuide && (
+              <section
+                className="old-backups-guide"
+                aria-labelledby="old-backups-title"
+              >
+                <h3 id="old-backups-title">Your older backups</h3>
+                <p>
+                  The kit for an earlier recovery key may have been lost or
+                  seen, and it still opens backups saved before that key was
+                  replaced.
+                </p>
+                {oldBackupsGuide.step === "save" ? (
+                  <>
+                    <ol>
+                      <li>
+                        {readOnly
+                          ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
+                          : "Save a new backup now: choose Save encrypted backup."}{" "}
+                        Keep it, or a copy of it, somewhere other than this
+                        device, such as a USB stick or a cloud drive.
+                      </li>
+                      <li>
+                        Then delete the older backups. Once the new one is
+                        saved, this says how.
+                      </li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      I have no older backups
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <ol>
+                      <li>
+                        {oldBackupsGuide.keep ? (
+                          <>
+                            Your new backup is &ldquo;{oldBackupsGuide.keep}
+                            &rdquo;
+                            {savedSize(oldBackupsGuide.bytes, sizesIn1024s)}.
+                          </>
+                        ) : (
+                          `Your new backup is the one you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes, sizesIn1024s)}: your files app shows when each file was saved, and its size.`
+                        )}{" "}
+                        Keep it, or a copy of it, somewhere other than this
+                        device, such as a USB stick or a cloud drive.
+                      </li>
+                      <li>
+                        Delete the older backups: files whose names start with
+                        &ldquo;myCarlos backup&rdquo;, and any you renamed,
+                        other than the new one and its copies. They are wherever
+                        you saved them: a folder, a USB stick, or on a phone the
+                        Files app or a cloud drive.
+                      </li>
+                      <li>
+                        If you saved it in place of an older backup, that file
+                        is now your new backup: keep it.
+                      </li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      Done with older backups
+                    </button>
+                  </>
+                )}
+              </section>
+            )}
+          </div>
+          <div>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={() => void onSaveBackup()}
+            >
+              Save encrypted backup…
+            </button>
+          </div>
+        </section>
         <section className="setting-row native-setting-form">
           <div>
             <h2>Change passphrase</h2>
             <p>
               Use at least {MIN_PASSPHRASE_CHARS} characters and avoid common
-              names or predictable phrases. Until recovery kits are implemented,
-              forgetting the new passphrase permanently loses access.
+              names or predictable phrases. Your recovery key, if you have one,
+              keeps working; without one, forgetting the new passphrase means
+              erasing the vault.
+            </p>
+            <p>
+              Changing your passphrase keeps out someone who only knows the old
+              one. If they may also have a copy of your vault, such as a backup
+              of this device or a saved backup file, a new passphrase is not
+              enough: the old one still opens that copy, and with that copy they
+              could open a newer one they got later. Shutting them out takes a
+              new vault, and care not to lose documents on the way. Ask for help
+              before you erase anything.
             </p>
           </div>
           <form onSubmit={submitPassphrase}>

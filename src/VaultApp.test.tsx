@@ -11,7 +11,13 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
-import type { ImportOutcome, VaultBridge, VaultSnapshot } from "./vault";
+import type {
+  ImportOutcome,
+  SavedBackup,
+  VaultBridge,
+  VaultSnapshot,
+} from "./vault";
+import { ANNOUNCE_DELAY_MS } from "./native/announce";
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -45,6 +51,29 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(emptySnapshot),
     changePassphrase: vi.fn().mockResolvedValue(undefined),
+    // Tests that set up a recovery key say so; the others get a vault without
+    // one, as when making the key fails after the vault was created.
+    beginRecoveryKey: vi
+      .fn()
+      .mockRejectedValue({ code: "storage", message: "FAKE no key here." }),
+    confirmRecoveryKey: vi
+      .fn()
+      .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+    saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
+    cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
+    recover: vi
+      .fn()
+      .mockResolvedValue({ passphraseReplaced: true, snapshot: emptySnapshot }),
+    pickBackupDestination: vi.fn().mockResolvedValue(null),
+    saveBackupToPicked: vi.fn().mockResolvedValue(undefined),
+    pickRestoreSource: vi.fn().mockResolvedValue(null),
+    inspectRestore: vi.fn().mockResolvedValue({
+      replaces: "nothing",
+      differsFromThisDevice: false,
+      documentCount: 0,
+    }),
+    restore: vi.fn().mockResolvedValue(true),
     createProfile: vi.fn().mockResolvedValue("profile-2"),
     createFolder: vi.fn().mockResolvedValue("folder-1"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +125,17 @@ async function startExport() {
   });
 }
 
+// Messages for a screen or dialog that has just appeared are written after this
+// delay, so that its status line reads them out.
+async function passAnnounceDelay() {
+  if (vi.isFakeTimers())
+    await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+  else
+    await act(
+      () => new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS)),
+    );
+}
+
 // The unlock screen says only that the vault locked; a transfer's outcome is
 // shown after the next unlock, where only the owner sees it.
 async function expectOutcomeAfterUnlock(outcome: string) {
@@ -109,6 +149,7 @@ async function expectOutcomeAfterUnlock(outcome: string) {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
   });
+  await passAnnounceDelay();
   expect(screen.getByText(`Vault unlocked. ${outcome}`)).toBeVisible();
 }
 
@@ -674,6 +715,1181 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("gives a rename's result to a status line already back on screen", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+
+    // The document's details are replaced while it is renamed. Their status
+    // line comes back empty, and the result is written into it after.
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    // Fake timers from here, so that nothing is written before it is checked.
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const detailsStatus = within(details).getByRole("status");
+      expect(detailsStatus).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(detailsStatus).toHaveTextContent(
+        "Document renamed to FAKE Results.pdf.",
+      );
+
+      // The rename dialog makes the page inert. Its status line is written
+      // to once the dialog has closed.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Close document details" }),
+        );
+      });
+      const pageStatus = screen.getByRole("status");
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "Rename folder FAKE Old folder",
+          }),
+        );
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Folder name"), {
+          target: { value: "FAKE Lab results" },
+        });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(pageStatus).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(pageStatus).toHaveTextContent(
+        "Folder renamed to FAKE Lab results.",
+      );
+
+      // A result is not written into another document's details opened
+      // before it was due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "Rename folder FAKE Lab results",
+          }),
+        );
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Folder name"), {
+          target: { value: "FAKE Old folder" },
+        });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: "More options for FAKE Results.pdf",
+          }),
+        );
+      });
+      await passAnnounceDelay();
+      const otherDetails = screen.getByRole("dialog", {
+        name: "FAKE Results.pdf",
+      });
+      expect(within(otherDetails).getByRole("status")).toBeEmptyDOMElement();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds a rename's result while a confirmation opened at once is on screen", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.clear(screen.getByLabelText("File name"));
+    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+      });
+      // The confirmation replaces the details before the result is due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Save a copy to this computer" }),
+        );
+      });
+      await passAnnounceDelay();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      });
+      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const status = within(details).getByRole("status");
+      expect(status).toBeEmptyDOMElement();
+      await passAnnounceDelay();
+      expect(status).toHaveTextContent("Document renamed to FAKE Results.pdf.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  const RECOVERY_KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
+
+  it("sets up a recovery key before anything else in a new vault", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.type(
+      await screen.findByLabelText("First patient profile"),
+      "FAKE Test Patient",
+    );
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText("Confirm passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Create vault" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Your recovery key",
+    });
+    // The passphrase just typed authorizes the key.
+    expect(bridge.beginRecoveryKey).toHaveBeenCalledWith(
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    // There is no way out until the key is set up.
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: "Cancel" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Next" }));
+    await user.type(
+      within(dialog).getByLabelText("Your recovery key"),
+      RECOVERY_KEY,
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Check and save" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByText(
+        "Recovery key saved. Keep your kit somewhere safe.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Set up recovery key" }),
+    ).not.toBeInTheDocument();
+    // The button that led here is gone: focus is on the page, not on nothing.
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "My records" })).toHaveFocus(),
+    );
+  });
+
+  it("says that a key shown in a setup that was cancelled does not work", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Set up recovery key" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await screen.findByRole("dialog", { name: "Your recovery key" });
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByText(
+        /setup was not finished\. The key you were shown does not open the vault\. Destroy/,
+      ),
+    ).toBeVisible();
+  });
+
+  it("clears a recovery form left unattended", async () => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        render(<VaultApp bridge={nativeBridge()} />);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText("Forgot your passphrase?"));
+      });
+      const key = screen.getByLabelText("Recovery key");
+      await act(async () => {
+        fireEvent.change(key, { target: { value: RECOVERY_KEY } });
+        fireEvent.click(
+          screen.getByRole("button", { name: "Show recovery key" }),
+        );
+      });
+      expect(key).toHaveAttribute("type", "text");
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+      });
+      expect(key).toHaveValue("");
+      expect(key).toHaveAttribute("type", "password");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a vault that locked before its key was made as locked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockRejectedValue({
+        code: "locked",
+        message: "Unlock the vault to continue.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "Create your encrypted vault" });
+    fireEvent.change(screen.getByLabelText("First patient profile"), {
+      target: { value: "Jamie" },
+    });
+    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+      fireEvent.change(field, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    }
+    await user.click(screen.getByRole("button", { name: "Create vault" }));
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/locked before its recovery key could be made/),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("offers a recovery key to a vault that has none", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Set up recovery key" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    expect(within(dialog).getByLabelText("Passphrase")).toHaveFocus();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("saves an encrypted backup from Security as a transfer", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    expect(
+      await screen.findByText(
+        "Encrypted backup saved. Keep it somewhere other than this device.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("names the damaged document that stopped a backup", async () => {
+    const user = userEvent.setup();
+    const recordId = snapshotWithRecord.records[0].id;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "damaged_document",
+        message: "A document in the vault is damaged.",
+        recordId,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(
+      await screen.findByText(
+        /^No backup was saved: the document "FAKE_Results\.pdf" \(added [^)]+\) is damaged and can no longer be read/,
+      ),
+    ).toBeVisible();
+  });
+
+  it("restores a backup on a device with no vault, and leaves it locked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-3"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "nothing",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(bridge.restore).toHaveBeenCalledWith(
+      "pick-3",
+      { passphrase: "river-azimuth-cobalt-sparrow-934" },
+      false,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    // The screen opens on it, so the field that takes focus says it.
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /^Backup restored\./,
+    );
+  });
+
+  it("restores over a locked vault, and leaves focus in the Passphrase field", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+    });
+    // A key setup the last lock ended, in the vault being replaced.
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    // And steps for the replaced vault's older backups.
+    const guide = "mycarlos.oldBackupsGuide.v1";
+    window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(await screen.findByText(/^Backup restored\./)).toBeVisible();
+    // The button that was pressed is gone with the form.
+    expect(screen.getByLabelText("Passphrase")).toHaveFocus();
+    // Its outcome would be told of the restored vault, wrongly.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
+    expect(window.localStorage.getItem(guide)).toBeNull();
+  });
+
+  it("forgets a key setup's outcome when a restore will finish at the next start", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      pickRestoreSource: vi.fn().mockResolvedValue("pick-4"),
+      inspectRestore: vi.fn().mockResolvedValue({
+        replaces: "sameVault",
+        differsFromThisDevice: false,
+        documentCount: 4,
+      }),
+      restore: vi.fn().mockRejectedValue({
+        code: "restore_unfinished",
+        message: "The backup was checked, but restoring it has not finished.",
+      }),
+    });
+    const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
+    window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    // And steps for the replaced vault's older backups.
+    const guide = "mycarlos.oldBackupsGuide.v1";
+    window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Restore from a backup"));
+    await user.click(
+      screen.getByRole("button", { name: "Choose backup file…" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Backup passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Restore backup" }),
+    );
+    expect(
+      await screen.findByText(/restoring it has not finished/),
+    ).toBeVisible();
+    // The vault it was told of is the one the next start replaces.
+    expect(window.localStorage.getItem(unfinished)).toBeNull();
+    expect(window.localStorage.getItem(guide)).toBeNull();
+  });
+
+  // Opens recovery key setup from Security, as far as the key step, in a
+  // vault whose recovery key was set up at `setAtMs`. The app can then be
+  // hidden, which locks it, and unlocked again.
+  async function showKeyInSetup(
+    setAtMs: number | null,
+    overrides: Partial<VaultBridge> = {},
+    exposed = true,
+  ) {
+    const user = userEvent.setup();
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: setAtMs };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(vault),
+      unlock: vi.fn().mockResolvedValue(vault),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      ...overrides,
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    const view = render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: setAtMs ? "Replace recovery key" : "Set up recovery key",
+      }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    // Replacing asks why: whether the old kit may have been lost or seen.
+    if (setAtMs)
+      await user.click(
+        within(dialog).getByLabelText(
+          exposed
+            ? "Its kit or note may have been lost, or seen by someone else"
+            : "I just want a new key: its kit is safe",
+        ),
+      );
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Your recovery key" }),
+    ).toHaveTextContent("leaving or locking cancels this key");
+    const setVisibility = (state: DocumentVisibilityState) =>
+      act(async () => {
+        visibilityState = state;
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    const hide = async () => {
+      await setVisibility("hidden");
+      await setVisibility("visible");
+    };
+    const unlock = async () => {
+      await user.type(
+        await screen.findByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+    };
+    const typeKeyBack = async () => {
+      const keyStep = screen.getByRole("dialog", { name: "Your recovery key" });
+      await user.click(within(keyStep).getByRole("button", { name: "Next" }));
+      await user.type(
+        within(keyStep).getByLabelText("Your recovery key"),
+        RECOVERY_KEY,
+      );
+      await user.click(
+        within(keyStep).getByRole("button", { name: "Check and save" }),
+      );
+    };
+    return { user, bridge, view, hide, setVisibility, unlock, typeKeyBack };
+  }
+
+  it.each([
+    [
+      "first",
+      null,
+      /^Vault unlocked\. Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+    ],
+    [
+      "replacement",
+      5,
+      /^Vault unlocked\. Your recovery key was not replaced: setup ended when the vault locked or myCarlos closed, and your earlier key still works\./,
+    ],
+  ])(
+    "says after the next unlock that a lock ended a %s key's setup",
+    async (_, setAtMs, said) => {
+      const { hide, unlock } = await showKeyInSetup(setAtMs);
+      // The app is hidden, which locks it, with the key on screen.
+      await hide();
+      await unlock();
+      expect(await screen.findByText(said)).toBeVisible();
+    },
+  );
+
+  it("never says a key stored as the vault locked was lost", async () => {
+    // Hiding the app while the native confirmation may be open does not lock
+    // it; the lock comes as the confirmation ends, and its reply and the
+    // key's can fall either way. The next unlock must not say to destroy
+    // the one kit that works.
+    let answer: (snapshot: VaultSnapshot) => void = () => undefined;
+    const { bridge, setVisibility, unlock, typeKeyBack } = await showKeyInSetup(
+      5,
+      {
+        confirmRecoveryKey: vi.fn(
+          () =>
+            new Promise<VaultSnapshot>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    );
+    await typeKeyBack();
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+    await setVisibility("hidden");
+    expect(bridge.lock).not.toHaveBeenCalled();
+    const saved = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    await act(async () => answer(saved));
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalled());
+    await setVisibility("visible");
+    vi.mocked(bridge.unlock).mockResolvedValue(saved);
+    await unlock();
+    expect(await screen.findByText(/^Vault unlocked\./)).toBeVisible();
+    expect(screen.queryByText(/was not replaced/)).toBeNull();
+    expect(screen.queryByText(/destroy it/)).toBeNull();
+  });
+
+  it.each([
+    ["saved", true],
+    ["cancelled", false],
+  ])(
+    "says nothing after the next unlock about a setup %s before the lock",
+    async (_, saved) => {
+      const after = { ...emptySnapshot, recoveryKeySetAtMs: saved ? 9 : 5 };
+      const { user, bridge, hide, unlock, typeKeyBack } = await showKeyInSetup(
+        5,
+        { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+      );
+      if (saved) await typeKeyBack();
+      else
+        await user.click(
+          within(
+            screen.getByRole("dialog", { name: "Your recovery key" }),
+          ).getByRole("button", { name: "Cancel" }),
+        );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      // A replaced key says what to do with backups the old key opens.
+      if (saved)
+        expect(
+          await screen.findByText(
+            /^Recovery key replaced\. The old one no longer opens this vault\. Your old kit could still open backups saved before now\. In Security, save a new backup, then delete the older ones: Security shows the steps\.$/,
+          ),
+        ).toBeVisible();
+      vi.mocked(bridge.unlock).mockResolvedValue(after);
+      await hide();
+      await unlock();
+      expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+    },
+  );
+
+  it("says to keep old backups when a replaced key leaves the vault read-only", async () => {
+    // The key was stored, but the vault could not finish writing it, and so
+    // cannot save a backup: deleting the old ones would leave none.
+    const stored = {
+      ...emptySnapshot,
+      recoveryKeySetAtMs: 9,
+      recovery: "writeFailed" as const,
+    };
+    const { typeKeyBack } = await showKeyInSetup(5, {
+      confirmRecoveryKey: vi.fn().mockResolvedValue(stored),
+    });
+    await typeKeyBack();
+    expect(
+      await screen.findByText(/^Recovery key replaced\. .*keep them for now/),
+    ).toBeVisible();
+    expect(screen.queryByText(/Security shows the steps/)).toBeNull();
+  });
+
+  it("tells a routine replacement to keep the old kit safe, not to delete backups", async () => {
+    const after = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    const { user, typeKeyBack } = await showKeyInSetup(
+      5,
+      { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+      false,
+    );
+    await typeKeyBack();
+    const told = await screen.findByText(/^Recovery key replaced\./);
+    expect(told).toHaveTextContent(
+      "Keep the old key's kit safe. If you destroy it",
+    );
+    expect(told).not.toHaveTextContent(/delete/i);
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    expect(screen.queryByText("Your older backups")).toBeNull();
+  });
+
+  it("walks a replacement for an exposed kit through a new backup, then the old ones", async () => {
+    const after = {
+      ...emptySnapshot,
+      recoveryKeySetAtMs: 9,
+      recoveryKeyLabel: "7F3A",
+    };
+    const written = "myCarlos backup 2026-09-30 7F3A.mycarlosbackup";
+    const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+      confirmRecoveryKey: vi.fn().mockResolvedValue(after),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-9"),
+      saveBackupToPicked: vi
+        .fn()
+        .mockResolvedValue({ name: written, bytes: 4096 }),
+    });
+    await typeKeyBack();
+    await screen.findByText(/^Recovery key replaced\./);
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    // A new backup first: deleting never leaves none.
+    const steps = within(guide).getAllByRole("listitem");
+    expect(steps[0]).toHaveTextContent("Save a new backup now");
+    expect(steps[1]).toHaveTextContent("Then delete the older backups");
+
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9");
+    // Named by the patient's own date.
+    const today = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    expect(bridge.pickBackupDestination).toHaveBeenCalledWith(
+      `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`,
+    );
+    expect(
+      await screen.findByText(
+        "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
+      ),
+    ).toBeVisible();
+    // The file the native side wrote is the one to keep: whatever it is
+    // named, every other backup goes.
+    const next = within(
+      screen.getByRole("region", { name: "Your older backups" }),
+    ).getAllByRole("listitem");
+    expect(next[0]).toHaveTextContent(
+      // The test platform is Windows, whose Explorer counts in 1024s.
+      `Your new backup is “${written}” (4 KB, 4,096 bytes). Keep it, or a copy of it, somewhere other than this device`,
+    );
+    expect(next[1]).toHaveTextContent("other than the new one and its copies");
+    expect(next[2]).toHaveTextContent("that file is now your new backup");
+
+    await user.click(
+      screen.getByRole("button", { name: "Done with older backups" }),
+    );
+    expect(screen.queryByText("Your older backups")).toBeNull();
+    expect(
+      window.localStorage.getItem("mycarlos.oldBackupsGuide.v1"),
+    ).toBeNull();
+  });
+
+  it("keeps the step to save a new backup when saving one failed", async () => {
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({ step: "save" }),
+    );
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-3"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "no_space",
+        message:
+          "There is not enough space where you chose to save it. No backup was saved. Keep your older backups.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(await screen.findByText(/Keep your older backups\./)).toBeVisible();
+    // No new backup, so nothing may be deleted yet.
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    expect(within(guide).getAllByRole("listitem")[0]).toHaveTextContent(
+      "Save a new backup now",
+    );
+    expect(window.localStorage.getItem("mycarlos.oldBackupsGuide.v1")).toBe(
+      JSON.stringify({ step: "save" }),
+    );
+  });
+
+  it("asks for a new backup again when a save over the one to keep failed", async () => {
+    // Android names no file, so the patient may have saved over the one to
+    // keep, which a failure after opening it leaves empty.
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({ step: "delete", keep: null, savedAtMs: 1 }),
+    );
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-3"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "storage",
+        message: "The backup could not be saved there. No backup was saved.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    await screen.findByText(/No backup was saved/);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Save a new backup now");
+  });
+
+  it("asks for a new backup again, and says once what was left, when Lock now cuts a save off", async () => {
+    // Android names no file, so this save may be over the one to keep; the
+    // lock then empties it.
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({ step: "delete", keep: null, savedAtMs: 1, bytes: 10 }),
+    );
+    const note =
+      "The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups.";
+    let failSave!: (error: unknown) => void;
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-5"),
+      saveBackupToPicked: vi.fn(
+        () =>
+          new Promise<SavedBackup>((_, reject) => {
+            failSave = reject;
+          }),
+      ),
+      lock: vi.fn(async () => {
+        failSave({ ...CANCELLED, note });
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
+    await user.click(
+      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+    );
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    await expectOutcomeAfterUnlock(
+      `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`,
+    );
+    expect(screen.getAllByText(new RegExp("it was emptied"))).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Save a new backup now");
+  });
+
+  it("keeps the backup saved last when another is saved while the steps are open", async () => {
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({
+        step: "delete",
+        keep: "first.mycarlosbackup",
+        savedAtMs: 1,
+      }),
+    );
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-4"),
+      saveBackupToPicked: vi
+        .fn()
+        .mockResolvedValue({ name: "second.mycarlosbackup", bytes: 10 }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(
+      await screen.findByText(/Your new backup is “second\.mycarlosbackup”/),
+    ).toBeVisible();
+  });
+
+  it("shows the steps for old backups after an unlock reports an exposed key replaced", async () => {
+    window.localStorage.setItem(
+      "mycarlos.unfinishedRecoveryKey.v1",
+      JSON.stringify({ setAtMs: 5, exposed: true }),
+    );
+    const user = userEvent.setup();
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    render(
+      <VaultApp
+        bridge={nativeBridge({
+          unlock: vi.fn().mockResolvedValue(vault),
+          snapshot: vi.fn().mockResolvedValue(vault),
+        })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(await screen.findByText(/Security shows the steps\./)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    expect(
+      screen.getByRole("region", { name: "Your older backups" }),
+    ).toBeVisible();
+  });
+
+  it("says so after unlocking when myCarlos closed with a key on screen", async () => {
+    const { view } = await showKeyInSetup(5);
+    // Closed, not locked: the next start finds the vault locked.
+    view.unmount();
+    const user = userEvent.setup();
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: 5 };
+    render(
+      <VaultApp
+        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(/Your recovery key was not replaced/),
+    ).toBeVisible();
+  });
+
+  it("says to keep old backups when a key stored as it locked opens read-only", async () => {
+    // A replacement stored just as the vault locked, which then opens
+    // read-only: it cannot save a backup, so the old ones must stay.
+    window.localStorage.setItem(
+      "mycarlos.unfinishedRecoveryKey.v1",
+      JSON.stringify({ setAtMs: 5, exposed: true }),
+    );
+    const user = userEvent.setup();
+    const vault = {
+      ...emptySnapshot,
+      recoveryKeySetAtMs: 9,
+      recovery: "writeFailed" as const,
+    };
+    render(
+      <VaultApp
+        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(
+        /was saved just before the vault locked.*keep them for now/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Security shows the steps/)).toBeNull();
+  });
+
+  it("opens a locked vault with its recovery key and a new passphrase", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("Forgot your passphrase?"));
+    await user.type(screen.getByLabelText("Recovery key"), RECOVERY_KEY);
+    await user.type(
+      screen.getByLabelText("New passphrase"),
+      "lantern-orbit-willow-cascade-572",
+    );
+    await user.type(
+      screen.getByLabelText("Confirm new passphrase"),
+      "lantern-orbit-willow-cascade-572",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Open with recovery key" }),
+    );
+    expect(bridge.recover).toHaveBeenCalledWith(
+      RECOVERY_KEY,
+      "lantern-orbit-willow-cascade-572",
+    );
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
+    expect(
+      await screen.findByText(/^Vault opened with your recovery key\./),
+    ).toBeVisible();
+  });
+
+  const HELD_OUTCOME = "1 file(s) encrypted and imported.";
+
+  // Backgrounds the app during an import, so that the vault locks when the
+  // import ends and its outcome is held for the next unlock. Fake timers.
+  async function lockWithHeldOutcome(bridge: VaultBridge) {
+    let finishImport!: (value: ImportOutcome) => void;
+    vi.mocked(bridge.importPickedFiles).mockImplementationOnce(
+      () =>
+        new Promise<ImportOutcome>((resolve) => {
+          finishImport = resolve;
+        }),
+    );
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose files to import" }),
+      );
+    });
+    await act(async () => {
+      visibilityState = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () =>
+      finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+    );
+    await act(async () => {
+      visibilityState = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(screen.getByText("Vault locked.")).toBeVisible();
+  }
+
+  async function unlockWithoutWaiting() {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase"), {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    });
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  }
+
+  it("keeps a held transfer outcome when the vault locks before it was shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      // Locked again inside the delay: only "Vault locked." is on the unlock
+      // screen, now and once the delay has passed.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      await passAnnounceDelay();
+      expect(screen.queryByText(/Vault unlocked/)).not.toBeInTheDocument();
+      // The outcome was kept for the next unlock.
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a held transfer outcome when a message arrives while a lock is under way", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      let finishLock!: () => void;
+      vi.mocked(bridge.lock).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishLock = resolve;
+          }),
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+      });
+      // Written to the library's line, which the lock is about to replace.
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File(["%PDF-1.7"], "FAKE dropped.pdf", { type: "application/pdf" }),
+      );
+      await act(async () => {
+        fireDragEvent("drop", window, { dataTransfer: transfer });
+      });
+      expect(
+        screen.queryByText(HELD_OUTCOME, { exact: false }),
+      ).not.toBeInTheDocument();
+      await act(async () => finishLock());
+      await passAnnounceDelay();
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for an operation started at once before giving the unlock result", async () => {
+    vi.useFakeTimers();
+    try {
+      let choose!: (pick: string | null) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      vi.mocked(bridge.pickImportFiles).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            choose = resolve;
+          }),
+      );
+      await unlockWithoutWaiting();
+      // A picker opened at once, before the result was written.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await passAnnounceDelay();
+      // Nothing is written behind the picker.
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+      await act(async () => choose(null));
+      await passAnnounceDelay();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `No files selected. Nothing changed. ${HELD_OUTCOME}`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds a held transfer outcome to a message that arrives before it was shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        pickImportFiles: vi
+          .fn()
+          .mockResolvedValueOnce("pick-1")
+          .mockResolvedValue(null),
+      });
+      await lockWithHeldOutcome(bridge);
+      await unlockWithoutWaiting();
+      // An operation started at once reports first.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await passAnnounceDelay();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `No files selected. Nothing changed. ${HELD_OUTCOME}`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["unlocking", "locked", /^Vault unlocked\.$/],
+    ["creating", "absent", /^Encrypted vault created\./],
+  ] as const)(
+    "gives the result of %s to the library's status line once it is on screen",
+    async (_, initial, message) => {
+      vi.useFakeTimers();
+      try {
+        const bridge = nativeBridge({
+          status: vi.fn().mockResolvedValue(initial),
+        });
+        await act(async () => {
+          render(<VaultApp bridge={bridge} />);
+        });
+        await act(async () => {
+          if (initial === "absent")
+            fireEvent.change(screen.getByLabelText("First patient profile"), {
+              target: { value: "FAKE Test Patient" },
+            });
+          for (const field of screen.getAllByLabelText(/passphrase/i))
+            fireEvent.change(field, {
+              target: { value: "river-azimuth-cobalt-sparrow-934" },
+            });
+        });
+        await act(async () => {
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: initial === "absent" ? "Create vault" : "Unlock",
+            }),
+          );
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        const status = screen.getByRole("status");
+        expect(status).toBeEmptyDOMElement();
+        await passAnnounceDelay();
+        expect(status).toHaveTextContent(message);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("starts the selection again when a search could hide selected documents", async () => {
     const user = userEvent.setup();
     const record = (id: string, displayName: string) => ({
@@ -1039,6 +2255,11 @@ describe("durable vault UI", () => {
         await screen.findByRole("heading", { name: "Unlock your vault" }),
       ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
+      // Not a change to the status line, which is not read out: the field
+      // that takes focus says it.
+      expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+        "Vault locked.",
+      );
     } finally {
       visibility.mockRestore();
     }
@@ -1415,6 +2636,96 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("tells at once what a backup cut off by a lock left, when that lock fails", async () => {
+    const user = userEvent.setup();
+    const note = "Delete that one, not your other backups.";
+    let failTransfer!: (error: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importPickedFiles: vi.fn(
+        () =>
+          new Promise<ImportOutcome>((_, reject) => {
+            failTransfer = reject;
+          }),
+      ),
+      lock: vi.fn(async () => {
+        failTransfer({
+          code: "locked",
+          message: "Unlock the vault to continue.",
+          note,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw {
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        };
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    // The vault stays open, and the patient is here: told now, not after
+    // some later unlock.
+    expect(
+      await screen.findByText(
+        new RegExp(
+          `The backup stopped because the vault locked\\. No backup was saved\\. Keep your older backups\\. ${note.replace(/\./g, "\\.")}`,
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("keeps what was held hidden when a lock fails on the hidden screen", async () => {
+    const user = userEvent.setup();
+    const note = "Delete that one, not your other backups.";
+    let failTransfer!: (error: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importPickedFiles: vi.fn(
+        () =>
+          new Promise<ImportOutcome>((_, reject) => {
+            failTransfer = reject;
+          }),
+      ),
+      lock: vi.fn(async () => {
+        failTransfer({ ...CANCELLED, note });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw {
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        };
+      }),
+    });
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+      visibility.mockReturnValue("hidden");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      visibility.mockReturnValue("visible");
+      await user.click(
+        screen.getByRole("button", {
+          name: "Lock now and cancel the transfer",
+        }),
+      );
+      expect(await screen.findByRole("alert")).toBeVisible();
+      // An onlooker may see this screen: nothing held is shown on it.
+      expect(screen.queryByText(new RegExp(note))).toBeNull();
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
   it("holds a lock for a transfer past an earlier manual failure, and reports a failure after it", async () => {
     const user = userEvent.setup();
     let finishImport!: (value: ImportOutcome) => void;
@@ -1634,6 +2945,7 @@ describe("durable vault UI", () => {
         fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
       });
       // The import's outcome is kept; the failed lock's error is not.
+      await passAnnounceDelay();
       expect(
         screen.getByText("Vault unlocked. 1 file(s) encrypted and imported."),
       ).toBeVisible();
@@ -1994,6 +3306,62 @@ describe("durable vault UI", () => {
   );
 
   it.each([
+    ["the transfer fails first", 0, 50],
+    ["the lock finishes first", 50, 0],
+  ])(
+    "tells after the next unlock what a backup cut off by Lock now left, when %s",
+    async (_, failDelay, lockDelay) => {
+      const user = userEvent.setup();
+      const note = "Delete that one, not your other backups.";
+      let failTransfer!: (error: unknown) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        importPickedFiles: vi.fn(
+          () =>
+            new Promise<ImportOutcome>((_, reject) => {
+              failTransfer = reject;
+            }),
+        ),
+        lock: vi.fn(async () => {
+          setTimeout(() => failTransfer({ ...CANCELLED, note }), failDelay);
+          await new Promise((resolve) => setTimeout(resolve, lockDelay));
+        }),
+      });
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+      try {
+        render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: "Choose files to import" }),
+        );
+        await waitFor(() =>
+          expect(bridge.importPickedFiles).toHaveBeenCalled(),
+        );
+        visibility.mockReturnValue("hidden");
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        visibility.mockReturnValue("visible");
+        await user.click(
+          screen.getByRole("button", {
+            name: "Lock now and cancel the transfer",
+          }),
+        );
+        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        });
+        await expectOutcomeAfterUnlock(
+          `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`,
+        );
+      } finally {
+        visibility.mockRestore();
+      }
+    },
+  );
+
+  it.each([
     ["the import fails first", 0, 50],
     ["the lock finishes first", 50, 0],
   ])(
@@ -2122,6 +3490,26 @@ describe("durable vault UI", () => {
       true,
       CANCELLED,
       "The transfer did not finish.",
+    ],
+    [
+      // An Android backup's document, opened and so emptied: what is left
+      // there is still said, after the next unlock.
+      "cuts off a transfer that may have left an emptied file",
+      false,
+      { ...CANCELLED, note: "Delete that one, not your other backups." },
+      "The backup stopped because the vault locked. No backup was saved. Keep your older backups. Delete that one, not your other backups.",
+    ],
+    [
+      // A lock that landed while the document was being opened, which
+      // empties it: the backup then fails as locked, not cancelled.
+      "locked the vault as a transfer opened its file",
+      false,
+      {
+        code: "locked",
+        message: "Unlock the vault to continue.",
+        note: "Delete that one, not your other backups.",
+      },
+      "The backup stopped because the vault locked. No backup was saved. Keep your older backups. Delete that one, not your other backups.",
     ],
     [
       "locked the vault before a transfer began",
@@ -2622,6 +4010,9 @@ describe("durable vault UI", () => {
   it("requires the exact destructive reset phrase", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();
+    // Steps for an erased vault's backups mean nothing for the next one.
+    const guide = "mycarlos.oldBackupsGuide.v1";
+    window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await user.click(screen.getByText("Forgot your passphrase?"));
@@ -2636,6 +4027,7 @@ describe("durable vault UI", () => {
     await waitFor(() =>
       expect(bridge.reset).toHaveBeenCalledWith("RESET MYCARLOS VAULT"),
     );
+    await waitFor(() => expect(window.localStorage.getItem(guide)).toBeNull());
   });
 
   it("shows the unlock screen when erasing the vault fails, because the session is already closed", async () => {
@@ -2999,21 +4391,50 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
     const warning = screen.getByRole("alertdialog", {
-      name: "Remove 1 damaged document?",
+      name: "Permanently remove 1 damaged document?",
     });
+    expect(warning).toHaveAccessibleDescription(/permanently/);
     expect(warning).toHaveTextContent(/cannot be undone/);
+    // The files may only be out of reach, which is not the same as gone.
+    expect(warning).toHaveTextContent(/drive that is disconnected/);
     expect(warning).toHaveTextContent(/backup/);
+    // Nothing is removed without an explicit confirmation: Cancel has focus,
+    // and Cancel, Escape and a click outside all leave everything in place.
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // Enter straight away presses Cancel, which has focus.
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: screen.getByRole("alertdialog").parentElement!,
+    });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(removeUnavailableRecords).not.toHaveBeenCalled();
 
     await user.click(
       screen.getByRole("button", { name: "Remove damaged documents" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    const remove = screen.getByRole("button", { name: "Permanently remove" });
+    expect(remove).toHaveClass("danger");
+    await user.click(remove);
     await waitFor(() =>
       expect(removeUnavailableRecords).toHaveBeenCalledOnce(),
     );
+    // It names the documents that were shown as damaged.
+    expect(removeUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
     expect(
       await screen.findByText(
         "1 damaged document removed. The vault accepts changes again.",
@@ -3057,7 +4478,9 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: "Remove damaged documents" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    );
 
     expect(
       await screen.findByText(/1 damaged document removed/),
@@ -3078,6 +4501,166 @@ describe("durable vault UI", () => {
     expect(
       screen.queryByRole("button", { name: "Remove damaged documents" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("lets a long list of damaged documents be scrolled from the keyboard", async () => {
+    const user = userEvent.setup();
+    const records = Array.from({ length: 30 }, (_, index) => ({
+      id: `record-${index}`,
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: `FAKE_lost_${index}.pdf`,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: false,
+    }));
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        recovery: "lostObjects",
+        records,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const opener = await screen.findByRole("button", {
+      name: "Remove damaged documents",
+    });
+    await user.click(opener);
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Permanently remove 30 damaged documents?",
+    });
+    const list = within(dialog).getByRole("list", {
+      name: "Documents to remove",
+    });
+    // It overflows, and a region that scrolls must be reachable by keyboard.
+    expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
+    const results = await axe.run(dialog, {
+      runOnly: {
+        type: "tag",
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+      },
+    });
+    expect(results.violations).toEqual([]);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it("shows what the vault reports after a removal was refused", async () => {
+    const user = userEvent.setup();
+    const record = (id: string, available: boolean) => ({
+      id,
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: `FAKE_${id}.pdf`,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available,
+    });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [record("a", false), record("b", true)],
+        })
+        // Another file went missing before the removal ran.
+        .mockResolvedValue({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [record("a", false), record("b", false)],
+        }),
+      removeUnavailableRecords: vi.fn().mockRejectedValue({
+        code: "removal_changed",
+        message: "FAKE the vault changed.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Remove damaged documents" }),
+    );
+    const confirmation = screen.getByRole("alertdialog", {
+      name: "Permanently remove 1 damaged document?",
+    });
+    expect(confirmation).toBeVisible();
+    // It names what would be removed, and nothing else.
+    const named = within(confirmation).getByRole("list", {
+      name: "Documents to remove",
+    });
+    expect(within(named).getAllByRole("listitem")).toHaveLength(1);
+    expect(named).toHaveTextContent("FAKE_a.pdf");
+    // It can be scrolled with the keyboard, but Cancel has the first focus,
+    // and the names are not read out with the dialog.
+    expect(named).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(named).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(confirmation).toHaveAccessibleDescription(
+      /Their encrypted files are missing/,
+    );
+    expect(confirmation).not.toHaveAccessibleDescription(/FAKE_a\.pdf/);
+    const asked = vi.mocked(bridge.snapshot).mock.calls.length;
+    await user.click(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    );
+    expect(await screen.findByText("FAKE the vault changed.")).toBeVisible();
+    // The refusal itself made the screen ask the vault again.
+    expect(vi.mocked(bridge.snapshot).mock.calls.length).toBeGreaterThan(asked);
+    expect(bridge.removeUnavailableRecords).toHaveBeenCalledWith(["a"]);
+    // The next confirmation counts what is damaged now.
+    await user.click(
+      screen.getByRole("button", { name: "Remove damaged documents" }),
+    );
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Permanently remove 2 damaged documents?",
+      }),
+    ).toBeVisible();
+  });
+
+  it("does not call a document missing when files could not be read", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        recovery: "unreadableSlot",
+        records: [
+          {
+            id: "record-1",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: "FAKE_Unreadable.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/pdf",
+            plaintextSize: 2048,
+            importedAtMs: 1,
+            available: false,
+          },
+        ],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(await screen.findByText(/· File unavailable/)).toBeVisible();
+    expect(screen.queryByText(/Damaged: file missing/)).not.toBeInTheDocument();
+    // The notice says which documents cannot be opened: those so marked.
+    expect(
+      screen.getByText(/keeps its files on this device/),
+    ).toHaveTextContent("except any marked “File unavailable”");
+    await user.click(screen.getByText("FAKE_Unreadable.pdf"));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("alert"),
+    ).toHaveTextContent("This document is unavailable.");
   });
 
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {

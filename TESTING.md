@@ -6,7 +6,8 @@ iOS Simulator.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
-> forgotten one cannot be recovered, only erased with the vault (see [Start over](#start-over)).
+> forgotten one can be replaced only with the vault's recovery key, or else erased with the vault
+> (see [Start over](#start-over)).
 
 **Help improve this guide.** So far these builds have only been tried on Windows, so the steps for
 macOS, Android and the iOS Simulator may be wrong or incomplete. If something does not work or does
@@ -114,34 +115,58 @@ On every platform:
 1. Create a vault. For **First patient profile**, type a made-up name such as
    `FAKE Test Patient`. Choose a throwaway passphrase of at least 15 characters; the app rejects
    common or predictable ones.
-2. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
+2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
+   then **Next**, and type the whole key back. Typing it wrong says so; three wrong
+   tries go back to the key. Check that the saved kit opens and shows the key and no names, and
+   that the key's label shown beside the key is on the saved and the printed kit, and in
+   **Security** once the key is set up.
+3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
+   passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
+   **Replace recovery key** asks for the passphrase and why you are replacing it, and makes a new
+   key. Choose "may have been lost, or seen". After you type it back, a system dialog (not part of
+   the app's own screen) asks **Replace your recovery key?** Choose **Cancel** once: the setup stays
+   open and says the current key still works. Check again and choose **Replace key**: the old key
+   then stops working, and **Security** shows the steps for older backups. Choose **Save encrypted
+   backup…**: the suggested name has the date and the key's label, and after saving, the steps
+   name that file to keep and say to delete every other backup (on Android, which gives no name,
+   they give the time it was saved instead). Replace the key once more with "I
+   just want a new key": the app says to keep the old kit safe, and says nothing about deleting
+   backups. The vault does not lock by itself while that dialog is open.
+4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:
    the two Bloodwork files are identical.
-3. Create a folder with **New folder**, open a document and use **Move to** to put it in the
+5. Create a folder with **New folder**, open a document and use **Move to** to put it in the
    folder, then rename the document (**Rename document** in its details) and the folder
    (**Rename folder**).
-4. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
+6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
-5. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
+7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
+   app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a
+   backup** on the unlock screen: pick the file, open it with the passphrase, and check that the
+   app says the vault on this device is not the same as the backup and asks you to agree before
+   restoring. After restoring, the vault is locked; unlock it and check that the extra document is
+   gone and the others open. Try a copy of the backup with a few bytes changed: it is refused and
+   nothing changes.
+8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-6. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+9. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
    keep the screen on), and confirm it locks.
-7. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
-   it is locked when you come back.
-8. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
-   drive so it takes several seconds). While it is still importing, send the app to the
-   background, then come back within a minute. If the import is still running, the screen should
-   say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
-   vault should lock by itself when it is done, saying only "Vault locked." Unlock: the app should
-   say "Vault unlocked. 1 file(s) encrypted and imported." and the document should be in the
-   library.
-   On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
-   importing, and the import continues only when you come back. If you come back within the
-   automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
-   does. If you stay away longer than that, the vault may instead lock as you return and leave the
-   document out; after you unlock, the app says "The transfer did not finish." Either way nothing
-   from the vault is shown meanwhile.
+10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+    it is locked when you come back.
+11. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+    drive so it takes several seconds). While it is still importing, send the app to the
+    background, then come back within a minute. If the import is still running, the screen should
+    say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
+    vault should lock by itself when it is done, saying only "Vault locked." Unlock: the app should
+    say "Vault unlocked. 1 file(s) encrypted and imported." and the document should be in the
+    library.
+    On iPhone, the app says "Keep myCarlos open: switching apps pauses this transfer." while
+    importing, and the import continues only when you come back. If you come back within the
+    automatic lock delay, the screen says the vault will lock when the transfer finishes, and it
+    does. If you stay away longer than that, the vault may instead lock as you return and leave the
+    document out; after you unlock, the app says "The transfer did not finish." Either way nothing
+    from the vault is shown meanwhile.
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
@@ -180,10 +205,13 @@ VoiceOver.
 With the screen reader on, using only the keyboard (or only swipes on a phone), go through
 [What to try](#what-to-try) and check each of these:
 
-1. **Create a vault** (the first screen on a new install). Every field is read with its name.
-   Type two different passphrases: "Passphrases do not match." is read out.
+1. **Create a vault** (the first screen on a new install). Every field is read with its name,
+   and the **Passphrase** field also with its rules ("Use at least 15 characters…"). Type two
+   different passphrases: "Passphrases do not match." is read out. After **Create vault**,
+   the recovery key setup opens and its title is read out.
 2. **Unlock screen.** It opens in the **Passphrase** field and the reader says so. Unlock with a
-   wrong passphrase, and note whether the reason is read out without you moving focus.
+   wrong passphrase: the reason is read out without you moving focus. Then unlock: "Vault
+   unlocked." is read out (with a transfer's result, if one finished while the vault was locked).
 3. **Finding your way.** Jumping by heading reaches the page title (for example **My records**)
    and each section in **Security**. The sidebar is read as the **Record library** navigation;
    on a phone, the **Section** menu is read with that name.
@@ -194,21 +222,23 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    whether it is pressed.
 5. **Messages.** After an import, a move or renaming a folder, the result (for example "4 file(s)
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
-   appear. Also rename a document and note whether its result is read out.
-6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete** or
-   **Save a copy** moves focus into the dialog and reads its title. In confirmations, focus
+   appear. Renaming a document from its details reads out "Document renamed to…" once you are
+   back in the details.
+6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
+   **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
+   group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). The recovery key
+   setup of a new vault is the exception: Escape does not close it. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
-   it (or, from a dialog opened within a document's details, to those details).
+   it (or, from a dialog opened within a document's details, to those details). When that button
+   is gone by then, as after setting up a recovery key from the "No recovery key yet" notice, focus
+   goes to the page's heading. Closing the recovery key setup once a key has been shown says
+   that the key does not work.
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
-   over from the library; note whether the reader also says "Vault locked." Check the same after
-   an automatic lock.
+   over from the library, and the reader says "Vault locked." with the field. Check the same
+   after an automatic lock.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
-
-Known gaps, still worth confirming: the unlock screen's messages (items 2 and 7) and the message
-after renaming a document (item 5) may appear on screen without being read out, and the
-passphrase requirements on the Create screen are not read with the passphrase field.
 
 Then turn the screen reader off and check text size:
 

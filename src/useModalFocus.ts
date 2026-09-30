@@ -12,6 +12,8 @@ export function useModalFocus(
   active: boolean,
   dialogRef: RefObject<HTMLElement | null>,
   close: () => void,
+  /** What takes the first focus; otherwise the first control that can. */
+  initialFocus?: RefObject<HTMLElement | null>,
 ): void {
   const closeRef = useRef(close);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -29,7 +31,7 @@ export function useModalFocus(
         dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ??
           [],
       );
-    focusable()[0]?.focus();
+    (initialFocus?.current ?? focusable()[0])?.focus();
 
     const containFocus = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

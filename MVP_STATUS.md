@@ -30,7 +30,7 @@ privacy, accessibility, or clinical review.
       one-to-fifteen-minute inactivity configuration with the approved five-minute default. A manual
       lock cancels streaming at the next I/O boundary; an automatic or background lock during an
       import or export hides content at once and locks when the transfer finishes.
-- [x] Confirmed passphrase change and typed plus trusted-native-confirmation whole-vault reset.
+- [x] Passphrase change (current passphrase required) and typed plus trusted-native-confirmation whole-vault reset.
 - [x] Exclusive OS ownership across app instances for unlocked sessions and lifecycle operations;
       subprocess coverage verifies rejection and fresh-state handoff after ownership release.
 - [x] Interrupted-reset recovery before startup/access/creation, covering abrupt exit after
@@ -142,7 +142,11 @@ privacy, accessibility, or clinical review.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext
       canaries. Recursive application-storage canary inspection is automated.
 - [x] State the current evaluation's passphrase-only permanent-loss behavior and the limits of
-      readable exports/deletion directly in the UI. The selected recovery kit and backup remain open.
+      readable exports/deletion directly in the UI. The recovery key and its kit are implemented (header format 2: set up when a vault is created
+      or from Security, with typed-back verification, a saved or printed kit, replacement, and
+      recovery with a new passphrase from the unlock screen), and so is the portable encrypted backup
+      (save from Security; restore from the create or unlock screen, verified in full before it
+      replaces anything).
 
 ## Required before a patient pilot
 
@@ -150,10 +154,15 @@ privacy, accessibility, or clinical review.
       E2EE portal synchronization, sharing, privacy, and updates; see
       [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md). Implementation and review remain open.
 - [ ] Design and test an isolated hostile-PDF viewer with no vault or network capability.
-- [ ] Implement the approved portable encrypted backup, E2EE synchronization, device enrollment,
-      rollback protection, immediate deletion, and resurrection-prevention tombstones.
+- [x] Implement the approved portable encrypted backup (one authenticated file of ciphertext;
+      restore verifies all of it before replacing anything, and asks for agreement before it
+      replaces a vault that is a different one, cannot be read, or differs from the backup).
+- [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
+      and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
-- [ ] Add signing, notarization, app-store packaging, updater security, and release operations.
+- [ ] Add signing, notarization, app-store packaging, updater security, and release operations,
+      with the app-store licence review in [`LICENSE_NOTES.md`](LICENSE_NOTES.md) and the licence
+      texts (the app's and its dependencies') shipped with the downloads, which they are not yet.
 - [ ] Resolve all high/critical shipped-runtime findings; Linux remains under evaluation pending review of the
       documented `glib` backport and device/release validation.

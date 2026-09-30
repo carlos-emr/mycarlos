@@ -17,10 +17,24 @@ this document: it also needs format-specific review, fixtures, and interruption 
 3. An upgrade keeps its previous complete vault until the replacement has been authenticated and
    durably activated.
 4. Backup metadata records its format version and source generation. Restore authenticates the
-   complete backup and refuses an incompatible or detectably stale replacement before changing the
-   live vault.
+   complete backup before changing the live vault, refuses an incompatible one, and replaces a
+   vault that has changed since the backup only after the patient has been told what would be
+   lost and has agreed.
 5. Version-specific readers are immutable after release except for security fixes that preserve
    their accepted grammar. New output uses a new writer and explicit migration.
+
+## Header-only format changes
+
+A format change confined to the header, such as header format 2's optional recovery-key envelope,
+does not use the staged-copy sequence below. Headers are already written as a pair of consecutive
+generations into two slots, each through the atomic replacement primitive, and unlock selects the
+newest authentic one; a passphrase change relies on the same commit. Writing the new format as the
+next header generation therefore keeps the previous authentic header as the fallback until the new
+one is durable, and rewrites nothing else. Readers accept both header formats (rule 1 still refuses
+unknown ones), and a vault moves to the new format at its next header write. Builds from before the
+change are outside this guarantee while the two slots hold different formats; `VAULT_FORMAT.md`
+("Header formats") says what they do. Manifest and object
+format changes still require the full protocol.
 
 ## Transaction layout
 
@@ -66,7 +80,8 @@ zeroization and renderer-boundary rules as ordinary vault operations.
 
 ## Restart recovery
 
-Headers and manifests can only be authenticated with the passphrase, so migration artifacts are
+Headers and manifests can only be authenticated with the passphrase or the recovery key, so
+migration artifacts are
 resolved within the unlock flow, before the vault is opened for any other command; any handling
 before the passphrase is entered is structural only. Recovery never chooses a vault by timestamp
 alone. "Valid" below means fully authenticated as in step 2 or step 8; no verification result is
@@ -85,7 +100,8 @@ trusted from before the interruption:
 
 Authenticated migration metadata in the target manifest must bind the source vault ID, source
 format, source generation, target format, and random operation ID. Local metadata cannot by itself
-detect restoration of an older formerly valid vault; the future backup/synchronization rollback
+detect restoration of an older formerly valid vault (a portable backup restore compares the
+backup with the vault on the device, which is not a trust anchor); the synchronization rollback
 trust anchor remains a separate requirement.
 
 ## Required test matrix for each migration

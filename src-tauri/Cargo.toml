@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A non-production Tauri evaluation for the proposed myCarlos app"
 authors = ["CARLOS EMR contributors"]
 edition = "2021"
-license = "GPL-2.0-or-later"
+license = "AGPL-3.0-or-later"
 
 [lib]
 name = "mycarlos_tauri_poc_lib"

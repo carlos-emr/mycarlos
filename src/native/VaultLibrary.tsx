@@ -1,13 +1,17 @@
 import { LibrarySidebar } from "./LibrarySidebar";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
-import type {
-  VaultBridge,
-  VaultFolder,
-  VaultRecord,
-  VaultSnapshot,
+import {
+  localDateText,
+  namedDamage,
+  type SavedBackup,
+  type VaultBridge,
+  type VaultFolder,
+  type VaultRecord,
+  type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { RecoveryKeySetup } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -18,6 +22,16 @@ import {
   searchKey,
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
+import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
+import {
+  OLD_BACKUPS_EXPOSED,
+  OLD_BACKUPS_KEEP,
+  OLD_BACKUPS_ROUTINE,
+  readOldBackupsGuide,
+  rememberOldBackupsGuide,
+  type OldBackupsGuide,
+} from "./oldBackups";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -54,6 +68,11 @@ export function VaultLibrary({
   onLock,
   autoLockMinutes,
   onAutoLockMinutes,
+  newVaultRecoveryKey = null,
+  onNewVaultRecoveryKeyShown,
+  onUnfinishedRecoveryKey,
+  canPrint = false,
+  sizesIn1024s = false,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -63,13 +82,42 @@ export function VaultLibrary({
   run: (operation: () => Promise<void>) => Promise<void>;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
-  refresh: () => Promise<VaultSnapshot>;
+  /** Shows the vault as it is now: `known` if a command just returned it,
+   * or as the native side says. */
+  refresh: (known?: VaultSnapshot) => Promise<VaultSnapshot>;
   onLock: () => Promise<void>;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
+  /** The recovery key made with a vault just created, to set up first. */
+  newVaultRecoveryKey?: string | null;
+  onNewVaultRecoveryKeyShown?: () => void;
+  /** Whether a recovery key setup has shown a key and not ended: a lock then
+   * ends it, and the patient is told after the next unlock. */
+  onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
+  /** Whether this platform can print the recovery kit. */
+  canPrint?: boolean;
+  /** Whether this platform's file app counts sizes in 1024s (Windows). */
+  sizesIn1024s?: boolean;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
+  // The steps for older backups after a key whose kit may have been lost or
+  // seen was replaced: kept across locks, until the patient says done.
+  const [oldBackupsGuide, setOldBackupsGuideState] =
+    useState<OldBackupsGuide | null>(readOldBackupsGuide);
+  const setOldBackupsGuide = (guide: OldBackupsGuide | null) => {
+    rememberOldBackupsGuide(guide);
+    setOldBackupsGuideState(guide);
+  };
+  // Gone once the vault locks: what a reply that comes later would show is
+  // then not seen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<NativeView>("list");
@@ -78,12 +126,33 @@ export function VaultLibrary({
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  // The result of a dialog's action (a rename, a recovery key), given once the
+  // dialog has closed (see the effect below), and the document whose details
+  // it was started from, if any.
+  const [dialogResult, setDialogResult] = useState<{
+    message: string;
+    recordId: string | null;
+  } | null>(null);
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
     action: "delete" | "export";
     recordId: string;
   } | null>(null);
   const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
+  // Setting up a recovery key. A vault just created starts with its key, which
+  // must be set up before the library can be used.
+  const [recoverySetup, setRecoverySetup] = useState<{
+    initialKey?: string;
+    required: boolean;
+  } | null>(() =>
+    newVaultRecoveryKey
+      ? { initialKey: newVaultRecoveryKey, required: true }
+      : null,
+  );
+  useEffect(() => {
+    if (newVaultRecoveryKey) onNewVaultRecoveryKeyShown?.();
+    // Only the key the library opened with.
+  }, []);
   const [showFolderForm, setShowFolderForm] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
@@ -172,6 +241,61 @@ export function VaultLibrary({
     setSelectedIds([]);
   }, [query]);
 
+  // A status line reads out only text that changes while it is on the page.
+  // The rename dialog makes the page inert, and replaces a document's details,
+  // whose status line then comes back with it. Give the result once that line
+  // is back and has had time to be seen, or it is shown but never read out.
+  // A dialog returns focus to the button that opened it. When that button is
+  // gone by then (the banner that offered the setup, the Create screen), focus
+  // would be left on nothing: put it on the page's heading.
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const focusPageIfLost = () =>
+    window.setTimeout(() => {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body || !focused.isConnected)
+        pageHeadingRef.current?.focus();
+    }, ANNOUNCE_DELAY_MS);
+  const setNoticeRef = useRef(setNotice);
+  setNoticeRef.current = setNotice;
+  useEffect(() => {
+    // Any dialog open, such as a confirmation opened straight away, hides the
+    // status line too: wait until it closes.
+    // The same goes while an operation runs: its own result comes next, and
+    // a result written during a transfer would be taken for that transfer's.
+    if (
+      !dialogResult ||
+      renameTarget ||
+      confirmation ||
+      confirmRemoveDamaged ||
+      recoverySetup ||
+      busy
+    )
+      return;
+    // A newer message replaces the result, and another document's details
+    // opened meanwhile are not where it belongs.
+    if (
+      notice ||
+      (activeRecordId !== null && activeRecordId !== dialogResult.recordId)
+    ) {
+      setDialogResult(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setNoticeRef.current(dialogResult.message);
+      setDialogResult(null);
+    }, ANNOUNCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeRecordId,
+    busy,
+    confirmation,
+    confirmRemoveDamaged,
+    notice,
+    dialogResult,
+    recoverySetup,
+    renameTarget,
+  ]);
+
   const renameFolder = (folder: VaultFolder) =>
     setRenameTarget({ kind: "folder", id: folder.id, name: folder.name });
   const saveName = async (name: string) => {
@@ -194,9 +318,12 @@ export function VaultLibrary({
       await bridge.renameRecord(renameTarget.id, name);
     }
     await refresh();
-    setNotice(
-      `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
-    );
+    // Cleared now, so that the result is a change even when it repeats.
+    setNotice("");
+    setDialogResult({
+      message: `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
+      recordId: activeRecordId,
+    });
   };
 
   const importFiles = () =>
@@ -307,6 +434,47 @@ export function VaultLibrary({
       : [recordId],
   });
 
+  const saveBackup = () =>
+    run(async () => {
+      // Named by the patient's own date, not the UTC one.
+      const pickId = await bridge.pickBackupDestination(
+        localDateText(new Date()),
+      );
+      if (!pickId) {
+        setNotice("No location chosen. Nothing changed.");
+        return;
+      }
+      let saved: SavedBackup | undefined;
+      try {
+        saved = await bridge.saveBackupToPicked(pickId);
+      } catch (error) {
+        // On Android the steps may name no file, and this save may have been
+        // over the one they say to keep, now emptied: a new backup comes
+        // first again. (A save to a path leaves nothing when it fails.)
+        if (oldBackupsGuide?.step === "delete" && oldBackupsGuide.keep === null)
+          setOldBackupsGuide({ step: "save" });
+        throw namedDamage(error, snapshot);
+      }
+      // After a key replacement, the file written last is the one to keep,
+      // named, or when the platform gives no name, by when it was saved.
+      // Its size tells it from an empty or partial file.
+      if (oldBackupsGuide) {
+        setOldBackupsGuide({
+          step: "delete",
+          keep: saved?.name ?? null,
+          savedAtMs: Date.now(),
+          bytes: saved?.bytes ?? null,
+        });
+        setNotice(
+          "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
+        );
+        return;
+      }
+      setNotice(
+        "Encrypted backup saved. Keep it somewhere other than this device.",
+      );
+    });
+
   const exportRecord = (record: VaultRecord) => {
     setConfirmation(null);
     void run(async () => {
@@ -320,13 +488,27 @@ export function VaultLibrary({
     });
   };
 
-  const damagedCount = snapshot.records.filter(
-    (record) => !record.available,
-  ).length;
+  // Every damaged document in the vault, not only those in view: removal
+  // takes them all, so the confirmation names them all.
+  const damaged = snapshot.records.filter((record) => !record.available);
+  const damagedIds = damaged.map((record) => record.id);
+  const damagedCount = damagedIds.length;
+  const profileName = (id: string) =>
+    snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
+    "";
   const removeDamaged = () => {
     setConfirmRemoveDamaged(false);
     void run(async () => {
-      const removed = await bridge.removeUnavailableRecords();
+      let removed: string[];
+      try {
+        // The vault removes only what this screen showed as damaged.
+        removed = await bridge.removeUnavailableRecords(damagedIds);
+      } catch (error) {
+        // A refusal can change what the vault reports (more documents
+        // damaged, or files that cannot be read): show that, then the reason.
+        await refresh().catch(() => undefined);
+        throw error;
+      }
       setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !removed.includes(id)),
@@ -458,7 +640,10 @@ export function VaultLibrary({
           <header
             className="titlebar"
             inert={Boolean(
-              activeRecord || renameTarget || confirmRemoveDamaged,
+              activeRecord ||
+                renameTarget ||
+                confirmRemoveDamaged ||
+                recoverySetup,
             )}
           >
             <span className="window-dots" aria-hidden="true">
@@ -479,7 +664,10 @@ export function VaultLibrary({
           <label
             className="mobile-section-picker"
             inert={Boolean(
-              activeRecord || renameTarget || confirmRemoveDamaged,
+              activeRecord ||
+                renameTarget ||
+                confirmRemoveDamaged ||
+                recoverySetup,
             )}
           >
             <span>Section</span>
@@ -498,7 +686,10 @@ export function VaultLibrary({
           <div
             className="app-body"
             inert={Boolean(
-              activeRecord || renameTarget || confirmRemoveDamaged,
+              activeRecord ||
+                renameTarget ||
+                confirmRemoveDamaged ||
+                recoverySetup,
             )}
           >
             <LibrarySidebar
@@ -563,7 +754,9 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1>{locationTitle}</h1>
+                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                      {locationTitle}
+                    </h1>
                     <p>
                       {visibleFolders.length} folders · {visibleRecords.length}{" "}
                       documents in this location
@@ -713,11 +906,15 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Read-only recovery mode.</strong> A copy of the
-                      vault's metadata could not be read, and it may be newer
-                      than what is shown. Nothing will be changed on disk. Check
-                      that no other program holds the myCarlos data folder, then
-                      lock and unlock again.
+                      <strong>Read-only recovery mode.</strong> Some of the
+                      vault's files could not be read, and they may be newer or
+                      intact, so nothing can be changed for now, including your
+                      passphrase and recovery key. Your documents can still be
+                      opened and saved as copies, except any marked “File
+                      unavailable”. Check that the drive holding the myCarlos
+                      data folder is connected, that no other program holds the
+                      folder, and that a cloud sync tool keeps its files on this
+                      device, then lock and unlock again.
                     </span>
                   </div>
                 )}
@@ -730,6 +927,24 @@ export function VaultLibrary({
                       and unlock again; the vault repairs itself when it can
                       write.
                     </span>
+                  </div>
+                )}
+                {!readOnly && !snapshot.recoveryKeySetAtMs && (
+                  <div className="purpose-note warning">
+                    <Icon name="info" />
+                    <span>
+                      <strong>No recovery key yet.</strong> If you forget your
+                      passphrase without one, the only way back in is to erase
+                      the vault.
+                    </span>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setRecoverySetup({ required: false })}
+                    >
+                      Set up recovery key
+                    </button>
                   </div>
                 )}
 
@@ -830,6 +1045,11 @@ export function VaultLibrary({
                   selectedIds={selectedIds}
                   disabled={busy || readOnly}
                   searching={Boolean(query)}
+                  unavailableLabel={
+                    snapshot.recovery === "unreadableSlot"
+                      ? "File unavailable"
+                      : "Damaged: file missing"
+                  }
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
@@ -857,10 +1077,78 @@ export function VaultLibrary({
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
                 onReset={resetVault}
+                recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
+                recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
+                oldBackupsGuide={oldBackupsGuide}
+                sizesIn1024s={sizesIn1024s}
+                onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
+                onSaveBackup={saveBackup}
+                onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}
           </div>
 
+          {recoverySetup && (
+            <RecoveryKeySetup
+              bridge={bridge}
+              initialKey={recoverySetup.initialKey}
+              replacing={Boolean(snapshot.recoveryKeySetAtMs)}
+              required={recoverySetup.required}
+              canPrint={canPrint}
+              onKeyShown={({ exposed }) =>
+                onUnfinishedRecoveryKey?.({
+                  setAtMs: snapshot.recoveryKeySetAtMs ?? null,
+                  ...(exposed && { exposed }),
+                })
+              }
+              onDone={(stored, { exposed }) => {
+                const replaced = Boolean(snapshot.recoveryKeySetAtMs);
+                // Older backups still open with the old key. Only a kit that
+                // may have been lost or seen makes them worth replacing, and
+                // a vault that could not finish writing the key cannot save
+                // a backup: the old ones are then kept until it can.
+                const backups = !exposed
+                  ? OLD_BACKUPS_ROUTINE
+                  : stored.recovery
+                    ? OLD_BACKUPS_KEEP
+                    : OLD_BACKUPS_EXPOSED;
+                if (replaced && exposed) setOldBackupsGuide({ step: "save" });
+                const saved = replaced
+                  ? `Recovery key replaced. The old one no longer opens this vault. ${backups}`
+                  : "Recovery key saved. Keep your kit somewhere safe.";
+                setRecoverySetup(null);
+                setNotice("");
+                // The setup is finished once the patient is told so. Until
+                // then a lock leaves it unfinished, and the next unlock says
+                // the key was saved.
+                const tell = (message: string) => {
+                  if (!mountedRef.current) return;
+                  onUnfinishedRecoveryKey?.(null);
+                  setDialogResult({ message, recordId: activeRecordId });
+                };
+                // As the confirmation returned it: so that what this screen
+                // shows, and the next setup's record of the key it would
+                // replace, is the vault with this key.
+                void refresh(stored).then(() => tell(saved));
+                focusPageIfLost();
+              }}
+              onClose={(keyShown) => {
+                onUnfinishedRecoveryKey?.(null);
+                setRecoverySetup(null);
+                if (keyShown) {
+                  setNotice("");
+                  setDialogResult({
+                    message: snapshot.recoveryKeySetAtMs
+                      ? "Recovery key setup was not finished. The key you were shown does not open the vault; your earlier key still does. Destroy any kit saved or printed just now."
+                      : "Recovery key setup was not finished. The key you were shown does not open the vault. Destroy any kit saved or printed just now.",
+                    recordId: activeRecordId,
+                  });
+                }
+                focusPageIfLost();
+              }}
+              onLocked={() => void onLock()}
+            />
+          )}
           {renameTarget && (
             <RenameDialog
               target={renameTarget}
@@ -875,6 +1163,7 @@ export function VaultLibrary({
               folders={folders}
               busy={busy}
               readOnly={readOnly}
+              unreadable={snapshot.recovery === "unreadableSlot"}
               notice={notice}
               onClose={() => setActiveRecordId(null)}
               onRename={() =>
@@ -913,20 +1202,42 @@ export function VaultLibrary({
           )}
           {confirmRemoveDamaged && (
             <ConfirmDialog
-              title={`Remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Remove"
+              title={`Permanently remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Permanently remove"
               danger
               onConfirm={removeDamaged}
               onCancel={() => setConfirmRemoveDamaged(false)}
+              details={
+                // It scrolls when it is long, so it takes focus, to be
+                // scrolled with the keyboard. It is not read out with the
+                // dialog: the title counts the documents.
+                <ul
+                  className="native-confirm-list"
+                  aria-label="Documents to remove"
+                  tabIndex={0}
+                >
+                  {damaged.map((record) => (
+                    <li key={record.id}>
+                      {record.displayName}
+                      {snapshot.profiles.length > 1 &&
+                        ` (${profileName(record.profileId)})`}
+                    </li>
+                  ))}
+                </ul>
+              }
             >
               <p>
-                The encrypted files for these documents are missing from this
-                device, so their content is already gone from here. Removing
-                them forgets their names and details too. This cannot be undone.
+                Their encrypted files are missing from this device, so their
+                content is already gone from here. Removing them also deletes
+                their names and details from the vault, permanently. This cannot
+                be undone.
               </p>
               <p>
-                If you have a backup of the myCarlos data folder, restore it
-                first: any file that is back is kept, not removed.
+                First check that the files are not just out of reach: if the
+                myCarlos data folder is on a drive that is disconnected, or
+                another program is using it, fix that, then lock and unlock
+                again. If you have a backup of the data folder, restore it
+                first: any file that comes back is kept.
               </p>
             </ConfirmDialog>
           )}

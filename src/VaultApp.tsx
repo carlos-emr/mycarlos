@@ -5,7 +5,9 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isRestoreUnfinished,
   vaultErrorMessage,
+  vaultErrorNote,
   type VaultBridge,
   type VaultSnapshot,
   type VaultStatus,
@@ -13,6 +15,14 @@ import {
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { VaultLibrary } from "./native/VaultLibrary";
 import { TransferHold } from "./native/transferHold";
+import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import {
+  rememberUnfinishedRecoveryKey,
+  takeUnfinishedRecoveryKey,
+  unfinishedRecoveryKeyMessage,
+  exposedKeyReplaced,
+} from "./native/unfinishedRecoveryKey";
+import { rememberOldBackupsGuide } from "./native/oldBackups";
 import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
@@ -23,6 +33,8 @@ export interface VaultAppProps {
   bridge?: VaultBridge;
 }
 const defaultBridge = createVaultBridge();
+// Platforms with a print dialog for the recovery kit.
+const DESKTOP_PLATFORMS = new Set(["windows", "macos", "linux"]);
 
 // Timers pause while a device sleeps, so the inactivity deadline is kept as a
 // wall-clock time and rechecked at least this often. The same recheck retries a
@@ -58,6 +70,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice] = useState("");
+  // A message for the library that unlocking or creating the vault is about to
+  // show. Its status line reads out only what changes once it is on screen, so
+  // the message is written just after (see the effect below).
+  const [libraryNotice, setLibraryNotice] = useState<{
+    message: string;
+    // The result of a transfer that a lock ended, held for this unlock. It
+    // must reach the patient: it may say a readable copy was left behind.
+    outcome: string | null;
+  } | null>(null);
+  // The recovery key made with a vault just created. The library opens on it,
+  // and the patient sets it up before anything else.
+  const [newVaultRecoveryKey, setNewVaultRecoveryKey] = useState<string | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -116,6 +142,56 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
   }, []);
 
+  // Results kept for after the next unlock add up: one never replaces
+  // another. `first` puts an older result ahead of what was kept since.
+  const holdForUnlock = useCallback((outcome: string, first = false) => {
+    const held = pendingOutcomeRef.current;
+    pendingOutcomeRef.current = (first ? [outcome, held] : [held, outcome])
+      .filter(Boolean)
+      .join(" ");
+  }, []);
+
+  // Nothing held for the next unlock is about a vault a restore replaces:
+  // not a transfer's outcome, nor how a key setup ended.
+  const forgetReplacedVault = () => {
+    pendingOutcomeRef.current = null;
+    rememberUnfinishedRecoveryKey(null);
+    rememberOldBackupsGuide(null);
+  };
+
+  // Taken as a vault opens: what happened while it was locked, and how a
+  // recovery key setup that a lock or closing ended actually ended.
+  const takeHeldOutcome = (opened: VaultSnapshot) => {
+    const unfinished = takeUnfinishedRecoveryKey();
+    // A key whose kit may have been exposed was replaced as the lock fell:
+    // Security shows the steps for its older backups, as after a
+    // replacement the patient saw finish.
+    if (
+      unfinished &&
+      exposedKeyReplaced(unfinished, opened.recoveryKeySetAtMs ?? null)
+    )
+      rememberOldBackupsGuide({ step: "save" });
+    const outcome = [
+      pendingOutcomeRef.current,
+      unfinished &&
+        unfinishedRecoveryKeyMessage(
+          unfinished,
+          opened.recoveryKeySetAtMs ?? null,
+          Boolean(opened.recovery),
+        ),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    pendingOutcomeRef.current = null;
+    return outcome || null;
+  };
+
+  // Read through a ref so that `requestLock` keeps its identity: the automatic
+  // lock effect depends on it, and re-running that effect resets its deadline.
+  // `lock` reads it too.
+  const concealedRef = useRef(concealed);
+  concealedRef.current = concealed;
+
   const lock = useCallback(async () => {
     if (lockingRef.current) return;
     lockingRef.current = true;
@@ -125,27 +201,32 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       sessionRef.current += 1;
       setSnapshot(null);
+      // A key shown but not set up ended with the session.
+      setNewVaultRecoveryKey(null);
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
-        pendingOutcomeRef.current = transferOutcomeRef.current;
+        holdForUnlock(transferOutcomeRef.current);
       setNotice("Vault locked.");
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
       // including the concealed screen, which would otherwise claim "Locked".
       setLockFailed(true);
-      setNotice(vaultErrorMessage(error));
+      // What was held for the unlock after this lock is for the patient now,
+      // while the vault stays open, unless the content is hidden: there it
+      // keeps waiting for an unlock, where only the owner sees it.
+      const held = concealedRef.current ? null : pendingOutcomeRef.current;
+      if (held) pendingOutcomeRef.current = null;
+      setNotice(
+        held ? `${vaultErrorMessage(error)} ${held}` : vaultErrorMessage(error),
+      );
     } finally {
       lockingRef.current = false;
     }
-  }, [bridge, holdLock, transferHold]);
+  }, [bridge, holdForUnlock, holdLock, transferHold]);
 
-  // Read through a ref so that `requestLock` keeps its identity: the automatic
-  // lock effect depends on it, and re-running that effect resets its deadline.
-  const concealedRef = useRef(concealed);
-  concealedRef.current = concealed;
   const requestLock = useCallback(
     (concealImmediately = false) => {
       if (concealImmediately) {
@@ -154,6 +235,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // announced again on every recheck.
         if (!concealedRef.current) setLockFailed(false);
         setConcealed(true);
+        // At once, for a lock that fails before the screen is drawn again.
+        concealedRef.current = true;
       }
       void lock();
     },
@@ -169,16 +252,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
     if (!concealedRef.current) setLockFailed(false);
     setConcealed(true);
+    concealedRef.current = true;
     holdLock(true);
   }, [holdLock, requestLock, transferHold]);
 
   const platformRef = useRef("");
+  // Also kept as state, for what is rendered from it.
+  const [platform, setPlatform] = useState("");
   useEffect(() => {
     let active = true;
     bridge
       .platform()
       .then((platform) => {
-        if (active) platformRef.current = platform;
+        if (active) {
+          platformRef.current = platform;
+          setPlatform(platform);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -246,6 +335,24 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
+      saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
+      // A native confirmation may be open for as long as a picker.
+      confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),
+      pickBackupDestination: (localDate) =>
+        track(bridge.pickBackupDestination(localDate)),
+      saveBackupToPicked: (pickId) =>
+        transfer(() => bridge.saveBackupToPicked(pickId)),
+      pickRestoreSource: () => track(bridge.pickRestoreSource()),
+      restore: async (pickId, credential, replace) => {
+        try {
+          return await bridge.restore(pickId, credential, replace);
+        } catch (error) {
+          // Put in place at the next start: like a restore that finished, it
+          // replaces the vault that what is held for the next unlock is about.
+          if (isRestoreUnfinished(error)) forgetReplacedVault();
+          throw error;
+        }
+      },
       importPickedFiles: (pickId, profileId, folderIds) =>
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
@@ -340,6 +447,46 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
   }, [autoLockMinutes, bridge, lockWhenIdle, status]);
 
+  const libraryShown = status === "unlocked" && snapshot !== null && !concealed;
+  useEffect(() => {
+    if (!libraryNotice) return;
+    const { message, outcome } = libraryNotice;
+    // Held again for the next unlock, after anything a later lock kept.
+    const holdOutcome = () => {
+      if (outcome) holdForUnlock(outcome, true);
+    };
+    // The session ended before the message was written. Nothing of it may
+    // reach the unlock screen; a held outcome waits for the next unlock.
+    if (status !== "unlocked") {
+      if (status === "locked") holdOutcome();
+      setLibraryNotice(null);
+      return;
+    }
+    // A newer message, such as the result of an operation started at once,
+    // is not overwritten. A held outcome is added to it, or held again while
+    // the library is hidden.
+    if (notice) {
+      // A lock under way replaces whatever is written now.
+      if (outcome && libraryShown && !lockingRef.current)
+        setNotice(`${notice} ${outcome}`);
+      else holdOutcome();
+      setLibraryNotice(null);
+      return;
+    }
+    // Nor while an operation runs, for example under a picker: its own
+    // result comes next, and the branch above then adds a held outcome to it.
+    if (!libraryShown || busy) return;
+    const armedIn = sessionRef.current;
+    const timer = window.setTimeout(() => {
+      // A lock that has landed, or is under way, but is not rendered yet:
+      // leave the message for the branches above.
+      if (sessionRef.current !== armedIn || lockingRef.current) return;
+      setNotice([message, outcome].filter(Boolean).join(" "));
+      setLibraryNotice(null);
+    }, ANNOUNCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [busy, holdForUnlock, libraryNotice, libraryShown, notice, status]);
+
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);
     setAutoLockMinutes(normalized);
@@ -375,26 +522,41 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // Failures that only say the vault locked, or that a lock cut the
       // operation off.
       const lockedOut = isLockedError(error) || isCancelledError(error);
+      // A backup a lock cut off where it may have left something to act on
+      // (an Android document, emptied as it was opened): told after the
+      // next unlock, however the lock came. Only a backup's failure carries
+      // such a note.
+      const note = lockedOut ? vaultErrorNote(error) : null;
+      const cutOff = note
+        ? `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`
+        : null;
       if (sessionRef.current !== startedIn) {
         // The vault locked while this ran. Report a failure that left
         // something to act on: a transfer's, such as a partial copy, after the
         // next unlock; any other now, as the person who asked for it is here.
         if (!lockedOut) {
-          if (transferHold.active)
-            pendingOutcomeRef.current = vaultErrorMessage(error);
+          if (transferHold.active) holdForUnlock(vaultErrorMessage(error));
           else setNotice(vaultErrorMessage(error));
-        }
+        } else if (cutOff) holdForUnlock(cutOff);
         return;
       }
-      // A lock under way cancelled it, and says so itself when it finishes.
-      if (lockingRef.current && isCancelledError(error)) return;
+      // A lock under way cancelled it, and says so itself when it finishes;
+      // what a cut-off backup may have left is kept for after the unlock.
+      if (lockingRef.current && (cutOff || isCancelledError(error))) {
+        if (cutOff) holdForUnlock(cutOff);
+        return;
+      }
       if (lockedOut && status === "unlocked") {
         // The native idle deadline locked the vault, or tried to, for example
         // while this screen was suspended: a command then fails as locked, and
         // a transfer it cut off as cancelled (a provider export's write pass
         // as a partial copy instead, handled below). Lock here too, which also
         // confirms it.
-        if (isCancelledError(error)) report("The transfer did not finish.");
+        // What a cut-off backup left is held for the next unlock, which a
+        // failed lock does not lose (it shows it, or waits for a later one).
+        if (cutOff) holdForUnlock(cutOff);
+        else if (isCancelledError(error))
+          report("The transfer did not finish.");
         requestLock(true);
         return;
       }
@@ -418,16 +580,33 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // still in flight then belongs to a finished session and is ignored.
   const session = sessionRef.current;
   const inSession = () => sessionRef.current === session;
-  const refresh = async () => {
-    const next = await bridge.snapshot();
+  // `known` is the vault as a command that changed it returned it, taken
+  // under the same guard as the change: nothing to ask again.
+  const refresh = async (known?: VaultSnapshot) => {
+    const next = known ?? (await bridge.snapshot());
     if (inSession()) setSnapshot(next);
     return next;
   };
   const setSessionNotice = (message: string) => {
+    // Clearing the line is not a result: it must not replace a transfer's
+    // outcome, shown or held.
+    if (!message) {
+      if (inSession()) setNotice("");
+      return;
+    }
     if (inSession()) report(message);
     // The lock that ended this transfer has landed: keep its result for
     // after the next unlock.
-    else if (transferHold.active) pendingOutcomeRef.current = message;
+    else if (transferHold.active) holdForUnlock(message);
+  };
+
+  // A restored vault is locked: it opens with its own passphrase or key.
+  const restored = () => {
+    forgetReplacedVault();
+    setStatus("locked");
+    setNotice(
+      "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
+    );
   };
 
   if (status === "loading") {
@@ -443,16 +622,42 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <CreateVault
         busy={busy}
         notice={notice}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
         onCreate={(profile, passphrase) =>
           run(async () => {
             setSnapshot(await bridge.create(passphrase, profile));
             // Nothing from a vault that is gone.
             pendingOutcomeRef.current = null;
+            rememberUnfinishedRecoveryKey(null);
+            rememberOldBackupsGuide(null);
+            // The passphrase was just typed, so it authorizes the recovery key
+            // at once. If that fails, the library offers to set one up.
+            const begun = await bridge.beginRecoveryKey(passphrase).then(
+              (key) => ({ key, locked: false }),
+              (error: unknown) => ({ key: null, locked: isLockedError(error) }),
+            );
+            if (begun.locked) {
+              // The vault locked meanwhile (its automatic lock): it is shown
+              // locked, not open on what the lock ended.
+              setSnapshot(null);
+              setStatus("locked");
+              setNotice(
+                "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+              );
+              return;
+            }
+            const recoveryKey = begun.key;
+            setNewVaultRecoveryKey(recoveryKey);
             setConcealed(false);
             setStatus("unlocked");
-            setNotice(
-              "Encrypted vault created. Keep your passphrase safe; it cannot be recovered.",
-            );
+            // With a key to set up, its dialog says what happened instead.
+            if (!recoveryKey)
+              setLibraryNotice({
+                message:
+                  "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+                outcome: null,
+              });
           })
         }
       />
@@ -464,6 +669,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <UnlockVault
         busy={busy}
         notice={notice}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
         autoLockMinutes={autoLockMinutes}
         onUnlock={(passphrase) =>
           run(async () => {
@@ -471,24 +678,37 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
-            const outcome = pendingOutcomeRef.current;
-            pendingOutcomeRef.current = null;
-            setNotice(
-              [
-                current.recovery
-                  ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
-                  : "Vault unlocked.",
-                outcome,
-              ]
-                .filter(Boolean)
-                .join(" "),
-            );
+            const outcome = takeHeldOutcome(current);
+            setLibraryNotice({
+              message: current.recovery
+                ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
+                : "Vault unlocked.",
+              outcome,
+            });
+          })
+        }
+        onRecover={(recoveryKey, newPassphrase) =>
+          run(async () => {
+            const { passphraseReplaced, snapshot: current } =
+              await bridge.recover(recoveryKey, newPassphrase);
+            setSnapshot(current);
+            setConcealed(false);
+            setStatus("unlocked");
+            const outcome = takeHeldOutcome(current);
+            setLibraryNotice({
+              message: passphraseReplaced
+                ? "Vault opened with your recovery key. Use your new passphrase from now on."
+                : "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
+              outcome,
+            });
           })
         }
         onReset={(confirmation) =>
           run(async () => {
             if (await bridge.reset(confirmation)) {
               pendingOutcomeRef.current = null;
+              rememberUnfinishedRecoveryKey(null);
+              rememberOldBackupsGuide(null);
               setStatus("absent");
               setNotice("");
             } else {
@@ -553,6 +773,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onLock={lock}
       autoLockMinutes={autoLockMinutes}
       onAutoLockMinutes={updateAutoLockMinutes}
+      newVaultRecoveryKey={newVaultRecoveryKey}
+      onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
+      onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
+      canPrint={DESKTOP_PLATFORMS.has(platform)}
+      sizesIn1024s={platform === "windows"}
     />
   );
 }
