@@ -11,7 +11,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
-import type { ImportOutcome, VaultBridge, VaultSnapshot } from "./vault";
+import type {
+  ImportOutcome,
+  SavedBackup,
+  VaultBridge,
+  VaultSnapshot,
+} from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 
 const TRANSFER_HOLD =
@@ -1411,7 +1416,8 @@ describe("durable vault UI", () => {
       screen.getByRole("region", { name: "Your older backups" }),
     ).getAllByRole("listitem");
     expect(next[0]).toHaveTextContent(
-      `Your new backup is “${written}” (4 KB). Keep it, or a copy of it, somewhere other than this device`,
+      // The test platform is Windows, whose Explorer counts in 1024s.
+      `Your new backup is “${written}” (4 KB, 4,096 bytes). Keep it, or a copy of it, somewhere other than this device`,
     );
     expect(next[1]).toHaveTextContent("other than the new one and its copies");
     expect(next[2]).toHaveTextContent("that file is now your new backup");
@@ -1478,6 +1484,55 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
     await screen.findByText(/No backup was saved/);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Save a new backup now");
+  });
+
+  it("asks for a new backup again, and says once what was left, when Lock now cuts a save off", async () => {
+    // Android names no file, so this save may be over the one to keep; the
+    // lock then empties it.
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({ step: "delete", keep: null, savedAtMs: 1, bytes: 10 }),
+    );
+    const note =
+      "The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups.";
+    let failSave!: (error: unknown) => void;
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-5"),
+      saveBackupToPicked: vi.fn(
+        () =>
+          new Promise<SavedBackup>((_, reject) => {
+            failSave = reject;
+          }),
+      ),
+      lock: vi.fn(async () => {
+        failSave({ ...CANCELLED, note });
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
+    await user.click(
+      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+    );
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    await expectOutcomeAfterUnlock(
+      `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`,
+    );
+    expect(screen.getAllByText(new RegExp("it was emptied"))).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: /Security/ }));
     expect(
       within(
         screen.getByRole("region", { name: "Your older backups" }),

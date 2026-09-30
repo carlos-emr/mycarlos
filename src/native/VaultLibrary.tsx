@@ -72,6 +72,7 @@ export function VaultLibrary({
   onNewVaultRecoveryKeyShown,
   onUnfinishedRecoveryKey,
   canPrint = false,
+  sizesIn1024s = false,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -95,6 +96,8 @@ export function VaultLibrary({
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
+  /** Whether this platform's file app counts sizes in 1024s (Windows). */
+  sizesIn1024s?: boolean;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -1077,6 +1080,7 @@ export function VaultLibrary({
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
+                sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}

@@ -10,7 +10,7 @@ import {
 } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
-import { formatBytes } from "./recordPresentation";
+import { formatFileSize } from "./recordPresentation";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -30,13 +30,16 @@ interface SecuritySettingsProps {
    * or seen was replaced, if any are left. */
   oldBackupsGuide?: OldBackupsGuide | null;
   onOldBackupsGuideDone?: () => void;
+  /** Whether this platform's file app counts sizes in 1024s (Windows). */
+  sizesIn1024s?: boolean;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
 }
 
-/** The size of a saved backup, which tells it from an empty or partial one. */
-const savedSize = (bytes: number | null) =>
-  bytes === null ? "" : ` (${formatBytes(bytes)})`;
+/** The size of a saved backup, which tells it from an empty or partial one,
+ * as the platform's file app counts it. */
+const savedSize = (bytes: number | null, in1024s: boolean) =>
+  bytes === null ? "" : ` (${formatFileSize(bytes, in1024s)})`;
 
 export function SecuritySettings({
   busy,
@@ -52,6 +55,7 @@ export function SecuritySettings({
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
   onOldBackupsGuideDone,
+  sizesIn1024s = false,
   onSetUpRecoveryKey,
   onSaveBackup,
 }: SecuritySettingsProps) {
@@ -244,10 +248,11 @@ export function SecuritySettings({
                         {oldBackupsGuide.keep ? (
                           <>
                             Your new backup is &ldquo;{oldBackupsGuide.keep}
-                            &rdquo;{savedSize(oldBackupsGuide.bytes)}.
+                            &rdquo;
+                            {savedSize(oldBackupsGuide.bytes, sizesIn1024s)}.
                           </>
                         ) : (
-                          `Your new backup is the one you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes)}: your files app shows when each file was saved, and its size.`
+                          `Your new backup is the one you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes, sizesIn1024s)}: your files app shows when each file was saved, and its size.`
                         )}{" "}
                         Keep it, or a copy of it, somewhere other than this
                         device, such as a USB stick or a cloud drive.

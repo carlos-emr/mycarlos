@@ -552,7 +552,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // a transfer it cut off as cancelled (a provider export's write pass
         // as a partial copy instead, handled below). Lock here too, which also
         // confirms it.
-        if (cutOff) report(cutOff);
+        // What a cut-off backup left is held for the next unlock, which a
+        // failed lock does not lose (it shows it, or waits for a later one).
+        if (cutOff) holdForUnlock(cutOff);
         else if (isCancelledError(error))
           report("The transfer did not finish.");
         requestLock(true);
@@ -775,6 +777,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onNewVaultRecoveryKeyShown={() => setNewVaultRecoveryKey(null)}
       onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
+      sizesIn1024s={platform === "windows"}
     />
   );
 }

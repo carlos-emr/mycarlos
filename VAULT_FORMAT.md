@@ -380,8 +380,9 @@ opens, even if the open then fails): a failure before myCarlos has it open says 
 may be left there to delete, and to keep any backup that is not empty; a failure after says that the
 file there may be empty or incomplete, and emptied if it was an older backup, and to delete that
 one, not the other backups. What may be left on Android is said after any backup failure; for a
-backup a lock cut off, it is told, with the rest, after the next unlock. When the steps for older
-backups name no file (Android), such a failure takes them back to saving a new backup first.
+backup a lock cut off, it is told, with the rest, after the next unlock, or at once if that lock
+fails while the screen is shown. When the steps for older backups name no file (Android), such a
+failure takes them back to saving a new backup first.
 
 A backup opens with the passphrase, and the recovery key if it had one, that the vault had when it
 was saved, not with any set up since; a restore that is refused for either says so in those words,
