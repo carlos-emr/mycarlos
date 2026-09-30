@@ -443,7 +443,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLibraryNotice(null);
       return;
     }
-    if (!libraryShown) return;
+    // Nor while an operation runs, for example under a picker: its own
+    // result comes next, and the branch above then adds a held outcome to it.
+    if (!libraryShown || busy) return;
     const armedIn = sessionRef.current;
     const timer = window.setTimeout(() => {
       // A lock that has landed, or is under way, but is not rendered yet:
@@ -453,7 +455,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLibraryNotice(null);
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [holdForUnlock, libraryNotice, libraryShown, notice, status]);
+  }, [busy, holdForUnlock, libraryNotice, libraryShown, notice, status]);
 
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);
@@ -582,9 +584,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             rememberUnfinishedRecoveryKey(null);
             // The passphrase was just typed, so it authorizes the recovery key
             // at once. If that fails, the library offers to set one up.
-            const recoveryKey = await bridge
-              .beginRecoveryKey(passphrase)
-              .catch(() => null);
+            const begun = await bridge.beginRecoveryKey(passphrase).then(
+              (key) => ({ key, locked: false }),
+              (error: unknown) => ({ key: null, locked: isLockedError(error) }),
+            );
+            if (begun.locked) {
+              // The vault locked meanwhile (its automatic lock): it is shown
+              // locked, not open on what the lock ended.
+              setSnapshot(null);
+              setStatus("locked");
+              setNotice(
+                "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+              );
+              return;
+            }
+            const recoveryKey = begun.key;
             setNewVaultRecoveryKey(recoveryKey);
             setConcealed(false);
             setStatus("unlocked");
