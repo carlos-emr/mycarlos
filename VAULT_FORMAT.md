@@ -147,12 +147,15 @@ counted, so that killing it is no way round the count. The right secret clears t
 the vault either way clears both of its counts), and creating, erasing or restoring a vault clears
 them too, as they were about the vault it replaces. The counts, and when the last wrong try was,
 are kept in `attempts.json` beside the vault (written as `attempts.json.new`, renamed over it, and
-its folder synced), so that closing and reopening myCarlos, or a power cut, does not clear them;
-before a vault home exists they last for that run only. A clock set back behind the
-last wrong try counts the wait from then, rather than never, and a file that does not read starts
-from nothing. This slows only guessing through the app on this device: a copy of the vault, or a
-backup, can be guessed at elsewhere without it, where only the cost of the key derivation stands in
-the way; and whoever can delete the file, or move the clock forward, undoes the wait.
+its folder synced), so that closing and reopening myCarlos, or a power cut, does not clear them.
+Before a vault home exists, or when the file cannot be written (a full or read-only disk), they last
+for that run only: refusing every try then would shut the patient out of a vault that can still be
+read, and a disk that fails to write undoes no more than deleting the file does. A clock set back
+behind the last wrong try counts the wait from then, rather than never, and a file that does not
+read starts from nothing. This slows only guessing through the app on this device: a copy of the
+vault, or a backup, can be guessed at elsewhere without it, where only the cost of the key
+derivation stands in the way; and whoever can delete the file, make it unwritable, or move the
+clock forward, undoes the wait.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
