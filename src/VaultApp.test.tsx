@@ -4158,9 +4158,12 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    expect(await screen.findByText(/File unavailable/)).toBeVisible();
+    expect(await screen.findByText(/· File unavailable/)).toBeVisible();
     expect(screen.queryByText(/Damaged: file missing/)).not.toBeInTheDocument();
-    expect(screen.getByText(/keeps its files on this device/)).toBeVisible();
+    // The notice says which documents cannot be opened: those so marked.
+    expect(
+      screen.getByText(/keeps its files on this device/),
+    ).toHaveTextContent("except any marked “File unavailable”");
     await user.click(screen.getByText("FAKE_Unreadable.pdf"));
     expect(
       within(screen.getByRole("dialog")).getByRole("alert"),

@@ -232,6 +232,8 @@ pub enum VaultError {
     Cancelled,
     #[error("the vault is in read-only recovery mode")]
     RecoveryMode,
+    #[error("part of the vault could not be read")]
+    Unreadable,
     #[error("the documents to remove are not the ones that were confirmed")]
     RemovalChanged,
     #[error("this storage cannot hold the vault safely")]
@@ -682,9 +684,16 @@ impl VaultStore {
         };
         finish_pending_resets(&self.root)?;
         self.cancel_io.store(false, Ordering::Release);
-        let (header, master_key, wrapping_key) =
+        let (header, master_key, wrapping_key, header_unreadable) =
             read_header_for_passphrase(&self.root, passphrase)?;
-        self.open_with_header(&mut guard, storage_lock, header, master_key, wrapping_key)
+        self.open_with_header(
+            &mut guard,
+            storage_lock,
+            header,
+            master_key,
+            wrapping_key,
+            header_unreadable,
+        )
     }
 
     /// The rest of an unlock, once a header and its keys are authenticated:
@@ -697,6 +706,8 @@ impl VaultStore {
         header: VaultHeader,
         master_key: SecretKey,
         wrapping_key: SecretKey,
+        // From the reading that chose the header, not a later one.
+        header_unreadable: bool,
     ) -> Result<(), VaultError> {
         let recovery_key_set_at_ms = header
             .recovery
@@ -707,13 +718,17 @@ impl VaultStore {
             manifest,
             unavailable,
             mut recovery,
-        } = select_manifest(&slots)?;
-        if recovery == Some(RecoveryReason::LostObjects) && header_slot_unreadable(&self.root) {
+        } = select_manifest(&slots).map_err(|error| not_damage_if(header_unreadable, error))?;
+        if header_unreadable {
             // `select_manifest` only sees the manifest slots. A header slot that
             // cannot be read outranks lost objects for the same reason an
             // unreadable manifest slot does: removing the lost records would
             // make the session writable, and a passphrase change could then
             // rewrap the key over a newer generation held in that slot.
+            //
+            // It also stops an unlock that found nothing else wrong, before
+            // anything is repaired or cleaned up: the passphrase used may be
+            // one that the slot's header has replaced.
             recovery = Some(RecoveryReason::UnreadableSlot);
         }
         if recovery.is_some() {
@@ -750,19 +765,15 @@ impl VaultStore {
             }
         };
         if !header_healthy {
-            if header_slot_unreadable(&self.root) {
-                // Repair rewrites both slots under the passphrase just used. A
-                // slot that could not be read may be a newer passphrase
-                // generation, which that would silently roll back.
-                recovery = Some(RecoveryReason::UnreadableSlot);
-            } else {
-                match repair_header_redundancy(&self.root, &header, &wrapping_key, &master_key) {
-                    Ok(()) => {}
-                    Err(VaultError::NoSpace | VaultError::Storage) => {
-                        recovery = Some(RecoveryReason::WriteFailed);
-                    }
-                    Err(error) => return Err(error),
+            // Both slots were read when the header was chosen, or the unlock
+            // would have stopped above: the repair does not write over a
+            // header that was not seen.
+            match repair_header_redundancy(&self.root, &header, &wrapping_key, &master_key) {
+                Ok(()) => {}
+                Err(VaultError::NoSpace | VaultError::Storage) => {
+                    recovery = Some(RecoveryReason::WriteFailed);
                 }
+                Err(error) => return Err(error),
             }
         } else {
             // Both slots are authentic and current, so a legacy envelope has been
@@ -1430,7 +1441,13 @@ impl VaultStore {
         // Select the header as unlock does: the newest one that `current`
         // authenticates. Taking the highest generation on structure alone would
         // let a damaged or planted slot turn the right passphrase into a refusal.
-        let (header, verified, _) = read_header_for_passphrase(&self.root, current)?;
+        let (header, verified, _, header_unreadable) =
+            read_header_for_passphrase(&self.root, current)?;
+        // The session is writable, so every slot could be read when it was
+        // opened. One that cannot be read now is not written over.
+        if header_unreadable {
+            return Err(VaultError::Unreadable);
+        }
         if header.vault_id != unlocked.manifest.vault_id
             || verified.as_ref() != unlocked.master_key.as_ref()
         {
@@ -1474,7 +1491,11 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        let (header, verified, wrapping_key) = read_header_for_passphrase(&self.root, passphrase)?;
+        let (header, verified, wrapping_key, header_unreadable) =
+            read_header_for_passphrase(&self.root, passphrase)?;
+        if header_unreadable {
+            return Err(VaultError::Unreadable);
+        }
         if header.vault_id != unlocked.manifest.vault_id
             || verified.as_ref() != unlocked.master_key.as_ref()
         {
@@ -1604,7 +1625,7 @@ impl VaultStore {
         }
 
         let vault_id = unlocked.manifest.vault_id;
-        let current = newest_authentic_header(&self.root, vault_id, &unlocked.master_key)?;
+        let current = current_header(&self.root, vault_id, &unlocked.master_key)?;
         // The passphrase that authorized the key must still open the current
         // header; otherwise the pair below would wrap the master key under a
         // passphrase that no longer applies.
@@ -1666,10 +1687,11 @@ impl VaultStore {
         let storage_lock = acquire_storage_lock(&self.root)?;
         finish_pending_resets(&self.root)?;
         self.cancel_io.store(false, Ordering::Release);
-        let (header, master_key) = read_header_for_recovery_key(&self.root, &key)?;
+        let (header, master_key, header_unreadable) =
+            read_header_for_recovery_key(&self.root, &key)?;
         let slots = read_manifest_slots(&self.root, &master_key, header.vault_id)?;
-        let selected = select_manifest(&slots)?;
-        let header_unreadable = header_slot_unreadable(&self.root);
+        let selected =
+            select_manifest(&slots).map_err(|error| not_damage_if(header_unreadable, error))?;
         if selected.recovery.is_some() || header_unreadable {
             // As in `open_with_header`: an unreadable header slot outranks lost
             // objects, so the session cannot become writable over it.
@@ -1745,7 +1767,15 @@ impl VaultStore {
         // header write failed, the redundancy repair there rewrites it. An
         // error from here on is reported although the passphrase is already
         // replaced; the recovery key still opens the vault.
-        self.open_with_header(&mut guard, storage_lock, first, master_key, wrapping_key)?;
+        // Both header slots were read before they were written.
+        self.open_with_header(
+            &mut guard,
+            storage_lock,
+            first,
+            master_key,
+            wrapping_key,
+            false,
+        )?;
         Ok(true)
     }
 
@@ -1843,7 +1873,7 @@ impl VaultStore {
         }
         let manifest = &unlocked.manifest;
         let vault_id = manifest.vault_id;
-        let header = newest_authentic_header(&self.root, vault_id, &unlocked.master_key)?;
+        let header = current_header(&self.root, vault_id, &unlocked.master_key)?;
         let header_data = serde_json::to_vec_pretty(&header).map_err(|_| VaultError::Storage)?;
         let keys = derive_keys(vault_id, &unlocked.master_key)?;
         let manifest_data = read_bounded_regular_file(
@@ -1954,7 +1984,8 @@ impl VaultStore {
             manifest_data,
             ..
         } = opened;
-        let candidates = read_header_candidates(&self.root);
+        let files = read_header_files(&self.root);
+        let candidates = &files.candidates;
         let (replaces, differs_from_this_device) = if !self.root.exists() {
             (RestoreReplaces::Nothing, false)
         } else if candidates.is_empty() {
@@ -1967,16 +1998,29 @@ impl VaultStore {
         {
             // The same vault holds the same master key, so its own header and
             // manifest can be read and compared with the backup's.
-            let live_header = newest_authentic_header(&self.root, header.vault_id, master_key).ok();
-            let live_manifest = read_manifest_slots(&self.root, master_key, header.vault_id)
-                .ok()
-                .and_then(|slots| {
+            // From the same reading as whether a slot could not be read.
+            let live_header = candidates
+                .iter()
+                .filter(|live| {
+                    live.vault_id == header.vault_id && valid_header_integrity(live, master_key)
+                })
+                .max_by_key(|live| live.generation);
+            let slots = read_manifest_slots(&self.root, master_key, header.vault_id).ok();
+            let live_manifest = slots.as_ref().and_then(|slots| {
+                slots
+                    .iter()
+                    .filter_map(SlotReading::authentic)
+                    .map(|(manifest, _)| manifest)
+                    .max_by_key(|manifest| manifest.generation)
+                    .cloned()
+            });
+            // A header or manifest slot that could not be read may hold
+            // something newer than what was compared.
+            let partly_unreadable = files.slot_unreadable
+                || slots.as_ref().is_some_and(|slots| {
                     slots
                         .iter()
-                        .filter_map(SlotReading::authentic)
-                        .map(|(manifest, _)| manifest)
-                        .max_by_key(|manifest| manifest.generation)
-                        .cloned()
+                        .any(|slot| matches!(slot, SlotReading::Unreadable))
                 });
             // The same passphrase (its KDF salt) and the same recovery key.
             let same_keys = live_header.is_some_and(|live| {
@@ -1994,7 +2038,10 @@ impl VaultStore {
             // Which of the two is the later one is not told: a generation
             // moves on with repairs, and a vault restored and changed
             // elsewhere has a lower one than a vault left untouched here.
-            (RestoreReplaces::SameVault, !(same_keys && same_content))
+            (
+                RestoreReplaces::SameVault,
+                partly_unreadable || !(same_keys && same_content),
+            )
         } else {
             (RestoreReplaces::OtherVault, false)
         };
@@ -2123,7 +2170,12 @@ impl VaultStore {
             atomic_bytes(&manifest_path(&stage, manifest.generation), &manifest_data)?;
             sync_dir(&stage.join("objects"))?;
             let slots = read_manifest_slots(&stage, &master_key, header.vault_id)?;
-            let selected = select_manifest(&slots)?;
+            // A copy just written that cannot be read back is a failure of
+            // the storage, not something about the vault on this device.
+            let selected = select_manifest(&slots).map_err(|error| match error {
+                VaultError::Unreadable => VaultError::Storage,
+                other => other,
+            })?;
             if selected.recovery.is_some() || selected.manifest != manifest {
                 return Err(VaultError::BackupUnreadable);
             }
@@ -3188,8 +3240,50 @@ fn read_headers(root: &Path, names: &[&str]) -> Vec<VaultHeader> {
         .collect()
 }
 
+#[cfg(test)]
 fn read_header_candidates(root: &Path) -> Vec<VaultHeader> {
     read_headers(root, &[HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER])
+}
+
+/// The header files as one reading found them. Choosing a header and
+/// deciding whether a slot was unreadable must come from the same reading:
+/// a slot held by another program for a moment could otherwise be missed
+/// when the header is chosen and found readable when it is asked about,
+/// and a repair would then write over a header that was never seen.
+struct HeaderFiles {
+    /// The structurally valid headers, slots first.
+    candidates: Vec<VaultHeader>,
+    /// A slot is there and could not be used: its file could not be read, or
+    /// a newer build wrote it. Nothing may be written over it.
+    slot_unreadable: bool,
+    /// A header file is there and could not be read, which may pass.
+    file_unreadable: bool,
+}
+
+fn read_header_files(root: &Path) -> HeaderFiles {
+    let mut files = HeaderFiles {
+        candidates: Vec::new(),
+        slot_unreadable: false,
+        file_unreadable: false,
+    };
+    for name in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
+        let is_slot = name != LEGACY_HEADER;
+        match read_bounded_regular_file(&root.join(name), MAX_HEADER_BYTES) {
+            Ok(data) => match serde_json::from_slice::<VaultHeader>(&data) {
+                Ok(header) if valid_header(&header) => files.candidates.push(header),
+                _ if is_slot && newer_build_header(&data) => files.slot_unreadable = true,
+                _ => {}
+            },
+            Err(error) if unreadable_error(&error) => {
+                files.file_unreadable = true;
+                files.slot_unreadable |= is_slot;
+            }
+            // Absent, oversized and non-regular files are damage that repair
+            // may replace.
+            Err(_) => {}
+        }
+    }
+    files
 }
 
 #[cfg(test)]
@@ -3234,13 +3328,29 @@ fn recovery_group_matches(typed: &str, expected: &str) -> bool {
     normalized.as_str() == expected
 }
 
-/// The newest header slot authenticated by the session's master key.
-fn newest_authentic_header(
+/// A vault is called damaged only when every file that holds its state
+/// could be read.
+fn not_damage_if(unreadable: bool, error: VaultError) -> VaultError {
+    match error {
+        VaultError::Corrupt if unreadable => VaultError::Unreadable,
+        other => other,
+    }
+}
+
+/// The header an open vault writes after, or backs up: the newest one its
+/// master key authenticates, once every slot could be read. A slot that
+/// could not may hold a newer one.
+fn current_header(
     root: &Path,
     vault_id: Uuid,
     master_key: &[u8; 32],
 ) -> Result<VaultHeader, VaultError> {
-    read_header_candidates(root)
+    let files = read_header_files(root);
+    if files.slot_unreadable {
+        return Err(VaultError::Unreadable);
+    }
+    files
+        .candidates
         .into_iter()
         .filter(|header| header.vault_id == vault_id && valid_header_integrity(header, master_key))
         .max_by_key(|header| header.generation)
@@ -3254,13 +3364,19 @@ fn newest_authentic_header(
 fn read_header_for_recovery_key(
     root: &Path,
     recovery_key: &[u8; RECOVERY_KEY_BYTES],
-) -> Result<(VaultHeader, SecretKey), VaultError> {
-    let mut candidates = read_header_candidates(root);
+) -> Result<(VaultHeader, SecretKey, bool), VaultError> {
+    let HeaderFiles {
+        mut candidates,
+        slot_unreadable,
+        file_unreadable,
+    } = read_header_files(root);
     if candidates.is_empty() {
-        return Err(if root.exists() {
-            VaultError::Corrupt
-        } else {
+        return Err(if !root.exists() {
             VaultError::Missing
+        } else if file_unreadable {
+            VaultError::Unreadable
+        } else {
+            VaultError::Corrupt
         });
     }
     candidates.sort_by_key(|header| std::cmp::Reverse(header.generation));
@@ -3282,7 +3398,12 @@ fn read_header_for_recovery_key(
             break;
         }
     }
-    let (header, master_key) = selected.ok_or(VaultError::WrongRecoveryKey)?;
+    // A header that could not be read may be the one this key opens.
+    let (header, master_key) = selected.ok_or(if file_unreadable {
+        VaultError::Unreadable
+    } else {
+        VaultError::WrongRecoveryKey
+    })?;
     if candidates.iter().any(|candidate| {
         candidate.generation > header.generation && valid_header_integrity(candidate, &master_key)
     }) {
@@ -3295,19 +3416,25 @@ fn read_header_for_recovery_key(
     }) {
         return Err(VaultError::Corrupt);
     }
-    Ok((header, master_key))
+    Ok((header, master_key, slot_unreadable))
 }
 
 fn read_header_for_passphrase(
     root: &Path,
     passphrase: &str,
-) -> Result<(VaultHeader, SecretKey, SecretKey), VaultError> {
-    let mut candidates = read_header_candidates(root);
+) -> Result<(VaultHeader, SecretKey, SecretKey, bool), VaultError> {
+    let HeaderFiles {
+        mut candidates,
+        slot_unreadable,
+        file_unreadable,
+    } = read_header_files(root);
     if candidates.is_empty() {
-        return Err(if root.exists() {
-            VaultError::Corrupt
-        } else {
+        return Err(if !root.exists() {
             VaultError::Missing
+        } else if file_unreadable {
+            VaultError::Unreadable
+        } else {
+            VaultError::Corrupt
         });
     }
     candidates.sort_by_key(|header| std::cmp::Reverse(header.generation));
@@ -3336,7 +3463,13 @@ fn read_header_for_passphrase(
             break;
         }
     }
-    let (header, master_key, key_index) = selected.ok_or(VaultError::WrongPassphrase)?;
+    // A header that could not be read may be the one this passphrase opens:
+    // after a change of passphrase, the other slot may still hold the old one.
+    let (header, master_key, key_index) = selected.ok_or(if file_unreadable {
+        VaultError::Unreadable
+    } else {
+        VaultError::WrongPassphrase
+    })?;
 
     // A valid newer header for this same master key represents a committed passphrase rotation.
     // Do not silently fall back to an older passphrase. Invalid newer tags are damaged copies and
@@ -3354,7 +3487,7 @@ fn read_header_for_passphrase(
         return Err(VaultError::Corrupt);
     }
     let (_, wrapping_key) = wrapping_keys.swap_remove(key_index);
-    Ok((header, master_key, wrapping_key))
+    Ok((header, master_key, wrapping_key, slot_unreadable))
 }
 
 fn header_redundancy_healthy(
@@ -3722,8 +3855,19 @@ fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultEr
     };
     let Some(selected) = newest(slots.iter().filter_map(SlotReading::complete))? else {
         // No generation has all of its objects.
-        let (manifest, missing) =
-            newest(slots.iter().filter_map(SlotReading::authentic))?.ok_or(VaultError::Corrupt)?;
+        let (manifest, missing) = newest(slots.iter().filter_map(SlotReading::authentic))?
+            .ok_or_else(|| {
+                // Nothing to open, but not for certain nothing there: a slot
+                // that could not be read may hold the vault's state.
+                if slots
+                    .iter()
+                    .any(|slot| matches!(slot, SlotReading::Unreadable))
+                {
+                    VaultError::Unreadable
+                } else {
+                    VaultError::Corrupt
+                }
+            })?;
         return Ok(read_only_selection(manifest, missing));
     };
     let kept: HashSet<&str> = selected
@@ -3812,23 +3956,10 @@ fn manifest_redundancy_healthy(slots: &[SlotReading; 2], selected: &Manifest) ->
     adjacent && includes_selected && first == second
 }
 
-/// A header slot that exists but cannot be read may hold a newer passphrase
-/// generation, so repair must not rewrap the key over it.
-///
-/// The same goes for a slot written in a header format newer than this build
-/// knows: a newer build put it there, so it is not damage to repair over.
-fn header_slot_unreadable(root: &Path) -> bool {
-    HEADER_SLOTS.iter().any(|name| {
-        let path = root.join(name);
-        file_unreadable(&path, MAX_HEADER_BYTES) || header_from_newer_build(&path)
-    })
-}
-
-fn header_from_newer_build(path: &Path) -> bool {
-    let Ok(data) = read_bounded_regular_file(path, MAX_HEADER_BYTES) else {
-        return false;
-    };
-    serde_json::from_slice::<serde_json::Value>(&data).is_ok_and(|header| {
+/// A slot written in a header format newer than this build knows: a newer
+/// build put it there, so it is not damage to repair over.
+fn newer_build_header(data: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(data).is_ok_and(|header| {
         header["magic"] == "MYCARLOS-VAULT"
             && header["formatVersion"]
                 .as_u64()
@@ -3836,15 +3967,13 @@ fn header_from_newer_build(path: &Path) -> bool {
     })
 }
 
-fn file_unreadable(path: &Path, maximum: usize) -> bool {
-    match read_bounded_regular_file(path, maximum) {
-        Ok(_) => false,
-        // Absent, oversized and non-regular slots are damage that repair may replace.
-        Err(error) => !matches!(
-            error.kind(),
-            io::ErrorKind::NotFound | io::ErrorKind::InvalidData
-        ),
-    }
+/// Absent, oversized and non-regular slots are damage that repair may
+/// replace. Any other failure to read leaves what the file holds unknown.
+fn unreadable_error(error: &io::Error) -> bool {
+    !matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+    )
 }
 
 /// The newest complete generation, as an unlock would select before any
@@ -8312,6 +8441,53 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_vault_partly_unreadable_is_not_said_to_hold_what_the_backup_holds() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        let preview = || {
+            store
+                .inspect_backup(
+                    Cursor::new(backup.clone()),
+                    RestoreCredential::Passphrase(PASSWORD),
+                )
+                .unwrap()
+        };
+        assert!(!preview().differs_from_this_device);
+        // One header slot cannot be read: it may hold a newer passphrase or
+        // recovery key, so the vault is not said to be the backup's as it is.
+        let slot = root.join(HEADER_SLOTS[1]);
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        let seen = preview();
+        made_readable(&slot);
+        assert_eq!(seen.replaces, RestoreReplaces::SameVault);
+        assert!(seen.differs_from_this_device);
+        // Nor when a manifest slot cannot be read: the older one here, so
+        // that the newest still reads as the backup's.
+        store.unlock(PASSWORD).unwrap();
+        let generation = store
+            .unlocked
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .generation;
+        store.lock();
+        let older = manifest_path(&root, generation + 1);
+        assert!(older.exists());
+        assert!(made_unreadable(&older));
+        let seen = preview();
+        made_readable(&older);
+        assert!(seen.differs_from_this_device);
+        assert!(!preview().differs_from_this_device);
+    }
+
     #[test]
     fn a_vault_whose_header_cannot_be_read_is_not_called_another_one() {
         let temp = tempfile::tempdir().unwrap();
@@ -10192,11 +10368,21 @@ mod tests {
         assert!(selected.recovery.is_some());
         assert_eq!(selected.unavailable.len(), 1);
 
+        assert!(matches!(
+            select_manifest(&[SlotReading::Absent, SlotReading::Damaged]),
+            Err(VaultError::Corrupt)
+        ));
+        // A slot that could not be read may hold the vault's state: that is
+        // not damage, and may pass.
         for slots in [
-            [SlotReading::Absent, SlotReading::Damaged],
             [SlotReading::Damaged, SlotReading::Unreadable],
+            [SlotReading::Unreadable, SlotReading::Absent],
+            [SlotReading::Unreadable, SlotReading::Unreadable],
         ] {
-            assert!(matches!(select_manifest(&slots), Err(VaultError::Corrupt)));
+            assert!(matches!(
+                select_manifest(&slots),
+                Err(VaultError::Unreadable)
+            ));
         }
     }
 
@@ -10321,6 +10507,326 @@ mod tests {
         fs::set_permissions(&newest_slot, fs::Permissions::from_mode(0o600)).unwrap();
         assert_eq!(fs::read(&newest_slot).unwrap(), newest_before);
         store.unlock(REPLACEMENT).unwrap();
+    }
+
+    /// Makes `path` unreadable, or says that it cannot be done here: a
+    /// privileged process ignores file modes.
+    #[cfg(unix)]
+    fn made_unreadable(path: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+        let unreadable = fs::read(path).is_err();
+        if !unreadable {
+            made_readable(path);
+        }
+        unreadable
+    }
+
+    #[cfg(unix)]
+    fn made_readable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_header_slot_stops_an_unlock_before_it_writes_anything() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("first.pdf", b"first")], 2)
+            .unwrap();
+        let older_slots = [
+            fs::read(root.join("manifest-0.bin")).unwrap(),
+            fs::read(root.join("manifest-1.bin")).unwrap(),
+        ];
+        store
+            .import(profile, vec![], vec![source("second.pdf", b"second")], 3)
+            .unwrap();
+        let newest_generation = store
+            .unlocked
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .generation;
+        store.lock();
+
+        // Everything an unlock would otherwise put right: a manifest slot
+        // left behind, a file no document owns, and what interrupted writes
+        // leave.
+        let stale = usize::try_from((newest_generation + 1) % 2).unwrap();
+        let stale_slot = root.join(format!("manifest-{stale}.bin"));
+        fs::write(&stale_slot, &older_slots[stale]).unwrap();
+        let orphan = root
+            .join("objects")
+            .join(format!("{}.mcobj", Uuid::new_v4()));
+        fs::write(&orphan, b"no document owns this").unwrap();
+        fs::create_dir_all(root.join("staging").join("left-over")).unwrap();
+        let abandoned = root.join(format!("{ATOMIC_WRITE_PREFIX}left-over"));
+        fs::create_dir(&abandoned).unwrap();
+
+        let header_slot = root.join(HEADER_SLOTS[0]);
+        let header_before = fs::read(&header_slot).unwrap();
+        let other_header_before = fs::read(root.join(HEADER_SLOTS[1])).unwrap();
+        if !made_unreadable(&header_slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::UnreadableSlot));
+        assert_eq!(snapshot.records.len(), 2);
+        store.lock();
+        made_readable(&header_slot);
+
+        assert_eq!(fs::read(&stale_slot).unwrap(), older_slots[stale]);
+        assert_eq!(fs::read(&header_slot).unwrap(), header_before);
+        assert_eq!(
+            fs::read(root.join(HEADER_SLOTS[1])).unwrap(),
+            other_header_before
+        );
+        assert!(orphan.exists());
+        assert!(root.join("staging").join("left-over").exists());
+        assert!(abandoned.exists());
+
+        // Once it can be read, the unlock puts all of it right.
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        assert_ne!(fs::read(&stale_slot).unwrap(), older_slots[stale]);
+        assert!(!orphan.exists());
+        assert!(!root.join("staging").join("left-over").exists());
+        assert!(!abandoned.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn header_slots_that_cannot_be_read_are_not_called_damage_or_a_wrong_passphrase() {
+        const REPLACEMENT: &str = "lantern-orbit-willow-cascade-572";
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        let older_slots = HEADER_SLOTS.map(|name| fs::read(root.join(name)).unwrap());
+        store.change_passphrase(PASSWORD, REPLACEMENT).unwrap();
+        store.lock();
+        let generation = |slot: usize| {
+            let header: VaultHeader =
+                serde_json::from_slice(&fs::read(root.join(HEADER_SLOTS[slot])).unwrap()).unwrap();
+            header.generation
+        };
+        // The change landed in one slot only, and that slot cannot be read:
+        // the header that can be read still holds the old passphrase.
+        let first_write = usize::from(generation(1) < generation(0));
+        fs::write(
+            root.join(HEADER_SLOTS[1 - first_write]),
+            &older_slots[1 - first_write],
+        )
+        .unwrap();
+        let newest_slot = root.join(HEADER_SLOTS[first_write]);
+        if !made_unreadable(&newest_slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        // The new passphrase is right, and must not be called wrong. Nor
+        // can a wrong one be told from it.
+        for passphrase in [REPLACEMENT, "violet-harbor-mosaic-tundra-381"] {
+            assert!(matches!(
+                store.unlock(passphrase),
+                Err(VaultError::Unreadable)
+            ));
+        }
+        // The old one opens the header that could be read, and changes
+        // nothing: not the passphrase, not a recovery key.
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        assert!(matches!(
+            store.change_passphrase(PASSWORD, "violet-harbor-mosaic-tundra-381"),
+            Err(VaultError::RecoveryMode)
+        ));
+        assert!(matches!(
+            store.begin_recovery_key(PASSWORD),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.lock();
+
+        // Neither slot can be read: nothing says the vault is damaged.
+        let other_slot = root.join(HEADER_SLOTS[1 - first_write]);
+        assert!(made_unreadable(&other_slot));
+        assert!(matches!(
+            store.unlock(REPLACEMENT),
+            Err(VaultError::Unreadable)
+        ));
+        assert!(matches!(
+            store.recover(&key, PASSWORD),
+            Err(VaultError::Unreadable)
+        ));
+
+        made_readable(&newest_slot);
+        made_readable(&other_slot);
+        store.unlock(REPLACEMENT).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_open_vault_does_not_write_a_header_over_a_slot_it_cannot_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let slot = root.join(HEADER_SLOTS[1]);
+        let before = fs::read(&slot).unwrap();
+        // The slot stops being readable while the vault is open.
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        assert!(matches!(
+            store.change_passphrase(PASSWORD, "lantern-orbit-willow-cascade-572"),
+            Err(VaultError::Unreadable)
+        ));
+        assert!(matches!(
+            store.begin_recovery_key(PASSWORD),
+            Err(VaultError::Unreadable)
+        ));
+        // Nor is a backup made, and the check made before a provider's
+        // destination is emptied refuses it too.
+        assert!(matches!(
+            store.verify_for_backup(),
+            Err(VaultError::Unreadable)
+        ));
+        assert!(matches!(
+            store.backup(Vec::new(), 3),
+            Err(VaultError::Unreadable)
+        ));
+        made_readable(&slot);
+        assert_eq!(fs::read(&slot).unwrap(), before);
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_recovery_key_is_not_confirmed_over_a_slot_that_cannot_be_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        let answers = [(1, groups[1].as_ref()), (5, groups[5].as_ref())];
+        let slot = root.join(HEADER_SLOTS[1]);
+        let before = fs::read(&slot).unwrap();
+        // While the patient writes the key down.
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        assert!(matches!(
+            store.confirm_recovery_key(&answers, 2),
+            Err(VaultError::Unreadable)
+        ));
+        let mut backup = Vec::new();
+        assert!(matches!(
+            store.backup(&mut backup, 3),
+            Err(VaultError::Unreadable)
+        ));
+        made_readable(&slot);
+        assert_eq!(fs::read(&slot).unwrap(), before);
+        // The key is still waiting, and is confirmed once the slot is back.
+        store.confirm_recovery_key(&answers, 4).unwrap();
+        assert!(store.snapshot().unwrap().recovery_key_set_at_ms.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn damaged_manifests_beside_an_unreadable_header_are_not_called_damage() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        store.lock();
+        for slot in ["manifest-0.bin", "manifest-1.bin"] {
+            fs::write(root.join(slot), b"damaged").unwrap();
+        }
+        assert!(matches!(store.unlock(PASSWORD), Err(VaultError::Corrupt)));
+        let slot = root.join(HEADER_SLOTS[0]);
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        assert!(matches!(
+            store.unlock(PASSWORD),
+            Err(VaultError::Unreadable)
+        ));
+        assert!(matches!(
+            store.recover(&key, "lantern-orbit-willow-cascade-572"),
+            Err(VaultError::Unreadable)
+        ));
+        made_readable(&slot);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_recovery_with_a_header_slot_unreadable_opens_read_only() {
+        const REPLACEMENT: &str = "lantern-orbit-willow-cascade-572";
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        store.lock();
+        let slot = root.join(HEADER_SLOTS[0]);
+        let other = fs::read(root.join(HEADER_SLOTS[1])).unwrap();
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        // A key that is not the vault's cannot be told from one that is for
+        // the header that could not be read.
+        assert!(matches!(
+            store.recover("0000-0000-0000-0000-0000-0000-0000", REPLACEMENT),
+            Err(VaultError::Unreadable | VaultError::RecoveryKeyTypo)
+        ));
+        // The vault's key opens it, and the passphrase is not replaced.
+        assert!(!store.recover(&key, REPLACEMENT).unwrap());
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::UnreadableSlot)
+        );
+        store.lock();
+        made_readable(&slot);
+        assert_eq!(fs::read(root.join(HEADER_SLOTS[1])).unwrap(), other);
+        store.unlock(PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn a_wrong_passphrase_is_still_called_wrong_when_every_header_was_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        assert!(matches!(
+            store.unlock("lantern-orbit-willow-cascade-572"),
+            Err(VaultError::WrongPassphrase)
+        ));
+        // A slot that is gone, or damaged, is not one that could not be read.
+        fs::remove_file(root.join(HEADER_SLOTS[0])).unwrap();
+        fs::write(root.join(HEADER_SLOTS[1]), b"damaged").unwrap();
+        fs::remove_file(root.join(LEGACY_HEADER)).ok();
+        assert!(matches!(store.unlock(PASSWORD), Err(VaultError::Corrupt)));
     }
 
     #[test]

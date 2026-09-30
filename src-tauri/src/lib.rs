@@ -52,6 +52,18 @@ struct PublicText {
 type CommandResult<T> = Result<T, PublicError>;
 
 impl PublicError {
+    /// A failure to save a backup, said of the backup: nothing was typed
+    /// for it to check.
+    fn of_backup(self) -> Self {
+        if self.code != "unreadable" {
+            return self;
+        }
+        Self {
+            message: "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            ..self
+        }
+    }
+
     fn partial_export() -> Self {
         Self {
             code: "partial_export",
@@ -143,6 +155,10 @@ impl From<VaultError> for PublicText {
             VaultError::RemovalChanged => Self {
                 code: "removal_changed",
                 message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
+            },
+            VaultError::Unreadable => Self {
+                code: "unreadable",
+                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not erase the vault. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -929,7 +945,8 @@ async fn vault_backup_picked(
         return run_blocking(store.inner(), move |store| {
             store.backup_atomic(&path, now_ms())
         })
-        .await;
+        .await
+        .map_err(PublicError::of_backup);
     }
     // Android content providers return a URI rather than a path. A backup
     // holds only ciphertext, so a partial one left by a failure is not
@@ -949,6 +966,7 @@ async fn vault_backup_picked(
         store.backup(std::io::BufWriter::new(output), now_ms())
     })
     .await
+    .map_err(PublicError::of_backup)
 }
 
 /// Asks which backup to restore. Only while no vault is open.
@@ -1515,6 +1533,19 @@ mod tests {
             VaultError::Storage
         ));
     }
+    #[test]
+    fn a_backup_that_could_not_read_the_vault_asks_nothing_to_be_checked() {
+        let backup = PublicError::from(VaultError::Unreadable).of_backup();
+        assert_eq!(backup.code, "unreadable");
+        assert!(backup.message.contains("no backup was saved"));
+        assert!(!backup.message.contains("typed"));
+        let other = PublicError::from(VaultError::Corrupt).of_backup();
+        assert_eq!(
+            other.message,
+            PublicError::from(VaultError::Corrupt).message
+        );
+    }
+
     #[test]
     fn public_errors_do_not_expose_internal_details() {
         let error = PublicError::from(VaultError::Storage);

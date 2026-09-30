@@ -188,8 +188,9 @@ orphan objects are removed without relying on a later unlock. The atomic replace
 stages each header or manifest in an `.atomicwrite*` directory beside it; one that a killed process
 left behind may still hold a superseded wrapped key, so a writable unlock and reset remove them.
 
-Two cases open the vault in recovery mode without writing to storage at all: no repair, no staging
-cleanup, and no orphan removal. First, if no authentic generation has all of its objects, unlock
+Three cases open the vault in recovery mode without writing to the vault at all: no repair, no
+staging cleanup, and no orphan removal. (Before any header is read, an unlock takes the lock file
+beside the vault and finishes a reset or restore that an earlier run left unfinished.) First, if no authentic generation has all of its objects, unlock
 selects the newest authentic manifest anyway, reports each record whose object is missing or is not
 a regular file as unavailable, and refuses to export those records; the remaining records stay
 exportable, so one lost object no longer leaves whole-vault reset as the only action. The same
@@ -199,8 +200,23 @@ as an orphan, so the newest generation is opened read-only instead. Second, if a
 manifest slot exists but cannot be read (for example a sharing violation or device error), that
 slot may hold the newest committed state, so unlock does not repair over it or remove the objects
 it may reference. An absent, oversized, or non-regular slot is still treated as damage that repair
-replaces. A header slot that exists but cannot be read is likewise never rewrapped over, because it
-may hold a newer passphrase generation; the session opens in recovery mode instead.
+replaces. Third, if a header slot exists but cannot be read, it may hold a newer passphrase
+generation: the passphrase just used may be one that it has replaced (a change whose second write
+did not land leaves the earlier passphrase in the other slot, and that passphrase still opens the
+vault, read-only). Whether a slot could be read is taken from the same reading that chose the
+header, so that a slot held for a moment by another program is not missed by one and seen by the
+other. While the vault is open and writable, a change of passphrase, a new recovery key (when it
+is made and when it is confirmed) and a backup are refused if a header slot cannot be read by
+then; documents can still be added and changed, which does not touch the headers. A legacy
+`header.json` that cannot be read does not make the vault read-only: the slots supersede it.
+
+A vault that cannot be opened is reported as damaged only when every file that holds its state
+could be read. If no header opens with what was typed, or no manifest is authentic, and a header
+or manifest file is there that could not be read, the error is `unreadable` instead: the files may
+be held by another program, or on a drive that is away, and the patient is told that nothing has
+been changed and not to erase the vault. It cannot say whether the passphrase was right, since the
+header it opens may be the one that could not be read. A slot from a newer build is not counted
+here: it opens the vault read-only, but a passphrase that only it holds is reported as wrong.
 
 The snapshot names the reason for recovery mode, because each has its own way out. `lostObjects`:
 some records' ciphertext is missing; the patient can restore the vault folder from a backup, or
