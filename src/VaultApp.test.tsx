@@ -1102,6 +1102,9 @@ describe("durable vault UI", () => {
     // A key setup the last lock ended, in the vault being replaced.
     const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
     window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    // And steps for the replaced vault's older backups.
+    const guide = "mycarlos.oldBackupsGuide.v1";
+    window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
     await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
@@ -1120,6 +1123,7 @@ describe("durable vault UI", () => {
     expect(screen.getByLabelText("Passphrase")).toHaveFocus();
     // Its outcome would be told of the restored vault, wrongly.
     expect(window.localStorage.getItem(unfinished)).toBeNull();
+    expect(window.localStorage.getItem(guide)).toBeNull();
   });
 
   it("forgets a key setup's outcome when a restore will finish at the next start", async () => {
@@ -1138,6 +1142,9 @@ describe("durable vault UI", () => {
     });
     const unfinished = "mycarlos.unfinishedRecoveryKey.v1";
     window.localStorage.setItem(unfinished, JSON.stringify({ setAtMs: 5 }));
+    // And steps for the replaced vault's older backups.
+    const guide = "mycarlos.oldBackupsGuide.v1";
+    window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
     await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
@@ -1156,6 +1163,7 @@ describe("durable vault UI", () => {
     ).toBeVisible();
     // The vault it was told of is the one the next start replaces.
     expect(window.localStorage.getItem(unfinished)).toBeNull();
+    expect(window.localStorage.getItem(guide)).toBeNull();
   });
 
   // Opens recovery key setup from Security, as far as the key step, in a
@@ -1352,7 +1360,7 @@ describe("durable vault UI", () => {
     await typeKeyBack();
     const told = await screen.findByText(/^Recovery key replaced\./);
     expect(told).toHaveTextContent(
-      "Keep the old key's kit safe, or destroy it on purpose",
+      "Keep the old key's kit safe. If you destroy it",
     );
     expect(told).not.toHaveTextContent(/delete/i);
     await user.click(screen.getByRole("button", { name: /Security/ }));
@@ -1365,9 +1373,11 @@ describe("durable vault UI", () => {
       recoveryKeySetAtMs: 9,
       recoveryKeyLabel: "7F3A",
     };
+    const written = "myCarlos backup 2026-09-30 7F3A.mycarlosbackup";
     const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
       confirmRecoveryKey: vi.fn().mockResolvedValue(after),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-9"),
+      saveBackupToPicked: vi.fn().mockResolvedValue(written),
     });
     await typeKeyBack();
     await screen.findByText(/^Recovery key replaced\./);
@@ -1376,7 +1386,7 @@ describe("durable vault UI", () => {
     // A new backup first: deleting never leaves none.
     const steps = within(guide).getAllByRole("listitem");
     expect(steps[0]).toHaveTextContent("Save a new backup now");
-    expect(steps[1]).toHaveTextContent("Then delete the older backups");
+    expect(steps[1]).toHaveTextContent("Then delete every other backup");
 
     await user.click(
       screen.getByRole("button", { name: "Save encrypted backup…" }),
@@ -1387,19 +1397,80 @@ describe("durable vault UI", () => {
         "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
       ),
     ).toBeVisible();
-    const name = `myCarlos backup ${new Date().toISOString().slice(0, 10)} 7F3A`;
+    // The file the native side wrote is the one to keep: whatever it is
+    // named, every other backup goes.
     const next = within(
       screen.getByRole("region", { name: "Your older backups" }),
     ).getAllByRole("listitem");
-    expect(next[0]).toHaveTextContent(`Keep your new backup, “${name}”`);
-    expect(next[1]).toHaveTextContent("have an earlier date, or no date");
-    expect(next[2]).toHaveTextContent("that file is now the new one: keep it");
+    expect(next[0]).toHaveTextContent(`Keep your new backup, “${written}”.`);
+    expect(next[1]).toHaveTextContent("Delete every other backup");
+    expect(next[2]).toHaveTextContent("that file is now your new backup");
 
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(
+      screen.getByRole("button", { name: "Done with older backups" }),
+    );
     expect(screen.queryByText("Your older backups")).toBeNull();
     expect(
       window.localStorage.getItem("mycarlos.oldBackupsGuide.v1"),
     ).toBeNull();
+  });
+
+  it("keeps the step to save a new backup when saving one failed", async () => {
+    window.localStorage.setItem(
+      "mycarlos.oldBackupsGuide.v1",
+      JSON.stringify({ step: "save" }),
+    );
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-3"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "no_space",
+        message:
+          "There is not enough space where you chose to save it. No backup was saved. Keep your older backups.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(await screen.findByText(/Keep your older backups\./)).toBeVisible();
+    // No new backup, so nothing may be deleted yet.
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    expect(within(guide).getAllByRole("listitem")[0]).toHaveTextContent(
+      "Save a new backup now",
+    );
+    expect(window.localStorage.getItem("mycarlos.oldBackupsGuide.v1")).toBe(
+      JSON.stringify({ step: "save" }),
+    );
+  });
+
+  it("shows the steps for old backups after an unlock reports an exposed key replaced", async () => {
+    window.localStorage.setItem(
+      "mycarlos.unfinishedRecoveryKey.v1",
+      JSON.stringify({ setAtMs: 5, exposed: true }),
+    );
+    const user = userEvent.setup();
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    render(
+      <VaultApp
+        bridge={nativeBridge({
+          unlock: vi.fn().mockResolvedValue(vault),
+          snapshot: vi.fn().mockResolvedValue(vault),
+        })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(await screen.findByText(/Security shows the steps\./)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    expect(
+      screen.getByRole("region", { name: "Your older backups" }),
+    ).toBeVisible();
   });
 
   it("says so after unlocking when myCarlos closed with a key on screen", async () => {
@@ -3652,6 +3723,9 @@ describe("durable vault UI", () => {
   it("requires the exact destructive reset phrase", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();
+    // Steps for an erased vault's backups mean nothing for the next one.
+    const guide = "mycarlos.oldBackupsGuide.v1";
+    window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await user.click(screen.getByText("Forgot your passphrase?"));
@@ -3666,6 +3740,7 @@ describe("durable vault UI", () => {
     await waitFor(() =>
       expect(bridge.reset).toHaveBeenCalledWith("RESET MYCARLOS VAULT"),
     );
+    await waitFor(() => expect(window.localStorage.getItem(guide)).toBeNull());
   });
 
   it("shows the unlock screen when erasing the vault fails, because the session is already closed", async () => {

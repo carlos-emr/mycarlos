@@ -124,7 +124,9 @@ export interface VaultBridge {
   /** Asks where to save an encrypted backup; null if the picker was
    * cancelled. */
   pickBackupDestination(): Promise<string | null>;
-  saveBackupToPicked(pickId: string): Promise<void>;
+  /** Saves the backup; resolves to the name of the file written, where the
+   * platform says it (not for an Android document provider). */
+  saveBackupToPicked(pickId: string): Promise<string | null>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -289,7 +291,7 @@ export function createVaultBridge(): VaultBridge {
       }),
     pickBackupDestination: () => invoke<string | null>("vault_backup_pick"),
     saveBackupToPicked: (pickId) =>
-      invoke<void>("vault_backup_picked", { request: { pickId } }),
+      invoke<string | null>("vault_backup_picked", { request: { pickId } }),
     pickRestoreSource: () => invoke<string | null>("vault_restore_pick"),
     inspectRestore: (pickId, credential) =>
       invoke<RestorePreview>("vault_restore_inspect", {

@@ -7,7 +7,7 @@
 
 /** A routine replacement: the old kit is safe. */
 export const OLD_BACKUPS_ROUTINE =
-  "Backups you saved before now still open with your old key, or the passphrase they were saved with. Keep the old key's kit safe, or destroy it on purpose: those backups then open only with their passphrase. A backup you save from now on opens with your new key.";
+  "Backups you saved before now still open with your old key, or the passphrase they were saved with. Keep the old key's kit safe. If you destroy it, those backups open only with their passphrase. A backup you save from now on opens with your new key.";
 
 /** A kit that may have been lost or seen: Security shows the steps. */
 export const OLD_BACKUPS_EXPOSED =
@@ -18,12 +18,13 @@ export const OLD_BACKUPS_KEEP =
   'Your old kit could still open backups saved before now, but keep them for now: this vault cannot save a new backup until you have done what the "Read-only recovery mode" notice in the library says. Then save a new backup in Security, and delete the older ones.';
 
 /** Where the steps for older backups are: a new backup to save first, then
- * the older ones to delete, keeping the one named here. Kept in webview
- * storage, so that a lock or closing myCarlos does not lose the steps; it
- * holds only a file name the patient has seen. */
+ * every other one to delete, keeping the one named here (the file written,
+ * where the platform says it). Kept in webview storage, so that a lock or
+ * closing myCarlos does not lose the steps; it holds only a file name the
+ * patient chose or saw. */
 export type OldBackupsGuide =
   | { step: "save" }
-  | { step: "delete"; keep: string };
+  | { step: "delete"; keep: string | null };
 
 const STORAGE_KEY = "mycarlos.oldBackupsGuide.v1";
 
@@ -38,7 +39,8 @@ export function readOldBackupsGuide(): OldBackupsGuide | null {
   if (typeof stored !== "object" || stored === null) return null;
   const { step, keep } = stored as { step?: unknown; keep?: unknown };
   if (step === "save") return { step };
-  if (step === "delete" && typeof keep === "string") return { step, keep };
+  if (step === "delete" && (typeof keep === "string" || keep === null))
+    return { step, keep };
   return null;
 }
 
@@ -49,11 +51,4 @@ export function rememberOldBackupsGuide(guide: OldBackupsGuide | null): void {
   } catch {
     // Without webview storage the steps last as long as this screen.
   }
-}
-
-/** The name a backup saved now is given by default: as the native side
- * names it, by its UTC date and the vault's key label. */
-export function backupFileName(now: Date, keyLabel: string | null): string {
-  const date = now.toISOString().slice(0, 10);
-  return `myCarlos backup ${date}${keyLabel ? ` ${keyLabel}` : ""}`;
 }

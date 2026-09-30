@@ -127,8 +127,8 @@ On every platform:
    the app's own screen) asks **Replace your recovery key?** Choose **Cancel** once: the setup stays
    open and says the current key still works. Check again and choose **Replace key**: the old key
    then stops working, and **Security** shows the steps for older backups. Choose **Save encrypted
-   backup…**: the suggested name has today's date and the key's label, and after saving, the steps
-   name that file to keep and say which older ones to delete. Replace the key once more with "I
+   backup…**: the suggested name has the date and the key's label, and after saving, the steps
+   name that file to keep and say to delete every other backup. Replace the key once more with "I
    just want a new key": the app says to keep the old kit safe, and says nothing about deleting
    backups. The vault does not lock by itself while that dialog is open.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in

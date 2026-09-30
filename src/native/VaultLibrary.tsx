@@ -26,7 +26,6 @@ import {
   OLD_BACKUPS_EXPOSED,
   OLD_BACKUPS_KEEP,
   OLD_BACKUPS_ROUTINE,
-  backupFileName,
   readOldBackupsGuide,
   rememberOldBackupsGuide,
   type OldBackupsGuide,
@@ -437,19 +436,15 @@ export function VaultLibrary({
         setNotice("No location chosen. Nothing changed.");
         return;
       }
-      // Named as the native side names it, for the steps after a key
-      // replacement: this is the one to keep.
-      const name = backupFileName(
-        new Date(),
-        snapshot.recoveryKeyLabel ?? null,
-      );
+      let savedAs: string | null;
       try {
-        await bridge.saveBackupToPicked(pickId);
+        savedAs = (await bridge.saveBackupToPicked(pickId)) ?? null;
       } catch (error) {
         throw namedDamage(error, snapshot);
       }
+      // After a key replacement, the file written is the one to keep.
       if (oldBackupsGuide?.step === "save") {
-        setOldBackupsGuide({ step: "delete", keep: name });
+        setOldBackupsGuide({ step: "delete", keep: savedAs });
         setNotice(
           "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
         );

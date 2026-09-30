@@ -8,7 +8,7 @@ use std::io;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -53,18 +53,19 @@ type CommandResult<T> = Result<T, PublicError>;
 
 impl PublicError {
     /// A failure to save a backup, said of the backup: nothing was typed
-    /// for it to check, and the older backups are to be kept. `emptied`: an
-    /// Android document provider's destination was opened, which empties it,
-    /// so an incomplete file may be left there.
-    fn of_backup(self, emptied: bool) -> Self {
-        let message = match (self.code, emptied) {
-            ("unreadable", _) => "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+    /// for it to check, and the older backups are to be kept. `provider`:
+    /// an Android document provider's destination, which the picker made
+    /// and opening empties, so an empty or incomplete file may be left.
+    fn of_backup(self, provider: bool) -> Self {
+        let message = match (self.code, provider) {
+            ("unreadable", false) => "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            ("unreadable", true) => "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool. An empty or incomplete file may be left where you chose to save: delete that one, not your older backups.",
             ("no_space", false) => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups.",
-            ("no_space", true) => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups. An incomplete file may be left where you chose to save: delete that one, not your older backups.",
+            ("no_space", true) => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups. An empty or incomplete file may be left where you chose to save: delete that one, not your older backups.",
             ("storage", false) => "The backup could not be saved there. No backup was saved. Keep your older backups.",
-            ("storage", true) => "The backup could not be saved there. No backup was saved. Keep your older backups. An incomplete file may be left where you chose to save: delete that one, not your older backups.",
+            ("storage", true) => "The backup could not be saved there. No backup was saved. Keep your older backups. An empty or incomplete file may be left where you chose to save: delete that one, not your older backups.",
             ("cancelled", false) => "The backup stopped because the vault locked. No backup was saved. Keep your older backups.",
-            ("cancelled", true) => "The backup stopped because the vault locked. No backup was saved. Keep your older backups. An incomplete file may be left where you chose to save: delete that one, not your older backups.",
+            ("cancelled", true) => "The backup stopped because the vault locked. No backup was saved. Keep your older backups. An empty or incomplete file may be left where you chose to save: delete that one, not your older backups.",
             _ => return self,
         };
         Self { message, ..self }
@@ -999,25 +1000,31 @@ async fn vault_backup_picked(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: PickRequest,
-) -> CommandResult<()> {
+) -> CommandResult<Option<String>> {
     let destination = picks
         .backups
         .take(request.pick_id, picks.session())
         .ok_or(VaultError::NotFound)?;
     if let Ok(path) = destination.clone().into_path() {
+        // The name the patient gave it, or the one they saved over, for the
+        // steps that follow a key replacement: the file to keep.
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.inner(), move |store| {
             store.backup_atomic(&path, now_ms())
         })
         .await
+        .map(|()| name)
         .map_err(|error| error.of_backup(false));
     }
-    // Android content providers return a URI rather than a path. A backup
-    // holds only ciphertext, so a partial one left by a failure is not
-    // readable, only incomplete, and restoring it is refused.
-    let emptied = Arc::new(AtomicBool::new(false));
-    let opened = Arc::clone(&emptied);
+    // Android content providers return a URI rather than a path, and no
+    // name. A backup holds only ciphertext, so a partial one left by a
+    // failure is not readable, only incomplete, and restoring it is
+    // refused. The picker has already made the document, so any failure
+    // may leave an empty or incomplete file there.
     run_blocking(store.inner(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
@@ -1029,12 +1036,12 @@ async fn vault_backup_picked(
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
-        opened.store(true, Ordering::Release);
         drop(opening);
         store.backup(std::io::BufWriter::new(output), now_ms())
     })
     .await
-    .map_err(|error| error.of_backup(emptied.load(Ordering::Acquire)))
+    .map(|()| None)
+    .map_err(|error| error.of_backup(true))
 }
 
 /// Asks which backup to restore. Only while no vault is open.
@@ -1623,20 +1630,20 @@ mod tests {
             || VaultError::Cancelled,
         ];
         for failure in failures {
-            for emptied in [false, true] {
+            for provider in [false, true] {
                 let plain = PublicError::from(failure());
-                let failed = PublicError::from(failure()).of_backup(emptied);
+                let failed = PublicError::from(failure()).of_backup(provider);
                 assert_eq!(failed.code, plain.code);
                 assert!(failed.message.contains("No backup was saved"));
                 assert!(failed.message.contains("Keep your older backups."));
-                // Only a provider's destination, once opened, may hold an
+                // Only a provider's destination may hold an empty or
                 // incomplete file: that one, not the older backups, goes.
                 assert_eq!(
                     failed
                         .message
                         .contains("delete that one, not your older backups"),
-                    emptied,
-                    "{} {emptied}",
+                    provider,
+                    "{} {provider}",
                     plain.code
                 );
             }

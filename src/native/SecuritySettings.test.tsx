@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { printedDate } from "./KeyLabel";
 import { SecuritySettings } from "./SecuritySettings";
 
 function renderSettings(overrides: Record<string, unknown> = {}) {
@@ -39,7 +40,7 @@ describe("SecuritySettings recovery key", () => {
     expect(line).toHaveTextContent(/one with another label does not open/);
     // A kit or note from before labels has none, and may still work.
     expect(line).toHaveTextContent(
-      `one without a label may still be this key, set up on ${new Date(setAt).toLocaleDateString()}.`,
+      `one without a label may still be this key, set up on ${printedDate(new Date(setAt))}.`,
     );
     // The date it was set up is beside the heading.
     expect(
@@ -52,7 +53,10 @@ describe("SecuritySettings recovery key", () => {
     const guide = screen.getByRole("region", { name: "Your older backups" });
     const steps = within(guide).getAllByRole("listitem");
     expect(steps[0]).toHaveTextContent("Save a new backup now");
-    expect(within(guide).queryByRole("button", { name: "Done" })).toBeNull();
+    // A patient with no older backups is not held to the steps.
+    expect(
+      within(guide).getByRole("button", { name: "I have no older backups" }),
+    ).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
@@ -70,10 +74,21 @@ describe("SecuritySettings recovery key", () => {
     });
     const guide = screen.getByRole("region", { name: "Your older backups" });
     expect(within(guide).getAllByRole("listitem")[0]).toHaveTextContent(
-      "Keep your new backup, “myCarlos backup 2026-09-30 7F3A” (unless you renamed it).",
+      "Keep your new backup, “myCarlos backup 2026-09-30 7F3A”.",
     );
-    fireEvent.click(within(guide).getByRole("button", { name: "Done" }));
+    fireEvent.click(
+      within(guide).getByRole("button", { name: "Done with older backups" }),
+    );
     expect(onOldBackupsGuideDone).toHaveBeenCalledOnce();
+  });
+
+  it("names no file when the platform does not say it", () => {
+    renderSettings({ oldBackupsGuide: { step: "delete", keep: null } });
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Keep the backup you just saved.");
   });
 
   it("says a new backup waits for a vault that accepts changes", () => {

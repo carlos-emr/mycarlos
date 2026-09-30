@@ -8,7 +8,7 @@ import {
   ResetConfirmation,
   tooShortPassphrase,
 } from "./VaultAuth";
-import { KeyLabel } from "./KeyLabel";
+import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 
 interface SecuritySettingsProps {
@@ -170,7 +170,7 @@ export function SecuritySettings({
                 label is the one that works; one with another label does not
                 open this vault. Kits and notes made before labels were shown
                 have none: one without a label may still be this key, set up on{" "}
-                {new Date(recoveryKeySetAtMs).toLocaleDateString()}.
+                {printedDate(new Date(recoveryKeySetAtMs))}.
               </p>
             )}
           </div>
@@ -204,38 +204,21 @@ export function SecuritySettings({
               >
                 <h3 id="old-backups-title">Your older backups</h3>
                 <p>
-                  The kit for your old recovery key may have been lost or seen,
-                  and it still opens backups saved before you replaced it.
+                  The kit for an earlier recovery key may have been lost or
+                  seen, and it still opens backups saved before that key was
+                  replaced.
                 </p>
                 {oldBackupsGuide.step === "save" ? (
-                  <ol>
-                    <li>
-                      {readOnly
-                        ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
-                        : "Save a new backup now: choose Save encrypted backup."}
-                    </li>
-                    <li>
-                      Then delete the older backups. Once the new one is saved,
-                      this says which.
-                    </li>
-                  </ol>
-                ) : (
                   <>
                     <ol>
                       <li>
-                        Keep your new backup, &ldquo;{oldBackupsGuide.keep}
-                        &rdquo; (unless you renamed it).
+                        {readOnly
+                          ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
+                          : "Save a new backup now: choose Save encrypted backup."}
                       </li>
                       <li>
-                        Delete the older backups: files whose names start with
-                        &ldquo;myCarlos backup&rdquo; and have an earlier date,
-                        or no date. They are wherever you saved them: a folder,
-                        a USB stick, or on a phone the Files app or a cloud
-                        drive.
-                      </li>
-                      <li>
-                        If you saved the new backup over a file with the same
-                        name, that file is now the new one: keep it.
+                        Then delete every other backup. Once the new one is
+                        saved, this says how.
                       </li>
                     </ol>
                     <button
@@ -243,7 +226,39 @@ export function SecuritySettings({
                       type="button"
                       onClick={onOldBackupsGuideDone}
                     >
-                      Done
+                      I have no older backups
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <ol>
+                      <li>
+                        {oldBackupsGuide.keep ? (
+                          <>
+                            Keep your new backup, &ldquo;{oldBackupsGuide.keep}
+                            &rdquo;.
+                          </>
+                        ) : (
+                          "Keep the backup you just saved."
+                        )}
+                      </li>
+                      <li>
+                        Delete every other backup: files whose names start with
+                        &ldquo;myCarlos backup&rdquo;, and any you renamed. They
+                        are wherever you saved them: a folder, a USB stick, or
+                        on a phone the Files app or a cloud drive.
+                      </li>
+                      <li>
+                        If you saved it in place of an older backup, that file
+                        is now your new backup: keep it.
+                      </li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      Done with older backups
                     </button>
                   </>
                 )}

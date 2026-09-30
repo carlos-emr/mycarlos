@@ -10,7 +10,7 @@ import {
   type VaultBridge,
   type VaultSnapshot,
 } from "../vault";
-import { KeyLabel, spoken } from "./KeyLabel";
+import { KeyLabel, printedDate, spoken } from "./KeyLabel";
 
 type Step = "passphrase" | "key" | "check";
 
@@ -20,14 +20,6 @@ const TRIES_BEFORE_REVIEW = 3;
 
 /** Letters and digits in a recovery key: 7 groups of 4. */
 const KEY_SYMBOLS = 28;
-
-/** A date no reader can take for another: the month in words. */
-export const printedDate = (date: Date) =>
-  date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
 
 export function RecoveryKeySetup({
   bridge,
@@ -199,7 +191,11 @@ export function RecoveryKeySetup({
 
   const begin = async (event: FormEvent) => {
     event.preventDefault();
-    if (busy || !passphrase || (replacing && exposed === null)) return;
+    if (busy || !passphrase) return;
+    if (replacing && exposed === null) {
+      setError("Choose why you are replacing your recovery key.");
+      return;
+    }
     const secret = passphrase;
     setPassphrase("");
     setBusy(true);
@@ -349,12 +345,18 @@ export function RecoveryKeySetup({
                 </p>
                 <fieldset>
                   <legend>Why are you replacing it?</legend>
+                  <p className="field-hint">
+                    If you are not sure, choose the first.
+                  </p>
                   <label className="restore-choice">
                     <input
                       type="radio"
                       name="replace-reason"
                       checked={exposed === true}
-                      onChange={() => setExposed(true)}
+                      onChange={() => {
+                        setExposed(true);
+                        setError("");
+                      }}
                     />
                     Its kit or note may have been lost, or seen by someone else
                   </label>
@@ -363,7 +365,10 @@ export function RecoveryKeySetup({
                       type="radio"
                       name="replace-reason"
                       checked={exposed === false}
-                      onChange={() => setExposed(false)}
+                      onChange={() => {
+                        setExposed(false);
+                        setError("");
+                      }}
                     />
                     I just want a new key: its kit is safe
                   </label>
@@ -396,8 +401,7 @@ export function RecoveryKeySetup({
                 disabled={
                   busy ||
                   !passphrase ||
-                  utf8Length(passphrase) > MAX_PASSPHRASE_BYTES ||
-                  (replacing && exposed === null)
+                  utf8Length(passphrase) > MAX_PASSPHRASE_BYTES
                 }
               >
                 Continue

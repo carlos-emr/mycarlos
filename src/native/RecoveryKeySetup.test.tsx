@@ -2,7 +2,8 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { VaultSnapshot } from "../vault";
-import { RecoveryKeySetup, printedDate } from "./RecoveryKeySetup";
+import { printedDate } from "./KeyLabel";
+import { RecoveryKeySetup } from "./RecoveryKeySetup";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 const GROUPS = KEY.split("-");
@@ -434,14 +435,19 @@ describe("RecoveryKeySetup", () => {
   it("asks why a key is replaced, and says so when it is shown and saved", async () => {
     const user = userEvent.setup();
     const onKeyShown = vi.fn();
-    const { onDone } = setUp({ replacing: true, onKeyShown });
+    const { bridge, onDone } = setUp({ replacing: true, onKeyShown });
     await user.type(
       screen.getByLabelText("Passphrase"),
       "river-azimuth-cobalt-sparrow-934",
     );
-    // Whether older backups are to go depends on the answer.
+    // Whether older backups are to go depends on the answer: none, no key.
     const next = screen.getByRole("button", { name: "Continue" });
-    expect(next).toBeDisabled();
+    await user.click(next);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Choose why you are replacing your recovery key.",
+    );
+    expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
+    // The passphrase is still there.
     await user.click(
       screen.getByLabelText(
         "Its kit or note may have been lost, or seen by someone else",
