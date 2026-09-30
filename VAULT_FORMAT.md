@@ -90,15 +90,15 @@ and that a new backup should be saved and the older ones then deleted. Once the 
 app says how: first a new backup, from Security; then the older files, whose names start with
 "myCarlos backup" unless the patient renamed them, wherever they were saved (a folder, a USB stick,
 or on a phone the Files app or a cloud drive; myCarlos does not know where), keeping the new one. A
-vault that could not finish writing the key, or that opens read-only when the next unlock reports a
-key stored as a lock fell, cannot save a backup, so the app says to keep the old ones until it can.
-The key is then stored only if the typed groups still match and whether it replaces a key is still
-what the patient was asked about (a vault that had none may have gained one, or the reverse),
-checked as it is stored. A vault's first key is not asked about, as it replaces nothing. The
-envelope's id is chosen when the key is made, so that a kit saved before the check can name it.
-Cancelling, locking, or changing the passphrase first writes nothing and forgets the pending key.
-Wherever a key is typed, case, Crockford's look-alike letters and anything in it other than a letter
-or digit (dashes, spaces, other punctuation) do not matter.
+vault that could not finish writing the key, or that opens read-only when the next unlock or
+recovery reports a key stored as a lock fell, cannot save a backup, so the app says to keep the old
+ones until it can. The key is then stored only if the typed groups still match and whether it
+replaces a key is still what the patient was asked about (a vault that had none may have gained one,
+or the reverse), checked as it is stored. A vault's first key is not asked about, as it replaces
+nothing. The envelope's id is chosen when the key is made, so that a kit saved before the check can
+name it. Cancelling, locking, or changing the passphrase first writes nothing and forgets the
+pending key. Wherever a key is typed, case, Crockford's look-alike letters and anything in it other
+than a letter or digit (dashes, spaces, other punctuation) do not matter.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
 four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is

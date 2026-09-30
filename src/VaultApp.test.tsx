@@ -1353,6 +1353,37 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("says to keep old backups when a key stored as it locked opens read-only", async () => {
+    // A replacement stored just as the vault locked, which then opens
+    // read-only: it cannot save a backup, so the old ones must stay.
+    window.localStorage.setItem(
+      "mycarlos.unfinishedRecoveryKey.v1",
+      JSON.stringify({ setAtMs: 5 }),
+    );
+    const user = userEvent.setup();
+    const vault = {
+      ...emptySnapshot,
+      recoveryKeySetAtMs: 9,
+      recovery: "writeFailed" as const,
+    };
+    render(
+      <VaultApp
+        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(
+        /was saved just before the vault locked.*Keep them for now/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Then delete the older backups/)).toBeNull();
+  });
+
   it("opens a locked vault with its recovery key and a new passphrase", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();

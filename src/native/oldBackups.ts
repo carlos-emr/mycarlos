@@ -8,4 +8,4 @@ export const OLD_BACKUPS_ADVICE =
 
 /** The same, for a vault that cannot save a backup just now. */
 export const OLD_BACKUPS_KEEP =
-  'Any backups you saved before now still open with the passphrase or recovery key they were saved with. Keep them for now: this vault cannot save a new backup until you have done what the "Read-only recovery mode" notice in your records says. Then save a new backup in Security, and delete the older ones, keeping the new one.';
+  'Any backups you saved before now still open with the passphrase or recovery key they were saved with. Keep them for now: this vault cannot save a new backup until you have done what the "Read-only recovery mode" notice in the library says. Then save a new backup in Security, and delete the older ones, keeping the new one.';

@@ -142,6 +142,8 @@ describe("RecoveryKeySetup", () => {
     const kit = document.querySelector("body > .recovery-kit-print");
     expect(kit).toHaveTextContent(KEY);
     expect(kit).not.toHaveTextContent(/label/i);
+    // The date still tells it from other kits.
+    expect(kit).toHaveTextContent(`Printed ${new Date().toLocaleDateString()}`);
   });
 
   it("offers Print only where the platform can print", () => {

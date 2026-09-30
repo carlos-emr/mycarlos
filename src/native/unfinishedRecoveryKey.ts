@@ -50,7 +50,7 @@ export function takeUnfinishedRecoveryKey(): UnfinishedRecoveryKey | null {
 export function unfinishedRecoveryKeyMessage(
   unfinished: UnfinishedRecoveryKey,
   setAtMsNow: number | null,
-  readOnly = false,
+  readOnly: boolean,
 ): string | null {
   if (setAtMsNow === unfinished.setAtMs)
     return unfinished.setAtMs === null
