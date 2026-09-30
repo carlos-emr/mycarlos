@@ -1694,7 +1694,7 @@ mod tests {
                 assert_eq!(
                     failed
                         .message
-                        .contains("delete that one, not your other backups"),
+                        .contains("Delete that one, not your other backups"),
                     destination == BackupDestination::ProviderEmptied,
                     "{} {destination:?}",
                     plain.code
