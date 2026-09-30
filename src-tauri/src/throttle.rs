@@ -12,6 +12,17 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write as _, path::PathBuf, sync::Mutex};
 
+/// How a try went.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// A passphrase or recovery key that does not open it.
+    Wrong,
+    /// It opened.
+    Right,
+    /// Something else: a typo in a key's check characters, a storage error.
+    Neither,
+}
+
 /// What a secret was tried for. Each is counted apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Attempt {
@@ -81,24 +92,82 @@ impl AttemptThrottle {
     }
 
     /// How many milliseconds are left before `attempt` may be tried again,
-    /// if it must wait. A clock set back never makes a wait longer than the
-    /// one the count calls for.
+    /// if it must wait.
+    #[cfg(test)]
     pub fn wait(&self, attempt: Attempt, now_ms: u64) -> Option<u64> {
         let mut counts = self.lock();
-        let count = *counts.of(attempt);
-        let wait = wait_after(count.failures);
-        let until = count.last_failure_ms.saturating_add(wait);
-        let left = until.saturating_sub(now_ms).min(wait);
-        (left > 0).then_some(left)
+        self.left(&mut counts, attempt, now_ms)
+    }
+
+    /// Starts a try at `attempt`, unless it must wait: it is counted as
+    /// wrong at once, under the same lock as the check, so that tries sent
+    /// together cannot all pass the check before any is counted. `settle`
+    /// then says how it went.
+    pub fn begin(&self, attempt: Attempt, now_ms: u64) -> Result<(), u64> {
+        let mut counts = self.lock();
+        if let Some(left) = self.left(&mut counts, attempt, now_ms) {
+            return Err(left);
+        }
+        let count = counts.of(attempt);
+        count.failures = count.failures.saturating_add(1);
+        count.last_failure_ms = now_ms;
+        self.keep(&counts);
+        Ok(())
+    }
+
+    /// How a try started by `begin` went: a wrong secret stays counted, the
+    /// right one clears the count, and anything else (a typo, a storage
+    /// error) is taken back off it.
+    pub fn settle(&self, attempt: Attempt, outcome: Outcome) {
+        match outcome {
+            Outcome::Wrong => {}
+            Outcome::Right => self.succeeded(attempt),
+            Outcome::Neither => {
+                let mut counts = self.lock();
+                let count = counts.of(attempt);
+                count.failures = count.failures.saturating_sub(1);
+                self.keep(&counts);
+            }
+        }
     }
 
     /// A wrong secret was given for `attempt`.
+    #[cfg(test)]
     pub fn failed(&self, attempt: Attempt, now_ms: u64) {
         let mut counts = self.lock();
         let count = counts.of(attempt);
         count.failures = count.failures.saturating_add(1);
         count.last_failure_ms = now_ms;
         self.keep(&counts);
+    }
+
+    /// The vault the counts were about is gone or replaced (created, erased
+    /// or restored): its counts go with it. A backup's count stays.
+    pub fn forget_vault(&self) {
+        let mut counts = self.lock();
+        let before = *counts;
+        counts.unlock = Count::default();
+        counts.recovery_key = Count::default();
+        if *counts != before {
+            self.keep(&counts);
+        }
+    }
+
+    /// The wait left for `attempt`. A clock set back behind the last wrong
+    /// try moves that try to now, so that the wait counts down from now,
+    /// rather than never.
+    fn left(&self, counts: &mut Counts, attempt: Attempt, now_ms: u64) -> Option<u64> {
+        let count = counts.of(attempt);
+        if now_ms < count.last_failure_ms {
+            count.last_failure_ms = now_ms;
+            self.keep(counts);
+        }
+        let count = *counts.of(attempt);
+        let until = count
+            .last_failure_ms
+            .saturating_add(wait_after(count.failures));
+        let left = until.saturating_sub(now_ms);
+        (left > 0).then_some(left)
     }
 
     /// The right secret was given for `attempt`. Opening the vault, by its
@@ -179,12 +248,45 @@ mod tests {
     }
 
     #[test]
-    fn a_clock_set_back_waits_no_longer_than_the_count_calls_for() {
+    fn a_clock_set_back_counts_the_wait_down_from_then() {
         let throttle = AttemptThrottle::new(None);
         for _ in 0..FREE_TRIES {
             throttle.failed(Attempt::Backup, 1_000_000);
         }
+        // Set back hours: the wait is as long as the count calls for, and
+        // then over, not stuck until the clock catches up.
         assert_eq!(throttle.wait(Attempt::Backup, 0), Some(5_000));
+        assert_eq!(throttle.wait(Attempt::Backup, 2_000), Some(3_000));
+        assert_eq!(throttle.wait(Attempt::Backup, 5_000), None);
+    }
+
+    #[test]
+    fn tries_sent_together_are_each_counted_before_they_run() {
+        let throttle = AttemptThrottle::new(None);
+        // Five begun at once, none settled yet: the sixth must wait.
+        for _ in 0..FREE_TRIES {
+            assert!(throttle.begin(Attempt::Unlock, 1_000).is_ok());
+        }
+        assert_eq!(throttle.begin(Attempt::Unlock, 1_000), Err(5_000));
+        // A try that was neither right nor wrong is taken back off.
+        throttle.settle(Attempt::Unlock, Outcome::Neither);
+        assert!(throttle.begin(Attempt::Unlock, 1_000).is_ok());
+        throttle.settle(Attempt::Unlock, Outcome::Right);
+        assert_eq!(throttle.wait(Attempt::Unlock, 1_000), None);
+    }
+
+    #[test]
+    fn a_new_or_replaced_vault_starts_its_counts_again() {
+        let throttle = AttemptThrottle::new(None);
+        for attempt in [Attempt::Unlock, Attempt::RecoveryKey, Attempt::Backup] {
+            for _ in 0..FREE_TRIES {
+                throttle.failed(attempt, 1_000);
+            }
+        }
+        throttle.forget_vault();
+        assert_eq!(throttle.wait(Attempt::Unlock, 1_000), None);
+        assert_eq!(throttle.wait(Attempt::RecoveryKey, 1_000), None);
+        assert_eq!(throttle.wait(Attempt::Backup, 1_000), Some(5_000));
     }
 
     #[test]

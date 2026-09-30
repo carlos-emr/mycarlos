@@ -17,7 +17,7 @@ use std::{
 use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
-use throttle::{Attempt, AttemptThrottle};
+use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
 use vault::{
     ImportSource, RestoreCredential, RestorePreview, RestoreReplaces, VaultError, VaultSnapshot,
@@ -109,7 +109,7 @@ impl PublicError {
     fn wait(left_ms: u64) -> Self {
         Self {
             code: "too_many_attempts",
-            message: "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one.",
+            message: "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
             record_id: None,
             note: None,
             retry_after_ms: Some(left_ms),
@@ -286,6 +286,13 @@ struct PassphraseRequest {
     passphrase: String,
 }
 
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for PassphraseRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PickRequest {
@@ -337,6 +344,14 @@ struct RecoverRequest {
     new_passphrase: String,
 }
 
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for RecoverRequest {
+    fn drop(&mut self) {
+        self.recovery_key.zeroize();
+        self.new_passphrase.zeroize();
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RecoverResponse {
@@ -364,6 +379,14 @@ struct ConfirmRecoveryKeyRequest {
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ChangePassphraseRequest {
+    fn drop(&mut self) {
+        self.current_passphrase.zeroize();
+        self.new_passphrase.zeroize();
+    }
 }
 
 #[derive(Deserialize)]
@@ -674,10 +697,11 @@ async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultS
 async fn vault_create(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let picks = Arc::clone(picks.inner());
-    run_blocking(store.inner(), move |store| {
+    let created = run_blocking(store.inner(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
             .inspect(|_| picks.clear())
@@ -685,7 +709,12 @@ async fn vault_create(
         request.passphrase.zeroize();
         result
     })
-    .await
+    .await;
+    // Wrong tries at an earlier vault say nothing about this one.
+    if created.is_ok() {
+        throttle.forget_vault();
+    }
+    created
 }
 
 #[tauri::command]
@@ -825,14 +854,22 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 #[tauri::command]
 async fn vault_change_passphrase(
     store: State<'_, Arc<VaultStore>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: ChangePassphraseRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
-        let result = store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
-        request.current_passphrase.zeroize();
-        request.new_passphrase.zeroize();
-        result
-    })
+    // The current passphrase is checked as at unlock, and counted with it:
+    // a vault left open must not let the passphrase be guessed without end.
+    tried(
+        throttle.inner(),
+        Attempt::Unlock,
+        run_blocking(store.inner(), move |store| {
+            let result =
+                store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
+            request.current_passphrase.zeroize();
+            request.new_passphrase.zeroize();
+            result
+        }),
+    )
     .await
 }
 
@@ -852,15 +889,21 @@ impl Serialize for ShownRecoveryKey {
 #[tauri::command]
 async fn vault_recovery_key_begin(
     store: State<'_, Arc<VaultStore>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<ShownRecoveryKey> {
-    run_blocking(store.inner(), move |store| {
-        let result = store
-            .begin_recovery_key(&request.passphrase)
-            .map(ShownRecoveryKey);
-        request.passphrase.zeroize();
-        result
-    })
+    // As for a passphrase change: the passphrase is counted with unlock's.
+    tried(
+        throttle.inner(),
+        Attempt::Unlock,
+        run_blocking(store.inner(), move |store| {
+            let result = store
+                .begin_recovery_key(&request.passphrase)
+                .map(ShownRecoveryKey);
+            request.passphrase.zeroize();
+            result
+        }),
+    )
     .await
 }
 
@@ -1078,25 +1121,30 @@ impl<W: std::io::Write> std::io::Write for Counted<W> {
 }
 
 /// Runs a command that tries a secret for `attempt`: refused, before any
-/// work, while the wait after earlier wrong tries runs; a wrong passphrase
-/// or recovery key then counts, and the right one clears the count. A
-/// mistyped key (its check characters wrong) and other failures do not.
+/// work, while the wait after earlier wrong tries runs. The try is counted
+/// before it runs, so that tries sent together cannot all pass; a wrong
+/// passphrase or recovery key then stays counted, the right one clears the
+/// count, and anything else (a key mistyped in its check characters, a
+/// storage error) is taken back off it.
 async fn tried<T>(
     throttle: &AttemptThrottle,
     attempt: Attempt,
     command: impl std::future::Future<Output = CommandResult<T>>,
 ) -> CommandResult<T> {
-    if let Some(left_ms) = throttle.wait(attempt, now_ms()) {
-        return Err(PublicError::wait(left_ms));
-    }
+    throttle
+        .begin(attempt, now_ms())
+        .map_err(PublicError::wait)?;
     let result = command.await;
-    match &result {
-        Ok(_) => throttle.succeeded(attempt),
-        Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
-            throttle.failed(attempt, now_ms());
-        }
-        Err(_) => {}
-    }
+    throttle.settle(
+        attempt,
+        match &result {
+            Ok(_) => Outcome::Right,
+            Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
+                Outcome::Wrong
+            }
+            Err(_) => Outcome::Neither,
+        },
+    );
     result
 }
 
@@ -1380,6 +1428,8 @@ async fn vault_restore(
     })
     .await
     .map_err(PublicError::of_restore)
+    // The vault the counts were about is replaced, or there was none.
+    .inspect(|_| throttle.forget_vault())
 }
 
 #[tauri::command]
@@ -1656,6 +1706,7 @@ async fn vault_reset(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     request: ResetRequest,
 ) -> CommandResult<bool> {
     if request.confirmation != "RESET MYCARLOS VAULT" {
@@ -1681,6 +1732,8 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // The vault the counts were about is gone.
+    throttle.forget_vault();
     Ok(true)
 }
 
@@ -1703,7 +1756,8 @@ pub fn run() {
                     .join("vault-home")
                     .join("vault-v1"),
             )));
-            // Wrong tries at a secret, counted beside the vault.
+            // Wrong tries at a secret, counted beside the vault in
+            // `attempts.json` (written as `attempts.json.new`).
             app.manage(Arc::new(AttemptThrottle::new(Some(
                 app.path()
                     .app_local_data_dir()?
@@ -1909,6 +1963,39 @@ mod tests {
             tauri::async_runtime::block_on(tried(&throttle, Attempt::Backup, async { Ok(()) }))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn every_command_that_checks_a_secret_is_counted() {
+        let source = include_str!("lib.rs");
+        for (command, attempt) in [
+            ("async fn vault_unlock(", "Attempt::Unlock"),
+            ("async fn vault_change_passphrase(", "Attempt::Unlock"),
+            ("async fn vault_recovery_key_begin(", "Attempt::Unlock"),
+            ("async fn vault_recover(", "Attempt::RecoveryKey"),
+            ("async fn vault_restore_inspect(", "Attempt::Backup"),
+            ("async fn vault_restore(", "Attempt::Backup"),
+        ] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            assert!(body.contains("tried("), "{command}");
+            assert!(body.contains(attempt), "{command}");
+        }
+    }
+
+    #[test]
+    fn a_try_refused_during_a_wait_adds_nothing_to_it() {
+        let throttle = AttemptThrottle::new(None);
+        let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
+        for _ in 0..throttle::FREE_TRIES {
+            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
+        }
+        let first = throttle.wait(Attempt::Unlock, now_ms()).unwrap();
+        for _ in 0..10 {
+            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
+        }
+        // Still the wait after five, not after fifteen.
+        assert!(throttle.wait(Attempt::Unlock, now_ms()).unwrap() <= first);
     }
 
     #[test]

@@ -175,5 +175,5 @@ privacy, accessibility, or clinical review.
 - [ ] Rotate the vault's master key when the passphrase or recovery key changes, or on request.
       Until then, an old passphrase or recovery key, together with a copy of the vault made while
       it was in use (a device backup, a copied folder, a backup file), keeps opening the vault as it
-      is now; the only remedy is a new vault. This is an accepted limit for the first release (see
+      is now and as it will be; the only remedy is a new vault. This is an accepted limit for the first release (see
       `THREAT_MODEL.md` KEY-05 and `VAULT_FORMAT.md` "Known limits").
