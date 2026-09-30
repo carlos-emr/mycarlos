@@ -1984,7 +1984,8 @@ impl VaultStore {
             manifest_data,
             ..
         } = opened;
-        let candidates = read_header_candidates(&self.root);
+        let files = read_header_files(&self.root);
+        let candidates = &files.candidates;
         let (replaces, differs_from_this_device) = if !self.root.exists() {
             (RestoreReplaces::Nothing, false)
         } else if candidates.is_empty() {
@@ -1998,15 +1999,25 @@ impl VaultStore {
             // The same vault holds the same master key, so its own header and
             // manifest can be read and compared with the backup's.
             let live_header = newest_authentic_header(&self.root, header.vault_id, master_key).ok();
-            let live_manifest = read_manifest_slots(&self.root, master_key, header.vault_id)
-                .ok()
-                .and_then(|slots| {
-                    slots
-                        .iter()
-                        .filter_map(SlotReading::authentic)
-                        .map(|(manifest, _)| manifest)
-                        .max_by_key(|manifest| manifest.generation)
-                        .cloned()
+            let slots = read_manifest_slots(&self.root, master_key, header.vault_id).ok();
+            let live_manifest = slots.as_ref().and_then(|slots| {
+                slots
+                    .iter()
+                    .filter_map(SlotReading::authentic)
+                    .map(|(manifest, _)| manifest)
+                    .max_by_key(|manifest| manifest.generation)
+                    .cloned()
+            });
+            // A header or manifest slot, or a document, that could not be
+            // read may hold something newer than what was compared.
+            let partly_unreadable = files.slot_unreadable
+                || files.file_unreadable
+                || slots.as_ref().is_some_and(|slots| {
+                    slots.iter().any(|slot| match slot {
+                        SlotReading::Unreadable => true,
+                        SlotReading::Authentic { unknown, .. } => !unknown.is_empty(),
+                        _ => false,
+                    })
                 });
             // The same passphrase (its KDF salt) and the same recovery key.
             let same_keys = live_header.is_some_and(|live| {
@@ -2024,7 +2035,10 @@ impl VaultStore {
             // Which of the two is the later one is not told: a generation
             // moves on with repairs, and a vault restored and changed
             // elsewhere has a lower one than a vault left untouched here.
-            (RestoreReplaces::SameVault, !(same_keys && same_content))
+            (
+                RestoreReplaces::SameVault,
+                partly_unreadable || !(same_keys && same_content),
+            )
         } else {
             (RestoreReplaces::OtherVault, false)
         };
@@ -8324,6 +8338,34 @@ mod tests {
                 .replaces,
             RestoreReplaces::OtherVault
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_vault_partly_unreadable_is_not_said_to_hold_what_the_backup_holds() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        let preview = || {
+            store
+                .inspect_backup(
+                    Cursor::new(backup.clone()),
+                    RestoreCredential::Passphrase(PASSWORD),
+                )
+                .unwrap()
+        };
+        assert!(!preview().differs_from_this_device);
+        // One header slot cannot be read: it may hold a newer passphrase or
+        // recovery key, so the vault is not said to be the backup's as it is.
+        let slot = root.join(HEADER_SLOTS[1]);
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        let seen = preview();
+        made_readable(&slot);
+        assert_eq!(seen.replaces, RestoreReplaces::SameVault);
+        assert!(seen.differs_from_this_device);
     }
 
     #[test]
