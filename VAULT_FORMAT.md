@@ -144,18 +144,27 @@ Each try is counted as it starts, under the same lock as the check, so that trie
 cannot all pass, and is taken back off, with the time of the wrong try before it unless another try
 has counted since, if it turns out neither right nor wrong; a try the app is killed during stays
 counted, so that killing it is no way round the count. The right secret clears the count (opening
-the vault either way clears both of its counts), and creating, erasing or restoring a vault clears
-them too, as they were about the vault it replaces. The counts, and when the last wrong try was,
-are kept in `attempts.json` beside the vault (written as `attempts.json.new`, renamed over it, and
-its folder synced), so that closing and reopening myCarlos, or a power cut, does not clear them.
-Before a vault home exists, or when the file cannot be written (a full or read-only disk), they last
+the vault either way clears both of its counts), even if reading the vault's state after it fails.
+Creating, erasing or restoring a vault clears the vault's two counts, as they were about the vault
+it replaces; the count for backups stays, as the same backup files can still be tried. The counts,
+and when the last wrong try was, are kept in `attempts.json` beside the vault, written as the
+vault's own files are: private to the user, staged in an `.atomicwrite*` folder beside it and
+renamed over it, and on macOS, Linux, iOS and Android the folder synced (Windows relies on its
+filesystem journal), so that closing and reopening myCarlos, or a power cut, does not clear them.
+The file is read only as a plain file of at most 4 KiB, never through a link, and each time the
+counts are needed rather than as the app starts, so that another copy of myCarlos open at the same
+time shares them: each takes the higher count and the later time of its own and the file's, unless
+the other has cleared them since (a clear is numbered). Two copies trying at the same instant can
+still lose one another's count, so copies run side by side can each guess at the pace of one. Before
+a vault home exists, or when the file cannot be written (a full or read-only disk), the counts last
 for that run only: refusing every try then would shut the patient out of a vault that can still be
 read, and a disk that fails to write undoes no more than deleting the file does. A clock set back
-behind the last wrong try counts the wait from then, rather than never, and a file that does not
-read starts from nothing. This slows only guessing through the app on this device: a copy of the
-vault, or a backup, can be guessed at elsewhere without it, where only the cost of the key
-derivation stands in the way; and whoever can delete the file, make it unwritable, or move the
-clock forward, undoes the wait.
+behind the last wrong try counts the wait from then, rather than never; a clock before 1970, which
+reads as unknown, means no wait, rather than one that never ends; and a file that does not read
+starts from nothing. This slows only guessing through the app on this device: a copy of the vault,
+or a backup, can be guessed at elsewhere without it, where only the cost of the key derivation
+stands in the way; and whoever can delete the file, make it unwritable, set the clock forward or
+before 1970, or run several copies of myCarlos at once, undoes or weakens the wait.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
@@ -197,7 +206,7 @@ vault-home/               holds only what the vault manages; back up as a whole
   vault-v1.restore-ready/ a verified restore about to replace the vault; finished at the next start
   pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
   attempts.json           wrong tries in a row at a secret, and when the last was (no secret)
-  attempts.json.new       the same being written, renamed over it once complete
+  .atomicwrite*/          attempts.json being written, renamed over it once complete
   vault-v1/
     header-0.json        non-secret KDF configuration, wrapped master key, optional recovery-key
                          envelope (format 2), and keyed integrity tag

@@ -1654,7 +1654,7 @@ describe("durable vault UI", () => {
           unlock: vi.fn().mockRejectedValue({
             code: "too_many_attempts",
             message:
-              "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one.",
+              "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
             retryAfterMs: 30_000,
           }),
         })}
@@ -1667,7 +1667,7 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: "Unlock" }));
     expect(
       await screen.findByText(
-        /To slow down anyone guessing, myCarlos waits a little before the next one\. Try again in 30 seconds\./,
+        /To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked\. Try again in 30 seconds\./,
       ),
     ).toBeVisible();
   });

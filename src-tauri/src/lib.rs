@@ -741,13 +741,13 @@ async fn vault_unlock(
                 // A pick can read the session after a lock clears it but pass its
                 // unlocked check before the lock lands. Starting a new session here
                 // leaves such a pick in the one that ended.
-                .inspect(|_| picks.clear())
-                .and_then(|_| store.snapshot());
+                .inspect(|_| picks.clear());
             request.passphrase.zeroize();
             result
         }),
     )
-    .await
+    .await?;
+    run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
 #[tauri::command]
@@ -1058,26 +1058,24 @@ async fn vault_recover(
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
     let picks = Arc::clone(picks.inner());
-    tried(
+    let passphrase_replaced = tried(
         throttle.inner(),
         Attempt::RecoveryKey,
         run_blocking(store.inner(), move |store| {
             let result = store
                 .recover(&request.recovery_key, &request.new_passphrase)
                 // As for unlock: a pick from the session that ended stays there.
-                .inspect(|_| picks.clear())
-                .and_then(|passphrase_replaced| {
-                    Ok(RecoverResponse {
-                        passphrase_replaced,
-                        snapshot: store.snapshot()?,
-                    })
-                });
+                .inspect(|_| picks.clear());
             request.recovery_key.zeroize();
             request.new_passphrase.zeroize();
             result
         }),
     )
-    .await
+    .await?;
+    Ok(RecoverResponse {
+        passphrase_replaced,
+        snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
+    })
 }
 
 #[derive(Deserialize)]
@@ -1133,30 +1131,47 @@ impl<W: std::io::Write> std::io::Write for Counted<W> {
 /// passphrase or recovery key then stays counted, the right one clears the
 /// count, and anything else (a key mistyped in its check characters, a
 /// storage error) is taken back off it, with the time of the wrong try
-/// before it, unless another try has counted since.
+/// before it, unless another try has counted since. `command` is only the
+/// check of the secret: what follows a right one (reading the vault's state)
+/// runs after it, so that its failure does not leave the count.
 async fn tried<T>(
-    throttle: &AttemptThrottle,
+    throttle: &Arc<AttemptThrottle>,
     attempt: Attempt,
     command: impl std::future::Future<Output = CommandResult<T>>,
 ) -> CommandResult<T> {
     // A try the app is killed during stays counted: that must not be a way
     // round the count.
-    let started = throttle
-        .begin(attempt, now_ms())
+    let now = now_ms();
+    let started = on_throttle(throttle, move |throttle| throttle.begin(attempt, now))
+        .await?
         .map_err(PublicError::wait)?;
     let result = command.await;
-    throttle.settle(
-        attempt,
-        started,
-        match &result {
-            Ok(_) => Outcome::Right,
-            Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
-                Outcome::Wrong
-            }
-            Err(_) => Outcome::Neither,
-        },
-    );
+    let outcome = match &result {
+        Ok(_) => Outcome::Right,
+        Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
+            Outcome::Wrong
+        }
+        Err(_) => Outcome::Neither,
+    };
+    // A settle lost to a failed thread leaves the try counted, as a kill does.
+    let _ = on_throttle(throttle, move |throttle| {
+        throttle.settle(attempt, started, outcome)
+    })
+    .await;
     result
+}
+
+/// Runs `work` on the throttle away from the async runtime, as it reads and
+/// writes its file.
+async fn on_throttle<R, F>(throttle: &Arc<AttemptThrottle>, work: F) -> CommandResult<R>
+where
+    R: Send + 'static,
+    F: FnOnce(&AttemptThrottle) -> R + Send + 'static,
+{
+    let throttle = Arc::clone(throttle);
+    tauri::async_runtime::spawn_blocking(move || work(&throttle))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Asks where to save an encrypted backup. The backup itself is written by
@@ -1947,7 +1962,7 @@ mod tests {
 
     #[test]
     fn a_secret_tried_too_soon_after_wrong_ones_waits_and_says_so() {
-        let throttle = AttemptThrottle::new(None);
+        let throttle = Arc::new(AttemptThrottle::new(None));
         let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
         for _ in 0..throttle::FREE_TRIES {
             assert!(
@@ -2021,6 +2036,15 @@ mod tests {
             assert_eq!(code.matches("forget_vault()").count(), 1, "{command}");
             assert!(code.contains(clears), "{command}");
         }
+        // What follows a right secret is outside the try, so that its failure
+        // does not leave the count.
+        for command in ["async fn vault_unlock(", "async fn vault_recover("] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            let tried = &body[body.find("tried(").unwrap()..body.find(".await?;").unwrap()];
+            assert!(!tried.contains("snapshot"), "{command}");
+            assert!(body.contains("run_blocking(store.inner(), VaultStore::snapshot)"));
+        }
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
         let restore = &restore[..restore.find("\n}\n").unwrap()];
@@ -2029,7 +2053,7 @@ mod tests {
 
     #[test]
     fn a_try_refused_during_a_wait_adds_nothing_to_it() {
-        let throttle = AttemptThrottle::new(None);
+        let throttle = Arc::new(AttemptThrottle::new(None));
         let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
         for _ in 0..throttle::FREE_TRIES {
             let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
@@ -2044,7 +2068,7 @@ mod tests {
 
     #[test]
     fn only_a_wrong_secret_counts_toward_a_wait() {
-        let throttle = AttemptThrottle::new(None);
+        let throttle = Arc::new(AttemptThrottle::new(None));
         // A key whose check characters are wrong is a typo, not a guess.
         for _ in 0..throttle::FREE_TRIES + 3 {
             let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::RecoveryKey, async {

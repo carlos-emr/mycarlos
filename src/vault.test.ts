@@ -120,7 +120,7 @@ describe("error messages", () => {
     const waiting = {
       code: "too_many_attempts",
       message:
-        "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one.",
+        "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
       retryAfterMs: 4_200,
     };
     expect(vaultErrorMessage(waiting)).toBe(
