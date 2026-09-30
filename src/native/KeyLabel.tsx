@@ -1,4 +1,5 @@
-/** Letters and digits read out one at a time, not as a word. */
+/** Letters and digits read out one at a time, not as a word, so that 0 and
+ * O, or 1 and I, are clear. */
 export const spoken = (text: string) => text.split("").join(" ");
 
 /** A recovery key's short label, as it is printed, and spelled out to a

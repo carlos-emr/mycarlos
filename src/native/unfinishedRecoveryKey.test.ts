@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OLD_BACKUPS_ADVICE } from "./oldBackups";
+import { OLD_BACKUPS_ADVICE, OLD_BACKUPS_KEEP } from "./oldBackups";
 import { unfinishedRecoveryKeyMessage } from "./unfinishedRecoveryKey";
 
 describe("how an unfinished key setup ended", () => {
@@ -11,6 +11,10 @@ describe("how an unfinished key setup ended", () => {
     const first = unfinishedRecoveryKeyMessage({ setAtMs: null }, 9);
     expect(first).toMatch(/^The recovery key you were shown was saved/);
     expect(first).not.toContain(OLD_BACKUPS_ADVICE);
+    // A vault opened read-only cannot save a backup: keep the old ones.
+    const readOnly = unfinishedRecoveryKeyMessage({ setAtMs: 5 }, 9, true);
+    expect(readOnly).toContain(OLD_BACKUPS_KEEP);
+    expect(readOnly).not.toContain(OLD_BACKUPS_ADVICE);
     // Not saved: nothing about backups either.
     expect(unfinishedRecoveryKeyMessage({ setAtMs: 5 }, 5)).not.toContain(
       OLD_BACKUPS_ADVICE,

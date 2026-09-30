@@ -37,6 +37,7 @@ describe("SecuritySettings recovery key", () => {
     );
     expect(within(line).getByText("7 F 3 A")).toHaveClass("sr-only");
     expect(line).toHaveTextContent(/one with another label does not open/);
+    expect(line).not.toHaveTextContent(new Date(setAt).toLocaleDateString());
     // The date it was set up is beside the heading.
     expect(
       screen.getByText(`Set up ${new Date(setAt).toLocaleDateString()}`),

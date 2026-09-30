@@ -124,10 +124,10 @@ On every platform:
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and makes a new key. After you type it back, a
    system dialog (not part of the app's own screen) asks **Replace your recovery key?** and says to
-   save a new backup afterwards, then delete older ones. Choose **Cancel** once: the setup stays open and says the
-   current key still works. Check again and choose **Replace key**: the old key then stops working,
-   and the app says to save a new backup first, then where the older ones are to delete them. The vault does not lock by
-   itself while that dialog is open.
+   save a new backup afterwards, then delete older ones. Choose **Cancel** once: the setup stays
+   open and says the current key still works. Check again and choose **Replace key**: the old key
+   then stops working, and the app says to save a new backup first, then where the older ones are
+   to delete them. The vault does not lock by itself while that dialog is open.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:

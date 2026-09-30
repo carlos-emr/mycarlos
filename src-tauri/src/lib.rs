@@ -803,7 +803,7 @@ async fn vault_recovery_key_begin(
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Any backups you saved before now still open with the recovery key and passphrase they were saved with, so an old kit could still open them: once this is done, save a new backup, then delete the older ones (myCarlos says how). Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Any backups you saved before now still open with the passphrase or recovery key they were saved with, so an old kit could still open them: once this is done, save a new backup, then delete the older ones (myCarlos says how). Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {

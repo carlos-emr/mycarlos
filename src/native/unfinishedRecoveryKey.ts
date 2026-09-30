@@ -1,4 +1,4 @@
-import { OLD_BACKUPS_ADVICE } from "./oldBackups";
+import { OLD_BACKUPS_ADVICE, OLD_BACKUPS_KEEP } from "./oldBackups";
 
 // A recovery key setup that has shown a key and not ended. A lock ends it,
 // and so does myCarlos closing, and the key it showed then opens nothing; the
@@ -45,15 +45,17 @@ export function takeUnfinishedRecoveryKey(): UnfinishedRecoveryKey | null {
 
 /** What the patient is told after unlocking about a setup that showed a key,
  * from when the vault's recovery key was set up now; nothing when that
- * cannot be told (a vault with no key now that had one). */
+ * cannot be told (a vault with no key now that had one). A vault opened
+ * read-only cannot save a backup, so the old ones are to be kept. */
 export function unfinishedRecoveryKeyMessage(
   unfinished: UnfinishedRecoveryKey,
   setAtMsNow: number | null,
+  readOnly = false,
 ): string | null {
   if (setAtMsNow === unfinished.setAtMs)
     return unfinished.setAtMs === null
       ? "Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key. If you saved or wrote down the key it showed, destroy it: that key does not open the vault."
       : "Your recovery key was not replaced: setup ended when the vault locked or myCarlos closed, and your earlier key still works. If you saved or wrote down the new key it showed, destroy it: that key does not open the vault.";
   if (setAtMsNow === null) return null;
-  return `The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it.${unfinished.setAtMs === null ? "" : ` Your earlier recovery key no longer opens this vault. ${OLD_BACKUPS_ADVICE}`}`;
+  return `The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it.${unfinished.setAtMs === null ? "" : ` Your earlier recovery key no longer opens this vault. ${readOnly ? OLD_BACKUPS_KEEP : OLD_BACKUPS_ADVICE}`}`;
 }

@@ -21,8 +21,6 @@ const TRIES_BEFORE_REVIEW = 3;
 /** Letters and digits in a recovery key: 7 groups of 4. */
 const KEY_SYMBOLS = 28;
 
-/** Read one character at a time, so that 0 and O, or 1 and I, are clear. */
-
 export function RecoveryKeySetup({
   bridge,
   initialKey,
@@ -454,18 +452,16 @@ export function RecoveryKeySetup({
                 <div className="recovery-kit-print" aria-hidden="true">
                   <h1>myCarlos recovery kit</h1>
                   <p className="recovery-kit-key">{key}</p>
+                  <p>
+                    {label ? `Key label: ${label} · ` : ""}Printed{" "}
+                    {new Date().toLocaleDateString()}
+                  </p>
                   {label && (
-                    <>
-                      <p>
-                        Key label: {label} · Printed{" "}
-                        {new Date().toLocaleDateString()}
-                      </p>
-                      <p>
-                        The label is not secret. In Security, myCarlos shows the
-                        label of the recovery key that works now: a kit with a
-                        different label no longer opens the vault.
-                      </p>
-                    </>
+                    <p>
+                      The label is not secret. In Security, myCarlos shows the
+                      label of the recovery key that works now: a kit with a
+                      different label no longer opens the vault.
+                    </p>
                   )}
                   <p>
                     If you forget your myCarlos passphrase, this key opens your

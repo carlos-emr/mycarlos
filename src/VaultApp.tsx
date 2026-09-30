@@ -157,11 +157,16 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   // Taken as a vault opens: what happened while it was locked, and how a
   // recovery key setup that a lock or closing ended actually ended.
-  const takeHeldOutcome = (setAtMsNow: number | null) => {
+  const takeHeldOutcome = (opened: VaultSnapshot) => {
     const unfinished = takeUnfinishedRecoveryKey();
     const outcome = [
       pendingOutcomeRef.current,
-      unfinished && unfinishedRecoveryKeyMessage(unfinished, setAtMsNow),
+      unfinished &&
+        unfinishedRecoveryKeyMessage(
+          unfinished,
+          opened.recoveryKeySetAtMs ?? null,
+          Boolean(opened.recovery),
+        ),
     ]
       .filter(Boolean)
       .join(" ");
@@ -631,7 +636,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
-            const outcome = takeHeldOutcome(current.recoveryKeySetAtMs ?? null);
+            const outcome = takeHeldOutcome(current);
             setLibraryNotice({
               message: current.recovery
                 ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
@@ -647,7 +652,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
-            const outcome = takeHeldOutcome(current.recoveryKeySetAtMs ?? null);
+            const outcome = takeHeldOutcome(current);
             setLibraryNotice({
               message: passphraseReplaced
                 ? "Vault opened with your recovery key. Use your new passphrase from now on."

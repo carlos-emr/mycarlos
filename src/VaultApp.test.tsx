@@ -1304,7 +1304,7 @@ describe("durable vault UI", () => {
       if (saved)
         expect(
           await screen.findByText(
-            /^Recovery key replaced\. .*First save a new backup: in Security, choose Save encrypted backup\. Then delete the older backups, and keep the new one: they are files named "myCarlos backup".*Check each file's date before you delete it\.$/,
+            /^Recovery key replaced\. .*First save a new backup: in Security, choose Save encrypted backup\. Then delete the older backups, and keep the new one: they are files whose names start with "myCarlos backup".*Check each file's date before you delete it\.$/,
           ),
         ).toBeVisible();
       vi.mocked(bridge.unlock).mockResolvedValue(after);
