@@ -29,11 +29,12 @@ pub enum Outcome {
 }
 
 /// A try under way, as `begin` counted it: when the wrong try before it
-/// was, and when it began.
+/// was, when it began, and how many clears the count had then.
 #[derive(Clone, Copy, Debug)]
 pub struct Try {
     before: u64,
     at: u64,
+    clears: u64,
 }
 
 /// What a secret was tried for. Each is counted apart.
@@ -77,14 +78,21 @@ impl Count {
     /// This run's count and the file's, taken together: whichever was
     /// cleared since the other wins; otherwise the higher count and the
     /// later time, so that no copy's wrong tries are lost, nor this run's
-    /// when the file could not be written.
-    fn with(self, kept: Count) -> Count {
+    /// when the file could not be written. A time in the file past `now_ms`
+    /// is from before the clock was set back: this run's own time, already
+    /// brought back to then, is kept over it, even when the file could not
+    /// take it.
+    fn with(self, kept: Count, now_ms: u64) -> Count {
         match self.clears.cmp(&kept.clears) {
             Ordering::Less => kept,
             Ordering::Greater => self,
             Ordering::Equal => Count {
                 failures: self.failures.max(kept.failures),
-                last_failure_ms: self.last_failure_ms.max(kept.last_failure_ms),
+                last_failure_ms: if kept.last_failure_ms > now_ms && self != Count::default() {
+                    self.last_failure_ms
+                } else {
+                    self.last_failure_ms.max(kept.last_failure_ms)
+                },
                 clears: self.clears,
             },
         }
@@ -118,11 +126,11 @@ impl Counts {
         }
     }
 
-    fn with(self, kept: Counts) -> Counts {
+    fn with(self, kept: Counts, now_ms: u64) -> Counts {
         Counts {
-            unlock: self.unlock.with(kept.unlock),
-            recovery_key: self.recovery_key.with(kept.recovery_key),
-            backup: self.backup.with(kept.backup),
+            unlock: self.unlock.with(kept.unlock, now_ms),
+            recovery_key: self.recovery_key.with(kept.recovery_key, now_ms),
+            backup: self.backup.with(kept.backup, now_ms),
         }
     }
 }
@@ -148,7 +156,7 @@ impl AttemptThrottle {
     /// if it must wait.
     #[cfg(test)]
     pub fn wait(&self, attempt: Attempt, now_ms: u64) -> Option<u64> {
-        let mut counts = self.lock();
+        let mut counts = self.lock(now_ms);
         self.left(&mut counts, attempt, now_ms)
     }
 
@@ -157,7 +165,7 @@ impl AttemptThrottle {
     /// together cannot all pass the check before any is counted. `settle`
     /// then says how it went.
     pub fn begin(&self, attempt: Attempt, now_ms: u64) -> Result<Try, u64> {
-        let mut counts = self.lock();
+        let mut counts = self.lock(now_ms);
         if let Some(left) = self.left(&mut counts, attempt, now_ms) {
             return Err(left);
         }
@@ -165,6 +173,7 @@ impl AttemptThrottle {
         let started = Try {
             before: count.last_failure_ms,
             at: now_ms,
+            clears: count.clears,
         };
         count.failures = count.failures.saturating_add(1);
         count.last_failure_ms = now_ms;
@@ -175,14 +184,18 @@ impl AttemptThrottle {
     /// How a try started by `begin` went: a wrong secret stays counted, the
     /// right one clears the count, and anything else (a typo, a storage
     /// error) is taken back off it, with the time of the wrong try before
-    /// it, unless a later try has counted since.
-    pub fn settle(&self, attempt: Attempt, started: Try, outcome: Outcome) {
+    /// it, unless a later try has counted since. A count cleared since the
+    /// try began no longer holds it, and is left alone.
+    pub fn settle(&self, attempt: Attempt, started: Try, outcome: Outcome, now_ms: u64) {
         match outcome {
             Outcome::Wrong => {}
-            Outcome::Right => self.succeeded(attempt),
+            Outcome::Right => self.succeeded(attempt, now_ms),
             Outcome::Neither => {
-                let mut counts = self.lock();
+                let mut counts = self.lock(now_ms);
                 let count = counts.of(attempt);
+                if count.clears != started.clears {
+                    return;
+                }
                 count.failures = count.failures.saturating_sub(1);
                 if count.last_failure_ms == started.at {
                     count.last_failure_ms = started.before;
@@ -195,7 +208,7 @@ impl AttemptThrottle {
     /// A wrong secret was given for `attempt`.
     #[cfg(test)]
     pub fn failed(&self, attempt: Attempt, now_ms: u64) {
-        let mut counts = self.lock();
+        let mut counts = self.lock(now_ms);
         let count = counts.of(attempt);
         count.failures = count.failures.saturating_add(1);
         count.last_failure_ms = now_ms;
@@ -204,8 +217,8 @@ impl AttemptThrottle {
 
     /// The vault the counts were about is gone or replaced (created, erased
     /// or restored): its counts go with it. A backup's count stays.
-    pub fn forget_vault(&self) {
-        let mut counts = self.lock();
+    pub fn forget_vault(&self, now_ms: u64) {
+        let mut counts = self.lock(now_ms);
         let before = *counts;
         counts.unlock.clear();
         counts.recovery_key.clear();
@@ -238,8 +251,8 @@ impl AttemptThrottle {
     /// The right secret was given for `attempt`. Opening the vault, by its
     /// passphrase or its recovery key, clears both counts: whoever did it
     /// has the vault anyway.
-    pub fn succeeded(&self, attempt: Attempt) {
-        let mut counts = self.lock();
+    pub fn succeeded(&self, attempt: Attempt, now_ms: u64) {
+        let mut counts = self.lock(now_ms);
         let before = *counts;
         match attempt {
             Attempt::Unlock | Attempt::RecoveryKey => {
@@ -257,10 +270,10 @@ impl AttemptThrottle {
     /// open at the same time may have changed it. A file that cannot be
     /// read (missing, damaged, a link, or not a plain file) leaves this
     /// run's counts as they are.
-    fn lock(&self) -> MutexGuard<'_, Counts> {
+    fn lock(&self, now_ms: u64) -> MutexGuard<'_, Counts> {
         let mut counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(kept) = self.read() {
-            *counts = counts.with(kept);
+            *counts = counts.with(kept, now_ms);
         }
         counts
     }
@@ -333,6 +346,42 @@ mod tests {
     }
 
     #[test]
+    fn a_clock_set_back_is_not_undone_by_a_file_that_could_not_be_written() {
+        // The file still holds a time from before the clock went back, as
+        // when it could not take the time this run brought back to then.
+        let kept = Count {
+            failures: 6,
+            last_failure_ms: 1_000_000,
+            clears: 0,
+        };
+        let brought_back = Count {
+            last_failure_ms: 5_000,
+            ..kept
+        };
+        assert_eq!(brought_back.with(kept, 6_000).last_failure_ms, 5_000);
+        // A run that knows nothing yet takes the file's time, and brings it
+        // back itself.
+        assert_eq!(Count::default().with(kept, 6_000), kept);
+        // With the clock right, the later time wins as before.
+        assert_eq!(
+            brought_back.with(kept, 2_000_000).last_failure_ms,
+            1_000_000
+        );
+    }
+
+    #[test]
+    fn a_try_that_began_before_a_clear_does_not_uncount_one_after_it() {
+        let throttle = AttemptThrottle::new(None);
+        let early = throttle.begin(Attempt::Unlock, 1_000).unwrap();
+        throttle.succeeded(Attempt::Unlock, 1_000);
+        throttle.begin(Attempt::Unlock, 2_000).unwrap();
+        // The early try turns out neither: the later one stays counted.
+        throttle.settle(Attempt::Unlock, early, Outcome::Neither, 2_000);
+        let mut counts = throttle.lock(2_000);
+        assert_eq!(counts.of(Attempt::Unlock).failures, 1);
+    }
+
+    #[test]
     fn a_clock_that_cannot_be_read_does_not_shut_the_patient_out() {
         let throttle = AttemptThrottle::new(None);
         for _ in 0..FREE_TRIES + 3 {
@@ -354,9 +403,9 @@ mod tests {
         }
         assert!(matches!(throttle.begin(Attempt::Unlock, 1_000), Err(5_000)));
         // A try that was neither right nor wrong is taken back off.
-        throttle.settle(Attempt::Unlock, begun[0], Outcome::Neither);
+        throttle.settle(Attempt::Unlock, begun[0], Outcome::Neither, 1_000);
         let right = throttle.begin(Attempt::Unlock, 1_000).unwrap();
-        throttle.settle(Attempt::Unlock, right, Outcome::Right);
+        throttle.settle(Attempt::Unlock, right, Outcome::Right, 1_000);
         assert_eq!(throttle.wait(Attempt::Unlock, 1_000), None);
     }
 
@@ -369,7 +418,7 @@ mod tests {
         // The wait ends at 6 seconds; a typo at 7 must not start another.
         assert_eq!(throttle.wait(Attempt::RecoveryKey, 7_000), None);
         let typo = throttle.begin(Attempt::RecoveryKey, 7_000).unwrap();
-        throttle.settle(Attempt::RecoveryKey, typo, Outcome::Neither);
+        throttle.settle(Attempt::RecoveryKey, typo, Outcome::Neither, 7_000);
         assert_eq!(throttle.wait(Attempt::RecoveryKey, 7_000), None);
     }
 
@@ -381,7 +430,7 @@ mod tests {
                 throttle.failed(attempt, 1_000);
             }
         }
-        throttle.forget_vault();
+        throttle.forget_vault(1_000);
         assert_eq!(throttle.wait(Attempt::Unlock, 1_000), None);
         assert_eq!(throttle.wait(Attempt::RecoveryKey, 1_000), None);
         assert_eq!(throttle.wait(Attempt::Backup, 1_000), Some(5_000));
@@ -395,11 +444,11 @@ mod tests {
                 throttle.failed(attempt, 1_000);
             }
         }
-        throttle.succeeded(Attempt::RecoveryKey);
+        throttle.succeeded(Attempt::RecoveryKey, 1_000);
         assert_eq!(throttle.wait(Attempt::Unlock, 1_000), None);
         assert_eq!(throttle.wait(Attempt::RecoveryKey, 1_000), None);
         assert_eq!(throttle.wait(Attempt::Backup, 1_000), Some(5_000));
-        throttle.succeeded(Attempt::Backup);
+        throttle.succeeded(Attempt::Backup, 1_000);
         assert_eq!(throttle.wait(Attempt::Backup, 1_000), None);
     }
 
@@ -439,7 +488,7 @@ mod tests {
             throttle.failed(Attempt::Unlock, 1_000);
         }
         let right = throttle.begin(Attempt::Unlock, 7_000).unwrap();
-        throttle.settle(Attempt::Unlock, right, Outcome::Right);
+        throttle.settle(Attempt::Unlock, right, Outcome::Right, 7_000);
         let on_disk = kept(&path).unlock;
         assert_eq!((on_disk.failures, on_disk.last_failure_ms), (0, 0));
         assert_eq!(
@@ -464,7 +513,7 @@ mod tests {
         assert_eq!(first.wait(Attempt::Unlock, 1_000), Some(10_000));
         // Cleared in one, cleared in the other: the second's six do not
         // come back with its next try.
-        first.succeeded(Attempt::Unlock);
+        first.succeeded(Attempt::Unlock, 1_000);
         assert_eq!(second.wait(Attempt::Unlock, 1_000), None);
         second.failed(Attempt::Unlock, 2_000);
         assert_eq!(kept(&path).unlock.failures, 1);

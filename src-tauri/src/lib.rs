@@ -719,7 +719,7 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
-        throttle.forget_vault();
+        forget_vault(throttle.inner()).await;
     }
     created
 }
@@ -1146,6 +1146,7 @@ async fn tried<T>(
         .await?
         .map_err(PublicError::wait)?;
     let result = command.await;
+    let now = now_ms();
     let outcome = match &result {
         Ok(_) => Outcome::Right,
         Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
@@ -1155,10 +1156,17 @@ async fn tried<T>(
     };
     // A settle lost to a failed thread leaves the try counted, as a kill does.
     let _ = on_throttle(throttle, move |throttle| {
-        throttle.settle(attempt, started, outcome)
+        throttle.settle(attempt, started, outcome, now)
     })
     .await;
     result
+}
+
+/// The vault the counts were about is gone or replaced: its counts go too.
+async fn forget_vault(throttle: &Arc<AttemptThrottle>) {
+    let now = now_ms();
+    // A clear lost to a failed thread leaves the counts as they were.
+    let _ = on_throttle(throttle, move |throttle| throttle.forget_vault(now)).await;
 }
 
 /// Runs `work` on the throttle away from the async runtime, as it reads and
@@ -1444,18 +1452,17 @@ async fn vault_restore(
         // The file is opened again here. Another backup in its place by now,
         // or a vault that appeared or changed since, is not what the dialog
         // described, and is refused.
-        store
-            .restore_confirmed(
-                open_restore_source(&app, source)?,
-                request.credential()?,
-                &preview,
-            )
-            .map(|()| true)
+        store.restore_confirmed(
+            open_restore_source(&app, source)?,
+            request.credential()?,
+            &preview,
+        )
     })
     .await
-    .map_err(PublicError::of_restore)
+    .map_err(PublicError::of_restore)?;
     // The vault the counts were about is replaced, or there was none.
-    .inspect(|_| throttle.forget_vault())
+    forget_vault(throttle.inner()).await;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -1759,7 +1766,7 @@ async fn vault_reset(
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
     // The vault the counts were about is gone.
-    throttle.forget_vault();
+    forget_vault(throttle.inner()).await;
     Ok(true)
 }
 
@@ -1783,7 +1790,7 @@ pub fn run() {
                     .join("vault-v1"),
             )));
             // Wrong tries at a secret, counted beside the vault in
-            // `attempts.json` (written as `attempts.json.new`).
+            // `attempts.json`, and read only when needed, not here.
             app.manage(Arc::new(AttemptThrottle::new(Some(
                 app.path()
                     .app_local_data_dir()?
@@ -2014,15 +2021,15 @@ mod tests {
         for (command, clears) in [
             (
                 "async fn vault_create(",
-                "if created.is_ok() { throttle.forget_vault(); }",
+                "if created.is_ok() { forget_vault(throttle.inner()).await; }",
             ),
             (
                 "async fn vault_reset(",
-                "VaultStore::reset).await?; throttle.forget_vault(); Ok(true)",
+                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
             ),
             (
                 "async fn vault_restore(",
-                ".map_err(PublicError::of_restore) .inspect(|_| throttle.forget_vault())",
+                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner()).await; Ok(true)",
             ),
         ] {
             let body = source.split(command).nth(1).unwrap();
@@ -2033,7 +2040,7 @@ mod tests {
                 .filter(|line| !line.starts_with("//"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            assert_eq!(code.matches("forget_vault()").count(), 1, "{command}");
+            assert_eq!(code.matches("forget_vault(").count(), 1, "{command}");
             assert!(code.contains(clears), "{command}");
         }
         // What follows a right secret is outside the try, so that its failure
@@ -2048,7 +2055,7 @@ mod tests {
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
         let restore = &restore[..restore.find("\n}\n").unwrap()];
-        assert!(restore.ends_with(".inspect(|_| throttle.forget_vault())"));
+        assert!(restore.ends_with("forget_vault(throttle.inner()).await;\n    Ok(true)"));
     }
 
     #[test]
