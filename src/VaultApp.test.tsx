@@ -999,6 +999,31 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("names the damaged document that stopped a backup", async () => {
+    const user = userEvent.setup();
+    const recordId = snapshotWithRecord.records[0].id;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn().mockRejectedValue({
+        code: "damaged_document",
+        message: "A document in the vault is damaged.",
+        recordId,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(
+      await screen.findByText(
+        /^No backup was saved: the document "FAKE_Results\.pdf" is damaged and can no longer be read/,
+      ),
+    ).toBeVisible();
+  });
+
   it("restores a backup on a device with no vault, and leaves it locked", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({

@@ -277,7 +277,9 @@ work.
 
 A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it. Every
 document is authenticated as it is copied, so a damaged one fails the backup, naming the problem
-while the vault is still there, rather than the restore.
+while the vault is still there, rather than the restore. The refusal carries that document's id
+(never its name), and the screen names the document, so that the patient can delete it, or add it
+again from another copy, and back up the rest.
 
 ```text
 "MYCARLOS-BACKUP\n"                      16-byte magic, format 1
@@ -299,13 +301,20 @@ backed up, since what it shows may not be what it holds. Saving streams with con
 transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
 replaced atomically only once complete.
 
+A backup opens with the passphrase and recovery key the vault had when it was saved, not with any
+set up since; a restore that is refused for either says so in those words, not the unlock screen's.
+A backup file that cannot be opened at all (for example, one a cloud folder has not brought to
+the device) is refused with advice to copy it to a local folder first, and nothing changes.
+
 Restoring happens while no vault is open. The patient picks the file and gives its passphrase or
 recovery key. An inspect step reads only the header and manifest and reports what restoring would
 replace: nothing, the same vault unchanged, the same vault differing from the backup (its
-documents, passphrase or recovery key; or it could not be read to tell), or a different vault. The
-screen spells this out and requires an explicit agreement before a changed or different vault is
-replaced. Replacing any vault is then confirmed in a trusted native dialog, as a reset is; the
-native side works the preview out again itself and puts it in the dialog. The restore itself:
+documents, passphrase or recovery key; or it could not be read to tell), a different vault, or a
+vault whose header could not be read at all, so that which one it is cannot be told (it is not
+called a different one). The screen spells this out and requires an explicit agreement before a
+changed, different or unreadable vault is replaced. Replacing any vault is then confirmed in a
+trusted native dialog, as a reset is; the native side works the preview out again itself and puts
+it in the dialog. The restore itself:
 
 1. opens the header with the credential, as unlock would, and checks its integrity tag. The file
    is opened again for this, so the restore works the preview out once more from what it has
@@ -320,10 +329,14 @@ native side works the preview out again itself and puts it in the dialog. The re
    `vault-v1.reset-pending/` and renames the restore into place;
 6. erases the retired vault as a reset does, key envelopes first.
 
-Any failure before step 5 removes the stage and changes nothing else. So does a failure to retire
-the live vault: the verified copy is discarded, so that a restore reported as failed cannot happen
-at a later start. It is renamed back to a stage's name before it is removed, and a start never
-puts a `restore-ready` directory without a header in place, so a removal cut short cannot either. From step 5 on, each step is one rename, and every start repeats whatever is
+Any failure before step 5 removes the stage and changes nothing else. So does a failure in step 5:
+a failure to retire the live vault, or to rename the restore into place once it is retired, in
+which case the retired vault is renamed back first. The verified copy is then discarded, so that a
+restore reported as failed cannot happen at a later start. It is renamed back to a stage's name
+before it is removed, and a start never puts a `restore-ready` directory without a header in
+place, so a removal cut short cannot either. Only if the retired vault cannot be renamed back is
+the verified copy kept, as the one vault left: the patient is told that the restore finishes when
+myCarlos next starts. From step 5 on, each step is one rename, and every start repeats whatever is
 left: status, create, unlock and reset put a waiting restore in place first when the live vault
 is already retired, then finish erasing a retired vault, then activate a restore still waiting.
 A failure to erase the retired vault after the restore is in place is not a failed restore; the
@@ -333,7 +346,9 @@ restore always takes the whole backup: an older backup brings back documents del
 the passphrase and recovery key it was made with, and the screen and the native dialog say so
 before the patient agrees. On Android a backup is written straight to the document the provider
 returns, so a failed or cancelled save leaves an incomplete file there (which a restore refuses)
-in place of what that document held.
+in place of what that document held. Everything that would refuse the backup is therefore checked
+first, as the backup checks it (a read-only vault, the header, the manifest slot, every document),
+before that document is opened and emptied.
 
 ## Known limits before release
 

@@ -26,6 +26,8 @@ function consequence(preview: RestorePreview): string {
       return "The vault on this device is not the same as this backup. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
     case "otherVault":
       return "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.";
+    case "unreadable":
+      return "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring erases it, permanently, and puts the backup in its place.";
   }
 }
 
@@ -99,7 +101,9 @@ export function RestoreBackup({
   // Replacing an older copy, or another vault, loses something for good.
   const needsAgreement =
     preview !== null &&
-    (preview.replaces === "otherVault" || preview.differsFromThisDevice);
+    (preview.replaces === "otherVault" ||
+      preview.replaces === "unreadable" ||
+      preview.differsFromThisDevice);
 
   const choose = async () => {
     setBusy(true);
@@ -187,7 +191,7 @@ export function RestoreBackup({
     <form className="restore-backup" onSubmit={(event) => void check(event)}>
       <p>
         An encrypted backup opens with the passphrase it was made with, or with
-        the vault's recovery key.
+        the recovery key the vault had when the backup was saved.
       </p>
       <button
         ref={chooseRef}
@@ -280,7 +284,8 @@ export function RestoreBackup({
                 checked={agreed}
                 onChange={(event) => setAgreed(event.target.checked)}
               />
-              {preview.replaces === "otherVault"
+              {preview.replaces === "otherVault" ||
+              preview.replaces === "unreadable"
                 ? "Erase the vault on this device and restore the backup"
                 : "Replace the vault on this device with this backup and lose what changed since"}
             </label>

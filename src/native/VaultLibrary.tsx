@@ -2,6 +2,7 @@ import { LibrarySidebar } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  namedDamage,
   vaultErrorMessage,
   type VaultBridge,
   type VaultFolder,
@@ -404,7 +405,11 @@ export function VaultLibrary({
         setNotice("No location chosen. Nothing changed.");
         return;
       }
-      await bridge.saveBackupToPicked(pickId);
+      try {
+        await bridge.saveBackupToPicked(pickId);
+      } catch (error) {
+        throw namedDamage(error, snapshot.records);
+      }
       setNotice(
         "Encrypted backup saved. Keep it somewhere other than this device.",
       );

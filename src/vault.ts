@@ -48,8 +48,13 @@ export interface RecoveryKeyGroup {
   value: string;
 }
 
-/** What restoring a backup would replace on this device. */
-export type RestoreReplaces = "nothing" | "sameVault" | "otherVault";
+/** What restoring a backup would replace on this device: "unreadable" is a
+ * vault that could not be read to tell whether it is the backup's. */
+export type RestoreReplaces =
+  | "nothing"
+  | "sameVault"
+  | "otherVault"
+  | "unreadable";
 
 export interface RestorePreview {
   replaces: RestoreReplaces;
@@ -57,7 +62,7 @@ export interface RestorePreview {
    * passphrase or recovery key have changed since (or it could not be read
    * to tell). Restoring loses those changes. */
   differsFromThisDevice: boolean;
-  /** The vault on this device is newer than the backup. */
+  /** How many documents the backup holds. */
   documentCount: number;
 }
 
@@ -167,6 +172,8 @@ export interface VaultBridge {
 interface PublicError {
   code?: string;
   message?: string;
+  /** The document a failure is about, if it is about one. */
+  recordId?: string;
 }
 
 export function vaultErrorMessage(error: unknown): string {
@@ -175,6 +182,22 @@ export function vaultErrorMessage(error: unknown): string {
     if (typeof message === "string") return message;
   }
   return "The vault operation could not be completed.";
+}
+
+/** A backup refused over one document that no longer reads, named: the
+ * native side gives only its id. Any other error is returned as it is. */
+export function namedDamage(
+  error: unknown,
+  records: readonly VaultRecord[],
+): unknown {
+  if (!hasErrorCode(error, "damaged_document")) return error;
+  const id = (error as PublicError).recordId;
+  const record = records.find((candidate) => candidate.id === id);
+  if (!record) return error;
+  return {
+    code: "damaged_document",
+    message: `No backup was saved: the document "${record.displayName}" is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+  };
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {

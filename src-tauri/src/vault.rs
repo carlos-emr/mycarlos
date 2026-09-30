@@ -162,15 +162,15 @@ fn run_at_test_boundary(_boundary: &str) {}
 
 #[cfg(test)]
 thread_local! {
-    /// A boundary that fails on this thread only, so that tests running
+    /// Boundaries that fail on this thread only, so that tests running
     /// beside this one are not failed too.
-    static FAIL_AT_TEST_BOUNDARY: std::cell::Cell<Option<&'static str>> =
-        const { std::cell::Cell::new(None) };
+    static FAIL_AT_TEST_BOUNDARY: std::cell::Cell<&'static [&'static str]> =
+        const { std::cell::Cell::new(&[]) };
 }
 
 #[cfg(test)]
 fn fail_at_test_boundary(boundary: &str) -> Result<(), VaultError> {
-    if FAIL_AT_TEST_BOUNDARY.get() == Some(boundary)
+    if FAIL_AT_TEST_BOUNDARY.get().contains(&boundary)
         || std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref() == Ok(boundary)
     {
         Err(VaultError::NoSpace)
@@ -242,6 +242,12 @@ pub enum VaultError {
     BackupUnreadable,
     #[error("the backup or the vault is not what was confirmed")]
     BackupChanged,
+    #[error("the backup file could not be opened")]
+    BackupNotOpened,
+    #[error("a document does not authenticate, so the vault cannot be backed up")]
+    DamagedDocument(Uuid),
+    #[error("the restore was verified, but could not yet take the vault's place")]
+    RestoreUnfinished,
 }
 
 impl From<io::Error> for VaultError {
@@ -1694,33 +1700,16 @@ impl VaultStore {
         Ok(())
     }
 
-    /// Checks that a backup could be made: every document authenticates. For
-    /// a destination that cannot be written beside and renamed over, such as
-    /// a document provider's, so that an earlier backup there is not
-    /// overwritten by one that is then refused.
+    /// Checks that a backup could be made, as `backup` checks it, without
+    /// writing one: for a destination that cannot be written beside and
+    /// renamed over, such as a document provider's, so that an earlier backup
+    /// there is not overwritten by one that is then refused.
     pub fn verify_for_backup(&self) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        if unlocked.recovery.is_some() {
-            return Err(VaultError::RecoveryMode);
-        }
-        let manifest = &unlocked.manifest;
-        let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
-        for record in &manifest.records {
-            let object_key = unwrap_secret(
-                &keys.object_wrap,
-                &record.wrapped_object_key,
-                record.id.as_bytes(),
-            )?;
-            verify_object(
-                &self.root.join("objects").join(&record.object_name),
-                CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
-                    .with_progress(&self.idle),
-                manifest.vault_id,
-                record.id,
-                &object_key,
-                record.plaintext_size,
-            )?;
+        let parts = self.backup_parts(unlocked)?;
+        for record in &unlocked.manifest.records {
+            self.verify_for_backup_object(unlocked, &parts.keys, record)?;
         }
         Ok(())
     }
@@ -1731,6 +1720,45 @@ impl VaultStore {
     pub fn backup<W: Write>(&self, writer: W, now_ms: u64) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let parts = self.backup_parts(unlocked)?;
+        let manifest = &unlocked.manifest;
+        let writer =
+            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle);
+        let mut backup = BackupWriter::new(writer)?;
+        backup.entry(
+            BACKUP_KIND_HEADER,
+            "header.json",
+            parts.header_data.len() as u64,
+            &mut parts.header_data.as_slice(),
+        )?;
+        backup.entry(
+            BACKUP_KIND_MANIFEST,
+            "manifest.bin",
+            parts.manifest_data.len() as u64,
+            &mut parts.manifest_data.as_slice(),
+        )?;
+        for record in &manifest.records {
+            // A restore refuses the whole backup over one object that does not
+            // authenticate, so a damaged one is found now, while the vault
+            // and its other documents are still here, not when it is needed.
+            self.verify_for_backup_object(unlocked, &parts.keys, record)?;
+            let path = self.root.join("objects").join(&record.object_name);
+            let mut object = open_regular_read(&path)?;
+            let length = object.metadata()?.len();
+            backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
+        }
+        backup.finish(
+            &unlocked.master_key,
+            manifest.vault_id,
+            manifest.generation,
+            now_ms,
+        )
+    }
+
+    /// Every check that refuses a backup before its documents are read, and
+    /// what the backup holds besides them. `verify_for_backup` makes the same
+    /// checks, so that nothing it passes is refused by `backup` afterwards.
+    fn backup_parts(&self, unlocked: &UnlockedVault) -> Result<BackupParts, VaultError> {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
@@ -1748,45 +1776,41 @@ impl VaultStore {
         if decrypt_manifest(&manifest_data, &keys.manifest, vault_id).as_ref() != Some(manifest) {
             return Err(VaultError::Corrupt);
         }
-        let writer =
-            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle);
-        let mut backup = BackupWriter::new(writer)?;
-        backup.entry(
-            BACKUP_KIND_HEADER,
-            "header.json",
-            header_data.len() as u64,
-            &mut header_data.as_slice(),
+        Ok(BackupParts {
+            header_data,
+            manifest_data,
+            keys,
+        })
+    }
+
+    /// Authenticates one document for a backup. One that does not is named,
+    /// so that the patient can tell which, instead of every backup failing
+    /// over something they cannot find.
+    fn verify_for_backup_object(
+        &self,
+        unlocked: &UnlockedVault,
+        keys: &DerivedKeys,
+        record: &StoredRecord,
+    ) -> Result<(), VaultError> {
+        let vault_id = unlocked.manifest.vault_id;
+        let object_key = unwrap_secret(
+            &keys.object_wrap,
+            &record.wrapped_object_key,
+            record.id.as_bytes(),
         )?;
-        backup.entry(
-            BACKUP_KIND_MANIFEST,
-            "manifest.bin",
-            manifest_data.len() as u64,
-            &mut manifest_data.as_slice(),
-        )?;
-        for record in &manifest.records {
-            let path = self.root.join("objects").join(&record.object_name);
-            // A restore refuses the whole backup over one object that does not
-            // authenticate, so a damaged one is found now, while the vault
-            // and its other documents are still here, not when it is needed.
-            let object_key = unwrap_secret(
-                &keys.object_wrap,
-                &record.wrapped_object_key,
-                record.id.as_bytes(),
-            )?;
-            verify_object(
-                &path,
-                CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
-                    .with_progress(&self.idle),
-                vault_id,
-                record.id,
-                &object_key,
-                record.plaintext_size,
-            )?;
-            let mut object = open_regular_read(&path)?;
-            let length = object.metadata()?.len();
-            backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
-        }
-        backup.finish(&unlocked.master_key, vault_id, manifest.generation, now_ms)
+        verify_object(
+            &self.root.join("objects").join(&record.object_name),
+            CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                .with_progress(&self.idle),
+            vault_id,
+            record.id,
+            &object_key,
+            record.plaintext_size,
+        )
+        .map_err(|error| match error {
+            VaultError::Corrupt => VaultError::DamagedDocument(record.id),
+            error => error,
+        })
     }
 
     /// Saves a backup to a file the patient chose, as an export is saved:
@@ -1851,9 +1875,14 @@ impl VaultStore {
             manifest_data,
             ..
         } = opened;
+        let candidates = read_header_candidates(&self.root);
         let (replaces, differs_from_this_device) = if !self.root.exists() {
             (RestoreReplaces::Nothing, false)
-        } else if read_header_candidates(&self.root)
+        } else if candidates.is_empty() {
+            // No header could be read: the vault may be the backup's, damaged
+            // or unreadable, or another one. It is not called either.
+            (RestoreReplaces::Unreadable, false)
+        } else if candidates
             .iter()
             .any(|candidate| candidate.vault_id == header.vault_id)
         {
@@ -2068,11 +2097,11 @@ impl VaultStore {
         terminate_at_test_boundary("restore.after-ready");
         if let Err(error) = activate_restore(&self.root) {
             // The failure is reported, so the restore must not happen after
-            // all at a later start. With the live vault still in place nothing
-            // has changed: discard the verified copy. With the live vault
-            // already retired, the copy is the only vault left, and the next
-            // start puts it in place.
-            if self.root.exists() {
+            // all at a later start: the vault is as it was, which activation
+            // sees to by putting a retired vault back, and the verified copy
+            // is discarded. Only when that could not be done is the copy the
+            // one vault left, and the next start puts it in place.
+            if !matches!(error, VaultError::RestoreUnfinished) {
                 // Under a stage's name first, in one step: a removal cut
                 // short must not leave half a vault under the name that the
                 // next start puts in place.
@@ -2118,6 +2147,13 @@ impl VaultStore {
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(result)
     }
+}
+
+/// What a backup holds besides its documents, and the keys to check them.
+struct BackupParts {
+    header_data: Vec<u8>,
+    manifest_data: Vec<u8>,
+    keys: DerivedKeys,
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]
@@ -4546,6 +4582,9 @@ pub enum RestoreReplaces {
     SameVault,
     /// The vault on this device is a different one, which would be erased.
     OtherVault,
+    /// The vault on this device could not be read, so whether it is the
+    /// backup's cannot be told. It would be erased.
+    Unreadable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -4897,6 +4936,7 @@ fn activate_restore(root: &Path) -> Result<bool, VaultError> {
         sync_parent(parent);
         return Ok(false);
     }
+    let mut retired_here = None;
     if root.exists() {
         let retired = reset_path(root)?;
         // Pending resets finish before this runs, so a retired vault still
@@ -4908,8 +4948,24 @@ fn activate_restore(root: &Path) -> Result<bool, VaultError> {
         fs::rename(root, &retired)?;
         sync_parent(parent);
         terminate_at_test_boundary("restore.after-retire");
+        retired_here = Some(retired);
     }
-    fs::rename(&ready, root)?;
+    if let Err(error) = fail_at_test_boundary("restore.before-activate")
+        .and_then(|()| fs::rename(&ready, root).map_err(VaultError::from))
+    {
+        // Put back the vault this retired, so that the failure leaves the
+        // vault as it was. Only if that fails too is the verified copy the
+        // one vault left, which the next start puts in place.
+        if let Some(retired) = retired_here {
+            let restored = fail_at_test_boundary("restore.before-rollback")
+                .and_then(|()| fs::rename(&retired, root).map_err(VaultError::from));
+            sync_parent(parent);
+            if restored.is_err() {
+                return Err(VaultError::RestoreUnfinished);
+            }
+        }
+        return Err(error);
+    }
     sync_parent(parent);
     terminate_at_test_boundary("restore.after-activate");
     Ok(true)
@@ -7907,17 +7963,40 @@ mod tests {
         );
     }
 
-    /// Makes `boundary` fail on this thread until the guard is dropped.
+    #[test]
+    fn a_vault_whose_header_cannot_be_read_is_not_called_another_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        for slot in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
+            if root.join(slot).exists() {
+                fs::write(root.join(slot), b"not a header").unwrap();
+            }
+        }
+        assert_eq!(
+            store
+                .inspect_backup(Cursor::new(backup), RestoreCredential::Passphrase(PASSWORD))
+                .unwrap()
+                .replaces,
+            RestoreReplaces::Unreadable
+        );
+    }
+
+    /// Makes `boundary`, or each of `boundaries`, fail on this thread until
+    /// the guard is dropped.
     struct FailAt;
     impl FailAt {
         fn new(boundary: &'static str) -> Self {
-            FAIL_AT_TEST_BOUNDARY.set(Some(boundary));
+            Self::all(Box::leak(Box::new([boundary])))
+        }
+        fn all(boundaries: &'static [&'static str]) -> Self {
+            FAIL_AT_TEST_BOUNDARY.set(boundaries);
             Self
         }
     }
     impl Drop for FailAt {
         fn drop(&mut self) {
-            FAIL_AT_TEST_BOUNDARY.set(None);
+            FAIL_AT_TEST_BOUNDARY.set(&[]);
         }
     }
 
@@ -7934,15 +8013,23 @@ mod tests {
         // The object is there, so the vault opens as usual. Without the check
         // the backup would save, and no restore would ever accept it.
         store.unlock(PASSWORD).unwrap();
-        assert_eq!(store.snapshot().unwrap().recovery, None);
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        // The refusal names the document, so the patient can tell which.
+        let rotted = snapshot
+            .records
+            .iter()
+            .find(|record| record.display_name == "rotted.pdf")
+            .unwrap()
+            .id;
         let mut backup = Vec::new();
         assert!(matches!(
             store.verify_for_backup(),
-            Err(VaultError::Corrupt)
+            Err(VaultError::DamagedDocument(id)) if id == rotted
         ));
         assert!(matches!(
             store.backup(&mut backup, 4),
-            Err(VaultError::Corrupt)
+            Err(VaultError::DamagedDocument(id)) if id == rotted
         ));
     }
 
@@ -8025,6 +8112,77 @@ mod tests {
         let restarted = VaultStore::new(root);
         restarted.unlock(PASSWORD).unwrap();
         assert_eq!(restarted.snapshot().unwrap().records.len(), 3);
+    }
+
+    /// A vault changed after its backup was made: it holds a third
+    /// document, which the backup does not.
+    fn changed_since_its_backup(root: &Path) -> (VaultStore, Vec<u8>) {
+        let (store, backup, _) = backed_up_vault(root);
+        store.unlock(PASSWORD).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("later.pdf", b"later record")],
+                5,
+            )
+            .unwrap();
+        store.lock();
+        (store, backup)
+    }
+
+    #[test]
+    fn a_restore_that_could_not_take_the_vaults_place_puts_it_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup) = changed_since_its_backup(&root);
+        {
+            let _failing = FailAt::new("restore.before-activate");
+            assert!(matches!(
+                store.restore(
+                    Cursor::new(backup),
+                    RestoreCredential::Passphrase(PASSWORD),
+                    true
+                ),
+                Err(VaultError::NoSpace)
+            ));
+        }
+        // The vault was retired, and is back: the failure changed nothing,
+        // and no later start finishes the restore.
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+        let restarted = VaultStore::new(root);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 3);
+    }
+
+    #[test]
+    fn a_restore_that_could_not_put_the_vault_back_finishes_at_the_next_start() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup) = changed_since_its_backup(&root);
+        {
+            let _failing = FailAt::all(&["restore.before-activate", "restore.before-rollback"]);
+            assert!(matches!(
+                store.restore(
+                    Cursor::new(backup),
+                    RestoreCredential::Passphrase(PASSWORD),
+                    true
+                ),
+                Err(VaultError::RestoreUnfinished)
+            ));
+        }
+        // The verified copy is the one vault left, so it is kept, and the
+        // next start puts it in place, as the failure said.
+        assert!(!root.exists());
+        assert_eq!(restore_leftovers(&root).len(), 1);
+        let restarted = VaultStore::new(root.clone());
+        assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
     }
 
     #[test]
@@ -8310,6 +8468,38 @@ mod tests {
         assert!(matches!(
             store.backup(Vec::new(), 1),
             Err(VaultError::RecoveryMode)
+        ));
+        assert!(matches!(
+            store.verify_for_backup(),
+            Err(VaultError::RecoveryMode)
+        ));
+    }
+
+    #[test]
+    fn the_check_before_a_provider_backup_refuses_what_the_backup_refuses() {
+        // A provider's destination is emptied before the backup is written,
+        // so the check must refuse whatever the backup would.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let generation = store
+            .unlocked
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .generation;
+        // The manifest slot no longer holds what the session shows.
+        fs::write(manifest_path(&root, generation), b"not the manifest").unwrap();
+        assert!(matches!(
+            store.verify_for_backup(),
+            Err(VaultError::Corrupt)
+        ));
+        assert!(matches!(
+            store.backup(Vec::new(), 1),
+            Err(VaultError::Corrupt)
         ));
     }
 
