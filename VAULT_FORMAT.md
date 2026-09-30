@@ -334,9 +334,10 @@ a failure to retire the live vault, or to rename the restore into place once it 
 which case the retired vault is renamed back first. The verified copy is then discarded, so that a
 restore reported as failed cannot happen at a later start. It is renamed back to a stage's name
 before it is removed, and a start never puts a `restore-ready` directory without a header in
-place, so a removal cut short cannot either. Only if the retired vault cannot be renamed back is
-the verified copy kept, as the one vault left: the patient is told that the restore finishes when
-myCarlos next starts. From step 5 on, each step is one rename, and every start repeats whatever is
+place, so a removal cut short cannot either. Only if the retired vault cannot be renamed back, or
+the verified copy cannot be removed, is it kept (as the one vault left, or as what the next start
+puts in place): the patient is told to close and reopen myCarlos to finish the restore, and then to
+open the vault with the backup's passphrase or recovery key. From step 5 on, each step is one rename, and every start repeats whatever is
 left: status, create, unlock and reset put a waiting restore in place first when the live vault
 is already retired, then finish erasing a retired vault, then activate a restore still waiting.
 A failure to erase the retired vault after the restore is in place is not a failed restore; the
@@ -348,7 +349,8 @@ before the patient agrees. On Android a backup is written straight to the docume
 returns, so a failed or cancelled save leaves an incomplete file there (which a restore refuses)
 in place of what that document held. Everything that would refuse the backup is therefore checked
 first, as the backup checks it (a read-only vault, the header, the manifest slot, every document),
-before that document is opened and emptied.
+before that document is opened and emptied; only a failure while the backup is written, or a lock
+or change that comes between the check and the writing, can leave it emptied.
 
 ## Known limits before release
 

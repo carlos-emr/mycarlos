@@ -188,15 +188,22 @@ export function vaultErrorMessage(error: unknown): string {
  * native side gives only its id. Any other error is returned as it is. */
 export function namedDamage(
   error: unknown,
-  records: readonly VaultRecord[],
+  vault: Pick<VaultSnapshot, "profiles" | "records">,
 ): unknown {
   if (!hasErrorCode(error, "damaged_document")) return error;
   const id = (error as PublicError).recordId;
-  const record = records.find((candidate) => candidate.id === id);
+  const record = vault.records.find((candidate) => candidate.id === id);
   if (!record) return error;
+  // Two documents can share a name: when it was added, and whose records
+  // hold it if there is more than one person's, tell them apart.
+  const profile =
+    vault.profiles.length > 1
+      ? vault.profiles.find((candidate) => candidate.id === record.profileId)
+      : undefined;
+  const where = `added ${new Date(record.importedAtMs).toLocaleDateString()}${profile ? `, in ${profile.displayName}'s records` : ""}`;
   return {
     code: "damaged_document",
-    message: `No backup was saved: the document "${record.displayName}" is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+    message: `No backup was saved: the document "${record.displayName}" (${where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
   };
 }
 

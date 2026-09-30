@@ -98,7 +98,8 @@ export function RestoreBackup({
 
   const credential = (): RestoreCredential =>
     method === "passphrase" ? { passphrase: secret } : { recoveryKey: secret };
-  // Replacing an older copy, or another vault, loses something for good.
+  // Replacing a vault that differs from the backup, another vault, or one
+  // that cannot be read loses something for good.
   const needsAgreement =
     preview !== null &&
     (preview.replaces === "otherVault" ||

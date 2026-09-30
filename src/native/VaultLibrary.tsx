@@ -408,7 +408,7 @@ export function VaultLibrary({
       try {
         await bridge.saveBackupToPicked(pickId);
       } catch (error) {
-        throw namedDamage(error, snapshot.records);
+        throw namedDamage(error, snapshot);
       }
       setNotice(
         "Encrypted backup saved. Keep it somewhere other than this device.",

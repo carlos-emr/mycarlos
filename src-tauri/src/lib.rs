@@ -162,7 +162,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::RestoreUnfinished => Self {
                 code: "restore_unfinished",
-                message: "The backup was checked, but it could not yet take the vault's place. Close myCarlos and open it again: the restore finishes when it starts.",
+                message: "The backup was checked but not yet put in place. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
             },
         }
     }

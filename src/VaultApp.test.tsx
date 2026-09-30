@@ -1019,7 +1019,7 @@ describe("durable vault UI", () => {
     );
     expect(
       await screen.findByText(
-        /^No backup was saved: the document "FAKE_Results\.pdf" is damaged and can no longer be read/,
+        /^No backup was saved: the document "FAKE_Results\.pdf" \(added [^)]+\) is damaged and can no longer be read/,
       ),
     ).toBeVisible();
   });

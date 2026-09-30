@@ -2110,6 +2110,12 @@ impl VaultStore {
                     discard(&stage);
                 } else {
                     discard(&ready);
+                    // What cannot be removed (a file held open, say) is put
+                    // in place at the next start, so the failure is not the
+                    // one to report.
+                    if HEADER_SLOTS.iter().any(|slot| ready.join(slot).is_file()) {
+                        return Err(VaultError::RestoreUnfinished);
+                    }
                 }
             }
             return Err(error);
@@ -8183,6 +8189,53 @@ mod tests {
         assert!(!reset_path(&root).unwrap().exists());
         restarted.unlock(PASSWORD).unwrap();
         assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn a_restore_that_could_not_take_the_vaults_place_at_a_start_puts_it_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (_store, backup) = changed_since_its_backup(&root);
+        let file = temp.path().join("backup.mycarlosbackup");
+        fs::write(&file, &backup).unwrap();
+        // A verified restore waits for the next start, which fails to put it
+        // in place after retiring the vault.
+        run_restore_termination_child(&root, &file, "restore.after-ready");
+        let restarted = VaultStore::new(root.clone());
+        {
+            let _failing = FailAt::new("restore.before-activate");
+            assert!(restarted.status().is_err());
+        }
+        // The vault is back, and the restore still waits for a start.
+        assert!(root.exists());
+        assert!(!reset_path(&root).unwrap().exists());
+        assert_eq!(restore_leftovers(&root).len(), 1);
+        assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
+        assert!(restore_leftovers(&root).is_empty());
+    }
+
+    #[test]
+    fn a_failed_restore_onto_a_device_with_no_vault_leaves_it_without_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_, backup, _) = backed_up_vault(&temp.path().join("home-a").join("vault"));
+        let root = temp.path().join("home-b").join("vault");
+        let store = VaultStore::new(root.clone());
+        {
+            let _failing = FailAt::new("restore.before-activate");
+            assert!(matches!(
+                store.restore(
+                    Cursor::new(backup),
+                    RestoreCredential::Passphrase(PASSWORD),
+                    false
+                ),
+                Err(VaultError::NoSpace)
+            ));
+        }
+        // Reported as failed, so nothing is put in place later either.
+        assert!(restore_leftovers(&root).is_empty());
+        assert_eq!(store.status().unwrap(), VaultStatus::Absent);
     }
 
     #[test]
