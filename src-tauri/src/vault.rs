@@ -1998,7 +1998,13 @@ impl VaultStore {
         {
             // The same vault holds the same master key, so its own header and
             // manifest can be read and compared with the backup's.
-            let live_header = newest_authentic_header(&self.root, header.vault_id, master_key).ok();
+            // From the same reading as whether a slot could not be read.
+            let live_header = candidates
+                .iter()
+                .filter(|live| {
+                    live.vault_id == header.vault_id && valid_header_integrity(live, master_key)
+                })
+                .max_by_key(|live| live.generation);
             let slots = read_manifest_slots(&self.root, master_key, header.vault_id).ok();
             let live_manifest = slots.as_ref().and_then(|slots| {
                 slots
@@ -2008,16 +2014,13 @@ impl VaultStore {
                     .max_by_key(|manifest| manifest.generation)
                     .cloned()
             });
-            // A header or manifest slot, or a document, that could not be
-            // read may hold something newer than what was compared.
+            // A header or manifest slot that could not be read may hold
+            // something newer than what was compared.
             let partly_unreadable = files.slot_unreadable
-                || files.file_unreadable
                 || slots.as_ref().is_some_and(|slots| {
-                    slots.iter().any(|slot| match slot {
-                        SlotReading::Unreadable => true,
-                        SlotReading::Authentic { unknown, .. } => !unknown.is_empty(),
-                        _ => false,
-                    })
+                    slots
+                        .iter()
+                        .any(|slot| matches!(slot, SlotReading::Unreadable))
                 });
             // The same passphrase (its KDF salt) and the same recovery key.
             let same_keys = live_header.is_some_and(|live| {
@@ -3305,19 +3308,6 @@ fn current_header(
     }
     files
         .candidates
-        .into_iter()
-        .filter(|header| header.vault_id == vault_id && valid_header_integrity(header, master_key))
-        .max_by_key(|header| header.generation)
-        .ok_or(VaultError::Corrupt)
-}
-
-/// The newest header slot authenticated by the session's master key.
-fn newest_authentic_header(
-    root: &Path,
-    vault_id: Uuid,
-    master_key: &[u8; 32],
-) -> Result<VaultHeader, VaultError> {
-    read_header_candidates(root)
         .into_iter()
         .filter(|header| header.vault_id == vault_id && valid_header_integrity(header, master_key))
         .max_by_key(|header| header.generation)
@@ -8366,6 +8356,25 @@ mod tests {
         made_readable(&slot);
         assert_eq!(seen.replaces, RestoreReplaces::SameVault);
         assert!(seen.differs_from_this_device);
+        // Nor when a manifest slot cannot be read: the older one here, so
+        // that the newest still reads as the backup's.
+        store.unlock(PASSWORD).unwrap();
+        let generation = store
+            .unlocked
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .generation;
+        store.lock();
+        let older = manifest_path(&root, generation + 1);
+        assert!(older.exists());
+        assert!(made_unreadable(&older));
+        let seen = preview();
+        made_readable(&older);
+        assert!(seen.differs_from_this_device);
+        assert!(!preview().differs_from_this_device);
     }
 
     #[test]
