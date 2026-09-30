@@ -950,6 +950,35 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("shows a vault that locked before its key was made as locked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockRejectedValue({
+        code: "locked",
+        message: "Unlock the vault to continue.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "Create your encrypted vault" });
+    fireEvent.change(screen.getByLabelText("First patient profile"), {
+      target: { value: "Jamie" },
+    });
+    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+      fireEvent.change(field, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    }
+    await user.click(screen.getByRole("button", { name: "Create vault" }));
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/locked before its recovery key could be made/),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("offers a recovery key to a vault that has none", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({

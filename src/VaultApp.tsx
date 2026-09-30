@@ -549,9 +549,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             rememberUnfinishedRecoveryKey(null);
             // The passphrase was just typed, so it authorizes the recovery key
             // at once. If that fails, the library offers to set one up.
-            const recoveryKey = await bridge
-              .beginRecoveryKey(passphrase)
-              .catch(() => null);
+            const begun = await bridge.beginRecoveryKey(passphrase).then(
+              (key) => ({ key, locked: false }),
+              (error: unknown) => ({ key: null, locked: isLockedError(error) }),
+            );
+            if (begun.locked) {
+              // The vault locked meanwhile (its automatic lock): it is shown
+              // locked, not open on what the lock ended.
+              setSnapshot(null);
+              setStatus("locked");
+              setNotice(
+                "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+              );
+              return;
+            }
+            const recoveryKey = begun.key;
             setNewVaultRecoveryKey(recoveryKey);
             setConcealed(false);
             setStatus("unlocked");
