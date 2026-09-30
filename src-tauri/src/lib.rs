@@ -803,7 +803,7 @@ async fn vault_recovery_key_begin(
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open only with your current key (or the passphrase they were made with), not the new one, so save a new backup once this is done. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now will not open with the new key. They still need your current key, or the passphrase they were saved with, so save a new backup once this is done. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -1837,7 +1837,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_that_changed_while_the_dialog_was_open_is_not_stored() {
+    fn a_key_cancelled_while_the_dialog_was_open_is_not_stored() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let (store, groups) = key_being_set_up(&root, true);

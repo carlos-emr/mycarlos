@@ -82,10 +82,11 @@ vault as it then is, from the same session, so that a lock cannot fall between t
 vault already has a key, the command asks in a trusted native dialog before it replaces it, after
 the typed groups were found right and before anything is written; cancelled there, nothing changes
 and the pending key stays, to be checked again or cancelled. The dialog also says that backups
-saved before then still open only with the current key (or their passphrase), and to save a new
-backup afterwards; the app says so again once the key is replaced. The key is then stored only if
-the typed groups still match and the vault still has a key to replace, checked as it is stored. A
-vault's first key is not asked about, as it replaces nothing. The envelope's id is chosen when the key is made, so that a kit
+saved before then still open only with the key being replaced (or their passphrase), not the new
+one, and to save a new backup afterwards; the app says so again once the key is replaced. The key
+is then stored only if the typed groups still match and whether it replaces a key is still what
+the patient was asked about (a vault that had none may have gained one, or the reverse), checked
+as it is stored. A vault's first key is not asked about, as it replaces nothing. The envelope's id is chosen when the key is made, so that a kit
 saved before the check can name it. Cancelling, locking, or changing the passphrase first writes
 nothing and forgets the pending key. Wherever a key is typed, case, Crockford's look-alike letters
 and anything in it other than a letter or digit (dashes, spaces, other punctuation) do not matter.

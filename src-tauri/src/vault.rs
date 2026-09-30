@@ -1576,7 +1576,7 @@ impl VaultStore {
     }
 
     /// Checks the typed groups against the key being set up, as
-    /// `confirm_recovery_key` will, and says whether confirming would replace
+    /// `confirm_recovery_key_replacing` will, and says whether confirming would replace
     /// a recovery key the vault already has. Nothing changes. For the
     /// confirmation asked of the patient before a key is replaced, which
     /// should not be asked over a mistyped answer.
