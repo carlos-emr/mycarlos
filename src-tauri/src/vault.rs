@@ -515,6 +515,9 @@ pub struct ImportOutcome {
 /// derived from the passphrase that authorized it, for the header write.
 struct PendingRecoveryKey {
     key: Zeroizing<[u8; RECOVERY_KEY_BYTES]>,
+    /// The id its envelope will have: chosen now, so that a kit saved before
+    /// the check can name the key it holds.
+    key_id: Uuid,
     kdf: KdfConfig,
     wrapping_key: SecretKey,
 }
@@ -841,8 +844,11 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        Ok(VaultSnapshot {
+        Ok(Self::snapshot_of(guard.as_ref().ok_or(VaultError::Locked)?))
+    }
+
+    fn snapshot_of(unlocked: &UnlockedVault) -> VaultSnapshot {
+        VaultSnapshot {
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
             records: unlocked
@@ -863,7 +869,7 @@ impl VaultStore {
                 .collect(),
             recovery: unlocked.recovery,
             recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
-        })
+        }
     }
 
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
@@ -1432,6 +1438,7 @@ impl VaultStore {
         let text = encode_recovery_key(&key);
         unlocked.pending_recovery_key = Some(PendingRecoveryKey {
             key,
+            key_id: Uuid::new_v4(),
             kdf: header.kdf,
             wrapping_key,
         });
@@ -1450,7 +1457,26 @@ impl VaultStore {
             .ok_or(VaultError::Invalid)?;
         Ok(recovery_kit_text(
             &encode_recovery_key(&pending.key),
+            &recovery_key_label(pending.key_id),
             now_ms,
+        ))
+    }
+
+    /// The name suggested for the kit's file: the date, and the short label
+    /// of the key it holds. A kit for a new key then does not take the place
+    /// of the kit for the key the vault still has, should the new one never
+    /// be set up.
+    pub fn recovery_kit_name(&self, now_ms: u64) -> Result<String, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let pending = unlocked
+            .pending_recovery_key
+            .as_ref()
+            .ok_or(VaultError::Invalid)?;
+        let (year, month, day) = utc_date(now_ms);
+        Ok(format!(
+            "myCarlos recovery kit {year:04}-{month:02}-{day:02} {}.txt",
+            recovery_key_label(pending.key_id)
         ))
     }
 
@@ -1482,14 +1508,15 @@ impl VaultStore {
     }
 
     /// Checks groups of the pending recovery key as the patient typed them
-    /// back (group index and text; at least two different groups), then
-    /// stores the key: a new pair of header generations carries its envelope,
-    /// replacing any earlier recovery key.
+    /// back (group index and text; at least two different groups, and the
+    /// app sends all seven), then stores the key: a new pair of header
+    /// generations carries its envelope, replacing any earlier recovery key.
+    /// Returns the vault as it then is.
     pub fn confirm_recovery_key(
         &self,
         groups: &[(usize, &str)],
         now_ms: u64,
-    ) -> Result<(), VaultError> {
+    ) -> Result<VaultSnapshot, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.recovery.is_some() {
@@ -1497,6 +1524,7 @@ impl VaultStore {
         }
         let PendingRecoveryKey {
             key: pending,
+            key_id,
             kdf,
             wrapping_key,
         } = unlocked
@@ -1543,7 +1571,8 @@ impl VaultStore {
         if !opens {
             return Err(VaultError::Corrupt);
         }
-        let envelope = new_recovery_envelope(pending, vault_id, &unlocked.master_key, now_ms)?;
+        let envelope =
+            new_recovery_envelope(pending, *key_id, vault_id, &unlocked.master_key, now_ms)?;
         let first_generation = current
             .generation
             .checked_add(1)
@@ -1567,7 +1596,10 @@ impl VaultStore {
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
-        Ok(())
+        // Taken under the same session guard: a lock that came between the
+        // key being stored and a snapshot taken apart would report a key
+        // that was stored as a failure.
+        Ok(Self::snapshot_of(unlocked))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -2758,15 +2790,17 @@ fn recovery_key_check(key: &[u8; RECOVERY_KEY_BYTES]) -> u16 {
     (u16::from(digest[0]) << 2) | u16::from(digest[1] >> 6)
 }
 
-/// Reads a recovery key as typed: case, spaces and hyphens do not matter, and
-/// I, L and O are read as 1, 1 and 0, as Crockford base32 allows.
+/// Reads a recovery key as typed: case, and anything but a letter or digit
+/// (spaces, dashes, other punctuation), do not matter, and I, L and O are
+/// read as 1, 1 and 0, as Crockford base32 allows.
 fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, VaultError> {
     if text.len() > 256 {
         return Err(VaultError::RecoveryKeyTypo);
     }
     let mut values = Zeroizing::new(Vec::with_capacity(RECOVERY_KEY_GROUPS * 4));
     for character in text.chars() {
-        if character == '-' || character.is_whitespace() {
+        // Dashes, spaces and any other punctuation only separate groups.
+        if !character.is_alphanumeric() {
             continue;
         }
         let symbol = match character.to_ascii_uppercase() {
@@ -2814,15 +2848,22 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
     Ok(key)
 }
 
+/// A short name for a recovery key, from its envelope's id, which is not
+/// secret: it tells kits apart, and says nothing about the key.
+fn recovery_key_label(key_id: Uuid) -> String {
+    key_id.simple().to_string()[..4].to_uppercase()
+}
+
 /// The text of a recovery kit. Plain text, so that it prints and opens
 /// anywhere; the date is UTC.
-fn recovery_kit_text(key: &str, now_ms: u64) -> Zeroizing<String> {
+fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
     let (year, month, day) = utc_date(now_ms);
     Zeroizing::new(format!(
         "myCarlos recovery kit\n\
          =====================\n\
          \n\
          Recovery key:  {key}\n\
+         Key label:     {label} (not secret: it tells kits apart)\n\
          Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
          \n\
          What it is for\n\
@@ -2887,11 +2928,11 @@ fn recovery_aad(vault_id: Uuid, key_id: Uuid) -> Vec<u8> {
 
 fn new_recovery_envelope(
     recovery_key: &[u8; RECOVERY_KEY_BYTES],
+    key_id: Uuid,
     vault_id: Uuid,
     master_key: &[u8; 32],
     now_ms: u64,
 ) -> Result<RecoveryEnvelope, VaultError> {
-    let key_id = Uuid::new_v4();
     let wrap_key = recovery_wrap_key(recovery_key, vault_id, key_id)?;
     Ok(RecoveryEnvelope {
         key_id,
@@ -3042,7 +3083,7 @@ fn recovery_group_matches(typed: &str, expected: &str) -> bool {
     let mut normalized = Zeroizing::new(String::with_capacity(typed.len()));
     for character in typed
         .chars()
-        .filter(|character| *character != '-' && !character.is_whitespace())
+        .filter(|character| character.is_alphanumeric())
     {
         normalized.push(match character.to_ascii_uppercase() {
             'I' | 'L' => '1',
@@ -5304,7 +5345,9 @@ mod tests {
             "recovery-key" => {
                 let key = store.begin_recovery_key(PASSWORD).unwrap();
                 let groups = recovery_key_groups(&key);
-                store.confirm_recovery_key(&[(0, &groups[0]), (6, &groups[6])], 7)
+                store
+                    .confirm_recovery_key(&[(0, &groups[0]), (6, &groups[6])], 7)
+                    .map(|_| ())
             }
             _ => panic!("unknown failure-child operation"),
         };
@@ -7252,6 +7295,11 @@ mod tests {
                 .replace('0', "o")
                 .replace('1', "l");
             assert_eq!(*decode_recovery_key(&relaxed).unwrap(), key);
+            // Nor does other punctuation, which some keyboards put in.
+            for separator in [". ", "_", "\u{2013}"] {
+                let punctuated = text.replace('-', separator);
+                assert_eq!(*decode_recovery_key(&punctuated).unwrap(), key);
+            }
         }
         for text in ["", "ABCD", "UUUU-UUUU-UUUU-UUUU-UUUU-UUUU-UUUU"] {
             assert!(matches!(
@@ -7277,6 +7325,27 @@ mod tests {
             }
         }
         assert!(accepted <= 5, "{accepted} slips accepted");
+    }
+
+    #[test]
+    fn the_whole_key_typed_back_is_stored_and_opens_the_vault() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        let typed: Vec<(usize, &str)> = groups
+            .iter()
+            .enumerate()
+            .map(|(index, group)| (index, group.as_str()))
+            .collect();
+        // The vault it leaves is returned with it, from the same session.
+        let snapshot = store.confirm_recovery_key(&typed, 5).unwrap();
+        assert_eq!(snapshot.recovery_key_set_at_ms, Some(5));
+        store.lock();
+        assert!(store
+            .recover(&key.replace('-', ". "), PASSPHRASE_REPLACEMENT)
+            .unwrap());
     }
 
     #[test]
@@ -7402,6 +7471,20 @@ mod tests {
         assert!(kit.contains(&key));
         assert!(kit.contains("2026-09-28"));
         assert!(!kit.contains("Jamie"));
+        // Its file is named by the date and the key's label, which the kit
+        // gives too: a kit for a new key does not take the place of another.
+        let name = store.recovery_kit_name(1_790_553_600_000).unwrap();
+        let label = name
+            .strip_prefix("myCarlos recovery kit 2026-09-28 ")
+            .and_then(|rest| rest.strip_suffix(".txt"))
+            .unwrap()
+            .to_owned();
+        assert_eq!(label.len(), 4);
+        assert!(label
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(kit.contains(&format!("Key label:     {label}")));
+        assert!(!name.contains("Jamie"));
 
         // Saved as an export is: outside the vault home, and private.
         let outside = temp.path().join("kit.txt");
@@ -7420,12 +7503,19 @@ mod tests {
         ));
         assert!(!inside.exists());
 
-        // Once the key is stored, there is no kit left to save.
+        // Once the key is stored, there is no kit left to save, and the
+        // stored key has the id whose label the kit gave.
         let groups = recovery_key_groups(&key);
         store
             .confirm_recovery_key(&[(0, &groups[0]), (3, &groups[3])], 5)
             .unwrap();
         assert!(matches!(store.recovery_kit(1), Err(VaultError::Invalid)));
+        assert!(matches!(
+            store.recovery_kit_name(1),
+            Err(VaultError::Invalid)
+        ));
+        let stored = read_latest_header(&root).unwrap().recovery.unwrap();
+        assert_eq!(recovery_key_label(stored.key_id), label);
     }
 
     #[test]
