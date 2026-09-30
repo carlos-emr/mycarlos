@@ -74,6 +74,12 @@ describe("RestoreBackup", () => {
       "Erase the vault on this device and restore the backup",
     ],
     [
+      // A vault whose header cannot be read: it may be the backup's or not.
+      { replaces: "unreadable" as const },
+      /could not be read, so myCarlos cannot tell.*erases it, permanently/,
+      "Erase the vault on this device and restore the backup",
+    ],
+    [
       // A changed passphrase or recovery key, with the documents as they were.
       { replaces: "sameVault" as const, differsFromThisDevice: true },
       /is not the same as this backup.*passphrase and recovery key/,
