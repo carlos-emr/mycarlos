@@ -168,20 +168,24 @@ starts and removes it.
 ## 7. What leaves the device
 
 **The app itself sends nothing.** It:
-- has no way to reach the internet: its security settings let its screens talk only to the app's
-  own parts, and it includes no code for network connections;
+- makes no network connections of its own: its security settings let its screens talk only to the
+  app's own parts, and it includes no code for network connections;
 - has no analytics, telemetry or crash reporting;
 - has no automatic updates yet (updates are planned through app stores and a signed desktop
   updater);
 - sends nothing to CARLOS, a clinic or the developers.
 
 **Outside the app's own code:**
+- **Files the patient picks.** To add a document, save a readable copy or a backup, or restore
+  one, the patient picks a place in the system's own file window. If that place is a cloud drive
+  (for example iCloud Drive, Google Drive or OneDrive), the system or that drive's app moves the
+  file over the network, not myCarlos: a readable copy then goes to that service unencrypted, and
+  a backup encrypted.
 - Apple device backups can carry the encrypted vault to iCloud (section 3).
 - The Windows installer may, without asking, download WebView2 (the Microsoft component that
   draws the app's screens) if the computer lacks it (open question 9).
 - Parts of the system the app does not control have not been checked: for example the operating
-  system's own crash reports, WebView2's own updates, a cloud drive chosen in the system's file
-  window, and print services.
+  system's own crash reports, WebView2's own updates, and print services.
 
 What the patient saves themselves (backups, recovery kits, readable copies) leaves the vault only
 where the patient puts it.
