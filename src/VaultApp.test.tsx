@@ -1147,6 +1147,35 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("shows a vault that locked before its key was made as locked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockRejectedValue({
+        code: "locked",
+        message: "Unlock the vault to continue.",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "Create your encrypted vault" });
+    fireEvent.change(screen.getByLabelText("First patient profile"), {
+      target: { value: "Jamie" },
+    });
+    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+      fireEvent.change(field, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    }
+    await user.click(screen.getByRole("button", { name: "Create vault" }));
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/locked before its recovery key could be made/),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("offers a recovery key to a vault that has none", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -1636,6 +1665,40 @@ describe("durable vault UI", () => {
       await lockWithHeldOutcome(bridge);
       await expectOutcomeAfterUnlock(HELD_OUTCOME);
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for an operation started at once before giving the unlock result", async () => {
+    vi.useFakeTimers();
+    try {
+      let choose!: (pick: string | null) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      await lockWithHeldOutcome(bridge);
+      vi.mocked(bridge.pickImportFiles).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            choose = resolve;
+          }),
+      );
+      await unlockWithoutWaiting();
+      // A picker opened at once, before the result was written.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Choose files to import" }),
+        );
+      });
+      await passAnnounceDelay();
+      // Nothing is written behind the picker.
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+      await act(async () => choose(null));
+      await passAnnounceDelay();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        `No files selected. Nothing changed. ${HELD_OUTCOME}`,
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -4155,6 +4218,53 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lets a long list of damaged documents be scrolled from the keyboard", async () => {
+    const user = userEvent.setup();
+    const records = Array.from({ length: 30 }, (_, index) => ({
+      id: `record-${index}`,
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: `FAKE_lost_${index}.pdf`,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: false,
+    }));
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue({
+        ...emptySnapshot,
+        recovery: "lostObjects",
+        records,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const opener = await screen.findByRole("button", {
+      name: "Remove damaged documents",
+    });
+    await user.click(opener);
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Permanently remove 30 damaged documents?",
+    });
+    const list = within(dialog).getByRole("list", {
+      name: "Documents to remove",
+    });
+    // It overflows, and a region that scrolls must be reachable by keyboard.
+    expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
+    const results = await axe.run(dialog, {
+      runOnly: {
+        type: "tag",
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+      },
+    });
+    expect(results.violations).toEqual([]);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
   it("shows what the vault reports after a removal was refused", async () => {
     const user = userEvent.setup();
     const record = (id: string, available: boolean) => ({
@@ -4202,6 +4312,18 @@ describe("durable vault UI", () => {
     });
     expect(within(named).getAllByRole("listitem")).toHaveLength(1);
     expect(named).toHaveTextContent("FAKE_a.pdf");
+    // It can be scrolled with the keyboard, but Cancel has the first focus,
+    // and the names are not read out with the dialog.
+    expect(named).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(named).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(confirmation).toHaveAccessibleDescription(
+      /Their encrypted files are missing/,
+    );
+    expect(confirmation).not.toHaveAccessibleDescription(/FAKE_a\.pdf/);
     const asked = vi.mocked(bridge.snapshot).mock.calls.length;
     await user.click(
       screen.getByRole("button", { name: "Permanently remove" }),
