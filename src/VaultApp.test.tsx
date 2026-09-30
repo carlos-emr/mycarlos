@@ -1031,8 +1031,12 @@ describe("durable vault UI", () => {
         /Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
       ),
     ).toBeVisible();
-    // The offer waits: a dialog would hide what was just said.
+    // The offer waits: a dialog would hide what was just said. It is not
+    // counted, so the next unlock makes it.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      window.localStorage.getItem("mycarlos.recoveryOfferHour.v1"),
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: "Set up recovery key" }),
     ).toBeVisible();

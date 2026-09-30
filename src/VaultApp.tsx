@@ -74,8 +74,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // the message is written just after (see the effect below).
   const [libraryNotice, setLibraryNotice] = useState<{
     message: string;
-    // The result of a transfer that a lock ended, held for this unlock. It
-    // must reach the patient: it may say a readable copy was left behind.
+    // What was held for this unlock: the result of a transfer that a lock
+    // ended, or how a key setup it ended ended. It must reach the patient:
+    // it may say a readable copy was left behind, or which key to keep.
     outcome: string | null;
   } | null>(null);
   // The library opens on the recovery key setup: for a vault just created,
