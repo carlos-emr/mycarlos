@@ -61,3 +61,8 @@ WebSocket host allowance is confined to `devCsp`; packaged builds keep the produ
 `npm run test:dev-hmr` verifies a real hot update under that development policy using a
 non-localhost address. CI also compiles both mobile development paths and builds the
 bundled Android/iOS packages.
+
+## Licence
+
+Contributions are accepted under the project's licence, `AGPL-3.0-or-later`; see
+[LICENSE_NOTES.md](LICENSE_NOTES.md).

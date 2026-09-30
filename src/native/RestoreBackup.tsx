@@ -23,7 +23,7 @@ function consequence(preview: RestorePreview): string {
         return "The vault on this device holds the same documents. Restoring replaces it with this backup.";
       // Which of the two is the later one is not said: the vault may have
       // been restored and changed elsewhere since.
-      return "The vault on this device is not the same as this backup. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
+      return "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
     case "otherVault":
       return "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.";
     case "unreadable":
@@ -192,7 +192,7 @@ export function RestoreBackup({
     <form className="restore-backup" onSubmit={(event) => void check(event)}>
       <p>
         An encrypted backup opens with the passphrase it was made with, or with
-        the recovery key the vault had when the backup was saved.
+        the recovery key the vault had when the backup was saved, if it had one.
       </p>
       <button
         ref={chooseRef}

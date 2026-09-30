@@ -161,6 +161,8 @@ privacy, accessibility, or clinical review.
       and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
-- [ ] Add signing, notarization, app-store packaging, updater security, and release operations.
+- [ ] Add signing, notarization, app-store packaging, updater security, and release operations,
+      with the app-store licence review in [`LICENSE_NOTES.md`](LICENSE_NOTES.md) and the licence
+      texts (the app's and its dependencies') shipped with the downloads, which they are not yet.
 - [ ] Resolve all high/critical shipped-runtime findings; Linux remains under evaluation pending review of the
       documented `glib` backport and device/release validation.

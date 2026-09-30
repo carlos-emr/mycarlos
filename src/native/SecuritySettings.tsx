@@ -8,6 +8,9 @@ import {
   ResetConfirmation,
   tooShortPassphrase,
 } from "./VaultAuth";
+import { KeyLabel, printedDate } from "./KeyLabel";
+import type { OldBackupsGuide } from "./oldBackups";
+import { formatFileSize } from "./recordPresentation";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -21,9 +24,22 @@ interface SecuritySettingsProps {
   onReset: (confirmation: string) => Promise<void>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
+  /** Its short label, which its kit shows. */
+  recoveryKeyLabel?: string | null;
+  /** The steps for older backups after a key whose kit may have been lost
+   * or seen was replaced, if any are left. */
+  oldBackupsGuide?: OldBackupsGuide | null;
+  onOldBackupsGuideDone?: () => void;
+  /** Whether this platform's file app counts sizes in 1024s (Windows). */
+  sizesIn1024s?: boolean;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
 }
+
+/** The size of a saved backup, which tells it from an empty or partial one,
+ * as the platform's file app counts it. */
+const savedSize = (bytes: number | null, in1024s: boolean) =>
+  bytes === null ? "" : ` (${formatFileSize(bytes, in1024s)})`;
 
 export function SecuritySettings({
   busy,
@@ -36,6 +52,10 @@ export function SecuritySettings({
   onCreateProfile,
   onReset,
   recoveryKeySetAtMs,
+  recoveryKeyLabel = null,
+  oldBackupsGuide = null,
+  onOldBackupsGuideDone,
+  sizesIn1024s = false,
   onSetUpRecoveryKey,
   onSaveBackup,
 }: SecuritySettingsProps) {
@@ -143,7 +163,7 @@ export function SecuritySettings({
               Recovery key{" "}
               <span className="state-pill">
                 {recoveryKeySetAtMs
-                  ? `Set up ${new Date(recoveryKeySetAtMs).toLocaleDateString()}`
+                  ? `Set up ${printedDate(new Date(recoveryKeySetAtMs))}`
                   : "Not set up"}
               </span>
             </h2>
@@ -152,6 +172,16 @@ export function SecuritySettings({
               nobody at your clinic or at myCarlos can open your vault for you.
               Replacing it stops the old one working.
             </p>
+            {recoveryKeySetAtMs && recoveryKeyLabel && (
+              <p>
+                Your current key has the label{" "}
+                <KeyLabel label={recoveryKeyLabel} />. A kit or note with this
+                label is the one that works; one with another label does not
+                open this vault. Kits and notes made before labels were shown
+                have none: one without a label may still be this key, set up on{" "}
+                {printedDate(new Date(recoveryKeySetAtMs))}.
+              </p>
+            )}
           </div>
           <div>
             <button
@@ -176,6 +206,81 @@ export function SecuritySettings({
               keeps opening with them even after you change them here. To
               restore one, lock the vault and choose Restore from a backup.
             </p>
+            {oldBackupsGuide && (
+              <section
+                className="old-backups-guide"
+                aria-labelledby="old-backups-title"
+              >
+                <h3 id="old-backups-title">Your older backups</h3>
+                <p>
+                  The kit for an earlier recovery key may have been lost or
+                  seen, and it still opens backups saved before that key was
+                  replaced.
+                </p>
+                {oldBackupsGuide.step === "save" ? (
+                  <>
+                    <ol>
+                      <li>
+                        {readOnly
+                          ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
+                          : "Save a new backup now: choose Save encrypted backup."}{" "}
+                        Keep it, or a copy of it, somewhere other than this
+                        device, such as a USB stick or a cloud drive.
+                      </li>
+                      <li>
+                        Then delete the older backups. Once the new one is
+                        saved, this says how.
+                      </li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      I have no older backups
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <ol>
+                      <li>
+                        {oldBackupsGuide.keep ? (
+                          <>
+                            Your new backup is &ldquo;{oldBackupsGuide.keep}
+                            &rdquo;
+                            {savedSize(oldBackupsGuide.bytes, sizesIn1024s)}.
+                          </>
+                        ) : (
+                          `Your new backup is the one you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes, sizesIn1024s)}: your files app shows when each file was saved, and its size.`
+                        )}{" "}
+                        Keep it, or a copy of it, somewhere other than this
+                        device, such as a USB stick or a cloud drive.
+                      </li>
+                      <li>
+                        Delete the older backups: files whose names start with
+                        &ldquo;myCarlos backup&rdquo;, and any you renamed,
+                        other than the new one and its copies. They are wherever
+                        you saved them: a folder, a USB stick, or on a phone the
+                        Files app or a cloud drive.
+                      </li>
+                      <li>
+                        If you saved it in place of an older backup, that file
+                        is now your new backup: keep it.
+                      </li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      Done with older backups
+                    </button>
+                  </>
+                )}
+              </section>
+            )}
           </div>
           <div>
             <button
