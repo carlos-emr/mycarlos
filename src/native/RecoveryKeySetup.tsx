@@ -10,6 +10,7 @@ import {
   type VaultBridge,
   type VaultSnapshot,
 } from "../vault";
+import { KeyLabel, spoken } from "./KeyLabel";
 
 type Step = "passphrase" | "key" | "check";
 
@@ -21,7 +22,6 @@ const TRIES_BEFORE_REVIEW = 3;
 const KEY_SYMBOLS = 28;
 
 /** Read one character at a time, so that 0 and O, or 1 and I, are clear. */
-const spoken = (group: string) => group.split("").join(" ");
 
 export function RecoveryKeySetup({
   bridge,
@@ -394,7 +394,7 @@ export function RecoveryKeySetup({
             )}
             {label && (
               <p>
-                Key label: <strong>{label}</strong>. Write it next to the key.
+                Key label: <KeyLabel label={label} />. Write it next to the key.
                 It is not secret: in Security, myCarlos shows the label of the
                 key that works, so you can tell which kit is current.
               </p>
@@ -454,15 +454,19 @@ export function RecoveryKeySetup({
                 <div className="recovery-kit-print" aria-hidden="true">
                   <h1>myCarlos recovery kit</h1>
                   <p className="recovery-kit-key">{key}</p>
-                  <p>
-                    Key label: {label ?? "not available"} · Printed{" "}
-                    {new Date().toLocaleDateString()}
-                  </p>
-                  <p>
-                    The label is not secret. In Security, myCarlos shows the
-                    label of the recovery key that works now: a kit with a
-                    different label no longer opens the vault.
-                  </p>
+                  {label && (
+                    <>
+                      <p>
+                        Key label: {label} · Printed{" "}
+                        {new Date().toLocaleDateString()}
+                      </p>
+                      <p>
+                        The label is not secret. In Security, myCarlos shows the
+                        label of the recovery key that works now: a kit with a
+                        different label no longer opens the vault.
+                      </p>
+                    </>
+                  )}
                   <p>
                     If you forget your myCarlos passphrase, this key opens your
                     vault on this device and lets you choose a new passphrase.

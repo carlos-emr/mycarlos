@@ -128,12 +128,20 @@ describe("RecoveryKeySetup", () => {
   });
 
   it("shows the key without its label when the label cannot be had", async () => {
+    const user = userEvent.setup();
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+    onTestFinished(() => print.mockRestore());
     setUp(
-      { initialKey: KEY },
+      { initialKey: KEY, canPrint: true },
       { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "locked" }) },
     );
     expect(await screen.findByText(GROUPS[0])).toBeVisible();
     expect(screen.queryByText(/Key label/)).toBeNull();
+    // Nor does a kit printed then say a kit with another label is void.
+    await user.click(screen.getByRole("button", { name: "Print" }));
+    const kit = document.querySelector("body > .recovery-kit-print");
+    expect(kit).toHaveTextContent(KEY);
+    expect(kit).not.toHaveTextContent(/label/i);
   });
 
   it("offers Print only where the platform can print", () => {

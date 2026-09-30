@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SecuritySettings } from "./SecuritySettings";
 
@@ -30,10 +30,17 @@ describe("SecuritySettings recovery key", () => {
     const setAt = Date.UTC(2026, 8, 30, 12);
     renderSettings({ recoveryKeySetAtMs: setAt, recoveryKeyLabel: "7F3A" });
     const line = screen.getByText(/Your current key has the label/);
-    expect(line).toHaveTextContent(
-      `Your current key has the label 7F3A and was set up on ${new Date(setAt).toLocaleDateString()}.`,
+    // Shown as printed, and spelled out to a screen reader.
+    expect(within(line).getByText("7F3A")).toHaveAttribute(
+      "aria-hidden",
+      "true",
     );
+    expect(within(line).getByText("7 F 3 A")).toHaveClass("sr-only");
     expect(line).toHaveTextContent(/one with another label does not open/);
+    // The date it was set up is beside the heading.
+    expect(
+      screen.getByText(`Set up ${new Date(setAt).toLocaleDateString()}`),
+    ).toBeVisible();
   });
 
   it("names no label for a vault without a key", () => {

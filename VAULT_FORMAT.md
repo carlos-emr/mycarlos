@@ -85,17 +85,19 @@ is, from the same session, so that a lock cannot fall between the two. When the 
 key, the command asks in a trusted native dialog before it replaces it, after the typed groups were
 found right and before anything is written; cancelled there, nothing changes and the pending key
 stays, to be checked again or cancelled. The dialog also says that backups saved before then still
-open with the key being replaced, so a lost kit could still open them, and that they should be
-deleted and a new backup saved. Once the key is replaced, the app says how: the backup files are
-named "myCarlos backup" (ending in .mycarlosbackup), wherever the patient saved them (a folder, a
-USB stick, or on a phone the Files app or a cloud drive; myCarlos does not know where), and a new
-one is saved from Security. The key is then stored only if the typed groups still match and whether
-it replaces a key is still what the patient was asked about (a vault that had none may have gained
-one, or the reverse), checked as it is stored. A vault's first key is not asked about, as it
-replaces nothing. The envelope's id is chosen when the key is made, so that a kit saved before the
-check can name it. Cancelling, locking, or changing the passphrase first writes nothing and forgets
-the pending key. Wherever a key is typed, case, Crockford's look-alike letters and anything in it
-other than a letter or digit (dashes, spaces, other punctuation) do not matter.
+open with the recovery key and passphrase they were saved with, so an old kit could still open them,
+and that a new backup should be saved and the older ones then deleted. Once the key is replaced, the
+app says how: first a new backup, from Security; then the older files, named "myCarlos backup"
+(ending in .mycarlosbackup) wherever the patient saved them (a folder, a USB stick, or on a phone
+the Files app or a cloud drive; myCarlos does not know where), keeping the new one. A vault that
+could not finish writing the key opens read-only and cannot save a backup, so it says to keep the
+old ones until it can. The key is then stored only if the typed groups still match and whether it
+replaces a key is still what the patient was asked about (a vault that had none may have gained one,
+or the reverse), checked as it is stored. A vault's first key is not asked about, as it replaces
+nothing. The envelope's id is chosen when the key is made, so that a kit saved before the check can
+name it. Cancelling, locking, or changing the passphrase first writes nothing and forgets the
+pending key. Wherever a key is typed, case, Crockford's look-alike letters and anything in it other
+than a letter or digit (dashes, spaces, other punctuation) do not matter.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
 four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is

@@ -23,7 +23,7 @@ function consequence(preview: RestorePreview): string {
         return "The vault on this device holds the same documents. Restoring replaces it with this backup.";
       // Which of the two is the later one is not said: the vault may have
       // been restored and changed elsewhere since.
-      return "The vault on this device may not be the same as this backup: it has changed since, or part of it could not be read. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
+      return "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
     case "otherVault":
       return "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.";
     case "unreadable":

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
   namedDamage,
-  vaultErrorMessage,
   type VaultBridge,
   type VaultFolder,
   type VaultRecord,
@@ -23,7 +22,7 @@ import {
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { ANNOUNCE_DELAY_MS } from "./announce";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
-import { OLD_BACKUPS_ADVICE } from "./oldBackups";
+import { OLD_BACKUPS_ADVICE, OLD_BACKUPS_KEEP } from "./oldBackups";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -1056,8 +1055,10 @@ export function VaultLibrary({
               }
               onDone={(stored) => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
+                // A vault that could not finish writing the key cannot save a
+                // backup: the old ones are kept until it can.
                 const saved = replaced
-                  ? `Recovery key replaced. The old one no longer opens this vault. ${OLD_BACKUPS_ADVICE}`
+                  ? `Recovery key replaced. The old one no longer opens this vault. ${stored.recovery ? OLD_BACKUPS_KEEP : OLD_BACKUPS_ADVICE}`
                   : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");
@@ -1072,15 +1073,7 @@ export function VaultLibrary({
                 // As the confirmation returned it: so that what this screen
                 // shows, and the next setup's record of the key it would
                 // replace, is the vault with this key.
-                void refresh(stored).then(
-                  () => tell(saved),
-                  // The key is saved, but this screen still shows the vault
-                  // as it was before.
-                  (error: unknown) =>
-                    tell(
-                      `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
-                    ),
-                );
+                void refresh(stored).then(() => tell(saved));
                 focusPageIfLost();
               }}
               onClose={(keyShown) => {

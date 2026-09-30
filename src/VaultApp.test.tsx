@@ -1304,7 +1304,7 @@ describe("durable vault UI", () => {
       if (saved)
         expect(
           await screen.findByText(
-            /^Recovery key replaced\. .*Delete them: they are the files named "myCarlos backup".*choose Save encrypted backup\.$/,
+            /^Recovery key replaced\. .*First save a new backup: in Security, choose Save encrypted backup\. Then delete the older backups, and keep the new one: they are files named "myCarlos backup".*Check each file's date before you delete it\.$/,
           ),
         ).toBeVisible();
       vi.mocked(bridge.unlock).mockResolvedValue(after);
@@ -1313,6 +1313,24 @@ describe("durable vault UI", () => {
       expect(await screen.findByText("Vault unlocked.")).toBeVisible();
     },
   );
+
+  it("says to keep old backups when a replaced key leaves the vault read-only", async () => {
+    // The key was stored, but the vault could not finish writing it, and so
+    // cannot save a backup: deleting the old ones would leave none.
+    const stored = {
+      ...emptySnapshot,
+      recoveryKeySetAtMs: 9,
+      recovery: "writeFailed" as const,
+    };
+    const { typeKeyBack } = await showKeyInSetup(5, {
+      confirmRecoveryKey: vi.fn().mockResolvedValue(stored),
+    });
+    await typeKeyBack();
+    expect(
+      await screen.findByText(/^Recovery key replaced\. .*Keep them for now/),
+    ).toBeVisible();
+    expect(screen.queryByText(/Then delete the older backups/)).toBeNull();
+  });
 
   it("says so after unlocking when myCarlos closed with a key on screen", async () => {
     const { view } = await showKeyInSetup(5);

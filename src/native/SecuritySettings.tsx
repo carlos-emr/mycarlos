@@ -8,6 +8,7 @@ import {
   ResetConfirmation,
   tooShortPassphrase,
 } from "./VaultAuth";
+import { KeyLabel } from "./KeyLabel";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -158,10 +159,9 @@ export function SecuritySettings({
             {recoveryKeySetAtMs && recoveryKeyLabel && (
               <p>
                 Your current key has the label{" "}
-                <strong>{recoveryKeyLabel}</strong> and was set up on{" "}
-                {new Date(recoveryKeySetAtMs).toLocaleDateString()}. The kit or
-                note with this label is the one that works; one with another
-                label does not open this vault.
+                <KeyLabel label={recoveryKeyLabel} />. The kit or note with this
+                label is the one that works; one with another label does not
+                open this vault.
               </p>
             )}
           </div>
