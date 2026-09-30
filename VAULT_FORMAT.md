@@ -76,23 +76,38 @@ Setting up a key is two steps. `begin` takes the current passphrase, as a passph
 since a recovery key opens the vault for good; it generates the key, keeps it and the
 passphrase-derived wrapping key in native memory, and returns the key once for display. This is the
 only secret the native side ever sends to the renderer. `confirm` checks at least two of its groups
-as the patient types them back, and only then writes a new pair of header generations carrying the
-envelope, replacing any earlier key. When the vault already has a key, the command asks in a
-trusted native dialog before it replaces it, after the typed groups were found right and before
-anything is written; cancelled there, nothing changes and the pending key stays, to be checked
-again or cancelled. A vault's first key is not asked about, as it replaces nothing. Cancelling,
-locking, or changing the passphrase first writes nothing and forgets the pending key.
+as the patient types them back (the app asks for the whole key, all seven), and only then writes a
+new pair of header generations carrying the envelope, replacing any earlier key; it returns the
+vault as it then is, from the same session, so that a lock cannot fall between the two. When the
+vault already has a key, the command asks in a trusted native dialog before it replaces it, after
+the typed groups were found right and before anything is written; cancelled there, nothing changes
+and the pending key stays, to be checked again or cancelled. The dialog also says that backups
+saved before then still open only with the current key (or their passphrase), and to save a new
+backup afterwards; the app says so again once the key is replaced. The key is then stored only if
+the typed groups still match and the vault still has a key to replace, checked as it is stored. A
+vault's first key is not asked about, as it replaces nothing. The envelope's id is chosen when the key is made, so that a kit
+saved before the check can name it. Cancelling, locking, or changing the passphrase first writes
+nothing and forgets the pending key. Wherever a key is typed, case, Crockford's look-alike letters
+and anything in it other than a letter or digit (dashes, spaces, other punctuation) do not matter.
 
-While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, the
-UTC date it was saved, and what it is for, with no patient or document names. It is written
-natively, only to a file the patient picks. For a filesystem path it is never inside the vault
-home, is private to the user on Unix, and replaces a link at the destination rather than writing
-through it; a document provider's URI (Android) is written directly, so a failed write can leave a
-partial kit there. The kit holds the key in plain text by design, and says that the key works only
-once the check is finished: a kit saved for a setup that was then cancelled, or ended by a lock,
-holds a key that opens nothing. Setup is the first thing a new vault shows: the passphrase just
-typed authorizes it, and the dialog has no Cancel and ignores Escape. It offers "Set up later" once
-something other than a wrong answer has failed. A lock ends it all the same (on a phone, switching
+While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
+four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
+for, with no patient or document names. The name suggested for its file carries the date and the
+label, so that a kit for a new key does not take the place of the kit for the key the vault still
+has, should the new one never be set up. It is written natively, only to a file the patient picks.
+For a filesystem path it is never inside the vault home, is private to the user on Unix, and
+replaces a link at the destination rather than writing through it; a document provider's URI
+(Android) is written directly, so a failed write can leave a partial kit there. The kit holds the
+key in plain text by design, and says that the key works only once the check is finished: a kit
+saved for a setup that was then cancelled, or ended by a lock before the check finished, holds a
+key that opens nothing. The key step says so. If a lock, or myCarlos closing, ends a setup after
+the key was shown and before the patient saw it finish, the next unlock says how it ended: from when
+the vault's recovery key was set up, before and after, it tells a key never stored from one stored
+just as the lock came (whose reply the setup never saw). A marker in webview storage carries this
+over a restart; it holds only that time, never the key, and creating, erasing or restoring a vault
+forgets it. Setup is the first thing a new vault shows: the passphrase just typed authorizes it,
+and the dialog has no Cancel and ignores Escape. It offers "Set up later" once something other than
+a wrong answer has failed. A lock ends it all the same (on a phone, switching
 apps locks), and so does a failure to make the key; the vault then has no recovery key and says so
 in a banner until one is set up.
 
@@ -308,7 +323,9 @@ work.
 
 A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it. Every
 document is authenticated as it is copied, so a damaged one fails the backup, naming the problem
-while the vault is still there, rather than the restore.
+while the vault is still there, rather than the restore. The refusal carries that document's id
+(never its name), and the screen names the document, so that the patient can delete it, or add it
+again from another copy, and back up the rest.
 
 ```text
 "MYCARLOS-BACKUP\n"                      16-byte magic, format 1
@@ -330,13 +347,20 @@ backed up, since what it shows may not be what it holds. Saving streams with con
 transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
 replaced atomically only once complete.
 
+A backup opens with the passphrase and recovery key the vault had when it was saved, not with any
+set up since; a restore that is refused for either says so in those words, not the unlock screen's.
+A backup file that cannot be opened at all (for example, one a cloud folder has not brought to
+the device) is refused with advice to copy it to a local folder first, and nothing changes.
+
 Restoring happens while no vault is open. The patient picks the file and gives its passphrase or
 recovery key. An inspect step reads only the header and manifest and reports what restoring would
 replace: nothing, the same vault unchanged, the same vault differing from the backup (its
-documents, passphrase or recovery key; or it could not be read to tell), or a different vault. The
-screen spells this out and requires an explicit agreement before a changed or different vault is
-replaced. Replacing any vault is then confirmed in a trusted native dialog, as a reset is; the
-native side works the preview out again itself and puts it in the dialog. The restore itself:
+documents, passphrase or recovery key; or it could not be read to tell), a different vault, or a
+vault whose header could not be read at all, so that which one it is cannot be told (it is not
+called a different one). The screen spells this out and requires an explicit agreement before a
+changed, different or unreadable vault is replaced. Replacing any vault is then confirmed in a
+trusted native dialog, as a reset is; the native side works the preview out again itself and puts
+it in the dialog. The restore itself:
 
 1. opens the header with the credential, as unlock would, and checks its integrity tag. The file
    is opened again for this, so the restore works the preview out once more from what it has
@@ -351,10 +375,16 @@ native side works the preview out again itself and puts it in the dialog. The re
    `vault-v1.reset-pending/` and renames the restore into place;
 6. erases the retired vault as a reset does, key envelopes first.
 
-Any failure before step 5 removes the stage and changes nothing else. So does a failure to retire
-the live vault: the verified copy is discarded, so that a restore reported as failed cannot happen
-at a later start. It is renamed back to a stage's name before it is removed, and a start never
-puts a `restore-ready` directory without a header in place, so a removal cut short cannot either. From step 5 on, each step is one rename, and every start repeats whatever is
+Any failure before step 5 removes the stage and changes nothing else. So does a failure in step 5:
+a failure to retire the live vault, or to rename the restore into place once it is retired, in
+which case the retired vault is renamed back first. The verified copy is then discarded, so that a
+restore reported as failed cannot happen at a later start. It is renamed back to a stage's name
+before it is removed, and a start never puts a `restore-ready` directory without a header in
+place, so a removal cut short cannot either; where it cannot be renamed, its header is removed
+first, for the same reason. Only if the retired vault cannot be renamed back, or the verified
+copy's header cannot be removed, is the copy kept whole (as the one vault left, or as what the next
+start puts in place): the patient is told to close and reopen myCarlos to finish the restore, and then to
+open the vault with the backup's passphrase or recovery key. From step 5 on, each step is one rename, and every start repeats whatever is
 left: status, create, unlock and reset put a waiting restore in place first when the live vault
 is already retired, then finish erasing a retired vault, then activate a restore still waiting.
 A failure to erase the retired vault after the restore is in place is not a failed restore; the
@@ -364,7 +394,10 @@ restore always takes the whole backup: an older backup brings back documents del
 the passphrase and recovery key it was made with, and the screen and the native dialog say so
 before the patient agrees. On Android a backup is written straight to the document the provider
 returns, so a failed or cancelled save leaves an incomplete file there (which a restore refuses)
-in place of what that document held.
+in place of what that document held. Everything that would refuse the backup is therefore checked
+first, as the backup checks it (a read-only vault, the header, the manifest slot, every document),
+before that document is opened and emptied; only a failure while the backup is written, or a lock
+or change that comes between the check and the writing, can leave it emptied.
 
 ## Known limits before release
 
