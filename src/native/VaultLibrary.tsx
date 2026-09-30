@@ -845,10 +845,11 @@ export function VaultLibrary({
                       vault's files could not be read, and they may be newer or
                       intact, so nothing can be changed for now, including your
                       passphrase and recovery key. Your documents can still be
-                      opened and saved as copies. Check that the drive holding
-                      the myCarlos data folder is connected, that no other
-                      program holds the folder, and that a cloud sync tool keeps
-                      its files on this device, then lock and unlock again.
+                      opened and saved as copies, except any marked “File
+                      unavailable”. Check that the drive holding the myCarlos
+                      data folder is connected, that no other program holds the
+                      folder, and that a cloud sync tool keeps its files on this
+                      device, then lock and unlock again.
                     </span>
                   </div>
                 )}
