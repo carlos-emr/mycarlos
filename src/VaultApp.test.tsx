@@ -1377,7 +1377,9 @@ describe("durable vault UI", () => {
     const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
       confirmRecoveryKey: vi.fn().mockResolvedValue(after),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-9"),
-      saveBackupToPicked: vi.fn().mockResolvedValue(written),
+      saveBackupToPicked: vi
+        .fn()
+        .mockResolvedValue({ name: written, bytes: 4096 }),
     });
     await typeKeyBack();
     await screen.findByText(/^Recovery key replaced\./);
@@ -1386,15 +1388,21 @@ describe("durable vault UI", () => {
     // A new backup first: deleting never leaves none.
     const steps = within(guide).getAllByRole("listitem");
     expect(steps[0]).toHaveTextContent("Save a new backup now");
-    expect(steps[1]).toHaveTextContent("Then delete every other backup");
+    expect(steps[1]).toHaveTextContent("Then delete the older backups");
 
     await user.click(
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
     expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9");
+    // Named by the patient's own date.
+    const today = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    expect(bridge.pickBackupDestination).toHaveBeenCalledWith(
+      `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`,
+    );
     expect(
       await screen.findByText(
-        "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
+        "Encrypted backup saved. This is your new backup: keep it, and a copy somewhere other than this device. Security now shows which older ones to delete.",
       ),
     ).toBeVisible();
     // The file the native side wrote is the one to keep: whatever it is
@@ -1402,8 +1410,10 @@ describe("durable vault UI", () => {
     const next = within(
       screen.getByRole("region", { name: "Your older backups" }),
     ).getAllByRole("listitem");
-    expect(next[0]).toHaveTextContent(`Keep your new backup, “${written}”.`);
-    expect(next[1]).toHaveTextContent("Delete every other backup");
+    expect(next[0]).toHaveTextContent(
+      `Keep your new backup, “${written}” (4 KB), and a copy of it somewhere other than this device`,
+    );
+    expect(next[1]).toHaveTextContent("other than the new one and its copies");
     expect(next[2]).toHaveTextContent("that file is now your new backup");
 
     await user.click(
@@ -1488,7 +1498,9 @@ describe("durable vault UI", () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-4"),
-      saveBackupToPicked: vi.fn().mockResolvedValue("second.mycarlosbackup"),
+      saveBackupToPicked: vi
+        .fn()
+        .mockResolvedValue({ name: "second.mycarlosbackup", bytes: 10 }),
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(await screen.findByRole("button", { name: /Security/ }));

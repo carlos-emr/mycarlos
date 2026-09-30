@@ -44,7 +44,7 @@ describe("SecuritySettings recovery key", () => {
     );
     // The date it was set up is beside the heading.
     expect(
-      screen.getByText(`Set up ${new Date(setAt).toLocaleDateString()}`),
+      screen.getByText(`Set up ${printedDate(new Date(setAt))}`),
     ).toBeVisible();
   });
 
@@ -70,13 +70,17 @@ describe("SecuritySettings recovery key", () => {
         step: "delete",
         keep: "myCarlos backup 2026-09-30 7F3A",
         savedAtMs: 1,
+        bytes: 2048,
       },
       onOldBackupsGuideDone,
     });
     const guide = screen.getByRole("region", { name: "Your older backups" });
-    expect(within(guide).getAllByRole("listitem")[0]).toHaveTextContent(
-      "Keep your new backup, “myCarlos backup 2026-09-30 7F3A”.",
+    // Kept, with a copy away from this device; the rest are older.
+    const steps = within(guide).getAllByRole("listitem");
+    expect(steps[0]).toHaveTextContent(
+      "Keep your new backup, “myCarlos backup 2026-09-30 7F3A” (2 KB), and a copy of it somewhere other than this device",
     );
+    expect(steps[1]).toHaveTextContent("other than the new one and its copies");
     fireEvent.click(
       within(guide).getByRole("button", { name: "Done with older backups" }),
     );
@@ -86,7 +90,7 @@ describe("SecuritySettings recovery key", () => {
   it("names no file when the platform does not say it", () => {
     const savedAtMs = Date.UTC(2026, 8, 30, 14, 31);
     renderSettings({
-      oldBackupsGuide: { step: "delete", keep: null, savedAtMs },
+      oldBackupsGuide: { step: "delete", keep: null, savedAtMs, bytes: 0 },
     });
     // It is told apart by when it was saved.
     expect(
@@ -94,7 +98,7 @@ describe("SecuritySettings recovery key", () => {
         screen.getByRole("region", { name: "Your older backups" }),
       ).getAllByRole("listitem")[0],
     ).toHaveTextContent(
-      `Keep the backup you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+      `Keep the backup you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} (0 B)`,
     );
   });
 

@@ -1569,20 +1569,20 @@ impl VaultStore {
         ))
     }
 
-    /// The name suggested for a backup's file: the date it is saved (UTC,
-    /// so dates only ever move on) and the label of the vault's recovery key,
-    /// if it has one. Backups saved on different days, or under different
-    /// keys, then do not take each other's place, and the newest is plain.
-    pub fn backup_file_name(&self, now_ms: u64) -> Result<String, VaultError> {
+    /// The name suggested for a backup's file: the date it is saved, as the
+    /// patient's own calendar gives it (`YYYY-MM-DD`, already checked; the
+    /// caller falls back to the UTC date), and the label of the vault's
+    /// recovery key, if it has one. Backups saved on different days, or
+    /// under different keys, then do not take each other's place.
+    pub fn backup_file_name(&self, date: &str) -> Result<String, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        let (year, month, day) = utc_date(now_ms);
         Ok(match unlocked.recovery_key_id {
             Some(key_id) => format!(
-                "myCarlos backup {year:04}-{month:02}-{day:02} {}.mycarlosbackup",
+                "myCarlos backup {date} {}.mycarlosbackup",
                 recovery_key_label(key_id)
             ),
-            None => format!("myCarlos backup {year:04}-{month:02}-{day:02}.mycarlosbackup"),
+            None => format!("myCarlos backup {date}.mycarlosbackup"),
         })
     }
 
@@ -3131,6 +3131,12 @@ fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
 
 /// Year, month and day (UTC) of a time in milliseconds since 1970, by
 /// Howard Hinnant's days-to-civil algorithm.
+/// The UTC date of `ms`, as `YYYY-MM-DD`.
+pub(crate) fn utc_date_text(ms: u64) -> String {
+    let (year, month, day) = utc_date(ms);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 fn utc_date(ms: u64) -> (i64, u32, u32) {
     let days = i64::try_from(ms / 86_400_000).unwrap_or(i64::MAX / 2);
     let z = days + 719_468;
@@ -7952,20 +7958,21 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         assert!(matches!(
-            store.backup_file_name(1_790_553_600_000),
+            store.backup_file_name("2026-09-28"),
             Err(VaultError::Locked)
         ));
         store.create(PASSWORD, "Jamie", 1).unwrap();
         assert_eq!(
-            store.backup_file_name(1_790_553_600_000).unwrap(),
+            store.backup_file_name("2026-09-28").unwrap(),
             "myCarlos backup 2026-09-28.mycarlosbackup"
         );
         set_up_recovery_key(&store, 2);
         let label = store.snapshot().unwrap().recovery_key_label.unwrap();
         assert_eq!(
-            store.backup_file_name(1_790_553_600_000).unwrap(),
+            store.backup_file_name("2026-09-28").unwrap(),
             format!("myCarlos backup 2026-09-28 {label}.mycarlosbackup")
         );
+        assert_eq!(utc_date_text(1_790_553_600_000), "2026-09-28");
     }
 
     #[test]

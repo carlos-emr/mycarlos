@@ -50,6 +50,19 @@ export interface RecoveryKeyGroup {
   value: string;
 }
 
+/** A backup saved: the name of the file written, where the platform says it
+ * (not an Android document provider), and how many bytes it holds. */
+export interface SavedBackup {
+  name: string | null;
+  bytes: number;
+}
+
+/** Today on the patient's own calendar, as `YYYY-MM-DD`. */
+export function localDateText(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** What restoring a backup would replace on this device: "unreadable" is a
  * vault that could not be read to tell whether it is the backup's. */
 export type RestoreReplaces =
@@ -123,10 +136,11 @@ export interface VaultBridge {
   recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
   /** Asks where to save an encrypted backup; null if the picker was
    * cancelled. */
-  pickBackupDestination(): Promise<string | null>;
-  /** Saves the backup; resolves to the name of the file written, where the
-   * platform says it (not for an Android document provider). */
-  saveBackupToPicked(pickId: string): Promise<string | null>;
+  /** `localDate`: today on the patient's calendar, `YYYY-MM-DD`, for the
+   * name suggested. */
+  pickBackupDestination(localDate?: string): Promise<string | null>;
+  /** Saves the backup, and says what was written. */
+  saveBackupToPicked(pickId: string): Promise<SavedBackup>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -184,12 +198,15 @@ interface PublicError {
   message?: string;
   /** The document a failure is about, if it is about one. */
   recordId?: string;
+  /** A sentence to add after the message, about how the failure came about. */
+  note?: string;
 }
 
 export function vaultErrorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as PublicError).message;
-    if (typeof message === "string") return message;
+    const { message, note } = error as PublicError;
+    if (typeof message === "string")
+      return typeof note === "string" ? `${message} ${note}` : message;
   }
   return "The vault operation could not be completed.";
 }
@@ -289,9 +306,10 @@ export function createVaultBridge(): VaultBridge {
       invoke<RecoverOutcome>("vault_recover", {
         request: { recoveryKey, newPassphrase },
       }),
-    pickBackupDestination: () => invoke<string | null>("vault_backup_pick"),
+    pickBackupDestination: (localDate) =>
+      invoke<string | null>("vault_backup_pick", { request: { localDate } }),
     saveBackupToPicked: (pickId) =>
-      invoke<string | null>("vault_backup_picked", { request: { pickId } }),
+      invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
     pickRestoreSource: () => invoke<string | null>("vault_restore_pick"),
     inspectRestore: (pickId, credential) =>
       invoke<RestorePreview>("vault_restore_inspect", {

@@ -8,7 +8,9 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  localDateText,
   namedDamage,
+  vaultErrorMessage,
   type VaultRecord,
 } from "./vault";
 
@@ -85,5 +87,22 @@ describe("a backup refused over a damaged document", () => {
     expect(namedDamage(damaged, vault)).toBe(damaged);
     const other = { code: "storage", message: "No." };
     expect(namedDamage(other, vault)).toBe(other);
+  });
+});
+
+describe("error messages", () => {
+  it("adds the note about how a failure came about", () => {
+    expect(
+      vaultErrorMessage({
+        code: "storage",
+        message: "No backup was saved.",
+        note: "An empty file (0 bytes) may be left.",
+      }),
+    ).toBe("No backup was saved. An empty file (0 bytes) may be left.");
+    expect(vaultErrorMessage({ code: "storage", message: "No." })).toBe("No.");
+  });
+
+  it("gives today on the patient's own calendar", () => {
+    expect(localDateText(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
   });
 });

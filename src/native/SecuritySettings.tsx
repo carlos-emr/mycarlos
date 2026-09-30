@@ -10,6 +10,7 @@ import {
 } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
+import { formatBytes } from "./recordPresentation";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -32,6 +33,10 @@ interface SecuritySettingsProps {
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
 }
+
+/** The size of a saved backup, which tells it from an empty or partial one. */
+const savedSize = (bytes: number | null) =>
+  bytes === null ? "" : ` (${formatBytes(bytes)})`;
 
 export function SecuritySettings({
   busy,
@@ -154,7 +159,7 @@ export function SecuritySettings({
               Recovery key{" "}
               <span className="state-pill">
                 {recoveryKeySetAtMs
-                  ? `Set up ${new Date(recoveryKeySetAtMs).toLocaleDateString()}`
+                  ? `Set up ${printedDate(new Date(recoveryKeySetAtMs))}`
                   : "Not set up"}
               </span>
             </h2>
@@ -214,16 +219,19 @@ export function SecuritySettings({
                       <li>
                         {readOnly
                           ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
-                          : "Save a new backup now: choose Save encrypted backup."}
+                          : "Save a new backup now: choose Save encrypted backup."}{" "}
+                        Keep it, or a copy of it, somewhere other than this
+                        device, such as a USB stick or a cloud drive.
                       </li>
                       <li>
-                        Then delete every other backup. Once the new one is
+                        Then delete the older backups. Once the new one is
                         saved, this says how.
                       </li>
                     </ol>
                     <button
                       className="button"
                       type="button"
+                      disabled={busy}
                       onClick={onOldBackupsGuideDone}
                     >
                       I have no older backups
@@ -236,17 +244,21 @@ export function SecuritySettings({
                         {oldBackupsGuide.keep ? (
                           <>
                             Keep your new backup, &ldquo;{oldBackupsGuide.keep}
-                            &rdquo;.
+                            &rdquo;
+                            {savedSize(oldBackupsGuide.bytes)}, and a copy of it
+                            somewhere other than this device, such as a USB
+                            stick or a cloud drive.
                           </>
                         ) : (
-                          `Keep the backup you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}: your files app shows when each file was saved.`
+                          `Keep the backup you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes)}, and a copy of it somewhere other than this device, such as a USB stick or a cloud drive. Your files app shows when each file was saved, and its size.`
                         )}
                       </li>
                       <li>
-                        Delete every other backup: files whose names start with
-                        &ldquo;myCarlos backup&rdquo;, and any you renamed. They
-                        are wherever you saved them: a folder, a USB stick, or
-                        on a phone the Files app or a cloud drive.
+                        Delete the older backups: files whose names start with
+                        &ldquo;myCarlos backup&rdquo;, and any you renamed,
+                        other than the new one and its copies. They are wherever
+                        you saved them: a folder, a USB stick, or on a phone the
+                        Files app or a cloud drive.
                       </li>
                       <li>
                         If you saved it in place of an older backup, that file
@@ -256,6 +268,7 @@ export function SecuritySettings({
                     <button
                       className="button"
                       type="button"
+                      disabled={busy}
                       onClick={onOldBackupsGuideDone}
                     >
                       Done with older backups

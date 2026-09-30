@@ -7,7 +7,7 @@
 
 /** A routine replacement: the old kit is safe. */
 export const OLD_BACKUPS_ROUTINE =
-  "Backups you saved before now still open with your old key, or the passphrase they were saved with. Keep the old key's kit safe. If you destroy it, those backups open only with their passphrase. A backup you save from now on opens with your new key.";
+  "Each backup you saved before now still opens with your old key, or the passphrase it was saved with. Keep the old key's kit safe. If you destroy it, those backups open only with their passphrase. A backup you save from now on opens with your new key.";
 
 /** A kit that may have been lost or seen: Security shows the steps. */
 export const OLD_BACKUPS_EXPOSED =
@@ -24,7 +24,12 @@ export const OLD_BACKUPS_KEEP =
  * patient chose or saw. */
 export type OldBackupsGuide =
   | { step: "save" }
-  | { step: "delete"; keep: string | null; savedAtMs: number };
+  | {
+      step: "delete";
+      keep: string | null;
+      savedAtMs: number;
+      bytes: number | null;
+    };
 
 const STORAGE_KEY = "mycarlos.oldBackupsGuide.v1";
 
@@ -37,10 +42,11 @@ export function readOldBackupsGuide(): OldBackupsGuide | null {
     return null;
   }
   if (typeof stored !== "object" || stored === null) return null;
-  const { step, keep, savedAtMs } = stored as {
+  const { step, keep, savedAtMs, bytes } = stored as {
     step?: unknown;
     keep?: unknown;
     savedAtMs?: unknown;
+    bytes?: unknown;
   };
   if (step === "save") return { step };
   if (
@@ -48,7 +54,12 @@ export function readOldBackupsGuide(): OldBackupsGuide | null {
     (typeof keep === "string" || keep === null) &&
     typeof savedAtMs === "number"
   )
-    return { step, keep, savedAtMs };
+    return {
+      step,
+      keep,
+      savedAtMs,
+      bytes: typeof bytes === "number" ? bytes : null,
+    };
   return null;
 }
 

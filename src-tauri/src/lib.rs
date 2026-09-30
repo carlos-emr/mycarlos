@@ -41,6 +41,10 @@ struct PublicError {
     /// never put in an error.
     #[serde(skip_serializing_if = "Option::is_none")]
     record_id: Option<Uuid>,
+    /// A sentence the renderer adds after the message, where it depends on
+    /// how the failure came about rather than on what it was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<&'static str>,
 }
 
 /// What an error says, whatever it is about.
@@ -66,36 +70,33 @@ enum BackupDestination {
 impl PublicError {
     /// A failure to save a backup, said of the backup: nothing was typed
     /// for it to check, and the older backups are to be kept. Where it was
-    /// being saved decides what may be left there.
+    /// being saved adds what may be left there, whatever the failure.
     fn of_backup(self, destination: BackupDestination) -> Self {
-        // The base message, and what it adds for an Android document
-        // provider's document. Nothing is written to it before it is open,
-        // so until then it is whole or empty (the provider may empty it as
-        // it opens, even if the open then fails); once opened, it may be
-        // empty or incomplete.
-        macro_rules! at {
-            ($base:literal) => {
-                match destination {
-                    BackupDestination::Path => $base,
-                    BackupDestination::ProviderUntouched => concat!(
-                        $base,
-                        " An empty file (0 bytes) may be left where you chose to save: you can delete it. Keep any backup that is not empty."
-                    ),
-                    BackupDestination::ProviderEmptied => concat!(
-                        $base,
-                        " The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups."
-                    ),
-                }
-            };
-        }
         let message = match self.code {
-            "unreadable" => at!("myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool."),
-            "no_space" => at!("There is not enough space where you chose to save it. No backup was saved. Keep your older backups."),
-            "storage" => at!("The backup could not be saved there. No backup was saved. Keep your older backups."),
-            "cancelled" => at!("The backup stopped because the vault locked. No backup was saved. Keep your older backups."),
-            _ => return self,
+            "unreadable" => "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            "no_space" => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups.",
+            "storage" => "The backup could not be saved there. No backup was saved. Keep your older backups.",
+            "cancelled" => "The backup stopped because the vault locked. No backup was saved. Keep your older backups.",
+            _ => self.message,
         };
-        Self { message, ..self }
+        // An Android document provider's document. Nothing is written to it
+        // before it is open, so until then it is whole or empty (the provider
+        // may empty it as it opens, even if the open then fails); once
+        // opened, it may be empty or incomplete.
+        let note = match destination {
+            BackupDestination::Path => None,
+            BackupDestination::ProviderUntouched => Some(
+                "An empty file (0 bytes) may be left where you chose to save: you can delete it. Keep any backup that is not empty.",
+            ),
+            BackupDestination::ProviderEmptied => Some(
+                "The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups.",
+            ),
+        };
+        Self {
+            message,
+            note,
+            ..self
+        }
     }
 
     fn partial_export() -> Self {
@@ -103,6 +104,7 @@ impl PublicError {
             code: "partial_export",
             message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
             record_id: None,
+            note: None,
         }
     }
 
@@ -123,6 +125,7 @@ impl PublicError {
             code: "recovery_mode",
             message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
             record_id: None,
+            note: None,
         }
     }
 }
@@ -241,6 +244,7 @@ impl From<VaultError> for PublicError {
             code,
             message,
             record_id,
+            note: None,
         }
     }
 }
@@ -996,6 +1000,53 @@ async fn vault_recover(
     .await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupPickRequest {
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`.
+    #[serde(default)]
+    local_date: Option<String>,
+}
+
+/// Whether `text` reads as a date, `YYYY-MM-DD`: digits and two dashes,
+/// nothing that could reach a file name otherwise.
+fn is_plain_date(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() == 10
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            4 | 7 => *byte == b'-',
+            _ => byte.is_ascii_digit(),
+        })
+}
+
+/// What a saved backup was: the name of the file written, where the
+/// platform says it, and how many bytes it holds, which tells a complete
+/// file from an empty or partial one.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedBackup {
+    name: Option<String>,
+    bytes: u64,
+}
+
+/// Counts what passes through it.
+struct Counted<W> {
+    inner: W,
+    bytes: Arc<AtomicU64>,
+}
+
+impl<W: std::io::Write> std::io::Write for Counted<W> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        let written = self.inner.write(buffer)?;
+        self.bytes.fetch_add(written as u64, Ordering::Relaxed);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// Asks where to save an encrypted backup. The backup itself is written by
 /// `vault_backup_picked`, so that the renderer can treat it as a transfer.
 #[tauri::command]
@@ -1003,15 +1054,23 @@ async fn vault_backup_pick(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    request: BackupPickRequest,
 ) -> CommandResult<Option<Uuid>> {
     let session = picks.session();
+    // Named by the patient's own date where the renderer gives one that
+    // reads as a date, else by the UTC date.
+    let date = request
+        .local_date
+        .as_deref()
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms()), str::to_owned);
     // Nothing is asked for unless there is a writable vault to back up.
     run_blocking(store.inner(), |store| match store.snapshot()?.recovery {
         None => Ok(()),
         Some(_) => Err(VaultError::RecoveryMode),
     })
     .await?;
-    let name = run_blocking(store.inner(), |store| store.backup_file_name(now_ms())).await?;
+    let name = run_blocking(store.inner(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog().file().set_file_name(name).blocking_save_file()
@@ -1027,7 +1086,7 @@ async fn vault_backup_picked(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: PickRequest,
-) -> CommandResult<Option<String>> {
+) -> CommandResult<SavedBackup> {
     let destination = picks
         .backups
         .take(request.pick_id, picks.session())
@@ -1041,10 +1100,13 @@ async fn vault_backup_picked(
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.inner(), move |store| {
-            store.backup_atomic(&path, now_ms())
+            store.backup_atomic(&path, now_ms())?;
+            Ok(SavedBackup {
+                name,
+                bytes: std::fs::metadata(&path).map_or(0, |metadata| metadata.len()),
+            })
         })
         .await
-        .map(|()| name)
         .map_err(|error| error.of_backup(BackupDestination::Path));
     }
     // Android content providers return a URI rather than a path, and no
@@ -1054,6 +1116,8 @@ async fn vault_backup_picked(
     // what a failure says may be left there.
     let emptied = Arc::new(AtomicBool::new(false));
     let opened = Arc::clone(&emptied);
+    let bytes = Arc::new(AtomicU64::new(0));
+    let counted = Arc::clone(&bytes);
     run_blocking(store.inner(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
@@ -1067,10 +1131,19 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup(std::io::BufWriter::new(output), now_ms())
+        store.backup(
+            std::io::BufWriter::new(Counted {
+                inner: output,
+                bytes: counted,
+            }),
+            now_ms(),
+        )
     })
     .await
-    .map(|()| None)
+    .map(|()| SavedBackup {
+        name: None,
+        bytes: bytes.load(Ordering::Relaxed),
+    })
     .map_err(|error| {
         error.of_backup(if emptied.load(Ordering::Acquire) {
             BackupDestination::ProviderEmptied
@@ -1660,11 +1733,12 @@ mod tests {
 
     #[test]
     fn a_backup_that_failed_says_to_keep_the_older_ones() {
-        let failures: [fn() -> VaultError; 4] = [
+        let failures: [fn() -> VaultError; 5] = [
             || VaultError::Unreadable,
             || VaultError::NoSpace,
             || VaultError::Storage,
             || VaultError::Cancelled,
+            || VaultError::Corrupt,
         ];
         for failure in failures {
             for destination in [
@@ -1675,31 +1749,48 @@ mod tests {
                 let plain = PublicError::from(failure());
                 let failed = PublicError::from(failure()).of_backup(destination);
                 assert_eq!(failed.code, plain.code);
-                assert!(failed
-                    .message
-                    .to_lowercase()
-                    .contains("no backup was saved"));
-                assert!(failed.message.contains("Keep your older backups."));
-                // A document not yet opened is whole or empty: only an empty
-                // one is to go.
+                if plain.code != "corrupt" {
+                    assert!(failed
+                        .message
+                        .to_lowercase()
+                        .contains("no backup was saved"));
+                    assert!(failed.message.contains("Keep your older backups."));
+                }
+                // Whatever the failure, what may be left where it was saved
+                // is said: a document not yet opened is whole or empty, and
+                // only an empty one goes; one opened may be emptied.
                 assert_eq!(
                     failed
-                        .message
-                        .contains("Keep any backup that is not empty."),
+                        .note
+                        .is_some_and(|note| note.contains("Keep any backup that is not empty.")),
                     destination == BackupDestination::ProviderUntouched,
                     "{} {destination:?}",
                     plain.code
                 );
-                // Only one opened, and so emptied, is to be deleted.
                 assert_eq!(
-                    failed
-                        .message
-                        .contains("Delete that one, not your other backups"),
+                    failed.note.is_some_and(
+                        |note| note.contains("Delete that one, not your other backups")
+                    ),
                     destination == BackupDestination::ProviderEmptied,
                     "{} {destination:?}",
                     plain.code
                 );
             }
+        }
+    }
+
+    #[test]
+    fn only_a_plain_date_names_a_backup() {
+        assert!(is_plain_date("2026-09-30"));
+        for text in [
+            "2026-9-30",
+            "2026/09/30",
+            "2026-09-30 ",
+            "../x/09-30",
+            "２０２６-09-30",
+            "",
+        ] {
+            assert!(!is_plain_date(text), "{text}");
         }
     }
 
@@ -2384,6 +2475,7 @@ mod tests {
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
             let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
             let _ = serde_json::from_slice::<NameRequest>(&payload);

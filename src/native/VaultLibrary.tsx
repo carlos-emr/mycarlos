@@ -2,7 +2,9 @@ import { LibrarySidebar } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  localDateText,
   namedDamage,
+  type SavedBackup,
   type VaultBridge,
   type VaultFolder,
   type VaultRecord,
@@ -431,14 +433,17 @@ export function VaultLibrary({
 
   const saveBackup = () =>
     run(async () => {
-      const pickId = await bridge.pickBackupDestination();
+      // Named by the patient's own date, not the UTC one.
+      const pickId = await bridge.pickBackupDestination(
+        localDateText(new Date()),
+      );
       if (!pickId) {
         setNotice("No location chosen. Nothing changed.");
         return;
       }
-      let savedAs: string | null;
+      let saved: SavedBackup | undefined;
       try {
-        savedAs = (await bridge.saveBackupToPicked(pickId)) ?? null;
+        saved = await bridge.saveBackupToPicked(pickId);
       } catch (error) {
         // On Android the steps may name no file, and this save may have been
         // over the one they say to keep, now emptied: a new backup comes
@@ -449,14 +454,16 @@ export function VaultLibrary({
       }
       // After a key replacement, the file written last is the one to keep,
       // named, or when the platform gives no name, by when it was saved.
+      // Its size tells it from an empty or partial file.
       if (oldBackupsGuide) {
         setOldBackupsGuide({
           step: "delete",
-          keep: savedAs,
+          keep: saved?.name ?? null,
           savedAtMs: Date.now(),
+          bytes: saved?.bytes ?? null,
         });
         setNotice(
-          "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
+          "Encrypted backup saved. This is your new backup: keep it, and a copy somewhere other than this device. Security now shows which older ones to delete.",
         );
         return;
       }
