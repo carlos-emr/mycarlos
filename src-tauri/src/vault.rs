@@ -4405,7 +4405,9 @@ mod tests {
             "recovery-key" => {
                 let key = store.begin_recovery_key(PASSWORD).unwrap();
                 let groups = recovery_key_groups(&key);
-                store.confirm_recovery_key(&[(0, &groups[0]), (6, &groups[6])], 7)
+                store
+                    .confirm_recovery_key(&[(0, &groups[0]), (6, &groups[6])], 7)
+                    .map(|_| ())
             }
             _ => panic!("unknown failure-child operation"),
         };
