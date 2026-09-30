@@ -419,7 +419,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLibraryNotice(null);
       return;
     }
-    if (!libraryShown) return;
+    // Nor while an operation runs, for example under a picker: its own
+    // result comes next, and the branch above then adds a held outcome to it.
+    if (!libraryShown || busy) return;
     const armedIn = sessionRef.current;
     const timer = window.setTimeout(() => {
       // A lock that has landed, or is under way, but is not rendered yet:
@@ -429,7 +431,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLibraryNotice(null);
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [holdForUnlock, libraryNotice, libraryShown, notice, status]);
+  }, [busy, holdForUnlock, libraryNotice, libraryShown, notice, status]);
 
   const updateAutoLockMinutes = (value: unknown) => {
     const normalized = normalizeAutoLockMinutes(value);

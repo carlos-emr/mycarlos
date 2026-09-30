@@ -424,13 +424,27 @@ export function VaultLibrary({
     });
   };
 
-  const damagedCount = snapshot.records.filter(
-    (record) => !record.available,
-  ).length;
+  // Every damaged document in the vault, not only those in view: removal
+  // takes them all, so the confirmation names them all.
+  const damaged = snapshot.records.filter((record) => !record.available);
+  const damagedIds = damaged.map((record) => record.id);
+  const damagedCount = damagedIds.length;
+  const profileName = (id: string) =>
+    snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
+    "";
   const removeDamaged = () => {
     setConfirmRemoveDamaged(false);
     void run(async () => {
-      const removed = await bridge.removeUnavailableRecords();
+      let removed: string[];
+      try {
+        // The vault removes only what this screen showed as damaged.
+        removed = await bridge.removeUnavailableRecords(damagedIds);
+      } catch (error) {
+        // A refusal can change what the vault reports (more documents
+        // damaged, or files that cannot be read): show that, then the reason.
+        await refresh().catch(() => undefined);
+        throw error;
+      }
       setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !removed.includes(id)),
@@ -828,11 +842,13 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Read-only recovery mode.</strong> A copy of the
-                      vault's metadata could not be read, and it may be newer
-                      than what is shown. Nothing will be changed on disk. Check
-                      that no other program holds the myCarlos data folder, then
-                      lock and unlock again.
+                      <strong>Read-only recovery mode.</strong> Some of the
+                      vault's files could not be read, and they may be newer or
+                      intact, so nothing will be changed on disk. Check that the
+                      drive holding the myCarlos data folder is connected, that
+                      no other program holds the folder, and that a cloud sync
+                      tool keeps its files on this device, then lock and unlock
+                      again.
                     </span>
                   </div>
                 )}
@@ -963,6 +979,11 @@ export function VaultLibrary({
                   selectedIds={selectedIds}
                   disabled={busy || readOnly}
                   searching={Boolean(query)}
+                  unavailableLabel={
+                    snapshot.recovery === "unreadableSlot"
+                      ? "File unavailable"
+                      : "Damaged: file missing"
+                  }
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
@@ -1065,6 +1086,7 @@ export function VaultLibrary({
               folders={folders}
               busy={busy}
               readOnly={readOnly}
+              unreadable={snapshot.recovery === "unreadableSlot"}
               notice={notice}
               onClose={() => setActiveRecordId(null)}
               onRename={() =>
@@ -1103,20 +1125,42 @@ export function VaultLibrary({
           )}
           {confirmRemoveDamaged && (
             <ConfirmDialog
-              title={`Remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Remove"
+              title={`Permanently remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Permanently remove"
               danger
               onConfirm={removeDamaged}
               onCancel={() => setConfirmRemoveDamaged(false)}
+              details={
+                // It scrolls when it is long, so it takes focus, to be
+                // scrolled with the keyboard. It is not read out with the
+                // dialog: the title counts the documents.
+                <ul
+                  className="native-confirm-list"
+                  aria-label="Documents to remove"
+                  tabIndex={0}
+                >
+                  {damaged.map((record) => (
+                    <li key={record.id}>
+                      {record.displayName}
+                      {snapshot.profiles.length > 1 &&
+                        ` (${profileName(record.profileId)})`}
+                    </li>
+                  ))}
+                </ul>
+              }
             >
               <p>
-                The encrypted files for these documents are missing from this
-                device, so their content is already gone from here. Removing
-                them forgets their names and details too. This cannot be undone.
+                Their encrypted files are missing from this device, so their
+                content is already gone from here. Removing them also deletes
+                their names and details from the vault, permanently. This cannot
+                be undone.
               </p>
               <p>
-                If you have a backup of the myCarlos data folder, restore it
-                first: any file that is back is kept, not removed.
+                First check that the files are not just out of reach: if the
+                myCarlos data folder is on a drive that is disconnected, or
+                another program is using it, fix that, then lock and unlock
+                again. If you have a backup of the data folder, restore it
+                first: any file that comes back is kept.
               </p>
             </ConfirmDialog>
           )}
