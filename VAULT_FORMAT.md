@@ -20,8 +20,10 @@
   FUSE, and removable filesystems) with `unsupported_storage`. Windows has no equivalent call, so
   the probe cannot detect such storage there; the local application-data directory is what keeps
   the vault off it.
-- **Implemented recovery:** the patient passphrase; there is no vendor key or recovery code
-- **Approved patient-pilot recovery:** a patient-held recovery key; not implemented in format v1
+- **Implemented recovery:** the patient passphrase, and a patient-held recovery key (header
+  format 2) with a saved or printed kit, set up when a vault is created. There is no vendor key.
+- **Approved patient-pilot recovery:** the recovery key and kit, and a portable encrypted backup;
+  all three are implemented (see [Portable encrypted backup](#portable-encrypted-backup))
 
 This records decisions D-01, D-02, D-03, and D-05 from the [threat model's mandatory design
 decisions](THREAT_MODEL.md#mandatory-design-decisions) for the current local-only vertical slice.
@@ -39,7 +41,10 @@ key. Changing the passphrase therefore rewraps the master key without rewriting 
 The parameters and algorithm identifiers are stored in the non-secret header. They need target
 device benchmarking and independent cryptographic review before release. Raw keys never cross IPC;
 Rust zeroizes passphrase request strings and long-lived secret-key buffers where the libraries make
-that practical.
+that practical. The vault's own copies of a passphrase (its normalized form, and the lower-case
+form the name check reads) are sized once and wiped. Copies it does not control are not, among them those the
+strength estimator makes while it scores a new passphrase, the normalizer's working buffers, and
+the request as the IPC layer parsed it.
 
 New and replacement passphrases must contain at least 15 Unicode characters, contain no control
 characters, and encode to no more than 1,024 bytes. There are no composition rules. A passphrase is
@@ -52,8 +57,110 @@ its common-password/name/pattern data plus myCarlos and the current profile name
 proposed passphrase leaves the process.
 Unlock accepts a passphrase shorter than the current minimum, so a vault whose passphrase was set
 under an earlier rule stays openable. Input over 1,024 bytes is refused before normalization; every
-other length, composition, and strength rule applies to the normalized form. A production breach corpus, independent threshold review, and the patient-held
-recovery key remain patient-pilot work.
+other length, composition, and strength rule applies to the normalized form. A production breach corpus and independent threshold review remain patient-pilot work.
+
+### Recovery key (header format 2)
+
+A recovery key is 128 random bits from the OS generator, shown once as 26 Crockford base32
+characters plus 2 check characters, in 7 groups of 4 (for example `K7Q2-...`). The check characters
+are 10 bits of a SHA-256 hash of the key, so nearly every mistyped key is reported as a typo before
+any unwrapping. Typing is forgiving: case, spaces and hyphens are ignored, and I, L and O read as 1,
+1 and 0.
+
+The header's optional `recovery` envelope holds a random, non-secret `keyId`, the time the key was
+set up, and the master key wrapped with XChaCha20-Poly1305 under
+`HKDF-SHA-256(ikm = recovery key, salt = vaultId ‖ keyId, info = "mycarlos/recovery-wrap/v1")`, with
+`"mycarlos-recovery-v1:" ‖ vaultId ‖ keyId` as associated data. A 128-bit random key needs no
+memory-hard KDF. The envelope does not depend on the header generation: every header write (a
+passphrase change, redundancy repair, recovery) copies it forward unchanged, and the header's
+integrity tag, which covers it in format 2, binds it to each generation.
+
+Setting up a key is two steps. `begin` takes the current passphrase, as a passphrase change does,
+since a recovery key opens the vault for good; it generates the key, keeps it and the
+passphrase-derived wrapping key in native memory, and returns the key once for display. This is the
+only secret the native side ever sends to the renderer. `confirm` checks the whole key as the
+patient types it back, all seven groups (fewer are refused), and only then writes a new pair of
+header generations carrying the envelope, replacing any earlier key; it returns the vault as it then
+is, from the same session, so that a lock cannot fall between the two. When the vault already has a
+key, the command asks in a trusted native dialog before it replaces it, after the typed groups were
+found right and before anything is written; cancelled there, nothing changes and the pending key
+stays, to be checked again or cancelled. The dialog also says that backups saved before then still
+open with the passphrase or recovery key they were saved with, and that myCarlos says what to do
+about them. The setup asks first why the key is being replaced: whether its kit or note may have
+been lost or seen. If so, the app says to save a new backup and then delete the older ones, and
+Security shows the steps, kept in webview storage (a file name, nothing secret) until the patient
+closes them: first a new backup (or "I have no older backups"), with it or a copy of it kept
+somewhere other than the device; once it is saved, the file written, with its size, by the name the
+native side reports (an Android document provider gives none, so it is "the backup you just saved",
+with the time it was saved; a later save while the steps are open takes its place), and the older
+backups to delete: files whose names start with "myCarlos backup", and any renamed, other than the
+new one and its copies, wherever they were saved (a folder, a USB stick, or on a phone the Files app
+or a cloud drive; myCarlos does not know where). A backup saved in place of an older one is the new
+one. A failed backup leaves the steps where they were. If not, it says that the older backups still
+open with the old key, so its kit is to be kept safe (if it is destroyed, they open only with their
+passphrase), and says nothing about deleting them. A vault that could not finish writing the key, or
+that opens read-only when the next unlock or recovery reports a key stored as a lock fell, cannot
+save a backup, so the app says to keep the old ones until it can. The key is then stored only if the
+typed groups still match and whether it replaces a key is still what the patient was asked about (a
+vault that had none may have gained one, or the reverse), checked as it is stored. A vault's first
+key is not asked about, as it replaces nothing. The envelope's id is chosen when the key is made, so
+that a kit saved before the check can name it. Cancelling, locking, or changing the passphrase first
+writes nothing and forgets the pending key. Wherever a key is typed, case, Crockford's look-alike
+letters and anything in it other than a letter or digit (dashes, spaces, other punctuation) do not
+matter.
+
+While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
+four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
+for, with no patient or document names. The key step shows the label beside the key, and a printed
+kit carries it with the date it was printed; the page asks for it with `recovery_key_label`, which
+returns only that label. Security shows the label and set-up date of the key the vault has (the
+snapshot carries the label, from the header's envelope), so that the patient can tell the kit that
+works from any other. The name suggested for its file carries the date and the label, so that a kit
+for a new key does not take the place of the kit for the key the vault still has, should the new one
+never be set up. It is written natively, only to a file the patient picks. For a filesystem path it
+is never inside the vault home, is private to the user on Unix, and replaces a link at the
+destination rather than writing through it; a document provider's URI (Android) is written directly,
+so a failed write can leave a partial kit there. The kit holds the key in plain text by design, and
+says that the key works only once the check is finished: a kit saved for a setup that was then
+cancelled, or ended by a lock before the check finished, holds a key that opens nothing. The key
+step says so. If a lock, or myCarlos closing, ends a setup after the key was shown and before the
+patient saw it finish, the next unlock says how it ended: from when the vault's recovery key was set
+up, before and after, it tells a key never stored from one stored just as the lock came (whose reply
+the setup never saw). A marker in webview storage carries this over a restart; it holds only that
+time, never the key, and creating, erasing or restoring a vault forgets it. Setup is the first thing
+a new vault shows: the passphrase just typed authorizes it, and the dialog has no Cancel and ignores
+Escape. It offers "Set up later" once something other than a wrong answer has failed. A lock ends it
+all the same (on a phone, switching apps locks), and so does a failure to make the key; the vault
+then has no recovery key and says so in a banner until one is set up.
+
+`recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
+unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
+the same master key exists that the key does not open (a replaced key). The new passphrase must meet
+the usual rules; then a new header pair wraps the master key under it and carries the envelope
+forward, and the vault opens as an unlock would. If that pair cannot be written at all, as on a full
+disk, the vault opens read-only with its passphrase unchanged. A vault that can only open read-only (see
+recovery mode below) opens read-only with its passphrase unchanged, since nothing may be rewritten,
+so that its documents can still be saved.
+
+**Header formats.** Format 1 headers (no envelope) are still read, with their original integrity
+payload. Every header written now is format 2, so a vault moves to format 2 at its next header write;
+until then it stays format 1. A generation 0 (legacy, untagged) header is always format 1 and never
+carries an envelope. A format 1 header that carries an envelope, or any other version, is invalid.
+
+An earlier build, which knows only format 1, does not read a format 2 header. Once both slots are
+format 2 it reports the vault as damaged and changes nothing. While the slots are mixed (the format 2
+write of one slot landed and the other did not, or a legacy `header.json` is still there), an earlier
+build opens the format 1 header with the earlier passphrase and its repair writes format 1 over the
+format 2 slot, undoing the passphrase change or recovery key that slot carried. Do not go back to an
+earlier build with a vault this build has written to. From this build on, a slot in a header format
+newer than the build knows counts as unreadable: the vault opens read-only and the slot is left alone.
+The format number is read before anything authenticates the slot, so a damaged or altered slot can
+claim a newer format and keep the vault read-only. Nothing is lost by that: documents can still be
+read and exported. The ways out are the build that wrote the slot, or a restored copy of the vault.
+
+Replacing the recovery key, like changing the passphrase, does not change the master key. The
+replaced key no longer opens this vault's current headers, but it still opens any earlier copy of
+them (a backup, a snapshot), and with it the master key. See "Known limits before release".
 
 ## Files and transactions
 
@@ -62,9 +169,12 @@ vault-home/               holds only what the vault manages; back up as a whole
   vault-v1.lock           stable OS lock file; never rename or delete while the app is running
   vault-v1.reset-pending/ retired vault awaiting completion of an already-confirmed reset
   .create-<uuid>/         a vault being created, renamed into place once complete
+  .restore-<uuid>/        a backup being restored, not yet verified; removed at the next start
+  vault-v1.restore-ready/ a verified restore about to replace the vault; finished at the next start
   pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
   vault-v1/
-    header-0.json        non-secret KDF configuration, wrapped master key, and keyed integrity tag
+    header-0.json        non-secret KDF configuration, wrapped master key, optional recovery-key
+                         envelope (format 2), and keyed integrity tag
     header-1.json        redundant generation-bound wrapped-key and integrity-tag slot
     manifest-0.bin       authenticated encrypted metadata slot
     manifest-1.bin       authenticated encrypted metadata slot
@@ -103,8 +213,9 @@ orphan objects are removed without relying on a later unlock. The atomic replace
 stages each header or manifest in an `.atomicwrite*` directory beside it; one that a killed process
 left behind may still hold a superseded wrapped key, so a writable unlock and reset remove them.
 
-Two cases open the vault in recovery mode without writing to storage at all: no repair, no staging
-cleanup, and no orphan removal. First, if no authentic generation has all of its objects, unlock
+Three cases open the vault in recovery mode without writing to the vault at all: no repair, no
+staging cleanup, and no orphan removal. (Before any header is read, an unlock takes the lock file
+beside the vault and finishes a reset or restore that an earlier run left unfinished.) First, if no authentic generation has all of its objects, unlock
 selects the newest authentic manifest anyway, reports each record whose object is missing or is not
 a regular file as unavailable, and refuses to export those records; the remaining records stay
 exportable, so one lost object no longer leaves whole-vault reset as the only action. The same
@@ -114,16 +225,43 @@ as an orphan, so the newest generation is opened read-only instead. Second, if a
 manifest slot exists but cannot be read (for example a sharing violation or device error), that
 slot may hold the newest committed state, so unlock does not repair over it or remove the objects
 it may reference. An absent, oversized, or non-regular slot is still treated as damage that repair
-replaces. A header slot that exists but cannot be read is likewise never rewrapped over, because it
-may hold a newer passphrase generation; the session opens in recovery mode instead.
+replaces. Third, if a header slot exists but cannot be read, it may hold a newer passphrase
+generation: the passphrase just used may be one that it has replaced (a change whose second write
+did not land leaves the earlier passphrase in the other slot, and that passphrase still opens the
+vault, read-only). Whether a slot could be read is taken from the same reading that chose the
+header, so that a slot held for a moment by another program is not missed by one and seen by the
+other. While the vault is open and writable, a change of passphrase, a new recovery key (when it
+is made and when it is confirmed) and a backup are refused if a header slot cannot be read by
+then; documents can still be added and changed, which does not touch the headers. A legacy
+`header.json` that cannot be read does not make the vault read-only: the slots supersede it.
+
+A vault that cannot be opened is reported as damaged only when every file that holds its state
+could be read. If no header opens with what was typed, or no manifest is authentic, and a header
+or manifest file is there that could not be read, the error is `unreadable` instead: the files may
+be held by another program, or on a drive that is away, and the patient is told that nothing has
+been changed and not to erase the vault. It cannot say whether the passphrase was right, since the
+header it opens may be the one that could not be read. A slot from a newer build is not counted
+here: it opens the vault read-only, but a passphrase that only it holds is reported as wrong.
 
 The snapshot names the reason for recovery mode, because each has its own way out. `lostObjects`:
 some records' ciphertext is missing; the patient can restore the vault folder from a backup, or
-choose to remove the damaged documents. Removal re-checks the disk first, drops only records whose
-object is still missing, commits the now-complete manifest through the ordinary two-generation
+choose to remove the damaged documents. Removal re-checks the disk first, drops only records that
+were shown as damaged and whose object is still missing (if another has gone missing since, it
+removes nothing and shows that one too), commits the now-complete manifest through the ordinary two-generation
 write, and leaves recovery mode; a file that came back is kept. `unreadableSlot`: a manifest or
-header slot could not be read and may be newer than what was opened, so nothing is written, not
-even a removal, until a later unlock can read it. `writeFailed`: a redundant write or repair failed;
+header slot could not be read and may be newer than what was opened, or a record's object could not
+be looked up and may be intact, so nothing is written, not even a removal, until a later unlock can
+read it.
+
+An object is **present** when it is a regular file; **missing** when it is not found in a folder
+that could be searched (or the folder is gone), or is a directory or special file; and **unknown**
+when the lookup failed for any other reason (a permission, sharing or device error), when it is not
+found but the `objects` folder is a link or a file (so the folder could not be searched for
+certain), or when the object is a link or a Windows reparse point such as a cloud placeholder.
+Unknown objects are listed as unavailable but are never offered for removal. Removal names the
+documents the patient was shown; if the vault's own list differs by then, nothing is removed.
+A vault whose objects stay unknown stays read-only until they can be read: reconnect the drive, fix
+the folder's permissions, or tell the sync tool to keep the files on this device. `writeFailed`: a redundant write or repair failed;
 a later unlock retries the repair.
 
 Every manifest is checked with the reader's own validation before it is written. A mutation that
@@ -195,16 +333,109 @@ promised and the generated Android application manifest is configured in CI with
 both for device-to-device transfer, so the same step writes data extraction rules that exclude every
 storage domain from `<cloud-backup>` and `<device-transfer>`. Checked-in build logic rejects an
 Android build unless those generated-manifest settings and the rules file are present; Android users
-still need a future explicit encrypted export/restore flow and physical OEM transfer testing.
+move a vault with the portable encrypted backup below, and physical OEM transfer testing remains.
 
-Losing the passphrase means losing access. The only fallback is a typed-confirmation whole-vault
-reset followed by a trusted native confirmation dialog. It permanently removes all local profiles
-and records.
+A forgotten passphrase is replaced with the recovery key, if the patient set one up. Without it, the
+only fallback is a typed-confirmation whole-vault reset followed by a trusted native confirmation
+dialog, which permanently removes all local profiles and records. OS cloud backup is to be excluded
+where the platform permits, now that the portable backup exists; that is separate, per-platform
+work.
 
-The patient-pilot target in [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) replaces this limitation
-with a patient-held recovery kit and portable authenticated encrypted backups. That target is not
-implemented by format v1. OS cloud backup is to be excluded where the platform permits once the
-portable backup flow exists.
+### Portable encrypted backup
+
+A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it. Every
+document is authenticated as it is copied, so a damaged one fails the backup, naming the problem
+while the vault is still there, rather than the restore. The refusal carries that document's id
+(never its name), and the screen names the document, so that the patient can delete it, or add it
+again from another copy, and back up the rest.
+
+```text
+"MYCARLOS-BACKUP\n"                      16-byte magic, format 1
+entry*   kind (1 header, 2 manifest, 3 object) | name length (u16) | name | length (u64) | bytes
+         the newest authentic header (JSON), the current manifest slot, then every referenced object
+trailer  0xff | length (u32) | JSON {format, vaultId, manifestGeneration, createdAtMs,
+         entries: [{kind, name, length, sha256}]} | HMAC-SHA-256 tag (32 bytes)
+```
+
+The tag covers the magic and the trailer, under `HKDF-SHA-256(master key, salt = vaultId,
+"mycarlos/backup/v1")`. The trailer lists every entry's length and SHA-256, so the tag covers the
+whole file. Document content, names and details are already encrypted, so no plaintext of them is
+written at any point; the header's key envelopes (passphrase and recovery key) are what open it.
+Readable in the file: the vault id, the header and manifest generations, the backup's time, the
+KDF salt, the recovery key's id and set-up time, and each object's opaque name, length and hash,
+so the number of documents and their sizes. Whoever holds a backup can try passphrases against it
+at the cost of Argon2id per try, as with a copy of the vault. A read-only vault is not
+backed up, since what it shows may not be what it holds. Saving streams with constant memory, as a
+transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
+replaced atomically only once complete. The name suggested for it carries the date it is saved, on
+the patient's own calendar (the page gives it as `YYYY-MM-DD`, checked natively, with the UTC date
+if it gives none), and the label of the vault's recovery key, if it has one (`myCarlos backup
+2026-09-30 7F3A.mycarlosbackup`), so that backups from different days or keys do not take each
+other's place. A saved backup reports the name of the file written, where the platform says it,
+and its size.
+A backup that fails for want of space, a storage error, unreadable files or a lock says that none
+was saved and to keep the older ones. On Android, the picker makes a new document or hands back an
+older one the patient chose to save over, and opening it empties it (the provider may empty it as it
+opens, even if the open then fails): a failure before myCarlos has it open says that an empty file
+may be left there to delete, and to keep any backup that is not empty; a failure after says that the
+file there may be empty or incomplete, and emptied if it was an older backup, and to delete that
+one, not the other backups. What may be left on Android is said after any backup failure; for a
+backup a lock cut off, it is told, with the rest, after the next unlock, or at once if that lock
+fails while the screen is shown. When the steps for older backups name no file (Android), such a
+failure takes them back to saving a new backup first.
+
+A backup opens with the passphrase, and the recovery key if it had one, that the vault had when it
+was saved, not with any set up since; a restore that is refused for either says so in those words,
+not the unlock screen's.
+A backup file that cannot be opened at all (for example, one a cloud folder has not brought to
+the device) is refused with advice to copy it to a local folder first, and nothing changes.
+
+Restoring happens while no vault is open. The patient picks the file and gives its passphrase or
+recovery key. An inspect step reads only the header and manifest and reports what restoring would
+replace: nothing, the same vault unchanged, the same vault differing from the backup (its
+documents, passphrase or recovery key; or it could not be read to tell), a different vault, or a
+vault whose header could not be read at all, so that which one it is cannot be told (it is not
+called a different one). The screen spells this out and requires an explicit agreement before a
+changed, different or unreadable vault is replaced. Replacing any vault is then confirmed in a
+trusted native dialog, as a reset is; the native side works the preview out again itself and puts
+it in the dialog. The restore itself:
+
+1. opens the header with the credential, as unlock would, and checks its integrity tag. The file
+   is opened again for this, so the restore works the preview out once more from what it has
+   opened, and refuses if it is not the one the patient confirmed: another backup put in the
+   file's place meanwhile (in a shared or synced folder), or a vault that changed or appeared;
+2. streams every object into `.restore-<uuid>/` in the vault home, hashing each, accepting only the
+   manifest's objects, each once, in any order;
+3. checks the trailer's tag, that it lists exactly the entries read, and that nothing follows it;
+4. writes the header and manifest into the stage, opens it as unlock would (it must be complete and
+   writable), and decrypts every object to authenticate it;
+5. renames the verified stage to `vault-v1.restore-ready/`, then retires the live vault to
+   `vault-v1.reset-pending/` and renames the restore into place;
+6. erases the retired vault as a reset does, key envelopes first.
+
+Any failure before step 5 removes the stage and changes nothing else. So does a failure in step 5:
+a failure to retire the live vault, or to rename the restore into place once it is retired, in
+which case the retired vault is renamed back first. The verified copy is then discarded, so that a
+restore reported as failed cannot happen at a later start. It is renamed back to a stage's name
+before it is removed, and a start never puts a `restore-ready` directory without a header in
+place, so a removal cut short cannot either; where it cannot be renamed, its header is removed
+first, for the same reason. Only if the retired vault cannot be renamed back, or the verified
+copy's header cannot be removed, is the copy kept whole (as the one vault left, or as what the next
+start puts in place): the patient is told to close and reopen myCarlos to finish the restore, and then to
+open the vault with the backup's passphrase or recovery key. From step 5 on, each step is one rename, and every start repeats whatever is
+left: status, create, unlock and reset put a waiting restore in place first when the live vault
+is already retired, then finish erasing a retired vault, then activate a restore still waiting.
+A failure to erase the retired vault after the restore is in place is not a failed restore; the
+erasing is retried at every start. The restored
+vault is left locked; it opens with the passphrase or recovery key it was backed up with. The
+restore always takes the whole backup: an older backup brings back documents deleted since, and
+the passphrase and recovery key it was made with, and the screen and the native dialog say so
+before the patient agrees. On Android a backup is written straight to the document the provider
+returns, so a failed or cancelled save leaves an incomplete file there (which a restore refuses)
+in place of what that document held. Everything that would refuse the backup is therefore checked
+first, as the backup checks it (a read-only vault, the header, the manifest slot, every document),
+before that document is opened and emptied; only a failure while the backup is written, or a lock
+or change that comes between the check and the writing, can leave it emptied.
 
 ## Settings kept outside the vault
 
@@ -220,8 +451,19 @@ the app's files on the device can read them. Erasing the vault does not remove t
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.
-- Restoring an older valid pair of header slots can restore an older passphrase wrapper for the unchanged
-  master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
+- Changing the passphrase or replacing the recovery key does not change the master key. Someone who
+  has the earlier passphrase or key, and any earlier copy of a header (a device backup, a copied
+  folder, a saved backup file), has the master key, which decrypts the vault as it is now and
+  later, whenever they get a copy of it. Rotating the master key is not implemented. The
+  only remedy is a new vault, which the app does not guide: save a readable copy of every document
+  (one at a time, in every profile; a damaged document cannot be saved), check that each copy
+  opens, erase the vault, create a new one and import the copies. Folders, profiles and the dates
+  added are not kept, the saved copies are not encrypted while they wait, and the recovery key and
+  earlier backups belong to the earlier vault: restoring one brings the earlier master key back.
+  The earlier passphrase does not itself open a later copy of the vault; the master key taken from
+  the earlier copy does.
+- Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
+  recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.
 - Individual deletion has no backup/synchronization tombstone or verified secure-erasure guarantee
   for storage media, snapshots, exported plaintext, or copies outside the live vault.
