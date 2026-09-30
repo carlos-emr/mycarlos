@@ -803,7 +803,7 @@ async fn vault_recovery_key_begin(
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved. A kit you saved or printed for it will no longer open this vault. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open only with your current key (or the passphrase they were made with), not the new one, so save a new backup once this is done. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -832,25 +832,9 @@ async fn vault_recovery_key_confirm(
     store: State<'_, Arc<VaultStore>>,
     request: ConfirmRecoveryKeyRequest,
 ) -> CommandResult<Option<VaultSnapshot>> {
-    let request = Arc::new(request);
-    // A mistyped answer is refused before anything is asked.
-    let replaces = {
-        let request = Arc::clone(&request);
-        run_blocking(store.inner(), move |store| {
-            store.check_recovery_key(&request.groups())
-        })
-        .await?
-    };
-    // Held until the key is stored, for as long as a hold lasts, so that
-    // the automatic lock does not fall while the dialog is read: it would
-    // forget the key being set up, and the patient would press "Replace
-    // key" to a vault that had locked.
-    let _open = ActivityHold::new(store.idle());
-    if replaces {
-        let dialog_app = app.clone();
-        let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            dialog_app
-                .dialog()
+    run_blocking(store.inner(), move |store| {
+        confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
+            app.dialog()
                 .message(REPLACE_RECOVERY_KEY_WARNING)
                 .title("Replace your recovery key?")
                 .kind(MessageDialogKind::Warning)
@@ -860,22 +844,34 @@ async fn vault_recovery_key_confirm(
                 ))
                 .blocking_show()
         })
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?;
-        if !confirmed {
-            return Ok(None);
-        }
-    }
-    run_blocking(store.inner(), move |store| {
-        // Checked again with the change: the key being set up, or the
-        // vault, may not be what it was before the dialog.
-        if store.check_recovery_key(&request.groups())? != replaces {
-            return Err(VaultError::Invalid);
-        }
-        store.confirm_recovery_key(&request.groups(), now_ms())?;
-        store.snapshot().map(Some)
     })
     .await
+}
+
+/// What `vault_recovery_key_confirm` decides, apart from the dialog, which
+/// `confirm` shows: whether it answered yes.
+fn confirm_recovery_key_asking(
+    store: &VaultStore,
+    groups: &[(usize, &str)],
+    now_ms: impl FnOnce() -> u64,
+    confirm: impl FnOnce() -> bool,
+) -> Result<Option<VaultSnapshot>, VaultError> {
+    // A mistyped answer is refused before anything is asked.
+    let replaces = store.check_recovery_key(groups)?;
+    // Held until the key is stored, for as long as a hold lasts, so that
+    // the automatic lock does not fall while the dialog is read: it would
+    // forget the key being set up, and the patient would press "Replace
+    // key" to a vault that had locked.
+    let _open = ActivityHold::new(store.idle());
+    // A vault's first key replaces nothing, and is not asked about.
+    if replaces && !confirm() {
+        return Ok(None);
+    }
+    // Stored only if the key being set up, and whether it replaces one, are
+    // still what the patient was asked about.
+    store
+        .confirm_recovery_key_replacing(groups, now_ms(), replaces)
+        .map(Some)
 }
 
 /// Saves the kit for the recovery key being set up to a file the patient
@@ -1746,6 +1742,118 @@ mod tests {
                 .collect();
         files.sort();
         assert_eq!(files, ["default.json", "zoom.json"]);
+    }
+
+    /// A vault with a recovery key being set up, and that key's groups as
+    /// typed back; with `replacing`, the vault has a key already, set up at 2.
+    fn key_being_set_up(root: &std::path::Path, replacing: bool) -> (VaultStore, Vec<String>) {
+        let store = VaultStore::new(root.to_path_buf());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let groups = |store: &VaultStore| -> Vec<String> {
+            let key = store.begin_recovery_key(PASSWORD).unwrap();
+            key.split('-').map(str::to_owned).collect()
+        };
+        if replacing {
+            let first = groups(&store);
+            store.confirm_recovery_key(&typed_back(&first), 2).unwrap();
+        }
+        let pending = groups(&store);
+        (store, pending)
+    }
+
+    fn typed_back(groups: &[String]) -> Vec<(usize, &str)> {
+        groups.iter().map(String::as_str).enumerate().collect()
+    }
+
+    /// Every file directly in the vault folder, as it is.
+    fn vault_files(root: &std::path::Path) -> Vec<(std::ffi::OsString, Vec<u8>)> {
+        let mut files: Vec<_> = std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_file())
+            .map(|entry| (entry.file_name(), std::fs::read(entry.path()).unwrap()))
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn a_first_recovery_key_is_stored_without_asking() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, groups) = key_being_set_up(&temp.path().join("vault"), false);
+        let stored = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 5,
+            || panic!("a first key replaces nothing, and is not asked about"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(stored.recovery_key_set_at_ms, Some(5));
+    }
+
+    #[test]
+    fn replacing_a_recovery_key_is_asked_and_a_no_writes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, groups) = key_being_set_up(&root, true);
+        let before = vault_files(&root);
+        let mut asked = 0;
+        let outcome = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 5,
+            || {
+                asked += 1;
+                false
+            },
+        )
+        .unwrap();
+        assert_eq!(asked, 1);
+        assert!(outcome.is_none());
+        assert_eq!(vault_files(&root), before);
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(2));
+        // The key is still being set up, and a yes stores it.
+        let stored = confirm_recovery_key_asking(&store, &typed_back(&groups), || 6, || true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.recovery_key_set_at_ms, Some(6));
+    }
+
+    #[test]
+    fn a_mistyped_key_is_refused_before_anything_is_asked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, mut groups) = key_being_set_up(&temp.path().join("vault"), true);
+        groups[3] = "ZZZZ".to_owned();
+        assert!(matches!(
+            confirm_recovery_key_asking(
+                &store,
+                &typed_back(&groups),
+                || 5,
+                || { panic!("nothing is asked over a mistyped key") }
+            ),
+            Err(VaultError::RecoveryKeyTypo)
+        ));
+    }
+
+    #[test]
+    fn a_key_that_changed_while_the_dialog_was_open_is_not_stored() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, groups) = key_being_set_up(&root, true);
+        let before = vault_files(&root);
+        // Cancelled from elsewhere while the patient read the dialog.
+        let outcome = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 5,
+            || {
+                store.cancel_recovery_key();
+                true
+            },
+        );
+        assert!(matches!(outcome, Err(VaultError::Invalid)));
+        assert_eq!(vault_files(&root), before);
     }
 
     #[test]

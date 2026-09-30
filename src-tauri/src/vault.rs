@@ -1591,11 +1591,35 @@ impl VaultStore {
     /// back (group index and text; at least two different groups, and the
     /// app sends all seven), then stores the key: a new pair of header
     /// generations carries its envelope, replacing any earlier recovery key.
-    /// Returns the vault as it then is.
+    /// Returns the vault as it then is. The app confirms through
+    /// `confirm_recovery_key_replacing`.
+    #[cfg(test)]
     pub fn confirm_recovery_key(
         &self,
         groups: &[(usize, &str)],
         now_ms: u64,
+    ) -> Result<VaultSnapshot, VaultError> {
+        self.store_pending_key(groups, now_ms, None)
+    }
+
+    /// As `confirm_recovery_key`, once the patient was asked whether the key
+    /// replaces the vault's own (or not asked, as it did not): refused as
+    /// `Invalid`, with nothing written, if that has changed since. Checked
+    /// under the same session guard as the key is stored.
+    pub fn confirm_recovery_key_replacing(
+        &self,
+        groups: &[(usize, &str)],
+        now_ms: u64,
+        replaces: bool,
+    ) -> Result<VaultSnapshot, VaultError> {
+        self.store_pending_key(groups, now_ms, Some(replaces))
+    }
+
+    fn store_pending_key(
+        &self,
+        groups: &[(usize, &str)],
+        now_ms: u64,
+        replaces: Option<bool>,
     ) -> Result<VaultSnapshot, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
@@ -1605,6 +1629,9 @@ impl VaultStore {
             kdf,
             wrapping_key,
         } = matching_pending_key(unlocked, groups)?;
+        if replaces.is_some_and(|replaces| replaces != unlocked.recovery_key_set_at_ms.is_some()) {
+            return Err(VaultError::Invalid);
+        }
 
         let vault_id = unlocked.manifest.vault_id;
         let current = current_header(&self.root, vault_id, &unlocked.master_key)?;
@@ -8018,6 +8045,46 @@ mod tests {
             Err(VaultError::WrongRecoveryKey)
         ));
         assert!(store.recover(&second, PASSPHRASE_REPLACEMENT).unwrap());
+    }
+
+    #[test]
+    fn a_key_is_stored_only_if_it_replaces_what_the_patient_was_asked_about() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        let typed: Vec<(usize, &str)> = groups
+            .iter()
+            .enumerate()
+            .map(|(index, group)| (index, group.as_str()))
+            .collect();
+        // Agreed to as a replacement, but the vault has no key to replace.
+        assert!(matches!(
+            store.confirm_recovery_key_replacing(&typed, 5, true),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, None);
+        store
+            .confirm_recovery_key_replacing(&typed, 5, false)
+            .unwrap();
+        // Now it has one: a key not asked about as a replacement is refused.
+        let key = store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let groups = recovery_key_groups(&key);
+        let typed: Vec<(usize, &str)> = groups
+            .iter()
+            .enumerate()
+            .map(|(index, group)| (index, group.as_str()))
+            .collect();
+        assert!(matches!(
+            store.confirm_recovery_key_replacing(&typed, 6, false),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(5));
+        store
+            .confirm_recovery_key_replacing(&typed, 6, true)
+            .unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery_key_set_at_ms, Some(6));
     }
 
     #[test]
