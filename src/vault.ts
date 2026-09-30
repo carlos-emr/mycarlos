@@ -40,12 +40,28 @@ export interface VaultSnapshot {
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
   recoveryKeySetAtMs?: number | null;
+  /** Its short label, which its kit shows (not secret), if it has one. */
+  recoveryKeyLabel?: string | null;
 }
 
 /** One group of the recovery key as the patient typed it back, by position. */
 export interface RecoveryKeyGroup {
   index: number;
   value: string;
+}
+
+/** A backup saved: the name of the file written, where the platform says it
+ * (not an Android document provider), and how many bytes it holds. */
+export interface SavedBackup {
+  name: string | null;
+  /** Unknown where the size could not be read. */
+  bytes: number | null;
+}
+
+/** Today on the patient's own calendar, as `YYYY-MM-DD`. */
+export function localDateText(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 /** What restoring a backup would replace on this device: "unreadable" is a
@@ -113,13 +129,19 @@ export interface VaultBridge {
   /** Saves the kit for the key being set up; false if the picker was
    * cancelled. */
   saveRecoveryKit(): Promise<boolean>;
+  /** The short label of the key being set up, which its kits show. Not
+   * secret. */
+  recoveryKeyLabel(): Promise<string>;
   cancelRecoveryKey(): Promise<void>;
   /** Opens a locked vault with its recovery key and a new passphrase. */
   recover(recoveryKey: string, newPassphrase: string): Promise<RecoverOutcome>;
   /** Asks where to save an encrypted backup; null if the picker was
    * cancelled. */
-  pickBackupDestination(): Promise<string | null>;
-  saveBackupToPicked(pickId: string): Promise<void>;
+  /** `localDate`: today on the patient's calendar, `YYYY-MM-DD`, for the
+   * name suggested. */
+  pickBackupDestination(localDate?: string): Promise<string | null>;
+  /** Saves the backup, and says what was written. */
+  saveBackupToPicked(pickId: string): Promise<SavedBackup>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -177,12 +199,15 @@ interface PublicError {
   message?: string;
   /** The document a failure is about, if it is about one. */
   recordId?: string;
+  /** A sentence to add after the message, about how the failure came about. */
+  note?: string;
 }
 
 export function vaultErrorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as PublicError).message;
-    if (typeof message === "string") return message;
+    const { message, note } = error as PublicError;
+    if (typeof message === "string")
+      return typeof note === "string" ? `${message} ${note}` : message;
   }
   return "The vault operation could not be completed.";
 }
@@ -204,10 +229,20 @@ export function namedDamage(
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
   const where = `added ${new Date(record.importedAtMs).toLocaleDateString()}${profile ? `, in ${profile.displayName}'s records` : ""}`;
+  // What may be left where it was being saved still holds.
+  const { note } = error as PublicError;
   return {
     code: "damaged_document",
     message: `No backup was saved: the document "${record.displayName}" (${where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+    ...(typeof note === "string" && { note }),
   };
+}
+
+/** The note a failure carries about how it came about, if any. */
+export function vaultErrorNote(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { note } = error as PublicError;
+  return typeof note === "string" ? note : null;
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -276,14 +311,16 @@ export function createVaultBridge(): VaultBridge {
         request: { groups },
       }),
     saveRecoveryKit: () => invoke<boolean>("vault_recovery_kit_save"),
+    recoveryKeyLabel: () => invoke<string>("vault_recovery_key_label"),
     cancelRecoveryKey: () => invoke<void>("vault_recovery_key_cancel"),
     recover: (recoveryKey, newPassphrase) =>
       invoke<RecoverOutcome>("vault_recover", {
         request: { recoveryKey, newPassphrase },
       }),
-    pickBackupDestination: () => invoke<string | null>("vault_backup_pick"),
+    pickBackupDestination: (localDate) =>
+      invoke<string | null>("vault_backup_pick", { request: { localDate } }),
     saveBackupToPicked: (pickId) =>
-      invoke<void>("vault_backup_picked", { request: { pickId } }),
+      invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
     pickRestoreSource: () => invoke<string | null>("vault_restore_pick"),
     inspectRestore: (pickId, credential) =>
       invoke<RestorePreview>("vault_restore_inspect", {

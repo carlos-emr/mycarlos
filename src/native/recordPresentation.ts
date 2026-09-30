@@ -8,6 +8,19 @@ export function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** A saved file's size as the platform's own file app shows it, so that the
+ * patient can find it there: in 1000s (kB, MB), as Android's Files, macOS
+ * Finder and Linux file managers count, or in 1024s (KB, MB) as Windows
+ * Explorer does; and the exact count, which every file app can show. */
+export function formatFileSize(value: number, in1024s: boolean): string {
+  const exact = `${value.toLocaleString()} bytes`;
+  if (in1024s) return value < 1024 ? exact : `${formatBytes(value)}, ${exact}`;
+  if (value < 1000) return exact;
+  const kilobytes = Math.round(value / 1000);
+  if (kilobytes < 1000) return `${kilobytes} kB, ${exact}`;
+  return `${(value / 1_000_000).toFixed(1)} MB, ${exact}`;
+}
+
 // A kind is only a hint drawn from the file name, so it must not fire on a
 // fragment of another word: "Latest" is not a test, "Collaboration" is not a lab
 // and "Prescan" is not a scan. Words are compared from their start, which still

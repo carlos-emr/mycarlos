@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { VaultSnapshot } from "../vault";
+import { printedDate } from "./KeyLabel";
 import { RecoveryKeySetup } from "./RecoveryKeySetup";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
@@ -28,6 +29,7 @@ function setUp(
     beginRecoveryKey: vi.fn().mockResolvedValue(KEY),
     confirmRecoveryKey: vi.fn().mockResolvedValue(snapshot),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
     ...bridgeOverrides,
   };
@@ -120,6 +122,31 @@ describe("RecoveryKeySetup", () => {
     );
   });
 
+  it("shows the key's label with the key", async () => {
+    const { bridge } = setUp({ initialKey: KEY });
+    expect(await screen.findByText("7F3A")).toBeVisible();
+    expect(bridge.recoveryKeyLabel).toHaveBeenCalledOnce();
+  });
+
+  it("shows the key without its label when the label cannot be had", async () => {
+    const user = userEvent.setup();
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+    onTestFinished(() => print.mockRestore());
+    setUp(
+      { initialKey: KEY, canPrint: true },
+      { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "locked" }) },
+    );
+    expect(await screen.findByText(GROUPS[0])).toBeVisible();
+    expect(screen.queryByText(/Key label/)).toBeNull();
+    // Nor does a kit printed then say a kit with another label is void.
+    await user.click(screen.getByRole("button", { name: "Print" }));
+    const kit = document.querySelector("body > .recovery-kit-print");
+    expect(kit).toHaveTextContent(KEY);
+    expect(kit).not.toHaveTextContent(/label/i);
+    // The date still tells it from other kits.
+    expect(kit).toHaveTextContent(`Printed ${printedDate(new Date())}`);
+  });
+
   it("offers Print only where the platform can print", () => {
     setUp({ initialKey: KEY });
     expect(
@@ -139,6 +166,10 @@ describe("RecoveryKeySetup", () => {
     expect(document.body).toHaveClass("printing-recovery-kit");
     const kit = document.querySelector("body > .recovery-kit-print");
     expect(kit).toHaveTextContent(KEY);
+    // Its label and the date, so that kits can be told apart.
+    expect(kit).toHaveTextContent(
+      `Key label: 7F3A · Printed ${printedDate(new Date())}`,
+    );
     // On screen it takes no part.
     expect(kit).not.toBeVisible();
 
@@ -186,7 +217,7 @@ describe("RecoveryKeySetup", () => {
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith(
       GROUPS.map((group, index) => ({ index, value: group.toLowerCase() })),
     );
-    expect(onDone).toHaveBeenCalledWith(snapshot);
+    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: false });
   });
 
   it("reads other punctuation between groups as a separator", async () => {
@@ -388,7 +419,7 @@ describe("RecoveryKeySetup", () => {
     expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
     // The key typed is still there, and agreeing the second time saves it.
     await user.click(screen.getByRole("button", { name: "Check and save" }));
-    expect(onDone).toHaveBeenCalledWith(snapshot);
+    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: false });
   });
 
   it("says when it replaces an existing key", () => {
@@ -399,5 +430,59 @@ describe("RecoveryKeySetup", () => {
     expect(
       screen.getByText(/current recovery key stops working/),
     ).toBeVisible();
+  });
+
+  it("asks why a key is replaced, and says so when it is shown and saved", async () => {
+    const user = userEvent.setup();
+    const onKeyShown = vi.fn();
+    const { bridge, onDone } = setUp({ replacing: true, onKeyShown });
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    // Whether older backups are to go depends on the answer: none, no key.
+    const next = screen.getByRole("button", { name: "Continue" });
+    await user.click(next);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Choose why you are replacing your recovery key.",
+    );
+    expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
+    // The passphrase is still there.
+    await user.click(
+      screen.getByLabelText(
+        "Its kit or note may have been lost, or seen by someone else",
+      ),
+    );
+    await user.click(next);
+    await screen.findByRole("heading", { name: "Your recovery key" });
+    expect(onKeyShown).toHaveBeenCalledWith({ exposed: true });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await typeKey(user, KEY);
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: true });
+  });
+
+  it("asks no reason when a first key is set up", () => {
+    setUp();
+    expect(screen.queryByText("Why are you replacing it?")).toBeNull();
+  });
+
+  it("prints only once the label is known, or known to be missing", async () => {
+    let answer: (label: string) => void = () => undefined;
+    setUp(
+      { initialKey: KEY, canPrint: true },
+      {
+        recoveryKeyLabel: vi.fn(
+          () =>
+            new Promise<string>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    );
+    const print = screen.getByRole("button", { name: "Print" });
+    expect(print).toBeDisabled();
+    await act(async () => answer("7F3A"));
+    expect(print).toBeEnabled();
   });
 });
