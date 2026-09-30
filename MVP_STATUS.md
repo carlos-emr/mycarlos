@@ -142,9 +142,9 @@ privacy, accessibility, or clinical review.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext
       canaries. Recursive application-storage canary inspection is automated.
 - [x] State the current evaluation's passphrase-only permanent-loss behavior and the limits of
-      readable exports/deletion directly in the UI. The recovery key is implemented natively (header format 2: set up with typed-back verification,
-      replacement, and recovery with a new passphrase); its kit screens and the portable backup remain
-      open.
+      readable exports/deletion directly in the UI. The recovery key and its kit are implemented (header format 2: set up when a vault is created
+      or from Security, with typed-back verification, a saved or printed kit, replacement, and
+      recovery with a new passphrase from the unlock screen); the portable backup remains open.
 
 ## Required before a patient pilot
 

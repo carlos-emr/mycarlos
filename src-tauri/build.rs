@@ -72,6 +72,7 @@ fn main() {
             "vault_change_passphrase",
             "vault_recovery_key_begin",
             "vault_recovery_key_confirm",
+            "vault_recovery_kit_save",
             "vault_recovery_key_cancel",
             "vault_recover",
             "vault_create_profile",

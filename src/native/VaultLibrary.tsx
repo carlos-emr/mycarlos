@@ -1,13 +1,15 @@
 import { LibrarySidebar } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
-import type {
-  VaultBridge,
-  VaultFolder,
-  VaultRecord,
-  VaultSnapshot,
+import {
+  vaultErrorMessage,
+  type VaultBridge,
+  type VaultFolder,
+  type VaultRecord,
+  type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { RecoveryKeySetup } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -19,6 +21,7 @@ import {
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -55,6 +58,10 @@ export function VaultLibrary({
   onLock,
   autoLockMinutes,
   onAutoLockMinutes,
+  newVaultRecoveryKey = null,
+  onNewVaultRecoveryKeyShown,
+  onUnfinishedRecoveryKey,
+  canPrint = false,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -68,9 +75,26 @@ export function VaultLibrary({
   onLock: () => Promise<void>;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
+  /** The recovery key made with a vault just created, to set up first. */
+  newVaultRecoveryKey?: string | null;
+  onNewVaultRecoveryKeyShown?: () => void;
+  /** Whether a recovery key setup has shown a key and not ended: a lock then
+   * ends it, and the patient is told after the next unlock. */
+  onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
+  /** Whether this platform can print the recovery kit. */
+  canPrint?: boolean;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
+  // Gone once the vault locks: what a reply that comes later would show is
+  // then not seen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<NativeView>("list");
@@ -79,9 +103,10 @@ export function VaultLibrary({
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
-  // A rename's result, given once its dialog has closed (see the effect below),
-  // and the document whose details it was renamed from, if any.
-  const [renameResult, setRenameResult] = useState<{
+  // The result of a dialog's action (a rename, a recovery key), given once the
+  // dialog has closed (see the effect below), and the document whose details
+  // it was started from, if any.
+  const [dialogResult, setDialogResult] = useState<{
     message: string;
     recordId: string | null;
   } | null>(null);
@@ -91,6 +116,20 @@ export function VaultLibrary({
     recordId: string;
   } | null>(null);
   const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
+  // Setting up a recovery key. A vault just created starts with its key, which
+  // must be set up before the library can be used.
+  const [recoverySetup, setRecoverySetup] = useState<{
+    initialKey?: string;
+    required: boolean;
+  } | null>(() =>
+    newVaultRecoveryKey
+      ? { initialKey: newVaultRecoveryKey, required: true }
+      : null,
+  );
+  useEffect(() => {
+    if (newVaultRecoveryKey) onNewVaultRecoveryKeyShown?.();
+    // Only the key the library opened with.
+  }, []);
   const [showFolderForm, setShowFolderForm] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
@@ -183,6 +222,16 @@ export function VaultLibrary({
   // The rename dialog makes the page inert, and replaces a document's details,
   // whose status line then comes back with it. Give the result once that line
   // is back and has had time to be seen, or it is shown but never read out.
+  // A dialog returns focus to the button that opened it. When that button is
+  // gone by then (the banner that offered the setup, the Create screen), focus
+  // would be left on nothing: put it on the page's heading.
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const focusPageIfLost = () =>
+    window.setTimeout(() => {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body || !focused.isConnected)
+        pageHeadingRef.current?.focus();
+    }, ANNOUNCE_DELAY_MS);
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   useEffect(() => {
@@ -191,10 +240,11 @@ export function VaultLibrary({
     // The same goes while an operation runs: its own result comes next, and
     // a result written during a transfer would be taken for that transfer's.
     if (
-      !renameResult ||
+      !dialogResult ||
       renameTarget ||
       confirmation ||
       confirmRemoveDamaged ||
+      recoverySetup ||
       busy
     )
       return;
@@ -202,14 +252,14 @@ export function VaultLibrary({
     // opened meanwhile are not where it belongs.
     if (
       notice ||
-      (activeRecordId !== null && activeRecordId !== renameResult.recordId)
+      (activeRecordId !== null && activeRecordId !== dialogResult.recordId)
     ) {
-      setRenameResult(null);
+      setDialogResult(null);
       return;
     }
     const timer = window.setTimeout(() => {
-      setNoticeRef.current(renameResult.message);
-      setRenameResult(null);
+      setNoticeRef.current(dialogResult.message);
+      setDialogResult(null);
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [
@@ -218,7 +268,8 @@ export function VaultLibrary({
     confirmation,
     confirmRemoveDamaged,
     notice,
-    renameResult,
+    dialogResult,
+    recoverySetup,
     renameTarget,
   ]);
 
@@ -246,7 +297,7 @@ export function VaultLibrary({
     await refresh();
     // Cleared now, so that the result is a change even when it repeats.
     setNotice("");
-    setRenameResult({
+    setDialogResult({
       message: `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
       recordId: activeRecordId,
     });
@@ -525,7 +576,10 @@ export function VaultLibrary({
           <header
             className="titlebar"
             inert={Boolean(
-              activeRecord || renameTarget || confirmRemoveDamaged,
+              activeRecord ||
+                renameTarget ||
+                confirmRemoveDamaged ||
+                recoverySetup,
             )}
           >
             <span className="window-dots" aria-hidden="true">
@@ -546,7 +600,10 @@ export function VaultLibrary({
           <label
             className="mobile-section-picker"
             inert={Boolean(
-              activeRecord || renameTarget || confirmRemoveDamaged,
+              activeRecord ||
+                renameTarget ||
+                confirmRemoveDamaged ||
+                recoverySetup,
             )}
           >
             <span>Section</span>
@@ -565,7 +622,10 @@ export function VaultLibrary({
           <div
             className="app-body"
             inert={Boolean(
-              activeRecord || renameTarget || confirmRemoveDamaged,
+              activeRecord ||
+                renameTarget ||
+                confirmRemoveDamaged ||
+                recoverySetup,
             )}
           >
             <LibrarySidebar
@@ -630,7 +690,9 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1>{locationTitle}</h1>
+                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                      {locationTitle}
+                    </h1>
                     <p>
                       {visibleFolders.length} folders · {visibleRecords.length}{" "}
                       documents in this location
@@ -801,6 +863,24 @@ export function VaultLibrary({
                     </span>
                   </div>
                 )}
+                {!readOnly && !snapshot.recoveryKeySetAtMs && (
+                  <div className="purpose-note warning">
+                    <Icon name="info" />
+                    <span>
+                      <strong>No recovery key yet.</strong> If you forget your
+                      passphrase without one, the only way back in is to erase
+                      the vault.
+                    </span>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setRecoverySetup({ required: false })}
+                    >
+                      Set up recovery key
+                    </button>
+                  </div>
+                )}
 
                 <label className="search">
                   <Icon name="search" />
@@ -931,10 +1011,67 @@ export function VaultLibrary({
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
                 onReset={resetVault}
+                recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
+                onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}
           </div>
 
+          {recoverySetup && (
+            <RecoveryKeySetup
+              bridge={bridge}
+              initialKey={recoverySetup.initialKey}
+              replacing={Boolean(snapshot.recoveryKeySetAtMs)}
+              required={recoverySetup.required}
+              canPrint={canPrint}
+              onKeyShown={() =>
+                onUnfinishedRecoveryKey?.({
+                  setAtMs: snapshot.recoveryKeySetAtMs ?? null,
+                })
+              }
+              onDone={() => {
+                const replaced = Boolean(snapshot.recoveryKeySetAtMs);
+                const saved = replaced
+                  ? "Recovery key replaced. The old one no longer works."
+                  : "Recovery key saved. Keep your kit somewhere safe.";
+                setRecoverySetup(null);
+                setNotice("");
+                // The setup is finished once the patient is told so. Until
+                // then a lock leaves it unfinished, and the next unlock says
+                // the key was saved.
+                const tell = (message: string) => {
+                  if (!mountedRef.current) return;
+                  onUnfinishedRecoveryKey?.(null);
+                  setDialogResult({ message, recordId: activeRecordId });
+                };
+                void refresh().then(
+                  () => tell(saved),
+                  // The key is saved, but this screen still shows the vault
+                  // as it was before.
+                  (error: unknown) =>
+                    tell(
+                      `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
+                    ),
+                );
+                focusPageIfLost();
+              }}
+              onClose={(keyShown) => {
+                onUnfinishedRecoveryKey?.(null);
+                setRecoverySetup(null);
+                if (keyShown) {
+                  setNotice("");
+                  setDialogResult({
+                    message: snapshot.recoveryKeySetAtMs
+                      ? "Recovery key setup was not finished. The key you were shown does not open the vault; your earlier key still does. Destroy any kit saved or printed just now."
+                      : "Recovery key setup was not finished. The key you were shown does not open the vault. Destroy any kit saved or printed just now.",
+                    recordId: activeRecordId,
+                  });
+                }
+                focusPageIfLost();
+              }}
+              onLocked={() => void onLock()}
+            />
+          )}
           {renameTarget && (
             <RenameDialog
               target={renameTarget}

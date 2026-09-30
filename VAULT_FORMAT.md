@@ -21,9 +21,9 @@
   the probe cannot detect such storage there; the local application-data directory is what keeps
   the vault off it.
 - **Implemented recovery:** the patient passphrase, and a patient-held recovery key (header
-  format 2; the screens that set it up and use it follow separately). There is no vendor key.
-- **Approved patient-pilot recovery:** the recovery key with a printable kit, and a portable
-  encrypted backup; the kit screens and the backup are not implemented yet
+  format 2) with a saved or printed kit, set up when a vault is created. There is no vendor key.
+- **Approved patient-pilot recovery:** the recovery key and kit, and a portable encrypted backup;
+  the backup is not implemented yet
 
 This records decisions D-01, D-02, D-03, and D-05 from the [threat model's mandatory design
 decisions](THREAT_MODEL.md#mandatory-design-decisions) for the current local-only vertical slice.
@@ -79,9 +79,34 @@ Setting up a key is two steps. `begin` takes the current passphrase, as a passph
 since a recovery key opens the vault for good; it generates the key, keeps it and the
 passphrase-derived wrapping key in native memory, and returns the key once for display. This is the
 only secret the native side ever sends to the renderer. `confirm` checks at least two of its groups
-as the patient types them back, and only then writes a new pair of header generations carrying the
-envelope, replacing any earlier key. Cancelling, locking, or changing the passphrase first writes
-nothing and forgets the pending key.
+as the patient types them back (the app asks for the whole key, all seven), and only then writes a
+new pair of header generations carrying the envelope, replacing any earlier key; it returns the
+vault as it then is, from the same session, so that a lock cannot fall between the two. The
+envelope's id is chosen when the key is made, so that a kit saved before the check can name it.
+Cancelling, locking, or changing the passphrase first writes nothing and forgets the pending key.
+Wherever a key is typed, case, Crockford's look-alike letters and anything in it other than a
+letter or digit (dashes, spaces, other punctuation) do not matter.
+
+While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
+four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
+for, with no patient or document names. The name suggested for its file carries the date and the
+label, so that a kit for a new key does not take the place of the kit for the key the vault still
+has, should the new one never be set up. It is written natively, only to a file the patient picks.
+For a filesystem path it is never inside the vault home, is private to the user on Unix, and
+replaces a link at the destination rather than writing through it; a document provider's URI
+(Android) is written directly, so a failed write can leave a partial kit there. The kit holds the
+key in plain text by design, and says that the key works only once the check is finished: a kit
+saved for a setup that was then cancelled, or ended by a lock before the check finished, holds a
+key that opens nothing. The key step says so. If a lock, or myCarlos closing, ends a setup after
+the key was shown and before the patient saw it finish, the next unlock says how it ended: from when
+the vault's recovery key was set up, before and after, it tells a key never stored from one stored
+just as the lock came (whose reply the setup never saw). A marker in webview storage carries this
+over a restart; it holds only that time, never the key, and creating, erasing or restoring a vault
+forgets it. Setup is the first thing a new vault shows: the passphrase just typed authorizes it,
+and the dialog has no Cancel and ignores Escape. It offers "Set up later" once something other than
+a wrong answer has failed. A lock ends it all the same (on a phone, switching
+apps locks), and so does a failure to make the key; the vault then has no recovery key and says so
+in a banner until one is set up.
 
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
