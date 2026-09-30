@@ -186,6 +186,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     return outcome || null;
   };
 
+  // Read through a ref so that `requestLock` keeps its identity: the automatic
+  // lock effect depends on it, and re-running that effect resets its deadline.
+  // `lock` reads it too.
+  const concealedRef = useRef(concealed);
+  concealedRef.current = concealed;
+
   const lock = useCallback(async () => {
     if (lockingRef.current) return;
     lockingRef.current = true;
@@ -208,16 +214,19 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // The vault is still unlocked natively. Every caller must learn that,
       // including the concealed screen, which would otherwise claim "Locked".
       setLockFailed(true);
-      setNotice(vaultErrorMessage(error));
+      // What was held for the unlock after this lock is for the patient now,
+      // while the vault stays open, unless the content is hidden: there it
+      // keeps waiting for an unlock, where only the owner sees it.
+      const held = concealedRef.current ? null : pendingOutcomeRef.current;
+      if (held) pendingOutcomeRef.current = null;
+      setNotice(
+        held ? `${vaultErrorMessage(error)} ${held}` : vaultErrorMessage(error),
+      );
     } finally {
       lockingRef.current = false;
     }
   }, [bridge, holdForUnlock, holdLock, transferHold]);
 
-  // Read through a ref so that `requestLock` keeps its identity: the automatic
-  // lock effect depends on it, and re-running that effect resets its deadline.
-  const concealedRef = useRef(concealed);
-  concealedRef.current = concealed;
   const requestLock = useCallback(
     (concealImmediately = false) => {
       if (concealImmediately) {

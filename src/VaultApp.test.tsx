@@ -2581,6 +2581,48 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("tells at once what a backup cut off by a lock left, when that lock fails", async () => {
+    const user = userEvent.setup();
+    const note = "Delete that one, not your other backups.";
+    let failTransfer!: (error: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importPickedFiles: vi.fn(
+        () =>
+          new Promise<ImportOutcome>((_, reject) => {
+            failTransfer = reject;
+          }),
+      ),
+      lock: vi.fn(async () => {
+        failTransfer({
+          code: "locked",
+          message: "Unlock the vault to continue.",
+          note,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw {
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        };
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    // The vault stays open, and the patient is here: told now, not after
+    // some later unlock.
+    expect(
+      await screen.findByText(
+        new RegExp(
+          `The backup stopped because the vault locked\\. No backup was saved\\. Keep your older backups\\. ${note.replace(/\./g, "\\.")}`,
+        ),
+      ),
+    ).toBeVisible();
+  });
+
   it("holds a lock for a transfer past an earlier manual failure, and reports a failure after it", async () => {
     const user = userEvent.setup();
     let finishImport!: (value: ImportOutcome) => void;
