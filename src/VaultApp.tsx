@@ -19,7 +19,9 @@ import {
   rememberUnfinishedRecoveryKey,
   takeUnfinishedRecoveryKey,
   unfinishedRecoveryKeyMessage,
+  exposedKeyReplaced,
 } from "./native/unfinishedRecoveryKey";
+import { rememberOldBackupsGuide } from "./native/oldBackups";
 import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
@@ -153,12 +155,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const forgetReplacedVault = () => {
     pendingOutcomeRef.current = null;
     rememberUnfinishedRecoveryKey(null);
+    rememberOldBackupsGuide(null);
   };
 
   // Taken as a vault opens: what happened while it was locked, and how a
   // recovery key setup that a lock or closing ended actually ended.
   const takeHeldOutcome = (opened: VaultSnapshot) => {
     const unfinished = takeUnfinishedRecoveryKey();
+    // A key whose kit may have been exposed was replaced as the lock fell:
+    // Security shows the steps for its older backups, as after a
+    // replacement the patient saw finish.
+    if (
+      unfinished &&
+      exposedKeyReplaced(unfinished, opened.recoveryKeySetAtMs ?? null)
+    )
+      rememberOldBackupsGuide({ step: "save" });
     const outcome = [
       pendingOutcomeRef.current,
       unfinished &&
@@ -589,6 +600,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             // Nothing from a vault that is gone.
             pendingOutcomeRef.current = null;
             rememberUnfinishedRecoveryKey(null);
+            rememberOldBackupsGuide(null);
             // The passphrase was just typed, so it authorizes the recovery key
             // at once. If that fails, the library offers to set one up.
             const begun = await bridge.beginRecoveryKey(passphrase).then(
@@ -666,6 +678,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             if (await bridge.reset(confirmation)) {
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
+              rememberOldBackupsGuide(null);
               setStatus("absent");
               setNotice("");
             } else {

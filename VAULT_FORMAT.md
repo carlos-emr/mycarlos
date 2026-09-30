@@ -85,20 +85,24 @@ is, from the same session, so that a lock cannot fall between the two. When the 
 key, the command asks in a trusted native dialog before it replaces it, after the typed groups were
 found right and before anything is written; cancelled there, nothing changes and the pending key
 stays, to be checked again or cancelled. The dialog also says that backups saved before then still
-open with the passphrase or recovery key they were saved with, so an old kit could still open them,
-and that a new backup should be saved and the older ones then deleted. Once the key is replaced, the
-app says how: first a new backup, from Security; then the older files, whose names start with
-"myCarlos backup" unless the patient renamed them, wherever they were saved (a folder, a USB stick,
-or on a phone the Files app or a cloud drive; myCarlos does not know where), keeping the new one. A
-vault that could not finish writing the key, or that opens read-only when the next unlock or
-recovery reports a key stored as a lock fell, cannot save a backup, so the app says to keep the old
-ones until it can. The key is then stored only if the typed groups still match and whether it
-replaces a key is still what the patient was asked about (a vault that had none may have gained one,
-or the reverse), checked as it is stored. A vault's first key is not asked about, as it replaces
-nothing. The envelope's id is chosen when the key is made, so that a kit saved before the check can
-name it. Cancelling, locking, or changing the passphrase first writes nothing and forgets the
-pending key. Wherever a key is typed, case, Crockford's look-alike letters and anything in it other
-than a letter or digit (dashes, spaces, other punctuation) do not matter.
+open with the passphrase or recovery key they were saved with, and that myCarlos says what to do
+about them. The setup asks first why the key is being replaced: whether its kit or note may have
+been lost or seen. If so, the app says to save a new backup and then delete the older ones, and
+Security shows the steps, kept in webview storage (a file name, nothing secret) until the patient
+closes them: first a new backup; once it is saved, its name to keep, and the older ones to delete,
+whose names start with "myCarlos backup" and have an earlier date or none, wherever they were saved
+(a folder, a USB stick, or on a phone the Files app or a cloud drive; myCarlos does not know where).
+If not, it says that the older backups still open with the old key, so its kit is to be kept safe or
+destroyed on purpose, and says nothing about deleting them. A vault that could not finish writing
+the key, or that opens read-only when the next unlock or recovery reports a key stored as a lock
+fell, cannot save a backup, so the app says to keep the old ones until it can. The key is then
+stored only if the typed groups still match and whether it replaces a key is still what the patient
+was asked about (a vault that had none may have gained one, or the reverse), checked as it is
+stored. A vault's first key is not asked about, as it replaces nothing. The envelope's id is chosen
+when the key is made, so that a kit saved before the check can name it. Cancelling, locking, or
+changing the passphrase first writes nothing and forgets the pending key. Wherever a key is typed,
+case, Crockford's look-alike letters and anything in it other than a letter or digit (dashes,
+spaces, other punctuation) do not matter.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
 four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
@@ -358,7 +362,12 @@ so the number of documents and their sizes. Whoever holds a backup can try passp
 at the cost of Argon2id per try, as with a copy of the vault. A read-only vault is not
 backed up, since what it shows may not be what it holds. Saving streams with constant memory, as a
 transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
-replaced atomically only once complete.
+replaced atomically only once complete. The name suggested for it carries the UTC date it is saved
+and the label of the vault's recovery key, if it has one (`myCarlos backup 2026-09-30 7F3A`), so
+that backups from different days or keys do not take each other's place and the newest is plain. A
+backup that fails says that none was saved and to keep the older ones; on Android, where the
+provider's document is emptied as it is opened, a failure after that also says that an incomplete
+file may be left there, and to delete that one, not the older backups.
 
 A backup opens with the passphrase, and the recovery key if it had one, that the vault had when it
 was saved, not with any set up since; a restore that is refused for either says so in those words,

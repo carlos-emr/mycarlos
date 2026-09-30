@@ -2,7 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { VaultSnapshot } from "../vault";
-import { RecoveryKeySetup } from "./RecoveryKeySetup";
+import { RecoveryKeySetup, printedDate } from "./RecoveryKeySetup";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 const GROUPS = KEY.split("-");
@@ -143,7 +143,7 @@ describe("RecoveryKeySetup", () => {
     expect(kit).toHaveTextContent(KEY);
     expect(kit).not.toHaveTextContent(/label/i);
     // The date still tells it from other kits.
-    expect(kit).toHaveTextContent(`Printed ${new Date().toLocaleDateString()}`);
+    expect(kit).toHaveTextContent(`Printed ${printedDate(new Date())}`);
   });
 
   it("offers Print only where the platform can print", () => {
@@ -167,7 +167,7 @@ describe("RecoveryKeySetup", () => {
     expect(kit).toHaveTextContent(KEY);
     // Its label and the date, so that kits can be told apart.
     expect(kit).toHaveTextContent(
-      `Key label: 7F3A · Printed ${new Date().toLocaleDateString()}`,
+      `Key label: 7F3A · Printed ${printedDate(new Date())}`,
     );
     // On screen it takes no part.
     expect(kit).not.toBeVisible();
@@ -216,7 +216,7 @@ describe("RecoveryKeySetup", () => {
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith(
       GROUPS.map((group, index) => ({ index, value: group.toLowerCase() })),
     );
-    expect(onDone).toHaveBeenCalledWith(snapshot);
+    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: false });
   });
 
   it("reads other punctuation between groups as a separator", async () => {
@@ -418,7 +418,7 @@ describe("RecoveryKeySetup", () => {
     expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
     // The key typed is still there, and agreeing the second time saves it.
     await user.click(screen.getByRole("button", { name: "Check and save" }));
-    expect(onDone).toHaveBeenCalledWith(snapshot);
+    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: false });
   });
 
   it("says when it replaces an existing key", () => {
@@ -429,5 +429,54 @@ describe("RecoveryKeySetup", () => {
     expect(
       screen.getByText(/current recovery key stops working/),
     ).toBeVisible();
+  });
+
+  it("asks why a key is replaced, and says so when it is shown and saved", async () => {
+    const user = userEvent.setup();
+    const onKeyShown = vi.fn();
+    const { onDone } = setUp({ replacing: true, onKeyShown });
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    // Whether older backups are to go depends on the answer.
+    const next = screen.getByRole("button", { name: "Continue" });
+    expect(next).toBeDisabled();
+    await user.click(
+      screen.getByLabelText(
+        "Its kit or note may have been lost, or seen by someone else",
+      ),
+    );
+    await user.click(next);
+    await screen.findByRole("heading", { name: "Your recovery key" });
+    expect(onKeyShown).toHaveBeenCalledWith({ exposed: true });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await typeKey(user, KEY);
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: true });
+  });
+
+  it("asks no reason when a first key is set up", () => {
+    setUp();
+    expect(screen.queryByText("Why are you replacing it?")).toBeNull();
+  });
+
+  it("prints only once the label is known, or known to be missing", async () => {
+    let answer: (label: string) => void = () => undefined;
+    setUp(
+      { initialKey: KEY, canPrint: true },
+      {
+        recoveryKeyLabel: vi.fn(
+          () =>
+            new Promise<string>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    );
+    const print = screen.getByRole("button", { name: "Print" });
+    expect(print).toBeDisabled();
+    await act(async () => answer("7F3A"));
+    expect(print).toBeEnabled();
   });
 });

@@ -8,7 +8,7 @@ use std::io;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -53,15 +53,21 @@ type CommandResult<T> = Result<T, PublicError>;
 
 impl PublicError {
     /// A failure to save a backup, said of the backup: nothing was typed
-    /// for it to check.
-    fn of_backup(self) -> Self {
-        if self.code != "unreadable" {
-            return self;
-        }
-        Self {
-            message: "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
-            ..self
-        }
+    /// for it to check, and the older backups are to be kept. `emptied`: an
+    /// Android document provider's destination was opened, which empties it,
+    /// so an incomplete file may be left there.
+    fn of_backup(self, emptied: bool) -> Self {
+        let message = match (self.code, emptied) {
+            ("unreadable", _) => "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+            ("no_space", false) => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups.",
+            ("no_space", true) => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups. An incomplete file may be left where you chose to save: delete that one, not your older backups.",
+            ("storage", false) => "The backup could not be saved there. No backup was saved. Keep your older backups.",
+            ("storage", true) => "The backup could not be saved there. No backup was saved. Keep your older backups. An incomplete file may be left where you chose to save: delete that one, not your older backups.",
+            ("cancelled", false) => "The backup stopped because the vault locked. No backup was saved. Keep your older backups.",
+            ("cancelled", true) => "The backup stopped because the vault locked. No backup was saved. Keep your older backups. An incomplete file may be left where you chose to save: delete that one, not your older backups.",
+            _ => return self,
+        };
+        Self { message, ..self }
     }
 
     fn partial_export() -> Self {
@@ -803,7 +809,7 @@ async fn vault_recovery_key_begin(
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Any backups you saved before now still open with the passphrase or recovery key they were saved with, so an old kit could still open them: once this is done, save a new backup, then delete the older ones (myCarlos says how). Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with the passphrase or recovery key they were saved with, the current key among them; once this is done, myCarlos says what to do about them. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -977,12 +983,10 @@ async fn vault_backup_pick(
         Some(_) => Err(VaultError::RecoveryMode),
     })
     .await?;
+    let name = run_blocking(store.inner(), |store| store.backup_file_name(now_ms())).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_file_name("myCarlos backup.mycarlosbackup")
-            .blocking_save_file()
+        app.dialog().file().set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -1001,15 +1005,19 @@ async fn vault_backup_picked(
         .take(request.pick_id, picks.session())
         .ok_or(VaultError::NotFound)?;
     if let Ok(path) = destination.clone().into_path() {
+        // Written beside the destination and renamed over it only once
+        // complete: a failure leaves nothing there.
         return run_blocking(store.inner(), move |store| {
             store.backup_atomic(&path, now_ms())
         })
         .await
-        .map_err(PublicError::of_backup);
+        .map_err(|error| error.of_backup(false));
     }
     // Android content providers return a URI rather than a path. A backup
     // holds only ciphertext, so a partial one left by a failure is not
     // readable, only incomplete, and restoring it is refused.
+    let emptied = Arc::new(AtomicBool::new(false));
+    let opened = Arc::clone(&emptied);
     run_blocking(store.inner(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
@@ -1021,11 +1029,12 @@ async fn vault_backup_picked(
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
+        opened.store(true, Ordering::Release);
         drop(opening);
         store.backup(std::io::BufWriter::new(output), now_ms())
     })
     .await
-    .map_err(PublicError::of_backup)
+    .map_err(|error| error.of_backup(emptied.load(Ordering::Acquire)))
 }
 
 /// Asks which backup to restore. Only while no vault is open.
@@ -1595,15 +1604,43 @@ mod tests {
     }
     #[test]
     fn a_backup_that_could_not_read_the_vault_asks_nothing_to_be_checked() {
-        let backup = PublicError::from(VaultError::Unreadable).of_backup();
+        let backup = PublicError::from(VaultError::Unreadable).of_backup(false);
         assert_eq!(backup.code, "unreadable");
         assert!(backup.message.contains("no backup was saved"));
         assert!(!backup.message.contains("typed"));
-        let other = PublicError::from(VaultError::Corrupt).of_backup();
+        let other = PublicError::from(VaultError::Corrupt).of_backup(false);
         assert_eq!(
             other.message,
             PublicError::from(VaultError::Corrupt).message
         );
+    }
+
+    #[test]
+    fn a_backup_that_failed_says_to_keep_the_older_ones() {
+        let failures: [fn() -> VaultError; 3] = [
+            || VaultError::NoSpace,
+            || VaultError::Storage,
+            || VaultError::Cancelled,
+        ];
+        for failure in failures {
+            for emptied in [false, true] {
+                let plain = PublicError::from(failure());
+                let failed = PublicError::from(failure()).of_backup(emptied);
+                assert_eq!(failed.code, plain.code);
+                assert!(failed.message.contains("No backup was saved"));
+                assert!(failed.message.contains("Keep your older backups."));
+                // Only a provider's destination, once opened, may hold an
+                // incomplete file: that one, not the older backups, goes.
+                assert_eq!(
+                    failed
+                        .message
+                        .contains("delete that one, not your older backups"),
+                    emptied,
+                    "{} {emptied}",
+                    plain.code
+                );
+            }
+        }
     }
 
     #[test]
@@ -1786,12 +1823,13 @@ mod tests {
     }
 
     #[test]
-    fn replacing_a_key_says_to_save_a_new_backup_before_deleting_old_ones() {
+    fn replacing_a_key_says_older_backups_keep_their_key_and_tells_no_one_to_delete() {
+        // Whether to delete them depends on why the key is replaced, which
+        // the app asked; the dialog only says that they keep their key.
         let warning = REPLACE_RECOVERY_KEY_WARNING;
-        let save = warning.find("save a new backup").unwrap();
-        let delete = warning.find("delete the older ones").unwrap();
-        assert!(save < delete);
-        assert!(warning.contains("an old kit could still open them"));
+        assert!(warning.contains("Backups saved before now still open"));
+        assert!(warning.contains("myCarlos says what to do about them"));
+        assert!(!warning.contains("delete"));
     }
 
     #[test]
@@ -1835,6 +1873,21 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(stored.recovery_key_set_at_ms, Some(6));
+    }
+
+    #[test]
+    fn part_of_a_key_is_refused_before_anything_is_asked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, groups) = key_being_set_up(&temp.path().join("vault"), true);
+        assert!(matches!(
+            confirm_recovery_key_asking(
+                &store,
+                &typed_back(&groups)[..6],
+                || 5,
+                || { panic!("nothing is asked over part of a key") }
+            ),
+            Err(VaultError::Invalid)
+        ));
     }
 
     #[test]

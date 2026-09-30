@@ -1569,6 +1569,23 @@ impl VaultStore {
         ))
     }
 
+    /// The name suggested for a backup's file: the date it is saved (UTC,
+    /// so dates only ever move on) and the label of the vault's recovery key,
+    /// if it has one. Backups saved on different days, or under different
+    /// keys, then do not take each other's place, and the newest is plain.
+    pub fn backup_file_name(&self, now_ms: u64) -> Result<String, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let (year, month, day) = utc_date(now_ms);
+        Ok(match unlocked.recovery_key_id {
+            Some(key_id) => format!(
+                "myCarlos backup {year:04}-{month:02}-{day:02} {}.mycarlosbackup",
+                recovery_key_label(key_id)
+            ),
+            None => format!("myCarlos backup {year:04}-{month:02}-{day:02}.mycarlosbackup"),
+        })
+    }
+
     /// Saves the recovery kit to a file the patient chose, as an export is
     /// saved: never inside the vault home, private to the user, and replacing
     /// a link at the destination rather than writing through it.
@@ -3380,8 +3397,11 @@ fn matching_pending_key<'a>(
         .ok_or(VaultError::Invalid)?;
     // The whole key, every group once: typing it all back is what shows it
     // was written down whole.
+    if groups.len() != RECOVERY_KEY_GROUPS {
+        return Err(VaultError::Invalid);
+    }
     let distinct: HashSet<usize> = groups.iter().map(|(index, _)| *index).collect();
-    if distinct.len() != RECOVERY_KEY_GROUPS || groups.len() != RECOVERY_KEY_GROUPS {
+    if distinct.len() != RECOVERY_KEY_GROUPS {
         return Err(VaultError::Invalid);
     }
     // Every index is checked before any group is compared, so that the
@@ -7925,6 +7945,44 @@ mod tests {
             store.recover(&key, PASSPHRASE_REPLACEMENT),
             Err(VaultError::Invalid)
         ));
+    }
+
+    #[test]
+    fn a_backup_is_named_by_its_date_and_the_key_it_opens_with() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(matches!(
+            store.backup_file_name(1_790_553_600_000),
+            Err(VaultError::Locked)
+        ));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert_eq!(
+            store.backup_file_name(1_790_553_600_000).unwrap(),
+            "myCarlos backup 2026-09-28.mycarlosbackup"
+        );
+        set_up_recovery_key(&store, 2);
+        let label = store.snapshot().unwrap().recovery_key_label.unwrap();
+        assert_eq!(
+            store.backup_file_name(1_790_553_600_000).unwrap(),
+            format!("myCarlos backup 2026-09-28 {label}.mycarlosbackup")
+        );
+    }
+
+    #[test]
+    fn a_keys_label_stays_through_a_passphrase_change_and_a_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        let label = store.snapshot().unwrap().recovery_key_label;
+        assert!(label.is_some());
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery_key_label, label);
+        store.lock();
+        assert!(store.recover(&key, PASSWORD).unwrap());
+        assert_eq!(store.snapshot().unwrap().recovery_key_label, label);
     }
 
     #[test]

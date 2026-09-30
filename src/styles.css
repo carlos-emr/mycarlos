@@ -397,6 +397,15 @@ h1, h2, p { margin: 0; }
   border-bottom: 1px solid var(--line);
 }
 .setting-row > div { flex: 1; min-width: 0; }
+.old-backups-guide {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--teal-line);
+  border-radius: var(--radius-sm);
+  background: var(--teal-soft);
+}
+.old-backups-guide h3 { margin: 0 0 6px; color: var(--ink); font-size: 0.875rem; }
+.old-backups-guide ol { margin: 6px 0 10px; padding-left: 1.4em; }
 .setting-row h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--ink); font-size: 0.875rem; line-height: 1.4; }
 .setting-row p { max-width: 700px; margin-top: 4px; color: var(--ink-soft); font-size: 0.875rem; line-height: 1.5; }
 .setting-row > .button, .setting-row > .toggle, .setting-row > .select-control { flex: none; align-self: center; }

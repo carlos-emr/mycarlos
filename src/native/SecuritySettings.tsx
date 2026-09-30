@@ -9,6 +9,7 @@ import {
   tooShortPassphrase,
 } from "./VaultAuth";
 import { KeyLabel } from "./KeyLabel";
+import type { OldBackupsGuide } from "./oldBackups";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -24,6 +25,10 @@ interface SecuritySettingsProps {
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
   recoveryKeyLabel?: string | null;
+  /** The steps for older backups after a key whose kit may have been lost
+   * or seen was replaced, if any are left. */
+  oldBackupsGuide?: OldBackupsGuide | null;
+  onOldBackupsGuideDone?: () => void;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
 }
@@ -40,6 +45,8 @@ export function SecuritySettings({
   onReset,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
+  oldBackupsGuide = null,
+  onOldBackupsGuideDone,
   onSetUpRecoveryKey,
   onSaveBackup,
 }: SecuritySettingsProps) {
@@ -159,9 +166,11 @@ export function SecuritySettings({
             {recoveryKeySetAtMs && recoveryKeyLabel && (
               <p>
                 Your current key has the label{" "}
-                <KeyLabel label={recoveryKeyLabel} />. The kit or note with this
+                <KeyLabel label={recoveryKeyLabel} />. A kit or note with this
                 label is the one that works; one with another label does not
-                open this vault.
+                open this vault. Kits and notes made before labels were shown
+                have none: one without a label may still be this key, set up on{" "}
+                {new Date(recoveryKeySetAtMs).toLocaleDateString()}.
               </p>
             )}
           </div>
@@ -188,6 +197,58 @@ export function SecuritySettings({
               keeps opening with them even after you change them here. To
               restore one, lock the vault and choose Restore from a backup.
             </p>
+            {oldBackupsGuide && (
+              <section
+                className="old-backups-guide"
+                aria-labelledby="old-backups-title"
+              >
+                <h3 id="old-backups-title">Your older backups</h3>
+                <p>
+                  The kit for your old recovery key may have been lost or seen,
+                  and it still opens backups saved before you replaced it.
+                </p>
+                {oldBackupsGuide.step === "save" ? (
+                  <ol>
+                    <li>
+                      {readOnly
+                        ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
+                        : "Save a new backup now: choose Save encrypted backup."}
+                    </li>
+                    <li>
+                      Then delete the older backups. Once the new one is saved,
+                      this says which.
+                    </li>
+                  </ol>
+                ) : (
+                  <>
+                    <ol>
+                      <li>
+                        Keep your new backup, &ldquo;{oldBackupsGuide.keep}
+                        &rdquo; (unless you renamed it).
+                      </li>
+                      <li>
+                        Delete the older backups: files whose names start with
+                        &ldquo;myCarlos backup&rdquo; and have an earlier date,
+                        or no date. They are wherever you saved them: a folder,
+                        a USB stick, or on a phone the Files app or a cloud
+                        drive.
+                      </li>
+                      <li>
+                        If you saved the new backup over a file with the same
+                        name, that file is now the new one: keep it.
+                      </li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      Done
+                    </button>
+                  </>
+                )}
+              </section>
+            )}
           </div>
           <div>
             <button

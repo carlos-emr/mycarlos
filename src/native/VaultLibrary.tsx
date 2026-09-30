@@ -22,7 +22,15 @@ import {
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { ANNOUNCE_DELAY_MS } from "./announce";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
-import { OLD_BACKUPS_ADVICE, OLD_BACKUPS_KEEP } from "./oldBackups";
+import {
+  OLD_BACKUPS_EXPOSED,
+  OLD_BACKUPS_KEEP,
+  OLD_BACKUPS_ROUTINE,
+  backupFileName,
+  readOldBackupsGuide,
+  rememberOldBackupsGuide,
+  type OldBackupsGuide,
+} from "./oldBackups";
 
 type NativeSection = "records" | "security";
 type NativeView = "list" | "grid";
@@ -89,6 +97,14 @@ export function VaultLibrary({
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
+  // The steps for older backups after a key whose kit may have been lost or
+  // seen was replaced: kept across locks, until the patient says done.
+  const [oldBackupsGuide, setOldBackupsGuideState] =
+    useState<OldBackupsGuide | null>(readOldBackupsGuide);
+  const setOldBackupsGuide = (guide: OldBackupsGuide | null) => {
+    rememberOldBackupsGuide(guide);
+    setOldBackupsGuideState(guide);
+  };
   // Gone once the vault locks: what a reply that comes later would show is
   // then not seen.
   const mountedRef = useRef(true);
@@ -421,10 +437,23 @@ export function VaultLibrary({
         setNotice("No location chosen. Nothing changed.");
         return;
       }
+      // Named as the native side names it, for the steps after a key
+      // replacement: this is the one to keep.
+      const name = backupFileName(
+        new Date(),
+        snapshot.recoveryKeyLabel ?? null,
+      );
       try {
         await bridge.saveBackupToPicked(pickId);
       } catch (error) {
         throw namedDamage(error, snapshot);
+      }
+      if (oldBackupsGuide?.step === "save") {
+        setOldBackupsGuide({ step: "delete", keep: name });
+        setNotice(
+          "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
+        );
+        return;
       }
       setNotice(
         "Encrypted backup saved. Keep it somewhere other than this device.",
@@ -1035,6 +1064,8 @@ export function VaultLibrary({
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
+                oldBackupsGuide={oldBackupsGuide}
+                onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
@@ -1048,17 +1079,26 @@ export function VaultLibrary({
               replacing={Boolean(snapshot.recoveryKeySetAtMs)}
               required={recoverySetup.required}
               canPrint={canPrint}
-              onKeyShown={() =>
+              onKeyShown={({ exposed }) =>
                 onUnfinishedRecoveryKey?.({
                   setAtMs: snapshot.recoveryKeySetAtMs ?? null,
+                  ...(exposed && { exposed }),
                 })
               }
-              onDone={(stored) => {
+              onDone={(stored, { exposed }) => {
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
-                // A vault that could not finish writing the key cannot save a
-                // backup: the old ones are kept until it can.
+                // Older backups still open with the old key. Only a kit that
+                // may have been lost or seen makes them worth replacing, and
+                // a vault that could not finish writing the key cannot save
+                // a backup: the old ones are then kept until it can.
+                const backups = !exposed
+                  ? OLD_BACKUPS_ROUTINE
+                  : stored.recovery
+                    ? OLD_BACKUPS_KEEP
+                    : OLD_BACKUPS_EXPOSED;
+                if (replaced && exposed) setOldBackupsGuide({ step: "save" });
                 const saved = replaced
-                  ? `Recovery key replaced. The old one no longer opens this vault. ${stored.recovery ? OLD_BACKUPS_KEEP : OLD_BACKUPS_ADVICE}`
+                  ? `Recovery key replaced. The old one no longer opens this vault. ${backups}`
                   : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");

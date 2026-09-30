@@ -21,6 +21,14 @@ const TRIES_BEFORE_REVIEW = 3;
 /** Letters and digits in a recovery key: 7 groups of 4. */
 const KEY_SYMBOLS = 28;
 
+/** A date no reader can take for another: the month in words. */
+export const printedDate = (date: Date) =>
+  date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
 export function RecoveryKeySetup({
   bridge,
   initialKey,
@@ -48,14 +56,16 @@ export function RecoveryKeySetup({
   /** When the vault is new, the key must be set up: there is no way out. */
   required?: boolean;
   canPrint: boolean;
-  onDone: (snapshot: VaultSnapshot) => void;
+  /** `exposed`: when replacing, the old key's kit may have been lost or
+   * seen, as the patient said. */
+  onDone: (snapshot: VaultSnapshot, how: { exposed: boolean }) => void;
   /** `keyShown`: a key was on screen, and may be written down or in a kit,
    * that will now never open the vault. */
   onClose: (keyShown: boolean) => void;
   /** The vault turned out to be locked. */
   onLocked: () => void;
   /** A key is on screen, and may now be written down or saved. */
-  onKeyShown?: () => void;
+  onKeyShown?: (how: { exposed: boolean }) => void;
 }) {
   const [step, setStep] = useState<Step>(initialKey ? "key" : "passphrase");
   const [key, setKey] = useState(initialKey ?? "");
@@ -64,25 +74,37 @@ export function RecoveryKeySetup({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [typed, setTyped] = useState("");
+  // Why a key is being replaced: whether its kit may have been lost or seen
+  // decides what the patient is told to do with older backups.
+  const [exposed, setExposed] = useState<boolean | null>(null);
+  const exposedRef = useRef(exposed);
+  exposedRef.current = exposed;
   // Said once, when a key is first on screen.
   const keyShownRef = useRef(onKeyShown);
   keyShownRef.current = onKeyShown;
   useEffect(() => {
-    if (key) keyShownRef.current?.();
+    if (key) keyShownRef.current?.({ exposed: exposedRef.current === true });
   }, [key]);
   // The key's short label, which tells its kits apart: shown with the key
   // and printed on the kit. Not secret.
   const [label, setLabel] = useState<string | null>(null);
+  // Print waits until the label is known, or known to be missing.
+  const [labelSettled, setLabelSettled] = useState(false);
   useEffect(() => {
     if (!key) return;
     let current = true;
-    bridge.recoveryKeyLabel().then(
-      (found) => {
-        if (current) setLabel(found);
-      },
-      // Only the label is missing: the key and its kit still work.
-      () => undefined,
-    );
+    bridge
+      .recoveryKeyLabel()
+      .then(
+        (found) => {
+          if (current) setLabel(found);
+        },
+        // Only the label is missing: the key and its kit still work.
+        () => undefined,
+      )
+      .finally(() => {
+        if (current) setLabelSettled(true);
+      });
     return () => {
       current = false;
     };
@@ -177,7 +199,7 @@ export function RecoveryKeySetup({
 
   const begin = async (event: FormEvent) => {
     event.preventDefault();
-    if (busy || !passphrase) return;
+    if (busy || !passphrase || (replacing && exposed === null)) return;
     const secret = passphrase;
     setPassphrase("");
     setBusy(true);
@@ -247,7 +269,7 @@ export function RecoveryKeySetup({
       // so the setup stays unfinished, and the next unlock, finding the key
       // changed, says it was saved.
       if (!mountedRef.current) return;
-      if (snapshot) onDone(snapshot);
+      if (snapshot) onDone(snapshot, { exposed: exposed === true });
       // Cancelled in the native confirmation: the key is still being set
       // up, and can be checked again.
       else {
@@ -320,10 +342,33 @@ export function RecoveryKeySetup({
               open your vault for you.
             </p>
             {replacing && (
-              <p>
-                Your current recovery key stops working once you have checked
-                the new one.
-              </p>
+              <>
+                <p>
+                  Your current recovery key stops working once you have checked
+                  the new one.
+                </p>
+                <fieldset>
+                  <legend>Why are you replacing it?</legend>
+                  <label className="restore-choice">
+                    <input
+                      type="radio"
+                      name="replace-reason"
+                      checked={exposed === true}
+                      onChange={() => setExposed(true)}
+                    />
+                    Its kit or note may have been lost, or seen by someone else
+                  </label>
+                  <label className="restore-choice">
+                    <input
+                      type="radio"
+                      name="replace-reason"
+                      checked={exposed === false}
+                      onChange={() => setExposed(false)}
+                    />
+                    I just want a new key: its kit is safe
+                  </label>
+                </fieldset>
+              </>
             )}
             <label>
               Passphrase
@@ -351,7 +396,8 @@ export function RecoveryKeySetup({
                 disabled={
                   busy ||
                   !passphrase ||
-                  utf8Length(passphrase) > MAX_PASSPHRASE_BYTES
+                  utf8Length(passphrase) > MAX_PASSPHRASE_BYTES ||
+                  (replacing && exposed === null)
                 }
               >
                 Continue
@@ -430,7 +476,7 @@ export function RecoveryKeySetup({
                 <button
                   className="button"
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !labelSettled}
                   onClick={() =>
                     printing ? window.print() : setPrinting(true)
                   }
@@ -454,7 +500,7 @@ export function RecoveryKeySetup({
                   <p className="recovery-kit-key">{key}</p>
                   <p>
                     {label ? `Key label: ${label} · ` : ""}Printed{" "}
-                    {new Date().toLocaleDateString()}
+                    {printedDate(new Date())}
                   </p>
                   {label && (
                     <p>

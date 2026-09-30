@@ -1164,6 +1164,7 @@ describe("durable vault UI", () => {
   async function showKeyInSetup(
     setAtMs: number | null,
     overrides: Partial<VaultBridge> = {},
+    exposed = true,
   ) {
     const user = userEvent.setup();
     const vault = { ...emptySnapshot, recoveryKeySetAtMs: setAtMs };
@@ -1191,6 +1192,15 @@ describe("durable vault UI", () => {
       within(dialog).getByLabelText("Passphrase"),
       "river-azimuth-cobalt-sparrow-934",
     );
+    // Replacing asks why: whether the old kit may have been lost or seen.
+    if (setAtMs)
+      await user.click(
+        within(dialog).getByLabelText(
+          exposed
+            ? "Its kit or note may have been lost, or seen by someone else"
+            : "I just want a new key: its kit is safe",
+        ),
+      );
     await user.click(within(dialog).getByRole("button", { name: "Continue" }));
     expect(
       await screen.findByRole("dialog", { name: "Your recovery key" }),
@@ -1304,7 +1314,7 @@ describe("durable vault UI", () => {
       if (saved)
         expect(
           await screen.findByText(
-            /^Recovery key replaced\. .*First save a new backup: in Security, choose Save encrypted backup\. Then delete the older backups, and keep the new one: they are files whose names start with "myCarlos backup".*Check each file's date before you delete it\.$/,
+            /^Recovery key replaced\. The old one no longer opens this vault\. Your old kit could still open backups saved before now\. In Security, save a new backup, then delete the older ones: Security shows the steps\.$/,
           ),
         ).toBeVisible();
       vi.mocked(bridge.unlock).mockResolvedValue(after);
@@ -1327,9 +1337,69 @@ describe("durable vault UI", () => {
     });
     await typeKeyBack();
     expect(
-      await screen.findByText(/^Recovery key replaced\. .*Keep them for now/),
+      await screen.findByText(/^Recovery key replaced\. .*keep them for now/),
     ).toBeVisible();
-    expect(screen.queryByText(/Then delete the older backups/)).toBeNull();
+    expect(screen.queryByText(/Security shows the steps/)).toBeNull();
+  });
+
+  it("tells a routine replacement to keep the old kit safe, not to delete backups", async () => {
+    const after = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    const { user, typeKeyBack } = await showKeyInSetup(
+      5,
+      { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+      false,
+    );
+    await typeKeyBack();
+    const told = await screen.findByText(/^Recovery key replaced\./);
+    expect(told).toHaveTextContent(
+      "Keep the old key's kit safe, or destroy it on purpose",
+    );
+    expect(told).not.toHaveTextContent(/delete/i);
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    expect(screen.queryByText("Your older backups")).toBeNull();
+  });
+
+  it("walks a replacement for an exposed kit through a new backup, then the old ones", async () => {
+    const after = {
+      ...emptySnapshot,
+      recoveryKeySetAtMs: 9,
+      recoveryKeyLabel: "7F3A",
+    };
+    const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+      confirmRecoveryKey: vi.fn().mockResolvedValue(after),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-9"),
+    });
+    await typeKeyBack();
+    await screen.findByText(/^Recovery key replaced\./);
+    await user.click(screen.getByRole("button", { name: /Security/ }));
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    // A new backup first: deleting never leaves none.
+    const steps = within(guide).getAllByRole("listitem");
+    expect(steps[0]).toHaveTextContent("Save a new backup now");
+    expect(steps[1]).toHaveTextContent("Then delete the older backups");
+
+    await user.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9");
+    expect(
+      await screen.findByText(
+        "Encrypted backup saved. This is your new backup: keep it. Security now shows which older ones to delete.",
+      ),
+    ).toBeVisible();
+    const name = `myCarlos backup ${new Date().toISOString().slice(0, 10)} 7F3A`;
+    const next = within(
+      screen.getByRole("region", { name: "Your older backups" }),
+    ).getAllByRole("listitem");
+    expect(next[0]).toHaveTextContent(`Keep your new backup, “${name}”`);
+    expect(next[1]).toHaveTextContent("have an earlier date, or no date");
+    expect(next[2]).toHaveTextContent("that file is now the new one: keep it");
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByText("Your older backups")).toBeNull();
+    expect(
+      window.localStorage.getItem("mycarlos.oldBackupsGuide.v1"),
+    ).toBeNull();
   });
 
   it("says so after unlocking when myCarlos closed with a key on screen", async () => {
@@ -1358,7 +1428,7 @@ describe("durable vault UI", () => {
     // read-only: it cannot save a backup, so the old ones must stay.
     window.localStorage.setItem(
       "mycarlos.unfinishedRecoveryKey.v1",
-      JSON.stringify({ setAtMs: 5 }),
+      JSON.stringify({ setAtMs: 5, exposed: true }),
     );
     const user = userEvent.setup();
     const vault = {
@@ -1378,10 +1448,10 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: "Unlock" }));
     expect(
       await screen.findByText(
-        /was saved just before the vault locked.*Keep them for now/,
+        /was saved just before the vault locked.*keep them for now/,
       ),
     ).toBeVisible();
-    expect(screen.queryByText(/Then delete the older backups/)).toBeNull();
+    expect(screen.queryByText(/Security shows the steps/)).toBeNull();
   });
 
   it("opens a locked vault with its recovery key and a new passphrase", async () => {

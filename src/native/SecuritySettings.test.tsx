@@ -37,11 +37,52 @@ describe("SecuritySettings recovery key", () => {
     );
     expect(within(line).getByText("7 F 3 A")).toHaveClass("sr-only");
     expect(line).toHaveTextContent(/one with another label does not open/);
-    expect(line).not.toHaveTextContent(new Date(setAt).toLocaleDateString());
+    // A kit or note from before labels has none, and may still work.
+    expect(line).toHaveTextContent(
+      `one without a label may still be this key, set up on ${new Date(setAt).toLocaleDateString()}.`,
+    );
     // The date it was set up is beside the heading.
     expect(
       screen.getByText(`Set up ${new Date(setAt).toLocaleDateString()}`),
     ).toBeVisible();
+  });
+
+  it("shows the steps for older backups: a new one first", () => {
+    const props = renderSettings({ oldBackupsGuide: { step: "save" } });
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    const steps = within(guide).getAllByRole("listitem");
+    expect(steps[0]).toHaveTextContent("Save a new backup now");
+    expect(within(guide).queryByRole("button", { name: "Done" })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save encrypted backup…" }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledOnce();
+  });
+
+  it("names the new backup to keep, then lets the steps be closed", () => {
+    const onOldBackupsGuideDone = vi.fn();
+    renderSettings({
+      oldBackupsGuide: {
+        step: "delete",
+        keep: "myCarlos backup 2026-09-30 7F3A",
+      },
+      onOldBackupsGuideDone,
+    });
+    const guide = screen.getByRole("region", { name: "Your older backups" });
+    expect(within(guide).getAllByRole("listitem")[0]).toHaveTextContent(
+      "Keep your new backup, “myCarlos backup 2026-09-30 7F3A” (unless you renamed it).",
+    );
+    fireEvent.click(within(guide).getByRole("button", { name: "Done" }));
+    expect(onOldBackupsGuideDone).toHaveBeenCalledOnce();
+  });
+
+  it("says a new backup waits for a vault that accepts changes", () => {
+    renderSettings({ readOnly: true, oldBackupsGuide: { step: "save" } });
+    expect(
+      within(
+        screen.getByRole("region", { name: "Your older backups" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent("Once the vault accepts changes again");
   });
 
   it("names no label for a vault without a key", () => {
