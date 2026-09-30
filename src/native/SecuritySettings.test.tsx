@@ -78,7 +78,7 @@ describe("SecuritySettings recovery key", () => {
     // Kept, with a copy away from this device; the rest are older.
     const steps = within(guide).getAllByRole("listitem");
     expect(steps[0]).toHaveTextContent(
-      "Keep your new backup, “myCarlos backup 2026-09-30 7F3A” (2 KB), and a copy of it somewhere other than this device",
+      "Your new backup is “myCarlos backup 2026-09-30 7F3A” (2 KB). Keep it, or a copy of it, somewhere other than this device",
     );
     expect(steps[1]).toHaveTextContent("other than the new one and its copies");
     fireEvent.click(
@@ -98,7 +98,7 @@ describe("SecuritySettings recovery key", () => {
         screen.getByRole("region", { name: "Your older backups" }),
       ).getAllByRole("listitem")[0],
     ).toHaveTextContent(
-      `Keep the backup you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} (0 B)`,
+      `Your new backup is the one you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} (0 B)`,
     );
   });
 

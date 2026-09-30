@@ -1026,7 +1026,7 @@ fn is_plain_date(text: &str) -> bool {
 #[serde(rename_all = "camelCase")]
 struct SavedBackup {
     name: Option<String>,
-    bytes: u64,
+    bytes: Option<u64>,
 }
 
 /// Counts what passes through it.
@@ -1103,7 +1103,7 @@ async fn vault_backup_picked(
             store.backup_atomic(&path, now_ms())?;
             Ok(SavedBackup {
                 name,
-                bytes: std::fs::metadata(&path).map_or(0, |metadata| metadata.len()),
+                bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
             })
         })
         .await
@@ -1142,7 +1142,7 @@ async fn vault_backup_picked(
     .await
     .map(|()| SavedBackup {
         name: None,
-        bytes: bytes.load(Ordering::Relaxed),
+        bytes: Some(bytes.load(Ordering::Relaxed)),
     })
     .map_err(|error| {
         error.of_backup(if emptied.load(Ordering::Acquire) {
@@ -1777,6 +1777,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_backup_counts_what_reaches_its_file_not_what_waits_in_a_buffer() {
+        use std::io::Write as _;
+        let bytes = Arc::new(AtomicU64::new(0));
+        let mut file = Vec::new();
+        {
+            let mut writer = std::io::BufWriter::new(Counted {
+                inner: &mut file,
+                bytes: Arc::clone(&bytes),
+            });
+            writer.write_all(&[7; 10_000]).unwrap();
+            writer.flush().unwrap();
+        }
+        assert_eq!(bytes.load(Ordering::Relaxed), 10_000);
+        assert_eq!(file.len(), 10_000);
     }
 
     #[test]

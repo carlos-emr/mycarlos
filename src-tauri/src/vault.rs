@@ -3129,14 +3129,14 @@ fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
     ))
 }
 
-/// Year, month and day (UTC) of a time in milliseconds since 1970, by
-/// Howard Hinnant's days-to-civil algorithm.
 /// The UTC date of `ms`, as `YYYY-MM-DD`.
 pub(crate) fn utc_date_text(ms: u64) -> String {
     let (year, month, day) = utc_date(ms);
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// Year, month and day (UTC) of a time in milliseconds since 1970, by
+/// Howard Hinnant's days-to-civil algorithm.
 fn utc_date(ms: u64) -> (i64, u32, u32) {
     let days = i64::try_from(ms / 86_400_000).unwrap_or(i64::MAX / 2);
     let z = days + 719_468;

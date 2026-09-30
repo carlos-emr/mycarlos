@@ -54,7 +54,8 @@ export interface RecoveryKeyGroup {
  * (not an Android document provider), and how many bytes it holds. */
 export interface SavedBackup {
   name: string | null;
-  bytes: number;
+  /** Unknown where the size could not be read. */
+  bytes: number | null;
 }
 
 /** Today on the patient's own calendar, as `YYYY-MM-DD`. */
@@ -228,10 +229,20 @@ export function namedDamage(
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
   const where = `added ${new Date(record.importedAtMs).toLocaleDateString()}${profile ? `, in ${profile.displayName}'s records` : ""}`;
+  // What may be left where it was being saved still holds.
+  const { note } = error as PublicError;
   return {
     code: "damaged_document",
     message: `No backup was saved: the document "${record.displayName}" (${where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+    ...(typeof note === "string" && { note }),
   };
+}
+
+/** The note a failure carries about how it came about, if any. */
+export function vaultErrorNote(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { note } = error as PublicError;
+  return typeof note === "string" ? note : null;
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {

@@ -82,6 +82,20 @@ describe("a backup refused over a damaged document", () => {
     expect(alone.message).not.toContain("records)");
   });
 
+  it("keeps the note about what may be left where it was saved", () => {
+    const vault = {
+      profiles: [{ id: "p1", displayName: "Jamie", createdAtMs: 1 }],
+      records: [record("record-2", "p1")],
+    };
+    const named = namedDamage(
+      { ...damaged, note: "An empty file (0 bytes) may be left." },
+      vault,
+    );
+    expect(vaultErrorMessage(named)).toMatch(
+      /^No backup was saved: the document .* An empty file \(0 bytes\) may be left\.$/,
+    );
+  });
+
   it("leaves any other error, or a document it cannot find, as it was", () => {
     const vault = { profiles: [], records: [record("record-1", "p1")] };
     expect(namedDamage(damaged, vault)).toBe(damaged);

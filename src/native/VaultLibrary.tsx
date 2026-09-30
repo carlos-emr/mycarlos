@@ -463,7 +463,7 @@ export function VaultLibrary({
           bytes: saved?.bytes ?? null,
         });
         setNotice(
-          "Encrypted backup saved. This is your new backup: keep it, and a copy somewhere other than this device. Security now shows which older ones to delete.",
+          "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
         );
         return;
       }

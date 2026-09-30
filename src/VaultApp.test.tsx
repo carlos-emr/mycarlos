@@ -1402,7 +1402,7 @@ describe("durable vault UI", () => {
     );
     expect(
       await screen.findByText(
-        "Encrypted backup saved. This is your new backup: keep it, and a copy somewhere other than this device. Security now shows which older ones to delete.",
+        "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
       ),
     ).toBeVisible();
     // The file the native side wrote is the one to keep: whatever it is
@@ -1411,7 +1411,7 @@ describe("durable vault UI", () => {
       screen.getByRole("region", { name: "Your older backups" }),
     ).getAllByRole("listitem");
     expect(next[0]).toHaveTextContent(
-      `Keep your new backup, “${written}” (4 KB), and a copy of it somewhere other than this device`,
+      `Your new backup is “${written}” (4 KB). Keep it, or a copy of it, somewhere other than this device`,
     );
     expect(next[1]).toHaveTextContent("other than the new one and its copies");
     expect(next[2]).toHaveTextContent("that file is now your new backup");
@@ -1508,7 +1508,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
     expect(
-      await screen.findByText(/Keep your new backup, “second\.mycarlosbackup”/),
+      await screen.findByText(/Your new backup is “second\.mycarlosbackup”/),
     ).toBeVisible();
   });
 
@@ -3289,6 +3289,14 @@ describe("durable vault UI", () => {
       true,
       CANCELLED,
       "The transfer did not finish.",
+    ],
+    [
+      // An Android backup's document, opened and so emptied: what is left
+      // there is still said, after the next unlock.
+      "cuts off a transfer that may have left an emptied file",
+      false,
+      { ...CANCELLED, note: "Delete that one, not your other backups." },
+      "The transfer did not finish because the vault locked. Delete that one, not your other backups.",
     ],
     [
       "locked the vault before a transfer began",

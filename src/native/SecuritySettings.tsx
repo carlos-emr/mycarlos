@@ -243,15 +243,14 @@ export function SecuritySettings({
                       <li>
                         {oldBackupsGuide.keep ? (
                           <>
-                            Keep your new backup, &ldquo;{oldBackupsGuide.keep}
-                            &rdquo;
-                            {savedSize(oldBackupsGuide.bytes)}, and a copy of it
-                            somewhere other than this device, such as a USB
-                            stick or a cloud drive.
+                            Your new backup is &ldquo;{oldBackupsGuide.keep}
+                            &rdquo;{savedSize(oldBackupsGuide.bytes)}.
                           </>
                         ) : (
-                          `Keep the backup you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes)}, and a copy of it somewhere other than this device, such as a USB stick or a cloud drive. Your files app shows when each file was saved, and its size.`
-                        )}
+                          `Your new backup is the one you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes)}: your files app shows when each file was saved, and its size.`
+                        )}{" "}
+                        Keep it, or a copy of it, somewhere other than this
+                        device, such as a USB stick or a cloud drive.
                       </li>
                       <li>
                         Delete the older backups: files whose names start with
