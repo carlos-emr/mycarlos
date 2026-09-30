@@ -1417,7 +1417,7 @@ describe("durable vault UI", () => {
     ).getAllByRole("listitem");
     expect(next[0]).toHaveTextContent(
       // The test platform is Windows, whose Explorer counts in 1024s.
-      `Your new backup is “${written}” (4 KB, 4,096 bytes). Keep it, or a copy of it, somewhere other than this device`,
+      `Your new backup is “${written}” (4 KB, ${(4096).toLocaleString()} bytes). Keep it, or a copy of it, somewhere other than this device`,
     );
     expect(next[1]).toHaveTextContent("other than the new one and its copies");
     expect(next[2]).toHaveTextContent("that file is now your new backup");
