@@ -2623,6 +2623,54 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("keeps what was held hidden when a lock fails on the hidden screen", async () => {
+    const user = userEvent.setup();
+    const note = "Delete that one, not your other backups.";
+    let failTransfer!: (error: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importPickedFiles: vi.fn(
+        () =>
+          new Promise<ImportOutcome>((_, reject) => {
+            failTransfer = reject;
+          }),
+      ),
+      lock: vi.fn(async () => {
+        failTransfer({ ...CANCELLED, note });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw {
+          code: "storage",
+          message: "The storage operation could not be completed.",
+        };
+      }),
+    });
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+      visibility.mockReturnValue("hidden");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      visibility.mockReturnValue("visible");
+      await user.click(
+        screen.getByRole("button", {
+          name: "Lock now and cancel the transfer",
+        }),
+      );
+      expect(await screen.findByRole("alert")).toBeVisible();
+      // An onlooker may see this screen: nothing held is shown on it.
+      expect(screen.queryByText(new RegExp(note))).toBeNull();
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
   it("holds a lock for a transfer past an earlier manual failure, and reports a failure after it", async () => {
     const user = userEvent.setup();
     let finishImport!: (value: ImportOutcome) => void;

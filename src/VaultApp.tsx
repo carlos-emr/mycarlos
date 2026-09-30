@@ -235,6 +235,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // announced again on every recheck.
         if (!concealedRef.current) setLockFailed(false);
         setConcealed(true);
+        // At once, for a lock that fails before the screen is drawn again.
+        concealedRef.current = true;
       }
       void lock();
     },
@@ -250,6 +252,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
     if (!concealedRef.current) setLockFailed(false);
     setConcealed(true);
+    concealedRef.current = true;
     holdLock(true);
   }, [holdLock, requestLock, transferHold]);
 
