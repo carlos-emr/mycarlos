@@ -1646,6 +1646,32 @@ describe("durable vault UI", () => {
     expect(screen.queryByText(/Security shows the steps/)).toBeNull();
   });
 
+  it("says plainly why the next try must wait, after several wrong ones", async () => {
+    const user = userEvent.setup();
+    render(
+      <VaultApp
+        bridge={nativeBridge({
+          unlock: vi.fn().mockRejectedValue({
+            code: "too_many_attempts",
+            message:
+              "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one.",
+            retryAfterMs: 30_000,
+          }),
+        })}
+      />,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(
+        /To slow down anyone guessing, myCarlos waits a little before the next one\. Try again in 30 seconds\./,
+      ),
+    ).toBeVisible();
+  });
+
   it("opens a locked vault with its recovery key and a new passphrase", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();

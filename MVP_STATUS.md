@@ -70,6 +70,10 @@ privacy, accessibility, or clinical review.
 - [x] Add WCAG A/AA automation across browser and durable-vault states; implement modal focus
       containment/return and keyboard folder movement; fix detected contrast failures. Add browser
       and durable hostile-filename regressions proving metadata renders as text.
+- [x] Wait after repeated wrong secrets (unlock, recovery key, opening a backup): none for five
+      wrong tries in a row, then 5 seconds more for each, to a minute, kept beside the vault across
+      restarts, with the reason on screen. It slows only guessing through the app on the device,
+      not against a copied vault or backup.
 
 ## Required before calling the synthetic MVP reviewed
 
@@ -166,3 +170,10 @@ privacy, accessibility, or clinical review.
       texts (the app's and its dependencies') shipped with the downloads, which they are not yet.
 - [ ] Resolve all high/critical shipped-runtime findings; Linux remains under evaluation pending review of the
       documented `glib` backport and device/release validation.
+
+## Planned after the first release
+- [ ] Rotate the vault's master key when the passphrase or recovery key changes, or on request.
+      Until then, an old passphrase or recovery key, together with a copy of the vault made while
+      it was in use (a device backup, a copied folder, a backup file), keeps opening the vault as it
+      is now; the only remedy is a new vault. This is an accepted limit for the first release (see
+      `THREAT_MODEL.md` KEY-05 and `VAULT_FORMAT.md` "Known limits").

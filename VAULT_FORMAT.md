@@ -133,6 +133,18 @@ Escape. It offers "Set up later" once something other than a wrong answer has fa
 all the same (on a phone, switching apps locks), and so does a failure to make the key; the vault
 then has no recovery key and says so in a banner until one is set up.
 
+**Wrong tries.** Unlocking, recovering with the recovery key and opening a backup each count wrong
+tries in a row, apart: a passphrase or recovery key that does not open it counts, and a key whose
+check characters are wrong (a typo) does not. After five in a row, the next try waits 5 seconds,
+and each further wrong one adds 5 seconds, to a minute at most; a try made during the wait is
+refused before any work, with how long is left, and the screen says it is to slow down anyone
+guessing. The right secret clears the count (opening the vault either way clears both of its
+counts). The counts, and when the last wrong try was, are kept in `attempts.json` beside the vault,
+so that closing and reopening myCarlos does not clear them; a clock set back never makes a wait
+longer than the count calls for, and a file that does not read starts from nothing. This slows only
+guessing through the app on this device: a copy of the vault, or a backup, can be guessed at
+elsewhere without it, where only the cost of the key derivation stands in the way.
+
 `recover` opens a locked vault with the recovery key and a new passphrase. It selects the header as
 unlock does, the newest one the key authenticates, and refuses an older one when a newer header for
 the same master key exists that the key does not open (a replaced key). The new passphrase must meet
@@ -172,6 +184,7 @@ vault-home/               holds only what the vault manages; back up as a whole
   .restore-<uuid>/        a backup being restored, not yet verified; removed at the next start
   vault-v1.restore-ready/ a verified restore about to replace the vault; finished at the next start
   pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
+  attempts.json           wrong tries in a row at a secret, and when the last was (no secret)
   vault-v1/
     header-0.json        non-secret KDF configuration, wrapped master key, optional recovery-key
                          envelope (format 2), and keyed integrity tag
@@ -443,7 +456,8 @@ or change that comes between the check and the writing, can leave it emptied.
 - Changing the passphrase or replacing the recovery key does not change the master key. Someone who
   has the earlier passphrase or key, and any earlier copy of a header (a device backup, a copied
   folder, a saved backup file), has the master key, which decrypts the vault as it is now and
-  later, whenever they get a copy of it. Rotating the master key is not implemented. The
+  later, whenever they get a copy of it. Rotating the master key is not implemented; it is
+  planned for after the first release, and until then this limit is accepted. The
   only remedy is a new vault, which the app does not guide: save a readable copy of every document
   (one at a time, in every profile; a damaged document cannot be saved), check that each copy
   opens, erase the vault, create a new one and import the copies. Folders, profiles and the dates

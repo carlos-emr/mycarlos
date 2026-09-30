@@ -116,6 +116,21 @@ describe("error messages", () => {
     expect(vaultErrorMessage({ code: "storage", message: "No." })).toBe("No.");
   });
 
+  it("says how long to wait after several wrong tries", () => {
+    const waiting = {
+      code: "too_many_attempts",
+      message:
+        "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one.",
+      retryAfterMs: 4_200,
+    };
+    expect(vaultErrorMessage(waiting)).toBe(
+      `${waiting.message} Try again in 5 seconds.`,
+    );
+    expect(vaultErrorMessage({ ...waiting, retryAfterMs: 900 })).toMatch(
+      /Try again in 1 second\.$/,
+    );
+  });
+
   it("gives today on the patient's own calendar", () => {
     expect(localDateText(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
   });
