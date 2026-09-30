@@ -1576,7 +1576,7 @@ impl VaultStore {
     }
 
     /// Checks the typed groups against the key being set up, as
-    /// `confirm_recovery_key` will, and says whether confirming would replace
+    /// `confirm_recovery_key_replacing` will, and says whether confirming would replace
     /// a recovery key the vault already has. Nothing changes. For the
     /// confirmation asked of the patient before a key is replaced, which
     /// should not be asked over a mistyped answer.
@@ -1993,7 +1993,8 @@ impl VaultStore {
             manifest_data,
             ..
         } = opened;
-        let candidates = read_header_candidates(&self.root);
+        let files = read_header_files(&self.root);
+        let candidates = &files.candidates;
         let (replaces, differs_from_this_device) = if !self.root.exists() {
             (RestoreReplaces::Nothing, false)
         } else if candidates.is_empty() {
@@ -2006,16 +2007,29 @@ impl VaultStore {
         {
             // The same vault holds the same master key, so its own header and
             // manifest can be read and compared with the backup's.
-            let live_header = newest_authentic_header(&self.root, header.vault_id, master_key).ok();
-            let live_manifest = read_manifest_slots(&self.root, master_key, header.vault_id)
-                .ok()
-                .and_then(|slots| {
+            // From the same reading as whether a slot could not be read.
+            let live_header = candidates
+                .iter()
+                .filter(|live| {
+                    live.vault_id == header.vault_id && valid_header_integrity(live, master_key)
+                })
+                .max_by_key(|live| live.generation);
+            let slots = read_manifest_slots(&self.root, master_key, header.vault_id).ok();
+            let live_manifest = slots.as_ref().and_then(|slots| {
+                slots
+                    .iter()
+                    .filter_map(SlotReading::authentic)
+                    .map(|(manifest, _)| manifest)
+                    .max_by_key(|manifest| manifest.generation)
+                    .cloned()
+            });
+            // A header or manifest slot that could not be read may hold
+            // something newer than what was compared.
+            let partly_unreadable = files.slot_unreadable
+                || slots.as_ref().is_some_and(|slots| {
                     slots
                         .iter()
-                        .filter_map(SlotReading::authentic)
-                        .map(|(manifest, _)| manifest)
-                        .max_by_key(|manifest| manifest.generation)
-                        .cloned()
+                        .any(|slot| matches!(slot, SlotReading::Unreadable))
                 });
             // The same passphrase (its KDF salt) and the same recovery key.
             let same_keys = live_header.is_some_and(|live| {
@@ -2033,7 +2047,10 @@ impl VaultStore {
             // Which of the two is the later one is not told: a generation
             // moves on with repairs, and a vault restored and changed
             // elsewhere has a lower one than a vault left untouched here.
-            (RestoreReplaces::SameVault, !(same_keys && same_content))
+            (
+                RestoreReplaces::SameVault,
+                partly_unreadable || !(same_keys && same_content),
+            )
         } else {
             (RestoreReplaces::OtherVault, false)
         };
@@ -3396,19 +3413,6 @@ fn current_header(
     }
     files
         .candidates
-        .into_iter()
-        .filter(|header| header.vault_id == vault_id && valid_header_integrity(header, master_key))
-        .max_by_key(|header| header.generation)
-        .ok_or(VaultError::Corrupt)
-}
-
-/// The newest header slot authenticated by the session's master key.
-fn newest_authentic_header(
-    root: &Path,
-    vault_id: Uuid,
-    master_key: &[u8; 32],
-) -> Result<VaultHeader, VaultError> {
-    read_header_candidates(root)
         .into_iter()
         .filter(|header| header.vault_id == vault_id && valid_header_integrity(header, master_key))
         .max_by_key(|header| header.generation)
@@ -8518,6 +8522,53 @@ mod tests {
                 .replaces,
             RestoreReplaces::OtherVault
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_vault_partly_unreadable_is_not_said_to_hold_what_the_backup_holds() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        let preview = || {
+            store
+                .inspect_backup(
+                    Cursor::new(backup.clone()),
+                    RestoreCredential::Passphrase(PASSWORD),
+                )
+                .unwrap()
+        };
+        assert!(!preview().differs_from_this_device);
+        // One header slot cannot be read: it may hold a newer passphrase or
+        // recovery key, so the vault is not said to be the backup's as it is.
+        let slot = root.join(HEADER_SLOTS[1]);
+        if !made_unreadable(&slot) {
+            eprintln!("skipped: file modes do not bind this user");
+            return;
+        }
+        let seen = preview();
+        made_readable(&slot);
+        assert_eq!(seen.replaces, RestoreReplaces::SameVault);
+        assert!(seen.differs_from_this_device);
+        // Nor when a manifest slot cannot be read: the older one here, so
+        // that the newest still reads as the backup's.
+        store.unlock(PASSWORD).unwrap();
+        let generation = store
+            .unlocked
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .generation;
+        store.lock();
+        let older = manifest_path(&root, generation + 1);
+        assert!(older.exists());
+        assert!(made_unreadable(&older));
+        let seen = preview();
+        made_readable(&older);
+        assert!(seen.differs_from_this_device);
+        assert!(!preview().differs_from_this_device);
     }
 
     #[test]
