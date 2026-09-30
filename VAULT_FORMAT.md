@@ -89,15 +89,15 @@ open with the passphrase or recovery key they were saved with, and that myCarlos
 about them. The setup asks first why the key is being replaced: whether its kit or note may have
 been lost or seen. If so, the app says to save a new backup and then delete the older ones, and
 Security shows the steps, kept in webview storage (a file name, nothing secret) until the patient
-closes them: first a new backup (or "I have no older backups"), kept, or a copy of it, somewhere
-other than the device; once it is saved, the file written, with its size, by the name the native
-side reports (an Android document provider gives none, so it is "the backup you just saved", with
-the time it was saved; a later save while the steps are open takes its place), and the older backups
-to delete: files whose names start with "myCarlos backup", and any renamed, other than the new one
-and its copies, wherever they were saved (a folder, a USB stick, or on a phone the Files app or a
-cloud drive; myCarlos does not know where). A backup saved in place of an older one is the new one.
-A failed backup leaves the steps where they were. If not, it says that the older backups still open
-with the old key, so its kit is to be kept safe (if it is destroyed, they open only with their
+closes them: first a new backup (or "I have no older backups"), with it or a copy of it kept
+somewhere other than the device; once it is saved, the file written, with its size, by the name the
+native side reports (an Android document provider gives none, so it is "the backup you just saved",
+with the time it was saved; a later save while the steps are open takes its place), and the older
+backups to delete: files whose names start with "myCarlos backup", and any renamed, other than the
+new one and its copies, wherever they were saved (a folder, a USB stick, or on a phone the Files app
+or a cloud drive; myCarlos does not know where). A backup saved in place of an older one is the new
+one. A failed backup leaves the steps where they were. If not, it says that the older backups still
+open with the old key, so its kit is to be kept safe (if it is destroyed, they open only with their
 passphrase), and says nothing about deleting them. A vault that could not finish writing the key, or
 that opens read-only when the next unlock or recovery reports a key stored as a lock fell, cannot
 save a backup, so the app says to keep the old ones until it can. The key is then stored only if the
@@ -379,9 +379,9 @@ older one the patient chose to save over, and opening it empties it (the provide
 opens, even if the open then fails): a failure before myCarlos has it open says that an empty file
 may be left there to delete, and to keep any backup that is not empty; a failure after says that the
 file there may be empty or incomplete, and emptied if it was an older backup, and to delete that
-one, not the other backups. That sentence goes with any backup failure, and with a transfer a lock
-cut off, told after the next unlock. When the steps for older backups name no file (Android), such a
-failure takes them back to saving a new backup first.
+one, not the other backups. What may be left on Android is said after any backup failure; for a
+backup a lock cut off, it is told, with the rest, after the next unlock. When the steps for older
+backups name no file (Android), such a failure takes them back to saving a new backup first.
 
 A backup opens with the passphrase, and the recovery key if it had one, that the vault had when it
 was saved, not with any set up since; a restore that is refused for either says so in those words,

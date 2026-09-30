@@ -3161,6 +3161,62 @@ describe("durable vault UI", () => {
   );
 
   it.each([
+    ["the transfer fails first", 0, 50],
+    ["the lock finishes first", 50, 0],
+  ])(
+    "tells after the next unlock what a backup cut off by Lock now left, when %s",
+    async (_, failDelay, lockDelay) => {
+      const user = userEvent.setup();
+      const note = "Delete that one, not your other backups.";
+      let failTransfer!: (error: unknown) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        importPickedFiles: vi.fn(
+          () =>
+            new Promise<ImportOutcome>((_, reject) => {
+              failTransfer = reject;
+            }),
+        ),
+        lock: vi.fn(async () => {
+          setTimeout(() => failTransfer({ ...CANCELLED, note }), failDelay);
+          await new Promise((resolve) => setTimeout(resolve, lockDelay));
+        }),
+      });
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+      try {
+        render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: "Choose files to import" }),
+        );
+        await waitFor(() =>
+          expect(bridge.importPickedFiles).toHaveBeenCalled(),
+        );
+        visibility.mockReturnValue("hidden");
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        visibility.mockReturnValue("visible");
+        await user.click(
+          screen.getByRole("button", {
+            name: "Lock now and cancel the transfer",
+          }),
+        );
+        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        });
+        await expectOutcomeAfterUnlock(
+          `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`,
+        );
+      } finally {
+        visibility.mockRestore();
+      }
+    },
+  );
+
+  it.each([
     ["the import fails first", 0, 50],
     ["the lock finishes first", 50, 0],
   ])(
@@ -3296,7 +3352,19 @@ describe("durable vault UI", () => {
       "cuts off a transfer that may have left an emptied file",
       false,
       { ...CANCELLED, note: "Delete that one, not your other backups." },
-      "The transfer did not finish because the vault locked. Delete that one, not your other backups.",
+      "The backup stopped because the vault locked. No backup was saved. Keep your older backups. Delete that one, not your other backups.",
+    ],
+    [
+      // A lock that landed while the document was being opened, which
+      // empties it: the backup then fails as locked, not cancelled.
+      "locked the vault as a transfer opened its file",
+      false,
+      {
+        code: "locked",
+        message: "Unlock the vault to continue.",
+        note: "Delete that one, not your other backups.",
+      },
+      "The backup stopped because the vault locked. No backup was saved. Keep your older backups. Delete that one, not your other backups.",
     ],
     [
       "locked the vault before a transfer began",

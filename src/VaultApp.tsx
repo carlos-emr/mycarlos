@@ -510,12 +510,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // Failures that only say the vault locked, or that a lock cut the
       // operation off.
       const lockedOut = isLockedError(error) || isCancelledError(error);
-      // A transfer a lock cut off where it may have left something to act
-      // on (an Android backup's emptied file): told after the next unlock,
-      // however the lock came.
-      const note = isCancelledError(error) ? vaultErrorNote(error) : null;
+      // A backup a lock cut off where it may have left something to act on
+      // (an Android document, emptied as it was opened): told after the
+      // next unlock, however the lock came. Only a backup's failure carries
+      // such a note.
+      const note = lockedOut ? vaultErrorNote(error) : null;
       const cutOff = note
-        ? `The transfer did not finish because the vault locked. ${note}`
+        ? `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`
         : null;
       if (sessionRef.current !== startedIn) {
         // The vault locked while this ran. Report a failure that left
@@ -527,8 +528,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         } else if (cutOff) holdForUnlock(cutOff);
         return;
       }
-      // A lock under way cancelled it, and says so itself when it finishes.
-      if (lockingRef.current && isCancelledError(error)) {
+      // A lock under way cancelled it, and says so itself when it finishes;
+      // what a cut-off backup may have left is kept for after the unlock.
+      if (lockingRef.current && (cutOff || isCancelledError(error))) {
         if (cutOff) holdForUnlock(cutOff);
         return;
       }
@@ -538,8 +540,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // a transfer it cut off as cancelled (a provider export's write pass
         // as a partial copy instead, handled below). Lock here too, which also
         // confirms it.
-        if (isCancelledError(error))
-          report(cutOff ?? "The transfer did not finish.");
+        if (cutOff) report(cutOff);
+        else if (isCancelledError(error))
+          report("The transfer did not finish.");
         requestLock(true);
         return;
       }
