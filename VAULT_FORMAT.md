@@ -81,8 +81,8 @@ new pair of header generations carrying the envelope, replacing any earlier key;
 vault as it then is, from the same session, so that a lock cannot fall between the two. The
 envelope's id is chosen when the key is made, so that a kit saved before the check can name it.
 Cancelling, locking, or changing the passphrase first writes nothing and forgets the pending key.
-Wherever a key is typed, case, Crockford's look-alike letters and anything between groups other
-than a letter or digit (dashes, spaces, other punctuation) do not matter.
+Wherever a key is typed, case, Crockford's look-alike letters and anything in it other than a
+letter or digit (dashes, spaces, other punctuation) do not matter.
 
 While a key is pending, `recovery_kit_save` writes the kit: a plain-text file holding the key, a
 four-character label from the envelope's id (not secret), the UTC date it was saved, and what it is
@@ -93,14 +93,15 @@ For a filesystem path it is never inside the vault home, is private to the user 
 replaces a link at the destination rather than writing through it; a document provider's URI
 (Android) is written directly, so a failed write can leave a partial kit there. The kit holds the
 key in plain text by design, and says that the key works only once the check is finished: a kit
-saved for a setup that was then cancelled, or ended by a lock, holds a key that opens nothing. The
-key step says so. If a lock, or myCarlos closing, ends a setup after the key was shown, the next
-unlock says how it ended: from when the vault's recovery key was set up, before and after, it tells
-a key never stored from one stored just as the lock came (whose reply the setup never saw). A
-marker in webview storage carries this over a restart; it holds only that time, never the key.
-Setup is the first thing a new vault shows: the passphrase just typed authorizes it, and the
-dialog has no Cancel and ignores Escape. It offers "Set up later" once
-something other than a wrong answer has failed. A lock ends it all the same (on a phone, switching
+saved for a setup that was then cancelled, or ended by a lock before the check finished, holds a
+key that opens nothing. The key step says so. If a lock, or myCarlos closing, ends a setup after
+the key was shown and before the patient saw it finish, the next unlock says how it ended: from when
+the vault's recovery key was set up, before and after, it tells a key never stored from one stored
+just as the lock came (whose reply the setup never saw). A marker in webview storage carries this
+over a restart; it holds only that time, never the key, and creating, erasing or restoring a vault
+forgets it. Setup is the first thing a new vault shows: the passphrase just typed authorizes it,
+and the dialog has no Cancel and ignores Escape. It offers "Set up later" once something other than
+a wrong answer has failed. A lock ends it all the same (on a phone, switching
 apps locks), and so does a failure to make the key; the vault then has no recovery key and says so
 in a banner until one is set up.
 

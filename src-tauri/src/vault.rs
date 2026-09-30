@@ -2336,8 +2336,9 @@ fn recovery_key_check(key: &[u8; RECOVERY_KEY_BYTES]) -> u16 {
     (u16::from(digest[0]) << 2) | u16::from(digest[1] >> 6)
 }
 
-/// Reads a recovery key as typed: case, spaces and hyphens do not matter, and
-/// I, L and O are read as 1, 1 and 0, as Crockford base32 allows.
+/// Reads a recovery key as typed: case, and anything but a letter or digit
+/// (spaces, dashes, other punctuation), do not matter, and I, L and O are
+/// read as 1, 1 and 0, as Crockford base32 allows.
 fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, VaultError> {
     if text.len() > 256 {
         return Err(VaultError::RecoveryKeyTypo);

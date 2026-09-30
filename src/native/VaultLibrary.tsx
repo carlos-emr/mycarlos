@@ -86,6 +86,15 @@ export function VaultLibrary({
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
+  // Gone once the vault locks: what a reply that comes later would show is
+  // then not seen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<NativeView>("list");
@@ -1000,26 +1009,28 @@ export function VaultLibrary({
                 })
               }
               onDone={() => {
-                onUnfinishedRecoveryKey?.(null);
                 const replaced = Boolean(snapshot.recoveryKeySetAtMs);
                 const saved = replaced
                   ? "Recovery key replaced. The old one no longer works."
                   : "Recovery key saved. Keep your kit somewhere safe.";
                 setRecoverySetup(null);
                 setNotice("");
+                // The setup is finished once the patient is told so. Until
+                // then a lock leaves it unfinished, and the next unlock says
+                // the key was saved.
+                const tell = (message: string) => {
+                  if (!mountedRef.current) return;
+                  onUnfinishedRecoveryKey?.(null);
+                  setDialogResult({ message, recordId: activeRecordId });
+                };
                 void refresh().then(
-                  () =>
-                    setDialogResult({
-                      message: saved,
-                      recordId: activeRecordId,
-                    }),
+                  () => tell(saved),
                   // The key is saved, but this screen still shows the vault
                   // as it was before.
                   (error: unknown) =>
-                    setDialogResult({
-                      message: `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
-                      recordId: activeRecordId,
-                    }),
+                    tell(
+                      `${saved} This screen could not be updated: ${vaultErrorMessage(error)}`,
+                    ),
                 );
                 focusPageIfLost();
               }}

@@ -118,11 +118,20 @@ export function RecoveryKeySetup({
   };
   // A failure that is not a wrong answer. A locked vault is the app's to
   // show; anything else lets a required setup be left.
+  // An error about what was typed goes as the patient types again, so that
+  // the same error after another try is read out again. Others, such as why
+  // "Set up later" appeared, stay.
+  const typedWrongRef = useRef(false);
+  const typedWrong = (message: string) => {
+    typedWrongRef.current = true;
+    setError(message);
+  };
   const failed = (failure: unknown) => {
     if (isLockedError(failure)) {
       onLocked();
       return;
     }
+    typedWrongRef.current = false;
     setError(vaultErrorMessage(failure));
     setCanLeave(true);
   };
@@ -198,7 +207,7 @@ export function RecoveryKeySetup({
     // Anything but a letter or digit only separates groups, as natively.
     const symbols = typed.replace(/[^\p{L}\p{N}]/gu, "");
     if (symbols.length !== KEY_SYMBOLS) {
-      setError(
+      typedWrong(
         `You typed ${symbols.length === 1 ? "1 letter or digit" : `${symbols.length} letters and digits`}. Your recovery key has ${KEY_SYMBOLS} letters and digits: 7 groups of 4. Check what you wrote.`,
       );
       return;
@@ -218,6 +227,8 @@ export function RecoveryKeySetup({
       if (!mountedRef.current) return;
       onDone(snapshot);
     } catch (failure) {
+      // A lock closed this: it says so itself.
+      if (!mountedRef.current) return;
       // Only a wrong answer counts towards going back to the key.
       if (!isRecoveryKeyTypo(failure)) {
         failed(failure);
@@ -234,7 +245,7 @@ export function RecoveryKeySetup({
         );
       } else {
         setWrongTries(tries);
-        setError(vaultErrorMessage(failure));
+        typedWrong(vaultErrorMessage(failure));
       }
     } finally {
       setBusy(false);
@@ -436,9 +447,10 @@ export function RecoveryKeySetup({
                 value={typed}
                 onChange={(event) => {
                   setTyped(event.target.value);
-                  // So that the same error, after another try, is read out
-                  // again.
-                  setError("");
+                  if (typedWrongRef.current) {
+                    typedWrongRef.current = false;
+                    setError("");
+                  }
                 }}
               />
             </label>

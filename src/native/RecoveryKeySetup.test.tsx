@@ -189,6 +189,29 @@ describe("RecoveryKeySetup", () => {
     expect(onDone).toHaveBeenCalledWith(snapshot);
   });
 
+  it("reads other punctuation between groups as a separator", async () => {
+    // Some phone keyboards turn a double space into ". ".
+    const user = userEvent.setup();
+    const { bridge } = setUp({ initialKey: KEY });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await typeKey(user, KEY.replaceAll("-", ". "));
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith(
+      GROUPS.map((group, index) => ({ index, value: group })),
+    );
+  });
+
+  it("clears a typing error as the patient types again", async () => {
+    const user = userEvent.setup();
+    setUp({ initialKey: KEY });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await typeKey(user, GROUPS[0]);
+    await user.click(screen.getByRole("button", { name: "Check and save" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("You typed 4");
+    await user.type(screen.getByLabelText("Your recovery key"), "-");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("says when what was typed is not the length of a key, and asks nothing", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ initialKey: KEY });

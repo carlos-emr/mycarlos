@@ -544,7 +544,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(await bridge.create(passphrase, profile));
             // Nothing from a vault that is gone.
             pendingOutcomeRef.current = null;
-            takeUnfinishedRecoveryKey();
+            rememberUnfinishedRecoveryKey(null);
             // The passphrase was just typed, so it authorizes the recovery key
             // at once. If that fails, the library offers to set one up.
             const recoveryKey = await bridge
@@ -607,7 +607,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             if (await bridge.reset(confirmation)) {
               pendingOutcomeRef.current = null;
-              takeUnfinishedRecoveryKey();
+              rememberUnfinishedRecoveryKey(null);
               setStatus("absent");
               setNotice("");
             } else {

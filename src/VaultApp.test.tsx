@@ -1040,12 +1040,12 @@ describe("durable vault UI", () => {
     [
       "first",
       null,
-      /^Vault unlocked\. Recovery key setup ended when the vault locked, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+      /^Vault unlocked\. Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
     ],
     [
       "replacement",
       5,
-      /^Vault unlocked\. Your recovery key was not replaced: setup ended when the vault locked, and your earlier key still works\./,
+      /^Vault unlocked\. Your recovery key was not replaced: setup ended when the vault locked or myCarlos closed, and your earlier key still works\./,
     ],
   ])(
     "says after the next unlock that a lock ended a %s key's setup",
@@ -1080,7 +1080,7 @@ describe("durable vault UI", () => {
     await unlock();
     expect(
       await screen.findByText(
-        /^Vault unlocked\. The recovery key you were shown was saved just before the vault locked, so it is now your recovery key: keep what you saved or wrote down for it\. Your earlier recovery key no longer works\.$/,
+        /^Vault unlocked\. The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it\. Your earlier recovery key no longer works\.$/,
       ),
     ).toBeVisible();
   });
