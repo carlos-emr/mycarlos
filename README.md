@@ -36,7 +36,8 @@ security, device, integration, and release gates. [`PRODUCT_DECISIONS.md`](PRODU
 records the approved patient-pilot behavior; most of that larger scope is not implemented here.
 [`MASVS_MAPPING.md`](MASVS_MAPPING.md) provides a non-compliance working map of every MASVS v2.1.0
 control, and [`SECURITY_OPERATIONS.md`](SECURITY_OPERATIONS.md) fixes the evaluation's no-egress,
-incident, supported-version and future release boundaries.
+incident, supported-version and future release boundaries. [`PRIVACY_REVIEW.md`](PRIVACY_REVIEW.md)
+is a plain-language draft for a privacy officer starting a privacy impact assessment.
 
 Use [`EVALUATION.md`](EVALUATION.md) to reproduce the evaluation evidence and record remaining
 platform findings. The UI
