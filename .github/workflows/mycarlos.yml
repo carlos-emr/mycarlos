@@ -248,6 +248,8 @@ jobs:
           $listener.Start()
           $env:MYCARLOS_WINDOWS_CDP_PORT = [string]$listener.LocalEndpoint.Port
           $listener.Stop()
+          # The test rechecks this port immediately before app launch and reports
+          # an occupied port explicitly; release/rebind still has a small race.
           $env:MYCARLOS_WINDOWS_WEBVIEW_PROFILE = Join-Path $env:RUNNER_TEMP "mycarlos-webview-$([Guid]::NewGuid())"
           # WebView2 150+ ignores env/HKCU overrides for elevated hosts, including
           # this hosted runner. Scope temporary HKLM policies to this exe only.

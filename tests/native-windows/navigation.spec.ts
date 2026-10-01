@@ -235,22 +235,44 @@ test("installed app keeps navigation and popups inside its native boundary", asy
       [origin, true],
     ] as const) {
       await test.step(`refuse clicked ${newWindow ? "popup" : "link"} to ${target}`, async () => {
-        await page.evaluate(
+        const point = await page.evaluate(
           ({ url, popup }) => {
             const link = document.createElement("a");
             link.id = "navigation-probe";
             link.textContent = "Synthetic navigation probe";
             link.href = url;
+            link.style.cssText =
+              "position:fixed;top:0;left:0;padding:12px;z-index:2147483647;background:white;color:black";
+            link.addEventListener("click", (event) => {
+              document.documentElement.dataset.navigationProbeClicked = String(
+                event.isTrusted,
+              );
+            });
+            delete document.documentElement.dataset.navigationProbeClicked;
             if (popup) link.target = "_blank";
             document.body.prepend(link);
+            const rect = link.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            if (document.elementFromPoint(x, y) !== link)
+              throw new Error("Navigation probe is not the mouse target");
+            return { x, y };
           },
           { url: target, popup: newWindow },
         );
-        await page.locator("#navigation-probe").click({ noWaitAfter: true });
+        // WebView2 can leave CDP's navigation pending after a native refusal.
+        // Locator click's prechecks wait on it even with noWaitAfter. Send a real
+        // mouse click to the verified target and prove the trusted event arrived.
+        await page.mouse.click(point.x, point.y);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.dataset.navigationProbeClicked,
+          ),
+        ).toBe("true");
         await assertContained();
-        await page
-          .locator("#navigation-probe")
-          .evaluate((link) => link.remove());
+        await page.evaluate(() =>
+          document.querySelector("#navigation-probe")?.remove(),
+        );
       });
     }
     await test.step("app and native IPC still work after refused navigation", async () => {
