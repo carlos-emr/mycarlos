@@ -33,13 +33,19 @@ export async function runDialogScenarios({ backupPath }) {
     let settled = false,
       result,
       error;
+    const operation = (state.operation = { command, title, settled: false });
     const pending = call(command, request).then(
       (r) => {
         settled = true;
+        operation.settled = true;
+        operation.outcome =
+          typeof r === "boolean" || r === null ? r : "returned value";
         result = r;
       },
       (e) => {
         settled = true;
+        operation.settled = true;
+        operation.error = e;
         error = e;
       },
     );
