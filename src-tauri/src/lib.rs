@@ -755,6 +755,7 @@ async fn kdf_benchmark(
             message: "A speed test is already running. Wait for it to finish.",
             record_id: None,
             note: None,
+            retry_after_ms: None,
         });
     };
     let measured = tauri::async_runtime::spawn_blocking(move || {
@@ -768,6 +769,7 @@ async fn kdf_benchmark(
         message: "The speed test stopped before it finished. Nothing was changed. Try again.",
         record_id: None,
         note: None,
+        retry_after_ms: None,
     })??;
     let RuntimeInfo {
         platform,
