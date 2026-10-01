@@ -922,9 +922,9 @@ const NATIVE_CANCEL: &str = "Cancel";
 /// Asks in a trusted native dialog, which page code cannot press, before
 /// something that cannot be undone. Blocks until it is answered.
 ///
-/// The first button keeps things as they are, because on a computer the
-/// first button is the one that Enter presses, and a dialog can appear
-/// while the patient is typing. The button that goes ahead comes second, and
+/// The first button keeps things as they are: on Windows and macOS it is
+/// the Enter/Return default, and a dialog can appear while the patient is
+/// typing. Linux has no explicit default and needs device testing. The button that goes ahead comes second, and
 /// Cancel, which does what the first does, third.
 ///
 /// Three buttons, though two do the same, because each slot has a meaning
