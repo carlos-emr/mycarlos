@@ -3,6 +3,14 @@ param([Parameter(Mandatory)][int]$AppPid, [Parameter(Mandatory)][string]$Title,
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+# PowerShell can otherwise expose common Win32 controls only as generic panes.
+# Load the installed standard-control proxies before the first UIA query.
+Add-Type -AssemblyName UIAutomationClientsideProviders
+$providerAssemblies = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object {
+  $_.GetName().Name -eq 'UIAutomationClientsideProviders'
+})
+if ($providerAssemblies.Count -ne 1) { throw 'Expected one installed UIA provider assembly' }
+[System.Windows.Automation.ClientSettings]::RegisterClientSideProviderAssembly($providerAssemblies[0].GetName())
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -109,7 +117,7 @@ while ([DateTime]::UtcNow -lt $focusDeadline) {
   Start-Sleep -Milliseconds 50
 }
 if (!$focusOwned) { throw 'Keyboard focus is outside the owned dialog' }
-$evidence = @{nativeWindow=$nativeWindow; title=$dialog.Current.Name; action=$Action; buttons=@($buttons | ForEach-Object { $_.Current.Name }); beforeActivationFocus=$beforeFocus; focus=$focus.Current.Name; focusType=$focus.Current.ControlType.ProgrammaticName}
+$evidence = @{providerAssembly=$providerAssemblies[0].FullName; nativeWindow=$nativeWindow; title=$dialog.Current.Name; action=$Action; buttons=@($buttons | ForEach-Object { $_.Current.Name }); beforeActivationFocus=$beforeFocus; focus=$focus.Current.Name; focusType=$focus.Current.ControlType.ProgrammaticName}
 switch ($Action) {
   'enter' { [NativeDialogInput]::Key($hwnd, $AppPid, 0x0D) }
   'space' { [NativeDialogInput]::Key($hwnd, $AppPid, 0x20) }
@@ -117,7 +125,12 @@ switch ($Action) {
   'close' { if (![NativeDialogInput]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'WM_CLOSE failed' } }
   'button' {
     $matching = @($buttons | Where-Object { $_.Current.Name -eq $Value })
-    if ($matching.Count -ne 1) { throw "Expected one button named $Value; found $($matching.Count)" }
+    if ($matching.Count -ne 1) {
+      $controls = @($dialog.FindAll($scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
+        @{name=$_.Current.Name; type=$_.Current.ControlType.ProgrammaticName; class=$_.Current.ClassName; patterns=@($_.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })}
+      }) | ConvertTo-Json -Compress -Depth 4
+      throw "Expected one button named $Value; found $($matching.Count); provider: $($providerAssemblies[0].FullName); controls: $controls"
+    }
     ([System.Windows.Automation.InvokePattern]$matching[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
   }
   'file' {
