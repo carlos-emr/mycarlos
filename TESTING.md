@@ -275,3 +275,27 @@ Comment on [issue #4](https://github.com/carlos-emr/mycarlos/issues/4) (Android)
 the platform and OS version, the device or emulator, the source commit from `BUILD.txt`, what you
 did, and what happened. Screenshots help, as long as they show only made-up data. Report
 suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.
+
+## Automated Windows navigation smoke test
+
+The Windows CI job runs `npm run test:windows-navigation` against the executable installed
+from its freshly built NSIS package. It attaches Playwright to the real WebView2 window;
+there is no frontend server or mocked native bridge. The test checks startup, real Rust IPC,
+bundled-page reload, blocked outside/development-server navigation, and clicked links/popups
+(including a popup to a bundled page). A local request detector checks that no canary URL arrives.
+A changed document, transient external navigation, or extra webview also fails the test.
+
+The job uploads `mycarlos-windows-navigation-evidence`, with the Playwright report, trace and
+window screenshots. Failure evidence is captured only after Rust confirms there is no vault.
+The test has no automatic retries and a failed test prevents publishing that run's Windows installer.
+
+For a local run, use a disposable Windows account with no myCarlos vault. Install dependencies
+with `npm ci`, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
+and run `npm run test:windows-navigation`. A fresh temporary WebView profile is used and the
+spawned app/process tree is stopped afterward. The profile does not relocate the native vault;
+the test refuses an existing vault and never creates, unlocks, or deletes one. Remote debugging
+is enabled only for this test process. No Playwright browser download is needed on Windows:
+the test uses the installed WebView2 runtime. This suite deliberately fails on other platforms.
+
+This test covers Windows desktop navigation. macOS/mobile behavior, native file pickers,
+Narrator, and the documented upstream URL-parsing limitations still need their own checks.

@@ -239,6 +239,22 @@ jobs:
           if subsystem != 2:
               raise SystemExit(f"Installed app must use the Windows GUI subsystem, got {subsystem}")
           print("Installed app uses the Windows GUI subsystem; no console is allocated at launch.")
+      - name: Test installed Windows navigation guard
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $env:MYCARLOS_WINDOWS_APP = Join-Path $env:RUNNER_TEMP 'mycarlos-install-smoke/mycarlos-tauri-poc.exe'
+          npm run test:windows-navigation
+      - name: Upload Windows navigation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-windows-navigation-evidence
+          path: |
+            test-results/windows-native/
+            test-results/windows-native-report/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Prepare Windows download
         shell: pwsh
         env:

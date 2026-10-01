@@ -64,7 +64,10 @@ distributed to patients.
 
 "Vault tests" are the Rust storage, encryption, and crash-recovery tests; they do not launch the
 app's window. The Windows job also installs the package silently and checks that the installed
-executable is marked as a GUI program, so no console window will open; it does not start the app.
+executable is marked as a GUI program, so no console window will open. It then launches that
+installed app and uses Playwright attached to WebView2 to check bundled-page navigation, native
+IPC, and refusal of external navigation and popup requests. This is an automated smoke test;
+it does not establish device, screen-reader, or full vault-workflow readiness.
 Nothing on Android or iOS has been launched: import and export there depend on the
 system file pickers, whose behaviour has been reasoned from platform documentation but not
 observed. Physical-device, lifecycle, and backup/restore checks are tracked in

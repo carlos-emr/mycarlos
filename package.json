@@ -23,7 +23,8 @@
     "test:e2e": "playwright test",
     "tauri": "tauri",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "test:windows-navigation": "playwright test --config playwright.windows.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
