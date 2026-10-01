@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 
-async function listen(server: Server): Promise<number> {
+async function listen(server: Server, port = 0): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(port, "127.0.0.1", resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("No local port");
@@ -92,16 +92,27 @@ test("installed app keeps navigation and popups inside its native boundary", asy
     expect(requests).toEqual(["GET /navigation-canary"]);
     requests.length = 0;
 
-    let debugPort = Number(process.env.MYCARLOS_WINDOWS_CDP_PORT);
+    let debugPort = Number(process.env.MYCARLOS_WINDOWS_CDP_PORT ?? 0);
     if (process.env.MYCARLOS_WINDOWS_CDP_PORT) {
       expect(
-        Number.isInteger(debugPort) && debugPort > 0 && debugPort < 65536,
+        Number.isInteger(debugPort),
+        `Invalid CDP port: ${debugPort}`,
       ).toBe(true);
-    } else {
-      const reservation = createServer();
-      debugPort = await listen(reservation);
-      await close(reservation);
+      expect(debugPort).toBeGreaterThan(0);
+      expect(debugPort).toBeLessThan(65536);
     }
+    // Recheck CI's chosen port immediately before launch; local runs choose one.
+    // Releasing it cannot eliminate the bind race, but catches an occupied port.
+    const reservation = createServer();
+    try {
+      debugPort = await listen(reservation, debugPort);
+    } catch (cause) {
+      throw new Error(
+        `CDP port ${debugPort} is unavailable before app launch`,
+        { cause },
+      );
+    }
+    await close(reservation);
     const endpoint = `http://127.0.0.1:${debugPort}`;
     app = spawn(executable!, [], {
       shell: false,

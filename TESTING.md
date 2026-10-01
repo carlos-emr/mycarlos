@@ -289,6 +289,14 @@ The job uploads `mycarlos-windows-navigation-evidence`, with the Playwright repo
 window screenshots. Screenshots and traces are captured only after Rust confirms there is no vault.
 The test has no automatic retries and a failed test prevents publishing that run's Windows installer.
 
+The first attached Windows run exposed an outbound-request gap: WebView2 sent the test
+server a GET before cancelling navigation. The bundled page stayed intact, but the zero-request
+assertion failed. [Microsoft documents this behavior](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2navigationstartingeventargs#get_cancel).
+Windows now installs a native document-request interceptor before allowing app navigation.
+Disallowed document requests receive a local empty 403 response; Tauri IPC remains untouched.
+The zero-request assertion is retained to verify this fix on the installed build. If the required
+WebView2 request-filter API is unavailable, the app fails startup instead of running unprotected.
+
 For a local run, use a disposable Windows account with no myCarlos vault. Install dependencies
 with `npm ci` in a non-elevated shell, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
 and run `npm run test:windows-navigation`. A fresh temporary WebView profile is used and the

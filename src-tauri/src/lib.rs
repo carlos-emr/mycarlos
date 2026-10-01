@@ -1,5 +1,7 @@
 mod idle;
 mod vault;
+#[cfg(windows)]
+mod windows_navigation;
 
 use idle::{IdleDeadline, Opening};
 use serde::{Deserialize, Serialize};
@@ -1676,6 +1678,33 @@ fn may_navigate(config: &tauri::Config, url: &Url) -> bool {
     navigation_allowed(url, bundled_origin(config), dev_url)
 }
 
+// Keep app code from running until Windows request interception is installed.
+#[cfg(any(windows, test))]
+#[derive(Default)]
+struct NavigationStartup {
+    armed: bool,
+    pending: Option<Url>,
+}
+
+#[cfg(any(windows, test))]
+impl NavigationStartup {
+    fn permit(&mut self, url: &Url, allowed: bool) -> bool {
+        if !allowed {
+            return false;
+        }
+        if !self.armed {
+            self.pending = Some(url.clone());
+            return false;
+        }
+        true
+    }
+
+    fn arm(&mut self) -> Option<Url> {
+        self.armed = true;
+        self.pending.take()
+    }
+}
+
 /// Applies the rule to every webview the app creates.
 fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("navigation-guard")
@@ -1705,10 +1734,36 @@ pub fn run() {
                 .first()
                 .cloned()
                 .ok_or("the main window is not configured")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
-                .on_navigation(move |url| may_navigate(&config, url))
+            #[cfg(windows)]
+            let startup = Arc::new(Mutex::new(NavigationStartup::default()));
+            #[cfg(windows)]
+            let navigation_startup = Arc::clone(&startup);
+            let _webview = tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+                .on_navigation(move |url| {
+                    let allowed = may_navigate(&config, url);
+                    #[cfg(windows)]
+                    return navigation_startup
+                        .lock()
+                        .expect("navigation startup mutex poisoned")
+                        .permit(url, allowed);
+                    #[cfg(not(windows))]
+                    allowed
+                })
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
+            #[cfg(windows)]
+            {
+                windows_navigation::install(&_webview, app.config().clone())?;
+                // The initial navigation may happen during build or be queued.
+                // Replay it only if the startup gate already refused it.
+                let pending = startup
+                    .lock()
+                    .expect("navigation startup mutex poisoned")
+                    .arm();
+                if let Some(url) = pending {
+                    _webview.navigate(url)?;
+                }
+            }
             // `vault-home` holds the vault and only what the vault manages beside
             // it (lock file, pending reset, create stage, export journal). Back
             // up or restore the whole directory. Machine-local data, because the
@@ -2719,5 +2774,30 @@ mod tests {
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod navigation_startup_tests {
+    use super::*;
+
+    #[test]
+    fn startup_replays_only_allowed_navigation_after_installation() {
+        let bundled = Url::parse("http://tauri.localhost/").unwrap();
+        let outside = Url::parse("https://example.invalid/").unwrap();
+        let mut startup = NavigationStartup::default();
+        assert!(!startup.permit(&bundled, true));
+        assert!(!startup.permit(&outside, false));
+        assert_eq!(startup.arm(), Some(bundled.clone()));
+        assert!(startup.permit(&bundled, true));
+        assert!(!startup.permit(&outside, false));
+        assert_eq!(startup.arm(), None);
+    }
+
+    #[test]
+    fn startup_handles_navigation_queued_until_after_installation() {
+        let mut startup = NavigationStartup::default();
+        assert_eq!(startup.arm(), None);
+        assert!(startup.permit(&Url::parse("http://tauri.localhost/").unwrap(), true));
     }
 }
