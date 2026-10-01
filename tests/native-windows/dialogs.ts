@@ -1,7 +1,7 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -55,6 +55,30 @@ export async function testNativeDialogs(
     await readFile("scripts/native-dialogs/scenarios.mjs", "utf8")
   ).replace("export async function", "async function");
   const backupPath = testInfo.outputPath("synthetic.mycarlosbackup");
+  const native = async (title: string, action: string, value?: string) =>
+    JSON.parse(
+      (
+        await promisify(execFile)(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            resolve("scripts/native-dialogs/windows.ps1"),
+            "-AppPid",
+            String(appPid),
+            "-Title",
+            title,
+            "-Action",
+            action,
+            ...(value ? ["-Value", value] : []),
+          ],
+          { timeout: 30_000, maxBuffer: 1024 * 1024 },
+        )
+      ).stdout,
+    );
   // Start asynchronously: the host must keep polling while Rust awaits a dialog.
   await page.evaluate(
     `${source}\nvoid runDialogScenarios({backupPath:${JSON.stringify(backupPath)}});`,
@@ -63,11 +87,27 @@ export async function testNativeDialogs(
   const deadline = Date.now() + 420_000;
   while (Date.now() < deadline) {
     const state = (await page.evaluate("window.__nativeDialogTest")) as State;
-    await writeFile(
-      testInfo.outputPath("native-dialogs.json"),
-      JSON.stringify(state, null, 2),
-    );
+    try {
+      await writeFile(
+        testInfo.outputPath("native-dialogs.json"),
+        JSON.stringify(state, null, 2),
+      );
+    } catch (error) {
+      if (!state.error) throw error;
+      console.error("Additional native dialog evidence failure:", error);
+    }
     if (state.done) {
+      if (state.error) {
+        try {
+          const diagnostic = await native("DIAGNOSTIC", "inspect");
+          await writeFile(
+            testInfo.outputPath("native-dialog-failure.json"),
+            JSON.stringify(diagnostic, null, 2),
+          );
+        } catch (error) {
+          console.error("Additional native dialog diagnostic failure:", error);
+        }
+      }
       expect(state.error, "Native dialog scenarios").toBeUndefined();
       expect(state.results).toHaveLength(30);
       for (const result of state.results.filter(
@@ -84,32 +124,21 @@ export async function testNativeDialogs(
       last = request.id;
       let reply: { id: number; value?: unknown; error?: string };
       try {
+        if (request.action === "file" && request.title === "FILE_OPEN") {
+          expect(request.value).toBe(backupPath);
+          const backup = await stat(backupPath);
+          expect(
+            backup.isFile(),
+            "Backup must exist at its requested path",
+          ).toBe(true);
+          expect(backup.size, "Backup must contain ciphertext").toBeGreaterThan(
+            0,
+          );
+        }
         const value =
           request.action === "fingerprint"
             ? await fingerprint(vault)
-            : JSON.parse(
-                (
-                  await promisify(execFile)(
-                    "powershell.exe",
-                    [
-                      "-NoProfile",
-                      "-NonInteractive",
-                      "-ExecutionPolicy",
-                      "Bypass",
-                      "-File",
-                      resolve("scripts/native-dialogs/windows.ps1"),
-                      "-AppPid",
-                      String(appPid),
-                      "-Title",
-                      request.title,
-                      "-Action",
-                      request.action,
-                      ...(request.value ? ["-Value", request.value] : []),
-                    ],
-                    { timeout: 30_000, maxBuffer: 1024 * 1024 },
-                  )
-                ).stdout,
-              );
+            : await native(request.title, request.action, request.value);
         reply = { id: last, value };
       } catch (error) {
         reply = { id: last, error: String(error) };

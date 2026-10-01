@@ -40,7 +40,7 @@ public static class NativeDialogInput {
   [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
   static extern IntPtr ReadMessage(IntPtr hwnd, uint msg, UIntPtr w, StringBuilder text, uint flags, uint timeout, out UIntPtr result);
   [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
-  static extern IntPtr WriteMessage(IntPtr hwnd, uint msg, UIntPtr w, string text, uint flags, uint timeout, out UIntPtr result);
+  static extern IntPtr ScalarMessage(IntPtr hwnd, uint msg, UIntPtr w, IntPtr l, uint flags, uint timeout, out UIntPtr result);
   static string ClassName(IntPtr window) {
     var text = new StringBuilder(256); GetClassName(window, text, text.Capacity); return text.ToString();
   }
@@ -78,7 +78,7 @@ public static class NativeDialogInput {
     EnumWindowProc callback = (window, parameter) => {
       try {
         string name = ClassName(window);
-        if (name != "Button" && name != "Edit") return true;
+        if (name != "Button" && name != "Edit" && name != "Static") return true;
         if (!IsWindowVisible(window) || !IsWindowEnabled(window)) return true;
         OwnedChild(dialog, pid, window);
         result.Add(new WindowInfo { hwnd=window.ToInt64(), pid=pid, id=GetDlgCtrlID(window), title=ControlText(window), windowClass=name });
@@ -130,18 +130,57 @@ public static class NativeDialogInput {
     }
     throw new Exception("Tab did not reach the exact requested button");
   }
-  public static void Filename(IntPtr dialog, uint pid, IntPtr edit, int expectedId, string text) {
-    Focus(dialog,pid);
+  static void FilenameIdentity(IntPtr dialog, uint pid, IntPtr edit, int expectedId) {
     OwnedChild(dialog,pid,edit);
     if ((expectedId != 1001 && expectedId != 1148) || ClassName(edit) != "Edit" || GetDlgCtrlID(edit) != expectedId)
       throw new Exception("Wrong filename control");
+  }
+  public static int Filename(IntPtr dialog, uint pid, IntPtr edit, int expectedId, string text) {
+    int tabs=0;
+    for (; tabs<=50; tabs++) {
+      FilenameIdentity(dialog,pid,edit,expectedId);
+      if (Focus(dialog,pid) == edit) break;
+      if (tabs < 50) { Key(dialog,pid,0x09); Thread.Sleep(100); }
+    }
+    if (tabs > 50) throw new Exception("Tab did not reach the filename control");
+    FilenameIdentity(dialog,pid,edit,expectedId);
+    if (Focus(dialog,pid) != edit) throw new Exception("Filename control lost focus");
     UIntPtr result;
-    if (WriteMessage(edit, 0x000C, UIntPtr.Zero, text, 0x22, 1000, out result) == IntPtr.Zero || result == UIntPtr.Zero)
-      throw new Exception("Filename write failed or timed out");
-    if (ControlText(edit) != text) throw new Exception("Filename readback differs");
+    // EM_SETSEL selects the existing filename; genuine Unicode input replaces it.
+    // WM_SETTEXT readback alone does not prove the picker accepted a new filename.
+    if (ScalarMessage(edit, 0x00B1, UIntPtr.Zero, new IntPtr(-1), 0x22, 1000, out result) == IntPtr.Zero)
+      throw new Exception("Filename selection failed or timed out");
+    foreach (char character in text) {
+      FilenameIdentity(dialog,pid,edit,expectedId);
+      if (Focus(dialog,pid) != edit) throw new Exception("Filename control lost focus while typing");
+      var inputs = new INPUT[2];
+      inputs[0].type=inputs[1].type=1;
+      inputs[0].data.keyboard.scan=inputs[1].data.keyboard.scan=character;
+      inputs[0].data.keyboard.flags=4; // KEYEVENTF_UNICODE; wVk stays zero.
+      inputs[1].data.keyboard.flags=6; // UNICODE | KEYUP.
+      if (SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) != 2) throw new Exception("Filename input failed");
+    }
+    // SendInput queues input. Wait for the target thread to consume it.
+    for (int i=0; i<20; i++) {
+      FilenameIdentity(dialog,pid,edit,expectedId);
+      if (Focus(dialog,pid) != edit) throw new Exception("Filename control lost focus before readback");
+      if (ControlText(edit) == text) return tabs;
+      Thread.Sleep(100);
+    }
+    throw new Exception("Filename readback differs");
   }
 }
 '@
+if ($Action -eq 'inspect') {
+  # Failure evidence only: inspect the launched app's windows without input.
+  @([NativeDialogInput]::Windows($AppPid) | ForEach-Object {
+    $window = $_
+    try { $children = @([NativeDialogInput]::Controls([IntPtr]$window.hwnd, $AppPid)) }
+    catch { $children = @{error=$_.Exception.Message} }
+    @{window=$window; controls=$children}
+  }) | ConvertTo-Json -Compress -Depth 6
+  exit
+}
 $deadline = [DateTime]::UtcNow.AddSeconds(20)
 $nativeWindow = $null
 $windows = @()
@@ -220,7 +259,7 @@ switch ($Action) {
       throw "Expected one filename Edit1001/1148; controls: $diagnostic"
     }
     $evidence.filenameControlId = $edits[0].id
-    [NativeDialogInput]::Filename($hwnd, $AppPid, [IntPtr]$edits[0].hwnd, $edits[0].id, $Value)
+    $evidence.filenameTabs = [NativeDialogInput]::Filename($hwnd, $AppPid, [IntPtr]$edits[0].hwnd, $edits[0].id, $Value)
     $label = if ($Title -eq 'FILE_SAVE') { 'Save' } else { 'Open' }
     Activate-Button $label $true
   }

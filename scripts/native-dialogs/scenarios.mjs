@@ -175,7 +175,13 @@ export async function runDialogScenarios({ backupPath }) {
       backupPath,
     );
     assert(saveId, "Backup save was cancelled");
-    await call("vault_backup_picked", { pickId: saveId });
+    const saved = (state.savedBackup = await call("vault_backup_picked", {
+      pickId: saveId,
+    }));
+    assert(
+      saved?.name === backupPath.split(/[\\/]/).pop() && saved.bytes > 0,
+      "Backup was not saved with the requested filename and nonempty contents",
+    );
     await call("vault_create_profile", {
       displayName: "FAKE Added after backup",
     });
