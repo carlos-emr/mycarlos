@@ -277,13 +277,16 @@ each computer:
 3. Open it again and press Space. Nothing should change.
 4. Open it again and press Escape. Nothing should change.
 5. Open it again and close it with its X, if it has one. Nothing should change.
-6. Each time, the app should say that it was cancelled and that nothing changed.
+6. Each time, nothing should change. Erase and restore should report cancellation. For recovery-key
+   replacement, setup should stay open and say the current key still works.
 7. On a Mac, turn on **Keyboard navigation** in System Settings, then do steps 1 to 4 again, and
    say which button has the ring around it.
 8. Can the dialog end up behind the app's window? On Windows and on a Mac it should stay in front
    of it. On Linux it may not.
-9. Last, open it again, press Tab until the button that goes ahead has the focus, and say what
-   Enter and Space do then. They are expected to go ahead: use a vault you can lose.
+9. Using a vault you can lose, open it again and press Tab until the button that goes ahead has
+   focus. Try Enter and Space separately and record which button each key activates: the default
+   button and the focused button may differ. Also deliberately click the button that goes ahead
+   once and verify that it performs the requested action.
 
 On a phone: note the order of the buttons, then tap outside the dialog, and press Back on
 Android. Nothing should change.
@@ -302,3 +305,41 @@ Comment on [issue #4](https://github.com/carlos-emr/mycarlos/issues/4) (Android)
 the platform and OS version, the device or emulator, the source commit from `BUILD.txt`, what you
 did, and what happened. Screenshots help, as long as they show only made-up data. Report
 suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.
+
+## Automated Windows navigation smoke test
+
+The Windows CI job runs `npm run test:windows-navigation` against the executable installed
+from its freshly built NSIS package. It attaches Playwright to the real WebView2 window;
+there is no frontend server or mocked native bridge. The test checks startup, real Rust IPC,
+bundled-page reload, blocked outside/development-server navigation, and clicked links/popups
+(including a popup to a bundled page). A local request detector checks that no canary URL arrives.
+A changed document, transient external navigation, or extra webview also fails the test.
+
+The job uploads `mycarlos-windows-navigation-evidence`, with the Playwright report, trace and
+window screenshots. Screenshots and traces are captured only after Rust confirms there is no vault.
+The test has no automatic retries and a failed test prevents publishing that run's Windows installer.
+
+The first attached Windows run exposed an outbound-request gap: WebView2 sent the test
+server a GET before cancelling navigation. The bundled page stayed intact, but the zero-request
+assertion failed. [Microsoft documents this behavior](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2navigationstartingeventargs#get_cancel).
+Windows now installs a native document-request interceptor before allowing app navigation.
+Disallowed document requests receive a local empty 403 response; Tauri IPC remains untouched.
+The zero-request assertion is retained to verify this fix on the installed build. If the required
+WebView2 request-filter API is unavailable, the app fails startup instead of running unprotected.
+
+For a local run, use a disposable Windows account with no myCarlos vault. Install dependencies
+with `npm ci` in a non-elevated shell, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
+and run `npm run test:windows-navigation`. A fresh temporary WebView profile is used and the
+spawned app/process tree is stopped afterward. The profile does not relocate the native vault;
+the test refuses an existing vault and never creates, unlocks, or deletes one. Remote debugging
+is enabled only for testing. On the disposable elevated CI runner, the workflow temporarily
+sets executable-specific HKLM WebView2 policies for the debugging port and fresh profile,
+then removes only the values it added in a `finally` block. It refuses to overwrite existing
+values. WebView2 150+ ignores the equivalent environment overrides for elevated processes
+([Microsoft explanation](https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645)).
+Local runs should use a non-elevated shell and do not modify registry policy.
+No Playwright browser download is needed on Windows:
+the test uses the installed WebView2 runtime. This suite deliberately fails on other platforms.
+
+This test covers Windows desktop navigation. macOS/mobile behavior, native file pickers,
+Narrator, and the documented upstream URL-parsing limitations still need their own checks.

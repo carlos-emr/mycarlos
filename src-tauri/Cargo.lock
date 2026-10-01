@@ -2019,6 +2019,8 @@ dependencies = [
  "thiserror 2.0.20",
  "unicode-normalization",
  "uuid",
+ "webview2-com",
+ "windows",
  "zeroize",
  "zxcvbn",
 ]
