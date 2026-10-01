@@ -201,13 +201,24 @@ interface PublicError {
   recordId?: string;
   /** A sentence to add after the message, about how the failure came about. */
   note?: string;
+  /** How long to wait before the next try, after several wrong ones. */
+  retryAfterMs?: number;
 }
 
 export function vaultErrorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
-    const { message, note } = error as PublicError;
-    if (typeof message === "string")
-      return typeof note === "string" ? `${message} ${note}` : message;
+    const { message, note, retryAfterMs } = error as PublicError;
+    if (typeof message === "string") {
+      const parts = [message];
+      if (typeof note === "string") parts.push(note);
+      if (typeof retryAfterMs === "number" && retryAfterMs > 0) {
+        const seconds = Math.ceil(retryAfterMs / 1000);
+        parts.push(
+          `Try again in ${seconds} second${seconds === 1 ? "" : "s"}.`,
+        );
+      }
+      return parts.join(" ");
+    }
   }
   return "The vault operation could not be completed.";
 }
