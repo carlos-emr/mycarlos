@@ -351,8 +351,9 @@ Restore uses the real Save/Open dialogs and a backup created by the app; a profi
 after the backup proves which contents remain. Successful completion erases the synthetic
 vault. On failure, use only the disposable account; synthetic data may remain for diagnosis.
 The evidence artifact includes `native-dialogs.json`, with button labels and initial focus.
-The native driver checks the app PID and foreground dialog before sending operating-system
-keystrokes. Playwright invokes real Rust commands but cannot itself press these native buttons.
+The native driver checks the app PID, foreground dialog, and native focus before sending
+operating-system keystrokes. Explicit Windows button actions use Tab to reach the verified
+button and Space to activate it; initial Enter/Space checks leave focus untouched. Playwright invokes real Rust commands but cannot itself press these native buttons.
 
 For a local Windows dialog run, set `$env:MYCARLOS_WINDOWS_DIALOG_TESTS = '1'` before the
 command above. Keep the desktop available to the test and do not use its mouse or keyboard.

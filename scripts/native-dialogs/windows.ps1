@@ -1,70 +1,143 @@
 param([Parameter(Mandatory)][int]$AppPid, [Parameter(Mandatory)][string]$Title,
       [Parameter(Mandatory)][string]$Action, [string]$Value = '')
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-# PowerShell can otherwise expose common Win32 controls only as generic panes.
-# Load the installed standard-control proxies before the first UIA query.
-Add-Type -AssemblyName UIAutomationClientsideProviders
-$providerAssemblies = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object {
-  $_.GetName().Name -eq 'UIAutomationClientsideProviders'
-})
-if ($providerAssemblies.Count -ne 1) { throw 'Expected one installed UIA provider assembly' }
-[System.Windows.Automation.ClientSettings]::RegisterClientSideProviderAssembly($providerAssemblies[0].GetName())
+# Win32 identifies the actual controls independently of UIA client-side proxies.
+# Every keyboard action targets an owned foreground dialog with verified focus.
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 public static class NativeDialogInput {
-  public class WindowInfo { public long hwnd,owner; public uint pid,ownerPid; public string title,windowClass; }
+  public class WindowInfo { public long hwnd,owner; public uint pid,ownerPid; public int id; public string title,windowClass; }
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left,top,right,bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct GUIINFO {
+    public uint size,flags;
+    public IntPtr active,focus,capture,menuOwner,moveSize,caret;
+    public RECT caretRect;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx,dy; public uint data,flags,time; public UIntPtr extra; }
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort key,scan; public uint flags,time; public UIntPtr extra; }
+  [StructLayout(LayoutKind.Explicit)] public struct UNION { [FieldOffset(0)] public MOUSEINPUT mouse; [FieldOffset(0)] public KEYBDINPUT keyboard; }
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public UNION data; }
   delegate bool EnumWindowProc(IntPtr window, IntPtr parameter);
   [DllImport("user32.dll", SetLastError=true)] static extern bool EnumWindows(EnumWindowProc callback, IntPtr parameter);
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumWindowProc callback, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr window);
+  [DllImport("user32.dll")] static extern bool IsChild(IntPtr parent, IntPtr child);
+  [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr window);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder text, int count);
   [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+  [DllImport("user32.dll", SetLastError=true)] static extern bool GetGUIThreadInfo(uint thread, ref GUIINFO info);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint count, INPUT[] inputs, int size);
+  [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
+  static extern IntPtr ReadMessage(IntPtr hwnd, uint msg, UIntPtr w, StringBuilder text, uint flags, uint timeout, out UIntPtr result);
+  [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
+  static extern IntPtr WriteMessage(IntPtr hwnd, uint msg, UIntPtr w, string text, uint flags, uint timeout, out UIntPtr result);
+  static string ClassName(IntPtr window) {
+    var text = new StringBuilder(256); GetClassName(window, text, text.Capacity); return text.ToString();
+  }
+  static string ControlText(IntPtr window) {
+    var text = new StringBuilder(4096); UIntPtr result;
+    // WM_GETTEXT; finite timeout, abort if hung or the target disappears.
+    if (ReadMessage(window, 0x000D, (UIntPtr)text.Capacity, text, 0x22, 1000, out result) == IntPtr.Zero)
+      throw new Exception("Control text read failed or timed out");
+    if (result.ToUInt64() >= (ulong)text.Capacity - 1) throw new Exception("Control text truncated");
+    return text.ToString();
+  }
   public static WindowInfo[] Windows(uint appPid) {
     var result = new List<WindowInfo>();
     EnumWindowProc callback = (window, parameter) => {
       uint pid; GetWindowThreadProcessId(window, out pid);
       if (pid != appPid || !IsWindowVisible(window)) return true;
       var title = new StringBuilder(1024); GetWindowText(window, title, title.Capacity);
-      var name = new StringBuilder(256); GetClassName(window, name, name.Capacity);
       var owner = GetWindow(window, 4); // GW_OWNER
       uint ownerPid = 0; if (owner != IntPtr.Zero) GetWindowThreadProcessId(owner, out ownerPid);
-      result.Add(new WindowInfo { hwnd=window.ToInt64(), owner=owner.ToInt64(), pid=pid, ownerPid=ownerPid, title=title.ToString(), windowClass=name.ToString() });
+      result.Add(new WindowInfo { hwnd=window.ToInt64(), owner=owner.ToInt64(), pid=pid, ownerPid=ownerPid, title=title.ToString(), windowClass=ClassName(window) });
       return true;
     };
     if (!EnumWindows(callback, IntPtr.Zero)) throw new Exception("EnumWindows failed: " + Marshal.GetLastWin32Error());
     return result.ToArray();
   }
-  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx,dy; public uint data,flags,time; public UIntPtr extra; }
-  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort key,scan; public uint flags,time; public UIntPtr extra; }
-  [StructLayout(LayoutKind.Explicit)] public struct UNION { [FieldOffset(0)] public MOUSEINPUT mouse; [FieldOffset(0)] public KEYBDINPUT keyboard; }
-  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public UNION data; }
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
-  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
-  [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint count, INPUT[] inputs, int size);
-  public static void Key(IntPtr window, uint pid, ushort key) {
-    uint actual; GetWindowThreadProcessId(window, out actual);
-    if (actual != pid || GetForegroundWindow() != window) throw new Exception("Dialog lost foreground or ownership before keypress");
+  static void OwnedChild(IntPtr dialog, uint pid, IntPtr child) {
+    uint actual; GetWindowThreadProcessId(child, out actual);
+    if (actual != pid || !IsChild(dialog, child) || !IsWindowVisible(child) || !IsWindowEnabled(child))
+      throw new Exception("Control is not an enabled visible child of the owned dialog");
+  }
+  public static WindowInfo[] Controls(IntPtr dialog, uint pid) {
+    var result = new List<WindowInfo>();
+    // Never allow a managed exception to unwind through an unmanaged callback.
+    Exception failure = null;
+    EnumWindowProc callback = (window, parameter) => {
+      try {
+        string name = ClassName(window);
+        if (name != "Button" && name != "Edit") return true;
+        if (!IsWindowVisible(window) || !IsWindowEnabled(window)) return true;
+        OwnedChild(dialog, pid, window);
+        result.Add(new WindowInfo { hwnd=window.ToInt64(), pid=pid, id=GetDlgCtrlID(window), title=ControlText(window), windowClass=name });
+        return true;
+      } catch (Exception error) { failure=error; return false; }
+    };
+    // This enumerates descendants; its return value is documented as unused.
+    EnumChildWindows(dialog, callback, IntPtr.Zero);
+    if (failure != null) throw failure;
+    return result.ToArray();
+  }
+  public static IntPtr Focus(IntPtr dialog, uint pid) {
+    uint actual; uint thread=GetWindowThreadProcessId(dialog, out actual);
+    if (actual != pid || GetForegroundWindow() != dialog) throw new Exception("Dialog lost foreground or ownership");
+    var info = new GUIINFO { size=(uint)Marshal.SizeOf(typeof(GUIINFO)) };
+    if (!GetGUIThreadInfo(thread, ref info)) throw new Exception("GetGUIThreadInfo failed");
+    if (info.focus != dialog) OwnedChild(dialog, pid, info.focus);
+    return info.focus;
+  }
+  public static WindowInfo FocusInfo(IntPtr dialog, uint pid) {
+    var focus=Focus(dialog,pid);
+    return new WindowInfo { hwnd=focus.ToInt64(), pid=pid, title=ControlText(focus), windowClass=ClassName(focus) };
+  }
+  public static void Key(IntPtr dialog, uint pid, ushort key) { Key(dialog,pid,key,IntPtr.Zero); }
+  static void Key(IntPtr dialog, uint pid, ushort key, IntPtr expectedFocus) {
+    var focus=Focus(dialog,pid); // Recheck immediately before every real keypress.
+    if (expectedFocus != IntPtr.Zero && focus != expectedFocus) throw new Exception("Target button lost focus before activation");
     var inputs = new INPUT[2];
     inputs[0].type=inputs[1].type=1;
     inputs[0].data.keyboard.key=inputs[1].data.keyboard.key=key;
     inputs[1].data.keyboard.flags=2;
     if (SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) != 2) throw new Exception("SendInput failed: " + Marshal.GetLastWin32Error());
   }
+  public static int Activate(IntPtr dialog, uint pid, IntPtr button, string label) {
+    // Explicit actions only. Never called for untouched initial Enter/Space.
+    for (int tabs=0; tabs<=50; tabs++) {
+      OwnedChild(dialog,pid,button);
+      if (ClassName(button) != "Button" || ControlText(button) != label) throw new Exception("Button identity changed");
+      if (Focus(dialog,pid) == button) {
+        Key(dialog,pid,0x20,button);
+        return tabs;
+      }
+      if (tabs < 50) { Key(dialog,pid,0x09); Thread.Sleep(100); }
+    }
+    throw new Exception("Tab did not reach the exact requested button");
+  }
+  public static void Filename(IntPtr dialog, uint pid, IntPtr edit, string text) {
+    Focus(dialog,pid);
+    OwnedChild(dialog,pid,edit);
+    if (ClassName(edit) != "Edit" || GetDlgCtrlID(edit) != 1001) throw new Exception("Wrong filename control");
+    UIntPtr result;
+    if (WriteMessage(edit, 0x000C, UIntPtr.Zero, text, 0x22, 1000, out result) == IntPtr.Zero || result == UIntPtr.Zero)
+      throw new Exception("Filename write failed or timed out");
+    if (ControlText(edit) != text) throw new Exception("Filename readback differs");
+  }
 }
 '@
-$UI = [System.Windows.Automation.AutomationElement]
-$scope = [System.Windows.Automation.TreeScope]
-# Owned modal windows need not appear directly under the UIA desktop root.
-# Find the real top-level HWND first, then obtain its accessibility element.
 $deadline = [DateTime]::UtcNow.AddSeconds(20)
-$dialog = $null
+$nativeWindow = $null
 $windows = @()
 while ([DateTime]::UtcNow -lt $deadline) {
   $windows = @([NativeDialogInput]::Windows($AppPid))
@@ -76,72 +149,61 @@ while ([DateTime]::UtcNow -lt $deadline) {
     if (!$Title.StartsWith('FILE_') -and ($nativeWindow.owner -eq 0 -or $nativeWindow.ownerPid -ne $AppPid)) {
       throw 'Confirmation is not owned by the app window'
     }
-    $hwnd = [IntPtr]$nativeWindow.hwnd
-    $dialog = $UI::FromHandle($hwnd)
     break
   }
   Start-Sleep -Milliseconds 100
 }
-if ($null -eq $dialog) {
-  $diagnostic = @($windows | ForEach-Object {
-    $info = @{nativeWindow=$_}
-    try {
-      $accessible = $UI::FromHandle([IntPtr]$_.hwnd)
-      $info.uiaName = $accessible.Current.Name
-      $info.uiaType = $accessible.Current.ControlType.ProgrammaticName
-    } catch { $info.uiaError = $_.Exception.Message }
-    $info
-  }) | ConvertTo-Json -Compress -Depth 4
+if ($null -eq $nativeWindow) {
+  $diagnostic = $windows | ConvertTo-Json -Compress -Depth 3
   throw "Native dialog not found: $Title; visible app windows: $diagnostic"
 }
-[uint32]$ownerPid = 0
-[void][NativeDialogInput]::GetWindowThreadProcessId($hwnd, [ref]$ownerPid)
-if ($ownerPid -ne $AppPid) { throw 'Wrong native dialog owner' }
-$buttonCondition = [System.Windows.Automation.PropertyCondition]::new($UI::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-$buttons = $dialog.FindAll($scope::Descendants, $buttonCondition)
-$beforeFocus = $UI::FocusedElement.Current.Name
-# Activate only the dialog window; never move focus to a particular button.
+$hwnd = [IntPtr]$nativeWindow.hwnd
+# Activate only the window, preserving the dialog's own initial button focus.
 [void][NativeDialogInput]::SetForegroundWindow($hwnd)
 Start-Sleep -Milliseconds 100
-if ([NativeDialogInput]::GetForegroundWindow() -ne $hwnd) { throw 'Could not foreground the owned dialog' }
-$focusDeadline = [DateTime]::UtcNow.AddSeconds(5)
-$focusOwned = $false
-while ([DateTime]::UtcNow -lt $focusDeadline) {
-  $focus = $UI::FocusedElement
-  $ancestor = $focus
-  while ($null -ne $ancestor) {
-    if ([System.Windows.Automation.Automation]::Compare($ancestor, $dialog)) { $focusOwned = $true; break }
-    $ancestor = [System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($ancestor)
+$focus = [NativeDialogInput]::FocusInfo($hwnd, $AppPid)
+$controls = @([NativeDialogInput]::Controls($hwnd, $AppPid))
+$buttons = @($controls | Where-Object { $_.windowClass -eq 'Button' })
+$evidence = @{nativeWindow=$nativeWindow; title=$nativeWindow.title; action=$Action; buttons=@($buttons | ForEach-Object { $_.title }); focus=$focus.title; focusClass=$focus.windowClass; focusHwnd=$focus.hwnd}
+function Activate-Button([string]$Label, [bool]$FilePicker = $false) {
+  # Setting a filename can enable the file picker's Open/Save button.
+  # Refresh controls after that change instead of reusing initial enabled state.
+  $buttonDeadline = [DateTime]::UtcNow.AddSeconds(5)
+  do {
+    $currentControls = @([NativeDialogInput]::Controls($hwnd, $AppPid))
+    $matching = @($currentControls | Where-Object {
+      $buttonLabel = if ($FilePicker) { $_.title.Replace('&','') } else { $_.title }
+      $_.windowClass -eq 'Button' -and $buttonLabel -ceq $Label
+    })
+    if ($matching.Count -ne 0) { break }
+    Start-Sleep -Milliseconds 100
+  } while ([DateTime]::UtcNow -lt $buttonDeadline)
+  if ($matching.Count -ne 1) {
+    $diagnostic = $currentControls | ConvertTo-Json -Compress -Depth 3
+    throw "Expected one button named $Label; found $($matching.Count); controls: $diagnostic"
   }
-  if ($focusOwned) { break }
-  Start-Sleep -Milliseconds 50
+  $button = $matching[0]
+  $evidence.tabs = [NativeDialogInput]::Activate($hwnd, $AppPid, [IntPtr]$button.hwnd, $button.title)
+  $evidence.activated = $button.title
 }
-if (!$focusOwned) { throw 'Keyboard focus is outside the owned dialog' }
-$evidence = @{providerAssembly=$providerAssemblies[0].FullName; nativeWindow=$nativeWindow; title=$dialog.Current.Name; action=$Action; buttons=@($buttons | ForEach-Object { $_.Current.Name }); beforeActivationFocus=$beforeFocus; focus=$focus.Current.Name; focusType=$focus.Current.ControlType.ProgrammaticName}
 switch ($Action) {
   'enter' { [NativeDialogInput]::Key($hwnd, $AppPid, 0x0D) }
   'space' { [NativeDialogInput]::Key($hwnd, $AppPid, 0x20) }
   'escape' { [NativeDialogInput]::Key($hwnd, $AppPid, 0x1B) }
-  'close' { if (![NativeDialogInput]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'WM_CLOSE failed' } }
-  'button' {
-    $matching = @($buttons | Where-Object { $_.Current.Name -eq $Value })
-    if ($matching.Count -ne 1) {
-      $controls = @($dialog.FindAll($scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
-        @{name=$_.Current.Name; type=$_.Current.ControlType.ProgrammaticName; class=$_.Current.ClassName; patterns=@($_.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })}
-      }) | ConvertTo-Json -Compress -Depth 4
-      throw "Expected one button named $Value; found $($matching.Count); provider: $($providerAssemblies[0].FullName); controls: $controls"
-    }
-    ([System.Windows.Automation.InvokePattern]$matching[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+  'close' {
+    [void][NativeDialogInput]::Focus($hwnd, $AppPid)
+    if (![NativeDialogInput]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'WM_CLOSE failed' }
   }
+  'button' { Activate-Button $Value }
   'file' {
-    $editCondition = [System.Windows.Automation.PropertyCondition]::new($UI::AutomationIdProperty, '1001')
-    $edit = $dialog.FindFirst($scope::Descendants, $editCondition)
-    if ($null -eq $edit) { throw 'File name edit was not found' }
-    ([System.Windows.Automation.ValuePattern]$edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)).SetValue($Value)
+    $edits = @($controls | Where-Object { $_.windowClass -eq 'Edit' -and $_.id -eq 1001 })
+    if ($edits.Count -ne 1) {
+      $diagnostic = $controls | ConvertTo-Json -Compress -Depth 3
+      throw "Expected one filename Edit1001; controls: $diagnostic"
+    }
+    [NativeDialogInput]::Filename($hwnd, $AppPid, [IntPtr]$edits[0].hwnd, $Value)
     $label = if ($Title -eq 'FILE_SAVE') { 'Save' } else { 'Open' }
-    $matching = @($buttons | Where-Object { $_.Current.Name.Replace('&','') -eq $label })
-    if ($matching.Count -ne 1) { throw "Expected one file picker $label button" }
-    ([System.Windows.Automation.InvokePattern]$matching[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    Activate-Button $label $true
   }
   default { throw "Unknown native action: $Action" }
 }
