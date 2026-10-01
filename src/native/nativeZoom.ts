@@ -18,22 +18,36 @@ export async function startNativeZoom(): Promise<{
 } | null> {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
     return null;
+  let expired = false;
+  let native: { zoom: Zoom; mac: boolean } | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof native>((resolve) => {
+    timer = setTimeout(() => {
+      expired = true;
+      // If applying the saved size is slow, still show its controls. If
+      // platform detection is slow, do not install a controller later.
+      resolve(native);
+    }, READY_WAIT_MS);
+  });
+  const setup = async () => {
+    try {
+      const { platform } = await invoke<{ platform: string }>("runtime_info");
+      if (expired || !ZOOMS.has(platform)) return null;
+      const mac = platform === "macos";
+      const zoom = startZoom(
+        async (level) => getCurrentWebview().setZoom(level),
+        mac,
+      );
+      native = { zoom, mac };
+      await zoom.ready;
+      return native;
+    } catch {
+      return null;
+    }
+  };
   try {
-    const { platform } = await invoke<{ platform: string }>("runtime_info");
-    if (!ZOOMS.has(platform)) return null;
-    const mac = platform === "macos";
-    const zoom = startZoom(
-      async (level) => getCurrentWebview().setZoom(level),
-      mac,
-    );
-    // The app is shown after the size is applied, so that it does not jump,
-    // but never waits long for it.
-    await Promise.race([
-      zoom.ready,
-      new Promise((resolve) => setTimeout(resolve, READY_WAIT_MS)),
-    ]);
-    return { zoom, mac };
-  } catch {
-    return null;
+    return await Promise.race([setup(), deadline]);
+  } finally {
+    clearTimeout(timer);
   }
 }

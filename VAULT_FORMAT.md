@@ -439,9 +439,11 @@ or change that comes between the check and the writing, can leave it emptied.
 
 ## Settings kept outside the vault
 
-The app keeps a few settings of the device in the webview's own storage, not in the vault, so that
-they apply before a vault is unlocked. They name no vault, patient or document. Anyone who can read
-the app's files on the device can read them. Erasing the vault does not remove them.
+The following device preferences are kept in the webview's own storage, not in the vault, so that
+they apply before a vault is unlocked. These preferences name no vault, patient or document. Anyone
+who can read the app's files on the device can read them. Erasing the vault does not remove them.
+This table covers preferences only; recovery setup and older-backup guidance also keep local
+state, described in the recovery-key sections above.
 
 | Setting | Key | What it could tell |
 | --- | --- | --- |

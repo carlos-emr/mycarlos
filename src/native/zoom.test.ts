@@ -329,6 +329,65 @@ describe("zoom", () => {
     );
   });
 
+  it("restores the confirmed size after a refused reset and lets it be retried", async () => {
+    window.localStorage.setItem(KEY, "4");
+    const setZoom = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("FAKE reset refused"))
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    await zoom.ready;
+    zoom.request("reset");
+    await settled();
+    expect(zoom.level()).toBe(4);
+    expect(readZoom()).toBe(4);
+    zoom.request("reset");
+    await settled();
+    expect(setZoom.mock.calls).toEqual([[4], [1], [1]]);
+    expect(zoom.level()).toBe(1);
+    expect(readZoom()).toBe(1);
+  });
+
+  it("does not replace a newer queued size when an earlier request fails", async () => {
+    let refuse!: (error: Error) => void;
+    const setZoom = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            refuse = reject;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    zoom.request("in");
+    zoom.request("in");
+    await settled();
+    refuse(new Error("FAKE first request refused"));
+    await settled();
+    expect(setZoom.mock.calls).toEqual([[1.1], [1.25]]);
+    expect(zoom.level()).toBe(1.25);
+    expect(readZoom()).toBe(1.25);
+  });
+
+  it("falls back to the last successful queued size if later requests fail", async () => {
+    const setZoom = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValue(new Error("FAKE request refused"));
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    zoom.request("in");
+    zoom.request("in");
+    zoom.request("in");
+    await settled();
+    expect(zoom.level()).toBe(1.1);
+    expect(readZoom()).toBe(1.1);
+  });
+
   it("handles nothing once it is stopped", () => {
     const setZoom = vi.fn().mockResolvedValue(undefined);
     startZoom(setZoom, false).stop();

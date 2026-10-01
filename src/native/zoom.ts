@@ -102,37 +102,34 @@ export function startZoom(
   const tell = () => {
     for (const listener of listeners) listener();
   };
-  // One change at a time, in order: each is a command of its own.
-  let applying: Promise<void> = Promise.resolve();
-  const apply = (next: number) => {
-    applying = applying.then(() => setZoom(next)).catch(() => undefined);
-    return applying;
+  // Keep the last level the platform accepted so a rejected reset can be
+  // retried. Newer queued requests must not be overwritten by an older failure.
+  let confirmed = 1;
+  let revision = 0;
+  const apply = async (next: number, at: number) => {
+    try {
+      await setZoom(next);
+      confirmed = next;
+      persistZoom(next);
+    } catch {
+      if (revision === at) {
+        level = confirmed;
+        persistZoom(confirmed);
+        tell();
+      }
+    }
   };
-  let requested = false;
+  const ready = level === 1 ? Promise.resolve() : apply(level, revision);
+  // One change at a time, in order: each is a command of its own.
+  let applying = ready;
   const request = (asked: ZoomRequest) => {
     const next = zoomAfter(level, asked);
     if (next === level) return;
-    requested = true;
+    const at = ++revision;
     level = next;
-    persistZoom(level);
-    void apply(level);
+    applying = applying.then(() => apply(next, at));
     tell();
   };
-  // A size kept from last time that the platform refused is not the size
-  // shown: say the ordinary one, unless the patient has asked for another
-  // since, which is then the size.
-  const ready =
-    level === 1
-      ? Promise.resolve()
-      : setZoom(level).then(
-          () => undefined,
-          () => {
-            if (requested) return;
-            level = 1;
-            tell();
-          },
-        );
-  applying = ready;
 
   const onKey = (event: KeyboardEvent) => {
     const asked = zoomRequestOfKey(event, mac);
