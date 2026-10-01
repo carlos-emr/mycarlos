@@ -130,10 +130,11 @@ public static class NativeDialogInput {
     }
     throw new Exception("Tab did not reach the exact requested button");
   }
-  public static void Filename(IntPtr dialog, uint pid, IntPtr edit, string text) {
+  public static void Filename(IntPtr dialog, uint pid, IntPtr edit, int expectedId, string text) {
     Focus(dialog,pid);
     OwnedChild(dialog,pid,edit);
-    if (ClassName(edit) != "Edit" || GetDlgCtrlID(edit) != 1001) throw new Exception("Wrong filename control");
+    if ((expectedId != 1001 && expectedId != 1148) || ClassName(edit) != "Edit" || GetDlgCtrlID(edit) != expectedId)
+      throw new Exception("Wrong filename control");
     UIntPtr result;
     if (WriteMessage(edit, 0x000C, UIntPtr.Zero, text, 0x22, 1000, out result) == IntPtr.Zero || result == UIntPtr.Zero)
       throw new Exception("Filename write failed or timed out");
@@ -211,12 +212,15 @@ switch ($Action) {
   }
   'button' { Activate-Button $Value }
   'file' {
-    $edits = @($controls | Where-Object { $_.windowClass -eq 'Edit' -and $_.id -eq 1001 })
+    # Observed filename Edit IDs in the installed app's Save/Open pickers.
+    # These are native implementation details, so reject unknown/ambiguous layouts.
+    $edits = @($controls | Where-Object { $_.windowClass -eq 'Edit' -and $_.id -in @(1001,1148) })
     if ($edits.Count -ne 1) {
       $diagnostic = $controls | ConvertTo-Json -Compress -Depth 3
-      throw "Expected one filename Edit1001; controls: $diagnostic"
+      throw "Expected one filename Edit1001/1148; controls: $diagnostic"
     }
-    [NativeDialogInput]::Filename($hwnd, $AppPid, [IntPtr]$edits[0].hwnd, $Value)
+    $evidence.filenameControlId = $edits[0].id
+    [NativeDialogInput]::Filename($hwnd, $AppPid, [IntPtr]$edits[0].hwnd, $edits[0].id, $Value)
     $label = if ($Title -eq 'FILE_SAVE') { 'Save' } else { 'Open' }
     Activate-Button $label $true
   }
