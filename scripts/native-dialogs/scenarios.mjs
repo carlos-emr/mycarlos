@@ -49,6 +49,9 @@ export async function runDialogScenarios({ backupPath }) {
         error = e;
       },
     );
+    // If the host cannot operate the dialog, the outer runner terminates the
+    // owned app. Awaiting pending on that failure would hang on the same dialog;
+    // state.operation retains its settlement details for diagnosis.
     const evidence = await host(action, title, value);
     await pause(700);
     // Some Linux configurations leave Enter/Space on selectable message text.

@@ -69,7 +69,7 @@ public static class NativeDialogInput {
   static void OwnedChild(IntPtr dialog, uint pid, IntPtr child) {
     uint actual; GetWindowThreadProcessId(child, out actual);
     if (actual != pid || !IsChild(dialog, child) || !IsWindowVisible(child) || !IsWindowEnabled(child))
-      throw new Exception("Control is not an enabled visible child of the owned dialog");
+      throw new Exception("Control focus/ownership is not ready: hwnd=" + child.ToInt64() + ", pid=" + actual + ", class=" + ClassName(child) + ", child=" + IsChild(dialog,child) + ", visible=" + IsWindowVisible(child) + ", enabled=" + IsWindowEnabled(child));
   }
   public static WindowInfo[] Controls(IntPtr dialog, uint pid) {
     var result = new List<WindowInfo>();
@@ -95,7 +95,12 @@ public static class NativeDialogInput {
     if (actual != pid || GetForegroundWindow() != dialog) throw new Exception("Dialog lost foreground or ownership");
     var info = new GUIINFO { size=(uint)Marshal.SizeOf(typeof(GUIINFO)) };
     if (!GetGUIThreadInfo(thread, ref info)) throw new Exception("GetGUIThreadInfo failed");
-    if (info.focus != dialog) OwnedChild(dialog, pid, info.focus);
+    if (info.focus != dialog) {
+      try { OwnedChild(dialog, pid, info.focus); }
+      catch (Exception error) {
+        throw new Exception("Dialog=" + dialog.ToInt64() + ", expectedPid=" + pid + ", thread=" + thread + ", active=" + info.active.ToInt64() + ", flags=" + info.flags + "; " + error.Message);
+      }
+    }
     return info.focus;
   }
   public static WindowInfo FocusInfo(IntPtr dialog, uint pid) {
@@ -160,8 +165,18 @@ if ($null -eq $nativeWindow) {
 $hwnd = [IntPtr]$nativeWindow.hwnd
 # Activate only the window, preserving the dialog's own initial button focus.
 [void][NativeDialogInput]::SetForegroundWindow($hwnd)
-Start-Sleep -Milliseconds 100
-$focus = [NativeDialogInput]::FocusInfo($hwnd, $AppPid)
+# Wait for valid focus after the native window becomes visible, without
+# changing which control the dialog chooses.
+$focusDeadline = [DateTime]::UtcNow.AddSeconds(5)
+$focus = $null
+$focusError = ''
+do {
+  try { $focus = [NativeDialogInput]::FocusInfo($hwnd, $AppPid) }
+  catch { $focusError = $_.Exception.Message }
+  if ($null -ne $focus) { break }
+  Start-Sleep -Milliseconds 100
+} while ([DateTime]::UtcNow -lt $focusDeadline)
+if ($null -eq $focus) { throw "Dialog focus did not become ready: $focusError" }
 $controls = @([NativeDialogInput]::Controls($hwnd, $AppPid))
 $buttons = @($controls | Where-Object { $_.windowClass -eq 'Button' })
 $evidence = @{nativeWindow=$nativeWindow; title=$nativeWindow.title; action=$Action; buttons=@($buttons | ForEach-Object { $_.title }); focus=$focus.title; focusClass=$focus.windowClass; focusHwnd=$focus.hwnd}

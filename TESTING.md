@@ -349,7 +349,9 @@ and invokes Cancel and Keep. Every cancellation must preserve the encrypted vaul
 It also explicitly activates each destructive button and verifies the resulting vault state.
 Restore uses the real Save/Open dialogs and a backup created by the app; a profile added
 after the backup proves which contents remain. Successful completion erases the synthetic
-vault. On failure, use only the disposable account; synthetic data may remain for diagnosis.
+vault. On failure, synthetic data may remain in the disposable account for diagnosis.
+Use a fresh disposable account for the next local run; the initial vault check refuses
+the retained vault.
 The evidence artifact includes `native-dialogs.json`, with button labels and initial focus.
 The native driver checks the app PID, foreground dialog, and native focus before sending
 operating-system keystrokes. Explicit Windows button actions use Tab to reach the verified
