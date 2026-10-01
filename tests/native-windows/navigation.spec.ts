@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { testNativeDialogs } from "./dialogs";
 import { spawn, execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -160,7 +161,7 @@ test("installed app keeps navigation and popups inside its native boundary", asy
     await page.waitForFunction(() => "__TAURI_INTERNALS__" in window);
     await test.step("native IPC works with no existing vault", async () => {
       // A fresh WebView profile does not relocate Rust's vault. Use a disposable
-      // Windows account (as CI does); never create, unlock, or delete a vault here.
+      // Windows account (as CI does).
       expect(
         await invoke(page, "vault_status"),
         "Requires an empty test account",
@@ -283,6 +284,11 @@ test("installed app keeps navigation and popups inside its native boundary", asy
       ).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("native-window.png") });
     });
+    if (process.env.MYCARLOS_WINDOWS_DIALOG_TESTS === "1") {
+      await test.step("native destructive dialogs preserve the vault on cancellation", async () => {
+        await testNativeDialogs(page, app!.pid!, testInfo);
+      });
+    }
   } catch (error) {
     errors.push(error);
   } finally {

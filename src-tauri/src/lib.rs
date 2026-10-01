@@ -17,7 +17,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State, Url};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
@@ -916,9 +918,72 @@ async fn vault_recovery_key_begin(
     .await
 }
 
+/// The button of a native confirmation that closes it and changes nothing.
+const NATIVE_CANCEL: &str = "Cancel";
+
+/// Asks in a trusted native dialog, which page code cannot press, before
+/// something that cannot be undone. Blocks until it is answered.
+///
+/// The first button keeps things as they are: on Windows and macOS it is
+/// the Enter/Return default, and a dialog can appear while the patient is
+/// typing. Linux has no explicit default and needs device testing. The button
+/// that goes ahead comes second, and Cancel, which does what the first does,
+/// third.
+///
+/// Three buttons, though two do the same, because each slot has a meaning
+/// of its own on some platform. With two buttons and the safe one first,
+/// the button that goes ahead would take the slot that Android reports
+/// for the back button and a tap outside. And the third is titled "Cancel"
+/// because that title is what gives a button the Escape key on macOS.
+///
+/// On a computer the dialog is given the app's window. On Windows and
+/// macOS it then cannot end up behind it, and macOS shows it as an alert of
+/// the window, whose keys are the documented ones. The Linux dialogs take
+/// no notice of the window.
+fn confirmed_natively<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    title: &str,
+    message: impl Into<String>,
+    keep: &str,
+    go_ahead: &str,
+) -> bool {
+    // The dialog reports these words as answers of its own, not as the
+    // button that was given them.
+    debug_assert!(
+        keep != go_ahead && !["Yes", "No", "Ok", NATIVE_CANCEL].contains(&go_ahead),
+        "a button that goes ahead needs a label of its own"
+    );
+    let dialog = app
+        .dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
+            keep.to_owned(),
+            go_ahead.to_owned(),
+            NATIVE_CANCEL.to_owned(),
+        ));
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.parent(&window),
+        None => dialog,
+    };
+    agreed_natively(&dialog.blocking_show_with_result(), go_ahead)
+}
+
+/// The label of the app's one window, which is the default one.
+#[cfg(desktop)]
+const MAIN_WINDOW: &str = "main";
+
+/// Only the button that goes ahead counts as agreement: not the first
+/// button, a closed dialog, or an answer the dialog could not give.
+fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
+    matches!(answer, MessageDialogResult::Custom(label) if label == go_ahead)
+}
+
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with the passphrase or recovery key they were saved with, the current key among them; once this is done, myCarlos says what to do about them. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with the passphrase or recovery key they were saved with, the current key among them; once this is done, myCarlos says what to do about them. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Keep current key.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -949,15 +1014,13 @@ async fn vault_recovery_key_confirm(
 ) -> CommandResult<Option<VaultSnapshot>> {
     run_blocking(store.inner(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
-            app.dialog()
-                .message(REPLACE_RECOVERY_KEY_WARNING)
-                .title("Replace your recovery key?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Replace key".to_owned(),
-                    "Cancel".to_owned(),
-                ))
-                .blocking_show()
+            confirmed_natively(
+                &app,
+                "Replace your recovery key?",
+                REPLACE_RECOVERY_KEY_WARNING,
+                "Keep current key",
+                "Replace key",
+            )
         })
     })
     .await
@@ -1377,7 +1440,7 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
     match preview.replaces {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is a different one from the backup's. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
         )),
         RestoreReplaces::Unreadable => Some(format!(
             "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
@@ -1429,16 +1492,13 @@ async fn vault_restore(
         }
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            dialog_app
-                .dialog()
-                .message(warning)
-                .title("Replace the vault on this device?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Replace vault".to_owned(),
-                    "Cancel".to_owned(),
-                ))
-                .blocking_show()
+            confirmed_natively(
+                &dialog_app,
+                "Replace the vault on this device?",
+                warning,
+                "Keep this vault",
+                "Replace with backup",
+            )
         })
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -1736,6 +1796,8 @@ async fn vault_delete_record(
     .await
 }
 
+const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+
 #[tauri::command]
 async fn vault_reset(
     app: tauri::AppHandle,
@@ -1749,16 +1811,13 @@ async fn vault_reset(
     }
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app
-            .dialog()
-            .message("This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.")
-            .title("Erase the entire myCarlos vault?")
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Erase vault".to_owned(),
-                "Cancel".to_owned(),
-            ))
-            .blocking_show()
+        confirmed_natively(
+            &dialog_app,
+            "Erase the entire myCarlos vault?",
+            ERASE_VAULT_WARNING,
+            "Keep this vault",
+            "Erase vault",
+        )
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -2832,6 +2891,26 @@ mod tests {
     }
 
     #[test]
+    fn only_the_button_that_goes_ahead_counts_as_agreement() {
+        let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
+        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        for answer in [
+            custom("Keep this vault"),
+            custom(NATIVE_CANCEL),
+            custom("erase vault"),
+            custom(""),
+            // What the dialog reports when it is closed, or could not be
+            // shown, and what another layout's buttons would report.
+            MessageDialogResult::Cancel,
+            MessageDialogResult::Ok,
+            MessageDialogResult::Yes,
+            MessageDialogResult::No,
+        ] {
+            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+        }
+    }
+
+    #[test]
     fn the_restore_confirmation_says_what_would_be_lost() {
         let preview = |replaces, differs| RestorePreview {
             replaces,
@@ -2841,7 +2920,10 @@ mod tests {
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
         let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
-        assert!(other.contains("a different one") && other.contains("3 documents"));
+        assert!(
+            other.contains("is not the vault this backup was made from")
+                && other.contains("3 documents")
+        );
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
         assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();

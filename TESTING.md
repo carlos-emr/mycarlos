@@ -124,14 +124,15 @@ On every platform:
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and why you are replacing it, and makes a new
    key. Choose "may have been lost, or seen". After you type it back, a system dialog (not part of
-   the app's own screen) asks **Replace your recovery key?** Choose **Cancel** once: the setup stays
+   the app's own screen) asks **Replace your recovery key?** with the buttons **Keep current key**,
+   **Replace key** and **Cancel**. Choose **Keep current key**, or **Cancel**, once: the setup stays
    open and says the current key still works. Check again and choose **Replace key**: the old key
    then stops working, and **Security** shows the steps for older backups. Choose **Save encrypted
    backup…**: the suggested name has the date and the key's label, and after saving, the steps
    name that file to keep and say to delete every other backup (on Android, which gives no name,
-   they give the time it was saved instead). Replace the key once more with "I
-   just want a new key": the app says to keep the old kit safe, and says nothing about deleting
-   backups. The vault does not lock by itself while that dialog is open.
+   they give the time it was saved instead). Replace the key once more with "I just want a new
+   key": the app says to keep the old kit safe, and says nothing about deleting backups. The vault
+   does not lock by itself while that dialog is open.
 4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:
@@ -145,7 +146,8 @@ On every platform:
    app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a
    backup** on the unlock screen: pick the file, open it with the passphrase, and check that the
    app says the vault on this device is not the same as the backup and asks you to agree before
-   restoring. After restoring, the vault is locked; unlock it and check that the extra document is
+   restoring, first on the app's own screen and then in a system dialog (**Keep this vault**,
+   **Replace with backup**, **Cancel**). After restoring, the vault is locked; unlock it and check that the extra document is
    gone and the others open. Try a copy of the backup with a few bytes changed: it is refused and
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
@@ -259,7 +261,35 @@ To remove everything while unlocked, open **Security**, choose **Show reset cont
 `RESET MYCARLOS VAULT`, choose **Erase entire vault**, and confirm **Erase vault** in the dialog
 that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the unlock
 screen, type `RESET MYCARLOS VAULT`, choose **Erase vault**, and confirm **Erase vault** in the
-dialog.
+dialog, whose buttons are **Keep this vault**, **Erase vault** and **Cancel**.
+
+### The "are you sure?" dialogs (please try on Windows, on a Mac and on Linux)
+
+Three things ask in a dialog of the system's own before they happen: erasing the vault (above),
+restoring a backup over a vault (**Keep this vault**, **Replace with backup**, **Cancel**), and
+replacing the recovery key (**Keep current key**, **Replace key**, **Cancel**). The safe button
+is meant to be the one that Enter presses. Automated Windows/Linux checks are described below;
+please also try these steps on each target computer, especially macOS and with a screen reader:
+
+1. When the dialog opens, which button is highlighted? It should be the one that starts with
+   **Keep**. Write down the order of the buttons as you see them.
+2. Press Enter. Nothing should change.
+3. Open it again and press Space. Nothing should change.
+4. Open it again and press Escape. Nothing should change.
+5. Open it again and close it with its X, if it has one. Nothing should change.
+6. Each time, nothing should change. Erase and restore should report cancellation. For recovery-key
+   replacement, setup should stay open and say the current key still works.
+7. On a Mac, turn on **Keyboard navigation** in System Settings, then do steps 1 to 4 again, and
+   say which button has the ring around it.
+8. Can the dialog end up behind the app's window? On Windows and on a Mac it should stay in front
+   of it. On Linux it may not.
+9. Using a vault you can lose, open it again and press Tab until the button that goes ahead has
+   focus. Try Enter and Space separately and record which button each key activates: the default
+   button and the focused button may differ. Also deliberately click the button that goes ahead
+   once and verify that it performs the requested action.
+
+On a phone: note the order of the buttons, then tap outside the dialog, and press Back on
+Android. Nothing should change.
 
 Uninstalling also removes the vault on Android and iOS. On desktop the vault stays until erased;
 it lives in:
@@ -276,7 +306,7 @@ the platform and OS version, the device or emulator, the source commit from `BUI
 did, and what happened. Screenshots help, as long as they show only made-up data. Report
 suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.
 
-## Automated Windows navigation smoke test
+## Automated Windows native tests
 
 The Windows CI job runs `npm run test:windows-navigation` against the executable installed
 from its freshly built NSIS package. It attaches Playwright to the real WebView2 window;
@@ -286,7 +316,8 @@ bundled-page reload, blocked outside/development-server navigation, and clicked 
 A changed document, transient external navigation, or extra webview also fails the test.
 
 The job uploads `mycarlos-windows-navigation-evidence`, with the Playwright report, trace and
-window screenshots. Screenshots and traces are captured only after Rust confirms there is no vault.
+window screenshots. Capture starts only after Rust confirms there is no existing vault;
+with dialog tests enabled, subsequent capture contains only the synthetic test vault.
 The test has no automatic retries and a failed test prevents publishing that run's Windows installer.
 
 The first attached Windows run exposed an outbound-request gap: WebView2 sent the test
@@ -301,7 +332,7 @@ For a local run, use a disposable Windows account with no myCarlos vault. Instal
 with `npm ci` in a non-elevated shell, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
 and run `npm run test:windows-navigation`. A fresh temporary WebView profile is used and the
 spawned app/process tree is stopped afterward. The profile does not relocate the native vault;
-the test refuses an existing vault and never creates, unlocks, or deletes one. Remote debugging
+the navigation-only test refuses an existing vault and does not create one. Remote debugging
 is enabled only for testing. On the disposable elevated CI runner, the workflow temporarily
 sets executable-specific HKLM WebView2 policies for the debugging port and fresh profile,
 then removes only the values it added in a `finally` block. It refuses to overwrite existing
@@ -311,5 +342,38 @@ Local runs should use a non-elevated shell and do not modify registry policy.
 No Playwright browser download is needed on Windows:
 the test uses the installed WebView2 runtime. This suite deliberately fails on other platforms.
 
-This test covers Windows desktop navigation. macOS/mobile behavior, native file pickers,
-Narrator, and the documented upstream URL-parsing limitations still need their own checks.
+CI also sets `MYCARLOS_WINDOWS_DIALOG_TESTS=1` to test the three destructive confirmations.
+This opt-in creates a synthetic vault in the disposable account. For each dialog, it sends
+Enter and Space without focusing a button first, presses Escape, closes the native window,
+and invokes Cancel and Keep. Every cancellation must preserve the encrypted vault files.
+It also explicitly activates each destructive button and verifies the resulting vault state.
+Restore uses the real Save/Open dialogs and a backup created by the app; a profile added
+after the backup proves which contents remain. Successful completion erases the synthetic
+vault. On failure, synthetic data may remain in the disposable account for diagnosis.
+Use a fresh disposable account for the next local run; the initial vault check refuses
+the retained vault.
+The evidence artifact includes `native-dialogs.json`, with button labels and initial focus.
+The native driver checks the app PID, foreground dialog, and native focus before sending
+operating-system keystrokes. Explicit Windows button actions use Tab to reach the verified
+button and Space to activate it; initial Enter/Space checks leave focus untouched. Playwright invokes real Rust commands but cannot itself press these native buttons.
+
+For a local Windows dialog run, set `$env:MYCARLOS_WINDOWS_DIALOG_TESTS = '1'` before the
+command above. Keep the desktop available to the test and do not use its mouse or keyboard.
+
+Linux can run the same scenarios against an extracted evaluation package with a matching
+WebKitWebDriver. Install `python3-gi`, `gir1.2-atspi-2.0`, `at-spi2-core`, `xdotool`, `openbox`,
+`xvfb`, and `dbus-x11`. Run in a private virtual display/session, with absolute app/driver
+paths and a new evidence directory:
+
+```sh
+xvfb-run -a dbus-run-session -- sh -c '
+  openbox > /tmp/mycarlos-test-openbox.log 2>&1 &
+  exec /usr/bin/python3 scripts/native-dialogs/linux.py "$@"
+' sh /path/to/mycarlos-tauri-poc /path/to/WebKitWebDriver /path/to/new-evidence
+```
+
+The Linux driver creates isolated XDG directories and records AT-SPI focus/button evidence.
+If initial Enter or Space leaves a Linux dialog open, it records that behavior and dismisses
+with Escape; no destructive operation may occur. These checks cover the tested Windows
+and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
+and the documented upstream URL-parsing limitations still need their own checks.
