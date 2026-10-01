@@ -72,7 +72,7 @@ test("installed app keeps navigation and popups inside its native boundary", asy
   let browser: Browser | undefined;
   let tracing = false;
   let safeToCapture = false;
-  let failed = false;
+  const errors: unknown[] = [];
   let app: ReturnType<typeof spawn> | undefined;
   let launchError: Error | undefined;
   let appExited: Promise<void> | undefined;
@@ -236,12 +236,11 @@ test("installed app keeps navigation and popups inside its native boundary", asy
       await page.screenshot({ path: testInfo.outputPath("native-window.png") });
     });
   } catch (error) {
-    failed = true;
-    throw error;
+    errors.push(error);
   } finally {
     try {
       const context = browser?.contexts()[0];
-      if (safeToCapture && failed) {
+      if (safeToCapture && errors.length) {
         await context
           ?.pages()[0]
           ?.screenshot({
@@ -255,6 +254,8 @@ test("installed app keeps navigation and popups inside its native boundary", asy
           context!.tracing.stop({ path: testInfo.outputPath("trace.zip") }),
           "Trace capture",
         );
+    } catch (error) {
+      errors.push(error);
     } finally {
       // Kill only the process tree launched above, including its WebView children.
       // Stop it before disconnecting CDP so the native PID still owns that tree.
@@ -267,6 +268,8 @@ test("installed app keeps navigation and popups inside its native boundary", asy
           );
           await bounded(appExited!, "App shutdown");
         }
+      } catch (error) {
+        errors.push(error);
       } finally {
         // Attempt each cleanup even if the native process closed CDP first.
         const cleanup = await Promise.allSettled([
@@ -281,15 +284,18 @@ test("installed app keeps navigation and popups inside its native boundary", asy
             retryDelay: 200,
           }),
         ]);
-        const failures = cleanup.flatMap((result) =>
-          result.status === "rejected" ? [result.reason] : [],
+        errors.push(
+          ...cleanup.flatMap((result) =>
+            result.status === "rejected" ? [result.reason] : [],
+          ),
         );
-        if (failures.length)
-          throw new AggregateError(
-            failures,
-            "Native smoke test cleanup failed",
-          );
       }
     }
   }
+  // Keep the first assertion/startup failure as Playwright's primary error.
+  // Cleanup failures still fail a successful test, and remain visible alongside
+  // an earlier failure instead of replacing it from inside a finally block.
+  for (const error of errors.slice(1))
+    console.error("Additional cleanup failure:", error);
+  if (errors.length) throw errors[0];
 });
