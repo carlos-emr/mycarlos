@@ -268,8 +268,8 @@ dialog, whose buttons are **Keep this vault**, **Erase vault** and **Cancel**.
 Three things ask in a dialog of the system's own before they happen: erasing the vault (above),
 restoring a backup over a vault (**Keep this vault**, **Replace with backup**, **Cancel**), and
 replacing the recovery key (**Keep current key**, **Replace key**, **Cancel**). The safe button
-is meant to be the one that Enter presses. Nobody has tried that yet. For each of the three, on
-each computer:
+is meant to be the one that Enter presses. Automated Windows/Linux checks are described below;
+please also try these steps on each target computer, especially macOS and with a screen reader:
 
 1. When the dialog opens, which button is highlighted? It should be the one that starts with
    **Keep**. Write down the order of the buttons as you see them.
@@ -306,7 +306,7 @@ the platform and OS version, the device or emulator, the source commit from `BUI
 did, and what happened. Screenshots help, as long as they show only made-up data. Report
 suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.
 
-## Automated Windows navigation smoke test
+## Automated Windows native tests
 
 The Windows CI job runs `npm run test:windows-navigation` against the executable installed
 from its freshly built NSIS package. It attaches Playwright to the real WebView2 window;
@@ -316,7 +316,8 @@ bundled-page reload, blocked outside/development-server navigation, and clicked 
 A changed document, transient external navigation, or extra webview also fails the test.
 
 The job uploads `mycarlos-windows-navigation-evidence`, with the Playwright report, trace and
-window screenshots. Screenshots and traces are captured only after Rust confirms there is no vault.
+window screenshots. Capture starts only after Rust confirms there is no existing vault;
+with dialog tests enabled, subsequent capture contains only the synthetic test vault.
 The test has no automatic retries and a failed test prevents publishing that run's Windows installer.
 
 The first attached Windows run exposed an outbound-request gap: WebView2 sent the test
@@ -331,7 +332,7 @@ For a local run, use a disposable Windows account with no myCarlos vault. Instal
 with `npm ci` in a non-elevated shell, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
 and run `npm run test:windows-navigation`. A fresh temporary WebView profile is used and the
 spawned app/process tree is stopped afterward. The profile does not relocate the native vault;
-the test refuses an existing vault and never creates, unlocks, or deletes one. Remote debugging
+the navigation-only test refuses an existing vault and does not create one. Remote debugging
 is enabled only for testing. On the disposable elevated CI runner, the workflow temporarily
 sets executable-specific HKLM WebView2 policies for the debugging port and fresh profile,
 then removes only the values it added in a `finally` block. It refuses to overwrite existing
@@ -341,5 +342,35 @@ Local runs should use a non-elevated shell and do not modify registry policy.
 No Playwright browser download is needed on Windows:
 the test uses the installed WebView2 runtime. This suite deliberately fails on other platforms.
 
-This test covers Windows desktop navigation. macOS/mobile behavior, native file pickers,
-Narrator, and the documented upstream URL-parsing limitations still need their own checks.
+CI also sets `MYCARLOS_WINDOWS_DIALOG_TESTS=1` to test the three destructive confirmations.
+This opt-in creates a synthetic vault in the disposable account. For each dialog, it sends
+Enter and Space without focusing a button first, presses Escape, closes the native window,
+and invokes Cancel and Keep. Every cancellation must preserve the encrypted vault files.
+It also explicitly activates each destructive button and verifies the resulting vault state.
+Restore uses the real Save/Open dialogs and a backup created by the app; a profile added
+after the backup proves which contents remain. Successful completion erases the synthetic
+vault. On failure, use only the disposable account; synthetic data may remain for diagnosis.
+The evidence artifact includes `native-dialogs.json`, with button labels and initial focus.
+The native driver checks the app PID and foreground dialog before sending operating-system
+keystrokes. Playwright invokes real Rust commands but cannot itself press these native buttons.
+
+For a local Windows dialog run, set `$env:MYCARLOS_WINDOWS_DIALOG_TESTS = '1'` before the
+command above. Keep the desktop available to the test and do not use its mouse or keyboard.
+
+Linux can run the same scenarios against an extracted evaluation package with a matching
+WebKitWebDriver. Install `python3-gi`, `gir1.2-atspi-2.0`, `at-spi2-core`, `xdotool`, `openbox`,
+`xvfb`, and `dbus-x11`. Run in a private virtual display/session, with absolute app/driver
+paths and a new evidence directory:
+
+```sh
+xvfb-run -a dbus-run-session -- sh -c '
+  openbox > /tmp/mycarlos-test-openbox.log 2>&1 &
+  exec /usr/bin/python3 scripts/native-dialogs/linux.py "$@"
+' sh /path/to/mycarlos-tauri-poc /path/to/WebKitWebDriver /path/to/new-evidence
+```
+
+The Linux driver creates isolated XDG directories and records AT-SPI focus/button evidence.
+If initial Enter or Space leaves a Linux dialog open, it records that behavior and dismisses
+with Escape; no destructive operation may occur. These checks cover the tested Windows
+and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
+and the documented upstream URL-parsing limitations still need their own checks.

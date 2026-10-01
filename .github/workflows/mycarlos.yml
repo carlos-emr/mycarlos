@@ -239,10 +239,11 @@ jobs:
           if subsystem != 2:
               raise SystemExit(f"Installed app must use the Windows GUI subsystem, got {subsystem}")
           print("Installed app uses the Windows GUI subsystem; no console is allocated at launch.")
-      - name: Test installed Windows navigation guard
-        timeout-minutes: 4
+      - name: Test installed Windows navigation and confirmation dialogs
+        timeout-minutes: 10
         shell: pwsh
         run: |
+          $env:MYCARLOS_WINDOWS_DIALOG_TESTS = '1'
           $env:MYCARLOS_WINDOWS_APP = Join-Path $env:RUNNER_TEMP 'mycarlos-install-smoke/mycarlos-tauri-poc.exe'
           $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
           $listener.Start()
