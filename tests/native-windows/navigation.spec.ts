@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { spawn, execFile } from "node:child_process";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -62,7 +62,15 @@ test("installed app keeps navigation and popups inside its native boundary", asy
   expect(isAbsolute(executable!)).toBe(true);
   await access(executable!);
 
-  const profile = await mkdtemp(join(tmpdir(), "mycarlos-webview-test-"));
+  // CI sets matching machine-policy values for its elevated WebView2 host.
+  // Refuse an existing directory so cleanup can only remove a profile we created.
+  const policyProfile = process.env.MYCARLOS_WINDOWS_WEBVIEW_PROFILE;
+  if (policyProfile) {
+    expect(isAbsolute(policyProfile)).toBe(true);
+    await mkdir(policyProfile);
+  }
+  const profile =
+    policyProfile ?? (await mkdtemp(join(tmpdir(), "mycarlos-webview-test-")));
   const requests: string[] = [];
   const sink = createServer((request, response) => {
     requests.push(`${request.method} ${request.url}`);
@@ -84,9 +92,16 @@ test("installed app keeps navigation and popups inside its native boundary", asy
     expect(requests).toEqual(["GET /navigation-canary"]);
     requests.length = 0;
 
-    const reservation = createServer();
-    const debugPort = await listen(reservation);
-    await close(reservation);
+    let debugPort = Number(process.env.MYCARLOS_WINDOWS_CDP_PORT);
+    if (process.env.MYCARLOS_WINDOWS_CDP_PORT) {
+      expect(
+        Number.isInteger(debugPort) && debugPort > 0 && debugPort < 65536,
+      ).toBe(true);
+    } else {
+      const reservation = createServer();
+      debugPort = await listen(reservation);
+      await close(reservation);
+    }
     const endpoint = `http://127.0.0.1:${debugPort}`;
     app = spawn(executable!, [], {
       shell: false,

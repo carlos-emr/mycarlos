@@ -286,15 +286,21 @@ bundled-page reload, blocked outside/development-server navigation, and clicked 
 A changed document, transient external navigation, or extra webview also fails the test.
 
 The job uploads `mycarlos-windows-navigation-evidence`, with the Playwright report, trace and
-window screenshots. Failure evidence is captured only after Rust confirms there is no vault.
+window screenshots. Screenshots and traces are captured only after Rust confirms there is no vault.
 The test has no automatic retries and a failed test prevents publishing that run's Windows installer.
 
 For a local run, use a disposable Windows account with no myCarlos vault. Install dependencies
-with `npm ci`, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
+with `npm ci` in a non-elevated shell, set `MYCARLOS_WINDOWS_APP` to the absolute path of the installed executable,
 and run `npm run test:windows-navigation`. A fresh temporary WebView profile is used and the
 spawned app/process tree is stopped afterward. The profile does not relocate the native vault;
 the test refuses an existing vault and never creates, unlocks, or deletes one. Remote debugging
-is enabled only for this test process. No Playwright browser download is needed on Windows:
+is enabled only for testing. On the disposable elevated CI runner, the workflow temporarily
+sets executable-specific HKLM WebView2 policies for the debugging port and fresh profile,
+then removes only the values it added in a `finally` block. It refuses to overwrite existing
+values. WebView2 150+ ignores the equivalent environment overrides for elevated processes
+([Microsoft explanation](https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645)).
+Local runs should use a non-elevated shell and do not modify registry policy.
+No Playwright browser download is needed on Windows:
 the test uses the installed WebView2 runtime. This suite deliberately fails on other platforms.
 
 This test covers Windows desktop navigation. macOS/mobile behavior, native file pickers,
