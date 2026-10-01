@@ -1,3 +1,4 @@
+import { SecretInput } from "./SecretInput";
 import { useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
@@ -136,26 +137,31 @@ export function SecuritySettings({
     <main className="library-main purpose-screen">
       <div className="main-head">
         <div>
-          <h1>Security</h1>
-          <p>Your encrypted vault and access settings</p>
+          <h1 tabIndex={0}>Security</h1>
+          <p tabIndex={0}>Your encrypted vault and access settings</p>
         </div>
       </div>
       <div className="purpose-note warning">
         <Icon name="info" />
-        <span>
+        <span tabIndex={0}>
           <strong>Development build.</strong> Use synthetic files only.
         </span>
       </div>
-      <p className="status-line" role="status" aria-live="polite">
+      <p
+        tabIndex={notice ? 0 : -1}
+        className="status-line"
+        role="status"
+        aria-live="polite"
+      >
         {notice}
       </p>
       <div className="setting-list">
         <section className="setting-row">
           <div>
-            <h2>
+            <h2 tabIndex={0}>
               Encryption <span className="state-pill">On — always</span>
             </h2>
-            <p>
+            <p tabIndex={0}>
               Files, names, folders, and record details are encrypted on this
               device.
             </p>
@@ -163,13 +169,13 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>
+            <h2 tabIndex={0}>
               Lock automatically{" "}
               <span className="state-pill">
                 {autoLockMinutes} minute{autoLockMinutes === 1 ? "" : "s"}
               </span>
             </h2>
-            <p>
+            <p tabIndex={0}>
               The vault locks after the selected period without keyboard,
               pointer, or touch activity. This non-medical setting is clamped to
               1–15 minutes.
@@ -200,7 +206,7 @@ export function SecuritySettings({
         </section>
         <section className="setting-row">
           <div>
-            <h2>
+            <h2 tabIndex={0}>
               Recovery key{" "}
               <span className="state-pill">
                 {recoveryKeySetAtMs
@@ -208,13 +214,13 @@ export function SecuritySettings({
                   : "Not set up"}
               </span>
             </h2>
-            <p>
+            <p tabIndex={0}>
               Opens your vault if you forget your passphrase. Only you have it:
               nobody at your clinic or at myCarlos can open your vault for you.
               Replacing it stops the old one working.
             </p>
             {recoveryKeySetAtMs && recoveryKeyLabel && (
-              <p>
+              <p tabIndex={0}>
                 Your current key has the label{" "}
                 <KeyLabel label={recoveryKeyLabel} />. A kit or note with this
                 label is the one that works; one with another label does not
@@ -239,8 +245,8 @@ export function SecuritySettings({
         </section>
         <section className="setting-row">
           <div>
-            <h2>Encrypted backup</h2>
-            <p>
+            <h2 tabIndex={0}>Encrypted backup</h2>
+            <p tabIndex={0}>
               One file holding your whole vault, still encrypted. Keep it
               somewhere other than this device, such as a USB drive. It opens
               with the passphrase or recovery key you have when you save it, and
@@ -252,8 +258,10 @@ export function SecuritySettings({
                 className="old-backups-guide"
                 aria-labelledby="old-backups-title"
               >
-                <h3 id="old-backups-title">Your older backups</h3>
-                <p>
+                <h3 tabIndex={0} id="old-backups-title">
+                  Your older backups
+                </h3>
+                <p tabIndex={0}>
                   The kit for an earlier recovery key may have been lost or
                   seen, and it still opens backups saved before that key was
                   replaced.
@@ -261,14 +269,14 @@ export function SecuritySettings({
                 {oldBackupsGuide.step === "save" ? (
                   <>
                     <ol>
-                      <li>
+                      <li tabIndex={0}>
                         {readOnly
                           ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
                           : "Save a new backup now: choose Save encrypted backup."}{" "}
                         Keep it, or a copy of it, somewhere other than this
                         device, such as a USB stick or a cloud drive.
                       </li>
-                      <li>
+                      <li tabIndex={0}>
                         Then delete the older backups. Once the new one is
                         saved, this says how.
                       </li>
@@ -285,7 +293,7 @@ export function SecuritySettings({
                 ) : (
                   <>
                     <ol>
-                      <li>
+                      <li tabIndex={0}>
                         {oldBackupsGuide.keep ? (
                           <>
                             Your new backup is &ldquo;{oldBackupsGuide.keep}
@@ -298,14 +306,14 @@ export function SecuritySettings({
                         Keep it, or a copy of it, somewhere other than this
                         device, such as a USB stick or a cloud drive.
                       </li>
-                      <li>
+                      <li tabIndex={0}>
                         Delete the older backups: files whose names start with
                         &ldquo;myCarlos backup&rdquo;, and any you renamed,
                         other than the new one and its copies. They are wherever
                         you saved them: a folder, a USB stick, or on a phone the
                         Files app or a cloud drive.
                       </li>
-                      <li>
+                      <li tabIndex={0}>
                         If you saved it in place of an older backup, that file
                         is now your new backup: keep it.
                       </li>
@@ -336,14 +344,14 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>Change passphrase</h2>
-            <p>
+            <h2 tabIndex={0}>Change passphrase</h2>
+            <p tabIndex={0}>
               Use at least {MIN_PASSPHRASE_CHARS} characters and avoid common
               names or predictable phrases. Your recovery key, if you have one,
               keeps working; without one, forgetting the new passphrase means
               erasing the vault.
             </p>
-            <p>
+            <p tabIndex={0}>
               Changing your passphrase keeps out someone who only knows the old
               one. If they may also have a copy of your vault, such as a backup
               of this device or a saved backup file, a new passphrase is not
@@ -356,7 +364,8 @@ export function SecuritySettings({
           <form onSubmit={submitPassphrase}>
             <label>
               Current passphrase
-              <input
+              <SecretInput
+                aria-label="Current passphrase"
                 required
                 type="password"
                 autoComplete="current-password"
@@ -366,7 +375,8 @@ export function SecuritySettings({
             </label>
             <label>
               New passphrase
-              <input
+              <SecretInput
+                aria-label="New passphrase"
                 required
                 type="password"
                 autoComplete="new-password"
@@ -376,7 +386,8 @@ export function SecuritySettings({
             </label>
             <label>
               Confirm new passphrase
-              <input
+              <SecretInput
+                aria-label="Confirm new passphrase"
                 required
                 type="password"
                 autoComplete="new-password"
@@ -387,20 +398,24 @@ export function SecuritySettings({
               />
             </label>
             {currentPassphraseTooLong && (
-              <p role="alert">
+              <p tabIndex={0} role="alert">
                 The current passphrase is longer than any vault passphrase.
                 Check what you typed.
               </p>
             )}
             {newPassphraseConfirmation &&
               newPassphrase !== newPassphraseConfirmation && (
-                <p role="alert">New passphrases do not match.</p>
+                <p tabIndex={0} role="alert">
+                  New passphrases do not match.
+                </p>
               )}
             {newPassphraseTooLong && (
-              <p role="alert">The new passphrase is too long. Shorten it.</p>
+              <p tabIndex={0} role="alert">
+                The new passphrase is too long. Shorten it.
+              </p>
             )}
             {newPassphraseTooShort && newPassphraseConfirmation && (
-              <p role="alert">
+              <p tabIndex={0} role="alert">
                 The new passphrase is too short. Use at least{" "}
                 {MIN_PASSPHRASE_CHARS} characters.
               </p>
@@ -417,8 +432,8 @@ export function SecuritySettings({
             command, before a release to patients. */}
         <section className="setting-row native-setting-form">
           <div>
-            <h2>Speed test, for testers</h2>
-            <p>
+            <h2 tabIndex={0}>Speed test, for testers</h2>
+            <p tabIndex={0}>
               Measures how long this device takes to check a passphrase. It uses
               a made-up passphrase, not yours, and changes nothing. It takes a
               few seconds, longer on an older phone. Close other apps first, and
@@ -435,16 +450,24 @@ export function SecuritySettings({
             >
               Run speed test
             </button>
-            <p className="native-dialog-status" role="status">
+            <p
+              tabIndex={speedTest.running || speedTest.result ? 0 : -1}
+              className="native-dialog-status"
+              role="status"
+            >
               {speedTest.running ? "Measuring…" : speedTest.result}
             </p>
-            {speedTest.failed && <p role="alert">{speedTest.failed}</p>}
+            {speedTest.failed && (
+              <p tabIndex={0} role="alert">
+                {speedTest.failed}
+              </p>
+            )}
           </div>
         </section>
         <section className="setting-row">
           <div>
-            <h2>Readable copies and screenshots</h2>
-            <p>
+            <h2 tabIndex={0}>Readable copies and screenshots</h2>
+            <p tabIndex={0}>
               Exports and screenshots leave vault protection. Deleting a record
               from myCarlos cannot erase those copies or the clinic's source
               medical record.
@@ -453,8 +476,10 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>Patient profiles</h2>
-            <p>Keep each person’s filing cabinet separate inside this vault.</p>
+            <h2 tabIndex={0}>Patient profiles</h2>
+            <p tabIndex={0}>
+              Keep each person’s filing cabinet separate inside this vault.
+            </p>
           </div>
           <form onSubmit={submitProfile}>
             <label>
@@ -467,7 +492,9 @@ export function SecuritySettings({
               />
             </label>
             {nameTooLong(profileName) && (
-              <p role="alert">This name is too long. Shorten it.</p>
+              <p tabIndex={0} role="alert">
+                This name is too long. Shorten it.
+              </p>
             )}
             <button
               className="button"
@@ -484,8 +511,8 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-danger-setting">
           <div>
-            <h2>Erase entire vault</h2>
-            <p>
+            <h2 tabIndex={0}>Erase entire vault</h2>
+            <p tabIndex={0}>
               Permanently deletes every encrypted document, profile, and folder.
               This cannot be undone.
             </p>

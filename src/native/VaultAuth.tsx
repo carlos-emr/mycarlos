@@ -1,3 +1,4 @@
+import { SecretInput } from "./SecretInput";
 import {
   useEffect,
   useRef,
@@ -33,8 +34,8 @@ export function VaultAuthFrame({
   return (
     <div className="evaluation-page native-vault-page">
       <div className="evaluation-banner" role="note">
-        <strong>Synthetic-data development build</strong>
-        <span>Do not use real patient information</span>
+        <strong tabIndex={0}>Synthetic-data development build</strong>
+        <span tabIndex={0}>Do not use real patient information</span>
       </div>
       <div className="page-wrap native-auth-wrap">
         <section
@@ -47,8 +48,10 @@ export function VaultAuthFrame({
               <i />
               <i />
             </span>
-            <span className="window-title">myCarlos</span>
-            <span className="native-auth-state">
+            <span tabIndex={0} className="window-title">
+              myCarlos
+            </span>
+            <span tabIndex={0} className="native-auth-state">
               <Icon name="shield" /> {state}
             </span>
           </header>
@@ -74,7 +77,7 @@ function AuthNotice({
   id?: string;
 }) {
   return (
-    <p id={id} role="status">
+    <p tabIndex={notice ? 0 : -1} id={id} role="status">
       {notice}
     </p>
   );
@@ -152,13 +155,18 @@ export function CreateVault({
   return (
     <VaultAuthFrame state="Setting up">
       <section className="vault-card" aria-labelledby="create-title">
-        <p className="vault-kicker">myCarlos private records</p>
-        <h1 id="create-title">Create your encrypted vault</h1>
-        <p>
-          Your files and record details are encrypted on this device. Your
-          passphrase is the only recovery method.
+        <p tabIndex={0} className="vault-kicker">
+          myCarlos private records
         </p>
-        <p>
+        <h1 tabIndex={0} id="create-title">
+          Create your encrypted vault
+        </h1>
+        <p tabIndex={0}>
+          Your files and record details are encrypted on this device. Your
+          passphrase opens the vault. Next, you can set up a recovery key in
+          case you forget it.
+        </p>
+        <p tabIndex={0}>
           Your vault stays on this device. If you created one on another device,
           it is still there, and will not appear here.
         </p>
@@ -173,11 +181,14 @@ export function CreateVault({
             />
           </label>
           {profileTooLong && (
-            <p role="alert">This name is too long. Shorten it.</p>
+            <p tabIndex={0} role="alert">
+              This name is too long. Shorten it.
+            </p>
           )}
           <label>
             Passphrase
-            <input
+            <SecretInput
+              aria-label="Passphrase"
               required
               type="password"
               autoComplete="new-password"
@@ -186,14 +197,15 @@ export function CreateVault({
               onChange={(e) => setPassphrase(e.target.value)}
             />
           </label>
-          <small id="passphrase-rules">
+          <small tabIndex={0} id="passphrase-rules">
             Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
             common passwords, names, and predictable patterns are rejected
             locally.
           </small>
           <label>
             Confirm passphrase
-            <input
+            <SecretInput
+              aria-label="Confirm passphrase"
               required
               type="password"
               autoComplete="new-password"
@@ -202,13 +214,17 @@ export function CreateVault({
             />
           </label>
           {confirmation && passphrase !== confirmation && (
-            <p role="alert">Passphrases do not match.</p>
+            <p tabIndex={0} role="alert">
+              Passphrases do not match.
+            </p>
           )}
           {tooLong && (
-            <p role="alert">This passphrase is too long. Shorten it.</p>
+            <p tabIndex={0} role="alert">
+              This passphrase is too long. Shorten it.
+            </p>
           )}
           {tooShort && confirmation && (
-            <p role="alert">
+            <p tabIndex={0} role="alert">
               This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
               characters.
             </p>
@@ -266,9 +282,13 @@ export function UnlockVault({
   return (
     <VaultAuthFrame state="Locked">
       <section className="vault-card" aria-labelledby="unlock-title">
-        <p className="vault-kicker">myCarlos private records</p>
-        <h1 id="unlock-title">Unlock your vault</h1>
-        <p>
+        <p tabIndex={0} className="vault-kicker">
+          myCarlos private records
+        </p>
+        <h1 tabIndex={0} id="unlock-title">
+          Unlock your vault
+        </h1>
+        <p tabIndex={0}>
           The vault locks after {autoLockMinutes} minute
           {autoLockMinutes === 1 ? "" : "s"} of inactivity and whenever myCarlos
           is hidden, for example minimized or sent to the background.
@@ -276,7 +296,8 @@ export function UnlockVault({
         <form onSubmit={submit}>
           <label>
             Passphrase
-            <input
+            <SecretInput
+              aria-label="Passphrase"
               ref={passphraseRef}
               autoFocus
               required
@@ -288,7 +309,7 @@ export function UnlockVault({
             />
           </label>
           {tooLong && (
-            <p role="alert">
+            <p tabIndex={0} role="alert">
               This is longer than any vault passphrase. Check what you typed.
             </p>
           )}
@@ -307,8 +328,10 @@ export function UnlockVault({
               return onRecover(recoveryKey, newPassphrase);
             }}
           />
-          <h2 className="vault-reset-heading">No recovery key?</h2>
-          <p>
+          <h2 tabIndex={0} className="vault-reset-heading">
+            No recovery key?
+          </h2>
+          <p tabIndex={0}>
             Without one, the only way back in is to erase this vault, which
             permanently deletes everything in it, and start again.
           </p>
@@ -398,14 +421,16 @@ function RecoverWithKey({
   };
   return (
     <form onSubmit={submit}>
-      <p>
+      <p tabIndex={0}>
         Use your recovery key to open the vault and choose a new passphrase.
       </p>
       <label>
         Recovery key
-        <input
+        <SecretInput
+          aria-label="Recovery key"
           required
           type={shown ? "text" : "password"}
+          secretKind="recovery key"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="characters"
@@ -416,7 +441,7 @@ function RecoverWithKey({
           onChange={(e) => setRecoveryKey(e.target.value)}
         />
       </label>
-      <small id="recover-key-format">
+      <small tabIndex={0} id="recover-key-format">
         28 letters and digits, in 7 groups of 4, as on your kit or as you wrote
         it down. Dashes, spaces and other punctuation do not matter.
       </small>
@@ -430,7 +455,8 @@ function RecoverWithKey({
       </button>
       <label>
         New passphrase
-        <input
+        <SecretInput
+          aria-label="New passphrase"
           required
           type="password"
           autoComplete="new-password"
@@ -439,13 +465,14 @@ function RecoverWithKey({
           onChange={(e) => setPassphrase(e.target.value)}
         />
       </label>
-      <small id="recover-passphrase-rules">
+      <small tabIndex={0} id="recover-passphrase-rules">
         Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
         common passwords, names, and predictable patterns are rejected locally.
       </small>
       <label>
         Confirm new passphrase
-        <input
+        <SecretInput
+          aria-label="Confirm new passphrase"
           required
           type="password"
           autoComplete="new-password"
@@ -454,11 +481,17 @@ function RecoverWithKey({
         />
       </label>
       {confirmation && passphrase !== confirmation && (
-        <p role="alert">Passphrases do not match.</p>
+        <p tabIndex={0} role="alert">
+          Passphrases do not match.
+        </p>
       )}
-      {tooLong && <p role="alert">This passphrase is too long. Shorten it.</p>}
+      {tooLong && (
+        <p tabIndex={0} role="alert">
+          This passphrase is too long. Shorten it.
+        </p>
+      )}
       {tooShort && confirmation && (
-        <p role="alert">
+        <p tabIndex={0} role="alert">
           This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
           characters.
         </p>

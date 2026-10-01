@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'button, select, input, textarea, a[href], summary, [tabindex], [contenteditable="true"]';
 
 // When one dialog replaces another, the first dialog's cleanup runs while the
 // page behind it is still inert, so its opener cannot take focus and focus
@@ -26,12 +26,47 @@ export function useModalFocus(
       focused instanceof HTMLElement && focused !== document.body
         ? focused
         : pendingOpener;
-    const focusable = () =>
-      Array.from(
+    const focusable = () => {
+      const elements = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ??
           [],
+      ).filter(
+        (element) =>
+          element.tabIndex >= 0 &&
+          !element.matches(":disabled") &&
+          !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
+          element.getClientRects().length > 0 &&
+          getComputedStyle(element).visibility === "visible",
       );
-    (initialFocus?.current ?? focusable()[0])?.focus();
+      return elements;
+    };
+    const sameRadioGroup = (a: Element | null, b: Element) =>
+      a instanceof HTMLInputElement &&
+      b instanceof HTMLInputElement &&
+      a.type === "radio" &&
+      b.type === "radio" &&
+      Boolean(a.name) &&
+      a.name === b.name &&
+      a.form === b.form;
+    const edge = (elements: HTMLElement[], reverse: boolean) => {
+      const end = elements[reverse ? elements.length - 1 : 0];
+      return (
+        elements.find(
+          (element) =>
+            sameRadioGroup(element, end) &&
+            (element as HTMLInputElement).checked,
+        ) ?? end
+      );
+    };
+    const focusDialog = () => {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      if (!dialog.hasAttribute("tabindex")) dialog.tabIndex = -1;
+      dialog.focus();
+    };
+    const firstFocus = initialFocus?.current ?? edge(focusable(), false);
+    if (firstFocus) firstFocus.focus();
+    else focusDialog();
 
     const containFocus = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -41,13 +76,27 @@ export function useModalFocus(
       }
       if (event.key !== "Tab") return;
       const controls = focusable();
-      if (!controls.length) return;
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!controls.length) {
+        event.preventDefault();
+        focusDialog();
+        return;
+      }
+      const first = edge(controls, false);
+      const last = edge(controls, true);
+      const current = document.activeElement;
+      if (!controls.some((element) => element === current)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (
+        event.shiftKey &&
+        (current === first || sameRadioGroup(current, first))
+      ) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (
+        !event.shiftKey &&
+        (current === last || sameRadioGroup(current, last))
+      ) {
         event.preventDefault();
         first.focus();
       }

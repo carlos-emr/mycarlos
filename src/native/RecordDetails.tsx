@@ -35,7 +35,8 @@ export function RecordDetails({
   onExport,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
-  useModalFocus(true, dialogRef, onClose);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  useModalFocus(true, dialogRef, onClose, closeRef);
   const kind = recordKind(record.displayName);
   const folderNameById = new Map(
     folders.map((folder) => [folder.id, folder.name]),
@@ -52,10 +53,15 @@ export function RecordDetails({
       >
         <header className="dialog-head">
           <div>
-            <span className="eyebrow">Encrypted document</span>
-            <h2 id="native-record-title">{record.displayName}</h2>
+            <span tabIndex={0} className="eyebrow">
+              Encrypted document
+            </span>
+            <h2 tabIndex={0} id="native-record-title">
+              {record.displayName}
+            </h2>
           </div>
           <button
+            ref={closeRef}
             className="dialog-close"
             type="button"
             aria-label="Close document details"
@@ -79,12 +85,12 @@ export function RecordDetails({
             <i />
           </div>
           {record.available ? (
-            <p>
+            <p tabIndex={0}>
               The file stays encrypted in the vault. Save a copy only when you
               need a readable file outside myCarlos.
             </p>
           ) : (
-            <p role="alert">
+            <p tabIndex={0} role="alert">
               {unreadable ? (
                 <>
                   <strong>This document is unavailable.</strong> Its encrypted
@@ -104,24 +110,26 @@ export function RecordDetails({
         </div>
         <dl className="record-metadata">
           <div>
-            <dt>Kind</dt>
-            <dd>{kind.label}</dd>
+            <dt tabIndex={0}>Kind</dt>
+            <dd tabIndex={0}>{kind.label}</dd>
           </div>
           <div>
-            <dt>Source</dt>
-            <dd>{record.sourceLabel}</dd>
+            <dt tabIndex={0}>Source</dt>
+            <dd tabIndex={0}>{record.sourceLabel}</dd>
           </div>
           <div>
-            <dt>Date added</dt>
-            <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
+            <dt tabIndex={0}>Date added</dt>
+            <dd tabIndex={0}>
+              {new Date(record.importedAtMs).toLocaleString()}
+            </dd>
           </div>
           <div>
-            <dt>File</dt>
-            <dd>{formatBytes(record.plaintextSize)}</dd>
+            <dt tabIndex={0}>File</dt>
+            <dd tabIndex={0}>{formatBytes(record.plaintextSize)}</dd>
           </div>
           <div>
-            <dt>Folder</dt>
-            <dd>
+            <dt tabIndex={0}>Folder</dt>
+            <dd tabIndex={0}>
               {record.folderIds
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
@@ -139,7 +147,11 @@ export function RecordDetails({
             Rename document
           </button>
         </div>
-        <p className="native-dialog-status" role="status">
+        <p
+          tabIndex={notice ? 0 : -1}
+          className="native-dialog-status"
+          role="status"
+        >
           {notice}
         </p>
         <footer className="dialog-actions native-dialog-actions">
