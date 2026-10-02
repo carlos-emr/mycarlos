@@ -1,3 +1,4 @@
+import { SecretInput } from "./SecretInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -190,7 +191,7 @@ export function RestoreBackup({
 
   return (
     <form className="restore-backup" onSubmit={(event) => void check(event)}>
-      <p>
+      <p tabIndex={0}>
         An encrypted backup opens with the passphrase it was made with, or with
         the recovery key the vault had when the backup was saved, if it had one.
       </p>
@@ -206,7 +207,7 @@ export function RestoreBackup({
       {pickId && (
         <>
           <fieldset>
-            <legend>Open it with</legend>
+            <legend tabIndex={0}>Open it with</legend>
             <label className="restore-choice">
               <input
                 type="radio"
@@ -238,9 +239,13 @@ export function RestoreBackup({
           </fieldset>
           <label>
             {method === "passphrase" ? "Backup passphrase" : "Recovery key"}
-            <input
+            <SecretInput
+              aria-label={
+                method === "passphrase" ? "Backup passphrase" : "Recovery key"
+              }
               required
               type={shown ? "text" : "password"}
+              secretKind={method === "passphrase" ? "password" : "recovery key"}
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
@@ -260,7 +265,9 @@ export function RestoreBackup({
             {method === "passphrase" ? "Show passphrase" : "Show recovery key"}
           </button>
           {utf8Length(secret) > MAX_PASSPHRASE_BYTES && (
-            <p role="alert">This is too long. Check what you typed.</p>
+            <p tabIndex={0} role="alert">
+              This is too long. Check what you typed.
+            </p>
           )}
           <button
             className="button"
@@ -272,10 +279,14 @@ export function RestoreBackup({
           </button>
         </>
       )}
-      <p className="restore-status" role="status">
+      <p tabIndex={status ? 0 : -1} className="restore-status" role="status">
         {status}
       </p>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p tabIndex={0} role="alert">
+          {error}
+        </p>
+      )}
       {preview && (
         <>
           {needsAgreement && (

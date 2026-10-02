@@ -49,6 +49,7 @@ export function RenameDialog({
   // when the message is the same.
   const [refusals, setRefusals] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   // Someone who types the extension out of habit means the same name, so a
   // typed copy of it is dropped rather than doubled, unless the name was left
   // as it was or already ended with it twice, as in "Report.pdf.pdf".
@@ -100,7 +101,7 @@ export function RenameDialog({
   const close = () => {
     if (!saving) onClose();
   };
-  useModalFocus(true, dialogRef, close);
+  useModalFocus(true, dialogRef, close, inputRef);
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving || readOnly || invalid) return;
@@ -133,7 +134,9 @@ export function RenameDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
-          <h2 id="rename-title">Rename {target.kind}</h2>
+          <h2 tabIndex={0} id="rename-title">
+            Rename {target.kind}
+          </h2>
         </header>
         <form onSubmit={(event) => void save(event)}>
           <div className="native-rename-fields">
@@ -142,6 +145,7 @@ export function RenameDialog({
             </label>
             <div className="native-rename-input">
               <input
+                ref={inputRef}
                 id="rename-name"
                 required
                 maxLength={
@@ -163,7 +167,7 @@ export function RenameDialog({
               {/* The help text names the extension for screen readers. */}
               {extension && <span aria-hidden="true">{extension}</span>}
             </div>
-            <p id="rename-help">
+            <p tabIndex={0} id="rename-help">
               {target.kind === "folder"
                 ? "The folder and its contents stay in the same location."
                 : `This changes the name in myCarlos and the suggested export name.${
@@ -173,25 +177,29 @@ export function RenameDialog({
                   }`}
             </p>
             {extension && name.trim() && !stem && (
-              <p role="alert">Enter a name before {extension}.</p>
+              <p tabIndex={0} role="alert">
+                Enter a name before {extension}.
+              </p>
             )}
             {gainsExtension && (
-              <p role="alert">
+              <p tabIndex={0} role="alert">
                 This document&apos;s name has no .pdf extension, so it cannot
                 end in .pdf.
               </p>
             )}
             {tooLong && (
-              <p role="alert">This name is too long. Shorten it to save.</p>
+              <p tabIndex={0} role="alert">
+                This name is too long. Shorten it to save.
+              </p>
             )}
             {unsafeName && (
-              <p role="alert">
+              <p tabIndex={0} role="alert">
                 Document names cannot contain &lt; &gt; : &quot; | ? * / \ or
                 invisible control characters, or end with a dot.
               </p>
             )}
             {error && (
-              <p id="rename-error" role="alert" key={refusals}>
+              <p tabIndex={0} id="rename-error" role="alert" key={refusals}>
                 {error}
               </p>
             )}

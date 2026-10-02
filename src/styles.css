@@ -717,3 +717,9 @@ h1, h2, p { margin: 0; }
     transition-duration: .01ms !important;
   }
 }
+
+.secret-input { display: grid; gap: 5px; min-width: 0; }
+.secret-input input { width: 100%; min-width: 0; }
+.secret-count { font-size: 0.875rem; font-weight: 400; color: var(--ink-soft); }
+.recovery-key-dialog .dialog-head h2 { white-space: normal; overflow: visible; }
+.recovery-key-dialog [tabindex="0"] { scroll-margin-block: 16px; }

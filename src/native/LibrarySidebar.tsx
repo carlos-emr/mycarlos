@@ -58,8 +58,8 @@ export function LibrarySidebar({
           <Icon name="activity" />
         </span>
         <span>
-          <strong>myCarlos</strong>
-          <small>{profileName}</small>
+          <strong tabIndex={0}>myCarlos</strong>
+          <small tabIndex={0}>{profileName}</small>
         </span>
       </div>
       <nav className="side-nav" aria-label="Record library">
@@ -78,7 +78,9 @@ export function LibrarySidebar({
             {records.filter((record) => !record.folderIds.length).length}
           </span>
         </button>
-        <span className="nav-label">Folders</span>
+        <span tabIndex={0} className="nav-label">
+          Folders
+        </span>
         {sidebarFolders.map(({ folder, depth }) => (
           <button
             className={dropClass(
@@ -106,9 +108,13 @@ export function LibrarySidebar({
           </button>
         ))}
         {!folders.length && (
-          <small className="native-sidebar-empty">No folders yet</small>
+          <small tabIndex={0} className="native-sidebar-empty">
+            No folders yet
+          </small>
         )}
-        <span className="nav-label">Settings</span>
+        <span tabIndex={0} className="nav-label">
+          Settings
+        </span>
         <button
           className={section === "security" ? "selected" : ""}
           type="button"
@@ -118,7 +124,7 @@ export function LibrarySidebar({
         </button>
       </nav>
       <div className="storage">
-        <span>Encrypted local vault</span>
+        <span tabIndex={0}>Encrypted local vault</span>
         <div className="storage-meter">
           <span
             style={{
@@ -126,7 +132,7 @@ export function LibrarySidebar({
             }}
           />
         </div>
-        <small>
+        <small tabIndex={0}>
           {records.length} document{records.length === 1 ? "" : "s"} ·{" "}
           {folders.length} folder{folders.length === 1 ? "" : "s"}
         </small>

@@ -115,13 +115,14 @@ On every platform:
 1. Create a vault. For **First patient profile**, type a made-up name such as
    `FAKE Test Patient`. Choose a throwaway passphrase of at least 15 characters; the app rejects
    common or predictable ones.
-2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
-   then **Next**, and type the whole key back. Typing it wrong says so; three wrong
+2. Set up the recovery key the app shows next: try **Save recovery kit…** (and **Print recovery kit** on a computer),
+   then **Next: check your recovery key**, and type the whole key back. Typing it wrong says so; three wrong
    tries go back to the key. Check that the saved kit opens and shows the key and no names, and
    that the key's label shown beside the key is on the saved and the printed kit, and in
-   **Security** once the key is set up. If a lock ends the setup (or you leave it with **Set up
-   later**, which it offers after an error), the vault has no recovery key: lock and unlock, and the
-   setup opens by itself, at most once a day (the rest of the time only the notice offers it). It
+   **Security** once the key is set up. If a lock ends the setup (including **Lock vault and finish later** or Escape
+   during first setup), the unfinished key does not work. The next unlock shows an unfinished-key warning.
+   On a later eligible unlock, setup opens by itself, at most once a day
+   (the rest of the time only the notice offers it). It
    shows no key until you type your passphrase and choose **Continue**; **Set up later** closes it.
 3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
@@ -155,11 +156,14 @@ On every platform:
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-9. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
-   keep the screen on), and confirm it locks.
-10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+9. In **Security**, under **Speed test, for testers**, choose **Run speed test** three times, a
+   minute apart, staying on that screen while it runs. Send the three lines it gives with the
+   device's make and model and its system's version. `ARGON2_BENCHMARK.md` says how to record them.
+10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+    keep the screen on), and confirm it locks.
+11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-11. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
@@ -308,6 +312,31 @@ Comment on [issue #4](https://github.com/carlos-emr/mycarlos/issues/4) (Android)
 the platform and OS version, the device or emulator, the source commit from `BUILD.txt`, what you
 did, and what happened. Screenshots help, as long as they show only made-up data. Report
 suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.
+
+### Windows Narrator and keyboard retest
+
+Use the Windows evaluation artifact from PR #39, branch `feat/kdf-benchmark`, and match
+its BUILD.txt source commit to the reviewed revision. Use made-up data only.
+
+1. Start Narrator. Create or unlock a vault. Hover and focus an empty password field,
+   then type, delete and paste a throwaway password. The count description and hover text
+   should say “N character password”. Confirm it does not speak the secret. The field
+   remains a native protected password input: whether Narrator still repeats protected
+   bullets needs this Windows test and has not been verified on Linux.
+2. Tab and Shift+Tab through headings, instructions, warnings, labels (read with their
+   controls), and controls in create, unlock, restore, library and Security. Check the
+   count, show/hide controls, errors, and every paragraph, including long text.
+3. In recovery setup, Tab through all instructions and all seven key groups. Each group
+   should be read character by character. From the last action, Tab returns to the heading
+   and scrolls up; Shift+Tab goes backward. Repeat in a short window or at 200% scaling.
+4. Save a kit, go Next, go Back, and deliberately mistype the check. Focus should start at
+   each new heading, and all text/actions remain reachable. Save/Print/Next/Back names
+   describe the recovery-key action.
+5. Escape or “Lock vault and finish later” during first setup should hide the key and lock.
+   After unlocking, the unfinished-key warning says that key does not work. Optional setup
+   opened from Security may be cancelled; focus should return to its opening button.
+6. Report any repeated bullet speech, missing text, unexpected focus jump, or focus that
+   cannot leave a section. Browser keyboard/axe checks are not a Windows Narrator test.
 
 ## Automated Windows native tests
 
