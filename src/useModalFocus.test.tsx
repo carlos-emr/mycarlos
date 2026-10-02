@@ -44,7 +44,13 @@ function Fixture() {
   );
 }
 
-function BoundaryDialog({ radiosFirst }: { radiosFirst: boolean }) {
+function BoundaryDialog({
+  radiosFirst,
+  checked = true,
+}: {
+  radiosFirst: boolean;
+  checked?: boolean;
+}) {
   const ref = useRef<HTMLElement>(null);
   useModalFocus(true, ref, () => {});
   const radios = (
@@ -54,7 +60,7 @@ function BoundaryDialog({ radiosFirst }: { radiosFirst: boolean }) {
         First choice
       </label>
       <label>
-        <input type="radio" name="edge" defaultChecked />
+        <input type="radio" name="edge" defaultChecked={checked} />
         Selected choice
       </label>
       <label>
@@ -68,6 +74,36 @@ function BoundaryDialog({ radiosFirst }: { radiosFirst: boolean }) {
       {radiosFirst && radios}
       <button>Action</button>
       {!radiosFirst && radios}
+    </section>
+  );
+}
+
+function InterleavedRadioDialog({
+  checked,
+}: {
+  checked: "first" | "last" | false;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  useModalFocus(true, ref, () => {});
+  return (
+    <section ref={ref} role="dialog" aria-label="Interleaved radios">
+      <label>
+        <input
+          type="radio"
+          name="interleaved"
+          defaultChecked={checked === "first"}
+        />
+        Before action
+      </label>
+      <button>Intervening action</button>
+      <label>
+        <input
+          type="radio"
+          name="interleaved"
+          defaultChecked={checked === "last"}
+        />
+        After action
+      </label>
     </section>
   );
 }
@@ -90,6 +126,57 @@ function InitialFocusDialog({ disabled }: { disabled: boolean }) {
 }
 
 describe("modal keyboard focus", () => {
+  it.each(["first", "last"] as const)(
+    "keeps a button between radio members reachable with %s selected",
+    async (checked) => {
+      const user = userEvent.setup();
+      render(<InterleavedRadioDialog checked={checked} />);
+      const action = screen.getByRole("button", { name: "Intervening action" });
+      const selected = screen.getByLabelText(
+        checked === "first" ? "Before action" : "After action",
+      );
+      expect(checked === "first" ? selected : action).toHaveFocus();
+      selected.focus();
+      await user.tab();
+      expect(action).toHaveFocus();
+      await user.tab();
+      expect(selected).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(action).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(selected).toHaveFocus();
+    },
+  );
+
+  it("keeps an intervening button reachable when no radio is selected", async () => {
+    const user = userEvent.setup();
+    render(<InterleavedRadioDialog checked={false} />);
+    const action = screen.getByRole("button", { name: "Intervening action" });
+    const first = screen.getByLabelText("Before action");
+    const last = screen.getByLabelText("After action");
+    first.focus();
+    await user.tab();
+    expect(action).toHaveFocus();
+    last.focus();
+    await user.tab({ shift: true });
+    expect(action).toHaveFocus();
+  });
+
+  it.each([true, false])(
+    "wraps unselected contiguous radio groups, radios first: %s",
+    async (radiosFirst) => {
+      const user = userEvent.setup();
+      render(<BoundaryDialog radiosFirst={radiosFirst} checked={false} />);
+      const action = screen.getByRole("button", { name: "Action" });
+      screen.getByLabelText("First choice").focus();
+      await user.tab();
+      expect(action).toHaveFocus();
+      screen.getByLabelText("Last choice").focus();
+      await user.tab({ shift: true });
+      expect(action).toHaveFocus();
+    },
+  );
+
   it("falls back inside the dialog when its explicit initial control is disabled", () => {
     render(<InitialFocusDialog disabled />);
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
