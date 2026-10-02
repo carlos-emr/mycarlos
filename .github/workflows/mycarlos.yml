@@ -239,6 +239,56 @@ jobs:
           if subsystem != 2:
               raise SystemExit(f"Installed app must use the Windows GUI subsystem, got {subsystem}")
           print("Installed app uses the Windows GUI subsystem; no console is allocated at launch.")
+      - name: Test installed Windows navigation and confirmation dialogs
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $env:MYCARLOS_WINDOWS_DIALOG_TESTS = '1'
+          $env:MYCARLOS_WINDOWS_APP = Join-Path $env:RUNNER_TEMP 'mycarlos-install-smoke/mycarlos-tauri-poc.exe'
+          $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $env:MYCARLOS_WINDOWS_CDP_PORT = [string]$listener.LocalEndpoint.Port
+          $listener.Stop()
+          # The test rechecks this port immediately before app launch and reports
+          # an occupied port explicitly; release/rebind still has a small race.
+          $env:MYCARLOS_WINDOWS_WEBVIEW_PROFILE = Join-Path $env:RUNNER_TEMP "mycarlos-webview-$([Guid]::NewGuid())"
+          # WebView2 150+ ignores env/HKCU overrides for elevated hosts, including
+          # this hosted runner. Scope temporary HKLM policies to this exe only.
+          # https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
+          $root = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2'
+          $exe = 'mycarlos-tauri-poc.exe'
+          $policies = @{
+            AdditionalBrowserArguments = "--remote-debugging-port=$env:MYCARLOS_WINDOWS_CDP_PORT --remote-debugging-address=127.0.0.1"
+            UserDataFolder = $env:MYCARLOS_WINDOWS_WEBVIEW_PROFILE
+          }
+          $added = @()
+          try {
+            foreach ($name in $policies.Keys) {
+              $key = Join-Path $root $name
+              if ((Test-Path $key) -and ((Get-Item $key).GetValueNames() -contains $exe)) {
+                throw "Refusing to replace an existing WebView2 policy for $exe"
+              }
+              if (!(Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+              New-ItemProperty -Path $key -Name $exe -PropertyType String -Value $policies[$name] | Out-Null
+              $added += $key
+            }
+            npm run test:windows-navigation
+            if ($LASTEXITCODE -ne 0) { throw "Windows navigation smoke test failed ($LASTEXITCODE)" }
+          } finally {
+            foreach ($key in $added) {
+              Remove-ItemProperty -Path $key -Name $exe -ErrorAction Continue
+            }
+          }
+      - name: Upload Windows navigation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-windows-navigation-evidence
+          path: |
+            test-results/windows-native/
+            test-results/windows-native-report/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Prepare Windows download
         shell: pwsh
         env:

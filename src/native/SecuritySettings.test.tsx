@@ -42,6 +42,14 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe("SecuritySettings speed test", () => {
+  it("does not start while another vault action is busy", () => {
+    const props = renderSettings({ busy: true });
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(props.onSpeedTest).not.toHaveBeenCalled();
+  });
+
   it("measures when asked, and gives a line to send", async () => {
     let finish!: (report: typeof speedTest) => void;
     const props = renderSettings();

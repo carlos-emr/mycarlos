@@ -26,6 +26,15 @@ function Field() {
 }
 
 describe("secret input", () => {
+  it("counts passwords after NFC normalization without changing the input", () => {
+    const value = "abcdefghijklm" + "e\u0301";
+    render(<SecretInput aria-label="Passphrase" value={value} readOnly />);
+    const input = screen.getByLabelText("Passphrase");
+    expect(input).toHaveValue(value);
+    expect(input).toHaveAttribute("title", "14 character password");
+    expect(input).toHaveAccessibleDescription("14 character password");
+  });
+
   it("gives the character count on hover and focus without copying secrets into accessible metadata", async () => {
     const user = userEvent.setup();
     render(<Field />);

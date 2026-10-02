@@ -17,7 +17,9 @@ export function SecretInput({
   ...props
 }: Props) {
   const countId = useId();
-  const count = `${Array.from(value).length} character ${secretKind}`;
+  const countedValue =
+    secretKind === "password" ? value.normalize("NFC") : value;
+  const count = `${Array.from(countedValue).length} character ${secretKind}`;
   const description = type === "password" ? count : `${count}, shown`;
   return (
     <span className="secret-input">

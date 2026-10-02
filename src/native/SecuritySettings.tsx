@@ -84,7 +84,7 @@ export function SecuritySettings({
     failed: string;
   }>({ running: false, result: "", failed: "" });
   const runSpeedTest = async () => {
-    if (speedTest.running) return;
+    if (busy || speedTest.running) return;
     setSpeedTest({ running: true, result: "", failed: "" });
     try {
       const report = await onSpeedTest();
@@ -445,7 +445,7 @@ export function SecuritySettings({
             <button
               className="button"
               type="button"
-              disabled={speedTest.running}
+              disabled={busy || speedTest.running}
               onClick={() => void runSpeedTest()}
             >
               Run speed test

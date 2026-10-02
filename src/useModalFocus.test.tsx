@@ -44,7 +44,78 @@ function Fixture() {
   );
 }
 
+function BoundaryDialog({ radiosFirst }: { radiosFirst: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  useModalFocus(true, ref, () => {});
+  const radios = (
+    <>
+      <label>
+        <input type="radio" name="edge" />
+        First choice
+      </label>
+      <label>
+        <input type="radio" name="edge" defaultChecked />
+        Selected choice
+      </label>
+      <label>
+        <input type="radio" name="edge" />
+        Last choice
+      </label>
+    </>
+  );
+  return (
+    <section ref={ref} role="dialog" aria-label="Radio boundary">
+      {radiosFirst && radios}
+      <button>Action</button>
+      {!radiosFirst && radios}
+    </section>
+  );
+}
+
+function InitialFocusDialog({ disabled }: { disabled: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  const requested = useRef<HTMLInputElement>(null);
+  useModalFocus(true, ref, () => {}, requested);
+  return (
+    <section ref={ref} role="dialog" aria-label="Initial focus">
+      <input
+        ref={requested}
+        aria-label="Name"
+        disabled={disabled}
+        tabIndex={-1}
+      />
+      <button>Close</button>
+    </section>
+  );
+}
+
 describe("modal keyboard focus", () => {
+  it("falls back inside the dialog when its explicit initial control is disabled", () => {
+    render(<InitialFocusDialog disabled />);
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("allows an available explicit initial target outside the Tab sequence", () => {
+    render(<InitialFocusDialog disabled={false} />);
+    expect(screen.getByLabelText("Name")).toHaveFocus();
+  });
+
+  it.each([true, false])(
+    "wraps at a checked radio group boundary, radios first: %s",
+    async (radiosFirst) => {
+      const user = userEvent.setup();
+      render(<BoundaryDialog radiosFirst={radiosFirst} />);
+      const selected = screen.getByLabelText("Selected choice");
+      const action = screen.getByRole("button", { name: "Action" });
+      expect(radiosFirst ? selected : action).toHaveFocus();
+      selected.focus();
+      await user.tab({ shift: radiosFirst });
+      expect(action).toHaveFocus();
+      await user.tab({ shift: !radiosFirst });
+      expect(selected).toHaveFocus();
+    },
+  );
+
   it("includes static text and all control types, skips unavailable content, wraps both ways and restores the opener", async () => {
     const user = userEvent.setup();
     render(<Fixture />);

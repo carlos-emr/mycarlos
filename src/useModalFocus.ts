@@ -26,18 +26,16 @@ export function useModalFocus(
       focused instanceof HTMLElement && focused !== document.body
         ? focused
         : pendingOpener;
+    const available = (element: HTMLElement) =>
+      !element.matches(":disabled") &&
+      !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
+      element.getClientRects().length > 0 &&
+      getComputedStyle(element).visibility === "visible";
     const focusable = () => {
       const elements = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ??
           [],
-      ).filter(
-        (element) =>
-          element.tabIndex >= 0 &&
-          !element.matches(":disabled") &&
-          !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
-          element.getClientRects().length > 0 &&
-          getComputedStyle(element).visibility === "visible",
-      );
+      ).filter((element) => element.tabIndex >= 0 && available(element));
       return elements;
     };
     const sameRadioGroup = (a: Element | null, b: Element) =>
@@ -64,9 +62,17 @@ export function useModalFocus(
       if (!dialog.hasAttribute("tabindex")) dialog.tabIndex = -1;
       dialog.focus();
     };
-    const firstFocus = initialFocus?.current ?? edge(focusable(), false);
-    if (firstFocus) firstFocus.focus();
-    else focusDialog();
+    const requested = initialFocus?.current;
+    // An explicitly supplied heading may have tabindex=-1. Keep that support,
+    // but do not let a disabled or hidden initial control leave focus outside.
+    const firstFocus =
+      requested &&
+      dialogRef.current?.contains(requested) &&
+      available(requested)
+        ? requested
+        : edge(focusable(), false);
+    firstFocus?.focus();
+    if (!dialogRef.current?.contains(document.activeElement)) focusDialog();
 
     const containFocus = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

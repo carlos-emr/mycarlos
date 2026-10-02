@@ -434,7 +434,12 @@ export function RecoveryKeySetup({
               </p>
             )}
             <footer className="dialog-actions">
-              <button className="button" type="button" onClick={cancel}>
+              <button
+                className="button"
+                type="button"
+                onClick={cancel}
+                disabled={busy}
+              >
                 {leaveLabel}
               </button>
               <button

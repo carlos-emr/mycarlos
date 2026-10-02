@@ -1,6 +1,8 @@
 mod idle;
 mod throttle;
 mod vault;
+#[cfg(windows)]
+mod windows_navigation;
 
 use idle::{IdleDeadline, Opening};
 use serde::{Deserialize, Serialize};
@@ -14,7 +16,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{Manager, State};
+use tauri::{Manager, State, Url};
 use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
@@ -154,6 +156,10 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            VaultError::Busy => Self {
+                code: "busy",
+                message: "A passphrase check or speed test is running. Wait for it to finish, then try again.",
+            },
             VaultError::AlreadyExists => Self {
                 code: "already_exists",
                 message: "A vault already exists on this device.",
@@ -697,26 +703,6 @@ fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
 }
 
-/// One speed test at a time: each takes a core and 64 MiB for some seconds.
-#[derive(Default)]
-struct SpeedTest(std::sync::atomic::AtomicBool);
-
-/// Lets the next speed test start when this one ends, however it ends.
-struct SpeedTestRunning(Arc<SpeedTest>);
-
-impl SpeedTestRunning {
-    fn start(gate: &Arc<SpeedTest>) -> Option<Self> {
-        use std::sync::atomic::Ordering;
-        (!gate.0.swap(true, Ordering::AcqRel)).then(|| Self(Arc::clone(gate)))
-    }
-}
-
-impl Drop for SpeedTestRunning {
-    fn drop(&mut self) {
-        self.0 .0.store(false, std::sync::atomic::Ordering::Release);
-    }
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SpeedTestReport {
@@ -734,43 +720,20 @@ struct SpeedTestReport {
 /// For testers, in the evaluation builds: to be taken out, with its section
 /// in Security, before a release to patients.
 ///
-/// Only with a vault unlocked, where the screen that asks for it is, so that
-/// it is not run beside an unlock, which would double the memory the app
-/// needs at that moment. It can still meet one: the vault can lock while it
-/// runs and be unlocked again, or the passphrase be changed meanwhile. The
-/// screen asks testers to do nothing else until it is done.
+/// Admission shares the vault's KDF guard, so a speed test cannot overlap
+/// another passphrase operation. Locking remains available throughout.
 #[tauri::command]
-async fn kdf_benchmark(
-    store: State<'_, Arc<VaultStore>>,
-    gate: State<'_, Arc<SpeedTest>>,
-) -> CommandResult<SpeedTestReport> {
-    run_blocking(store.inner(), |store| match store.status()? {
-        VaultStatus::Unlocked => Ok(()),
-        _ => Err(VaultError::Locked),
-    })
-    .await?;
-    let Some(running) = SpeedTestRunning::start(gate.inner()) else {
-        return Err(PublicError {
-            code: "busy",
-            message: "A speed test is already running. Wait for it to finish.",
+async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<SpeedTestReport> {
+    let store = Arc::clone(store.inner());
+    let measured = tauri::async_runtime::spawn_blocking(move || store.benchmark_kdf())
+        .await
+        .map_err(|_| PublicError {
+            code: "speed_test_failed",
+            message: "The speed test stopped before it finished. Nothing was changed. Try again.",
             record_id: None,
             note: None,
             retry_after_ms: None,
-        });
-    };
-    let measured = tauri::async_runtime::spawn_blocking(move || {
-        // Held by the work itself, so that it ends with it.
-        let _running = running;
-        vault::benchmark_kdf()
-    })
-    .await
-    .map_err(|_| PublicError {
-        code: "speed_test_failed",
-        message: "The speed test stopped before it finished. Nothing was changed. Try again.",
-        record_id: None,
-        note: None,
-        retry_after_ms: None,
-    })??;
+        })??;
     let RuntimeInfo {
         platform,
         architecture,
@@ -1012,8 +975,9 @@ const NATIVE_CANCEL: &str = "Cancel";
 ///
 /// The first button keeps things as they are: on Windows and macOS it is
 /// the Enter/Return default, and a dialog can appear while the patient is
-/// typing. Linux has no explicit default and needs device testing. The button that goes ahead comes second, and
-/// Cancel, which does what the first does, third.
+/// typing. Linux has no explicit default and needs device testing. The button
+/// that goes ahead comes second, and Cancel, which does what the first does,
+/// third.
 ///
 /// Three buttons, though two do the same, because each slot has a meaning
 /// of its own on some platform. With two buttons and the safe one first,
@@ -1916,12 +1880,146 @@ async fn vault_reset(
     Ok(true)
 }
 
+/// The scheme and host the bundled pages are served from.
+type Origin = (&'static str, &'static str);
+
+/// Where this platform serves the bundled pages from. Windows and Android
+/// cannot use the app's own scheme and use a host name instead.
+///
+/// The app has one window, so its setting is every webview's.
+fn bundled_origin(config: &tauri::Config) -> Origin {
+    let https = config
+        .app
+        .windows
+        .first()
+        .is_some_and(|window| window.use_https_scheme);
+    origin_for(cfg!(windows) || cfg!(target_os = "android"), https)
+}
+
+fn origin_for(uses_host_name: bool, https: bool) -> Origin {
+    match (uses_host_name, https) {
+        (false, _) => ("tauri", "localhost"),
+        (true, false) => ("http", "tauri.localhost"),
+        (true, true) => ("https", "tauri.localhost"),
+    }
+}
+
+/// Whether the app's window may load `url`: only the app's own bundled
+/// pages, and in a development build the development server's.
+///
+/// The content security policy keeps page code from sending anything over
+/// the network, but it does not govern where the window itself goes. Page
+/// code that went to another site could take what it holds along in the
+/// address, and that site could then imitate the unlock screen.
+///
+/// Only this platform's own origin counts as bundled. Another platform's
+/// would be an address on the network here: `http://tauri.localhost` is
+/// whatever listens on this machine's port 80.
+fn navigation_allowed(url: &Url, bundled: Origin, dev_url: Option<&Url>) -> bool {
+    let (scheme, host) = bundled;
+    let is_bundled = url.scheme() == scheme
+        && url.host_str() == Some(host)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    is_bundled || dev_url.is_some_and(|dev| url.origin() == dev.origin())
+}
+
+/// `navigation_allowed` for this build: the development server counts only
+/// in a development build, though every build's configuration names it.
+fn may_navigate(config: &tauri::Config, url: &Url) -> bool {
+    let dev_url = tauri::is_dev()
+        .then_some(config.build.dev_url.as_ref())
+        .flatten();
+    navigation_allowed(url, bundled_origin(config), dev_url)
+}
+
+// Keep app code from running until Windows request interception is installed.
+#[cfg(any(windows, test))]
+#[derive(Default)]
+struct NavigationStartup {
+    armed: bool,
+    pending: Option<Url>,
+}
+
+#[cfg(any(windows, test))]
+impl NavigationStartup {
+    fn permit(&mut self, url: &Url, allowed: bool) -> bool {
+        if !allowed {
+            return false;
+        }
+        if !self.armed {
+            self.pending = Some(url.clone());
+            return false;
+        }
+        true
+    }
+
+    fn arm(&mut self) -> Option<Url> {
+        self.armed = true;
+        self.pending.take()
+    }
+}
+
+/// Applies the rule to every webview the app creates.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|webview, url| may_navigate(webview.config(), url))
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(navigation_guard())
         .setup(|app| {
+            // The window is made here, not by the configuration, so that it
+            // can refuse to open others: nothing in the app opens a window,
+            // and one opened by page code would load whatever it was given.
+            // (Desktop only: a phone's webview opens no windows.) It also
+            // carries the navigation rule itself, which the library asks
+            // before it looks for plugins, and even if it cannot find the
+            // webview to ask them about.
+            let config = app.config().clone();
+            let window = app
+                .config()
+                .app
+                .windows
+                .first()
+                .cloned()
+                .ok_or("the main window is not configured")?;
+            #[cfg(windows)]
+            let startup = Arc::new(Mutex::new(NavigationStartup::default()));
+            #[cfg(windows)]
+            let navigation_startup = Arc::clone(&startup);
+            let _webview = tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+                .on_navigation(move |url| {
+                    let allowed = may_navigate(&config, url);
+                    #[cfg(windows)]
+                    return navigation_startup
+                        .lock()
+                        .expect("navigation startup mutex poisoned")
+                        .permit(url, allowed);
+                    #[cfg(not(windows))]
+                    allowed
+                })
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
+            #[cfg(windows)]
+            {
+                windows_navigation::install(&_webview, app.config().clone())?;
+                // The initial navigation may happen during build or be queued.
+                // Replay it only if the startup gate already refused it.
+                let pending = startup
+                    .lock()
+                    .expect("navigation startup mutex poisoned")
+                    .arm();
+                if let Some(url) = pending {
+                    _webview.navigate(url)?;
+                }
+            }
             // `vault-home` holds the vault and only what the vault manages beside
             // it (lock file, pending reset, create stage, export journal). Back
             // up or restore the whole directory. Machine-local data, because the
@@ -1944,7 +2042,6 @@ pub fn run() {
                     .join("attempts.json"),
             ))));
             app.manage(Arc::new(PendingPicks::default()));
-            app.manage(Arc::new(SpeedTest::default()));
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             std::thread::Builder::new()
@@ -1999,21 +2096,136 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    const APP_SCHEME: Origin = ("tauri", "localhost");
+    const HOST_NAME: Origin = ("http", "tauri.localhost");
+    const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
+
     #[test]
-    fn one_speed_test_at_a_time_and_the_next_when_it_ends() {
-        let gate = Arc::new(SpeedTest::default());
-        let first = SpeedTestRunning::start(&gate).unwrap();
-        assert!(SpeedTestRunning::start(&gate).is_none());
-        drop(first);
-        let second = SpeedTestRunning::start(&gate).unwrap();
-        // Ended by a task that panicked, as by one that returned.
-        let running = std::thread::spawn(move || {
-            let _running = second;
-            panic!("FAKE the derivation failed");
-        })
-        .join();
-        assert!(running.is_err());
-        assert!(SpeedTestRunning::start(&gate).is_some());
+    fn the_window_may_only_load_the_apps_own_pages() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (origin, pages) in [
+            (
+                APP_SCHEME,
+                ["tauri://localhost", "tauri://localhost/index.html"],
+            ),
+            (
+                HOST_NAME,
+                ["http://tauri.localhost/", "http://tauri.localhost/a.js"],
+            ),
+            (
+                SECURE_HOST_NAME,
+                ["https://tauri.localhost/", "https://tauri.localhost/a.js"],
+            ),
+        ] {
+            for page in pages {
+                assert!(navigation_allowed(&url(page), origin, None), "{page}");
+            }
+        }
+        for origin in [APP_SCHEME, HOST_NAME, SECURE_HOST_NAME] {
+            for outside in [
+                "https://example.com/?secret=1",
+                "http://localhost:1420/",
+                "http://localhost/",
+                "https://tauri.localhost.example.com/",
+                "https://tauri.localhost./",
+                "https://tauri.localhost:8443/",
+                "http://tauri.localhost:8080/",
+                "http://someone@tauri.localhost/",
+                "tauri://someone@localhost/",
+                "https://user@example.com/tauri.localhost",
+                "tauri://example.com/",
+                "tauri://localhost.example.com/",
+                "file:///etc/passwd",
+                "data:text/html,<p>x</p>",
+                "blob:https://tauri.localhost/0",
+                "about:blank",
+                "javascript:void(0)",
+                "mailto:someone@example.com",
+                "intent://example.com/#Intent;scheme=https;end",
+            ] {
+                assert!(
+                    !navigation_allowed(&url(outside), origin, None),
+                    "{outside} with {origin:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn another_platforms_origin_is_an_outside_address_here() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (origin, elsewhere) in [
+            (
+                APP_SCHEME,
+                ["http://tauri.localhost/", "https://tauri.localhost/"],
+            ),
+            (HOST_NAME, ["tauri://localhost", "https://tauri.localhost/"]),
+            (
+                SECURE_HOST_NAME,
+                ["tauri://localhost", "http://tauri.localhost/"],
+            ),
+        ] {
+            for page in elsewhere {
+                assert!(
+                    !navigation_allowed(&url(page), origin, None),
+                    "{page} with {origin:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn this_platform_serves_its_pages_where_the_library_says() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let expected = if cfg!(windows) || cfg!(target_os = "android") {
+            HOST_NAME
+        } else {
+            APP_SCHEME
+        };
+        assert_eq!(bundled_origin(&config), expected);
+        // The library's own rule, for each kind of platform.
+        assert_eq!(origin_for(false, false), APP_SCHEME);
+        assert_eq!(origin_for(false, true), APP_SCHEME);
+        assert_eq!(origin_for(true, false), HOST_NAME);
+        assert_eq!(origin_for(true, true), SECURE_HOST_NAME);
+    }
+
+    #[test]
+    fn a_development_build_may_also_load_its_development_server() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        let dev = url("http://localhost:1420");
+        assert!(navigation_allowed(
+            &url("http://localhost:1420/src/main.tsx"),
+            APP_SCHEME,
+            Some(&dev)
+        ));
+        assert!(navigation_allowed(
+            &url("tauri://localhost"),
+            APP_SCHEME,
+            Some(&dev)
+        ));
+        for outside in [
+            "http://localhost:1421/",
+            "https://localhost:1420/",
+            "http://example.com:1420/",
+        ] {
+            assert!(
+                !navigation_allowed(&url(outside), APP_SCHEME, Some(&dev)),
+                "{outside}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_configuration_leaves_the_window_to_the_app() {
+        // A window the configuration made would have no guard against
+        // opening others.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows = config["app"]["windows"].as_array().unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0]["create"], false);
     }
 
     #[test]
@@ -2279,6 +2491,18 @@ mod tests {
         }
         // Still the wait after five, not after fifteen.
         assert!(throttle.wait(Attempt::Unlock, now_ms()).unwrap() <= first);
+    }
+
+    #[test]
+    fn busy_kdf_work_does_not_count_as_a_wrong_passphrase() {
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        for _ in 0..throttle::FREE_TRIES + 3 {
+            let result = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, async {
+                Err::<(), _>(PublicError::from(VaultError::Busy))
+            }));
+            assert_eq!(result.unwrap_err().code, "busy");
+        }
+        assert_eq!(throttle.wait(Attempt::Unlock, now_ms()), None);
     }
 
     #[test]
@@ -3017,5 +3241,30 @@ mod tests {
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod navigation_startup_tests {
+    use super::*;
+
+    #[test]
+    fn startup_replays_only_allowed_navigation_after_installation() {
+        let bundled = Url::parse("http://tauri.localhost/").unwrap();
+        let outside = Url::parse("https://example.invalid/").unwrap();
+        let mut startup = NavigationStartup::default();
+        assert!(!startup.permit(&bundled, true));
+        assert!(!startup.permit(&outside, false));
+        assert_eq!(startup.arm(), Some(bundled.clone()));
+        assert!(startup.permit(&bundled, true));
+        assert!(!startup.permit(&outside, false));
+        assert_eq!(startup.arm(), None);
+    }
+
+    #[test]
+    fn startup_handles_navigation_queued_until_after_installation() {
+        let mut startup = NavigationStartup::default();
+        assert_eq!(startup.arm(), None);
+        assert!(startup.permit(&Url::parse("http://tauri.localhost/").unwrap(), true));
     }
 }
