@@ -249,8 +249,25 @@ Then turn the screen reader off and check text size:
 
 - **Windows, macOS:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
   up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
-  down. Ctrl + 0 (Command + 0) resets it. Also try Windows **Settings → Accessibility → Text
-  size** and report whether the app follows it.
+  down. Ctrl + 0 (Command + 0) resets it. The line at the top of the window says the size and
+  has **Smaller text** and **Larger text** buttons that do the same. Also try Windows **Settings →
+  Accessibility → Text size** and report whether the app follows it.
+- **Windows, macOS, the size is remembered (new, and not yet tried by anyone):**
+  1. Press Ctrl + plus once. Does the size change by one step, or by two? It should be one.
+  2. Close the app at a size other than 100% and open it again. It should open at the size you
+     left it, without first showing at 100%. The next Ctrl + plus should go one step on.
+  3. Go to the largest size (400%) with the window at its smallest. Can you still unlock, and
+     get back with **Back to normal size** or Ctrl + 0?
+  4. On Windows, hold Ctrl and turn the mouse wheel one notch: one step. On a touchpad, scroll
+     with two fingers while holding Ctrl, and pinch: the size should change slowly or not at all,
+     never jump to the largest. On a touch screen, pinching is not expected to zoom any more; use
+     the buttons.
+  5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
+  6. With a screen reader on, press **Larger text**: it should say the new size. Press **Back to
+     normal size**: the focus should move to **Larger text**, not be lost.
+  7. At 200% and at 400%, hold Ctrl and turn the wheel one notch: one step each time, as at 100%.
+  8. On every screen at 100%, is there a scroll bar that was not there before? The line at the top
+     should not push the rest of the window past its bottom edge.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
   whether the text gets larger, and whether anything is cut off.
 - **iOS:** larger text in Settings is not expected to change the app yet; report what you see.
