@@ -131,7 +131,14 @@ time, never the key, and creating, erasing or restoring a vault forgets it. Setu
 a new vault shows: the passphrase just typed authorizes it, and the dialog has no Cancel and ignores
 Escape. It offers "Set up later" once something other than a wrong answer has failed. A lock ends it
 all the same (on a phone, switching apps locks), and so does a failure to make the key; the vault
-then has no recovery key and says so in a banner until one is set up.
+then has no recovery key and says so in a banner until one is set up. Unlocking a vault that has no
+recovery key opens the setup as an offer, at most once a day (the hour it was last offered is kept
+in the app's settings on the device, and names no vault; offers are 24 to 26 hours apart at the
+least), on the step that says what a recovery key is and asks for the passphrase: it says why it is
+there and can be left with "Set up later". No key is made or shown until the patient goes on, so
+that none is on screen unasked, where someone else may be looking. It is not opened on a vault that
+opened read-only, or over anything held for that unlock: the result of a transfer, or how a key
+setup that a lock ended had ended.
 
 **Wrong tries.** Unlocking, recovering with the recovery key and opening a backup each count wrong
 tries in a row, apart; a passphrase checked while the vault is open (to change it, or to make a

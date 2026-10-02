@@ -9,6 +9,12 @@ import {
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  forgetRecoveryOffer,
+  recordRecoveryOffer,
+} from "./native/recoveryOffer";
+
+const offerIsDue = () => forgetRecoveryOffer();
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
@@ -277,6 +283,11 @@ function renameBridge() {
 describe("durable vault UI", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    // Most tests here are not about the recovery key offer, which opens
+    // over the library when a vault without a key is unlocked: for them it
+    // was made earlier today. Those that are start with `offerIsDue()`.
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
   });
 
   it("says a vault stays on the device it was created on", async () => {
@@ -963,6 +974,183 @@ describe("durable vault UI", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("offers a recovery key when a vault without one is unlocked, and shows no key unasked", async () => {
+    offerIsDue();
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    // It says why it is there, to a screen reader too.
+    expect(dialog).toHaveAccessibleDescription(
+      /Your vault is open\. It has no recovery key yet.*Type your passphrase again to make your recovery key.*only when nobody else can see your screen/s,
+    );
+    // A press meant for Unlock that lands outside the dialog leaves it open.
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: document.querySelector(".dialog-backdrop")!,
+    });
+    expect(dialog).toBeInTheDocument();
+    // No key was made, and none is on screen.
+    expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
+    expect(screen.queryByText(RECOVERY_KEY.split("-")[0])).toBeNull();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Set up later" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Nothing was shown, so there is nothing to warn about.
+    expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+    expect(screen.queryByText(/setup was not finished/)).toBeNull();
+    // The library still offers it.
+    expect(
+      screen.getByRole("button", { name: "Set up recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("says how a key setup ended before it offers another", async () => {
+    offerIsDue();
+    // A first key's setup that a lock ended after the key was shown.
+    window.localStorage.setItem(
+      "mycarlos.unfinishedRecoveryKey.v1",
+      JSON.stringify({ setAtMs: null }),
+    );
+    const user = userEvent.setup();
+    render(<VaultApp bridge={nativeBridge()} />);
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByText(
+        /Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+      ),
+    ).toBeVisible();
+    // The offer waits: a dialog would hide what was just said. It is not
+    // counted, so the next unlock makes it.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      window.localStorage.getItem("mycarlos.recoveryOfferHour.v1"),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Set up recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("offers a recovery key at unlock once a day, and the notice the rest of the time", async () => {
+    offerIsDue();
+    const user = userEvent.setup();
+    render(<VaultApp bridge={nativeBridge()} />);
+    const unlock = async () => {
+      await user.type(
+        await screen.findByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      await screen.findByRole("heading", { name: "My records" });
+    };
+    const lock = () =>
+      user.click(screen.getByRole("button", { name: /Lock now/ }));
+
+    await unlock();
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Set up later",
+      }),
+    );
+    await lock();
+
+    // Again the same day: the library opens, with its notice and no dialog.
+    await unlock();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Set up recovery key" }),
+    ).toBeVisible();
+    await lock();
+
+    // A day later it is offered again.
+    const hour = Number(
+      window.localStorage.getItem("mycarlos.recoveryOfferHour.v1"),
+    );
+    forgetRecoveryOffer();
+    window.localStorage.setItem(
+      "mycarlos.recoveryOfferHour.v1",
+      String(hour - 25),
+    );
+    await unlock();
+    expect(
+      await screen.findByRole("dialog", { name: "Set up a recovery key" }),
+    ).toBeVisible();
+  });
+
+  it("sets up the key offered at unlock once the patient asks for it", async () => {
+    offerIsDue();
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    const offer = await screen.findByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    await user.type(
+      within(offer).getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(within(offer).getByRole("button", { name: "Continue" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Your recovery key",
+    });
+    expect(bridge.beginRecoveryKey).toHaveBeenCalledExactlyOnceWith(
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    // Leaving now is leaving a key that was shown.
+    await user.click(
+      within(dialog).getByRole("button", { name: "Set up later" }),
+    );
+    expect(
+      await screen.findByText(
+        /setup was not finished\. The key you were shown/,
+      ),
+    ).toBeVisible();
+  });
+
+  it.each([
+    ["has a recovery key", { recoveryKeySetAtMs: 5 }],
+    ["opened read-only", { recovery: "writeFailed" as const }],
+  ])("opens no setup at unlock when the vault %s", async (_, state) => {
+    offerIsDue();
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      unlock: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
+      snapshot: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.type(
+      await screen.findByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows a vault that locked before its key was made as locked", async () => {
@@ -1806,6 +1994,22 @@ describe("durable vault UI", () => {
       await act(async () => finishLock());
       await passAnnounceDelay();
       await expectOutcomeAfterUnlock(HELD_OUTCOME);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a held transfer outcome at unlock, not the recovery key setup", async () => {
+    vi.useFakeTimers();
+    try {
+      offerIsDue();
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      });
+      await lockWithHeldOutcome(bridge);
+      await expectOutcomeAfterUnlock(HELD_OUTCOME);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

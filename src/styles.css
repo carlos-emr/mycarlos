@@ -648,6 +648,8 @@ h1, h2, p { margin: 0; }
 .native-confirm-list { max-height: 9.5em; margin: 0; padding: 8px 8px 8px 28px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
 .native-rename-fields { display: grid; gap: 8px; padding: 16px 20px; }
 .recovery-key-dialog { max-width: 520px; }
+.recovery-key-about { display: grid; gap: 8px; }
+.recovery-key-about p { margin: 0; }
 .recovery-key-dialog .button, .recovery-key-dialog input { min-height: 44px; }
 .recovery-key-dialog .dialog-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .recovery-key-body { display: grid; gap: 12px; padding: 16px 20px; }

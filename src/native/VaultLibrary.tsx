@@ -11,7 +11,10 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
-import { RecoveryKeySetup } from "./RecoveryKeySetup";
+import {
+  RecoveryKeySetup,
+  type OpeningRecoverySetup,
+} from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -68,8 +71,8 @@ export function VaultLibrary({
   onLock,
   autoLockMinutes,
   onAutoLockMinutes,
-  newVaultRecoveryKey = null,
-  onNewVaultRecoveryKeyShown,
+  openingRecoverySetup = null,
+  onOpeningRecoverySetupShown,
   onUnfinishedRecoveryKey,
   canPrint = false,
   sizesIn1024s = false,
@@ -88,9 +91,10 @@ export function VaultLibrary({
   onLock: () => Promise<void>;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
-  /** The recovery key made with a vault just created, to set up first. */
-  newVaultRecoveryKey?: string | null;
-  onNewVaultRecoveryKeyShown?: () => void;
+  /** What the library opens on, when it opens on the recovery key setup: a
+   * new vault's key, to set up first, or the offer of one at unlock. */
+  openingRecoverySetup?: OpeningRecoverySetup | null;
+  onOpeningRecoverySetupShown?: () => void;
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
@@ -140,17 +144,22 @@ export function VaultLibrary({
   } | null>(null);
   const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
   // Setting up a recovery key. A vault just created starts with its key, which
-  // must be set up before the library can be used.
+  // must be set up before the library can be used. A vault unlocked without
+  // one is offered a key, which can be left for later: the setup opens on the
+  // step that asks, with no key made yet.
   const [recoverySetup, setRecoverySetup] = useState<{
     initialKey?: string;
     required: boolean;
+    offered?: boolean;
   } | null>(() =>
-    newVaultRecoveryKey
-      ? { initialKey: newVaultRecoveryKey, required: true }
-      : null,
+    !openingRecoverySetup
+      ? null
+      : openingRecoverySetup.vault === "created"
+        ? { initialKey: openingRecoverySetup.key, required: true }
+        : { required: false, offered: true },
   );
   useEffect(() => {
-    if (newVaultRecoveryKey) onNewVaultRecoveryKeyShown?.();
+    if (openingRecoverySetup) onOpeningRecoverySetupShown?.();
     // Only the key the library opened with.
   }, []);
   const [showFolderForm, setShowFolderForm] = useState(false);
@@ -1094,6 +1103,7 @@ export function VaultLibrary({
               initialKey={recoverySetup.initialKey}
               replacing={Boolean(snapshot.recoveryKeySetAtMs)}
               required={recoverySetup.required}
+              offered={recoverySetup.offered}
               canPrint={canPrint}
               onKeyShown={({ exposed }) =>
                 onUnfinishedRecoveryKey?.({
@@ -1134,7 +1144,15 @@ export function VaultLibrary({
               }}
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
+                const offered = recoverySetup.offered;
                 setRecoverySetup(null);
+                // An offer that was left before any key was shown: the
+                // unlock's own result, which waited for the dialog.
+                if (offered && !keyShown)
+                  setDialogResult({
+                    message: "Vault unlocked.",
+                    recordId: activeRecordId,
+                  });
                 if (keyShown) {
                   setNotice("");
                   setDialogResult({

@@ -119,7 +119,10 @@ On every platform:
    then **Next**, and type the whole key back. Typing it wrong says so; three wrong
    tries go back to the key. Check that the saved kit opens and shows the key and no names, and
    that the key's label shown beside the key is on the saved and the printed kit, and in
-   **Security** once the key is set up.
+   **Security** once the key is set up. If a lock ends the setup (or you leave it with **Set up
+   later**, which it offers after an error), the vault has no recovery key: lock and unlock, and the
+   setup opens by itself, at most once a day (the rest of the time only the notice offers it). It
+   shows no key until you type your passphrase and choose **Continue**; **Set up later** closes it.
 3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
    **Replace recovery key** asks for the passphrase and why you are replacing it, and makes a new
