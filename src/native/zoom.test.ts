@@ -37,9 +37,10 @@ const press = (
 // Changes are applied one after another, each once the one before settles.
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-const wheel = (deltaY: number, ctrlKey = true) => {
+const wheel = (deltaY: number, ctrlKey = true, deltaMode = 0) => {
   const event = new WheelEvent("wheel", {
     deltaY,
+    deltaMode,
     ctrlKey,
     cancelable: true,
     bubbles: true,
@@ -51,12 +52,15 @@ const wheel = (deltaY: number, ctrlKey = true) => {
 describe("zoom", () => {
   beforeEach(() => window.localStorage.clear());
 
-  it("takes the size there is that is nearest", () => {
+  it("takes the size there is that is nearest, and the ordinary one outside them", () => {
     expect(normalizeZoom(1)).toBe(1);
     expect(normalizeZoom("1.25")).toBe(1.25);
     expect(normalizeZoom(1.4)).toBe(1.5);
-    expect(normalizeZoom(0.1)).toBe(SMALLEST);
-    expect(normalizeZoom(99)).toBe(LARGEST);
+    expect(normalizeZoom(SMALLEST)).toBe(SMALLEST);
+    expect(normalizeZoom(LARGEST)).toBe(LARGEST);
+    // A kept value outside the sizes is damaged, not a wish for an end.
+    expect(normalizeZoom(0.1)).toBe(1);
+    expect(normalizeZoom(99)).toBe(1);
     for (const not of ["", "big", NaN, Infinity, -2, 0, null, undefined, {}])
       expect(normalizeZoom(not), String(not)).toBe(1);
   });
@@ -206,14 +210,46 @@ describe("zoom", () => {
     expect(setZoom.mock.calls).toEqual([[1.1]]);
   });
 
-  it("takes one notch for one step at every size", async () => {
-    window.localStorage.setItem(KEY, "2");
-    const { setZoom, zoom } = start();
-    await zoom.ready;
-    // At 200% the page reports a notch as half as many of its pixels.
-    wheel(-50);
+  it("takes one notch for one step at every size, as the page counts it or rounded", async () => {
+    for (const [index, at] of ZOOM_LEVELS.entries()) {
+      for (const way of ["in", "out"] as const) {
+        const next = ZOOM_LEVELS[index + (way === "in" ? 1 : -1)];
+        if (next === undefined) continue;
+        for (const round of [false, true]) {
+          window.localStorage.setItem(KEY, String(at));
+          const setZoom = vi.fn().mockResolvedValue(undefined);
+          const zoom = startZoom(setZoom, false);
+          try {
+            await zoom.ready;
+            // The page reports a notch in its own pixels: fewer of them the
+            // larger it is. Chromium keeps them as 32-bit floats; some
+            // browsers round them.
+            const notch = (way === "in" ? -100 : 100) / at;
+            wheel(round ? Math.round(notch) : Math.fround(notch));
+            await settled();
+            expect(zoom.level(), `${at} ${way} rounded=${round}`).toBe(next);
+          } finally {
+            zoom.stop();
+          }
+        }
+      }
+    }
+  });
+
+  it("counts a wheel reported in lines or in pages the same way", async () => {
+    const { zoom } = start();
+    // Three lines are one notch of an ordinary mouse.
+    wheel(-3, true, 1);
     await settled();
-    expect(setZoom).toHaveBeenLastCalledWith(2.5);
+    expect(zoom.level()).toBe(1.1);
+    // A page is one step.
+    wheel(-1, true, 2);
+    await settled();
+    expect(zoom.level()).toBe(1.25);
+    // Two lines are not yet a notch.
+    wheel(-2, true, 1);
+    await settled();
+    expect(zoom.level()).toBe(1.25);
   });
 
   it("starts adding the wheel up again after a pause", async () => {
@@ -243,6 +279,72 @@ describe("zoom", () => {
     onTestFinished(zoom.stop);
     await zoom.ready;
     expect(zoom.level()).toBe(1);
+    // The size kept is not overwritten: the next start tries it again.
+    expect(readZoom()).toBe(2);
+  });
+
+  it("gives up on a size the platform never applies, and goes on", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const setZoom = vi
+      .fn()
+      .mockReturnValueOnce(new Promise<void>(() => {}))
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    press("+");
+    expect(zoom.level()).toBe(1.1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(zoom.level()).toBe(1);
+    press("+");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setZoom.mock.calls).toEqual([[1.1], [1.1]]);
+    expect(zoom.level()).toBe(1.1);
+    expect(readZoom()).toBe(1.1);
+  });
+
+  it("shows a size the platform applies after it was given up on", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    let late!: () => void;
+    const setZoom = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          late = resolve;
+        }),
+      )
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    press("+");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(zoom.level()).toBe(1);
+    late();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(zoom.level()).toBe(1.1);
+    expect(readZoom()).toBe(1.1);
+    // Ctrl+0 then has something to undo.
+    press("0");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setZoom).toHaveBeenLastCalledWith(1);
+  });
+
+  it("opens at the ordinary size when the kept one cannot be read", () => {
+    const get = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("FAKE storage is unavailable");
+      });
+    onTestFinished(() => get.mockRestore());
+    expect(readZoom()).toBe(1);
+    const { setZoom, zoom } = start();
+    expect(zoom.level()).toBe(1);
+    expect(setZoom).not.toHaveBeenCalled();
   });
 
   it("keeps a size asked for while the one kept was being refused", async () => {
@@ -305,8 +407,13 @@ describe("zoom", () => {
   });
 
   it("ignores a kept size that is not one", () => {
-    window.localStorage.setItem(KEY, "enormous");
-    expect(start().setZoom).not.toHaveBeenCalled();
+    for (const kept of ["enormous", "99", "0.1"]) {
+      window.localStorage.setItem(KEY, kept);
+      const { setZoom, zoom } = start();
+      expect(setZoom, kept).not.toHaveBeenCalled();
+      expect(zoom.level(), kept).toBe(1);
+      zoom.stop();
+    }
   });
 
   it("carries on when the platform refuses, or nothing can be stored", async () => {

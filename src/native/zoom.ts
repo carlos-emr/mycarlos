@@ -17,14 +17,29 @@ export const ZOOM_LEVELS = [
 /** How far the wheel turns for one step: one notch of an ordinary mouse. A
  * touchpad sends many small turns, which add up to a step. */
 const WHEEL_STEP = 100;
+/** A notch counted back from the page's pixels can fall a little short of a
+ * step: Chromium keeps the page's pixels as 32-bit floats (100 / 1.1 comes
+ * back as 99.99999…), and some browsers round them. */
+const WHEEL_SLACK = 2;
+/** Lines in one notch, for a wheel reported in lines. */
+const WHEEL_NOTCH_LINES = 3;
 /** A pause after which turns of the wheel start adding up again. */
 const WHEEL_PAUSE_MS = 1000;
+/** How long the platform may take to apply a size. A command that never
+ * answers would otherwise hold back every request after it. */
+const SET_ZOOM_TIMEOUT_MS = 3000;
 
 /** The size there is that is nearest to `value`; the ordinary one for
- * anything that is not a size. */
+ * anything that is not a size, or is outside the sizes there are (a kept
+ * value like that is damaged, not a wish for the largest). */
 export function normalizeZoom(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < ZOOM_LEVELS[0] ||
+    parsed > ZOOM_LEVELS[ZOOM_LEVELS.length - 1]
+  )
+    return 1;
   return ZOOM_LEVELS.reduce((nearest, level) =>
     Math.abs(level - parsed) < Math.abs(nearest - parsed) ? level : nearest,
   );
@@ -74,6 +89,43 @@ export function zoomAfter(level: number, request: ZoomRequest): number {
 
 export const zoomPercent = (level: number) => `${Math.round(level * 100)}%`;
 
+/** How far one wheel event turns, counted as the screen does. The page
+ * reports the wheel in its own pixels, which shrink as it is zoomed: counted
+ * in the screen's, a notch is the same at every size. Lines and pages do not
+ * shrink. */
+export function wheelTurn(
+  event: Pick<WheelEvent, "deltaY" | "deltaMode">,
+  level: number,
+): number {
+  if (event.deltaMode === 1)
+    // DOM_DELTA_LINE
+    return (event.deltaY / WHEEL_NOTCH_LINES) * WHEEL_STEP;
+  if (event.deltaMode === 2)
+    // DOM_DELTA_PAGE
+    return Math.sign(event.deltaY) * WHEEL_STEP;
+  return event.deltaY * level;
+}
+
+/** What `within` fails with when the platform has not answered in time. */
+const TIMED_OUT = new Error("The platform did not apply the size in time.");
+
+/** `work`, or a failure once `ms` have passed without an answer. */
+function within(work: Promise<void>, ms: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(TIMED_OUT), ms);
+    work.then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** The app's zoom: its level, and the ways to change it. */
 export interface Zoom {
   level(): number;
@@ -107,16 +159,32 @@ export function startZoom(
   let confirmed = 1;
   let revision = 0;
   const apply = async (next: number, at: number) => {
+    const work = setZoom(next);
     try {
-      await setZoom(next);
+      await within(work, SET_ZOOM_TIMEOUT_MS);
       confirmed = next;
       persistZoom(next);
-    } catch {
+    } catch (error) {
       if (revision === at) {
         level = confirmed;
-        persistZoom(confirmed);
+        // A size kept from last time that could not be applied at the start
+        // (revision 0) stays kept, to be tried at the next start.
+        if (at > 0) persistZoom(confirmed);
         tell();
       }
+      // Given up on, the platform may still apply it. Then that is the size
+      // shown, so that what the bar says, and Ctrl+0, match the window.
+      if (error === TIMED_OUT)
+        work.then(
+          () => {
+            if (revision !== at) return;
+            confirmed = next;
+            level = next;
+            persistZoom(next);
+            tell();
+          },
+          () => undefined,
+        );
     }
   };
   const ready = level === 1 ? Promise.resolve() : apply(level, revision);
@@ -148,10 +216,8 @@ export function startZoom(
     )
       turned = 0;
     turnedAt = now;
-    // The page reports the wheel in its own pixels, which shrink as it is
-    // zoomed: counted in the screen's, a notch is the same at every size.
-    turned += event.deltaY * level;
-    if (Math.abs(turned) < WHEEL_STEP) return;
+    turned += wheelTurn(event, level);
+    if (Math.abs(turned) < WHEEL_STEP - WHEEL_SLACK) return;
     request(turned < 0 ? "in" : "out");
     turned = 0;
   };

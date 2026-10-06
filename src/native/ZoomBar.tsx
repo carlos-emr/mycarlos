@@ -1,5 +1,33 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
-import { ZOOM_LEVELS, zoomPercent, type Zoom } from "./zoom";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { NativeZoom } from "./nativeZoom";
+import { ZOOM_LEVELS, zoomPercent, zoomRequestOfKey, type Zoom } from "./zoom";
+
+/** The zoom bar once the native zoom exists: at the first render, or later
+ * if the platform answered after it. */
+export function NativeZoomBar({
+  initial,
+  installed,
+}: {
+  initial: NativeZoom | null;
+  installed: Promise<NativeZoom | null>;
+}) {
+  const [native, setNative] = useState(initial);
+  useEffect(() => {
+    if (native) return;
+    let current = true;
+    void installed.then((late) => {
+      if (current && late) setNative(late);
+    });
+    return () => {
+      current = false;
+    };
+  }, [installed, native]);
+  return native ? <ZoomBar zoom={native.zoom} mac={native.mac} /> : null;
+}
+
+// Under a dialog, the dialog's backdrop covers this bar. If its buttons are
+// pressed all the same (a screen reader can), focus stays in the dialog.
+const modalOpen = () => Boolean(document.querySelector('[aria-modal="true"]'));
 
 /**
  * The size of the interface, with buttons to change it. The size is kept
@@ -16,6 +44,9 @@ export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   const bar = useRef<HTMLElement | null>(null);
   const larger = useRef<HTMLButtonElement | null>(null);
   const refocus = useRef(false);
+  // Whether Ctrl+0 was pressed on "Back to normal size", so that the focus
+  // is not left on nothing when the button goes.
+  const resetFocused = useRef(false);
 
   // The screens below fill the window less the bar's height.
   useEffect(() => {
@@ -36,12 +67,16 @@ export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     };
   }, []);
 
-  // "Back to normal size" goes when it is pressed: focus is not left on
-  // nothing.
+  // "Back to normal size" goes when it is pressed, or when Ctrl+0 is pressed
+  // while it has the focus: focus is not left on nothing.
   useEffect(() => {
-    if (!refocus.current) return;
+    const wanted = refocus.current || resetFocused.current;
     refocus.current = false;
-    larger.current?.focus();
+    if (!wanted || level !== 1) return;
+    resetFocused.current = false;
+    const lost =
+      !document.activeElement || document.activeElement === document.body;
+    if (lost && !modalOpen()) larger.current?.focus();
   }, [level]);
 
   return (
@@ -76,6 +111,11 @@ export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
           <button
             className="button"
             type="button"
+            onKeyDown={(event) => {
+              // Seen before the page-wide handler applies it.
+              if (zoomRequestOfKey(event.nativeEvent, mac) === "reset")
+                resetFocused.current = true;
+            }}
             onClick={() => {
               refocus.current = true;
               zoom.request("reset");

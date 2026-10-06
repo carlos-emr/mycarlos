@@ -24,7 +24,7 @@ describe("native zoom startup", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders after the deadline if platform detection hangs and ignores a late response", async () => {
+  it("renders after the deadline if platform detection hangs, and installs the zoom when it answers", async () => {
     let finish!: (value: { platform: string }) => void;
     vi.mocked(invoke).mockReturnValue(
       new Promise((resolve) => {
@@ -32,19 +32,26 @@ describe("native zoom startup", () => {
       }),
     );
     window.localStorage.setItem("mycarlos.zoom.v1", "2");
-    const starting = startNativeZoom();
+    const { ready, installed } = startNativeZoom();
     await vi.advanceTimersByTimeAsync(1500);
-    expect(await starting).toBeNull();
-    finish({ platform: "windows" });
-    await vi.advanceTimersByTimeAsync(0);
+    expect(await ready).toBeNull();
     expect(setZoom).not.toHaveBeenCalled();
-    const key = new KeyboardEvent("keydown", {
-      key: "+",
-      ctrlKey: true,
-      cancelable: true,
-    });
-    window.dispatchEvent(key);
-    expect(key.defaultPrevented).toBe(false);
+    // The platform's own zoom is off: without this there would be none.
+    finish({ platform: "windows" });
+    const late = await installed;
+    try {
+      expect(late?.mac).toBe(false);
+      expect(setZoom).toHaveBeenCalledWith(2);
+      const key = new KeyboardEvent("keydown", {
+        key: "+",
+        ctrlKey: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(key);
+      expect(key.defaultPrevented).toBe(true);
+    } finally {
+      late?.zoom.stop();
+    }
   });
 
   it("keeps controls when applying the saved size outlasts the same startup deadline", async () => {
@@ -61,11 +68,11 @@ describe("native zoom startup", () => {
       }),
     );
     window.localStorage.setItem("mycarlos.zoom.v1", "2");
-    const starting = startNativeZoom();
+    const { ready } = startNativeZoom();
     await vi.advanceTimersByTimeAsync(1000);
     platform({ platform: "windows" });
     await vi.advanceTimersByTimeAsync(500);
-    const native = await starting;
+    const native = await ready;
     try {
       expect(native?.zoom.level()).toBe(2);
       expect(setZoom).toHaveBeenCalledWith(2);
@@ -79,7 +86,9 @@ describe("native zoom startup", () => {
 
   it("clears the deadline when startup finishes and leaves phones alone", async () => {
     vi.mocked(invoke).mockResolvedValue({ platform: "ios" });
-    expect(await startNativeZoom()).toBeNull();
+    const { ready, installed } = startNativeZoom();
+    expect(await ready).toBeNull();
+    expect(await installed).toBeNull();
     expect(setZoom).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });

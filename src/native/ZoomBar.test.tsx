@@ -1,7 +1,8 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { ZoomBar } from "./ZoomBar";
+import type { NativeZoom } from "./nativeZoom";
+import { NativeZoomBar, ZoomBar } from "./ZoomBar";
 import { startZoom } from "./zoom";
 
 function show(kept?: string, mac = false) {
@@ -71,6 +72,58 @@ describe("ZoomBar", () => {
       screen.getByRole("button", { name: "Back to normal size" }),
     );
     expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+  });
+
+  it("keeps the focus when Ctrl+0 removes Back to normal size", async () => {
+    const user = userEvent.setup();
+    show("1.5");
+    await user.click(
+      screen.getByRole("button", { name: "Back to normal size" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Larger text" }));
+    const back = screen.getByRole("button", { name: "Back to normal size" });
+    back.focus();
+    await user.keyboard("{Control>}0{/Control}");
+    expect(back).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+  });
+
+  it("leaves the focus in an open dialog when its buttons are pressed", async () => {
+    show("1.5");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    const inside = document.createElement("button");
+    inside.textContent = "FAKE dialog button";
+    dialog.append(inside);
+    document.body.append(dialog);
+    onTestFinished(() => dialog.remove());
+    inside.focus();
+    // As a screen reader presses it: without moving the focus first.
+    await act(async () =>
+      screen.getByRole("button", { name: "Back to normal size" }).click(),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+    expect(inside).toHaveFocus();
+  });
+
+  it("appears when the zoom is installed after the first render", async () => {
+    let install!: (native: NativeZoom | null) => void;
+    const installed = new Promise<NativeZoom | null>((resolve) => {
+      install = resolve;
+    });
+    render(<NativeZoomBar initial={null} installed={installed} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    const zoom = startZoom(vi.fn().mockResolvedValue(undefined), false);
+    onTestFinished(zoom.stop);
+    await act(async () => install({ zoom, mac: false }));
+    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+  });
+
+  it("shows nothing when there is no zoom to install", async () => {
+    render(<NativeZoomBar initial={null} installed={Promise.resolve(null)} />);
+    await act(async () => undefined);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("gives the screens below the room it takes", () => {
