@@ -191,7 +191,7 @@ export function RestoreBackup({
 
   return (
     <form className="restore-backup" onSubmit={(event) => void check(event)}>
-      <p tabIndex={0}>
+      <p>
         An encrypted backup opens with the passphrase it was made with, or with
         the recovery key the vault had when the backup was saved, if it had one.
       </p>
@@ -207,7 +207,7 @@ export function RestoreBackup({
       {pickId && (
         <>
           <fieldset>
-            <legend tabIndex={0}>Open it with</legend>
+            <legend>Open it with</legend>
             <label className="restore-choice">
               <input
                 type="radio"
@@ -265,9 +265,7 @@ export function RestoreBackup({
             {method === "passphrase" ? "Show passphrase" : "Show recovery key"}
           </button>
           {utf8Length(secret) > MAX_PASSPHRASE_BYTES && (
-            <p tabIndex={0} role="alert">
-              This is too long. Check what you typed.
-            </p>
+            <p role="alert">This is too long. Check what you typed.</p>
           )}
           <button
             className="button"
@@ -279,14 +277,10 @@ export function RestoreBackup({
           </button>
         </>
       )}
-      <p tabIndex={status ? 0 : -1} className="restore-status" role="status">
+      <p className="restore-status" role="status">
         {status}
       </p>
-      {error && (
-        <p tabIndex={0} role="alert">
-          {error}
-        </p>
-      )}
+      {error && <p role="alert">{error}</p>}
       {preview && (
         <>
           {needsAgreement && (

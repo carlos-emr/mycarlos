@@ -84,7 +84,7 @@ describe("SecuritySettings speed test", () => {
     ).toMatch(/Evaluation build, Simulator\.$/);
   });
 
-  it("says why it could not measure", async () => {
+  it("says why it could not measure, and can be run again", async () => {
     const props = renderSettings();
     props.onSpeedTest.mockRejectedValueOnce({
       code: "busy",
@@ -92,6 +92,14 @@ describe("SecuritySettings speed test", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
     expect(await screen.findByText("FAKE already running.")).toBeVisible();
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    expect(button).toBeEnabled();
+    expect(
+      within(button.closest("section")!).getByRole("status"),
+    ).toBeEmptyDOMElement();
+    fireEvent.click(button);
+    expect(await screen.findByText(speedTestLine(speedTest))).toBeVisible();
+    expect(props.onSpeedTest).toHaveBeenCalledTimes(2);
   });
 });
 

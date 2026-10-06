@@ -45,7 +45,8 @@ The line looks like this:
 It uses a made-up passphrase and salt, reads no vault and changes nothing. To copy the line on a
 phone, press and hold it. The native app prevents overlap with another speed test or
 passphrase operation. A competing operation asks you to wait and try again; it is not queued.
-Manual and idle locking remain available while the test runs.
+Manual and idle locking remain available while the test runs: a lock ends the test after the run
+under way, and the next unlock does not have to wait for the rest.
 
 **Which build.** The evaluation downloads are debug builds in which the key derivation itself is
 compiled at the same optimization level as in a release (see the `dev` profile in

@@ -119,8 +119,9 @@ On every platform:
    then **Next: check your recovery key**, and type the whole key back. Typing it wrong says so; three wrong
    tries go back to the key. Check that the saved kit opens and shows the key and no names, and
    that the key's label shown beside the key is on the saved and the printed kit, and in
-   **Security** once the key is set up. If a lock ends the setup (including **Lock vault and finish later** or Escape
-   during first setup), the unfinished key does not work. The next unlock shows an unfinished-key warning.
+   **Security** once the key is set up. During first setup, **Lock vault and finish later** or Escape
+   first asks "Discard this recovery key?"; **Cancel** goes back to the setup. If a lock ends the setup
+   (including **Discard key and lock**), the unfinished key does not work. The next unlock shows an unfinished-key warning.
    On a later eligible unlock, setup opens by itself, at most once a day
    (the rest of the time only the notice offers it). It
    shows no key until you type your passphrase and choose **Continue**; **Set up later** closes it.
@@ -236,7 +237,9 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
    **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
    group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). The recovery key
-   setup of a new vault is the exception: Escape does not close it. In confirmations, focus
+   setup of a new vault is the exception: there, Escape asks "Discard this recovery key?" first,
+   as **Lock vault and finish later** does; in that question, Escape means **Cancel**, so pressing
+   Escape twice discards nothing. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
    it (or, from a dialog opened within a document's details, to those details). When that button
@@ -315,27 +318,36 @@ suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, 
 
 ### Windows Narrator and keyboard retest
 
-Use the Windows evaluation artifact from PR #39, branch `feat/kdf-benchmark`, and match
-its BUILD.txt source commit to the reviewed revision. Use made-up data only.
+Use a Windows build of `main`, downloaded as described at the start of this guide, and note
+its BUILD.txt source commit in your report. Use made-up data only.
 
 1. Start Narrator. Create or unlock a vault. Hover and focus an empty password field,
    then type, delete and paste a throwaway password. The count description and hover text
    should say “N character password”. Confirm it does not speak the secret. The field
    remains a native protected password input: whether Narrator still repeats protected
    bullets needs this Windows test and has not been verified on Linux.
-2. Tab and Shift+Tab through headings, instructions, warnings, labels (read with their
-   controls), and controls in create, unlock, restore, library and Security. Check the
-   count, show/hide controls, errors, and every paragraph, including long text.
-3. In recovery setup, Tab through all instructions and all seven key groups. Each group
-   should be read character by character. From the last action, Tab returns to the heading
-   and scrolls up; Shift+Tab goes backward. Repeat in a short window or at 200% scaling.
-4. Save a kit, go Next, go Back, and deliberately mistype the check. Focus should start at
-   each new heading, and all text/actions remain reachable. Save/Print/Next/Back names
+2. Tab and Shift+Tab reach only things you can operate (buttons, fields, links, and the
+   list in a confirmation, so it can scroll); text is not a Tab stop. In create, unlock,
+   restore, library and Security, check that each field is read with its label and its hint
+   or count, and each button with a name that says what it acts on.
+3. Read the text with Narrator's scan mode: press Caps Lock + Space to turn it on, then use
+   the Up and Down arrows to read line by line and H (Shift + H backward) to jump between
+   headings. Check every heading, instruction, warning, error and paragraph, including long
+   text, in create, unlock, restore, library and Security. Press Caps Lock + Space again to
+   go back to typing.
+4. In recovery setup, when the dialog opens Narrator reads its title and instructions. In
+   scan mode, the seven key groups are read as a list, each group character by character
+   ("Group 6: Y Z 0 1"). Tab moves only between the buttons and wraps inside the dialog.
+   Repeat in a short window or at 200% scaling.
+5. Save a kit, go Next, go Back, and deliberately mistype the check. Focus should start at
+   each new heading, and scan mode should reach all the text. Save/Print/Next/Back names
    describe the recovery-key action.
-5. Escape or “Lock vault and finish later” during first setup should hide the key and lock.
-   After unlocking, the unfinished-key warning says that key does not work. Optional setup
-   opened from Security may be cancelled; focus should return to its opening button.
-6. Report any repeated bullet speech, missing text, unexpected focus jump, or focus that
+6. Escape or “Lock vault and finish later” during first setup asks "Discard this recovery
+   key?", with focus on **Cancel**. Cancel (or Escape) goes back to the setup, with focus
+   where it was. **Discard key and lock** hides the key and locks. After unlocking, the
+   unfinished-key warning says that key does not work. Optional setup opened from Security
+   may be cancelled; focus should return to its opening button.
+7. Report any repeated bullet speech, missing text, unexpected focus jump, or focus that
    cannot leave a section. Browser keyboard/axe checks are not a Windows Narrator test.
 
 ## Automated Windows native tests

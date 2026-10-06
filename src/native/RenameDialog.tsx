@@ -134,9 +134,7 @@ export function RenameDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
-          <h2 tabIndex={0} id="rename-title">
-            Rename {target.kind}
-          </h2>
+          <h2 id="rename-title">Rename {target.kind}</h2>
         </header>
         <form onSubmit={(event) => void save(event)}>
           <div className="native-rename-fields">
@@ -167,7 +165,7 @@ export function RenameDialog({
               {/* The help text names the extension for screen readers. */}
               {extension && <span aria-hidden="true">{extension}</span>}
             </div>
-            <p tabIndex={0} id="rename-help">
+            <p id="rename-help">
               {target.kind === "folder"
                 ? "The folder and its contents stay in the same location."
                 : `This changes the name in myCarlos and the suggested export name.${
@@ -177,29 +175,25 @@ export function RenameDialog({
                   }`}
             </p>
             {extension && name.trim() && !stem && (
-              <p tabIndex={0} role="alert">
-                Enter a name before {extension}.
-              </p>
+              <p role="alert">Enter a name before {extension}.</p>
             )}
             {gainsExtension && (
-              <p tabIndex={0} role="alert">
+              <p role="alert">
                 This document&apos;s name has no .pdf extension, so it cannot
                 end in .pdf.
               </p>
             )}
             {tooLong && (
-              <p tabIndex={0} role="alert">
-                This name is too long. Shorten it to save.
-              </p>
+              <p role="alert">This name is too long. Shorten it to save.</p>
             )}
             {unsafeName && (
-              <p tabIndex={0} role="alert">
+              <p role="alert">
                 Document names cannot contain &lt; &gt; : &quot; | ? * / \ or
                 invisible control characters, or end with a dot.
               </p>
             )}
             {error && (
-              <p tabIndex={0} id="rename-error" role="alert" key={refusals}>
+              <p id="rename-error" role="alert" key={refusals}>
                 {error}
               </p>
             )}

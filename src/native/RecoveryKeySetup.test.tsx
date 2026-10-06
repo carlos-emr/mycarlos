@@ -60,40 +60,51 @@ async function typeKey(user: ReturnType<typeof userEvent.setup>, key: string) {
 }
 
 describe("RecoveryKeySetup", () => {
-  it("lets Tab reach instructions and every key group, wrap to the top, and scroll back up", async () => {
+  it("keeps Tab on the controls and gives the text to screen readers with the dialog", async () => {
     const user = userEvent.setup();
     setUp({ initialKey: KEY });
     const dialog = screen.getByRole("dialog");
-    dialog.style.maxHeight = "220px";
     const heading = screen.getByRole("heading", { name: "Your recovery key" });
     expect(heading).toHaveFocus();
+    // The instructions are read when the dialog opens, not by tabbing to them.
+    expect(dialog).toHaveAccessibleDescription(
+      /Escape leaves this setup.*Write it down, or save or print the kit/,
+    );
+    // Each group is read a character at a time from its text.
+    const groups = within(
+      within(dialog).getByRole("list", { name: "Recovery key" }),
+    ).getAllByRole("listitem");
+    expect(groups).toHaveLength(7);
+    expect(groups[5]).toHaveTextContent(/Group 6:/);
+    for (const element of dialog.querySelectorAll("p, li, h2")) {
+      expect(element, element.textContent ?? "").not.toHaveAttribute(
+        "tabindex",
+        "0",
+      );
+    }
+    // Tab moves only between the controls, and wraps inside the dialog.
     const reached = new Set<Element>();
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 7; i++) {
       await user.tab();
       reached.add(document.activeElement!);
-      if (document.activeElement === heading) break;
     }
-    expect(heading).toHaveFocus();
-    for (const element of dialog.querySelectorAll("p:not(:empty), li")) {
-      expect(reached.has(element), element.textContent ?? "").toBe(true);
-    }
-    for (const group of within(dialog).getAllByRole("listitem")) {
-      expect(group).toHaveAttribute("tabindex", "0");
-    }
-    await user.tab({ shift: true });
-    expect(
-      screen.getByRole("button", { name: "Next: check your recovery key" }),
-    ).toHaveFocus();
-    expect(dialog.scrollTop).toBeGreaterThan(0);
-    await user.tab();
-    expect(heading).toHaveFocus();
-    expect(dialog.scrollTop).toBeLessThan(30);
+    expect([...reached].map((element) => element.textContent)).toEqual([
+      "Cancel",
+      "Save recovery kit…",
+      "Next: check your recovery key",
+    ]);
     await user.click(
       screen.getByRole("button", { name: "Next: check your recovery key" }),
     );
     expect(
       screen.getByRole("heading", { name: "Check your recovery key" }),
     ).toHaveFocus();
+    expect(dialog).toHaveAccessibleDescription(
+      screen
+        .getByText(/punctuation do not matter/)
+        .textContent!.replace(/\s+/g, " ")
+        .trim(),
+    );
     await user.tab();
     expect(screen.getByLabelText("Your recovery key")).toHaveFocus();
   });
@@ -226,7 +237,7 @@ describe("RecoveryKeySetup", () => {
     expect(document.body).not.toHaveClass("printing-recovery-kit");
   });
 
-  it("offers a way out of a required setup once it cannot succeed", async () => {
+  it("still lets a required setup be left after the key cannot be stored", async () => {
     const user = userEvent.setup();
     const { bridge, onLockAndLeave } = setUp(
       { initialKey: KEY, required: true },
@@ -245,6 +256,9 @@ describe("RecoveryKeySetup", () => {
       await screen.findByRole("button", {
         name: "Lock vault and finish later",
       }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Discard key and lock" }),
     );
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
     expect(onLockAndLeave).toHaveBeenCalledOnce();
@@ -409,7 +423,7 @@ describe("RecoveryKeySetup", () => {
     expect(screen.queryByText("FAKE locked.")).not.toBeInTheDocument();
   });
 
-  it("offers a way out of a required setup when the kit cannot be saved", async () => {
+  it("keeps focus and the way out of a required setup when the kit cannot be saved", async () => {
     const user = userEvent.setup();
     const { onLockAndLeave } = setUp(
       { initialKey: KEY, required: true },
@@ -426,6 +440,9 @@ describe("RecoveryKeySetup", () => {
     expect(save).toHaveFocus();
     await user.click(
       screen.getByRole("button", { name: "Lock vault and finish later" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Discard key and lock" }),
     );
     expect(onLockAndLeave).toHaveBeenCalledOnce();
   });
@@ -445,19 +462,118 @@ describe("RecoveryKeySetup", () => {
     expect(document.body).not.toHaveClass("printing-recovery-kit");
   });
 
-  it("locks and discards an unfinished first key when Escape is pressed", async () => {
+  it("ignores Escape and the way out while an operation runs", async () => {
+    const user = userEvent.setup();
+    let finish: (saved: boolean) => void = () => undefined;
+    const { bridge, onClose, onLockAndLeave } = setUp(
+      { initialKey: KEY, required: true },
+      {
+        saveRecoveryKit: vi.fn().mockReturnValue(
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+        ),
+      },
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Save recovery kit…" }),
+    );
+    const leave = screen.getByRole("button", {
+      name: "Lock vault and finish later",
+    });
+    expect(leave).toBeDisabled();
+    await user.keyboard("{Escape}");
+    await user.click(leave);
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+    await act(async () => finish(true));
+    expect(leave).toBeEnabled();
+    // Once it has finished, Escape asks before anything is discarded.
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("alertdialog", { name: "Discard this recovery key?" }),
+    ).toBeVisible();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+  });
+
+  it("leaves out the keyboard instructions where there is no keyboard", () => {
+    setUp({ initialKey: KEY, keyboardHints: false });
+    expect(screen.queryByText(/Escape leaves this setup/)).toBeNull();
+    // The dialog is still described, by the instructions that apply.
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+      /^Write it down, or save or print the kit/,
+    );
+  });
+
+  it("asks before Escape discards an unfinished first key, and Cancel goes back to it", async () => {
     const user = userEvent.setup();
     const { bridge, onClose, onLockAndLeave } = setUp({
       initialKey: KEY,
       required: true,
     });
-    expect(
-      screen.getByRole("button", { name: "Lock vault and finish later" }),
-    ).toBeEnabled();
+    const heading = screen.getByRole("heading", { name: "Your recovery key" });
+    expect(heading).toHaveFocus();
     await user.keyboard("{Escape}");
+    const confirm = screen.getByRole("alertdialog", {
+      name: "Discard this recovery key?",
+    });
+    expect(confirm).toHaveAccessibleDescription(/never open the vault/);
+    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    // The key is out of sight behind the question, and Tab stays in it.
+    expect(
+      screen.getByRole("list", { hidden: true, name: "Recovery key" }),
+    ).not.toBeVisible();
+    await user.tab();
+    expect(
+      within(confirm).getByRole("button", { name: "Discard key and lock" }),
+    ).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
+    await user.click(cancel);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("list", { name: "Recovery key" })).toBeVisible();
+    expect(heading).toHaveFocus();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+  });
+
+  it("cancels the question on a second Escape, so a double Escape discards nothing", async () => {
+    const user = userEvent.setup();
+    const { bridge, onLockAndLeave } = setUp({
+      initialKey: KEY,
+      required: true,
+    });
+    const heading = screen.getByRole("heading", { name: "Your recovery key" });
+    await user.keyboard("{Escape}{Escape}");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(heading).toHaveFocus();
+    expect(screen.getByRole("list", { name: "Recovery key" })).toBeVisible();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+  });
+
+  it("discards the first key and locks once confirmed, and returns focus to the button on Cancel", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose, onLockAndLeave } = setUp({
+      initialKey: KEY,
+      required: true,
+    });
+    const leave = screen.getByRole("button", {
+      name: "Lock vault and finish later",
+    });
+    await user.click(leave);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(leave).toHaveFocus();
+    await user.click(leave);
+    await user.click(
+      screen.getByRole("button", { name: "Discard key and lock" }),
+    );
+    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
     expect(onLockAndLeave).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
-    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
   });
 
   it("keeps the setup open when replacing was cancelled in the native confirmation", async () => {

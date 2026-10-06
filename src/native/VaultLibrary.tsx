@@ -76,6 +76,7 @@ export function VaultLibrary({
   onOpeningRecoverySetupShown,
   onUnfinishedRecoveryKey,
   canPrint = false,
+  keyboardHints = true,
   sizesIn1024s = false,
 }: {
   bridge: VaultBridge;
@@ -102,6 +103,9 @@ export function VaultLibrary({
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
+  /** Whether to show keyboard-only instructions (Tab, Escape): false on
+   * phones and tablets. */
+  keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
 }) {
@@ -638,8 +642,8 @@ export function VaultLibrary({
   return (
     <div className="evaluation-page native-vault-page">
       <div className="evaluation-banner" role="note">
-        <strong tabIndex={0}>Synthetic-data development build</strong>
-        <span tabIndex={0}>
+        <strong>Synthetic-data development build</strong>
+        <span>
           Files and record details are encrypted and saved on this device
         </span>
       </div>
@@ -662,9 +666,7 @@ export function VaultLibrary({
               <i />
               <i />
             </span>
-            <span tabIndex={0} className="window-title">
-              myCarlos
-            </span>
+            <span className="window-title">myCarlos</span>
             <button
               className="unlock-pill native-lock-button"
               type="button"
@@ -748,7 +750,7 @@ export function VaultLibrary({
                   {currentFolder && (
                     <>
                       <span aria-hidden="true">/</span>
-                      <strong tabIndex={0}>{currentFolder.name}</strong>
+                      <strong>{currentFolder.name}</strong>
                     </>
                   )}
                   <label className="native-profile-select">
@@ -767,10 +769,10 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1 ref={pageHeadingRef} tabIndex={0}>
+                    <h1 ref={pageHeadingRef} tabIndex={-1}>
                       {locationTitle}
                     </h1>
-                    <p tabIndex={0}>
+                    <p>
                       {visibleFolders.length} folders · {visibleRecords.length}{" "}
                       documents in this location
                     </p>
@@ -821,9 +823,7 @@ export function VaultLibrary({
                       />
                     </label>
                     {nameTooLong(folderName) && (
-                      <p tabIndex={0} role="alert">
-                        This name is too long. Shorten it.
-                      </p>
+                      <p role="alert">This name is too long. Shorten it.</p>
                     )}
                     <button
                       className="button primary"
@@ -899,7 +899,7 @@ export function VaultLibrary({
                 {snapshot.recovery === "lostObjects" && (
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
-                    <span tabIndex={0}>
+                    <span>
                       <strong>Read-only recovery mode.</strong> Some encrypted
                       files are missing from this device. Documents marked
                       damaged cannot be opened or copied; save copies of the
@@ -920,7 +920,7 @@ export function VaultLibrary({
                 {snapshot.recovery === "unreadableSlot" && (
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
-                    <span tabIndex={0}>
+                    <span>
                       <strong>Read-only recovery mode.</strong> Some of the
                       vault's files could not be read, and they may be newer or
                       intact, so nothing can be changed for now, including your
@@ -936,7 +936,7 @@ export function VaultLibrary({
                 {snapshot.recovery === "writeFailed" && (
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
-                    <span tabIndex={0}>
+                    <span>
                       <strong>Read-only recovery mode.</strong> A write to the
                       vault failed. Free storage or check the disk, then lock
                       and unlock again; the vault repairs itself when it can
@@ -947,7 +947,7 @@ export function VaultLibrary({
                 {!readOnly && !snapshot.recoveryKeySetAtMs && (
                   <div className="purpose-note warning">
                     <Icon name="info" />
-                    <span tabIndex={0}>
+                    <span>
                       <strong>No recovery key yet.</strong> If you forget your
                       passphrase without one, the only way back in is to erase
                       the vault.
@@ -974,10 +974,10 @@ export function VaultLibrary({
                   />
                 </label>
                 <div className="viewbar">
-                  <span tabIndex={0} className="native-location-chip">
+                  <span className="native-location-chip">
                     {currentFolder ? "Inside folder" : "Top level"}
                   </span>
-                  <span tabIndex={0} className="native-drag-hint">
+                  <span className="native-drag-hint">
                     Hold and drag a document or folder to move it
                   </span>
                   <div className="view-controls">
@@ -1019,8 +1019,8 @@ export function VaultLibrary({
 
                 {selectedIds.length > 0 && (
                   <div className="bulkbar" role="status">
-                    <strong tabIndex={0}>{selectedIds.length} selected</strong>
-                    <span tabIndex={0}>Move the selected documents.</span>
+                    <strong>{selectedIds.length} selected</strong>
+                    <span>Move the selected documents.</span>
                     <div className="bulk-actions native-move-actions">
                       <select
                         aria-label="Move selected to"
@@ -1049,12 +1049,7 @@ export function VaultLibrary({
                     </div>
                   </div>
                 )}
-                <p
-                  tabIndex={notice ? 0 : -1}
-                  className="status-line"
-                  role="status"
-                  aria-live="polite"
-                >
+                <p className="status-line" role="status" aria-live="polite">
                   {notice}
                 </p>
 
@@ -1117,6 +1112,7 @@ export function VaultLibrary({
               required={recoverySetup.required}
               offered={recoverySetup.offered}
               canPrint={canPrint}
+              keyboardHints={keyboardHints}
               onKeyShown={({ exposed }) =>
                 onUnfinishedRecoveryKey?.({
                   setAtMs: snapshot.recoveryKeySetAtMs ?? null,
@@ -1221,11 +1217,11 @@ export function VaultLibrary({
               onConfirm={() => deleteRecord(activeRecord)}
               onCancel={() => setConfirmation(null)}
             >
-              <p tabIndex={0}>
+              <p>
                 <strong>{activeRecord.displayName}</strong> will be permanently
                 deleted from this vault. This cannot be undone here.
               </p>
-              <p tabIndex={0}>
+              <p>
                 Readable exports and the clinic's source medical record are not
                 deleted.
               </p>
@@ -1248,7 +1244,7 @@ export function VaultLibrary({
                   tabIndex={0}
                 >
                   {damaged.map((record) => (
-                    <li tabIndex={0} key={record.id}>
+                    <li key={record.id}>
                       {record.displayName}
                       {snapshot.profiles.length > 1 &&
                         ` (${profileName(record.profileId)})`}
@@ -1257,13 +1253,13 @@ export function VaultLibrary({
                 </ul>
               }
             >
-              <p tabIndex={0}>
+              <p>
                 Their encrypted files are missing from this device, so their
                 content is already gone from here. Removing them also deletes
                 their names and details from the vault, permanently. This cannot
                 be undone.
               </p>
-              <p tabIndex={0}>
+              <p>
                 First check that the files are not just out of reach: if the
                 myCarlos data folder is on a drive that is disconnected, or
                 another program is using it, fix that, then lock and unlock
@@ -1279,7 +1275,7 @@ export function VaultLibrary({
               onConfirm={() => exportRecord(activeRecord)}
               onCancel={() => setConfirmation(null)}
             >
-              <p tabIndex={0}>
+              <p>
                 Saving creates a readable file outside the encrypted vault.
                 myCarlos cannot erase that copy later, and deleting this record
                 will not remove it.

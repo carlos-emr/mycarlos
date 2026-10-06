@@ -26,10 +26,10 @@ function EmptyState({ searching }: { searching: boolean }) {
   return (
     <div className="empty-state">
       <Icon name="folder" />
-      <strong tabIndex={0}>
+      <strong>
         {searching ? "No matching records" : "This location is empty"}
       </strong>
-      <span tabIndex={0}>
+      <span>
         {searching
           ? "Try another search."
           : "Add a folder or import a document here."}
@@ -60,17 +60,12 @@ export function LibraryItems({
       className="filelist native-filelist"
       aria-label={`${folders.length + records.length} visible library items`}
     >
-      <div className="file-head">
+      {/* Visual column labels only: each row's controls carry their own names. */}
+      <div className="file-head" aria-hidden="true">
         <span />
-        <span className="sorted" tabIndex={0}>
-          Name
-        </span>
-        <span className="column" tabIndex={0}>
-          Source
-        </span>
-        <span className="column" tabIndex={0}>
-          Date added
-        </span>
+        <span className="sorted">Name</span>
+        <span className="column">Source</span>
+        <span className="column">Date added</span>
         <span />
       </div>
       {folders.map((folder) => (
@@ -94,7 +89,7 @@ export function LibraryItems({
             className="file-name native-file-open"
             type="button"
             aria-label={`Open ${folder.name}`}
-            aria-description={`${folderCount(folder.id)} items`}
+            aria-describedby={`folder-items-${folder.id}`}
             onClick={() => onOpenFolder(folder.id)}
           >
             <span className="document-icon folder">
@@ -102,13 +97,15 @@ export function LibraryItems({
             </span>
             <span className="name-copy">
               <strong>{folder.name}</strong>
-              <small>{folderCount(folder.id)} items</small>
+              <small id={`folder-items-${folder.id}`}>
+                {folderCount(folder.id)} items
+              </small>
             </span>
           </button>
           <span className="column" aria-hidden="true">
             —
           </span>
-          <span tabIndex={0} className="column">
+          <span className="column">
             {new Date(folder.createdAtMs).toLocaleDateString()}
           </span>
           <button
@@ -153,16 +150,14 @@ export function LibraryItems({
                 >
                   {record.displayName}
                 </button>
-                <small tabIndex={0}>
+                <small>
                   {formatBytes(record.plaintextSize)} · {kind.label}
                   {!record.available && ` · ${unavailableLabel}`}
                 </small>
               </span>
             </div>
-            <span tabIndex={0} className="column">
-              {record.sourceLabel}
-            </span>
-            <span tabIndex={0} className="column">
+            <span className="column">{record.sourceLabel}</span>
+            <span className="column">
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
             <button

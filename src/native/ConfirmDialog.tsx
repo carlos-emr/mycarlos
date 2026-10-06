@@ -41,9 +41,7 @@ export function ConfirmDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
-          <h2 tabIndex={0} id="confirm-title">
-            {title}
-          </h2>
+          <h2 id="confirm-title">{title}</h2>
         </header>
         <div className="native-confirm-message">
           {details}

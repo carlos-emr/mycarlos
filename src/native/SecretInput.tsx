@@ -30,7 +30,7 @@ export function SecretInput({
         title={description}
         aria-describedby={[countId, describedBy].filter(Boolean).join(" ")}
       />
-      <small id={countId} className="secret-count" tabIndex={0}>
+      <small id={countId} className="secret-count">
         {description}
       </small>
     </span>

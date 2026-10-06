@@ -901,6 +901,15 @@ describe("durable vault UI", () => {
             name: "Lock vault and finish later",
           }),
         );
+      // Leaving the first setup is confirmed before the key is discarded.
+      const confirm = await screen.findByRole("alertdialog", {
+        name: "Discard this recovery key?",
+      });
+      expect((await axe.run(dialog)).violations).toEqual([]);
+      expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+      await user.click(
+        within(confirm).getByRole("button", { name: "Discard key and lock" }),
+      );
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(screen.queryByText("ABCD")).toBeNull();
       expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
@@ -4578,18 +4587,17 @@ describe("durable vault UI", () => {
       name: "Close document details",
     });
     expect(close).toHaveFocus();
-    await user.tab({ shift: true });
+    // The dialog's text is read with it when it opens; Tab moves only between
+    // its controls and wraps inside it.
     expect(
-      screen.getByRole("heading", { name: "FAKE_Report.pdf" }),
-    ).toHaveFocus();
-    await user.tab({ shift: true });
-    expect(screen.getByText("Encrypted document")).toHaveFocus();
+      screen.getByRole("dialog", { name: "FAKE_Report.pdf" }),
+    ).toHaveAccessibleDescription(/The file stays encrypted in the vault/);
     await user.tab({ shift: true });
     expect(
       screen.getByRole("button", { name: "Save a copy to this computer" }),
     ).toHaveFocus();
     await user.tab();
-    expect(screen.getByText("Encrypted document")).toHaveFocus();
+    expect(close).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
@@ -4932,22 +4940,15 @@ describe("durable vault UI", () => {
     // and the names are not read out with the dialog.
     expect(named).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
-    await user.tab({ shift: true });
-    expect(document.activeElement).toHaveTextContent(
-      /First check that the files/,
-    );
-    await user.tab({ shift: true });
-    expect(document.activeElement).toHaveTextContent(
-      /Their encrypted files are missing/,
-    );
-    await user.tab({ shift: true });
-    expect(within(named).getByRole("listitem")).toHaveFocus();
-    expect(document.activeElement).toHaveTextContent("FAKE_a.pdf");
+    // Tab reaches the list (to scroll it) and the two buttons, and wraps.
     await user.tab({ shift: true });
     expect(named).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    ).toHaveFocus();
     await user.tab();
-    await user.tab();
-    await user.tab();
+    expect(named).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     expect(confirmation).toHaveAccessibleDescription(

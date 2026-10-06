@@ -35,7 +35,7 @@ describe("secret input", () => {
     expect(input).toHaveAccessibleDescription("14 character password");
   });
 
-  it("gives the character count on hover and focus without copying secrets into accessible metadata", async () => {
+  it("gives the character count on hover and in the field's description without copying secrets into accessible metadata", async () => {
     const user = userEvent.setup();
     render(<Field />);
     const input = screen.getByLabelText("Passphrase");
@@ -47,10 +47,13 @@ describe("secret input", () => {
     expect(input).toHaveAccessibleDescription(
       "11 character password Use a long passphrase.",
     );
+    // The count is read with the field; it is text, not a Tab stop.
     const count = screen.getByText("11 character password");
-    expect(count).toHaveAttribute("tabindex", "0");
+    expect(count).not.toHaveAttribute("tabindex");
     await user.tab();
-    expect(count).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Toggle visibility" }),
+    ).toHaveFocus();
     for (const attr of input.attributes) {
       if (attr.name.startsWith("aria-") || attr.name === "title")
         expect(attr.value).not.toContain("FAKE secret");

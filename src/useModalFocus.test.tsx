@@ -9,8 +9,8 @@ function Dialog({ close }: { close: () => void }) {
   useModalFocus(true, ref, close);
   return (
     <section ref={ref} role="dialog" aria-modal="true" aria-label="Example">
-      <h2 tabIndex={0}>Instructions</h2>
-      <p tabIndex={0}>Read this first.</p>
+      <h2>Instructions</h2>
+      <p>Read this first.</p>
       <button hidden>Hidden</button>
       <button style={{ display: "none" }}>Not displayed</button>
       <div inert>
@@ -203,17 +203,14 @@ describe("modal keyboard focus", () => {
     },
   );
 
-  it("includes static text and all control types, skips unavailable content, wraps both ways and restores the opener", async () => {
+  it("skips static text and unavailable content, includes all control types, wraps both ways and restores the opener", async () => {
     const user = userEvent.setup();
     render(<Fixture />);
     const opener = screen.getByRole("button", { name: "Open" });
     await user.click(opener);
-    const heading = screen.getByRole("heading");
-    expect(heading).toHaveFocus();
-    await user.tab();
-    expect(screen.getByText("Read this first.")).toHaveFocus();
-    await user.tab();
-    expect(screen.getByText("More instructions")).toHaveFocus();
+    // Text is not a Tab stop: the first control takes the first focus.
+    const summary = screen.getByText("More instructions");
+    expect(summary).toHaveFocus();
     await user.tab();
     expect(screen.getByLabelText("Notes")).toHaveFocus();
     await user.tab();
@@ -221,12 +218,12 @@ describe("modal keyboard focus", () => {
     await user.tab();
     expect(screen.getByRole("link")).toHaveFocus();
     await user.tab();
-    expect(heading).toHaveFocus();
+    expect(summary).toHaveFocus();
     await user.tab({ shift: true });
     expect(screen.getByRole("link")).toHaveFocus();
     opener.focus();
     await user.tab();
-    expect(heading).toHaveFocus();
+    expect(summary).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(opener).toHaveFocus();
     expect(screen.queryByRole("dialog")).toBeNull();

@@ -615,7 +615,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   if (status === "loading") {
     return (
       <VaultAuthFrame state="Opening">
-        <p tabIndex={0}>Opening myCarlos…</p>
+        <p>Opening myCarlos…</p>
       </VaultAuthFrame>
     );
   }
@@ -751,10 +751,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       return (
         <VaultAuthFrame state="Locking">
           <section className="vault-card" aria-labelledby="hold-title">
-            <h1 tabIndex={0} id="hold-title">
-              Finishing the transfer
-            </h1>
-            <p tabIndex={0} role="status">
+            <h1 id="hold-title">Finishing the transfer</h1>
+            <p role="status">
               Vault content is hidden. myCarlos will lock as soon as the
               transfer finishes.
             </p>
@@ -770,7 +768,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       );
     return lockFailed ? (
       <VaultAuthFrame state="Not locked">
-        <p tabIndex={0} role="alert">
+        <p role="alert">
           myCarlos could not lock the vault. Its content is hidden, but the
           vault is still open. {notice}
         </p>
@@ -784,9 +782,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       </VaultAuthFrame>
     ) : (
       <VaultAuthFrame state="Locked">
-        <p tabIndex={0}>
-          Vault content is hidden while myCarlos finishes locking…
-        </p>
+        <p>Vault content is hidden while myCarlos finishes locking…</p>
       </VaultAuthFrame>
     );
   }
@@ -808,6 +804,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
       onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
+      keyboardHints={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
     />
   );

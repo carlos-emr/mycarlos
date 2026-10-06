@@ -608,9 +608,12 @@ impl VaultStore {
         self.benchmark_kdf_with(benchmark_kdf)
     }
 
+    /// `measure` is given a check that says whether the vault is still open.
+    /// It asks before each derivation, so a lock during the test ends it there
+    /// instead of holding off the next unlock (busy) for the derivations left.
     fn benchmark_kdf_with<T>(
         &self,
-        measure: impl FnOnce() -> Result<T, VaultError>,
+        measure: impl FnOnce(&dyn Fn() -> bool) -> Result<T, VaultError>,
     ) -> Result<T, VaultError> {
         let _work = self.start_kdf_work()?;
         if self.session().is_none() {
@@ -618,7 +621,7 @@ impl VaultStore {
         }
         // The session guard is gone: manual and idle locking can clear keys
         // immediately while the benchmark holds only synthetic data.
-        measure()
+        measure(&|| self.session().is_some())
     }
 
     pub fn status(&self) -> Result<VaultStatus, VaultError> {
@@ -2991,11 +2994,16 @@ pub struct KdfBenchmark {
 }
 
 /// Derives a key `KDF_BENCHMARK_SAMPLES` times and times each. It uses a
-/// made-up passphrase and salt, reads no vault and keeps nothing.
-fn benchmark_kdf() -> Result<KdfBenchmark, VaultError> {
+/// made-up passphrase and salt, reads no vault and keeps nothing. Before each
+/// derivation it asks `still_open`, and stops with `Locked` once the vault has
+/// been locked.
+fn benchmark_kdf(still_open: &dyn Fn() -> bool) -> Result<KdfBenchmark, VaultError> {
     let config = kdf_config_with_salt([0x5a_u8; 16]);
     let mut samples_ms = Vec::with_capacity(KDF_BENCHMARK_SAMPLES);
     for _ in 0..KDF_BENCHMARK_SAMPLES {
+        if !still_open() {
+            return Err(VaultError::Locked);
+        }
         let started = Instant::now();
         // Kept from the optimizer, which could otherwise drop work whose
         // result is not used.
@@ -6328,7 +6336,7 @@ mod tests {
             let worker = {
                 let store = Arc::clone(&store);
                 std::thread::spawn(move || {
-                    store.benchmark_kdf_with(|| {
+                    store.benchmark_kdf_with(|_| {
                         entered_tx.send(()).unwrap();
                         finish_rx.recv().unwrap();
                         Ok(())
@@ -6364,7 +6372,7 @@ mod tests {
                 Err(VaultError::Busy)
             ));
             assert!(matches!(
-                store.benchmark_kdf_with::<()>(|| panic!("busy benchmark ran")),
+                store.benchmark_kdf_with::<()>(|_| panic!("busy benchmark ran")),
                 Err(VaultError::Busy)
             ));
             let (locked_tx, locked_rx) = mpsc::channel();
@@ -6400,7 +6408,7 @@ mod tests {
             assert!(matches!(unlock_while_running, Ok(Err(VaultError::Busy))));
             assert_eq!(store.status().unwrap(), VaultStatus::Locked);
             assert!(matches!(
-                store.benchmark_kdf_with::<()>(|| panic!("locked benchmark ran")),
+                store.benchmark_kdf_with::<()>(|_| panic!("locked benchmark ran")),
                 Err(VaultError::Locked)
             ));
             store.unlock(PASSWORD).unwrap();
@@ -6413,18 +6421,47 @@ mod tests {
         let store = VaultStore::new(temp.path().join("vault"));
         store.create(PASSWORD, "Jamie", 1).unwrap();
         assert!(matches!(
-            store.benchmark_kdf_with(|| Err::<(), _>(VaultError::Storage)),
+            store.benchmark_kdf_with(|_| Err::<(), _>(VaultError::Storage)),
             Err(VaultError::Storage)
         ));
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = store.benchmark_kdf_with(|| -> Result<(), VaultError> {
+            let _ = store.benchmark_kdf_with(|_| -> Result<(), VaultError> {
                 panic!("FAKE benchmark panic")
             });
         }))
         .is_err());
-        store.benchmark_kdf_with(|| Ok(())).unwrap();
+        store.benchmark_kdf_with(|_| Ok(())).unwrap();
         store.lock();
         store.unlock(PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn benchmark_stops_at_the_next_sample_once_the_vault_is_locked() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        // The check handed to the measurement follows the session.
+        let open = store
+            .benchmark_kdf_with(|still_open| {
+                let before = still_open();
+                store.lock();
+                Ok((before, still_open()))
+            })
+            .unwrap();
+        assert_eq!(open, (true, false));
+        // Admission is free again at once: an unlock is not answered busy.
+        store.unlock(PASSWORD).unwrap();
+
+        // The measurement asks before each derivation and runs no more after
+        // a lock: here, one derivation, then Locked.
+        let asked = std::cell::Cell::new(0);
+        let result = benchmark_kdf(&|| {
+            asked.set(asked.get() + 1);
+            asked.get() == 1
+        });
+        assert!(matches!(result, Err(VaultError::Locked)));
+        assert_eq!(asked.get(), 2);
+        assert!(matches!(benchmark_kdf(&|| false), Err(VaultError::Locked)));
     }
 
     #[test]
@@ -12243,7 +12280,7 @@ mod tests {
     #[test]
     #[ignore = "manual release-mode benchmark for each supported device class"]
     fn benchmark_argon2id_unlock_work_factor() {
-        let measured = benchmark_kdf().unwrap();
+        let measured = benchmark_kdf(&|| true).unwrap();
         println!(
             "mycarlos_argon2id memory_kib={} iterations={} lanes={} samples_ms={:?} median_ms={} max_ms={} release={}",
             measured.memory_kib,

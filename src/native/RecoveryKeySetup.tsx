@@ -36,6 +36,7 @@ export function RecoveryKeySetup({
   required = false,
   offered = false,
   canPrint,
+  keyboardHints = true,
   onDone,
   onClose,
   onLocked,
@@ -62,6 +63,9 @@ export function RecoveryKeySetup({
    * the step that asks, and shows no key that was not asked for. */
   offered?: boolean;
   canPrint: boolean;
+  /** Whether to show instructions that only apply with a keyboard (Tab and
+   * Escape): false on phones and tablets. */
+  keyboardHints?: boolean;
   /** `exposed`: when replacing, the old key's kit may have been lost or
    * seen, as the patient said. */
   onDone: (snapshot: VaultSnapshot, how: { exposed: boolean }) => void;
@@ -154,11 +158,30 @@ export function RecoveryKeySetup({
     void bridge.cancelRecoveryKey().catch(() => undefined);
     onClose(Boolean(key));
   };
+  // Leaving the first setup discards the key on screen and locks the vault,
+  // so it is confirmed first (Ben, 6 Oct 2026). The confirmation replaces the
+  // setup inside this dialog, which keeps one focus trap: Escape there means
+  // Cancel, so a second Escape can never discard the key.
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const returnFromConfirmRef = useRef<HTMLElement | null>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
+  const discardAndLock = () => {
+    void bridge.cancelRecoveryKey().catch(() => undefined);
+    onLockAndLeave();
+  };
   const cancel = () => {
     if (busy) return;
-    if (required) {
-      void bridge.cancelRecoveryKey().catch(() => undefined);
-      onLockAndLeave();
+    if (confirmingLeave) {
+      setConfirmingLeave(false);
+      return;
+    }
+    if (required && key) {
+      const focused = document.activeElement;
+      returnFromConfirmRef.current =
+        focused instanceof HTMLElement ? focused : null;
+      setConfirmingLeave(true);
+    } else if (required) {
+      discardAndLock();
     } else leave();
   };
   // A failure that is not a wrong answer. A locked vault is the app's to
@@ -198,6 +221,18 @@ export function RecoveryKeySetup({
   // Each step replaces the last, and the control that had focus with it. The
   // heading starts each step, so instructions are not skipped.
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (confirmingLeave) {
+      confirmCancelRef.current?.focus();
+      return;
+    }
+    // Back from the confirmation: focus returns to where it was.
+    const back = returnFromConfirmRef.current;
+    returnFromConfirmRef.current = null;
+    if (!back) return;
+    if (back.isConnected && dialogRef.current?.contains(back)) back.focus();
+    else headingRef.current?.focus();
+  }, [confirmingLeave]);
   useEffect(() => {
     headingRef.current?.focus();
   }, [step]);
@@ -343,314 +378,348 @@ export function RecoveryKeySetup({
         aria-modal="true"
         aria-labelledby="recovery-key-title"
         aria-describedby={
-          step === "passphrase" ? "recovery-key-about" : undefined
+          step === "passphrase"
+            ? "recovery-key-about"
+            : step === "key"
+              ? keyboardHints
+                ? "recovery-key-keyboard-hint recovery-key-instructions"
+                : "recovery-key-instructions"
+              : "recovery-key-check-hint"
         }
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="dialog-head">
-          <h2 id="recovery-key-title" ref={headingRef} tabIndex={0}>
-            {title}
-          </h2>
-        </header>
-
-        {step === "passphrase" && (
-          <form className="recovery-key-body" onSubmit={(e) => void begin(e)}>
-            <div id="recovery-key-about" className="recovery-key-about">
-              {offered && (
-                <p tabIndex={0}>
-                  Your vault is open. It has no recovery key yet. Without one,
-                  if you forget your passphrase, the only way back in is to
-                  erase the vault.
-                </p>
-              )}
-              <p tabIndex={0}>
-                A recovery key opens your vault if you forget your passphrase.
-                Only you will have it: nobody at your clinic or at myCarlos can
-                open your vault for you.
+        {confirmingLeave && (
+          <section
+            className="recovery-key-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="recovery-key-confirm-title"
+            aria-describedby="recovery-key-confirm-message"
+          >
+            <header className="dialog-head">
+              <h2 id="recovery-key-confirm-title">
+                Discard this recovery key?
+              </h2>
+            </header>
+            <div className="recovery-key-body">
+              <p id="recovery-key-confirm-message">
+                This recovery key is not set up yet, so it will never open the
+                vault. myCarlos locks the vault now. After you unlock it, you
+                can set up a new key.
               </p>
-              {replacing && (
-                <p tabIndex={0}>
-                  Your current recovery key stops working once you have checked
-                  the new one.
-                </p>
-              )}
-              <p tabIndex={0}>
-                Type your passphrase{offered ? " again" : ""} to make your{" "}
-                {replacing ? "new " : ""}recovery key. It is shown next: choose
-                Continue only when nobody else can see your screen.
-              </p>
+              <footer className="dialog-actions">
+                <button
+                  ref={confirmCancelRef}
+                  className="button"
+                  type="button"
+                  onClick={() => setConfirmingLeave(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="button danger"
+                  type="button"
+                  onClick={discardAndLock}
+                >
+                  Discard key and lock
+                </button>
+              </footer>
             </div>
-            {replacing && (
-              <fieldset>
-                <legend tabIndex={0}>Why are you replacing it?</legend>
-                <p tabIndex={0} className="field-hint">
-                  If you are not sure, choose the first.
-                </p>
-                <label className="restore-choice">
-                  <input
-                    type="radio"
-                    name="replace-reason"
-                    checked={exposed === true}
-                    onChange={() => {
-                      setExposed(true);
-                      setError("");
-                    }}
-                  />
-                  Its kit or note may have been lost, or seen by someone else
-                </label>
-                <label className="restore-choice">
-                  <input
-                    type="radio"
-                    name="replace-reason"
-                    checked={exposed === false}
-                    onChange={() => {
-                      setExposed(false);
-                      setError("");
-                    }}
-                  />
-                  I just want a new key: its kit is safe
-                </label>
-              </fieldset>
-            )}
-            <label>
-              Passphrase
-              <SecretInput
-                aria-label="Passphrase"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-              />
-            </label>
-            {utf8Length(passphrase) > MAX_PASSPHRASE_BYTES && (
-              <p tabIndex={0} role="alert">
-                This is longer than any vault passphrase. Check what you typed.
-              </p>
-            )}
-            {error && (
-              <p tabIndex={0} role="alert">
-                {error}
-              </p>
-            )}
-            <footer className="dialog-actions">
-              <button
-                className="button"
-                type="button"
-                onClick={cancel}
-                disabled={busy}
-              >
-                {leaveLabel}
-              </button>
-              <button
-                className="button primary"
-                disabled={
-                  busy ||
-                  !passphrase ||
-                  utf8Length(passphrase) > MAX_PASSPHRASE_BYTES
-                }
-              >
-                Continue
-              </button>
-            </footer>
-          </form>
+          </section>
         )}
+        {/* Hidden rather than removed while confirming, so the key and the
+            control that had focus are still there after Cancel. */}
+        <div className="recovery-key-steps" hidden={confirmingLeave}>
+          <header className="dialog-head">
+            <h2 id="recovery-key-title" ref={headingRef} tabIndex={-1}>
+              {title}
+            </h2>
+          </header>
 
-        {step === "key" && (
-          <div className="recovery-key-body">
-            <p tabIndex={0}>
-              Use Tab and Shift+Tab to read each instruction and key group.
-              Escape leaves this setup; during first setup it locks the vault.
-              An unfinished key will not work.
-            </p>
-            <p tabIndex={0}>
-              Write it down, or save or print the kit, and keep it somewhere
-              private, away from this device. This is the only time myCarlos
-              shows it. Next, you type it all back to check it. Stay in myCarlos
-              until the check is done: leaving or locking cancels this key.
-            </p>
-            {busy ? (
-              // Not left on screen under a save picker.
-              <p tabIndex={0} className="recovery-key-groups">
-                Hidden while the kit is being saved.
-              </p>
-            ) : (
-              <ol
-                className="recovery-key-groups"
-                // Kept a list for readers that drop one styled without markers.
-                role="list"
-                aria-label="Recovery key"
-              >
-                {groups.map((group, index) => (
-                  <li tabIndex={0} key={index}>
-                    <span aria-hidden="true">{group}</span>
-                    <span className="sr-only">
-                      Group {index + 1}: {spoken(group)}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
-            {label && (
-              <p tabIndex={0}>
-                Key label: <KeyLabel label={label} />. Write it next to the key.
-                It is not secret: in Security, myCarlos shows the label of the
-                key that works, so you can tell which kit is current.
-              </p>
-            )}
-            <p
-              tabIndex={notice ? 0 : -1}
-              className="native-dialog-status"
-              role="status"
-            >
-              {notice}
-            </p>
-            {error && (
-              <p tabIndex={0} role="alert">
-                {error}
-              </p>
-            )}
-            <footer className="dialog-actions">
-              <button
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={cancel}
-              >
-                {leaveLabel}
-              </button>
-              <button
-                ref={saveButtonRef}
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={() => void saveKit()}
-              >
-                Save recovery kit…
-              </button>
-              {canPrint && (
+          {step === "passphrase" && (
+            <form className="recovery-key-body" onSubmit={(e) => void begin(e)}>
+              <div id="recovery-key-about" className="recovery-key-about">
+                {offered && (
+                  <p>
+                    Your vault is open. It has no recovery key yet. Without one,
+                    if you forget your passphrase, the only way back in is to
+                    erase the vault.
+                  </p>
+                )}
+                <p>
+                  A recovery key opens your vault if you forget your passphrase.
+                  Only you will have it: nobody at your clinic or at myCarlos
+                  can open your vault for you.
+                </p>
+                {replacing && (
+                  <p>
+                    Your current recovery key stops working once you have
+                    checked the new one.
+                  </p>
+                )}
+                <p>
+                  Type your passphrase{offered ? " again" : ""} to make your{" "}
+                  {replacing ? "new " : ""}recovery key. It is shown next:
+                  choose Continue only when nobody else can see your screen.
+                </p>
+              </div>
+              {replacing && (
+                <fieldset>
+                  <legend>Why are you replacing it?</legend>
+                  <p className="field-hint">
+                    If you are not sure, choose the first.
+                  </p>
+                  <label className="restore-choice">
+                    <input
+                      type="radio"
+                      name="replace-reason"
+                      checked={exposed === true}
+                      onChange={() => {
+                        setExposed(true);
+                        setError("");
+                      }}
+                    />
+                    Its kit or note may have been lost, or seen by someone else
+                  </label>
+                  <label className="restore-choice">
+                    <input
+                      type="radio"
+                      name="replace-reason"
+                      checked={exposed === false}
+                      onChange={() => {
+                        setExposed(false);
+                        setError("");
+                      }}
+                    />
+                    I just want a new key: its kit is safe
+                  </label>
+                </fieldset>
+              )}
+              <label>
+                Passphrase
+                <SecretInput
+                  aria-label="Passphrase"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={passphrase}
+                  onChange={(event) => setPassphrase(event.target.value)}
+                />
+              </label>
+              {utf8Length(passphrase) > MAX_PASSPHRASE_BYTES && (
+                <p role="alert">
+                  This is longer than any vault passphrase. Check what you
+                  typed.
+                </p>
+              )}
+              {error && <p role="alert">{error}</p>}
+              <footer className="dialog-actions">
                 <button
                   className="button"
                   type="button"
-                  disabled={busy || !labelSettled}
-                  onClick={() =>
-                    printing ? window.print() : setPrinting(true)
+                  onClick={cancel}
+                  disabled={busy}
+                >
+                  {leaveLabel}
+                </button>
+                <button
+                  className="button primary"
+                  disabled={
+                    busy ||
+                    !passphrase ||
+                    utf8Length(passphrase) > MAX_PASSPHRASE_BYTES
                   }
                 >
-                  Print recovery kit
+                  Continue
                 </button>
-              )}
-              <button
-                className="button primary"
-                type="button"
-                disabled={busy}
-                onClick={startCheck}
-              >
-                Next: check your recovery key
-              </button>
-            </footer>
-            {printing &&
-              createPortal(
-                <div className="recovery-kit-print" aria-hidden="true">
-                  <h1>myCarlos recovery kit</h1>
-                  <p className="recovery-kit-key">{key}</p>
-                  <p>
-                    {label ? `Key label: ${label} · ` : ""}Printed{" "}
-                    {printedDate(new Date())}
-                  </p>
-                  {label && (
-                    <p>
-                      The label is not secret. In Security, myCarlos shows the
-                      label of the recovery key that works now: a kit with a
-                      different label no longer opens the vault.
-                    </p>
-                  )}
-                  <p>
-                    If you forget your myCarlos passphrase, this key opens your
-                    vault on this device and lets you choose a new passphrase.
-                    It works once you have finished the check in myCarlos.
-                  </p>
-                  <p>
-                    Keep it somewhere private and away from the device. Anyone
-                    with this key and a copy of your vault can open it. If you
-                    set up a new recovery key, this one no longer opens the
-                    vault on this device.
-                  </p>
-                </div>,
-                document.body,
-              )}
-          </div>
-        )}
+              </footer>
+            </form>
+          )}
 
-        {step === "check" && (
-          <form className="recovery-key-body" onSubmit={(e) => void check(e)}>
-            <label>
-              Your recovery key
-              <input
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                maxLength={64}
-                aria-describedby="recovery-key-check-hint"
-                value={typed}
-                onChange={(event) => {
-                  setTyped(event.target.value);
-                  if (typedWrongRef.current) {
-                    typedWrongRef.current = false;
-                    setError("");
-                  }
-                }}
-              />
-            </label>
-            <p tabIndex={0} id="recovery-key-check-hint">
-              Type your whole recovery key, as you wrote it down or saved it: 7
-              groups of 4 letters and digits. Dashes, spaces and other
-              punctuation do not matter.
-            </p>
-            <p
-              tabIndex={notice ? 0 : -1}
-              className="native-dialog-status"
-              role="status"
-            >
-              {notice}
-            </p>
-            {error && (
-              <p tabIndex={0} role="alert">
-                {error}
+          {step === "key" && (
+            <div className="recovery-key-body">
+              {keyboardHints && (
+                <p id="recovery-key-keyboard-hint">
+                  Escape leaves this setup. During first setup it asks first,
+                  because leaving locks the vault and an unfinished key will not
+                  work.
+                </p>
+              )}
+              <p id="recovery-key-instructions">
+                Write it down, or save or print the kit, and keep it somewhere
+                private, away from this device. This is the only time myCarlos
+                shows it. Next, you type it all back to check it. Stay in
+                myCarlos until the check is done: leaving or locking cancels
+                this key.
               </p>
-            )}
-            <footer className="dialog-actions">
-              <button
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={cancel}
-              >
-                {leaveLabel}
-              </button>
-              <button
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setError("");
-                  setNotice("");
-                  setStep("key");
-                }}
-              >
-                Back: read your recovery key
-              </button>
-              <button
-                ref={checkButtonRef}
-                className="button primary"
-                disabled={busy || !typed.trim()}
-              >
-                Check and save
-              </button>
-            </footer>
-          </form>
-        )}
+              {busy ? (
+                // Not left on screen under a save picker.
+                <p className="recovery-key-groups">
+                  Hidden while the kit is being saved.
+                </p>
+              ) : (
+                <ol
+                  className="recovery-key-groups"
+                  // Kept a list for readers that drop one styled without markers.
+                  role="list"
+                  aria-label="Recovery key"
+                >
+                  {groups.map((group, index) => (
+                    <li key={index}>
+                      <span aria-hidden="true">{group}</span>
+                      <span className="sr-only">
+                        Group {index + 1}: {spoken(group)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {label && (
+                <p>
+                  Key label: <KeyLabel label={label} />. Write it next to the
+                  key. It is not secret: in Security, myCarlos shows the label
+                  of the key that works, so you can tell which kit is current.
+                </p>
+              )}
+              <p className="native-dialog-status" role="status">
+                {notice}
+              </p>
+              {error && <p role="alert">{error}</p>}
+              <footer className="dialog-actions">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={cancel}
+                >
+                  {leaveLabel}
+                </button>
+                <button
+                  ref={saveButtonRef}
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void saveKit()}
+                >
+                  Save recovery kit…
+                </button>
+                {canPrint && (
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy || !labelSettled}
+                    onClick={() =>
+                      printing ? window.print() : setPrinting(true)
+                    }
+                  >
+                    Print recovery kit
+                  </button>
+                )}
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={startCheck}
+                >
+                  Next: check your recovery key
+                </button>
+              </footer>
+              {printing &&
+                createPortal(
+                  <div className="recovery-kit-print" aria-hidden="true">
+                    <h1>myCarlos recovery kit</h1>
+                    <p className="recovery-kit-key">{key}</p>
+                    <p>
+                      {label ? `Key label: ${label} · ` : ""}Printed{" "}
+                      {printedDate(new Date())}
+                    </p>
+                    {label && (
+                      <p>
+                        The label is not secret. In Security, myCarlos shows the
+                        label of the recovery key that works now: a kit with a
+                        different label no longer opens the vault.
+                      </p>
+                    )}
+                    <p>
+                      If you forget your myCarlos passphrase, this key opens
+                      your vault on this device and lets you choose a new
+                      passphrase. It works once you have finished the check in
+                      myCarlos.
+                    </p>
+                    <p>
+                      Keep it somewhere private and away from the device. Anyone
+                      with this key and a copy of your vault can open it. If you
+                      set up a new recovery key, this one no longer opens the
+                      vault on this device.
+                    </p>
+                  </div>,
+                  document.body,
+                )}
+            </div>
+          )}
+
+          {step === "check" && (
+            <form className="recovery-key-body" onSubmit={(e) => void check(e)}>
+              <label>
+                Your recovery key
+                <input
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  maxLength={64}
+                  aria-describedby="recovery-key-check-hint"
+                  value={typed}
+                  onChange={(event) => {
+                    setTyped(event.target.value);
+                    if (typedWrongRef.current) {
+                      typedWrongRef.current = false;
+                      setError("");
+                    }
+                  }}
+                />
+              </label>
+              <p id="recovery-key-check-hint">
+                Type your whole recovery key, as you wrote it down or saved it:
+                7 groups of 4 letters and digits. Dashes, spaces and other
+                punctuation do not matter.
+              </p>
+              <p className="native-dialog-status" role="status">
+                {notice}
+              </p>
+              {error && <p role="alert">{error}</p>}
+              <footer className="dialog-actions">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={cancel}
+                >
+                  {leaveLabel}
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setError("");
+                    setNotice("");
+                    setStep("key");
+                  }}
+                >
+                  Back: read your recovery key
+                </button>
+                <button
+                  ref={checkButtonRef}
+                  className="button primary"
+                  disabled={busy || !typed.trim()}
+                >
+                  Check and save
+                </button>
+              </footer>
+            </form>
+          )}
+        </div>
       </section>
     </div>
   );
