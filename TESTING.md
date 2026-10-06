@@ -267,8 +267,8 @@ Then turn the screen reader off and check text size:
   5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
   6. With a screen reader on, press **Larger text**: it should say the new size. Press **Back to
      normal size**: the focus should move to **Larger text**, not be lost.
-  7. On Windows, at 200% and at 400%, hold Ctrl and turn the wheel one notch: one step each
-     time, as at 100%.
+  7. On Windows, at 200% and at 400%, hold Ctrl and turn the wheel one notch toward smaller
+     text: one step each time, as at 100%.
   8. On every screen at 100%, is there a scroll bar that was not there before? The line at the top
      should not push the rest of the window past its bottom edge.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
