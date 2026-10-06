@@ -14,6 +14,13 @@ import { KeyLabel, printedDate, spoken } from "./KeyLabel";
 
 type Step = "passphrase" | "key" | "check";
 
+/** What the library opens on, when it opens on the recovery key setup: for a
+ * vault just created, the key made with it, to be set up before anything
+ * else; for a vault unlocked without a recovery key, the offer of one. */
+export type OpeningRecoverySetup =
+  | { vault: "created"; key: string }
+  | { vault: "unlocked" };
+
 // After this many wrong answers the check goes back to the key, so that the
 // patient looks at what they wrote down rather than guessing again.
 const TRIES_BEFORE_REVIEW = 3;
@@ -26,6 +33,7 @@ export function RecoveryKeySetup({
   initialKey,
   replacing,
   required = false,
+  offered = false,
   canPrint,
   onDone,
   onClose,
@@ -47,6 +55,10 @@ export function RecoveryKeySetup({
   replacing: boolean;
   /** When the vault is new, the key must be set up: there is no way out. */
   required?: boolean;
+  /** The setup opened by itself, on a vault unlocked without a recovery key:
+   * it says why it is there, and leaving it is "Set up later". It opens on
+   * the step that asks, and shows no key that was not asked for. */
+  offered?: boolean;
   canPrint: boolean;
   /** `exposed`: when replacing, the old key's kit may have been lost or
    * seen, as the patient said. */
@@ -300,6 +312,7 @@ export function RecoveryKeySetup({
     }
   };
 
+  const leaveLabel = offered ? "Set up later" : "Cancel";
   const title =
     step === "passphrase"
       ? replacing
@@ -313,8 +326,10 @@ export function RecoveryKeySetup({
     <div
       className="dialog-backdrop"
       role="presentation"
-      // Once a key is on screen, a stray click outside must not end the setup.
-      onMouseDown={key ? undefined : cancel}
+      // Once a key is on screen, a stray click outside must not end the
+      // setup. Nor may one end an offer that opened by itself, before it was
+      // read: a second press meant for Unlock would land here.
+      onMouseDown={key || offered ? undefined : cancel}
     >
       <section
         ref={dialogRef}
@@ -322,6 +337,9 @@ export function RecoveryKeySetup({
         role="dialog"
         aria-modal="true"
         aria-labelledby="recovery-key-title"
+        aria-describedby={
+          step === "passphrase" ? "recovery-key-about" : undefined
+        }
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
@@ -332,48 +350,62 @@ export function RecoveryKeySetup({
 
         {step === "passphrase" && (
           <form className="recovery-key-body" onSubmit={(e) => void begin(e)}>
-            <p>
-              A recovery key opens your vault if you forget your passphrase.
-              Only you will have it: nobody at your clinic or at myCarlos can
-              open your vault for you.
-            </p>
-            {replacing && (
-              <>
+            <div id="recovery-key-about" className="recovery-key-about">
+              {offered && (
+                <p>
+                  Your vault is open. It has no recovery key yet. Without one,
+                  if you forget your passphrase, the only way back in is to
+                  erase the vault.
+                </p>
+              )}
+              <p>
+                A recovery key opens your vault if you forget your passphrase.
+                Only you will have it: nobody at your clinic or at myCarlos can
+                open your vault for you.
+              </p>
+              {replacing && (
                 <p>
                   Your current recovery key stops working once you have checked
                   the new one.
                 </p>
-                <fieldset>
-                  <legend>Why are you replacing it?</legend>
-                  <p className="field-hint">
-                    If you are not sure, choose the first.
-                  </p>
-                  <label className="restore-choice">
-                    <input
-                      type="radio"
-                      name="replace-reason"
-                      checked={exposed === true}
-                      onChange={() => {
-                        setExposed(true);
-                        setError("");
-                      }}
-                    />
-                    Its kit or note may have been lost, or seen by someone else
-                  </label>
-                  <label className="restore-choice">
-                    <input
-                      type="radio"
-                      name="replace-reason"
-                      checked={exposed === false}
-                      onChange={() => {
-                        setExposed(false);
-                        setError("");
-                      }}
-                    />
-                    I just want a new key: its kit is safe
-                  </label>
-                </fieldset>
-              </>
+              )}
+              <p>
+                Type your passphrase{offered ? " again" : ""} to make your{" "}
+                {replacing ? "new " : ""}recovery key. It is shown next: choose
+                Continue only when nobody else can see your screen.
+              </p>
+            </div>
+            {replacing && (
+              <fieldset>
+                <legend>Why are you replacing it?</legend>
+                <p className="field-hint">
+                  If you are not sure, choose the first.
+                </p>
+                <label className="restore-choice">
+                  <input
+                    type="radio"
+                    name="replace-reason"
+                    checked={exposed === true}
+                    onChange={() => {
+                      setExposed(true);
+                      setError("");
+                    }}
+                  />
+                  Its kit or note may have been lost, or seen by someone else
+                </label>
+                <label className="restore-choice">
+                  <input
+                    type="radio"
+                    name="replace-reason"
+                    checked={exposed === false}
+                    onChange={() => {
+                      setExposed(false);
+                      setError("");
+                    }}
+                  />
+                  I just want a new key: its kit is safe
+                </label>
+              </fieldset>
             )}
             <label>
               Passphrase
@@ -394,7 +426,7 @@ export function RecoveryKeySetup({
             {error && <p role="alert">{error}</p>}
             <footer className="dialog-actions">
               <button className="button" type="button" onClick={cancel}>
-                Cancel
+                {leaveLabel}
               </button>
               <button
                 className="button primary"
@@ -454,7 +486,7 @@ export function RecoveryKeySetup({
             <footer className="dialog-actions">
               {!required && (
                 <button className="button" type="button" onClick={cancel}>
-                  Cancel
+                  {leaveLabel}
                 </button>
               )}
               {required && canLeave && (
@@ -569,7 +601,7 @@ export function RecoveryKeySetup({
                   disabled={busy}
                   onClick={cancel}
                 >
-                  Cancel
+                  {leaveLabel}
                 </button>
               )}
               {required && canLeave && (

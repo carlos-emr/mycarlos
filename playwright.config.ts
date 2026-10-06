@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: "**/native-windows/**",
   outputDir: "test-results",
   timeout: 90_000,
   reporter: [["list"], ["html", { open: "never" }]],

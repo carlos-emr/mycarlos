@@ -1,5 +1,8 @@
 mod idle;
+mod throttle;
 mod vault;
+#[cfg(windows)]
+mod windows_navigation;
 
 use idle::{IdleDeadline, Opening};
 use serde::{Deserialize, Serialize};
@@ -13,9 +16,12 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{Manager, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri::{Manager, State, Url};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 use tauri_plugin_fs::{FsExt, OpenOptions};
+use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
 use vault::{
     ImportSource, RestoreCredential, RestorePreview, RestoreReplaces, VaultError, VaultSnapshot,
@@ -45,6 +51,9 @@ struct PublicError {
     /// how the failure came about rather than on what it was.
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<&'static str>,
+    /// How long to wait before the next try, after wrong ones.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_after_ms: Option<u64>,
 }
 
 /// What an error says, whatever it is about.
@@ -99,12 +108,25 @@ impl PublicError {
         }
     }
 
+    /// A secret tried again too soon after several wrong ones. The renderer
+    /// adds how long is left, from `retry_after_ms`.
+    fn wait(left_ms: u64) -> Self {
+        Self {
+            code: "too_many_attempts",
+            message: "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
+            record_id: None,
+            note: None,
+            retry_after_ms: Some(left_ms),
+        }
+    }
+
     fn partial_export() -> Self {
         Self {
             code: "partial_export",
             message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
             record_id: None,
             note: None,
+            retry_after_ms: None,
         }
     }
 
@@ -126,6 +148,7 @@ impl PublicError {
             message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
             record_id: None,
             note: None,
+            retry_after_ms: None,
         }
     }
 }
@@ -245,6 +268,7 @@ impl From<VaultError> for PublicError {
             message,
             record_id,
             note: None,
+            retry_after_ms: None,
         }
     }
 }
@@ -256,6 +280,13 @@ struct CreateVaultRequest {
     initial_profile_name: String,
 }
 
+// Wiped however the command ends.
+impl Drop for CreateVaultRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
+}
+
 #[derive(Deserialize)]
 struct RemoveUnavailableRequest {
     confirmed: Vec<Uuid>,
@@ -264,6 +295,13 @@ struct RemoveUnavailableRequest {
 #[derive(Deserialize)]
 struct PassphraseRequest {
     passphrase: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for PassphraseRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
 }
 
 #[derive(Deserialize)]
@@ -317,6 +355,14 @@ struct RecoverRequest {
     new_passphrase: String,
 }
 
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for RecoverRequest {
+    fn drop(&mut self) {
+        self.recovery_key.zeroize();
+        self.new_passphrase.zeroize();
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RecoverResponse {
@@ -344,6 +390,14 @@ struct ConfirmRecoveryKeyRequest {
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ChangePassphraseRequest {
+    fn drop(&mut self) {
+        self.current_passphrase.zeroize();
+        self.new_passphrase.zeroize();
+    }
 }
 
 #[derive(Deserialize)]
@@ -654,10 +708,11 @@ async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultS
 async fn vault_create(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let picks = Arc::clone(picks.inner());
-    run_blocking(store.inner(), move |store| {
+    let created = run_blocking(store.inner(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
             .inspect(|_| picks.clear())
@@ -665,28 +720,38 @@ async fn vault_create(
         request.passphrase.zeroize();
         result
     })
-    .await
+    .await;
+    // Wrong tries at an earlier vault say nothing about this one.
+    if created.is_ok() {
+        forget_vault(throttle.inner()).await;
+    }
+    created
 }
 
 #[tauri::command]
 async fn vault_unlock(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
     let picks = Arc::clone(picks.inner());
-    run_blocking(store.inner(), move |store| {
-        let result = store
-            .unlock(&request.passphrase)
-            // A pick can read the session after a lock clears it but pass its
-            // unlocked check before the lock lands. Starting a new session here
-            // leaves such a pick in the one that ended.
-            .inspect(|_| picks.clear())
-            .and_then(|_| store.snapshot());
-        request.passphrase.zeroize();
-        result
-    })
-    .await
+    tried(
+        throttle.inner(),
+        Attempt::Unlock,
+        run_blocking(store.inner(), move |store| {
+            let result = store
+                .unlock(&request.passphrase)
+                // A pick can read the session after a lock clears it but pass its
+                // unlocked check before the lock lands. Starting a new session here
+                // leaves such a pick in the one that ended.
+                .inspect(|_| picks.clear());
+            request.passphrase.zeroize();
+            result
+        }),
+    )
+    .await?;
+    run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
 #[tauri::command]
@@ -800,14 +865,22 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 #[tauri::command]
 async fn vault_change_passphrase(
     store: State<'_, Arc<VaultStore>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: ChangePassphraseRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
-        let result = store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
-        request.current_passphrase.zeroize();
-        request.new_passphrase.zeroize();
-        result
-    })
+    // The current passphrase is checked as at unlock, and counted with it:
+    // a vault left open must not let the passphrase be guessed without end.
+    tried(
+        throttle.inner(),
+        Attempt::Unlock,
+        run_blocking(store.inner(), move |store| {
+            let result =
+                store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
+            request.current_passphrase.zeroize();
+            request.new_passphrase.zeroize();
+            result
+        }),
+    )
     .await
 }
 
@@ -827,21 +900,90 @@ impl Serialize for ShownRecoveryKey {
 #[tauri::command]
 async fn vault_recovery_key_begin(
     store: State<'_, Arc<VaultStore>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<ShownRecoveryKey> {
-    run_blocking(store.inner(), move |store| {
-        let result = store
-            .begin_recovery_key(&request.passphrase)
-            .map(ShownRecoveryKey);
-        request.passphrase.zeroize();
-        result
-    })
+    // As for a passphrase change: the passphrase is counted with unlock's.
+    tried(
+        throttle.inner(),
+        Attempt::Unlock,
+        run_blocking(store.inner(), move |store| {
+            let result = store
+                .begin_recovery_key(&request.passphrase)
+                .map(ShownRecoveryKey);
+            request.passphrase.zeroize();
+            result
+        }),
+    )
     .await
+}
+
+/// The button of a native confirmation that closes it and changes nothing.
+const NATIVE_CANCEL: &str = "Cancel";
+
+/// Asks in a trusted native dialog, which page code cannot press, before
+/// something that cannot be undone. Blocks until it is answered.
+///
+/// The first button keeps things as they are: on Windows and macOS it is
+/// the Enter/Return default, and a dialog can appear while the patient is
+/// typing. Linux has no explicit default and needs device testing. The button
+/// that goes ahead comes second, and Cancel, which does what the first does,
+/// third.
+///
+/// Three buttons, though two do the same, because each slot has a meaning
+/// of its own on some platform. With two buttons and the safe one first,
+/// the button that goes ahead would take the slot that Android reports
+/// for the back button and a tap outside. And the third is titled "Cancel"
+/// because that title is what gives a button the Escape key on macOS.
+///
+/// On a computer the dialog is given the app's window. On Windows and
+/// macOS it then cannot end up behind it, and macOS shows it as an alert of
+/// the window, whose keys are the documented ones. The Linux dialogs take
+/// no notice of the window.
+fn confirmed_natively<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    title: &str,
+    message: impl Into<String>,
+    keep: &str,
+    go_ahead: &str,
+) -> bool {
+    // The dialog reports these words as answers of its own, not as the
+    // button that was given them.
+    debug_assert!(
+        keep != go_ahead && !["Yes", "No", "Ok", NATIVE_CANCEL].contains(&go_ahead),
+        "a button that goes ahead needs a label of its own"
+    );
+    let dialog = app
+        .dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
+            keep.to_owned(),
+            go_ahead.to_owned(),
+            NATIVE_CANCEL.to_owned(),
+        ));
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.parent(&window),
+        None => dialog,
+    };
+    agreed_natively(&dialog.blocking_show_with_result(), go_ahead)
+}
+
+/// The label of the app's one window, which is the default one.
+#[cfg(desktop)]
+const MAIN_WINDOW: &str = "main";
+
+/// Only the button that goes ahead counts as agreement: not the first
+/// button, a closed dialog, or an answer the dialog could not give.
+fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
+    matches!(answer, MessageDialogResult::Custom(label) if label == go_ahead)
 }
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
-const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with the passphrase or recovery key they were saved with, the current key among them; once this is done, myCarlos says what to do about them. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Cancel.";
+const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with the passphrase or recovery key they were saved with, the current key among them; once this is done, myCarlos says what to do about them. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Keep current key.";
 
 impl ConfirmRecoveryKeyRequest {
     fn groups(&self) -> Vec<(usize, &str)> {
@@ -872,15 +1014,13 @@ async fn vault_recovery_key_confirm(
 ) -> CommandResult<Option<VaultSnapshot>> {
     run_blocking(store.inner(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
-            app.dialog()
-                .message(REPLACE_RECOVERY_KEY_WARNING)
-                .title("Replace your recovery key?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Replace key".to_owned(),
-                    "Cancel".to_owned(),
-                ))
-                .blocking_show()
+            confirmed_natively(
+                &app,
+                "Replace your recovery key?",
+                REPLACE_RECOVERY_KEY_WARNING,
+                "Keep current key",
+                "Replace key",
+            )
         })
     })
     .await
@@ -979,25 +1119,28 @@ async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> Command
 async fn vault_recover(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
     let picks = Arc::clone(picks.inner());
-    run_blocking(store.inner(), move |store| {
-        let result = store
-            .recover(&request.recovery_key, &request.new_passphrase)
-            // As for unlock: a pick from the session that ended stays there.
-            .inspect(|_| picks.clear())
-            .and_then(|passphrase_replaced| {
-                Ok(RecoverResponse {
-                    passphrase_replaced,
-                    snapshot: store.snapshot()?,
-                })
-            });
-        request.recovery_key.zeroize();
-        request.new_passphrase.zeroize();
-        result
+    let passphrase_replaced = tried(
+        throttle.inner(),
+        Attempt::RecoveryKey,
+        run_blocking(store.inner(), move |store| {
+            let result = store
+                .recover(&request.recovery_key, &request.new_passphrase)
+                // As for unlock: a pick from the session that ended stays there.
+                .inspect(|_| picks.clear());
+            request.recovery_key.zeroize();
+            request.new_passphrase.zeroize();
+            result
+        }),
+    )
+    .await?;
+    Ok(RecoverResponse {
+        passphrase_replaced,
+        snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
     })
-    .await
 }
 
 #[derive(Deserialize)]
@@ -1045,6 +1188,63 @@ impl<W: std::io::Write> std::io::Write for Counted<W> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// Runs a command that tries a secret for `attempt`: refused, before any
+/// work, while the wait after earlier wrong tries runs. The try is counted
+/// before it runs, so that tries sent together cannot all pass; a wrong
+/// passphrase or recovery key then stays counted, the right one clears the
+/// count, and anything else (a key mistyped in its check characters, a
+/// storage error) is taken back off it, with the time of the wrong try
+/// before it, unless another try has counted since. `command` is only the
+/// check of the secret: what follows a right one (reading the vault's state)
+/// runs after it, so that its failure does not leave the count.
+async fn tried<T>(
+    throttle: &Arc<AttemptThrottle>,
+    attempt: Attempt,
+    command: impl std::future::Future<Output = CommandResult<T>>,
+) -> CommandResult<T> {
+    // A try the app is killed during stays counted: that must not be a way
+    // round the count.
+    let now = now_ms();
+    let started = on_throttle(throttle, move |throttle| throttle.begin(attempt, now))
+        .await?
+        .map_err(PublicError::wait)?;
+    let result = command.await;
+    let now = now_ms();
+    let outcome = match &result {
+        Ok(_) => Outcome::Right,
+        Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
+            Outcome::Wrong
+        }
+        Err(_) => Outcome::Neither,
+    };
+    // A settle lost to a failed thread leaves the try counted, as a kill does.
+    let _ = on_throttle(throttle, move |throttle| {
+        throttle.settle(attempt, started, outcome, now)
+    })
+    .await;
+    result
+}
+
+/// The vault the counts were about is gone or replaced: its counts go too.
+async fn forget_vault(throttle: &Arc<AttemptThrottle>) {
+    let now = now_ms();
+    // A clear lost to a failed thread leaves the counts as they were.
+    let _ = on_throttle(throttle, move |throttle| throttle.forget_vault(now)).await;
+}
+
+/// Runs `work` on the throttle away from the async runtime, as it reads and
+/// writes its file.
+async fn on_throttle<R, F>(throttle: &Arc<AttemptThrottle>, work: F) -> CommandResult<R>
+where
+    R: Send + 'static,
+    F: FnOnce(&AttemptThrottle) -> R + Send + 'static,
+{
+    let throttle = Arc::clone(throttle);
+    tauri::async_runtime::spawn_blocking(move || work(&throttle))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Asks where to save an encrypted backup. The backup itself is written by
@@ -1208,21 +1408,25 @@ async fn vault_restore_inspect(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RestoreRequest,
 ) -> CommandResult<RestorePreview> {
     let source = picks
         .restores
         .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
-    run_blocking(store.inner(), move |store| {
-        let result = request.credential().and_then(|credential| {
-            store.inspect_backup(open_restore_source(&app, source)?, credential)
-        });
-        request.zeroize();
-        result
+    tried(throttle.inner(), Attempt::Backup, async move {
+        run_blocking(store.inner(), move |store| {
+            let result = request.credential().and_then(|credential| {
+                store.inspect_backup(open_restore_source(&app, source)?, credential)
+            });
+            request.zeroize();
+            result
+        })
+        .await
+        .map_err(PublicError::of_restore)
     })
     .await
-    .map_err(PublicError::of_restore)
 }
 
 /// What the native confirmation says before a restore replaces a vault. It
@@ -1236,7 +1440,7 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
     match preview.replaces {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is a different one from the backup's. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
         )),
         RestoreReplaces::Unreadable => Some(format!(
             "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
@@ -1259,6 +1463,7 @@ async fn vault_restore(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     request: RestoreRequest,
 ) -> CommandResult<bool> {
     // Checked before the dialog, and taken only after it, so that a cancelled
@@ -1270,9 +1475,13 @@ async fn vault_restore(
     let request = Arc::new(request);
     let preview = {
         let (app, request) = (app.clone(), Arc::clone(&request));
-        run_blocking(store.inner(), move |store| {
-            store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
-        })
+        tried(
+            throttle.inner(),
+            Attempt::Backup,
+            run_blocking(store.inner(), move |store| {
+                store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
+            }),
+        )
         .await
         .map_err(PublicError::of_restore)?
     };
@@ -1283,16 +1492,13 @@ async fn vault_restore(
         }
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            dialog_app
-                .dialog()
-                .message(warning)
-                .title("Replace the vault on this device?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Replace vault".to_owned(),
-                    "Cancel".to_owned(),
-                ))
-                .blocking_show()
+            confirmed_natively(
+                &dialog_app,
+                "Replace the vault on this device?",
+                warning,
+                "Keep this vault",
+                "Replace with backup",
+            )
         })
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -1308,16 +1514,17 @@ async fn vault_restore(
         // The file is opened again here. Another backup in its place by now,
         // or a vault that appeared or changed since, is not what the dialog
         // described, and is refused.
-        store
-            .restore_confirmed(
-                open_restore_source(&app, source)?,
-                request.credential()?,
-                &preview,
-            )
-            .map(|()| true)
+        store.restore_confirmed(
+            open_restore_source(&app, source)?,
+            request.credential()?,
+            &preview,
+        )
     })
     .await
-    .map_err(PublicError::of_restore)
+    .map_err(PublicError::of_restore)?;
+    // The vault the counts were about is replaced, or there was none.
+    forget_vault(throttle.inner()).await;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -1589,11 +1796,14 @@ async fn vault_delete_record(
     .await
 }
 
+const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+
 #[tauri::command]
 async fn vault_reset(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
     request: ResetRequest,
 ) -> CommandResult<bool> {
     if request.confirmation != "RESET MYCARLOS VAULT" {
@@ -1601,16 +1811,13 @@ async fn vault_reset(
     }
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app
-            .dialog()
-            .message("This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.")
-            .title("Erase the entire myCarlos vault?")
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Erase vault".to_owned(),
-                "Cancel".to_owned(),
-            ))
-            .blocking_show()
+        confirmed_natively(
+            &dialog_app,
+            "Erase the entire myCarlos vault?",
+            ERASE_VAULT_WARNING,
+            "Keep this vault",
+            "Erase vault",
+        )
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -1619,7 +1826,97 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // The vault the counts were about is gone.
+    forget_vault(throttle.inner()).await;
     Ok(true)
+}
+
+/// The scheme and host the bundled pages are served from.
+type Origin = (&'static str, &'static str);
+
+/// Where this platform serves the bundled pages from. Windows and Android
+/// cannot use the app's own scheme and use a host name instead.
+///
+/// The app has one window, so its setting is every webview's.
+fn bundled_origin(config: &tauri::Config) -> Origin {
+    let https = config
+        .app
+        .windows
+        .first()
+        .is_some_and(|window| window.use_https_scheme);
+    origin_for(cfg!(windows) || cfg!(target_os = "android"), https)
+}
+
+fn origin_for(uses_host_name: bool, https: bool) -> Origin {
+    match (uses_host_name, https) {
+        (false, _) => ("tauri", "localhost"),
+        (true, false) => ("http", "tauri.localhost"),
+        (true, true) => ("https", "tauri.localhost"),
+    }
+}
+
+/// Whether the app's window may load `url`: only the app's own bundled
+/// pages, and in a development build the development server's.
+///
+/// The content security policy keeps page code from sending anything over
+/// the network, but it does not govern where the window itself goes. Page
+/// code that went to another site could take what it holds along in the
+/// address, and that site could then imitate the unlock screen.
+///
+/// Only this platform's own origin counts as bundled. Another platform's
+/// would be an address on the network here: `http://tauri.localhost` is
+/// whatever listens on this machine's port 80.
+fn navigation_allowed(url: &Url, bundled: Origin, dev_url: Option<&Url>) -> bool {
+    let (scheme, host) = bundled;
+    let is_bundled = url.scheme() == scheme
+        && url.host_str() == Some(host)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    is_bundled || dev_url.is_some_and(|dev| url.origin() == dev.origin())
+}
+
+/// `navigation_allowed` for this build: the development server counts only
+/// in a development build, though every build's configuration names it.
+fn may_navigate(config: &tauri::Config, url: &Url) -> bool {
+    let dev_url = tauri::is_dev()
+        .then_some(config.build.dev_url.as_ref())
+        .flatten();
+    navigation_allowed(url, bundled_origin(config), dev_url)
+}
+
+// Keep app code from running until Windows request interception is installed.
+#[cfg(any(windows, test))]
+#[derive(Default)]
+struct NavigationStartup {
+    armed: bool,
+    pending: Option<Url>,
+}
+
+#[cfg(any(windows, test))]
+impl NavigationStartup {
+    fn permit(&mut self, url: &Url, allowed: bool) -> bool {
+        if !allowed {
+            return false;
+        }
+        if !self.armed {
+            self.pending = Some(url.clone());
+            return false;
+        }
+        true
+    }
+
+    fn arm(&mut self) -> Option<Url> {
+        self.armed = true;
+        self.pending.take()
+    }
+}
+
+/// Applies the rule to every webview the app creates.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|webview, url| may_navigate(webview.config(), url))
+        .build()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1627,7 +1924,53 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(navigation_guard())
         .setup(|app| {
+            // The window is made here, not by the configuration, so that it
+            // can refuse to open others: nothing in the app opens a window,
+            // and one opened by page code would load whatever it was given.
+            // (Desktop only: a phone's webview opens no windows.) It also
+            // carries the navigation rule itself, which the library asks
+            // before it looks for plugins, and even if it cannot find the
+            // webview to ask them about.
+            let config = app.config().clone();
+            let window = app
+                .config()
+                .app
+                .windows
+                .first()
+                .cloned()
+                .ok_or("the main window is not configured")?;
+            #[cfg(windows)]
+            let startup = Arc::new(Mutex::new(NavigationStartup::default()));
+            #[cfg(windows)]
+            let navigation_startup = Arc::clone(&startup);
+            let _webview = tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+                .on_navigation(move |url| {
+                    let allowed = may_navigate(&config, url);
+                    #[cfg(windows)]
+                    return navigation_startup
+                        .lock()
+                        .expect("navigation startup mutex poisoned")
+                        .permit(url, allowed);
+                    #[cfg(not(windows))]
+                    allowed
+                })
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
+            #[cfg(windows)]
+            {
+                windows_navigation::install(&_webview, app.config().clone())?;
+                // The initial navigation may happen during build or be queued.
+                // Replay it only if the startup gate already refused it.
+                let pending = startup
+                    .lock()
+                    .expect("navigation startup mutex poisoned")
+                    .arm();
+                if let Some(url) = pending {
+                    _webview.navigate(url)?;
+                }
+            }
             // `vault-home` holds the vault and only what the vault manages beside
             // it (lock file, pending reset, create stage, export journal). Back
             // up or restore the whole directory. Machine-local data, because the
@@ -1641,6 +1984,14 @@ pub fn run() {
                     .join("vault-home")
                     .join("vault-v1"),
             )));
+            // Wrong tries at a secret, counted beside the vault in
+            // `attempts.json`, and read only when needed, not here.
+            app.manage(Arc::new(AttemptThrottle::new(Some(
+                app.path()
+                    .app_local_data_dir()?
+                    .join("vault-home")
+                    .join("attempts.json"),
+            ))));
             app.manage(Arc::new(PendingPicks::default()));
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
@@ -1695,6 +2046,138 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    const APP_SCHEME: Origin = ("tauri", "localhost");
+    const HOST_NAME: Origin = ("http", "tauri.localhost");
+    const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
+
+    #[test]
+    fn the_window_may_only_load_the_apps_own_pages() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (origin, pages) in [
+            (
+                APP_SCHEME,
+                ["tauri://localhost", "tauri://localhost/index.html"],
+            ),
+            (
+                HOST_NAME,
+                ["http://tauri.localhost/", "http://tauri.localhost/a.js"],
+            ),
+            (
+                SECURE_HOST_NAME,
+                ["https://tauri.localhost/", "https://tauri.localhost/a.js"],
+            ),
+        ] {
+            for page in pages {
+                assert!(navigation_allowed(&url(page), origin, None), "{page}");
+            }
+        }
+        for origin in [APP_SCHEME, HOST_NAME, SECURE_HOST_NAME] {
+            for outside in [
+                "https://example.com/?secret=1",
+                "http://localhost:1420/",
+                "http://localhost/",
+                "https://tauri.localhost.example.com/",
+                "https://tauri.localhost./",
+                "https://tauri.localhost:8443/",
+                "http://tauri.localhost:8080/",
+                "http://someone@tauri.localhost/",
+                "tauri://someone@localhost/",
+                "https://user@example.com/tauri.localhost",
+                "tauri://example.com/",
+                "tauri://localhost.example.com/",
+                "file:///etc/passwd",
+                "data:text/html,<p>x</p>",
+                "blob:https://tauri.localhost/0",
+                "about:blank",
+                "javascript:void(0)",
+                "mailto:someone@example.com",
+                "intent://example.com/#Intent;scheme=https;end",
+            ] {
+                assert!(
+                    !navigation_allowed(&url(outside), origin, None),
+                    "{outside} with {origin:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn another_platforms_origin_is_an_outside_address_here() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (origin, elsewhere) in [
+            (
+                APP_SCHEME,
+                ["http://tauri.localhost/", "https://tauri.localhost/"],
+            ),
+            (HOST_NAME, ["tauri://localhost", "https://tauri.localhost/"]),
+            (
+                SECURE_HOST_NAME,
+                ["tauri://localhost", "http://tauri.localhost/"],
+            ),
+        ] {
+            for page in elsewhere {
+                assert!(
+                    !navigation_allowed(&url(page), origin, None),
+                    "{page} with {origin:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn this_platform_serves_its_pages_where_the_library_says() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let expected = if cfg!(windows) || cfg!(target_os = "android") {
+            HOST_NAME
+        } else {
+            APP_SCHEME
+        };
+        assert_eq!(bundled_origin(&config), expected);
+        // The library's own rule, for each kind of platform.
+        assert_eq!(origin_for(false, false), APP_SCHEME);
+        assert_eq!(origin_for(false, true), APP_SCHEME);
+        assert_eq!(origin_for(true, false), HOST_NAME);
+        assert_eq!(origin_for(true, true), SECURE_HOST_NAME);
+    }
+
+    #[test]
+    fn a_development_build_may_also_load_its_development_server() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        let dev = url("http://localhost:1420");
+        assert!(navigation_allowed(
+            &url("http://localhost:1420/src/main.tsx"),
+            APP_SCHEME,
+            Some(&dev)
+        ));
+        assert!(navigation_allowed(
+            &url("tauri://localhost"),
+            APP_SCHEME,
+            Some(&dev)
+        ));
+        for outside in [
+            "http://localhost:1421/",
+            "https://localhost:1420/",
+            "http://example.com:1420/",
+        ] {
+            assert!(
+                !navigation_allowed(&url(outside), APP_SCHEME, Some(&dev)),
+                "{outside}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_configuration_leaves_the_window_to_the_app() {
+        // A window the configuration made would have no guard against
+        // opening others.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows = config["app"]["windows"].as_array().unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0]["create"], false);
+    }
+
     #[test]
     fn runtime_info_contains_only_non_sensitive_build_data() {
         let info = current_runtime_info();
@@ -1809,6 +2292,130 @@ mod tests {
         ] {
             assert!(!is_plain_date(text), "{text}");
         }
+    }
+
+    #[test]
+    fn a_secret_tried_too_soon_after_wrong_ones_waits_and_says_so() {
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
+        for _ in 0..throttle::FREE_TRIES {
+            assert!(
+                tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong())).is_err()
+            );
+        }
+        // Refused before the command runs: nothing is tried.
+        let ran = std::cell::Cell::new(false);
+        let waited = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, async {
+            ran.set(true);
+            Ok(())
+        }))
+        .unwrap_err();
+        assert!(!ran.get());
+        assert_eq!(waited.code, "too_many_attempts");
+        assert!(waited
+            .retry_after_ms
+            .is_some_and(|ms| ms > 0 && ms <= 5_000));
+        let value = serde_json::to_value(&waited).unwrap();
+        assert!(value["retryAfterMs"].is_u64());
+        assert!(waited.message.contains("To slow down anyone guessing"));
+        // Another secret is not held up by this one's count.
+        assert!(
+            tauri::async_runtime::block_on(tried(&throttle, Attempt::Backup, async { Ok(()) }))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn every_command_that_checks_a_secret_is_counted() {
+        let source = include_str!("lib.rs");
+        for (command, attempt) in [
+            ("async fn vault_unlock(", "Attempt::Unlock"),
+            ("async fn vault_change_passphrase(", "Attempt::Unlock"),
+            ("async fn vault_recovery_key_begin(", "Attempt::Unlock"),
+            ("async fn vault_recover(", "Attempt::RecoveryKey"),
+            ("async fn vault_restore_inspect(", "Attempt::Backup"),
+            ("async fn vault_restore(", "Attempt::Backup"),
+        ] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            assert!(body.contains("tried("), "{command}");
+            assert!(body.contains(attempt), "{command}");
+        }
+        // A new, erased or restored vault starts its counts again, and only
+        // once it is: a create refused because a vault exists, or a restore
+        // cancelled or failed, must not clear the counts of the one there.
+        // The code is read without its comments, one line after another.
+        for (command, clears) in [
+            (
+                "async fn vault_create(",
+                "if created.is_ok() { forget_vault(throttle.inner()).await; }",
+            ),
+            (
+                "async fn vault_reset(",
+                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
+            ),
+            (
+                "async fn vault_restore(",
+                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner()).await; Ok(true)",
+            ),
+        ] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            let code = body
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.starts_with("//"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(code.matches("forget_vault(").count(), 1, "{command}");
+            assert!(code.contains(clears), "{command}");
+        }
+        // What follows a right secret is outside the try, so that its failure
+        // does not leave the count.
+        for command in ["async fn vault_unlock(", "async fn vault_recover("] {
+            let body = source.split(command).nth(1).unwrap();
+            let body = &body[..body.find("\n}\n").unwrap()];
+            let tried = &body[body.find("tried(").unwrap()..body.find(".await?;").unwrap()];
+            assert!(!tried.contains("snapshot"), "{command}");
+            assert!(body.contains("run_blocking(store.inner(), VaultStore::snapshot)"));
+        }
+        // The restore clears them at its very end, past every early return.
+        let restore = source.split("async fn vault_restore(").nth(1).unwrap();
+        let restore = &restore[..restore.find("\n}\n").unwrap()];
+        assert!(restore.ends_with("forget_vault(throttle.inner()).await;\n    Ok(true)"));
+    }
+
+    #[test]
+    fn a_try_refused_during_a_wait_adds_nothing_to_it() {
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
+        for _ in 0..throttle::FREE_TRIES {
+            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
+        }
+        let first = throttle.wait(Attempt::Unlock, now_ms()).unwrap();
+        for _ in 0..10 {
+            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
+        }
+        // Still the wait after five, not after fifteen.
+        assert!(throttle.wait(Attempt::Unlock, now_ms()).unwrap() <= first);
+    }
+
+    #[test]
+    fn only_a_wrong_secret_counts_toward_a_wait() {
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        // A key whose check characters are wrong is a typo, not a guess.
+        for _ in 0..throttle::FREE_TRIES + 3 {
+            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::RecoveryKey, async {
+                Err::<(), _>(PublicError::from(VaultError::RecoveryKeyTypo))
+            }));
+        }
+        assert_eq!(throttle.wait(Attempt::RecoveryKey, now_ms()), None);
+        for _ in 0..throttle::FREE_TRIES {
+            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::RecoveryKey, async {
+                Err::<(), _>(PublicError::from(VaultError::WrongRecoveryKey))
+            }));
+        }
+        assert!(throttle.wait(Attempt::RecoveryKey, now_ms()).is_some());
     }
 
     #[test]
@@ -2289,6 +2896,26 @@ mod tests {
     }
 
     #[test]
+    fn only_the_button_that_goes_ahead_counts_as_agreement() {
+        let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
+        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        for answer in [
+            custom("Keep this vault"),
+            custom(NATIVE_CANCEL),
+            custom("erase vault"),
+            custom(""),
+            // What the dialog reports when it is closed, or could not be
+            // shown, and what another layout's buttons would report.
+            MessageDialogResult::Cancel,
+            MessageDialogResult::Ok,
+            MessageDialogResult::Yes,
+            MessageDialogResult::No,
+        ] {
+            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+        }
+    }
+
+    #[test]
     fn the_restore_confirmation_says_what_would_be_lost() {
         let preview = |replaces, differs| RestorePreview {
             replaces,
@@ -2298,7 +2925,10 @@ mod tests {
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
         let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
-        assert!(other.contains("a different one") && other.contains("3 documents"));
+        assert!(
+            other.contains("is not the vault this backup was made from")
+                && other.contains("3 documents")
+        );
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
         assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
@@ -2511,5 +3141,30 @@ mod tests {
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod navigation_startup_tests {
+    use super::*;
+
+    #[test]
+    fn startup_replays_only_allowed_navigation_after_installation() {
+        let bundled = Url::parse("http://tauri.localhost/").unwrap();
+        let outside = Url::parse("https://example.invalid/").unwrap();
+        let mut startup = NavigationStartup::default();
+        assert!(!startup.permit(&bundled, true));
+        assert!(!startup.permit(&outside, false));
+        assert_eq!(startup.arm(), Some(bundled.clone()));
+        assert!(startup.permit(&bundled, true));
+        assert!(!startup.permit(&outside, false));
+        assert_eq!(startup.arm(), None);
+    }
+
+    #[test]
+    fn startup_handles_navigation_queued_until_after_installation() {
+        let mut startup = NavigationStartup::default();
+        assert_eq!(startup.arm(), None);
+        assert!(startup.permit(&Url::parse("http://tauri.localhost/").unwrap(), true));
     }
 }
