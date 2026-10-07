@@ -1,6 +1,14 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 import type { NativeZoom } from "./nativeZoom";
 import { NativeZoomBar, ZoomBar } from "./ZoomBar";
 import { startZoom } from "./zoom";
@@ -16,6 +24,8 @@ function show(kept?: string, mac = false) {
 
 describe("ZoomBar", () => {
   beforeEach(() => window.localStorage.clear());
+  // Other test files share this storage.
+  afterEach(() => window.localStorage.removeItem("mycarlos.zoom.v1"));
 
   it("shows the size and the way to change it without a keyboard", async () => {
     const user = userEvent.setup();
@@ -86,6 +96,72 @@ describe("ZoomBar", () => {
     await user.keyboard("{Control>}0{/Control}");
     expect(back).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+  });
+
+  it.each([
+    [
+      "Ctrl+minus",
+      "1.1",
+      () =>
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "-", ctrlKey: true }),
+        ),
+    ],
+    [
+      "Ctrl+plus",
+      "0.9",
+      () =>
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "+", ctrlKey: true }),
+        ),
+    ],
+    [
+      "Ctrl with the wheel",
+      "0.9",
+      () =>
+        window.dispatchEvent(
+          new WheelEvent("wheel", {
+            // One notch, in the page's pixels at 90%.
+            deltaY: -100 / 0.9,
+            ctrlKey: true,
+            cancelable: true,
+          }),
+        ),
+    ],
+  ])(
+    "keeps the focus when %s removes Back to normal size",
+    (_how, kept, press) => {
+      show(kept);
+      const back = screen.getByRole("button", { name: "Back to normal size" });
+      back.focus();
+      act(press);
+      expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+      expect(back).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+    },
+  );
+
+  it("does not take the focus behind an open dialog", () => {
+    show("1.5");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.append(dialog);
+    onTestFinished(() => dialog.remove());
+    const back = screen.getByRole("button", { name: "Back to normal size" });
+    back.focus();
+    // By a key, not a click, so that only the focus says Back was in use.
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "0", ctrlKey: true }),
+      );
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+    expect(back).not.toBeInTheDocument();
+    // The dialog's own focus handling takes it back; the bar does not.
+    expect(
+      screen.getByRole("button", { name: "Larger text" }),
+    ).not.toHaveFocus();
   });
 
   it("leaves the focus in an open dialog when its buttons are pressed", async () => {

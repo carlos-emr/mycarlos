@@ -22,6 +22,8 @@ describe("native zoom startup", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    // Other test files share this storage.
+    window.localStorage.removeItem("mycarlos.zoom.v1");
   });
 
   it("renders after the deadline if platform detection hangs, and installs the zoom when it answers", async () => {
@@ -78,6 +80,33 @@ describe("native zoom startup", () => {
       expect(setZoom).toHaveBeenCalledWith(2);
       applied();
       await native?.zoom.ready;
+      expect(native?.zoom.level()).toBe(2);
+    } finally {
+      native?.zoom.stop();
+    }
+  });
+
+  it("holds the first render, within the startup wait, until the kept size is applied", async () => {
+    let applied!: () => void;
+    vi.mocked(invoke).mockResolvedValue({ platform: "windows" });
+    setZoom.mockReturnValue(
+      new Promise<void>((resolve) => {
+        applied = resolve;
+      }),
+    );
+    window.localStorage.setItem("mycarlos.zoom.v1", "2");
+    const { ready } = startNativeZoom();
+    let settled = false;
+    void ready.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(setZoom).toHaveBeenCalledWith(2);
+    expect(settled).toBe(false);
+    applied();
+    const native = await ready;
+    try {
+      expect(settled).toBe(true);
       expect(native?.zoom.level()).toBe(2);
     } finally {
       native?.zoom.stop();

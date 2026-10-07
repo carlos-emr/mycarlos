@@ -71,8 +71,9 @@ export function zoomRequestOfKey(
 ): ZoomRequest | null {
   if (event.altKey || !(mac ? event.metaKey : event.ctrlKey)) return null;
   // By the key's place for 0: with Shift, some layouts give it another sign.
-  if (event.code === "Digit0" || event.code === "Numpad0" || event.key === "0")
-    return "reset";
+  // Not the keypad's by its place: with Num Lock off, it is Insert (Ctrl with
+  // Insert copies). With Num Lock on, it gives "0".
+  if (event.code === "Digit0" || event.key === "0") return "reset";
   if (event.key === "+" || event.key === "=") return "in";
   if (event.key === "-" || event.key === "_") return "out";
   return null;
@@ -159,7 +160,13 @@ export function startZoom(
   let confirmed = 1;
   let revision = 0;
   const apply = async (next: number, at: number) => {
-    const work = setZoom(next);
+    let work: Promise<void>;
+    try {
+      work = setZoom(next);
+    } catch (error) {
+      // As a refusal: a throw here must not stop every later request.
+      work = Promise.reject(error);
+    }
     try {
       await within(work, SET_ZOOM_TIMEOUT_MS);
       confirmed = next;

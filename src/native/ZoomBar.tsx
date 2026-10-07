@@ -1,6 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { NativeZoom } from "./nativeZoom";
-import { ZOOM_LEVELS, zoomPercent, zoomRequestOfKey, type Zoom } from "./zoom";
+import { ZOOM_LEVELS, zoomPercent, type Zoom } from "./zoom";
 
 /** The zoom bar once the native zoom exists: at the first render, or later
  * if the platform answered after it. */
@@ -43,13 +49,28 @@ export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   const largest = level === ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
   const bar = useRef<HTMLElement | null>(null);
   const larger = useRef<HTMLButtonElement | null>(null);
+  const back = useRef<HTMLButtonElement | null>(null);
+  // Whether "Back to normal size" was pressed, or had the focus when the size
+  // changed: it goes at the ordinary size, and the focus must not be left on
+  // nothing, whatever changed the size (the button, a key or the wheel).
   const refocus = useRef(false);
-  // Whether Ctrl+0 was pressed on "Back to normal size", so that the focus
-  // is not left on nothing when the button goes.
-  const resetFocused = useRef(false);
+  useEffect(
+    () =>
+      // Told before the button goes, while it may still have the focus.
+      zoom.subscribe(() => {
+        if (
+          zoom.level() === 1 &&
+          back.current &&
+          document.activeElement === back.current
+        )
+          refocus.current = true;
+      }),
+    [zoom],
+  );
 
-  // The screens below fill the window less the bar's height.
-  useEffect(() => {
+  // The screens below fill the window less the bar's height. Measured
+  // before the first paint, so that no scroll bar shows for a moment.
+  useLayoutEffect(() => {
     const element = bar.current;
     if (!element) return;
     const root = document.documentElement;
@@ -67,13 +88,10 @@ export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     };
   }, []);
 
-  // "Back to normal size" goes when it is pressed, or when Ctrl+0 is pressed
-  // while it has the focus: focus is not left on nothing.
   useEffect(() => {
-    const wanted = refocus.current || resetFocused.current;
+    const wanted = refocus.current;
     refocus.current = false;
     if (!wanted || level !== 1) return;
-    resetFocused.current = false;
     const lost =
       !document.activeElement || document.activeElement === document.body;
     if (lost && !modalOpen()) larger.current?.focus();
@@ -109,13 +127,9 @@ export function ZoomBar({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
       {level !== 1 && (
         <>
           <button
+            ref={back}
             className="button"
             type="button"
-            onKeyDown={(event) => {
-              // Seen before the page-wide handler applies it.
-              if (zoomRequestOfKey(event.nativeEvent, mac) === "reset")
-                resetFocused.current = true;
-            }}
             onClick={() => {
               refocus.current = true;
               zoom.request("reset");

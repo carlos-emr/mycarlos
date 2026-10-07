@@ -1,4 +1,12 @@
-import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 import {
   ZOOM_LEVELS,
   normalizeZoom,
@@ -51,6 +59,8 @@ const wheel = (deltaY: number, ctrlKey = true, deltaMode = 0) => {
 
 describe("zoom", () => {
   beforeEach(() => window.localStorage.clear());
+  // Other test files share this storage.
+  afterEach(() => window.localStorage.removeItem("mycarlos.zoom.v1"));
 
   it("takes the size there is that is nearest, and the ordinary one outside them", () => {
     expect(normalizeZoom(1)).toBe(1);
@@ -109,12 +119,33 @@ describe("zoom", () => {
     expect(key("à", { ctrlKey: true }, false, "Digit0")).toBe("reset");
     expect(key("=", { ctrlKey: true }, false, "Digit0")).toBe("reset");
     expect(key("0", { ctrlKey: true }, false, "Numpad0")).toBe("reset");
+    // The keypad's 0 with Num Lock off is Insert: Ctrl with it copies.
+    expect(key("Insert", { ctrlKey: true }, false, "Numpad0")).toBeNull();
     // Not the other platform's key, not with Alt, not alone, not other keys.
     expect(key("+", { metaKey: true })).toBeNull();
     expect(key("+", { ctrlKey: true }, true)).toBeNull();
     expect(key("+", { ctrlKey: true, altKey: true })).toBeNull();
     expect(key("+", {})).toBeNull();
     expect(key("p", { ctrlKey: true })).toBeNull();
+  });
+
+  it("takes a platform that throws at once as a refusal, and goes on", async () => {
+    const setZoom = vi
+      .fn<(level: number) => Promise<void>>()
+      .mockImplementationOnce(() => {
+        throw new Error("FAKE synchronous failure");
+      })
+      .mockResolvedValue(undefined);
+    const zoom = startZoom(setZoom, false);
+    onTestFinished(zoom.stop);
+    zoom.request("in");
+    await vi.waitFor(() => expect(zoom.level()).toBe(1));
+    zoom.request("in");
+    await vi.waitFor(() => expect(setZoom).toHaveBeenCalledTimes(2));
+    expect(setZoom).toHaveBeenLastCalledWith(1.1);
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("mycarlos.zoom.v1")).toBe("1.1"),
+    );
   });
 
   it("changes nothing at the start when no size was kept", async () => {

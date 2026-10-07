@@ -260,15 +260,16 @@ Then turn the screen reader off and check text size:
      step on.
   3. Go to the largest size (400%) with the window at its smallest. Can you still unlock, and
      get back with **Back to normal size** or Ctrl + 0 (Command + 0)?
-  4. On Windows, hold Ctrl and turn the mouse wheel one notch: one step. On a touchpad, scroll
-     with two fingers while holding Ctrl, and pinch: the size should change slowly or not at all,
-     never jump to the largest. On a touch screen, pinching is not expected to zoom any more; use
-     the buttons.
+  4. On Windows, hold Ctrl and turn the mouse wheel one notch: one step. On Linux, report how
+     many notches one step takes (Linux reports the wheel differently; one is expected, more is
+     possible). On a touchpad, scroll with two fingers while holding Ctrl, and pinch: the size
+     should change slowly or not at all, never jump to the largest. On a touch screen, pinching is not
+     expected to zoom any more; use the buttons.
   5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
   6. With a screen reader on, press **Larger text**: it should say the new size. Press **Back to
      normal size**: the focus should move to **Larger text**, not be lost.
-  7. On Windows, at 200% and at 400%, hold Ctrl and turn the wheel one notch toward smaller
-     text: one step each time, as at 100%.
+  7. On Windows and Linux, at 200% and at 400%, hold Ctrl and turn the wheel toward smaller
+     text: as many notches for one step as at 100%.
   8. On every screen at 100%, is there a scroll bar that was not there before? The line at the top
      should not push the rest of the window past its bottom edge.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
