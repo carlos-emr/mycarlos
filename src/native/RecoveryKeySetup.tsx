@@ -187,8 +187,7 @@ export function RecoveryKeySetup({
   // A failure that is not a wrong answer. A locked vault is the app's to
   // show; other failures remain on this step and can be retried or left.
   // An error about what was typed goes as the patient types again, so that
-  // the same error after another try is read out again. Others, such as why
-  // "Set up later" appeared, stay.
+  // the same error after another try is read out again. Others stay.
   const typedWrongRef = useRef(false);
   const typedWrong = (message: string) => {
     typedWrongRef.current = true;

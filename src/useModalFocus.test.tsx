@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { userEvent } from "vitest/browser";
 import { useRef, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useModalFocus } from "./useModalFocus";
 
 function Dialog({ close }: { close: () => void }) {
@@ -160,6 +160,65 @@ describe("modal keyboard focus", () => {
     last.focus();
     await user.tab({ shift: true });
     expect(action).toHaveFocus();
+  });
+
+  function SplitGroupPage({ inert }: { inert: boolean }) {
+    return (
+      <>
+        <div inert={inert}>
+          <button>Outside before</button>
+        </div>
+        <InterleavedRadioDialog checked={false} />
+        <div inert={inert}>
+          <button>Outside after</button>
+        </div>
+      </>
+    );
+  }
+
+  // Chromium's order through a group with nothing selected depends on
+  // which member had the focus: after one end, Tab from the control between
+  // them skips the other end and leaves the dialog. With the page behind
+  // inert, as in the library, the focus goes to nothing instead.
+  it.each([
+    [false, "Tab"],
+    [true, "Tab"],
+    [false, "Shift+Tab"],
+    [true, "Shift+Tab"],
+  ] as const)(
+    "brings the focus back from an unselected split radio group, page behind inert: %s, %s",
+    async (inert, key) => {
+      const user = userEvent.setup();
+      render(<SplitGroupPage inert={inert} />);
+      const backward = key === "Shift+Tab";
+      const start = screen.getByLabelText(
+        backward ? "After action" : "Before action",
+      );
+      const end = screen.getByLabelText(
+        backward ? "Before action" : "After action",
+      );
+      start.focus();
+      await user.tab({ shift: backward });
+      expect(
+        screen.getByRole("button", { name: "Intervening action" }),
+      ).toHaveFocus();
+      await user.tab({ shift: backward });
+      // Back at the far end, as a wrap would: never on the outside.
+      await vi.waitFor(() => expect(start).toHaveFocus());
+      expect(end).not.toHaveFocus();
+    },
+  );
+
+  it("does not pull back a later focus outside that no Tab made", async () => {
+    const user = userEvent.setup();
+    render(<SplitGroupPage inert={false} />);
+    screen.getByLabelText("Before action").focus();
+    await user.tab();
+    const outside = screen.getByRole("button", { name: "Outside after" });
+    outside.focus();
+    // Past the timer that ends a Tab's watch.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(outside).toHaveFocus();
   });
 
   it.each([true, false])(

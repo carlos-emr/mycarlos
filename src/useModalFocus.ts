@@ -93,6 +93,28 @@ export function useModalFocus(
     firstFocus?.focus();
     if (!dialogRef.current?.contains(document.activeElement)) focusDialog();
 
+    // A Tab that left the dialog all the same comes back to its far end, as
+    // a wrap would.
+    let leaving: "first" | "last" | null = null;
+    let leavingTimer: number | undefined;
+    const bringBack = () => {
+      const end = edge(focusable(), leaving === "last");
+      leaving = null;
+      if (end) end.focus();
+      else focusDialog();
+    };
+    // The Tab's own first move of the focus decides: no later, unrelated
+    // move is pulled back.
+    const keepInside = (event: FocusEvent) => {
+      if (!leaving) return;
+      if (
+        event.target instanceof Node &&
+        !dialogRef.current?.contains(event.target)
+      )
+        bringBack();
+      else leaving = null;
+    };
+
     const containFocus = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -118,12 +140,26 @@ export function useModalFocus(
       } else if (!event.shiftKey && atBoundary(current, controls, true)) {
         event.preventDefault();
         first.focus();
+      } else {
+        // Left to the browser. Its order through a radio group with nothing
+        // selected depends on which member had the focus before, so with a
+        // control between members this Tab can still leave the dialog.
+        leaving = event.shiftKey ? "last" : "first";
+        window.clearTimeout(leavingTimer);
+        leavingTimer = window.setTimeout(() => {
+          // Out of the page, where no focusin comes.
+          if (leaving && !dialogRef.current?.contains(document.activeElement))
+            bringBack();
+          leaving = null;
+        });
       }
     };
-
     window.addEventListener("keydown", containFocus);
+    document.addEventListener("focusin", keepInside, true);
     return () => {
       window.removeEventListener("keydown", containFocus);
+      document.removeEventListener("focusin", keepInside, true);
+      window.clearTimeout(leavingTimer);
       const opener = returnFocusRef.current;
       opener?.focus();
       pendingOpener =

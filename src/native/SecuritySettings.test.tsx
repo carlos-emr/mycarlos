@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
@@ -100,6 +107,41 @@ describe("SecuritySettings speed test", () => {
     fireEvent.click(button);
     expect(await screen.findByText(speedTestLine(speedTest))).toBeVisible();
     expect(props.onSpeedTest).toHaveBeenCalledTimes(2);
+    // Only a locked vault locks the app.
+    expect(props.onLock).not.toHaveBeenCalled();
+  });
+
+  it("locks the app when the vault locked during the test", async () => {
+    const props = renderSettings();
+    props.onSpeedTest.mockRejectedValueOnce({
+      code: "locked",
+      message: "FAKE the vault is locked.",
+    });
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    fireEvent.click(button);
+    await vi.waitFor(() => expect(props.onLock).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(button).toBeEnabled());
+    expect(
+      within(button.closest("section")!).getByRole("status"),
+    ).toBeEmptyDOMElement();
+    expect(screen.queryByText("FAKE the vault is locked.")).toBeNull();
+  });
+
+  it("does not lock again once the screen has gone", async () => {
+    let answer!: (error: unknown) => void;
+    const props = renderSettings({
+      onSpeedTest: vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            answer = reject;
+          }),
+      ),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
+    // The app locked by itself and this screen went.
+    cleanup();
+    await act(async () => answer({ code: "locked", message: "FAKE locked." }));
+    expect(props.onLock).not.toHaveBeenCalled();
   });
 });
 

@@ -1,8 +1,9 @@
 import { SecretInput } from "./SecretInput";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
   MAX_PASSPHRASE_BYTES,
+  isLockedError,
   utf8Length,
   vaultErrorMessage,
   type SpeedTestReport,
@@ -83,6 +84,15 @@ export function SecuritySettings({
     result: string;
     failed: string;
   }>({ running: false, result: "", failed: "" });
+  // Whether this screen is still shown: once the app has locked by itself,
+  // a test's late "locked" answer must not lock again.
+  const shown = useRef(false);
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
   const runSpeedTest = async () => {
     if (busy || speedTest.running) return;
     setSpeedTest({ running: true, result: "", failed: "" });
@@ -94,6 +104,14 @@ export function SecuritySettings({
         failed: "",
       });
     } catch (error) {
+      // The vault locked before or while it ran (the automatic lock does
+      // not wait for it): the app locks too, rather than leave the library
+      // on screen.
+      if (isLockedError(error)) {
+        setSpeedTest({ running: false, result: "", failed: "" });
+        if (shown.current) void onLock();
+        return;
+      }
       setSpeedTest({
         running: false,
         result: "",
