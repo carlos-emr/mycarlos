@@ -13,6 +13,11 @@ type State = {
   results: { action: string; dismissedByKey: boolean }[];
 };
 
+/** How long one native dialog step may take before it is killed. The
+ * script is told it, and keeps its own deadline 5 s inside, so that it can
+ * say why. */
+const NATIVE_STEP_TIMEOUT_MS = 30_000;
+
 async function fingerprint(directory: string): Promise<[string, string][]> {
   const result: Record<string, string> = {};
   async function visit(path: string, prefix = "") {
@@ -74,8 +79,10 @@ export async function testNativeDialogs(
             "-Action",
             action,
             ...(value ? ["-Value", value] : []),
+            "-TimeoutSeconds",
+            String(NATIVE_STEP_TIMEOUT_MS / 1000),
           ],
-          { timeout: 30_000, maxBuffer: 1024 * 1024 },
+          { timeout: NATIVE_STEP_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
         )
       ).stdout,
     );
@@ -141,7 +148,16 @@ export async function testNativeDialogs(
             : await native(request.title, request.action, request.value);
         reply = { id: last, value };
       } catch (error) {
-        reply = { id: last, error: String(error) };
+        // The script is killed at its limit, with nothing on stderr.
+        const killed = (error as { killed?: boolean } | null)?.killed;
+        reply = {
+          id: last,
+          error:
+            String(error) +
+            (killed
+              ? ` (timed out after ${NATIVE_STEP_TIMEOUT_MS / 1000} s)`
+              : ""),
+        };
       }
       await page.evaluate((reply) => {
         const native = window as unknown as {
