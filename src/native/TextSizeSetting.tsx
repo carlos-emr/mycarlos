@@ -17,7 +17,9 @@ import {
   ZOOM_MIN_PERCENT,
   readTypedZoom,
   zoomPercent,
+  zoomRequestOfKey,
   type Zoom,
+  type ZoomRequest,
 } from "./zoom";
 
 const NativeZoomContext = createContext<NativeZoom | null>(null);
@@ -101,9 +103,10 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   // Whether the next change of size is this setting's own. Any other (a key,
   // the wheel) makes what was typed, and the note about it, out of date.
   const own = useRef(false);
-  // Whether "Back to normal size" was pressed, or had the focus when the size
-  // changed: it goes at the ordinary size, and the focus must not be left on
-  // nothing, whatever changed the size (the button, a key or the wheel).
+  // Whether "Back to normal size" was pressed, had the focus when the size
+  // changed, or is where the focus went from the box with 100 typed: it goes
+  // at the ordinary size, and the focus must not be left on nothing, whatever
+  // changed the size (the button, a key or the wheel).
   const refocus = useRef(false);
   useEffect(
     () =>
@@ -140,7 +143,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     if (zoom.level() !== before) own.current = true;
   };
 
-  const step = (request: "in" | "out" | "reset") => {
+  const step = (request: ZoomRequest) => {
     setDraft(null);
     setMessage({ text: "", error: false });
     change(() => zoom.request(request));
@@ -210,15 +213,26 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
               aria-invalid={message.error || undefined}
               onChange={(event) => {
                 setDraft(event.target.value);
-                if (message.error) setMessage({ text: "", error: false });
+                // A note about the last size typed is out of date too, and a
+                // note dropped here is read out again if it comes back.
+                if (message.text) setMessage({ text: "", error: false });
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if (zoomRequestOfKey(event.nativeEvent, mac)) {
+                  // A zoom key goes on to change the size, or not (Ctrl+0 at
+                  // 100%): either way what was typed is given up, so leaving
+                  // the box cannot apply it after the key.
+                  setDraft(null);
+                  setMessage({ text: "", error: false });
+                } else if (
+                  event.key === "Enter" &&
+                  !event.nativeEvent.isComposing
+                ) {
                   event.preventDefault();
                   apply();
                 } else if (event.key === "Escape" && draft !== null) {
-                  // Gives up what was typed; a dialog's own Escape still works
-                  // when there is nothing to give up.
+                  // Gives up what was typed. With nothing to give up, Escape
+                  // is left to the page.
                   event.preventDefault();
                   setDraft(null);
                   setMessage({ text: "", error: false });

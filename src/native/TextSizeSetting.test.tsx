@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   afterEach,
@@ -88,6 +88,20 @@ describe("TextSizeSetting", () => {
     expect(
       screen.getByRole("button", { name: "Smaller text" }),
     ).toHaveAttribute("aria-disabled", "false");
+  });
+
+  it("steps down to the smallest size, and stops there", async () => {
+    const user = userEvent.setup();
+    const { setZoom } = show("0.9");
+    const smaller = screen.getByRole("button", { name: "Smaller text" });
+    await user.click(smaller);
+    expect(setZoom).toHaveBeenLastCalledWith(0.8);
+    expect(box()).toHaveValue("80");
+    expect(smaller).toHaveAttribute("aria-disabled", "true");
+    expect(smaller).toHaveFocus();
+    setZoom.mockClear();
+    await user.click(smaller);
+    expect(setZoom).not.toHaveBeenCalled();
   });
 
   it("puts the focus on Larger text after going back to normal size", async () => {
@@ -322,6 +336,55 @@ describe("TextSizeSetting", () => {
       await user.tab();
       expect(setZoom).toHaveBeenLastCalledWith(1);
       expect(setZoom).not.toHaveBeenCalledWith(2);
+    });
+
+    it("forgets what was typed after a zoom key that changes nothing", async () => {
+      const user = userEvent.setup();
+      const { setZoom } = show();
+      await user.clear(box());
+      await user.type(box(), "400");
+      // Already at 100%: Ctrl+0 changes nothing, but still means 100%.
+      await user.keyboard("{Control>}0{/Control}");
+      expect(box()).toHaveValue("100");
+      await user.tab();
+      expect(setZoom).not.toHaveBeenCalled();
+    });
+
+    it("drops a note once something else is typed, and says it again when it comes back", async () => {
+      const user = userEvent.setup();
+      show();
+      const note = "The largest size is 400%.";
+      await user.clear(box());
+      await user.type(box(), "500{Enter}");
+      expect(screen.getByText(note)).toBeVisible();
+      await user.clear(box());
+      await user.type(box(), "9");
+      expect(screen.queryByText(note)).not.toBeInTheDocument();
+      await user.type(box(), "00{Enter}");
+      expect(screen.getByText(note)).toBeVisible();
+    });
+
+    it("keeps a refused size and its message when the box is left", async () => {
+      const user = userEvent.setup();
+      const { setZoom } = show();
+      await user.clear(box());
+      await user.type(box(), "abc");
+      await user.tab();
+      expect(setZoom).not.toHaveBeenCalled();
+      expect(box()).toHaveValue("abc");
+      expect(box()).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByText("Type a number from 80 to 400.")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+    });
+
+    it("waits for a word being composed before Enter applies", async () => {
+      const user = userEvent.setup();
+      const { setZoom } = show();
+      await user.clear(box());
+      await user.type(box(), "150");
+      fireEvent.keyDown(box(), { key: "Enter", isComposing: true });
+      expect(setZoom).not.toHaveBeenCalled();
+      expect(box()).toHaveValue("150");
     });
 
     it("drops a note about a typed size once the size changes another way", async () => {
