@@ -552,6 +552,13 @@ describe("a size typed as a percent", () => {
     expect(readTypedZoom(typed)).toEqual({ level, note });
   });
 
+  it("caps a run of digits too long for a number at the largest size", () => {
+    expect(readTypedZoom("9".repeat(400))).toEqual({
+      level: 4,
+      note: "The largest size is 400%.",
+    });
+  });
+
   it.each([
     "",
     " ",
@@ -598,6 +605,19 @@ describe("setting a size", () => {
     expect(setZoom).not.toHaveBeenCalled();
     zoom.set(2);
     expect(told).toHaveBeenCalledTimes(1);
+  });
+
+  it("changes nothing for what is not a size", async () => {
+    const { setZoom, zoom } = start();
+    const told = vi.fn();
+    zoom.set(2);
+    await vi.waitFor(() => expect(setZoom).toHaveBeenCalledTimes(1));
+    zoom.subscribe(told);
+    zoom.set(Number.NaN);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(zoom.level()).toBe(2);
+    expect(told).not.toHaveBeenCalled();
+    expect(setZoom).toHaveBeenCalledTimes(1);
   });
 
   it("is applied in order with the keys", async () => {

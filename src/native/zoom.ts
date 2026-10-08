@@ -109,8 +109,10 @@ export type TypedZoom = { level: number; note: string } | { error: string };
  */
 export function readTypedZoom(typed: string): TypedZoom {
   const text = typed.trim().replace(/\s*%$/, "");
+  // Digits, with an optional decimal part; a run of digits too long for a
+  // number is Infinity, beyond the largest size like any other.
   const percent = /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN;
-  if (!Number.isFinite(percent))
+  if (Number.isNaN(percent))
     return {
       error: `Type a number from ${ZOOM_MIN_PERCENT} to ${ZOOM_MAX_PERCENT}.`,
     };
@@ -251,7 +253,9 @@ export function startZoom(
     tell();
   };
   const request = (asked: ZoomRequest) => change(zoomAfter(level, asked));
-  const set = (wanted: number) =>
+  const set = (wanted: number) => {
+    // Not a size at all: nothing changes (normalizeZoom would make it 100%).
+    if (Number.isNaN(wanted)) return;
     change(
       normalizeZoom(
         Math.min(
@@ -260,6 +264,7 @@ export function startZoom(
         ),
       ),
     );
+  };
 
   const onKey = (event: KeyboardEvent) => {
     const asked = zoomRequestOfKey(event, mac);

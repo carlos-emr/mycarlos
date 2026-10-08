@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type FocusEvent,
   type ReactNode,
 } from "react";
 import { Icon } from "../Icon";
@@ -22,7 +23,8 @@ import {
 const NativeZoomContext = createContext<NativeZoom | null>(null);
 
 /** The native zoom for the screens below: at the first render, or later if
- * the platform answered after it; null where there is none (a browser). */
+ * the platform answered after it; null where there is none (a browser, a
+ * phone). Every change of size is told from here, on every screen. */
 export function NativeZoomProvider({
   initial,
   installed,
@@ -45,12 +47,24 @@ export function NativeZoomProvider({
   }, [installed, native]);
   return (
     <NativeZoomContext.Provider value={native}>
+      {native && <ZoomAnnouncer zoom={native.zoom} />}
       {children}
     </NativeZoomContext.Provider>
   );
 }
 
 export const useNativeZoom = () => useContext(NativeZoomContext);
+
+/** Tells a screen reader the new size, whatever changed it and wherever the
+ * focus is: a key or the wheel works on every screen, not only Preferences. */
+function ZoomAnnouncer({ zoom }: { zoom: Zoom }) {
+  const level = useSyncExternalStore(zoom.subscribe, zoom.level);
+  return (
+    <p className="sr-only" role="status" aria-atomic="true">
+      {`Text size ${zoomPercent(level)}`}
+    </p>
+  );
+}
 
 // A dialog over the page traps the focus: if the size changes behind it (with
 // Ctrl+0), the focus stays in the dialog.
@@ -77,13 +91,16 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   const larger = useRef<HTMLButtonElement | null>(null);
   const back = useRef<HTMLButtonElement | null>(null);
   // What is typed in the box, until it is applied or given up; null shows
-  // the size as it is, whatever changed it.
+  // the size as it is.
   const [draft, setDraft] = useState<string | null>(null);
   // A refusal or a note about the size typed, shown under the box.
   const [message, setMessage] = useState<{ text: string; error: boolean }>({
     text: "",
     error: false,
   });
+  // Whether the next change of size is this setting's own. Any other (a key,
+  // the wheel) makes what was typed, and the note about it, out of date.
+  const own = useRef(false);
   // Whether "Back to normal size" was pressed, or had the focus when the size
   // changed: it goes at the ordinary size, and the focus must not be left on
   // nothing, whatever changed the size (the button, a key or the wheel).
@@ -103,6 +120,11 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   );
 
   useEffect(() => {
+    if (own.current) own.current = false;
+    else {
+      setDraft(null);
+      setMessage({ text: "", error: false });
+    }
     const wanted = refocus.current;
     refocus.current = false;
     if (!wanted || level !== 1) return;
@@ -111,14 +133,21 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     if (lost && !modalOpen()) larger.current?.focus();
   }, [level]);
 
-  const step = (request: "in" | "out") => {
+  const change = (act: () => void) => {
+    const before = zoom.level();
+    act();
+    // Only a change that happened is waited for as this setting's own.
+    if (zoom.level() !== before) own.current = true;
+  };
+
+  const step = (request: "in" | "out" | "reset") => {
     setDraft(null);
     setMessage({ text: "", error: false });
-    zoom.request(request);
+    change(() => zoom.request(request));
   };
 
   // Applies what is typed. A refusal keeps the text, to be corrected.
-  const apply = () => {
+  const apply = (next: EventTarget | null = null) => {
     if (draft === null) return;
     const typed = readTypedZoom(draft);
     if ("error" in typed) {
@@ -127,7 +156,18 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     }
     setDraft(null);
     setMessage({ text: typed.note, error: false });
-    zoom.set(typed.level);
+    // Leaving the box for "Back to normal size" with 100 typed: the button
+    // goes before its click lands, and the focus must not be lost with it.
+    if (typed.level === 1 && next !== null && next === back.current)
+      refocus.current = true;
+    change(() => zoom.set(typed.level));
+  };
+
+  const leave = (event: FocusEvent<HTMLInputElement>) => {
+    // The window lost the focus (another app), not the box: a size half typed
+    // is not applied; it waits for the patient's return.
+    if (document.activeElement === event.currentTarget) return;
+    apply(event.relatedTarget);
   };
 
   return (
@@ -145,10 +185,6 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
         </p>
       </div>
       <div>
-        {/* Told once per change, whatever made it. */}
-        <p className="sr-only" role="status" aria-atomic="true">
-          {`Text size ${zoomPercent(level)}`}
-        </p>
         <div className="text-size-control">
           {/* Not disabled at either end, which would drop the focus on it. */}
           <button
@@ -188,7 +224,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
                   setMessage({ text: "", error: false });
                 }
               }}
-              onBlur={apply}
+              onBlur={leave}
             />
             <span aria-hidden="true">%</span>
           </label>
@@ -211,9 +247,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
               type="button"
               onClick={() => {
                 refocus.current = true;
-                setDraft(null);
-                setMessage({ text: "", error: false });
-                zoom.request("reset");
+                step("reset");
               }}
             >
               Back to normal size

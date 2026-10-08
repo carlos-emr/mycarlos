@@ -20,8 +20,8 @@ export function PreferencesSettings() {
             <div>
               <h2>Text size</h2>
               <p>
-                Text size can't be changed in this window. Use your browser's
-                zoom instead.
+                Here, text size follows your device: its own text size setting,
+                or the browser's zoom.
               </p>
             </div>
           </section>

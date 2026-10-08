@@ -719,7 +719,6 @@ h1, h2, p { margin: 0; }
 }
 
 /* Settings > Preferences: text size (TextSizeSetting). */
-.text-size-setting h2 .icon, .text-size-setting h2 svg { vertical-align: -3px; }
 .text-size-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .text-size-control .button { min-height: 44px; }
 .text-size-step { min-width: 44px; font-size: 1.25rem; line-height: 1; justify-content: center; }
@@ -727,9 +726,9 @@ h1, h2, p { margin: 0; }
 /* More specific than the setting form's label rule, which it replaces here. */
 .native-setting-form .text-size-box { display: flex; align-items: center; gap: 4px; color: var(--ink); font-size: 1rem; }
 .native-setting-form .text-size-box input { width: 4.5em; min-height: 44px; text-align: center; font-size: 1rem; }
-.text-size-box input[aria-invalid="true"] { border-color: #b42318; box-shadow: 0 0 0 1px #b42318; }
+.text-size-box input[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
 .text-size-message { margin: 6px 0 0; min-height: 1.25em; font-size: 0.875rem; color: var(--ink-soft); }
-.text-size-message.error { color: #b42318; font-weight: 700; }
+.text-size-message.error { color: var(--red); font-weight: 700; }
 
 .secret-input { display: grid; gap: 5px; min-width: 0; }
 .secret-input input { width: 100%; min-width: 0; }

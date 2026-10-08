@@ -272,7 +272,7 @@ Then turn the screen reader off and check text size:
      many notches one step takes (Linux reports the wheel differently; one is expected, more is
      possible). On a touchpad, scroll with two fingers while holding Ctrl, and pinch: the size
      should change slowly or not at all, never jump to the largest. On a touch screen, pinching is not
-     expected to zoom any more; use the buttons.
+     expected to zoom any more; use the buttons in **Settings → Preferences**, after unlocking.
   5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
   6. In **Settings → Preferences**, with a screen reader on, press **+** (read as "Larger text"):
      it should say the new size. Type 150 in the box and press Enter: it should say 150%. Press
