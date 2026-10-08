@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import VaultApp from "./VaultApp";
 import { startNativeZoom } from "./native/nativeZoom";
-import { NativeZoomBar } from "./native/ZoomBar";
+import { NativeZoomProvider } from "./native/TextSizeSetting";
 import "./styles.css";
 
 // The size kept from last time is applied before anything is shown, so that
@@ -13,8 +13,9 @@ const { ready, installed } = startNativeZoom();
 void ready.then((native) => {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <NativeZoomBar initial={native} installed={installed} />
-      <VaultApp />
+      <NativeZoomProvider initial={native} installed={installed}>
+        <VaultApp />
+      </NativeZoomProvider>
     </StrictMode>,
   );
 });

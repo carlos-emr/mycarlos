@@ -10,6 +10,7 @@ import {
 import {
   ZOOM_LEVELS,
   normalizeZoom,
+  readTypedZoom,
   readZoom,
   startZoom,
   zoomAfter,
@@ -532,5 +533,79 @@ describe("zoom", () => {
     expect(press("+").defaultPrevented).toBe(false);
     expect(wheel(-100).defaultPrevented).toBe(false);
     expect(setZoom).not.toHaveBeenCalled();
+  });
+});
+
+describe("a size typed as a percent", () => {
+  it.each([
+    ["100", 1, ""],
+    ["125%", 1.25, ""],
+    [" 400 % ", 4, ""],
+    ["80", 0.8, ""],
+    ["130", 1.25, "130% is between sizes, so it is 125%."],
+    ["112.5", 1.1, "112.5% is between sizes, so it is 110%."],
+    ["79", 0.8, "The smallest size is 80%."],
+    ["0", 0.8, "The smallest size is 80%."],
+    ["401", 4, "The largest size is 400%."],
+    ["10000", 4, "The largest size is 400%."],
+  ])("reads %j as %s", (typed, level, note) => {
+    expect(readTypedZoom(typed)).toEqual({ level, note });
+  });
+
+  it.each([
+    "",
+    " ",
+    "%",
+    "abc",
+    "1e3",
+    "-120",
+    "12,5",
+    "0x7d",
+    "Infinity",
+    "NaN",
+    "125 125",
+  ])("refuses %j", (typed) => {
+    expect(readTypedZoom(typed)).toEqual({
+      error: "Type a number from 80 to 400.",
+    });
+  });
+});
+
+describe("setting a size", () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => window.localStorage.removeItem(KEY));
+
+  it("goes to the nearest size there is, within the ends, and keeps it", async () => {
+    const { setZoom, zoom } = start();
+    zoom.set(1.3);
+    expect(zoom.level()).toBe(1.25);
+    zoom.set(9);
+    expect(zoom.level()).toBe(LARGEST);
+    zoom.set(0.1);
+    expect(zoom.level()).toBe(SMALLEST);
+    await vi.waitFor(() => expect(setZoom).toHaveBeenLastCalledWith(SMALLEST));
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem(KEY)).toBe(String(SMALLEST)),
+    );
+  });
+
+  it("tells listeners once per change, and not for the size it has", () => {
+    const { setZoom, zoom } = start();
+    const told = vi.fn();
+    zoom.subscribe(told);
+    zoom.set(1);
+    expect(told).not.toHaveBeenCalled();
+    expect(setZoom).not.toHaveBeenCalled();
+    zoom.set(2);
+    expect(told).toHaveBeenCalledTimes(1);
+  });
+
+  it("is applied in order with the keys", async () => {
+    const { setZoom, zoom } = start();
+    zoom.set(2);
+    zoom.request("in");
+    expect(zoom.level()).toBe(2.5);
+    await vi.waitFor(() => expect(setZoom).toHaveBeenCalledTimes(2));
+    expect(setZoom.mock.calls.map(([level]) => level)).toEqual([2, 2.5]);
   });
 });

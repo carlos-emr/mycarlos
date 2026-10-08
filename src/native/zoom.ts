@@ -4,8 +4,9 @@
 // handles them itself and keeps the level on this device, beside the
 // automatic lock setting. It says nothing about the vault.
 //
-// A level that is kept must be easy to undo: whenever it is not the ordinary
-// one, the app shows it with buttons to change it (ZoomBar).
+// A level that is kept must be easy to undo: Settings > Preferences shows it,
+// with buttons and a box to change it (TextSizeSetting), and Ctrl+0 (Cmd+0)
+// always goes back to the ordinary size.
 const ZOOM_STORAGE_KEY = "mycarlos.zoom.v1";
 
 /** The sizes there are, as browsers have them. Below 80% the small print
@@ -90,6 +91,49 @@ export function zoomAfter(level: number, request: ZoomRequest): number {
 
 export const zoomPercent = (level: number) => `${Math.round(level * 100)}%`;
 
+/** The smallest and largest sizes, as whole percents. */
+export const ZOOM_MIN_PERCENT = Math.round(ZOOM_LEVELS[0] * 100);
+export const ZOOM_MAX_PERCENT = Math.round(
+  ZOOM_LEVELS[ZOOM_LEVELS.length - 1] * 100,
+);
+
+/** What a typed size comes to: a size there is, with a note when it is not
+ * exactly the one typed; or why it was refused. */
+export type TypedZoom = { level: number; note: string } | { error: string };
+
+/**
+ * Reads a size typed as a percent ("125", "125%", " 125 % "). Beyond either
+ * end it is the nearest end; between sizes, the nearest size, as the keys
+ * and buttons only give those. Anything that is not a number is refused, so
+ * that a slip never changes the size.
+ */
+export function readTypedZoom(typed: string): TypedZoom {
+  const text = typed.trim().replace(/\s*%$/, "");
+  const percent = /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN;
+  if (!Number.isFinite(percent))
+    return {
+      error: `Type a number from ${ZOOM_MIN_PERCENT} to ${ZOOM_MAX_PERCENT}.`,
+    };
+  if (percent < ZOOM_MIN_PERCENT)
+    return {
+      level: ZOOM_LEVELS[0],
+      note: `The smallest size is ${ZOOM_MIN_PERCENT}%.`,
+    };
+  if (percent > ZOOM_MAX_PERCENT)
+    return {
+      level: ZOOM_LEVELS[ZOOM_LEVELS.length - 1],
+      note: `The largest size is ${ZOOM_MAX_PERCENT}%.`,
+    };
+  const level = normalizeZoom(percent / 100);
+  return {
+    level,
+    note:
+      Math.round(level * 100) === percent
+        ? ""
+        : `${text}% is between sizes, so it is ${zoomPercent(level)}.`,
+  };
+}
+
 /** How far one wheel event turns, counted as the screen does. The page
  * reports the wheel in its own pixels, which shrink as it is zoomed: counted
  * in the screen's, a notch is the same at every size. Lines and pages do not
@@ -131,6 +175,8 @@ function within(work: Promise<void>, ms: number): Promise<void> {
 export interface Zoom {
   level(): number;
   request(request: ZoomRequest): void;
+  /** Goes to a size there is: the nearest one to `level`, within the ends. */
+  set(level: number): void;
   /** Calls `listener` after every change; returns what ends that. */
   subscribe(listener: () => void): () => void;
   /** Settles once the level kept from last time is applied, or could not
@@ -180,7 +226,7 @@ export function startZoom(
         tell();
       }
       // Given up on, the platform may still apply it. Then that is the size
-      // shown, so that what the bar says, and Ctrl+0, match the window.
+      // shown, so that what Preferences says, and Ctrl+0, match the window.
       if (error === TIMED_OUT)
         work.then(
           () => {
@@ -197,14 +243,23 @@ export function startZoom(
   const ready = level === 1 ? Promise.resolve() : apply(level, revision);
   // One change at a time, in order: each is a command of its own.
   let applying = ready;
-  const request = (asked: ZoomRequest) => {
-    const next = zoomAfter(level, asked);
+  const change = (next: number) => {
     if (next === level) return;
     const at = ++revision;
     level = next;
     applying = applying.then(() => apply(next, at));
     tell();
   };
+  const request = (asked: ZoomRequest) => change(zoomAfter(level, asked));
+  const set = (wanted: number) =>
+    change(
+      normalizeZoom(
+        Math.min(
+          Math.max(wanted, ZOOM_LEVELS[0]),
+          ZOOM_LEVELS[ZOOM_LEVELS.length - 1],
+        ),
+      ),
+    );
 
   const onKey = (event: KeyboardEvent) => {
     const asked = zoomRequestOfKey(event, mac);
@@ -235,6 +290,7 @@ export function startZoom(
   return {
     level: () => level,
     request,
+    set,
     ready,
     subscribe(listener) {
       listeners.add(listener);
