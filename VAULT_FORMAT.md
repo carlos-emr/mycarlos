@@ -130,8 +130,10 @@ the setup never saw). A marker in webview storage carries this over a restart; i
 time, never the key, and creating, erasing or restoring a vault forgets it. Setup is the first thing
 a new vault shows: the passphrase just typed authorizes it, and Escape or "Lock vault and finish
 later" first asks whether to discard the key on screen; confirming cancels the unfinished key and
-locks the vault. A lock ends it all the same (on a phone, switching apps locks), and so does a failure to make the key; the vault
-then has no recovery key and says so in a banner until one is set up. Unlocking a vault that has no
+locks the vault. A lock ends it all the same (on a phone, switching apps locks), and so does a
+failure to make the key. If that happens before the key is stored, the vault has no recovery key and
+says so in a banner until one is set up; if the key was stored just as the lock came, the next
+unlock says so, as above. Unlocking a vault that has no
 recovery key opens the setup as an offer, at most once a day (the hour it was last offered is kept
 in the app's settings on the device, and names no vault; offers are 24 to 26 hours apart at the
 least), on the step that says what a recovery key is and asks for the passphrase: it says why it is

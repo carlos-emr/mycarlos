@@ -20,11 +20,11 @@ only.
 
 ## On the device: the speed test in the app
 
-A test cannot run on a phone, so the app carries the same measurement, on every platform the app
-runs on. The Windows, macOS and Android evaluation downloads install on a device. The iOS
-download runs only in the Simulator, whose lines say "Simulator"; an iPhone needs a build signed
-for it (see `TESTING.md`). An Android emulator's line looks like a phone's, so always name the
-device. Write down the source commit from the download's `BUILD.txt` as well.
+The Rust test harness above cannot run on a phone, so the app carries the same measurement, on every
+platform the app runs on. The Windows, macOS and Android evaluation downloads install on a device.
+The iOS download runs only in the Simulator, whose lines say "Simulator"; an iPhone needs a build
+signed for it (see `TESTING.md`). An Android emulator's line looks like a phone's, so always name
+the device. Write down the source commit from the download's `BUILD.txt` as well.
 
 1. Close other apps, and let the device cool if it is warm. Stay on the Security screen while the
    test runs, and do nothing else in the app: leaving it loses the result.
