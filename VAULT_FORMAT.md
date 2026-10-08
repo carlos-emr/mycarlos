@@ -484,6 +484,19 @@ first, as the backup checks it (a read-only vault, the header, the manifest slot
 before that document is opened and emptied; only a failure while the backup is written, or a lock
 or change that comes between the check and the writing, can leave it emptied.
 
+## Settings kept outside the vault
+
+The following device preferences are kept in the webview's own storage, not in the vault, so that
+they apply before a vault is unlocked. These preferences name no vault, patient or document. Anyone
+who can read the app's files on the device can read them. Erasing the vault does not remove them.
+This table covers preferences only; recovery setup and older-backup guidance also keep local
+state, described in the recovery-key sections above.
+
+| Setting | Key | What it could tell |
+| --- | --- | --- |
+| Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
+| Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
+
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.

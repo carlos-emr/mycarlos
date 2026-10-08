@@ -5,7 +5,7 @@ import type { VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibrarySidebarProps {
   profileName: string;
-  section: "records" | "security";
+  section: "records" | "security" | "preferences";
   currentFolderId: string | null;
   folders: VaultFolder[];
   records: VaultRecord[];
@@ -14,6 +14,7 @@ interface LibrarySidebarProps {
   folderCount: (folderId: string) => number;
   onOpenFolder: (folderId: string | null) => void;
   onOpenSecurity: () => void;
+  onOpenPreferences: () => void;
 }
 
 export function LibrarySidebar({
@@ -27,6 +28,7 @@ export function LibrarySidebar({
   folderCount,
   onOpenFolder,
   onOpenSecurity,
+  onOpenPreferences,
 }: LibrarySidebarProps) {
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
   const sidebarFolders = useMemo(() => {
@@ -115,6 +117,13 @@ export function LibrarySidebar({
           onClick={onOpenSecurity}
         >
           <Icon name="shield" /> Security
+        </button>
+        <button
+          className={section === "preferences" ? "selected" : ""}
+          type="button"
+          onClick={onOpenPreferences}
+        >
+          <Icon name="text-size" /> Preferences
         </button>
       </nav>
       <div className="storage">
