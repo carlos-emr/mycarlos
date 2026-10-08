@@ -226,7 +226,11 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
                   setMessage({ text: "", error: false });
                 } else if (
                   event.key === "Enter" &&
-                  !event.nativeEvent.isComposing
+                  // The Enter that ends a word being composed (an input
+                  // method). WebKit ends the composition first, and marks
+                  // that Enter only with key code 229.
+                  !event.nativeEvent.isComposing &&
+                  event.nativeEvent.keyCode !== 229
                 ) {
                   event.preventDefault();
                   apply();

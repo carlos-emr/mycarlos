@@ -383,8 +383,14 @@ describe("TextSizeSetting", () => {
       await user.clear(box());
       await user.type(box(), "150");
       fireEvent.keyDown(box(), { key: "Enter", isComposing: true });
-      expect(setZoom).not.toHaveBeenCalled();
+      // As WebKit sends it: the composition already ended, key code 229.
+      fireEvent.keyDown(box(), { key: "Enter", keyCode: 229 });
+      // The size itself, which changes at once (the platform is told later).
+      expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
       expect(box()).toHaveValue("150");
+      await user.keyboard("{Enter}");
+      expect(screen.getByRole("status")).toHaveTextContent("Text size 150%");
+      await vi.waitFor(() => expect(setZoom).toHaveBeenLastCalledWith(1.5));
     });
 
     it("drops a note about a typed size once the size changes another way", async () => {
