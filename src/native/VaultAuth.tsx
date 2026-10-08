@@ -1,3 +1,4 @@
+import { SecretInput } from "./SecretInput";
 import {
   useEffect,
   useRef,
@@ -156,7 +157,8 @@ export function CreateVault({
         <h1 id="create-title">Create your encrypted vault</h1>
         <p>
           Your files and record details are encrypted on this device. Your
-          passphrase is the only recovery method.
+          passphrase opens the vault. Next, you can set up a recovery key in
+          case you forget it.
         </p>
         <p>
           Your vault stays on this device. If you created one on another device,
@@ -177,7 +179,8 @@ export function CreateVault({
           )}
           <label>
             Passphrase
-            <input
+            <SecretInput
+              aria-label="Passphrase"
               required
               type="password"
               autoComplete="new-password"
@@ -193,7 +196,8 @@ export function CreateVault({
           </small>
           <label>
             Confirm passphrase
-            <input
+            <SecretInput
+              aria-label="Confirm passphrase"
               required
               type="password"
               autoComplete="new-password"
@@ -276,7 +280,8 @@ export function UnlockVault({
         <form onSubmit={submit}>
           <label>
             Passphrase
-            <input
+            <SecretInput
+              aria-label="Passphrase"
               ref={passphraseRef}
               autoFocus
               required
@@ -403,9 +408,11 @@ function RecoverWithKey({
       </p>
       <label>
         Recovery key
-        <input
+        <SecretInput
+          aria-label="Recovery key"
           required
           type={shown ? "text" : "password"}
+          secretKind="recovery key"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="characters"
@@ -430,7 +437,8 @@ function RecoverWithKey({
       </button>
       <label>
         New passphrase
-        <input
+        <SecretInput
+          aria-label="New passphrase"
           required
           type="password"
           autoComplete="new-password"
@@ -445,7 +453,8 @@ function RecoverWithKey({
       </small>
       <label>
         Confirm new passphrase
-        <input
+        <SecretInput
+          aria-label="Confirm new passphrase"
           required
           type="password"
           autoComplete="new-password"

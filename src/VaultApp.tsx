@@ -797,12 +797,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       run={run}
       refresh={refresh}
       onLock={lock}
+      onRequestLock={() => requestLock(true)}
       autoLockMinutes={autoLockMinutes}
       onAutoLockMinutes={updateAutoLockMinutes}
       openingRecoverySetup={openingRecoverySetup}
       onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
       onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
+      keyboardHints={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
     />
   );

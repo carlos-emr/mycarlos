@@ -141,8 +141,11 @@ privacy, accessibility, or clinical review.
       (some FUSE, network, and removable mounts) are decided unsupported: vault creation probes for
       it and refuses with a clear message, and the earlier tolerance in the import path is gone, so
       a vault later moved to such storage fails its writes rather than mis-reporting them.
-- [ ] Benchmark Argon2id on the oldest supported device class. A repeatable release-mode harness and
-      result template are in [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md); physical results remain.
+- [ ] Benchmark Argon2id on the oldest supported device class. A repeatable release-mode harness,
+      an in-app speed test for devices, and the result template are in
+      [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md); physical results remain.
+- [ ] Take the speed test for testers (the `kdf_benchmark` command and its section in Security)
+      out of builds released to patients.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext
       canaries. Recursive application-storage canary inspection is automated.
 - [x] State the current evaluation's passphrase-only permanent-loss behavior and the limits of

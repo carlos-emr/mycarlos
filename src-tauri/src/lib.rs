@@ -156,6 +156,10 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            VaultError::Busy => Self {
+                code: "busy",
+                message: "A passphrase check or speed test is running. Wait for it to finish, then try again.",
+            },
             VaultError::AlreadyExists => Self {
                 code: "already_exists",
                 message: "A vault already exists on this device.",
@@ -697,6 +701,51 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
 #[tauri::command]
 fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpeedTestReport {
+    #[serde(flatten)]
+    measured: vault::KdfBenchmark,
+    platform: String,
+    architecture: String,
+    app_version: String,
+}
+
+/// Times the passphrase key derivation on this device, for the record in
+/// ARGON2_BENCHMARK.md. It uses a made-up passphrase, reads no vault and
+/// changes nothing.
+///
+/// For testers, in the evaluation builds: to be taken out, with its section
+/// in Security, before a release to patients.
+///
+/// Admission shares the vault's KDF guard, so a speed test cannot overlap
+/// another passphrase operation. Locking remains available throughout.
+#[tauri::command]
+async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<SpeedTestReport> {
+    let store = Arc::clone(store.inner());
+    let measured = tauri::async_runtime::spawn_blocking(move || store.benchmark_kdf())
+        .await
+        .map_err(|_| PublicError {
+            code: "speed_test_failed",
+            message: "The speed test stopped before it finished. Nothing was changed. Try again.",
+            record_id: None,
+            note: None,
+            retry_after_ms: None,
+        })??;
+    let RuntimeInfo {
+        platform,
+        architecture,
+        app_version,
+        ..
+    } = current_runtime_info();
+    Ok(SpeedTestReport {
+        measured,
+        platform,
+        architecture,
+        app_version,
+    })
 }
 
 #[tauri::command]
@@ -2005,6 +2054,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            kdf_benchmark,
             vault_status,
             vault_create,
             vault_unlock,
@@ -2176,6 +2226,49 @@ mod tests {
         let windows = config["app"]["windows"].as_array().unwrap();
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0]["create"], false);
+    }
+
+    #[test]
+    fn a_speed_test_report_says_the_platform_and_nothing_else_about_the_device() {
+        let report = SpeedTestReport {
+            measured: vault::KdfBenchmark {
+                memory_kib: 65_536,
+                iterations: 3,
+                lanes: 4,
+                samples_ms: vec![1, 2, 3, 4, 5],
+                median_ms: 3,
+                max_ms: 5,
+                release: false,
+                simulator: false,
+            },
+            platform: "android".to_owned(),
+            architecture: "aarch64".to_owned(),
+            app_version: "0.1.0".to_owned(),
+        };
+        let json = serde_json::to_value(&report).unwrap();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "appVersion",
+                "architecture",
+                "iterations",
+                "lanes",
+                "maxMs",
+                "medianMs",
+                "memoryKib",
+                "platform",
+                "release",
+                "samplesMs",
+                "simulator"
+            ]
+        );
     }
 
     #[test]
@@ -2398,6 +2491,18 @@ mod tests {
         }
         // Still the wait after five, not after fifteen.
         assert!(throttle.wait(Attempt::Unlock, now_ms()).unwrap() <= first);
+    }
+
+    #[test]
+    fn busy_kdf_work_does_not_count_as_a_wrong_passphrase() {
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        for _ in 0..throttle::FREE_TRIES + 3 {
+            let result = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, async {
+                Err::<(), _>(PublicError::from(VaultError::Busy))
+            }));
+            assert_eq!(result.unwrap_err().code, "busy");
+        }
+        assert_eq!(throttle.wait(Attempt::Unlock, now_ms()), None);
     }
 
     #[test]

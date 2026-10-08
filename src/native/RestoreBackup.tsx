@@ -1,3 +1,4 @@
+import { SecretInput } from "./SecretInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -238,9 +239,13 @@ export function RestoreBackup({
           </fieldset>
           <label>
             {method === "passphrase" ? "Backup passphrase" : "Recovery key"}
-            <input
+            <SecretInput
+              aria-label={
+                method === "passphrase" ? "Backup passphrase" : "Recovery key"
+              }
               required
               type={shown ? "text" : "password"}
+              secretKind={method === "passphrase" ? "password" : "recovery key"}
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}

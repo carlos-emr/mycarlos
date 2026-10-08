@@ -96,7 +96,7 @@ describe("CreateVault", () => {
       />,
     );
     expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      /^Use at least 15 characters\./,
+      /^0 character password Use at least 15 characters\./,
     );
   });
 
@@ -194,8 +194,8 @@ describe("UnlockVault", () => {
     // The Unlock form's; the other is under "Forgot your passphrase?".
     const status = screen.getAllByRole("status")[0];
     expect(status).toBeEmptyDOMElement();
-    expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute(
-      "aria-describedby",
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      "0 character password",
     );
 
     rerender(<UnlockVault {...props} notice="FAKE wrong passphrase." />);
@@ -218,7 +218,9 @@ describe("UnlockVault", () => {
     );
     const passphrase = screen.getByLabelText("Passphrase");
     expect(passphrase).toHaveFocus();
-    expect(passphrase).toHaveAccessibleDescription("Vault locked.");
+    expect(passphrase).toHaveAccessibleDescription(
+      "0 character password Vault locked.",
+    );
   });
 
   it("opens with the recovery key and a new passphrase, and answers there", () => {
@@ -238,7 +240,7 @@ describe("UnlockVault", () => {
     });
     const replacement = screen.getByLabelText("New passphrase");
     expect(replacement).toHaveAccessibleDescription(
-      /^Use at least 15 characters\./,
+      /^0 character password Use at least 15 characters\./,
     );
     fireEvent.change(replacement, {
       target: { value: "lantern-orbit-willow-cascade-572" },
@@ -260,8 +262,8 @@ describe("UnlockVault", () => {
     const [unlockStatus, forgotStatus] = screen.getAllByRole("status");
     expect(unlockStatus).toBeEmptyDOMElement();
     expect(forgotStatus).toHaveTextContent("FAKE wrong recovery key.");
-    expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute(
-      "aria-describedby",
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      "0 character password",
     );
     // The key is kept, so that a typo in it can be corrected.
     expect(screen.getByLabelText("Recovery key")).toHaveValue(

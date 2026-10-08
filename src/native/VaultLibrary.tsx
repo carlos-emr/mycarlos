@@ -69,12 +69,14 @@ export function VaultLibrary({
   run,
   refresh,
   onLock,
+  onRequestLock,
   autoLockMinutes,
   onAutoLockMinutes,
   openingRecoverySetup = null,
   onOpeningRecoverySetupShown,
   onUnfinishedRecoveryKey,
   canPrint = false,
+  keyboardHints = true,
   sizesIn1024s = false,
 }: {
   bridge: VaultBridge;
@@ -89,6 +91,7 @@ export function VaultLibrary({
    * or as the native side says. */
   refresh: (known?: VaultSnapshot) => Promise<VaultSnapshot>;
   onLock: () => Promise<void>;
+  onRequestLock?: () => void;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
   /** What the library opens on, when it opens on the recovery key setup: a
@@ -100,6 +103,9 @@ export function VaultLibrary({
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
+  /** Whether to show keyboard-only instructions (Tab, Escape): false on
+   * phones and tablets. */
+  keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
 }) {
@@ -1092,6 +1098,7 @@ export function VaultLibrary({
                 sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
+                onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}
@@ -1105,6 +1112,7 @@ export function VaultLibrary({
               required={recoverySetup.required}
               offered={recoverySetup.offered}
               canPrint={canPrint}
+              keyboardHints={keyboardHints}
               onKeyShown={({ exposed }) =>
                 onUnfinishedRecoveryKey?.({
                   setAtMs: snapshot.recoveryKeySetAtMs ?? null,
@@ -1165,6 +1173,7 @@ export function VaultLibrary({
                 focusPageIfLost();
               }}
               onLocked={() => void onLock()}
+              onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
           {renameTarget && (
