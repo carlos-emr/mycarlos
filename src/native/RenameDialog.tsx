@@ -49,6 +49,7 @@ export function RenameDialog({
   // when the message is the same.
   const [refusals, setRefusals] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   // Someone who types the extension out of habit means the same name, so a
   // typed copy of it is dropped rather than doubled, unless the name was left
   // as it was or already ended with it twice, as in "Report.pdf.pdf".
@@ -100,7 +101,7 @@ export function RenameDialog({
   const close = () => {
     if (!saving) onClose();
   };
-  useModalFocus(true, dialogRef, close);
+  useModalFocus(true, dialogRef, close, inputRef);
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving || readOnly || invalid) return;
@@ -142,6 +143,7 @@ export function RenameDialog({
             </label>
             <div className="native-rename-input">
               <input
+                ref={inputRef}
                 id="rename-name"
                 required
                 maxLength={

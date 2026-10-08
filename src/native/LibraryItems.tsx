@@ -60,6 +60,7 @@ export function LibraryItems({
       className="filelist native-filelist"
       aria-label={`${folders.length + records.length} visible library items`}
     >
+      {/* Visual column labels only: each row's controls carry their own names. */}
       <div className="file-head" aria-hidden="true">
         <span />
         <span className="sorted">Name</span>
@@ -88,6 +89,7 @@ export function LibraryItems({
             className="file-name native-file-open"
             type="button"
             aria-label={`Open ${folder.name}`}
+            aria-describedby={`folder-items-${folder.id}`}
             onClick={() => onOpenFolder(folder.id)}
           >
             <span className="document-icon folder">
@@ -95,10 +97,14 @@ export function LibraryItems({
             </span>
             <span className="name-copy">
               <strong>{folder.name}</strong>
-              <small>{folderCount(folder.id)} items</small>
+              <small id={`folder-items-${folder.id}`}>
+                {folderCount(folder.id)} items
+              </small>
             </span>
           </button>
-          <span className="column">—</span>
+          <span className="column" aria-hidden="true">
+            —
+          </span>
           <span className="column">
             {new Date(folder.createdAtMs).toLocaleDateString()}
           </span>

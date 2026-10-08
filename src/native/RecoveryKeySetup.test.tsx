@@ -36,6 +36,7 @@ function setUp(
   const onDone = vi.fn();
   const onClose = vi.fn();
   const onLocked = vi.fn();
+  const onLockAndLeave = vi.fn();
   render(
     <RecoveryKeySetup
       bridge={bridge}
@@ -44,10 +45,11 @@ function setUp(
       onDone={onDone}
       onClose={onClose}
       onLocked={onLocked}
+      onLockAndLeave={onLockAndLeave}
       {...props}
     />,
   );
-  return { bridge, onDone, onClose, onLocked };
+  return { bridge, onDone, onClose, onLocked, onLockAndLeave };
 }
 
 /** Types the whole key back in the check step. */
@@ -58,6 +60,55 @@ async function typeKey(user: ReturnType<typeof userEvent.setup>, key: string) {
 }
 
 describe("RecoveryKeySetup", () => {
+  it("keeps Tab on the controls and gives the text to screen readers with the dialog", async () => {
+    const user = userEvent.setup();
+    setUp({ initialKey: KEY });
+    const dialog = screen.getByRole("dialog");
+    const heading = screen.getByRole("heading", { name: "Your recovery key" });
+    expect(heading).toHaveFocus();
+    // The instructions are read when the dialog opens, not by tabbing to them.
+    expect(dialog).toHaveAccessibleDescription(
+      /Escape leaves this setup.*Write it down, or save or print the kit/,
+    );
+    // Each group is read a character at a time from its text.
+    const groups = within(
+      within(dialog).getByRole("list", { name: "Recovery key" }),
+    ).getAllByRole("listitem");
+    expect(groups).toHaveLength(7);
+    expect(groups[5]).toHaveTextContent(/Group 6:/);
+    for (const element of dialog.querySelectorAll("p, li, h2")) {
+      expect(element, element.textContent ?? "").not.toHaveAttribute(
+        "tabindex",
+        "0",
+      );
+    }
+    // Tab moves only between the controls, and wraps inside the dialog.
+    const reached = new Set<Element>();
+    for (let i = 0; i < 7; i++) {
+      await user.tab();
+      reached.add(document.activeElement!);
+    }
+    expect([...reached].map((element) => element.textContent)).toEqual([
+      "Cancel",
+      "Save recovery kit…",
+      "Next: check your recovery key",
+    ]);
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Check your recovery key" }),
+    ).toHaveFocus();
+    expect(dialog).toHaveAccessibleDescription(
+      screen
+        .getByText(/punctuation do not matter/)
+        .textContent!.replace(/\s+/g, " ")
+        .trim(),
+    );
+    await user.tab();
+    expect(screen.getByLabelText("Your recovery key")).toHaveFocus();
+  });
+
   it("asks for the passphrase, then shows the key a group at a time", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp();
@@ -115,7 +166,9 @@ describe("RecoveryKeySetup", () => {
     const { bridge } = setUp({ initialKey: KEY });
     const status = screen.getByRole("status");
     expect(status).toBeEmptyDOMElement();
-    await user.click(screen.getByRole("button", { name: "Save kit…" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save recovery kit…" }),
+    );
     expect(bridge.saveRecoveryKit).toHaveBeenCalledOnce();
     expect(status).toHaveTextContent(
       "Recovery kit saved. The key starts working once you finish the check.",
@@ -139,7 +192,9 @@ describe("RecoveryKeySetup", () => {
     expect(await screen.findByText(GROUPS[0])).toBeVisible();
     expect(screen.queryByText(/Key label/)).toBeNull();
     // Nor does a kit printed then say a kit with another label is void.
-    await user.click(screen.getByRole("button", { name: "Print" }));
+    await user.click(
+      screen.getByRole("button", { name: "Print recovery kit" }),
+    );
     const kit = document.querySelector("body > .recovery-kit-print");
     expect(kit).toHaveTextContent(KEY);
     expect(kit).not.toHaveTextContent(/label/i);
@@ -150,7 +205,7 @@ describe("RecoveryKeySetup", () => {
   it("offers Print only where the platform can print", () => {
     setUp({ initialKey: KEY });
     expect(
-      screen.queryByRole("button", { name: "Print" }),
+      screen.queryByRole("button", { name: "Print recovery kit" }),
     ).not.toBeInTheDocument();
   });
 
@@ -161,7 +216,9 @@ describe("RecoveryKeySetup", () => {
     setUp({ initialKey: KEY, canPrint: true });
     expect(document.querySelector(".recovery-kit-print")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Print" }));
+    await user.click(
+      screen.getByRole("button", { name: "Print recovery kit" }),
+    );
     expect(print).toHaveBeenCalledOnce();
     expect(document.body).toHaveClass("printing-recovery-kit");
     const kit = document.querySelector("body > .recovery-kit-print");
@@ -180,9 +237,9 @@ describe("RecoveryKeySetup", () => {
     expect(document.body).not.toHaveClass("printing-recovery-kit");
   });
 
-  it("offers a way out of a required setup once it cannot succeed", async () => {
+  it("still lets a required setup be left after the key cannot be stored", async () => {
     const user = userEvent.setup();
-    const { bridge, onClose } = setUp(
+    const { bridge, onLockAndLeave } = setUp(
       { initialKey: KEY, required: true },
       {
         confirmRecoveryKey: vi
@@ -190,24 +247,34 @@ describe("RecoveryKeySetup", () => {
           .mockRejectedValue({ code: "no_space", message: "FAKE disk full." }),
       },
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(
-      screen.queryByRole("button", { name: "Set up later" }),
-    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     await typeKey(user, "ZZZZ".repeat(7));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     await user.click(
-      await screen.findByRole("button", { name: "Set up later" }),
+      await screen.findByRole("button", {
+        name: "Lock vault and finish later",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Discard key and lock" }),
     );
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(onLockAndLeave).toHaveBeenCalledOnce();
   });
 
   it("stores the key only once the whole key is typed back", async () => {
     const user = userEvent.setup();
     const { bridge, onDone } = setUp({ initialKey: KEY });
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     const field = screen.getByLabelText("Your recovery key");
+    expect(
+      screen.getByRole("heading", { name: "Check your recovery key" }),
+    ).toHaveFocus();
+    await user.tab();
     expect(field).toHaveFocus();
     expect(field).toHaveAccessibleDescription(/7 groups of 4/);
     // Case, dashes and spaces do not matter.
@@ -224,7 +291,9 @@ describe("RecoveryKeySetup", () => {
     // Some phone keyboards turn a double space into ". ".
     const user = userEvent.setup();
     const { bridge } = setUp({ initialKey: KEY });
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     await typeKey(user, KEY.replaceAll("-", ". "));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith(
@@ -235,7 +304,9 @@ describe("RecoveryKeySetup", () => {
   it("clears a typing error as the patient types again", async () => {
     const user = userEvent.setup();
     setUp({ initialKey: KEY });
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     await typeKey(user, GROUPS[0]);
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(screen.getByRole("alert")).toHaveTextContent("You typed 4");
@@ -246,7 +317,9 @@ describe("RecoveryKeySetup", () => {
   it("says when what was typed is not the length of a key, and asks nothing", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ initialKey: KEY });
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     await typeKey(user, GROUPS.slice(0, 6).join("-"));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -261,7 +334,9 @@ describe("RecoveryKeySetup", () => {
       { initialKey: KEY },
       { confirmRecoveryKey: vi.fn().mockRejectedValue(typo) },
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       await typeKey(user, "ZZZZ".repeat(7));
       await user.click(screen.getByRole("button", { name: "Check and save" }));
@@ -289,7 +364,9 @@ describe("RecoveryKeySetup", () => {
           .mockRejectedValue({ code: "storage", message: "FAKE disk full." }),
       },
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       await typeKey(user, "ZZZZ".repeat(7));
       await user.click(screen.getByRole("button", { name: "Check and save" }));
@@ -339,14 +416,16 @@ describe("RecoveryKeySetup", () => {
           .mockRejectedValue({ code: "locked", message: "FAKE locked." }),
       },
     );
-    await user.click(screen.getByRole("button", { name: "Save kit…" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save recovery kit…" }),
+    );
     await vi.waitFor(() => expect(onLocked).toHaveBeenCalledOnce());
     expect(screen.queryByText("FAKE locked.")).not.toBeInTheDocument();
   });
 
-  it("offers a way out of a required setup when the kit cannot be saved", async () => {
+  it("keeps focus and the way out of a required setup when the kit cannot be saved", async () => {
     const user = userEvent.setup();
-    const { onClose } = setUp(
+    const { onLockAndLeave } = setUp(
       { initialKey: KEY, required: true },
       {
         saveRecoveryKit: vi
@@ -354,13 +433,18 @@ describe("RecoveryKeySetup", () => {
           .mockRejectedValue({ code: "storage", message: "FAKE no disk." }),
       },
     );
-    const save = screen.getByRole("button", { name: "Save kit…" });
+    const save = screen.getByRole("button", { name: "Save recovery kit…" });
     await user.click(save);
     expect(await screen.findByText("FAKE no disk.")).toBeVisible();
     // Focus is back where it was before the buttons were disabled.
     expect(save).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "Set up later" }));
-    expect(onClose).toHaveBeenCalledExactlyOnceWith(true);
+    await user.click(
+      screen.getByRole("button", { name: "Lock vault and finish later" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Discard key and lock" }),
+    );
+    expect(onLockAndLeave).toHaveBeenCalledOnce();
   });
 
   it("says so when printing is not possible", async () => {
@@ -370,24 +454,126 @@ describe("RecoveryKeySetup", () => {
     });
     onTestFinished(() => print.mockRestore());
     setUp({ initialKey: KEY, canPrint: true });
-    await user.click(screen.getByRole("button", { name: "Print" }));
+    await user.click(
+      screen.getByRole("button", { name: "Print recovery kit" }),
+    );
     expect(await screen.findByText(/Printing is not available/)).toBeVisible();
     expect(document.querySelector(".recovery-kit-print")).toBeNull();
     expect(document.body).not.toHaveClass("printing-recovery-kit");
   });
 
-  it("has no way out when the key is required", async () => {
+  it("ignores Escape and the way out while an operation runs", async () => {
     const user = userEvent.setup();
-    const { bridge, onClose } = setUp({ initialKey: KEY, required: true });
-    expect(
-      screen.queryByRole("button", { name: "Cancel" }),
-    ).not.toBeInTheDocument();
+    let finish: (saved: boolean) => void = () => undefined;
+    const { bridge, onClose, onLockAndLeave } = setUp(
+      { initialKey: KEY, required: true },
+      {
+        saveRecoveryKit: vi.fn().mockReturnValue(
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+        ),
+      },
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Save recovery kit…" }),
+    );
+    const leave = screen.getByRole("button", {
+      name: "Lock vault and finish later",
+    });
+    expect(leave).toBeDisabled();
     await user.keyboard("{Escape}");
+    await user.click(leave);
+    expect(onLockAndLeave).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+    await act(async () => finish(true));
+    expect(leave).toBeEnabled();
+    // Once it has finished, Escape asks before anything is discarded.
+    await user.keyboard("{Escape}");
     expect(
-      screen.getByRole("heading", { name: "Your recovery key" }),
+      screen.getByRole("alertdialog", { name: "Discard this recovery key?" }),
     ).toBeVisible();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+  });
+
+  it("leaves out the keyboard instructions where there is no keyboard", () => {
+    setUp({ initialKey: KEY, keyboardHints: false });
+    expect(screen.queryByText(/Escape leaves this setup/)).toBeNull();
+    // The dialog is still described, by the instructions that apply.
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+      /^Write it down, or save or print the kit/,
+    );
+  });
+
+  it("asks before Escape discards an unfinished first key, and Cancel goes back to it", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose, onLockAndLeave } = setUp({
+      initialKey: KEY,
+      required: true,
+    });
+    const heading = screen.getByRole("heading", { name: "Your recovery key" });
+    expect(heading).toHaveFocus();
+    await user.keyboard("{Escape}");
+    const confirm = screen.getByRole("alertdialog", {
+      name: "Discard this recovery key?",
+    });
+    expect(confirm).toHaveAccessibleDescription(/never open the vault/);
+    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    // The key is out of sight behind the question, and Tab stays in it.
+    expect(
+      screen.getByRole("list", { hidden: true, name: "Recovery key" }),
+    ).not.toBeVisible();
+    await user.tab();
+    expect(
+      within(confirm).getByRole("button", { name: "Discard key and lock" }),
+    ).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
+    await user.click(cancel);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("list", { name: "Recovery key" })).toBeVisible();
+    expect(heading).toHaveFocus();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+  });
+
+  it("cancels the question on a second Escape, so a double Escape discards nothing", async () => {
+    const user = userEvent.setup();
+    const { bridge, onLockAndLeave } = setUp({
+      initialKey: KEY,
+      required: true,
+    });
+    const heading = screen.getByRole("heading", { name: "Your recovery key" });
+    await user.keyboard("{Escape}{Escape}");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(heading).toHaveFocus();
+    expect(screen.getByRole("list", { name: "Recovery key" })).toBeVisible();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+  });
+
+  it("discards the first key and locks once confirmed, and returns focus to the button on Cancel", async () => {
+    const user = userEvent.setup();
+    const { bridge, onClose, onLockAndLeave } = setUp({
+      initialKey: KEY,
+      required: true,
+    });
+    const leave = screen.getByRole("button", {
+      name: "Lock vault and finish later",
+    });
+    await user.click(leave);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(leave).toHaveFocus();
+    await user.click(leave);
+    await user.click(
+      screen.getByRole("button", { name: "Discard key and lock" }),
+    );
+    expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
+    expect(onLockAndLeave).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("keeps the setup open when replacing was cancelled in the native confirmation", async () => {
@@ -401,7 +587,9 @@ describe("RecoveryKeySetup", () => {
           .mockResolvedValue(snapshot),
       },
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     const status = screen.getByRole("status");
     expect(status).toBeEmptyDOMElement();
     await typeKey(user, KEY);
@@ -456,7 +644,9 @@ describe("RecoveryKeySetup", () => {
     await user.click(next);
     await screen.findByRole("heading", { name: "Your recovery key" });
     expect(onKeyShown).toHaveBeenCalledWith({ exposed: true });
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
     await typeKey(user, KEY);
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: true });
@@ -480,7 +670,7 @@ describe("RecoveryKeySetup", () => {
         ),
       },
     );
-    const print = screen.getByRole("button", { name: "Print" });
+    const print = screen.getByRole("button", { name: "Print recovery kit" });
     expect(print).toBeDisabled();
     await act(async () => answer("7F3A"));
     expect(print).toBeEnabled();

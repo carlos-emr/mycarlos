@@ -66,6 +66,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    benchmarkKdf: vi
+      .fn()
+      .mockRejectedValue({ code: "busy", message: "FAKE no speed test." }),
     recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
     recover: vi
@@ -860,6 +863,96 @@ describe("durable vault UI", () => {
 
   const RECOVERY_KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 
+  it.each(["Escape", "button", "lock failure"])(
+    "leaves first recovery setup safely using %s",
+    async (how) => {
+      const user = userEvent.setup();
+      const lock = vi.fn().mockResolvedValue(undefined);
+      if (how === "lock failure")
+        lock.mockRejectedValueOnce({ code: "storage" });
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("absent"),
+        beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+        lock,
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.type(
+        await screen.findByLabelText("First patient profile"),
+        "FAKE Patient",
+      );
+      await user.type(
+        screen.getByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.type(
+        screen.getByLabelText("Confirm passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      const create = screen.getByRole("button", { name: "Create vault" });
+      await user.click(create);
+      const dialog = await screen.findByRole("dialog", {
+        name: "Your recovery key",
+      });
+      expect((await axe.run(dialog)).violations).toEqual([]);
+      if (how === "Escape") await user.keyboard("{Escape}");
+      else
+        await user.click(
+          within(dialog).getByRole("button", {
+            name: "Lock vault and finish later",
+          }),
+        );
+      // Leaving the first setup is confirmed before the key is discarded.
+      const confirm = await screen.findByRole("alertdialog", {
+        name: "Discard this recovery key?",
+      });
+      expect((await axe.run(dialog)).violations).toEqual([]);
+      expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+      await user.click(
+        within(confirm).getByRole("button", { name: "Discard key and lock" }),
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(screen.queryByText("ABCD")).toBeNull();
+      expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
+      expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
+      if (how === "lock failure") {
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "could not lock the vault",
+        );
+        await user.click(
+          screen.getByRole("button", { name: "Try locking again" }),
+        );
+      }
+      await screen.findByRole("heading", { name: "Unlock your vault" });
+      await user.type(
+        screen.getByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      expect(
+        await screen.findByText(
+          /Recovery key setup ended.*that key does not open the vault/,
+        ),
+      ).toBeVisible();
+    },
+  );
+
+  it("returns focus to the Security recovery setup button after Escape", async () => {
+    const user = userEvent.setup();
+    render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
+      />,
+    );
+    await user.click(await screen.findByRole("button", { name: /Security/ }));
+    const opener = screen.getByRole("button", { name: "Set up recovery key" });
+    await user.click(opener);
+    expect(
+      screen.getByRole("heading", { name: "Set up a recovery key" }),
+    ).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
   it("sets up a recovery key before anything else in a new vault", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -891,14 +984,21 @@ describe("durable vault UI", () => {
     expect(bridge.beginRecoveryKey).toHaveBeenCalledWith(
       "river-azimuth-cobalt-sparrow-934",
     );
-    // There is no way out until the key is set up.
-    await user.keyboard("{Escape}");
-    expect(dialog).toBeInTheDocument();
+    // Leaving the first setup offers a lock, not entry to the library.
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Lock vault and finish later",
+      }),
+    ).toBeEnabled();
     expect(
       within(dialog).queryByRole("button", { name: "Cancel" }),
     ).not.toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole("button", { name: "Next" }));
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Next: check your recovery key",
+      }),
+    );
     await user.type(
       within(dialog).getByLabelText("Your recovery key"),
       RECOVERY_KEY,
@@ -1194,7 +1294,7 @@ describe("durable vault UI", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Set up a recovery key",
     });
-    expect(within(dialog).getByLabelText("Passphrase")).toHaveFocus();
+    expect(within(dialog).getByRole("heading")).toHaveFocus();
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -1278,7 +1378,7 @@ describe("durable vault UI", () => {
     ).toBeVisible();
     // The screen opens on it, so the field that takes focus says it.
     expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      /^Backup restored\./,
+      /^0 character password Backup restored\./,
     );
   });
 
@@ -1424,7 +1524,11 @@ describe("durable vault UI", () => {
     };
     const typeKeyBack = async () => {
       const keyStep = screen.getByRole("dialog", { name: "Your recovery key" });
-      await user.click(within(keyStep).getByRole("button", { name: "Next" }));
+      await user.click(
+        within(keyStep).getByRole("button", {
+          name: "Next: check your recovery key",
+        }),
+      );
       await user.type(
         within(keyStep).getByLabelText("Your recovery key"),
         RECOVERY_KEY,
@@ -2488,7 +2592,7 @@ describe("durable vault UI", () => {
       // Not a change to the status line, which is not read out: the field
       // that takes focus says it.
       expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-        "Vault locked.",
+        "0 character password Vault locked.",
       );
     } finally {
       visibility.mockRestore();
@@ -4483,6 +4587,11 @@ describe("durable vault UI", () => {
       name: "Close document details",
     });
     expect(close).toHaveFocus();
+    // The dialog's text is read with it when it opens; Tab moves only between
+    // its controls and wraps inside it.
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Report.pdf" }),
+    ).toHaveAccessibleDescription(/The file stays encrypted in the vault/);
     await user.tab({ shift: true });
     expect(
       screen.getByRole("button", { name: "Save a copy to this computer" }),
@@ -4831,7 +4940,14 @@ describe("durable vault UI", () => {
     // and the names are not read out with the dialog.
     expect(named).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    // Tab reaches the list (to scroll it) and the two buttons, and wraps.
     await user.tab({ shift: true });
+    expect(named).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(
+      screen.getByRole("button", { name: "Permanently remove" }),
+    ).toHaveFocus();
+    await user.tab();
     expect(named).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();

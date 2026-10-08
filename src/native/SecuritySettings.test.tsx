@@ -1,7 +1,28 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { printedDate } from "./KeyLabel";
-import { SecuritySettings } from "./SecuritySettings";
+import { SecuritySettings, speedTestLine } from "./SecuritySettings";
+
+const speedTest = {
+  memoryKib: 65536,
+  iterations: 3,
+  lanes: 4,
+  samplesMs: [812, 820, 815, 830, 811],
+  medianMs: 815,
+  maxMs: 830,
+  release: true,
+  simulator: false,
+  platform: "android",
+  architecture: "aarch64",
+  appVersion: "0.1.0",
+};
 
 function renderSettings(overrides: Record<string, unknown> = {}) {
   const props = {
@@ -17,6 +38,7 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
+    onSpeedTest: vi.fn().mockResolvedValue(speedTest),
     ...overrides,
   };
   render(<SecuritySettings {...props} />);
@@ -25,6 +47,103 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
 
 const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+describe("SecuritySettings speed test", () => {
+  it("does not start while another vault action is busy", () => {
+    const props = renderSettings({ busy: true });
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(props.onSpeedTest).not.toHaveBeenCalled();
+  });
+
+  it("measures when asked, and gives a line to send", async () => {
+    let finish!: (report: typeof speedTest) => void;
+    const props = renderSettings();
+    props.onSpeedTest.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    const section = button.closest("section")!;
+    const status = within(section).getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(props.onSpeedTest).not.toHaveBeenCalled();
+
+    fireEvent.click(button);
+    expect(status).toHaveTextContent("Measuring…");
+    expect(button).toBeDisabled();
+    await act(async () => finish(speedTest));
+    expect(status).toHaveTextContent(
+      "5 runs: 812, 820, 815, 830, 811 ms. Median 815 ms, longest 830 ms. Argon2id, 64 MiB, 3 passes, 4 lanes. android aarch64, myCarlos 0.1.0. Release build.",
+    );
+    expect(button).toBeEnabled();
+  });
+
+  it("says which kind of build was timed", () => {
+    expect(speedTestLine({ ...speedTest, release: false })).toMatch(
+      /Evaluation build\.$/,
+    );
+    expect(
+      speedTestLine({ ...speedTest, release: false, simulator: true }),
+    ).toMatch(/Evaluation build, Simulator\.$/);
+  });
+
+  it("says why it could not measure, and can be run again", async () => {
+    const props = renderSettings();
+    props.onSpeedTest.mockRejectedValueOnce({
+      code: "busy",
+      message: "FAKE already running.",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
+    expect(await screen.findByText("FAKE already running.")).toBeVisible();
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    expect(button).toBeEnabled();
+    expect(
+      within(button.closest("section")!).getByRole("status"),
+    ).toBeEmptyDOMElement();
+    fireEvent.click(button);
+    expect(await screen.findByText(speedTestLine(speedTest))).toBeVisible();
+    expect(props.onSpeedTest).toHaveBeenCalledTimes(2);
+    // Only a locked vault locks the app.
+    expect(props.onLock).not.toHaveBeenCalled();
+  });
+
+  it("locks the app when the vault locked during the test", async () => {
+    const props = renderSettings();
+    props.onSpeedTest.mockRejectedValueOnce({
+      code: "locked",
+      message: "FAKE the vault is locked.",
+    });
+    const button = screen.getByRole("button", { name: "Run speed test" });
+    fireEvent.click(button);
+    await vi.waitFor(() => expect(props.onLock).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(button).toBeEnabled());
+    expect(
+      within(button.closest("section")!).getByRole("status"),
+    ).toBeEmptyDOMElement();
+    expect(screen.queryByText("FAKE the vault is locked.")).toBeNull();
+  });
+
+  it("does not lock again once the screen has gone", async () => {
+    let answer!: (error: unknown) => void;
+    const props = renderSettings({
+      onSpeedTest: vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            answer = reject;
+          }),
+      ),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
+    // The app locked by itself and this screen went.
+    cleanup();
+    await act(async () => answer({ code: "locked", message: "FAKE locked." }));
+    expect(props.onLock).not.toHaveBeenCalled();
+  });
+});
 
 describe("SecuritySettings recovery key", () => {
   it("shows the current key's label and date, so the current kit can be told", () => {

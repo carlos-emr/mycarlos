@@ -35,7 +35,8 @@ export function RecordDetails({
   onExport,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
-  useModalFocus(true, dialogRef, onClose);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  useModalFocus(true, dialogRef, onClose, closeRef);
   const kind = recordKind(record.displayName);
   const folderNameById = new Map(
     folders.map((folder) => [folder.id, folder.name]),
@@ -48,6 +49,7 @@ export function RecordDetails({
         role="dialog"
         aria-modal="true"
         aria-labelledby="native-record-title"
+        aria-describedby="native-record-about"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
@@ -56,6 +58,7 @@ export function RecordDetails({
             <h2 id="native-record-title">{record.displayName}</h2>
           </div>
           <button
+            ref={closeRef}
             className="dialog-close"
             type="button"
             aria-label="Close document details"
@@ -79,12 +82,12 @@ export function RecordDetails({
             <i />
           </div>
           {record.available ? (
-            <p>
+            <p id="native-record-about">
               The file stays encrypted in the vault. Save a copy only when you
               need a readable file outside myCarlos.
             </p>
           ) : (
-            <p role="alert">
+            <p id="native-record-about" role="alert">
               {unreadable ? (
                 <>
                   <strong>This document is unavailable.</strong> Its encrypted

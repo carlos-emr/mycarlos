@@ -115,13 +115,15 @@ On every platform:
 1. Create a vault. For **First patient profile**, type a made-up name such as
    `FAKE Test Patient`. Choose a throwaway passphrase of at least 15 characters; the app rejects
    common or predictable ones.
-2. Set up the recovery key the app shows next: try **Save kit…** (and **Print** on a computer),
-   then **Next**, and type the whole key back. Typing it wrong says so; three wrong
+2. Set up the recovery key the app shows next: try **Save recovery kit…** (and **Print recovery kit** on a computer),
+   then **Next: check your recovery key**, and type the whole key back. Typing it wrong says so; three wrong
    tries go back to the key. Check that the saved kit opens and shows the key and no names, and
    that the key's label shown beside the key is on the saved and the printed kit, and in
-   **Security** once the key is set up. If a lock ends the setup (or you leave it with **Set up
-   later**, which it offers after an error), the vault has no recovery key: lock and unlock, and the
-   setup opens by itself, at most once a day (the rest of the time only the notice offers it). It
+   **Security** once the key is set up. During first setup, **Lock vault and finish later** or Escape
+   first asks "Discard this recovery key?"; **Cancel** goes back to the setup. If a lock ends the setup
+   (including **Discard key and lock**), the unfinished key does not work. The next unlock shows an unfinished-key warning.
+   On a later eligible unlock, setup opens by itself, at most once a day
+   (the rest of the time only the notice offers it). It
    shows no key until you type your passphrase and choose **Continue**; **Set up later** closes it.
 3. Later, lock the vault and use **Forgot your passphrase?** → your recovery key and a new
    passphrase: the vault opens, the new passphrase works and the old one does not. In **Security**,
@@ -155,11 +157,14 @@ On every platform:
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-9. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
-   keep the screen on), and confirm it locks.
-10. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
+9. In **Security**, under **Speed test, for testers**, choose **Run speed test** three times, a
+   minute apart, staying on that screen while it runs. Send the three lines it gives with the
+   device's make and model and its system's version. `ARGON2_BENCHMARK.md` says how to record them.
+10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
+    keep the screen on), and confirm it locks.
+11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-11. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
@@ -232,7 +237,9 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
    **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
    group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). The recovery key
-   setup of a new vault is the exception: Escape does not close it. In confirmations, focus
+   setup of a new vault is the exception: there, Escape asks "Discard this recovery key?" first,
+   as **Lock vault and finish later** does; in that question, Escape means **Cancel**, so pressing
+   Escape twice discards nothing. In confirmations, focus
    starts on **Cancel**, so pressing Enter straight away does nothing harmful. With a keyboard,
    Tab stays inside the dialog, and Escape closes it and returns focus to the button that opened
    it (or, from a dialog opened within a document's details, to those details). When that button
@@ -308,6 +315,40 @@ Comment on [issue #4](https://github.com/carlos-emr/mycarlos/issues/4) (Android)
 the platform and OS version, the device or emulator, the source commit from `BUILD.txt`, what you
 did, and what happened. Screenshots help, as long as they show only made-up data. Report
 suspected security problems privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.
+
+### Windows Narrator and keyboard retest
+
+Use a Windows build of `main`, downloaded as described at the start of this guide, and note
+its BUILD.txt source commit in your report. Use made-up data only.
+
+1. Start Narrator. Create or unlock a vault. Hover and focus an empty password field,
+   then type, delete and paste a throwaway password. The count description and hover text
+   should say “N character password”. Confirm it does not speak the secret. The field
+   remains a native protected password input: whether Narrator still repeats protected
+   bullets needs this Windows test and has not been verified on Linux.
+2. Tab and Shift+Tab reach only things you can operate (buttons, fields, links, and the
+   list in a confirmation, so it can scroll); text is not a Tab stop. In create, unlock,
+   restore, library and Security, check that each field is read with its label and its hint
+   or count, and each button with a name that says what it acts on.
+3. Read the text with Narrator's scan mode: press Caps Lock + Space to turn it on, then use
+   the Up and Down arrows to read line by line and H (Shift + H backward) to jump between
+   headings. Check every heading, instruction, warning, error and paragraph, including long
+   text, in create, unlock, restore, library and Security. Press Caps Lock + Space again to
+   go back to typing.
+4. In recovery setup, when the dialog opens Narrator reads its title and instructions. In
+   scan mode, the seven key groups are read as a list, each group character by character
+   ("Group 6: Y Z 0 1"). Tab moves only between the buttons and wraps inside the dialog.
+   Repeat in a short window or at 200% scaling.
+5. Save a kit, go Next, go Back, and deliberately mistype the check. Focus should start at
+   each new heading, and scan mode should reach all the text. Save/Print/Next/Back names
+   describe the recovery-key action.
+6. Escape or “Lock vault and finish later” during first setup asks "Discard this recovery
+   key?", with focus on **Cancel**. Cancel (or Escape) goes back to the setup, with focus
+   where it was. **Discard key and lock** hides the key and locks. After unlocking, the
+   unfinished-key warning says that key does not work. Optional setup opened from Security
+   may be cancelled; focus should return to its opening button.
+7. Report any repeated bullet speech, missing text, unexpected focus jump, or focus that
+   cannot leave a section. Browser keyboard/axe checks are not a Windows Narrator test.
 
 ## Automated Windows native tests
 
