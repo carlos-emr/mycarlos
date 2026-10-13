@@ -22,6 +22,7 @@ export type IconName =
   | "shield"
   | "sort"
   | "star"
+  | "text-size"
   | "trash";
 
 export function Icon({ name }: { name: IconName }) {
@@ -110,6 +111,11 @@ export function Icon({ name }: { name: IconName }) {
       break;
     case "plus":
       content = <path d="M12 5v14M5 12h14" />;
+      break;
+    case "text-size":
+      content = (
+        <path d="M3 19 8.5 5 14 19M5.3 14h6.4M15 19l3-7.5 3 7.5M16.2 16.2h3.6" />
+      );
       break;
     case "search":
       content = (

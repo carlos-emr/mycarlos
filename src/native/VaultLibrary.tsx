@@ -16,6 +16,7 @@ import {
   type OpeningRecoverySetup,
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { LibraryItems } from "./LibraryItems";
@@ -36,7 +37,7 @@ import {
   type OldBackupsGuide,
 } from "./oldBackups";
 
-type NativeSection = "records" | "security";
+type NativeSection = "records" | "security" | "preferences";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
 
@@ -695,6 +696,7 @@ export function VaultLibrary({
             >
               <option value="records">My records</option>
               <option value="security">Security</option>
+              <option value="preferences">Preferences</option>
             </select>
           </label>
 
@@ -721,6 +723,7 @@ export function VaultLibrary({
                 setCurrentFolderId(folderId);
               }}
               onOpenSecurity={() => setSection("security")}
+              onOpenPreferences={() => setSection("preferences")}
             />
 
             {section === "records" && (
@@ -1080,6 +1083,8 @@ export function VaultLibrary({
                 />
               </main>
             )}
+
+            {section === "preferences" && <PreferencesSettings />}
 
             {section === "security" && (
               <SecuritySettings

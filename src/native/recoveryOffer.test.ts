@@ -50,10 +50,16 @@ describe("the recovery key offer", () => {
   });
 
   it("keeps the hour only, and nothing about the vault", () => {
+    // Test files share the page's storage (the zoom level is kept there
+    // too): what this adds or changes is checked, not everything there.
+    const before: Record<string, string> = { ...window.localStorage };
     recordRecoveryOffer(NOW);
-    expect(Object.keys(window.localStorage)).toEqual([
+    const after: Record<string, string> = { ...window.localStorage };
+    expect(Object.keys(after).filter((key) => !(key in before))).toEqual([
       "mycarlos.recoveryOfferHour.v1",
     ]);
+    for (const key of Object.keys(before))
+      expect(after[key], key).toBe(before[key]);
     expect(window.localStorage.getItem("mycarlos.recoveryOfferHour.v1")).toBe(
       String(Math.floor(NOW / HOUR)),
     );

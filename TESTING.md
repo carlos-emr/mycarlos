@@ -254,10 +254,34 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 
 Then turn the screen reader off and check text size:
 
-- **Windows, macOS:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
+- **Windows, macOS, Linux:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
   up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
-  down. Ctrl + 0 (Command + 0) resets it. Also try Windows **Settings → Accessibility → Text
-  size** and report whether the app follows it.
+  down. Ctrl + 0 (Command + 0) resets it. After unlocking, **Settings → Preferences** shows the
+  size, with **−** and **+** buttons and a box to type a size, that do the same. Also try Windows
+  **Settings → Accessibility → Text size** and report whether the app follows it.
+- **Windows, macOS, Linux, the size is remembered (new, and not yet tried by anyone):**
+  1. Press Ctrl + plus once (Command + plus on a Mac). Does the size change by one step, or by
+     two? It should be one.
+  2. Close the app at a size other than 100% and open it again. It should open at the size you
+     left it, without first showing at 100%. The next Ctrl + plus (Command + plus) should go one
+     step on.
+  3. Go to the largest size (400%) with the window at its smallest. Can you still unlock? Before
+     unlocking, Ctrl + 0 (Command + 0) is the way back; after, also **Settings → Preferences →
+     Back to normal size**.
+  4. On Windows, hold Ctrl and turn the mouse wheel one notch: one step. On Linux, report how
+     many notches one step takes (Linux reports the wheel differently; one is expected, more is
+     possible). On a touchpad, scroll with two fingers while holding Ctrl, and pinch: the size
+     should change slowly or not at all, never jump to the largest. On a touch screen, pinching is not
+     expected to zoom any more; use the buttons in **Settings → Preferences**, after unlocking.
+  5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
+  6. In **Settings → Preferences**, with a screen reader on, press **+** (read as "Larger text"):
+     it should say the new size. Type 150 in the box and press Enter: it should say 150%. Press
+     **Back to normal size**: the focus should move to **+**, not be lost.
+  7. Type 130 in the box and press Enter: the size goes to 125% and a line under the box says why.
+     Type 500: 400%, the largest. Type `abc`: nothing changes, and the box says to type a number
+     from 80 to 400. Press Escape while typing: the box goes back to the size shown.
+  8. On Windows and Linux, at 200% and at 400%, hold Ctrl and turn the wheel toward smaller
+     text: as many notches for one step as at 100%.
 - **Android:** set **Settings → Display → Font size** to the largest and reopen the app. Report
   whether the text gets larger, and whether anything is cut off.
 - **iOS:** larger text in Settings is not expected to change the app yet; report what you see.

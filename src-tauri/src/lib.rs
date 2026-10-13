@@ -2639,21 +2639,26 @@ mod tests {
     #[test]
     fn the_desktop_window_lets_the_reader_zoom() {
         // Ctrl/Cmd with plus and minus scale the whole interface, as in a
-        // browser. Tauri leaves those keys off unless the window enables them.
+        // browser. The page handles those keys (src/native/zoom.ts), so that
+        // it can keep the level for the next start. The platform's own
+        // handling, which forgets it, must be off, or each key would count
+        // twice.
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let windows = config["app"]["windows"].as_array().unwrap();
         assert!(!windows.is_empty());
         for window in windows {
-            assert_eq!(window["zoomHotkeysEnabled"], true);
+            assert_eq!(window["zoomHotkeysEnabled"], false);
         }
-        // On macOS and Linux Tauri implements those keys in the page, which
-        // then needs leave to set its own zoom. Only there, and nothing else:
-        // Windows zooms natively, and mobile has no such command.
+        // The page needs leave to set its own zoom, on a computer and for
+        // nothing else: mobile has no such command.
         let zoom: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/zoom.json")).unwrap();
         assert_eq!(zoom["windows"], serde_json::json!(["main"]));
-        assert_eq!(zoom["platforms"], serde_json::json!(["macOS", "linux"]));
+        assert_eq!(
+            zoom["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
         assert_eq!(
             zoom["permissions"],
             serde_json::json!(["core:webview:allow-set-webview-zoom"])
