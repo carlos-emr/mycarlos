@@ -60,6 +60,7 @@
   --content-ink: #000;
   --content-line: #e4ecea;
   --content-preview-line: #e2ebe9;
+  --content-accent: #0f6b62;
   --content-strong-line: #b9dcd7;
   --content-border: #d3e0dd;
 }
@@ -449,7 +450,7 @@ h1, h2, p { margin: 0; }
 .tile-preview.folder .icon { width: 36px; height: 36px; }
 .paper-preview { align-content: end; justify-items: center; width: 84px; height: 92px; margin: 20px auto 0; padding: 13px 8px; border: 1px solid var(--content-border); border-bottom: 0; border-radius: 3px 3px 0 0; background: var(--content-paper); box-shadow: var(--shadow-sm); }
 .paper-preview i { display: block; width: 68px; height: 3px; margin: 3px 0; border-radius: 99px; background: var(--content-line); }
-.paper-preview i:first-child { width: 50px; height: 4px; margin-right: auto; background: var(--teal); }
+.paper-preview i:first-child { width: 50px; height: 4px; margin-right: auto; background: var(--content-accent); }
 .tile-caption { display: flex; align-items: flex-start; gap: 8px; min-height: 70px; padding: 10px 12px; }
 .tile-caption > span:last-child { min-width: 0; }
 .tile-caption strong { display: -webkit-box; overflow: hidden; font-size: 0.875rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -862,6 +863,10 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
     outline: 2px solid Highlight; outline-offset: -2px;
   }
   .check { border-color: ButtonBorder; }
+  .brand-mark { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+  /* These content graphics disappear when their paper and lines all map to Canvas.
+     Keep their original colours, without opting any app controls out. */
+  .paper-preview, .preview-paper { forced-color-adjust: none; }
   :focus-visible, .vault-card input:focus { outline: 3px solid Highlight; outline-offset: 2px; }
   .text-size-box input[aria-invalid="true"] { outline: 2px solid CanvasText; }
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }

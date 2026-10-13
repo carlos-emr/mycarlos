@@ -148,7 +148,8 @@ async function contrast(
           box.width <= 1 ||
           box.height <= 1 ||
           style.visibility !== "visible" ||
-          element.closest('[aria-hidden="true"], .sr-only')
+          element.closest(".sr-only") ||
+          (property !== "stroke" && element.closest('[aria-hidden="true"]'))
         )
           return [];
         if (
@@ -375,7 +376,8 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await expect(selected).toHaveCSS("outline-style", "solid");
   await expect(selected).toHaveCSS("opacity", "1");
   await expect(selected).toHaveCSS("box-shadow", "none");
-  await contrast(page, ".file-row .icon", "stroke", 3);
+  await expect(page.locator(".brand-mark .icon")).toBeVisible();
+  await contrast(page, ".icon", "stroke", 3);
   await accessible(page);
   await screenshot(page, info, "forced-warning-selected");
   await page.emulateMedia({ forcedColors: "none" });
@@ -411,6 +413,32 @@ test("paper preview content stays unchanged when the app theme changes", async (
 }, info) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
+  await page.getByRole("button", { name: "Grid view", exact: true }).click();
+  const thumbnail = page.locator(".paper-preview").first();
+  await expect(thumbnail.locator("i").first()).toHaveCSS(
+    "background-color",
+    "rgb(15, 107, 98)",
+  );
+  const thumbnailBox = await thumbnail.boundingBox();
+  expect(thumbnailBox).not.toBeNull();
+  const thumbnailClip = {
+    x: thumbnailBox!.x + 8,
+    y: thumbnailBox!.y + 8,
+    width: thumbnailBox!.width - 16,
+    height: thumbnailBox!.height - 16,
+  };
+  const originalThumbnail = await page.screenshot({ clip: thumbnailClip });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(
+    (await page.screenshot({ clip: thumbnailClip })).equals(originalThumbnail),
+  ).toBe(true);
+  await page.emulateMedia({ forcedColors: "active" });
+  expect(
+    (await page.screenshot({ clip: thumbnailClip })).equals(originalThumbnail),
+  ).toBe(true);
+  await page.emulateMedia({ colorScheme: "light", forcedColors: "none" });
+  await page.getByRole("button", { name: "List view", exact: true }).click();
   await page
     .getByRole("button", {
       name: "Bloodwork — cholesterol and liver panel",
@@ -431,10 +459,39 @@ test("paper preview content stays unchanged when the app theme changes", async (
     height: box!.height - 20,
   };
   const light = await page.screenshot({ clip });
+  const originalColours = await paper.evaluate((element) => ({
+    paper: getComputedStyle(element).backgroundColor,
+    lines: [...element.children].map(
+      (line) => getComputedStyle(line).backgroundColor,
+    ),
+  }));
+  // Forced colours can rasterise rounded ends differently on a phone. Compare
+  // their exact colours and solid centres, while retaining full Light/Dark parity.
+  const solidClip = {
+    x: box!.x + 50,
+    y: box!.y + 10,
+    width: 20,
+    height: box!.height - 20,
+  };
+  const solidLight = await page.screenshot({ clip: solidClip });
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const dark = await page.screenshot({ clip });
   expect(dark.equals(light)).toBe(true);
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(paper).toHaveCSS("forced-color-adjust", "none");
+  expect(
+    await paper.evaluate((element) => ({
+      paper: getComputedStyle(element).backgroundColor,
+      lines: [...element.children].map(
+        (line) => getComputedStyle(line).backgroundColor,
+      ),
+    })),
+  ).toEqual(originalColours);
+  expect((await page.screenshot({ clip: solidClip })).equals(solidLight)).toBe(
+    true,
+  );
+  await page.emulateMedia({ forcedColors: "none" });
   await expect(paper).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await screenshot(page, info, "dark-fixed-paper-preview");
 });
