@@ -10,6 +10,7 @@ import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import { RestoreBackup } from "./RestoreBackup";
+import { waitingText } from "./receivedNotice";
 import type { VaultBridge } from "../vault";
 
 /** What restoring a backup needs from the bridge. */
@@ -234,6 +235,7 @@ export function CreateVault({
 export function UnlockVault({
   busy,
   notice,
+  waiting = 0,
   autoLockMinutes,
   onUnlock,
   onRecover,
@@ -243,6 +245,8 @@ export function UnlockVault({
 }: {
   busy: boolean;
   notice: string;
+  /** How many shared files wait for an unlock. Their names are not shown. */
+  waiting?: number;
   autoLockMinutes: number;
   onUnlock: (passphrase: string) => Promise<void>;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
@@ -277,6 +281,9 @@ export function UnlockVault({
           {autoLockMinutes === 1 ? "" : "s"} of inactivity and whenever myCarlos
           is hidden, for example minimized or sent to the background.
         </p>
+        {waiting > 0 && (
+          <p className="native-received-waiting">{waitingText(waiting)}</p>
+        )}
         <form onSubmit={submit}>
           <label>
             Passphrase

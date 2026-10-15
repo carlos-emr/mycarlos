@@ -47,6 +47,8 @@ const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const OBJECT_MAGIC: &[u8; 5] = b"MCVO1";
 const CHUNK_SIZE: usize = 1024 * 1024;
 pub(crate) const MAX_IMPORT_FILES: usize = 100;
+/// Where every document so far comes from: the patient added it, and nothing has checked it.
+pub(crate) const MANUAL_IMPORT_LABEL: &str = "Manual import — unverified";
 pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
@@ -226,6 +228,8 @@ pub enum VaultError {
     WeakPassphrase,
     #[error("too many files were selected for one import")]
     ImportBatchLimit,
+    #[error("a file to import is not a PDF")]
+    NotPdf,
     #[error("there is not enough space to complete the operation")]
     NoSpace,
     #[error("the storage operation could not be completed")]
@@ -1183,7 +1187,7 @@ impl VaultStore {
                         profile_id,
                         folder_ids: folder_ids.clone(),
                         display_name: sanitize_basename(&source.display_name),
-                        source_label: "Manual import — unverified".to_owned(),
+                        source_label: MANUAL_IMPORT_LABEL.to_owned(),
                         media_type: "application/octet-stream".to_owned(),
                         plaintext_size: encrypted.plaintext_size,
                         imported_at_ms: now_ms,
@@ -2514,7 +2518,7 @@ fn file_extension(name: &str) -> &str {
     }
 }
 
-fn sanitize_basename(value: &str) -> String {
+pub(crate) fn sanitize_basename(value: &str) -> String {
     let raw = value.rsplit(['/', '\\']).next().unwrap_or("Imported file");
     let mut cleaned = String::new();
     for character in raw.chars().filter(|character| {
@@ -2759,7 +2763,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !record_ids.insert(record.id)
             || !profile_ids.contains(&record.profile_id)
             || !valid_record_name(&record.display_name)
-            || record.source_label != "Manual import — unverified"
+            || record.source_label != MANUAL_IMPORT_LABEL
             || record.media_type != "application/octet-stream"
             || !valid_object_name(&record.object_name)
             || !object_names.insert(record.object_name.as_str())
