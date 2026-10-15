@@ -8,10 +8,12 @@ import {
   isRestoreUnfinished,
   vaultErrorMessage,
   vaultErrorNote,
+  type ReceivedFile,
   type VaultBridge,
   type VaultSnapshot,
   type VaultStatus,
 } from "./vault";
+import { receiveNoticeText } from "./native/receivedNotice";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
@@ -72,6 +74,33 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice] = useState("");
+  // Files shared from another app, waiting. Asked for at start, whenever the
+  // window comes back to the front (which is how a share arrives), after an
+  // unlock, and after an add or a decline. Locked, only their count is shown.
+  const [received, setReceived] = useState<ReceivedFile[]>([]);
+  const refreshReceived = useCallback(() => {
+    bridge.listReceived().then(
+      ({ files, notice: missed }) => {
+        setReceived(files);
+        const text = receiveNoticeText(missed);
+        if (text) setNotice(text);
+      },
+      // Nothing waiting can be shown; the next ask tries again.
+      () => undefined,
+    );
+  }, [bridge]);
+  useEffect(() => {
+    refreshReceived();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshReceived();
+    };
+    window.addEventListener("focus", refreshReceived);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", refreshReceived);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshReceived]);
   // A message for the library that unlocking or creating the vault is about to
   // show. Its status line reads out only what changes once it is on screen, so
   // the message is written just after (see the effect below).
@@ -674,6 +703,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <UnlockVault
         busy={busy}
         notice={notice}
+        waiting={received.length}
         restoreBridge={trackedBridge}
         onRestored={restored}
         autoLockMinutes={autoLockMinutes}
@@ -806,6 +836,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       canPrint={DESKTOP_PLATFORMS.has(platform)}
       keyboardHints={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
+      received={received}
+      onReceivedChanged={refreshReceived}
     />
   );
 }

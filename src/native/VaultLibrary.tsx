@@ -4,6 +4,8 @@ import { Icon } from "../Icon";
 import {
   localDateText,
   namedDamage,
+  notPdfReceivedId,
+  type ReceivedFile,
   type SavedBackup,
   type VaultBridge,
   type VaultFolder,
@@ -16,6 +18,7 @@ import {
   type OpeningRecoverySetup,
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ReceivedFiles } from "./ReceivedFiles";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -79,6 +82,8 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   sizesIn1024s = false,
+  received = [],
+  onReceivedChanged,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -109,6 +114,10 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** Files shared from another app, waiting to be added or declined. */
+  received?: ReceivedFile[];
+  /** Asks again what is waiting, after an add or a decline. */
+  onReceivedChanged?: () => void;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -341,6 +350,38 @@ export function VaultLibrary({
       recordId: activeRecordId,
     });
   };
+
+  // A shared file an add refused as not a PDF, marked in the list.
+  const [notPdfId, setNotPdfId] = useState<string | null>(null);
+  const addReceived = (ids: string[]) =>
+    run(async () => {
+      const folderIds = currentFolderId ? [currentFolderId] : [];
+      try {
+        const outcome = await bridge.importReceived(ids, profileId, folderIds);
+        setNotPdfId(null);
+        await refresh();
+        const skipped = outcome.skippedDuplicates.length
+          ? ` ${outcome.skippedDuplicates.length} duplicate(s) skipped.`
+          : "";
+        setNotice(
+          `${outcome.imported.length} shared file(s) encrypted and added.${skipped}`,
+        );
+      } catch (error) {
+        setNotPdfId(notPdfReceivedId(error));
+        throw error;
+      } finally {
+        onReceivedChanged?.();
+      }
+    });
+  const declineReceived = (ids: string[]) =>
+    run(async () => {
+      try {
+        await bridge.discardReceived(ids);
+      } finally {
+        onReceivedChanged?.();
+      }
+      setNotice(`${ids.length} shared file(s) declined. Nothing was added.`);
+    });
 
   const importFiles = () =>
     run(async () => {
@@ -1051,6 +1092,16 @@ export function VaultLibrary({
                       </button>
                     </div>
                   </div>
+                )}
+                {!readOnly && (
+                  <ReceivedFiles
+                    files={received}
+                    destination={`${profileName(profileId)}'s records${currentFolder ? `, folder ${currentFolder.name}` : ""}`}
+                    notPdfId={notPdfId}
+                    disabled={busy}
+                    onAdd={(ids) => void addReceived(ids)}
+                    onDecline={(ids) => void declineReceived(ids)}
+                  />
                 )}
                 <p className="status-line" role="status" aria-live="polite">
                   {notice}

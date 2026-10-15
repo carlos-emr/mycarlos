@@ -99,6 +99,28 @@ export interface ImportOutcome {
   skippedDuplicates: string[];
 }
 
+/** A file another app shared with myCarlos, waiting for the patient to add or
+ * decline it. Where it came from stays native; the page has an id and a name. */
+export interface ReceivedFile {
+  id: string;
+  name: string;
+  /** The label the document will carry once added. */
+  sourceLabel: string;
+}
+
+/** What could not be received since the page last asked. Counts only. */
+export interface ReceiveNotice {
+  /** Shared items that were not files myCarlos accepts, such as text or links. */
+  dropped: number;
+  /** Shares refused whole: too many files would have been waiting. */
+  refusedShares: number;
+}
+
+export interface ReceivedState {
+  files: ReceivedFile[];
+  notice: ReceiveNotice;
+}
+
 /** How long this device took to derive a key from a passphrase. */
 export interface SpeedTestReport {
   memoryKib: number;
@@ -208,6 +230,17 @@ export interface VaultBridge {
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
   deleteRecord(recordId: string): Promise<void>;
+  /** The shared files waiting, and what could not be received since the
+   * last call (that part is reported once). Works while locked. */
+  listReceived(): Promise<ReceivedState>;
+  /** Adds the waiting files named. If it fails, they all keep waiting. */
+  importReceived(
+    ids: string[],
+    profileId: string,
+    folderIds: string[],
+  ): Promise<ImportOutcome>;
+  /** Forgets waiting files the patient declined. */
+  discardReceived(ids: string[]): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -220,6 +253,8 @@ interface PublicError {
   message?: string;
   /** The document a failure is about, if it is about one. */
   recordId?: string;
+  /** The shared file a failure is about, if it is about one. */
+  receivedId?: string;
   /** A sentence to add after the message, about how the failure came about. */
   note?: string;
   /** How long to wait before the next try, after several wrong ones. */
@@ -283,6 +318,13 @@ function hasErrorCode(error: unknown, code: string): boolean {
     error !== null &&
     (error as PublicError).code === code
   );
+}
+
+/** The waiting shared file an import refused as not a PDF, if that was why. */
+export function notPdfReceivedId(error: unknown): string | null {
+  if (!hasErrorCode(error, "not_pdf")) return null;
+  const { receivedId } = error as PublicError;
+  return typeof receivedId === "string" ? receivedId : null;
 }
 
 /** True when the native side reports that the vault is locked, for example by
@@ -397,6 +439,13 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
+    listReceived: () => invoke<ReceivedState>("received_list"),
+    importReceived: (ids, profileId, folderIds) =>
+      invoke<ImportOutcome>("received_import", {
+        request: { ids, profileId, folderIds },
+      }),
+    discardReceived: (ids) =>
+      invoke<void>("received_discard", { request: { ids } }),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },

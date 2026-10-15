@@ -287,6 +287,20 @@ h1, h2, p { margin: 0; }
 .bulkbar button { padding: 5px 10px; border: 1px solid rgb(255 255 255 / 28%); border-radius: 7px; background: transparent; color: #fff; }
 .bulkbar button:hover:not(:disabled) { background: rgb(255 255 255 / 12%); }
 
+.native-received {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--teal-soft);
+}
+.native-received h2 { margin: 0 0 4px; font-size: 1rem; }
+.native-received p { margin: 6px 0; }
+.native-received-list { margin: 8px 0; padding: 0; list-style: none; }
+.native-received-list li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 4px 0; }
+.native-received-list label { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.native-received-name { overflow-wrap: anywhere; }
+
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
   display: grid;

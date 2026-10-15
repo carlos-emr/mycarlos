@@ -1,10 +1,12 @@
 mod idle;
+mod received;
 mod throttle;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
 
 use idle::{IdleDeadline, Opening};
+use received::{ReceivedFiles, ReceivedSource};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
@@ -54,6 +56,9 @@ struct PublicError {
     /// How long to wait before the next try, after wrong ones.
     #[serde(skip_serializing_if = "Option::is_none")]
     retry_after_ms: Option<u64>,
+    /// The received file a failure is about, for the renderer to name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    received_id: Option<Uuid>,
 }
 
 /// What an error says, whatever it is about.
@@ -117,6 +122,7 @@ impl PublicError {
             record_id: None,
             note: None,
             retry_after_ms: Some(left_ms),
+            received_id: None,
         }
     }
 
@@ -127,6 +133,7 @@ impl PublicError {
             record_id: None,
             note: None,
             retry_after_ms: None,
+            received_id: None,
         }
     }
 
@@ -149,6 +156,7 @@ impl PublicError {
             record_id: None,
             note: None,
             retry_after_ms: None,
+            received_id: None,
         }
     }
 }
@@ -199,6 +207,10 @@ impl From<VaultError> for PublicText {
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
                 message: "Choose no more than 100 files in one import.",
+            },
+            VaultError::NotPdf => Self {
+                code: "not_pdf",
+                message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
@@ -273,6 +285,7 @@ impl From<VaultError> for PublicError {
             record_id,
             note: None,
             retry_after_ms: None,
+            received_id: None,
         }
     }
 }
@@ -733,6 +746,7 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
             record_id: None,
             note: None,
             retry_after_ms: None,
+            received_id: None,
         })??;
     let RuntimeInfo {
         platform,
@@ -1715,14 +1729,36 @@ fn open_import_source(
     path: tauri_plugin_fs::FilePath,
 ) -> Result<ImportSource, VaultError> {
     let display_name = import_display_name(&path);
+    Ok(ImportSource {
+        display_name,
+        reader: require_pdf(open_source_reader(app, path)?)?,
+    })
+}
+
+/// A received file, opened the way a picked one is. Its name was cleaned when it arrived.
+fn open_received_source(
+    app: &tauri::AppHandle,
+    file: received::ReceivedFile,
+) -> Result<ImportSource, VaultError> {
+    let path = match file.source {
+        ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path),
+        ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url),
+    };
+    Ok(ImportSource {
+        display_name: file.name,
+        reader: require_pdf(open_source_reader(app, path)?)?,
+    })
+}
+
+fn open_source_reader(
+    app: &tauri::AppHandle,
+    path: tauri_plugin_fs::FilePath,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
     #[cfg(desktop)]
     {
         if let Ok(local_path) = path.clone().into_path() {
             let file = vault::open_regular_read(&local_path).map_err(import_source_error)?;
-            return Ok(ImportSource {
-                display_name,
-                reader: Box::new(file),
-            });
+            return Ok(Box::new(file));
         }
     }
     let mut options = OpenOptions::new();
@@ -1731,9 +1767,20 @@ fn open_import_source(
         .fs()
         .open(path, options)
         .map_err(|_| VaultError::Storage)?;
-    Ok(ImportSource {
-        display_name,
-        reader: Box::new(file),
+    Ok(Box::new(file))
+}
+
+/// Refuses a file that does not start the way a PDF does. The start is read while the file is
+/// opened, so a refused file stops the import before anything is staged.
+fn require_pdf(
+    reader: Box<dyn std::io::Read + Send>,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    received::require_pdf_header(reader).map_err(|error| {
+        if received::is_not_pdf(&error) {
+            VaultError::NotPdf
+        } else {
+            VaultError::from(error)
+        }
     })
 }
 
@@ -1748,6 +1795,116 @@ fn import_source_error(error: io::Error) -> VaultError {
         io::ErrorKind::InvalidData => VaultError::Invalid,
         _ => VaultError::Storage,
     }
+}
+
+/// What the renderer may see of the files received from other apps.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedState {
+    files: Vec<received::ReceivedSummary>,
+    notice: received::ReceiveNotice,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedImportRequest {
+    ids: Vec<Uuid>,
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedDiscardRequest {
+    ids: Vec<Uuid>,
+}
+
+/// The files waiting for the patient, and what could not be taken since the last call. The
+/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
+/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// there.
+#[tauri::command]
+fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
+    ReceivedState {
+        files: received.list(),
+        notice: received.take_notice(),
+    }
+}
+
+/// Imports the received files the patient confirmed, into the profile and folders chosen. When
+/// anything fails, every one of them keeps waiting, so the patient can try again or discard
+/// one; a file that is not a PDF is named by `receivedId`.
+#[tauri::command]
+async fn received_import(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedImportRequest,
+) -> CommandResult<vault::ImportOutcome> {
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    vault::validate_import_count(request.ids.len()).map_err(PublicError::from)?;
+    let taken = received
+        .take(&request.ids)
+        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
+    let files = taken.clone();
+    let result = run_blocking(store.inner(), move |store| {
+        let mut sources = Vec::with_capacity(files.len());
+        {
+            let _opening = Opening::new(store.idle());
+            for (id, file) in files {
+                match open_received_source(&app, file) {
+                    Ok(source) => sources.push(source),
+                    Err(VaultError::NotPdf) => return Ok(Err(id)),
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        store
+            .import(request.profile_id, request.folder_ids, sources, now_ms())
+            .map(Ok)
+    })
+    .await;
+    match result {
+        Ok(Ok(outcome)) => Ok(outcome),
+        Ok(Err(not_pdf)) => {
+            received.restore(taken);
+            Err(PublicError {
+                received_id: Some(not_pdf),
+                ..PublicError::from(VaultError::NotPdf)
+            })
+        }
+        Err(error) => {
+            received.restore(taken);
+            Err(error)
+        }
+    }
+}
+
+/// Forgets received files the patient declined. Nothing of them was ever stored.
+#[tauri::command]
+fn received_discard(received: State<'_, Arc<ReceivedFiles>>, request: ReceivedDiscardRequest) {
+    received.discard(&request.ids);
+}
+
+/// Files another app opened with myCarlos, on the Mac, iPhone and Android.
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
+    let Some(received) = app.try_state::<Arc<ReceivedFiles>>() else {
+        return;
+    };
+    #[cfg(target_os = "android")]
+    let own_authority = format!("{}.fileprovider", app.config().identifier);
+    #[cfg(target_os = "android")]
+    let platform = received::OpenedPlatform::Android {
+        own_authority: &own_authority,
+    };
+    #[cfg(not(target_os = "android"))]
+    let platform = received::OpenedPlatform::Apple;
+    let sources = urls
+        .iter()
+        .filter_map(|url| received::accept_opened_url(url, platform))
+        .collect();
+    received.receive(urls.len(), sources);
 }
 
 /// Opens the save picker with the record's name. Returns the id of the chosen
@@ -2042,6 +2199,14 @@ pub fn run() {
                     .join("attempts.json"),
             ))));
             app.manage(Arc::new(PendingPicks::default()));
+            app.manage(Arc::new(ReceivedFiles::default()));
+            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
+            // second launch while the app is open is not forwarded yet (#53).
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                let (offered, sources) = received::accept_command_line(std::env::args_os());
+                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
+            }
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             std::thread::Builder::new()
@@ -2082,14 +2247,23 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            received_list,
+            received_import,
+            received_discard,
             vault_export_pick,
             vault_export_picked,
             vault_delete_record,
             vault_remove_unavailable_records,
             vault_reset
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running myCarlos");
+        .build(tauri::generate_context!())
+        .expect("error while building myCarlos")
+        .run(|_app, _event| {
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                receive_opened(_app, &urls);
+            }
+        });
 }
 
 #[cfg(test)]
@@ -2674,6 +2848,31 @@ mod tests {
         assert_eq!(files, ["default.json", "zoom.json"]);
     }
 
+    #[test]
+    fn a_file_that_is_not_a_pdf_is_refused_and_named() {
+        let text = std::io::Cursor::new(b"FAKE plain text".to_vec());
+        assert!(matches!(
+            require_pdf(Box::new(text)),
+            Err(VaultError::NotPdf)
+        ));
+        let pdf = std::io::Cursor::new(b"%PDF-1.7 FAKE".to_vec());
+        let mut kept = Vec::new();
+        std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
+        assert_eq!(kept, b"%PDF-1.7 FAKE");
+        // The renderer names the received file from its id, never from the message.
+        let error = PublicError {
+            received_id: Some(Uuid::nil()),
+            ..PublicError::from(VaultError::NotPdf)
+        };
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["code"], "not_pdf");
+        assert_eq!(json["receivedId"], Uuid::nil().to_string());
+        assert!(
+            serde_json::to_value(PublicError::from(VaultError::Locked)).unwrap()["receivedId"]
+                .is_null()
+        );
+    }
+
     /// A vault with a recovery key being set up, and that key's groups as
     /// typed back; with `replacing`, the vault has a key already, set up at 2.
     fn key_being_set_up(root: &std::path::Path, replacing: bool) -> (VaultStore, Vec<String>) {
@@ -3241,6 +3440,8 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersRequest>(&payload);
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
+            let _ = serde_json::from_slice::<ReceivedImportRequest>(&payload);
+            let _ = serde_json::from_slice::<ReceivedDiscardRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);

@@ -96,6 +96,14 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     pickExportDestination: vi.fn().mockResolvedValue(null),
     exportToPicked: vi.fn().mockResolvedValue(undefined),
     deleteRecord: vi.fn().mockResolvedValue(undefined),
+    listReceived: vi.fn().mockResolvedValue({
+      files: [],
+      notice: { dropped: 0, refusedShares: 0 },
+    }),
+    importReceived: vi
+      .fn()
+      .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+    discardReceived: vi.fn().mockResolvedValue(undefined),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
@@ -431,6 +439,87 @@ describe("durable vault UI", () => {
       "pick-1",
       "profile-1",
       [],
+    );
+  });
+
+  it("shows only a count of shared files while locked, then adds them where the library is open", async () => {
+    const user = userEvent.setup();
+    const waiting = {
+      files: [
+        {
+          id: "shared-1",
+          name: "FAKE_Bloodwork.pdf",
+          sourceLabel: "Manual import — unverified",
+        },
+        {
+          id: "shared-2",
+          name: "FAKE_Xray.pdf",
+          sourceLabel: "Manual import — unverified",
+        },
+      ],
+      notice: { dropped: 1, refusedShares: 0 },
+    };
+    const nothingWaiting = {
+      files: [],
+      notice: { dropped: 0, refusedShares: 0 },
+    };
+    const listReceived = vi
+      .fn()
+      .mockResolvedValueOnce(waiting)
+      .mockResolvedValue({ ...waiting, notice: nothingWaiting.notice });
+    const bridge = nativeBridge({
+      listReceived,
+      importReceived: vi.fn().mockImplementation(async () => {
+        listReceived.mockResolvedValue(nothingWaiting);
+        return { imported: ["record-1"], skippedDuplicates: [] };
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    expect(
+      await screen.findByText(
+        "2 shared files are waiting. Unlock to add them to your records. If myCarlos closes first, they are not kept: share them again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "One shared item was not received: myCarlos accepts PDF files only.",
+      ),
+    ).toBeVisible();
+    // Whoever is looking on has not unlocked: no names.
+    expect(screen.queryByText("FAKE_Bloodwork.pdf")).toBeNull();
+
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    const panel = await screen.findByRole("region", {
+      name: "Shared with myCarlos",
+    });
+    expect(within(panel).getByText("FAKE_Bloodwork.pdf")).toBeVisible();
+    expect(
+      within(panel).getAllByText("Manual import — unverified"),
+    ).toHaveLength(2);
+    expect(within(panel).getByText(/Adds to Jamie's records\./)).toBeVisible();
+
+    await user.click(
+      within(panel).getByRole("checkbox", { name: "FAKE_Xray.pdf" }),
+    );
+    await user.click(within(panel).getByRole("button", { name: "Add 1 file" }));
+    expect(bridge.importReceived).toHaveBeenCalledWith(
+      ["shared-1"],
+      "profile-1",
+      [],
+    );
+    expect(
+      await screen.findByText("1 shared file(s) encrypted and added."),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Shared with myCarlos" }),
+      ).toBeNull(),
     );
   });
 
