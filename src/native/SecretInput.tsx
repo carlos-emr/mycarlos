@@ -1,4 +1,5 @@
 import { useId, type ComponentPropsWithRef } from "react";
+import { useI18n } from "../i18n";
 
 type Props = Omit<ComponentPropsWithRef<"input">, "value" | "type"> & {
   value: string;
@@ -16,11 +17,20 @@ export function SecretInput({
   "aria-describedby": describedBy,
   ...props
 }: Props) {
+  const { t } = useI18n();
   const countId = useId();
   const countedValue =
     secretKind === "password" ? value.normalize("NFC") : value;
-  const count = `${Array.from(countedValue).length} character ${secretKind}`;
-  const description = type === "password" ? count : `${count}, shown`;
+  const count = t(
+    secretKind === "password"
+      ? "secret.count.password"
+      : "secret.count.recoveryKey",
+    { count: Array.from(countedValue).length },
+  );
+  const description =
+    type === "password"
+      ? count
+      : t("secret.count.shown", { description: count });
   return (
     <span className="secret-input">
       <input
