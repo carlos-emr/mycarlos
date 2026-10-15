@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../Icon";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import { RestoreBackup } from "./RestoreBackup";
@@ -24,23 +26,32 @@ export const MIN_PASSPHRASE_CHARS = 15;
 export const tooShortPassphrase = (value: string) =>
   [...value.normalize("NFC")].length < MIN_PASSPHRASE_CHARS;
 
+const FRAME_STATES = {
+  Locked: "frame.state.locked",
+  Locking: "frame.state.locking",
+  "Not locked": "frame.state.notLocked",
+  "Setting up": "frame.state.settingUp",
+  Opening: "frame.state.opening",
+} as const satisfies Record<string, MessageKey>;
+
 export function VaultAuthFrame({
   state,
   children,
 }: {
-  state: "Locked" | "Locking" | "Not locked" | "Setting up" | "Opening";
+  state: keyof typeof FRAME_STATES;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <div className="evaluation-page native-vault-page">
       <div className="evaluation-banner" role="note">
-        <strong>Synthetic-data development build</strong>
-        <span>Do not use real patient information</span>
+        <strong>{t("frame.banner.title")}</strong>
+        <span>{t("frame.banner.body")}</span>
       </div>
       <div className="page-wrap native-auth-wrap">
         <section
           className="app-window native-auth-window"
-          aria-label="myCarlos private vault"
+          aria-label={t("frame.window.label")}
         >
           <header className="titlebar">
             <span className="window-dots" aria-hidden="true">
@@ -50,7 +61,7 @@ export function VaultAuthFrame({
             </span>
             <span className="window-title">myCarlos</span>
             <span className="native-auth-state">
-              <Icon name="shield" /> {state}
+              <Icon name="shield" /> {t(FRAME_STATES[state])}
             </span>
           </header>
           <main className="vault-auth">{children}</main>
@@ -94,11 +105,12 @@ export function ResetConfirmation({
   actionLabel: string;
   onReset: (confirmation: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [resetText, setResetText] = useState("");
   return (
     <>
       <label>
-        Type {RESET_CONFIRMATION}
+        {t("reset.type", { phrase: RESET_CONFIRMATION })}
         <input
           maxLength={RESET_CONFIRMATION.length + 1}
           value={resetText}
@@ -130,6 +142,7 @@ export function CreateVault({
   restoreBridge: RestoreBridge;
   onRestored: () => void;
 }) {
+  const { t } = useI18n();
   const [profile, setProfile] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -153,20 +166,13 @@ export function CreateVault({
   return (
     <VaultAuthFrame state="Setting up">
       <section className="vault-card" aria-labelledby="create-title">
-        <p className="vault-kicker">myCarlos private records</p>
-        <h1 id="create-title">Create your encrypted vault</h1>
-        <p>
-          Your files and record details are encrypted on this device. Your
-          passphrase opens the vault. Next, you can set up a recovery key in
-          case you forget it.
-        </p>
-        <p>
-          Your vault stays on this device. If you created one on another device,
-          it is still there, and will not appear here.
-        </p>
+        <p className="vault-kicker">{t("auth.kicker")}</p>
+        <h1 id="create-title">{t("create.title")}</h1>
+        <p>{t("create.intro")}</p>
+        <p>{t("create.stays")}</p>
         <form onSubmit={submit}>
           <label>
-            First patient profile
+            {t("create.profile.label")}
             <input
               required
               maxLength={NAME_INPUT_MAX_LENGTH}
@@ -174,13 +180,11 @@ export function CreateVault({
               onChange={(e) => setProfile(e.target.value)}
             />
           </label>
-          {profileTooLong && (
-            <p role="alert">This name is too long. Shorten it.</p>
-          )}
+          {profileTooLong && <p role="alert">{t("create.profile.tooLong")}</p>}
           <label>
-            Passphrase
+            {t("passphrase.label")}
             <SecretInput
-              aria-label="Passphrase"
+              aria-label={t("passphrase.label")}
               required
               type="password"
               autoComplete="new-password"
@@ -190,14 +194,12 @@ export function CreateVault({
             />
           </label>
           <small id="passphrase-rules">
-            Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
-            common passwords, names, and predictable patterns are rejected
-            locally.
+            {t("passphrase.rules", { min: MIN_PASSPHRASE_CHARS })}
           </small>
           <label>
-            Confirm passphrase
+            {t("passphrase.confirm.label")}
             <SecretInput
-              aria-label="Confirm passphrase"
+              aria-label={t("passphrase.confirm.label")}
               required
               type="password"
               autoComplete="new-password"
@@ -206,24 +208,21 @@ export function CreateVault({
             />
           </label>
           {confirmation && passphrase !== confirmation && (
-            <p role="alert">Passphrases do not match.</p>
+            <p role="alert">{t("passphrase.mismatch")}</p>
           )}
-          {tooLong && (
-            <p role="alert">This passphrase is too long. Shorten it.</p>
-          )}
+          {tooLong && <p role="alert">{t("passphrase.tooLong")}</p>}
           {tooShort && confirmation && (
             <p role="alert">
-              This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
-              characters.
+              {t("passphrase.tooShort", { min: MIN_PASSPHRASE_CHARS })}
             </p>
           )}
           <AuthNotice notice={notice} />
           <button className="button primary" disabled={busy || invalid}>
-            Create vault
+            {t("create.submit")}
           </button>
         </form>
         <details className="vault-reset">
-          <summary>Restore from a backup</summary>
+          <summary>{t("restore.summary")}</summary>
           <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
         </details>
       </section>
@@ -250,6 +249,7 @@ export function UnlockVault({
   restoreBridge: RestoreBridge;
   onRestored: () => void;
 }) {
+  const { t } = useI18n();
   const [passphrase, setPassphrase] = useState("");
   // Messages go next to the part of the screen they answer: the Unlock form,
   // or the recovery key and erase controls under "Forgot your passphrase?".
@@ -270,18 +270,14 @@ export function UnlockVault({
   return (
     <VaultAuthFrame state="Locked">
       <section className="vault-card" aria-labelledby="unlock-title">
-        <p className="vault-kicker">myCarlos private records</p>
-        <h1 id="unlock-title">Unlock your vault</h1>
-        <p>
-          The vault locks after {autoLockMinutes} minute
-          {autoLockMinutes === 1 ? "" : "s"} of inactivity and whenever myCarlos
-          is hidden, for example minimized or sent to the background.
-        </p>
+        <p className="vault-kicker">{t("auth.kicker")}</p>
+        <h1 id="unlock-title">{t("unlock.title")}</h1>
+        <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
         <form onSubmit={submit}>
           <label>
-            Passphrase
+            {t("passphrase.label")}
             <SecretInput
-              aria-label="Passphrase"
+              aria-label={t("passphrase.label")}
               ref={passphraseRef}
               autoFocus
               required
@@ -292,18 +288,14 @@ export function UnlockVault({
               onChange={(e) => setPassphrase(e.target.value)}
             />
           </label>
-          {tooLong && (
-            <p role="alert">
-              This is longer than any vault passphrase. Check what you typed.
-            </p>
-          )}
+          {tooLong && <p role="alert">{t("passphrase.longerThanAny")}</p>}
           <AuthNotice notice={unlockNotice} />
           <button className="button primary" disabled={busy || tooLong}>
-            Unlock
+            {t("unlock.submit")}
           </button>
         </form>
         <details className="vault-reset">
-          <summary>Forgot your passphrase?</summary>
+          <summary>{t("unlock.forgot.summary")}</summary>
           <RecoverWithKey
             busy={busy}
             notice={source === "forgot" ? notice : ""}
@@ -312,14 +304,11 @@ export function UnlockVault({
               return onRecover(recoveryKey, newPassphrase);
             }}
           />
-          <h2 className="vault-reset-heading">No recovery key?</h2>
-          <p>
-            Without one, the only way back in is to erase this vault, which
-            permanently deletes everything in it, and start again.
-          </p>
+          <h2 className="vault-reset-heading">{t("unlock.noKey.heading")}</h2>
+          <p>{t("unlock.noKey.body")}</p>
           <ResetConfirmation
             busy={busy}
-            actionLabel="Erase vault"
+            actionLabel={t("reset.submit")}
             onReset={(confirmation) => {
               setSource("forgot");
               return onReset(confirmation);
@@ -327,7 +316,7 @@ export function UnlockVault({
           />
         </details>
         <details className="vault-reset">
-          <summary>Restore from a backup</summary>
+          <summary>{t("restore.summary")}</summary>
           <RestoreBackup
             bridge={restoreBridge}
             onRestored={() => {
@@ -358,6 +347,7 @@ function RecoverWithKey({
   notice: string;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [recoveryKey, setRecoveryKey] = useState("");
   const [shown, setShown] = useState(false);
   const [passphrase, setPassphrase] = useState("");
@@ -403,13 +393,11 @@ function RecoverWithKey({
   };
   return (
     <form onSubmit={submit}>
-      <p>
-        Use your recovery key to open the vault and choose a new passphrase.
-      </p>
+      <p>{t("recover.intro")}</p>
       <label>
-        Recovery key
+        {t("recover.key.label")}
         <SecretInput
-          aria-label="Recovery key"
+          aria-label={t("recover.key.label")}
           required
           type={shown ? "text" : "password"}
           secretKind="recovery key"
@@ -423,22 +411,19 @@ function RecoverWithKey({
           onChange={(e) => setRecoveryKey(e.target.value)}
         />
       </label>
-      <small id="recover-key-format">
-        28 letters and digits, in 7 groups of 4, as on your kit or as you wrote
-        it down. Dashes, spaces and other punctuation do not matter.
-      </small>
+      <small id="recover-key-format">{t("recover.key.format")}</small>
       <button
         className="button"
         type="button"
         aria-pressed={shown}
         onClick={() => setShown((current) => !current)}
       >
-        Show recovery key
+        {t("recover.key.show")}
       </button>
       <label>
-        New passphrase
+        {t("passphrase.new.label")}
         <SecretInput
-          aria-label="New passphrase"
+          aria-label={t("passphrase.new.label")}
           required
           type="password"
           autoComplete="new-password"
@@ -448,13 +433,12 @@ function RecoverWithKey({
         />
       </label>
       <small id="recover-passphrase-rules">
-        Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
-        common passwords, names, and predictable patterns are rejected locally.
+        {t("passphrase.rules", { min: MIN_PASSPHRASE_CHARS })}
       </small>
       <label>
-        Confirm new passphrase
+        {t("passphrase.confirmNew.label")}
         <SecretInput
-          aria-label="Confirm new passphrase"
+          aria-label={t("passphrase.confirmNew.label")}
           required
           type="password"
           autoComplete="new-password"
@@ -463,18 +447,17 @@ function RecoverWithKey({
         />
       </label>
       {confirmation && passphrase !== confirmation && (
-        <p role="alert">Passphrases do not match.</p>
+        <p role="alert">{t("passphrase.mismatch")}</p>
       )}
-      {tooLong && <p role="alert">This passphrase is too long. Shorten it.</p>}
+      {tooLong && <p role="alert">{t("passphrase.tooLong")}</p>}
       {tooShort && confirmation && (
         <p role="alert">
-          This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
-          characters.
+          {t("passphrase.tooShort", { min: MIN_PASSPHRASE_CHARS })}
         </p>
       )}
       <AuthNotice id="recover-notice" notice={notice} />
       <button className="button primary" disabled={busy || invalid}>
-        Open with recovery key
+        {t("recover.submit")}
       </button>
     </form>
   );
