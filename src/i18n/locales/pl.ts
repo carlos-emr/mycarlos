@@ -15,22 +15,22 @@ export const pl: Record<MessageKey, Message> = {
   "frame.state.opening": "Otwieranie",
   "auth.kicker": "Prywatne dokumenty myCarlos",
 
-  "passphrase.label": "Hasło",
-  "passphrase.confirm.label": "Powtórz hasło",
-  "passphrase.new.label": "Nowe hasło",
-  "passphrase.confirmNew.label": "Powtórz nowe hasło",
+  "passphrase.label": "Hasło główne",
+  "passphrase.confirm.label": "Powtórz hasło główne",
+  "passphrase.new.label": "Nowe hasło główne",
+  "passphrase.confirmNew.label": "Powtórz nowe hasło główne",
   "passphrase.rules":
     "Proszę użyć co najmniej {min} znaków. Spacje są dozwolone; popularne hasła, imiona i nazwiska oraz łatwe do odgadnięcia wzorce są odrzucane na tym urządzeniu.",
-  "passphrase.mismatch": "Hasła nie są takie same.",
-  "passphrase.tooLong": "To hasło jest zbyt długie. Proszę je skrócić.",
+  "passphrase.mismatch": "Hasła główne nie są takie same.",
+  "passphrase.tooLong": "To hasło główne jest zbyt długie. Proszę je skrócić.",
   "passphrase.tooShort":
-    "To hasło jest zbyt krótkie. Proszę użyć co najmniej {min} znaków.",
+    "To hasło główne jest zbyt krótkie. Proszę użyć co najmniej {min} znaków.",
   "passphrase.longerThanAny":
-    "Ten tekst jest dłuższy niż jakiekolwiek hasło do sejfu. Proszę sprawdzić, co zostało wpisane.",
+    "Ten tekst jest dłuższy niż jakiekolwiek hasło główne do sejfu. Proszę sprawdzić, co zostało wpisane.",
 
   "create.title": "Utwórz zaszyfrowany sejf",
   "create.intro":
-    "Pliki i szczegóły dokumentów są szyfrowane na tym urządzeniu. Hasło otwiera sejf. Następnie można skonfigurować klucz odzyskiwania na wypadek zapomnienia hasła.",
+    "Pliki i szczegóły dokumentów są szyfrowane na tym urządzeniu. Hasło główne otwiera sejf. Następnie można skonfigurować klucz odzyskiwania na wypadek zapomnienia hasła głównego.",
   "create.stays":
     "Sejf pozostaje na tym urządzeniu. Jeśli został utworzony na innym urządzeniu, nadal tam jest i nie pojawi się tutaj.",
   "create.profile.label": "Pierwszy profil pacjenta",
@@ -46,7 +46,7 @@ export const pl: Record<MessageKey, Message> = {
       "Sejf blokuje się po {count} minuty bezczynności oraz za każdym razem, gdy myCarlos zostaje ukryty, na przykład zminimalizowany lub przeniesiony do tła.",
   },
   "unlock.submit": "Odblokuj",
-  "unlock.forgot.summary": "Nie pamiętasz hasła?",
+  "unlock.forgot.summary": "Nie pamiętasz hasła głównego?",
   "unlock.noKey.heading": "Nie masz klucza odzyskiwania?",
   "unlock.noKey.body":
     "Bez niego jedynym sposobem powrotu jest usunięcie tego sejfu, co trwale kasuje wszystko, co w nim jest, i rozpoczęcie od nowa.",
@@ -56,7 +56,7 @@ export const pl: Record<MessageKey, Message> = {
   "reset.submit": "Usuń sejf",
 
   "recover.intro":
-    "Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło.",
+    "Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.",
   "recover.key.label": "Klucz odzyskiwania",
   "recover.key.format":
     "28 liter i cyfr, w 7 grupach po 4, tak jak na zestawie lub tak, jak zostały zapisane. Myślniki, spacje i inne znaki interpunkcyjne nie mają znaczenia.",
@@ -64,10 +64,10 @@ export const pl: Record<MessageKey, Message> = {
   "recover.submit": "Otwórz kluczem odzyskiwania",
 
   "secret.count.password": {
-    one: "Hasło: {count} znak",
-    few: "Hasło: {count} znaki",
-    many: "Hasło: {count} znaków",
-    other: "Hasło: {count} znaku",
+    one: "Hasło główne: {count} znak",
+    few: "Hasło główne: {count} znaki",
+    many: "Hasło główne: {count} znaków",
+    other: "Hasło główne: {count} znaku",
   },
   "secret.count.recoveryKey": {
     one: "Klucz odzyskiwania: {count} znak",
@@ -78,15 +78,15 @@ export const pl: Record<MessageKey, Message> = {
   "secret.count.shown": "{description}, widoczne",
 
   "restore.intro":
-    "Zaszyfrowaną kopię zapasową otwiera hasło, którego użyto przy jej tworzeniu, albo klucz odzyskiwania, jaki sejf miał w chwili zapisania kopii, jeśli go miał.",
+    "Zaszyfrowaną kopię zapasową otwiera hasło główne, którego użyto przy jej tworzeniu, albo klucz odzyskiwania, jaki sejf miał w chwili zapisania kopii, jeśli go miał.",
   "restore.choose": "Wybierz plik kopii zapasowej…",
   "restore.chooseOther": "Wybierz inną kopię zapasową…",
   "restore.chosen": "Wybrano kopię zapasową.",
   "restore.openWith": "Otwórz za pomocą",
-  "restore.method.passphrase": "Jej hasła",
+  "restore.method.passphrase": "Jej hasła głównego",
   "restore.method.recoveryKey": "Jej klucza odzyskiwania",
-  "restore.passphrase.label": "Hasło kopii zapasowej",
-  "restore.passphrase.show": "Pokaż hasło",
+  "restore.passphrase.label": "Hasło główne kopii zapasowej",
+  "restore.passphrase.show": "Pokaż hasło główne",
   "restore.tooLong":
     "To jest zbyt długie. Proszę sprawdzić, co zostało wpisane.",
   "restore.check": "Sprawdź kopię zapasową",
@@ -102,7 +102,7 @@ export const pl: Record<MessageKey, Message> = {
   "restore.consequence.same":
     "Sejf na tym urządzeniu zawiera te same dokumenty. Przywrócenie zastępuje go tą kopią zapasową.",
   "restore.consequence.differs":
-    "Sejf na tym urządzeniu może nie być taki sam jak ta kopia zapasowa: mógł się od tego czasu zmienić albo jego część nie mogła zostać odczytana. Przywrócenie zastępuje sejf kopią zapasową: wszystko, co jest w sejfie, a czego nie ma w kopii, zostaje utracone, a hasło i klucz odzyskiwania stają się tymi, z którymi wykonano kopię.",
+    "Sejf na tym urządzeniu może nie być taki sam jak ta kopia zapasowa: mógł się od tego czasu zmienić albo jego część nie mogła zostać odczytana. Przywrócenie zastępuje sejf kopią zapasową: wszystko, co jest w sejfie, a czego nie ma w kopii, zostaje utracone, a hasło główne i klucz odzyskiwania stają się tymi, z którymi wykonano kopię.",
   "restore.consequence.otherVault":
     "To urządzenie ma inny sejf. Przywrócenie trwale go usuwa i umieszcza w jego miejscu kopię zapasową.",
   "restore.consequence.unreadable":
