@@ -31,7 +31,7 @@ async function fakeVault(
                   profileId: "profile",
                   parentId: null,
                   name: "FAKE Results",
-                  createdAtMs: 1,
+                  createdAtMs: Date.UTC(2026, 9, 1, 12),
                 },
               ],
               records: [
@@ -43,7 +43,7 @@ async function fakeVault(
                   sourceLabel: "Manual import — unverified",
                   mediaType: "application/pdf",
                   plaintextSize: 200,
-                  importedAtMs: 1,
+                  importedAtMs: Date.UTC(2026, 9, 2, 12),
                   available: true,
                 },
               ],
