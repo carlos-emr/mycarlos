@@ -26,6 +26,7 @@ import {
   searchKey,
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
+import { folderPath, folderSubtree, recordPath } from "./folderTree";
 import { ANNOUNCE_DELAY_MS } from "./announce";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 import {
@@ -40,26 +41,6 @@ import {
 type NativeSection = "records" | "security" | "preferences";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
-
-/** The ids of a folder and of every folder beneath it. */
-function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
-  const subtree = new Set([rootId]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const folder of folders) {
-      if (
-        folder.parentId &&
-        subtree.has(folder.parentId) &&
-        !subtree.has(folder.id)
-      ) {
-        subtree.add(folder.id);
-        grew = true;
-      }
-    }
-  }
-  return subtree;
-}
 
 export function VaultLibrary({
   bridge,
@@ -186,40 +167,63 @@ export function VaultLibrary({
   );
   const currentFolder =
     folders.find((folder) => folder.id === currentFolderId) ?? null;
+  const folderById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders],
+  );
   const folderNameById = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder.name])),
     [folders],
   );
   const normalizedQuery = searchKey(query.trim());
+  // A search covers the open folder and every folder beneath it; from the top
+  // level (null), the whole profile. Without one, only what is directly in
+  // the open folder is shown.
+  const searchScope = useMemo(
+    () =>
+      normalizedQuery && currentFolderId
+        ? folderSubtree(folders, currentFolderId)
+        : null,
+    [currentFolderId, folders, normalizedQuery],
+  );
   const visibleFolders = useMemo(
     () =>
       folders
-        .filter((folder) => folder.parentId === currentFolderId)
-        .filter(
-          (folder) =>
-            !normalizedQuery ||
-            searchKey(folder.name).includes(normalizedQuery),
+        .filter((folder) =>
+          normalizedQuery
+            ? folder.id !== currentFolderId &&
+              (!searchScope || searchScope.has(folder.id)) &&
+              searchKey(folder.name).includes(normalizedQuery)
+            : folder.parentId === currentFolderId,
         )
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    [currentFolderId, folders, normalizedQuery],
+        .sort(
+          (left, right) =>
+            left.name.localeCompare(right.name) ||
+            folderPath(folderById, left.parentId).localeCompare(
+              folderPath(folderById, right.parentId),
+            ),
+        ),
+    [currentFolderId, folderById, folders, normalizedQuery, searchScope],
   );
+  // One entry per document, however many folders it is filed in.
   const visibleRecords = useMemo(() => {
     const matching = records.filter((record) => {
-      const inFolder = currentFolderId
+      if (normalizedQuery)
+        return (
+          (!searchScope ||
+            record.folderIds.some((id) => searchScope.has(id))) &&
+          searchKey(record.displayName).includes(normalizedQuery)
+        );
+      return currentFolderId
         ? record.folderIds.includes(currentFolderId)
         : record.folderIds.length === 0;
-      return (
-        inFolder &&
-        (!normalizedQuery ||
-          searchKey(record.displayName).includes(normalizedQuery))
-      );
     });
     return matching.sort((left, right) =>
       sort === "name"
         ? left.displayName.localeCompare(right.displayName)
         : right.importedAtMs - left.importedAtMs,
     );
-  }, [currentFolderId, normalizedQuery, records, sort]);
+  }, [currentFolderId, normalizedQuery, records, searchScope, sort]);
   const selectedRecords = records.filter((record) =>
     selectedIds.includes(record.id),
   );
@@ -639,6 +643,9 @@ export function VaultLibrary({
   }, [records]);
   const folderCount = (id: string) => folderCounts.get(id) ?? 0;
   const locationTitle = currentFolder?.name ?? "My records";
+  const searchLabel = currentFolder
+    ? "Search this folder and its subfolders"
+    : "Search everything in My records";
 
   return (
     <div className="evaluation-page native-vault-page">
@@ -732,10 +739,17 @@ export function VaultLibrary({
                   "library-main",
                   `pane:${currentFolderId ?? "root"}`,
                 )}
-                onDragOver={(event) =>
-                  dragOver(event, `pane:${currentFolderId ?? "root"}`)
-                }
-                onDrop={(event) => dropInto(event, currentFolderId)}
+                // Search results can come from below the open folder, and
+                // letting go of one where it started would move it into the
+                // open folder: the pane takes drops only when it shows the
+                // open folder's own items.
+                onDragOver={(event) => {
+                  if (!normalizedQuery)
+                    dragOver(event, `pane:${currentFolderId ?? "root"}`);
+                }}
+                onDrop={(event) => {
+                  if (!normalizedQuery) dropInto(event, currentFolderId);
+                }}
               >
                 <div className="native-profile-row">
                   <button
@@ -777,7 +791,7 @@ export function VaultLibrary({
                     </h1>
                     <p>
                       {visibleFolders.length} folders · {visibleRecords.length}{" "}
-                      documents in this location
+                      documents {normalizedQuery ? "found" : "in this location"}
                     </p>
                   </div>
                   <div className="head-actions">
@@ -968,12 +982,12 @@ export function VaultLibrary({
 
                 <label className="search">
                   <Icon name="search" />
-                  <span className="sr-only">Search this location</span>
+                  <span className="sr-only">{searchLabel}</span>
                   <input
                     type="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search this location"
+                    placeholder={searchLabel}
                   />
                 </label>
                 <div className="viewbar">
@@ -1063,6 +1077,16 @@ export function VaultLibrary({
                   selectedIds={selectedIds}
                   disabled={busy || readOnly}
                   searching={Boolean(query)}
+                  folderLocation={
+                    normalizedQuery
+                      ? (folder) => folderPath(folderById, folder.parentId)
+                      : undefined
+                  }
+                  recordLocation={
+                    normalizedQuery
+                      ? (record) => recordPath(folderById, record)
+                      : undefined
+                  }
                   unavailableLabel={
                     snapshot.recovery === "unreadableSlot"
                       ? "File unavailable"

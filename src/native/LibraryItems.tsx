@@ -16,6 +16,10 @@ interface LibraryItemsProps {
   drag: VaultDragDrop;
   recordDragItem: (recordId: string) => DragItem;
   folderCount: (folderId: string) => number;
+  /** While searching, where each result is (a path from the top), so that
+   * two with the same name can be told apart. */
+  folderLocation?: (folder: VaultFolder) => string;
+  recordLocation?: (record: VaultRecord) => string;
   onOpenFolder: (folderId: string) => void;
   onOpenRecord: (recordId: string) => void;
   onRenameFolder: (folder: VaultFolder) => void;
@@ -49,6 +53,8 @@ export function LibraryItems({
   drag,
   recordDragItem,
   folderCount,
+  folderLocation,
+  recordLocation,
   onOpenFolder,
   onOpenRecord,
   onRenameFolder,
@@ -89,7 +95,11 @@ export function LibraryItems({
             className="file-name native-file-open"
             type="button"
             aria-label={`Open ${folder.name}`}
-            aria-describedby={`folder-items-${folder.id}`}
+            aria-describedby={
+              folderLocation
+                ? `folder-items-${folder.id} folder-path-${folder.id}`
+                : `folder-items-${folder.id}`
+            }
             onClick={() => onOpenFolder(folder.id)}
           >
             <span className="document-icon folder">
@@ -100,6 +110,14 @@ export function LibraryItems({
               <small id={`folder-items-${folder.id}`}>
                 {folderCount(folder.id)} items
               </small>
+              {folderLocation && (
+                <small
+                  className="native-result-path"
+                  id={`folder-path-${folder.id}`}
+                >
+                  In {folderLocation(folder)}
+                </small>
+              )}
             </span>
           </button>
           <span className="column" aria-hidden="true">
@@ -135,6 +153,9 @@ export function LibraryItems({
               className={`check ${selectedIds.includes(record.id) ? "checked" : ""}`}
               type="button"
               aria-label={`Select ${record.displayName}`}
+              aria-describedby={
+                recordLocation ? `record-path-${record.id}` : undefined
+              }
               aria-pressed={selectedIds.includes(record.id)}
               onClick={() => onToggleSelected(record.id)}
             />
@@ -146,6 +167,9 @@ export function LibraryItems({
                 <button
                   className="record-open"
                   type="button"
+                  aria-describedby={
+                    recordLocation ? `record-path-${record.id}` : undefined
+                  }
                   onClick={() => onOpenRecord(record.id)}
                 >
                   {record.displayName}
@@ -154,6 +178,14 @@ export function LibraryItems({
                   {formatBytes(record.plaintextSize)} · {kind.label}
                   {!record.available && ` · ${unavailableLabel}`}
                 </small>
+                {recordLocation && (
+                  <small
+                    className="native-result-path"
+                    id={`record-path-${record.id}`}
+                  >
+                    In {recordLocation(record)}
+                  </small>
+                )}
               </span>
             </div>
             <span className="column">{record.sourceLabel}</span>
@@ -208,6 +240,11 @@ export function LibraryItems({
               <span>
                 <strong>{folder.name}</strong>
                 <small>{folderCount(folder.id)} items</small>
+                {folderLocation && (
+                  <small className="native-result-path">
+                    In {folderLocation(folder)}
+                  </small>
+                )}
               </span>
             </span>
           </button>
@@ -255,6 +292,11 @@ export function LibraryItems({
                     {new Date(record.importedAtMs).toLocaleDateString()}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
+                  {recordLocation && (
+                    <small className="native-result-path">
+                      In {recordLocation(record)}
+                    </small>
+                  )}
                 </span>
               </span>
             </button>
