@@ -122,3 +122,22 @@ describe("text sizes", () => {
     },
   );
 });
+
+describe("colours", () => {
+  it("are set only through the theme variables, so each theme sets them all", () => {
+    const literal =
+      /#[0-9a-f]{3,8}\b|\b(?:rgb|hsl)a?\(|(?<![-\w])(?:white|black)(?![-\w])/i;
+    const outside = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(
+      ([, selector, body]) =>
+        body
+          .split(";")
+          .map((declaration) => declaration.trim())
+          .filter(
+            (declaration) =>
+              !declaration.startsWith("--") && literal.test(declaration),
+          )
+          .map((declaration) => `${selector.trim()} { ${declaration} }`),
+    );
+    expect(outside).toEqual([]);
+  });
+});

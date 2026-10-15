@@ -209,6 +209,32 @@ async function contrast(
 const text =
   "h1,h2,h3,p,label,button,select,input,small,strong,.eyebrow,.nav-count,.tag,.chip";
 
+/** In forced colours, Chromium draws text on a Canvas backplate, whatever
+ * the background behind it: text the colour of Canvas would vanish. */
+async function readableOnBackplate(page: Page) {
+  const failures = await page.locator(text).evaluateAll((elements) => {
+    const probe = document.body.appendChild(document.createElement("div"));
+    probe.style.color = "Canvas";
+    const canvas = getComputedStyle(probe).color;
+    probe.remove();
+    return elements
+      .filter((element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          box.width > 1 &&
+          box.height > 1 &&
+          getComputedStyle(element).visibility === "visible" &&
+          !element.closest(".sr-only") &&
+          element.textContent?.trim() &&
+          getComputedStyle(element).forcedColorAdjust !== "none" &&
+          getComputedStyle(element).color === canvas
+        );
+      })
+      .map((element) => element.textContent?.trim().slice(0, 60));
+  });
+  expect(failures).toEqual([]);
+}
+
 test("remembers appearance and follows live system changes without vault mutations", async ({
   page,
 }, info) => {
@@ -363,6 +389,7 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await choice.press("End");
   await expect(choice).toHaveCSS("outline-style", "solid");
   await contrast(page, "select[aria-describedby]", "outline-color", 3);
+  await readableOnBackplate(page);
   await screenshot(page, info, "forced-preferences-focus");
   await section(page, info, "records");
   await expect(
@@ -376,14 +403,67 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await expect(selected).toHaveCSS("outline-style", "solid");
   await expect(selected).toHaveCSS("opacity", "1");
   await expect(selected).toHaveCSS("box-shadow", "none");
-  await expect(page.locator(".brand-mark .icon")).toBeVisible();
+  // A phone shows no sidebar, so no brand mark.
+  if (info.project.name !== "phone")
+    await expect(page.locator(".brand-mark .icon")).toBeVisible();
   await contrast(page, ".icon", "stroke", 3);
   await accessible(page);
+  await readableOnBackplate(page);
   await screenshot(page, info, "forced-warning-selected");
   await page.emulateMedia({ forcedColors: "none" });
   await section(page, info, "preferences");
   await expect(choice).toHaveValue("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+test("forced colours keep the locked screen's field, focus and button visible", async ({
+  page,
+}, info) => {
+  await fakeVault(
+    page,
+    info.project.name === "phone" ? "ios" : "windows",
+    true,
+  );
+  await page.emulateMedia({ colorScheme: "dark", forcedColors: "active" });
+  await page.goto("/");
+  const passphrase = page.getByLabel("Passphrase", { exact: true });
+  await passphrase.focus();
+  await expect(passphrase).toHaveCSS("outline-style", "solid");
+  await contrast(page, "input:focus", "outline-color", 3);
+  await contrast(page, "input", "border-top-color", 3);
+  await expect(page.getByRole("button", { name: "Unlock" })).toBeVisible();
+  await accessible(page);
+  await readableOnBackplate(page);
+  await screenshot(page, info, "forced-locked-focus");
+});
+
+test("forced colours keep the library's controls and a dialog's field and buttons visible", async ({
+  page,
+}, info) => {
+  await fakeVault(page, info.project.name === "phone" ? "ios" : "windows");
+  await page.emulateMedia({ colorScheme: "dark", forcedColors: "active" });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+  await contrast(page, ".button.primary", "color");
+  await contrast(page, ".icon", "stroke", 3);
+  await accessible(page);
+  await readableOnBackplate(page);
+  await screenshot(page, info, "forced-library");
+  await page
+    .getByRole("button", { name: "Rename folder FAKE Results" })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Rename folder",
+    exact: true,
+  });
+  const name = dialog.getByLabel("Folder name");
+  await expect(name).toBeFocused();
+  await expect(name).toHaveCSS("outline-style", "solid");
+  await contrast(page, "input:focus", "outline-color", 3);
+  await contrast(page, ".dialog-actions .button", "color");
+  await accessible(page);
+  await readableOnBackplate(page);
+  await screenshot(page, info, "forced-rename-dialog-focus");
 });
 
 test("short-window and phone Preferences remain reachable by keyboard", async ({

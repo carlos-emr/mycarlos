@@ -478,6 +478,6 @@ it has no Preferences screen. This is still a synthetic-data evaluation, not app
 
 `tests/appearance.spec.ts` exercises the real native UI with a synthetic IPC bridge in Chromium,
 including phone layout, live system changes, contrast checks and forced-colours emulation. This
-is separate from actual Windows/macOS native appearance testing and the outstanding PR #40
-zoom/device UI checks. Capture fresh light/dark/forced-colours screenshots at the reviewed head;
+is separate from actual Windows/macOS native appearance testing and the text-size checks on
+real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
 old screenshots and successful CI do not establish Ben's UI approval.

@@ -773,7 +773,7 @@ h1, h2, p { margin: 0; }
   .recovery-kit-key { font-family: ui-monospace, Consolas, monospace; font-size: 1.5rem; font-weight: 700; letter-spacing: .12em; }
 }
 .native-rename-fields label { font-weight: 700; }
-.native-rename-fields input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; }
+.native-rename-fields input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 .native-rename-input { display: flex; align-items: center; gap: 6px; }
 .native-rename-input span { color: var(--ink-soft); font-weight: 700; white-space: nowrap; }
 .native-rename-fields p { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
@@ -863,6 +863,11 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
     outline: 2px solid Highlight; outline-offset: -2px;
   }
   .check { border-color: ButtonBorder; }
+  /* Text here sits on a Canvas backplate, so a main button is drawn as any
+     button rather than LinkText behind it. A toggle's thumb is no text: on
+     LinkText it is Canvas, a pair every contrast theme keeps apart. */
+  .button.primary:not(:disabled):not([aria-disabled="true"]) { border-color: ButtonBorder; background: ButtonFace; color: ButtonText; }
+  .toggle:not(.off)::after { background: Canvas; }
   .brand-mark { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
   /* These content graphics disappear when their paper and lines all map to Canvas.
      Keep their original colours, without opting any app controls out. */
