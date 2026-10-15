@@ -61,6 +61,12 @@ describe("shared files waiting", () => {
     const dialog = screen.getByRole("alertdialog", {
       name: "Decline 3 files?",
     });
+    // Each file is named, so the patient sees which ones are forgotten.
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["FAKE_Bloodwork.pdf", "FAKE_Notes.pdf", "FAKE_Xray.pdf"]);
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onDecline).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Decline 3 files" }));
@@ -75,12 +81,36 @@ describe("shared files waiting", () => {
   it("marks a file refused as not a PDF and leaves it unticked", async () => {
     const user = userEvent.setup();
     const { onAdd } = renderPanel({ notPdfId: "shared-2" });
-    expect(screen.getByText("Not a PDF document: decline it")).toBeVisible();
+    expect(screen.getByText("Not a PDF document")).toBeVisible();
     expect(
       screen.getByRole("checkbox", { name: "FAKE_Notes.pdf" }),
     ).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: "Add 2 files" }));
     expect(onAdd).toHaveBeenCalledWith(["shared-1", "shared-3"]);
+  });
+
+  it("declines the refused file from its own button, naming it", async () => {
+    const user = userEvent.setup();
+    const { onDecline } = renderPanel({ notPdfId: "shared-2" });
+    // The ticked files are the good ones: the bulk button names them.
+    await user.click(screen.getByRole("button", { name: "Decline 2 files" }));
+    expect(
+      within(screen.getByRole("alertdialog", { name: "Decline 2 files?" }))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["FAKE_Bloodwork.pdf", "FAKE_Xray.pdf"]);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onDecline).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Decline FAKE_Notes.pdf" }),
+    );
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Decline FAKE_Notes.pdf?",
+    });
+    expect(within(dialog).queryByRole("list")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Decline" }));
+    expect(onDecline).toHaveBeenCalledWith(["shared-2"]);
   });
 
   it("does nothing while another operation runs", () => {

@@ -1865,7 +1865,10 @@ async fn received_import(
     })
     .await;
     match result {
-        Ok(Ok(outcome)) => Ok(outcome),
+        Ok(Ok(outcome)) => {
+            received.finish(&taken);
+            Ok(outcome)
+        }
         Ok(Err(not_pdf)) => {
             received.restore(taken);
             Err(PublicError {

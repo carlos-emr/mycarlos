@@ -188,13 +188,21 @@ pub(crate) struct ReceivedSummary {
 /// a later step of #49).
 #[derive(Default)]
 pub(crate) struct ReceivedFiles {
-    entries: Mutex<Vec<(Uuid, ReceivedFile)>>,
+    waiting: Mutex<Waiting>,
     notice: Mutex<ReceiveNotice>,
 }
 
+#[derive(Default)]
+struct Waiting {
+    files: Vec<(Uuid, ReceivedFile)>,
+    /// How many files an import has taken and not finished. They count against the limit:
+    /// a failed import puts them back, and that must not take the total past it.
+    taken: usize,
+}
+
 impl ReceivedFiles {
-    fn entries(&self) -> MutexGuard<'_, Vec<(Uuid, ReceivedFile)>> {
-        self.entries.lock().unwrap_or_else(PoisonError::into_inner)
+    fn waiting(&self) -> MutexGuard<'_, Waiting> {
+        self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn notice(&self) -> MutexGuard<'_, ReceiveNotice> {
@@ -216,8 +224,9 @@ impl ReceivedFiles {
         std::mem::take(&mut *self.notice())
     }
 
-    /// Adds one share. It is refused whole when it, or the total waiting, would exceed the
-    /// import limit, so a patient never sees part of what they shared silently left out.
+    /// Adds one share. It is refused whole when it, or the total waiting (counting files an
+    /// import has taken), would exceed the import limit, so a patient never sees part of what
+    /// they shared silently left out.
     pub(crate) fn add_share(
         &self,
         sources: Vec<ReceivedSource>,
@@ -225,22 +234,23 @@ impl ReceivedFiles {
         if sources.is_empty() {
             return Err(ShareRefused::NothingUsable);
         }
-        let mut entries = self.entries();
-        if sources.len() > MAX_IMPORT_FILES || entries.len() + sources.len() > MAX_IMPORT_FILES {
+        let mut waiting = self.waiting();
+        if waiting.files.len() + waiting.taken + sources.len() > MAX_IMPORT_FILES {
             return Err(ShareRefused::TooMany);
         }
         let mut ids = Vec::with_capacity(sources.len());
         for source in sources {
             let id = Uuid::new_v4();
             let name = received_name(&source);
-            entries.push((id, ReceivedFile { source, name }));
+            waiting.files.push((id, ReceivedFile { source, name }));
             ids.push(id);
         }
         Ok(ids)
     }
 
     pub(crate) fn list(&self) -> Vec<ReceivedSummary> {
-        self.entries()
+        self.waiting()
+            .files
             .iter()
             .map(|(id, file)| ReceivedSummary {
                 id: *id,
@@ -252,37 +262,48 @@ impl ReceivedFiles {
 
     /// Removes and returns exactly the files named, in arrival order, or nothing at all when
     /// any id is unknown or repeated: an import must not quietly take fewer files than confirmed.
+    /// The import then calls `finish` or `restore` with them.
     pub(crate) fn take(&self, ids: &[Uuid]) -> Option<Vec<(Uuid, ReceivedFile)>> {
-        let mut entries = self.entries();
+        let mut waiting = self.waiting();
         let wanted: std::collections::HashSet<Uuid> = ids.iter().copied().collect();
         if wanted.len() != ids.len()
             || !wanted
                 .iter()
-                .all(|id| entries.iter().any(|(known, _)| known == id))
+                .all(|id| waiting.files.iter().any(|(known, _)| known == id))
         {
             return None;
         }
-        let (taken, kept): (Vec<_>, Vec<_>) =
-            entries.drain(..).partition(|(id, _)| wanted.contains(id));
-        *entries = kept;
+        let (taken, kept): (Vec<_>, Vec<_>) = waiting
+            .files
+            .drain(..)
+            .partition(|(id, _)| wanted.contains(id));
+        waiting.files = kept;
+        waiting.taken += taken.len();
         Some(taken)
+    }
+
+    /// Ends an import that added the files it took.
+    pub(crate) fn finish(&self, taken: &[(Uuid, ReceivedFile)]) {
+        let mut waiting = self.waiting();
+        waiting.taken = waiting.taken.saturating_sub(taken.len());
     }
 
     /// Puts back files an import took and could not finish, ahead of any received since.
     pub(crate) fn restore(&self, taken: Vec<(Uuid, ReceivedFile)>) {
-        let mut entries = self.entries();
-        let later = std::mem::replace(&mut *entries, taken);
-        entries.extend(later);
+        let mut waiting = self.waiting();
+        waiting.taken = waiting.taken.saturating_sub(taken.len());
+        let later = std::mem::replace(&mut waiting.files, taken);
+        waiting.files.extend(later);
     }
 
     /// Forgets the files named. Unknown ids are ignored: a file already imported is gone too.
     pub(crate) fn discard(&self, ids: &[Uuid]) {
-        self.entries().retain(|(id, _)| !ids.contains(id));
+        self.waiting().files.retain(|(id, _)| !ids.contains(id));
     }
 
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.entries().len()
+        self.waiting().files.len()
     }
 }
 
@@ -488,6 +509,24 @@ mod tests {
             files.list().iter().map(|s| s.id).collect::<Vec<_>>(),
             [first[0], first[1], later[0]]
         );
+    }
+
+    #[test]
+    fn files_an_import_has_taken_still_count_against_the_limit() {
+        let files = ReceivedFiles::default();
+        let first = files.add_share(sources(60)).unwrap();
+        let taken = files.take(&first[..50]).unwrap();
+        // 10 waiting and 50 taken: a share of 41 would make 101 once they come back.
+        assert_eq!(files.add_share(sources(41)), Err(ShareRefused::TooMany));
+        files.add_share(sources(40)).unwrap();
+        files.restore(taken);
+        assert_eq!(files.len(), MAX_IMPORT_FILES);
+        // Taken and added: they no longer count.
+        let all: Vec<Uuid> = files.list().iter().map(|s| s.id).collect();
+        let taken = files.take(&all[..30]).unwrap();
+        files.finish(&taken);
+        files.add_share(sources(30)).unwrap();
+        assert_eq!(files.len(), MAX_IMPORT_FILES);
     }
 
     #[test]
