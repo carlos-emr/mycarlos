@@ -620,6 +620,9 @@ h1, h2, p { margin: 0; }
 .native-folder-move label { display: grid; min-width: 170px; gap: 5px; font-size: 0.875rem; font-weight: 700; }
 .native-folder-move select { min-width: 0; max-width: 100%; min-height: 39px; padding: 7px 28px 7px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 .native-location-chip { padding: 5px 10px; border-radius: 999px; background: var(--canvas-2); color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+/* A search result's folder path wraps rather than being cut, since its end
+   is often what tells two results apart. */
+.name-copy .native-result-path, .tile-caption .native-result-path { white-space: normal; overflow-wrap: anywhere; }
 .native-drag-hint { color: var(--ink-faint); font-size: 0.875rem; }
 .native-draggable { cursor: grab; transition: opacity 120ms ease, box-shadow 120ms ease, background-color 120ms ease; }
 .native-draggable:active { cursor: grabbing; }

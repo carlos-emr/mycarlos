@@ -2255,7 +2255,7 @@ describe("durable vault UI", () => {
     expect(screen.getByText("2 selected")).toBeVisible();
 
     await user.type(
-      screen.getByPlaceholderText("Search this location"),
+      screen.getByPlaceholderText("Search everything in My records"),
       "Alpha",
     );
     expect(screen.queryByText("FAKE_Beta.pdf")).not.toBeInTheDocument();
