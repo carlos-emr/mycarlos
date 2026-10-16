@@ -1,6 +1,14 @@
 import { useId, useSyncExternalStore } from "react";
 import { useAppearance } from "../AppearanceProvider";
-import { appearanceMode, type Appearance } from "../appearance";
+import type { Appearance, AppearanceMode } from "../appearance";
+
+// All three choices stay in view: a short list of radio buttons is easier to
+// read and press than a dropdown (#67).
+const CHOICES: ReadonlyArray<[AppearanceMode, string]> = [
+  ["system", "System"],
+  ["light", "Light"],
+  ["dark", "Dark"],
+];
 
 export function AppearanceSetting() {
   const appearance = useAppearance();
@@ -22,26 +30,30 @@ function AppearanceChoice({ appearance }: { appearance: Appearance }) {
           follows your device automatically.
         </p>
       </div>
-      <div className="appearance-choice">
-        <label htmlFor={id}>Appearance</label>
-        <select
-          id={id}
-          value={state.mode}
-          aria-describedby={`${id}-description${error ? ` ${id}-error` : ""}`}
-          onChange={(event) =>
-            appearance.set(appearanceMode(event.target.value))
-          }
-        >
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
+      <fieldset
+        className="appearance-choice"
+        aria-describedby={`${id}-description${error ? ` ${id}-error` : ""}`}
+      >
+        {/* The heading above already says it; the legend names the group for screen readers. */}
+        <legend className="sr-only">Appearance</legend>
+        {CHOICES.map(([mode, label]) => (
+          <label className="appearance-option" key={mode}>
+            <input
+              type="radio"
+              name={id}
+              value={mode}
+              checked={state.mode === mode}
+              onChange={() => appearance.set(mode)}
+            />
+            {label}
+          </label>
+        ))}
         {error && (
           <p id={`${id}-error`} className="appearance-error" role="alert">
             {error}
           </p>
         )}
-      </div>
+      </fieldset>
     </section>
   );
 }

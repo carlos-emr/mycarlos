@@ -104,6 +104,16 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
   });
 }
 
+/** The three Appearance radio buttons (#67), by the mode each one chooses. */
+function appearanceChoices(page: Page) {
+  const group = page.getByRole("group", { name: "Appearance" });
+  return {
+    system: group.getByRole("radio", { name: "System" }),
+    light: group.getByRole("radio", { name: "Light" }),
+    dark: group.getByRole("radio", { name: "Dark" }),
+  };
+}
+
 async function accessible(page: Page) {
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -243,22 +253,23 @@ test("remembers appearance and follows live system changes without vault mutatio
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
   await section(page, info, "preferences");
-  const choice = page.getByRole("combobox", { name: "Appearance" });
-  await expect(choice).toHaveValue("system");
-  await choice.focus();
-  await choice.press("ArrowDown");
-  await choice.press("ArrowDown");
-  await expect(choice).toHaveValue("dark");
-  await expect(choice).toBeFocused();
+  const { system, light, dark } = appearanceChoices(page);
+  await expect(system).toBeChecked();
+  // Arrow keys move through the radio buttons, choosing as they go.
+  await system.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(dark).toBeChecked();
+  await expect(dark).toBeFocused();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await section(page, info, "preferences");
-  await expect(choice).toHaveValue("dark");
-  await choice.selectOption("system");
+  await expect(dark).toBeChecked();
+  await system.check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await choice.selectOption("light");
+  await light.check();
   await page.emulateMedia({ colorScheme: "light" });
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -298,16 +309,18 @@ for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await page.goto("/");
     await section(page, info, "preferences");
-    const choice = page.getByRole("combobox", { name: "Appearance" });
-    await choice.focus();
-    await choice.press("Home");
-    await choice.press(theme === "light" ? "ArrowDown" : "End");
-    await expect(choice).toHaveValue(theme);
+    const choices = appearanceChoices(page);
+    const choice = choices[theme];
+    await choices.system.focus();
+    await page.keyboard.press("ArrowDown");
+    if (theme === "dark") await page.keyboard.press("ArrowDown");
+    await expect(choice).toBeChecked();
     await expect(choice).toBeFocused();
     await expect(choice).toHaveCSS("outline-style", "solid");
     await contrast(page, text);
-    await contrast(page, "select[aria-describedby]", "border-top-color", 3);
-    await contrast(page, "select[aria-describedby]", "outline-color", 3);
+    // The radio's ring is drawn by the browser from color-scheme, not from a
+    // CSS border, so only the focus outline has a colour to measure here.
+    await contrast(page, ".appearance-choice input:focus", "outline-color", 3);
     await accessible(page);
     await screenshot(page, info, `${theme}-preferences-focus`);
     await section(page, info, "records");
@@ -381,14 +394,17 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
   await section(page, info, "preferences");
-  const choice = page.getByRole("combobox", { name: "Appearance" });
-  await choice.selectOption("dark");
+  const { dark: choice } = appearanceChoices(page);
+  await choice.check();
   await page.emulateMedia({ forcedColors: "active" });
-  await expect(choice).toHaveValue("dark");
+  await expect(choice).toBeChecked();
+  // A key press, so that focus is shown as it is to a keyboard user; it ends on Dark.
   await choice.focus();
-  await choice.press("End");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowDown");
+  await expect(choice).toBeChecked();
   await expect(choice).toHaveCSS("outline-style", "solid");
-  await contrast(page, "select[aria-describedby]", "outline-color", 3);
+  await contrast(page, ".appearance-choice input:focus", "outline-color", 3);
   await readableOnBackplate(page);
   await screenshot(page, info, "forced-preferences-focus");
   await section(page, info, "records");
@@ -475,11 +491,11 @@ test("short-window and phone Preferences remain reachable by keyboard", async ({
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
   await section(page, info, "preferences");
-  const choice = page.getByRole("combobox", { name: "Appearance" });
-  await choice.focus();
-  await choice.press("ArrowDown");
-  await expect(choice).toHaveValue("light");
-  await expect(choice).toBeInViewport();
+  const { system, light } = appearanceChoices(page);
+  await system.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(light).toBeChecked();
+  await expect(light).toBeInViewport();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
