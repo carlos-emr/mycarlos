@@ -109,4 +109,226 @@ export const ptBR: Record<MessageKey, Message> = {
   "restore.restoring":
     "Restaurando a cópia de segurança. Isso pode demorar em um cofre grande…",
   "restore.cancelled": "Restauração cancelada. Nada foi alterado.",
+
+  // Shared
+  "common.cancel": "Cancelar",
+
+  // Library sidebar
+  "sidebar.label": "Biblioteca de documentos",
+  "sidebar.myRecords": "Meus documentos",
+  "sidebar.folders": "Pastas",
+  "sidebar.noFolders": "Nenhuma pasta ainda",
+  "sidebar.settings": "Configurações",
+  "sidebar.preferences": "Preferências",
+  "sidebar.storage": "Cofre local criptografado",
+  "sidebar.documents": {
+    one: "{count} documento",
+    many: "{count} de documentos",
+    other: "{count} documentos",
+  },
+  "sidebar.folderCount": {
+    one: "{count} pasta",
+    many: "{count} de pastas",
+    other: "{count} pastas",
+  },
+
+  // Text size (Settings > Preferences)
+  "textSize.title": "Tamanho do texto",
+  "textSize.announce": "Tamanho do texto {percent}",
+  "textSize.help":
+    "Aumenta ou diminui tudo no myCarlos, de {min}% a {max}%. O myCarlos lembra o tamanho neste computador. Você também pode manter a tecla {modifier} pressionada e pressionar mais, menos ou 0.",
+  "textSize.key.command": "Comando",
+  "textSize.smaller": "Texto menor",
+  "textSize.larger": "Texto maior",
+  "textSize.box": "Tamanho do texto em porcentagem",
+  "textSize.reset": "Voltar ao tamanho normal",
+  "textSize.notNumber": "Digite um número de {min} a {max}.",
+  "textSize.smallest": "O menor tamanho é {min}%.",
+  "textSize.largest": "O maior tamanho é {max}%.",
+  "textSize.between":
+    "{typed}% fica entre dois tamanhos, então o tamanho é {size}.",
+
+  // Rename a document or folder
+  "rename.title.document": "Renomear documento",
+  "rename.title.folder": "Renomear pasta",
+  "rename.label.folder": "Nome da pasta",
+  "rename.label.document": "Nome do arquivo",
+  "rename.help.folder": "A pasta e seu conteúdo continuam no mesmo lugar.",
+  "rename.help.document":
+    "Isso muda o nome no myCarlos e o nome sugerido ao exportar.",
+  "rename.help.documentExtension":
+    "Isso muda o nome no myCarlos e o nome sugerido ao exportar. A extensão {extension} continua a mesma.",
+  "rename.stemMissing": "Digite um nome antes de {extension}.",
+  "rename.gainsExtension":
+    "O nome deste documento não tem a extensão .pdf, então não pode terminar em .pdf.",
+  "rename.tooLong": "Este nome é longo demais. Encurte-o para salvar.",
+  "rename.unsafe":
+    "Nomes de documentos não podem conter {characters} nem caracteres de controle invisíveis, nem terminar com ponto.",
+  "rename.reserved":
+    "“{word}” não pode ser usado como nome de documento, porque o Windows o reserva para uso próprio. Escolha outro nome.",
+  "rename.saving": "Salvando…",
+  "rename.save": "Salvar nome",
+
+  // Settings > Security
+  "security.title": "Segurança",
+  "security.subtitle": "Seu cofre criptografado e as configurações de acesso",
+  "security.devBuild.title": "Versão de desenvolvimento.",
+  "security.devBuild.body": "Use apenas arquivos fictícios.",
+  "security.encryption.title": "Criptografia",
+  "security.encryption.state": "Ativada — sempre",
+  "security.encryption.body":
+    "Os arquivos, os nomes, as pastas e os detalhes dos documentos são criptografados neste dispositivo.",
+  "security.autoLock.title": "Bloqueio automático",
+  "security.autoLock.minutes": {
+    one: "{count} minuto",
+    many: "{count} de minutos",
+    other: "{count} minutos",
+  },
+  "security.autoLock.body":
+    "O cofre é bloqueado após o período escolhido sem atividade do teclado, do ponteiro ou da tela sensível ao toque. Esta configuração não médica é limitada a 1 a 15 minutos.",
+  "security.autoLock.label": "Tempo para o bloqueio automático",
+  "security.lockNow": "Bloquear agora",
+  "security.recoveryKey.title": "Chave de recuperação",
+  "security.recoveryKey.setUpOn": "Configurada em {date}",
+  "security.recoveryKey.notSetUp": "Não configurada",
+  "security.recoveryKey.body":
+    "Abre seu cofre se você esquecer sua frase secreta. Só você a tem: ninguém na sua clínica nem no myCarlos pode abrir seu cofre por você. Ao substituí-la, a antiga deixa de funcionar.",
+  "security.recoveryKey.current":
+    "Sua chave atual tem a etiqueta {label}. O kit ou a anotação com esta etiqueta é o que funciona; um com outra etiqueta não abre este cofre. Kits e anotações feitos antes de as etiquetas serem exibidas não têm etiqueta: um sem etiqueta ainda pode ser esta chave, configurada em {date}.",
+  "security.recoveryKey.replace": "Substituir a chave de recuperação",
+  "security.recoveryKey.setUp": "Configurar uma chave de recuperação",
+  "security.backup.title": "Cópia de segurança criptografada",
+  "security.backup.body":
+    "Um único arquivo com todo o seu cofre, ainda criptografado. Guarde-o em outro lugar que não este dispositivo, como um pen drive. Ele abre com a frase secreta ou a chave de recuperação que você tiver ao salvá-lo, e continua abrindo com elas mesmo depois que você as mudar aqui. Para restaurar uma cópia, bloqueie o cofre e escolha Restaurar a partir de uma cópia de segurança.",
+  "security.oldBackups.title": "Suas cópias de segurança anteriores",
+  "security.oldBackups.intro":
+    "O kit de uma chave de recuperação anterior pode ter sido perdido ou visto, e ele ainda abre as cópias de segurança salvas antes de essa chave ser substituída.",
+  "security.oldBackups.saveWhenWritable":
+    "Quando o cofre voltar a aceitar alterações, salve uma nova cópia de segurança: escolha Salvar cópia de segurança criptografada.",
+  "security.oldBackups.saveNow":
+    "Salve agora uma nova cópia de segurança: escolha Salvar cópia de segurança criptografada.",
+  "security.oldBackups.keepCopy":
+    "Guarde-a, ou uma cópia dela, em outro lugar que não este dispositivo, como um pen drive ou um armazenamento na nuvem.",
+  "security.oldBackups.thenDelete":
+    "Depois, exclua as cópias de segurança anteriores. Quando a nova estiver salva, aqui será explicado como.",
+  "security.oldBackups.none": "Não tenho cópias de segurança anteriores",
+  "security.oldBackups.named": "Sua nova cópia de segurança é “{name}”.",
+  "security.oldBackups.namedWithSize":
+    "Sua nova cópia de segurança é “{name}” ({size}).",
+  "security.oldBackups.justSaved":
+    "Sua nova cópia de segurança é a que você acabou de salvar, em {date} por volta das {time}: seu aplicativo de arquivos mostra quando cada arquivo foi salvo e o tamanho dele.",
+  "security.oldBackups.justSavedWithSize":
+    "Sua nova cópia de segurança é a que você acabou de salvar, em {date} por volta das {time} ({size}): seu aplicativo de arquivos mostra quando cada arquivo foi salvo e o tamanho dele.",
+  "security.oldBackups.deleteOlder":
+    "Exclua as cópias de segurança anteriores: os arquivos cujo nome começa com “myCarlos backup” e as que você renomeou, exceto a nova e as cópias dela. Elas estão onde você as salvou: uma pasta, um pen drive ou, no celular, o app Arquivos ou um armazenamento na nuvem.",
+  "security.oldBackups.inPlace":
+    "Se você a salvou no lugar de uma cópia de segurança anterior, esse arquivo agora é a sua nova cópia de segurança: guarde-o.",
+  "security.oldBackups.done": "Terminei com as cópias anteriores",
+  "security.backup.save": "Salvar cópia de segurança criptografada…",
+  "security.passphrase.title": "Mudar a frase secreta",
+  "security.passphrase.rules":
+    "Use pelo menos {min} caracteres e evite nomes comuns ou frases previsíveis. Sua chave de recuperação, se você tiver uma, continua funcionando; sem ela, esquecer a nova frase secreta significa apagar o cofre.",
+  "security.passphrase.copies":
+    "Mudar a frase secreta impede o acesso de quem só conhece a antiga. Se essa pessoa também puder ter uma cópia do seu cofre, como um backup deste dispositivo ou um arquivo de cópia de segurança salvo, uma nova frase secreta não basta: a antiga ainda abre essa cópia, e com essa cópia ela poderia abrir uma mais recente que conseguir depois. Para deixá-la de fora, é preciso um cofre novo, e cuidado para não perder documentos no caminho. Peça ajuda antes de apagar qualquer coisa.",
+  "security.passphrase.current": "Frase secreta atual",
+  "security.passphrase.currentTooLong":
+    "A frase secreta atual é mais longa do que qualquer frase secreta de cofre. Confira o que foi digitado.",
+  "security.passphrase.mismatch": "As novas frases secretas não coincidem.",
+  "security.passphrase.newTooLong":
+    "A nova frase secreta é longa demais. Encurte-a.",
+  "security.passphrase.newTooShort":
+    "A nova frase secreta é curta demais. Use pelo menos {min} caracteres.",
+  "security.passphrase.submit": "Mudar a frase secreta",
+  "security.speed.title": "Teste de velocidade, para testadores",
+  "security.speed.body":
+    "Mede quanto tempo este dispositivo leva para verificar uma frase secreta. Usa uma frase secreta inventada, não a sua, e não muda nada. Leva alguns segundos, mais em um celular antigo. Feche os outros aplicativos antes e fique nesta tela até terminar. Envie o resultado com a marca e o modelo do dispositivo.",
+  "security.speed.run": "Fazer o teste de velocidade",
+  "security.speed.measuring": "Medindo…",
+  "security.copies.title": "Cópias legíveis e capturas de tela",
+  "security.copies.body":
+    "Exportações e capturas de tela ficam fora da proteção do cofre. Excluir um documento do myCarlos não apaga essas cópias nem o prontuário original da clínica.",
+  "security.profiles.title": "Perfis de paciente",
+  "security.profiles.body":
+    "Mantenha separados os documentos de cada pessoa dentro deste cofre.",
+  "security.profiles.label": "Nome do novo perfil",
+  "security.profiles.add": "Adicionar perfil",
+  "security.erase.title": "Apagar todo o cofre",
+  "security.erase.body":
+    "Exclui permanentemente todos os documentos, perfis e pastas criptografados. Isso não pode ser desfeito.",
+  "security.erase.show": "Mostrar os controles para apagar",
+  "security.erase.submit": "Apagar todo o cofre",
+
+  // Recovery key setup, and the printed kit
+  "recoveryKey.printUnavailable":
+    "Não é possível imprimir aqui. Salve o kit ou anote a chave.",
+  "recoveryKey.chooseReason":
+    "Escolha por que você está substituindo sua chave de recuperação.",
+  "recoveryKey.kitSaved":
+    "Kit de recuperação salvo. A chave começa a funcionar quando você terminar a verificação.",
+  "recoveryKey.typedCount": {
+    one: "Você digitou {count} letra ou número. Sua chave de recuperação tem {total} letras e números: 7 grupos de 4. Confira o que você anotou.",
+    many: "Você digitou {count} de letras e números. Sua chave de recuperação tem {total} letras e números: 7 grupos de 4. Confira o que você anotou.",
+    other:
+      "Você digitou {count} letras e números. Sua chave de recuperação tem {total} letras e números: 7 grupos de 4. Confira o que você anotou.",
+  },
+  "recoveryKey.notChanged":
+    "Sua chave de recuperação não foi alterada. Sua chave atual continua funcionando. Para alterá-la, pressione Verificar e salvar de novo.",
+  "recoveryKey.threeMisses":
+    "Não coincidiu três vezes. Olhe de novo sua chave de recuperação e depois verifique-a.",
+  "recoveryKey.leave.required": "Bloquear o cofre e terminar depois",
+  "recoveryKey.leave.offered": "Configurar depois",
+  "recoveryKey.title.replace": "Substitua sua chave de recuperação",
+  "recoveryKey.title.setUp": "Configure uma chave de recuperação",
+  "recoveryKey.title.key": "Sua chave de recuperação",
+  "recoveryKey.title.check": "Verifique sua chave de recuperação",
+  "recoveryKey.discard.title": "Descartar esta chave de recuperação?",
+  "recoveryKey.discard.body":
+    "Esta chave de recuperação ainda não está configurada, então nunca vai abrir o cofre. O myCarlos bloqueia o cofre agora. Depois de desbloqueá-lo, você poderá configurar uma nova chave.",
+  "recoveryKey.discard.confirm": "Descartar a chave e bloquear",
+  "recoveryKey.about.offered":
+    "Seu cofre está aberto. Ele ainda não tem chave de recuperação. Sem ela, se você esquecer sua frase secreta, a única forma de voltar a entrar é apagar o cofre.",
+  "recoveryKey.about.what":
+    "Uma chave de recuperação abre seu cofre se você esquecer sua frase secreta. Só você vai tê-la: ninguém na sua clínica nem no myCarlos pode abrir seu cofre por você.",
+  "recoveryKey.about.replacing":
+    "Sua chave de recuperação atual deixa de funcionar quando você tiver verificado a nova.",
+  "recoveryKey.about.type":
+    "Digite sua frase secreta para criar sua chave de recuperação. Ela aparece em seguida: escolha Continuar só quando ninguém mais puder ver sua tela.",
+  "recoveryKey.about.typeAgain":
+    "Digite sua frase secreta de novo para criar sua chave de recuperação. Ela aparece em seguida: escolha Continuar só quando ninguém mais puder ver sua tela.",
+  "recoveryKey.about.typeNew":
+    "Digite sua frase secreta para criar sua nova chave de recuperação. Ela aparece em seguida: escolha Continuar só quando ninguém mais puder ver sua tela.",
+  "recoveryKey.about.typeAgainNew":
+    "Digite sua frase secreta de novo para criar sua nova chave de recuperação. Ela aparece em seguida: escolha Continuar só quando ninguém mais puder ver sua tela.",
+  "recoveryKey.reason.legend": "Por que você está substituindo a chave?",
+  "recoveryKey.reason.hint": "Se não tiver certeza, escolha a primeira.",
+  "recoveryKey.reason.exposed":
+    "O kit ou a anotação dela pode ter sido perdido ou visto por outra pessoa",
+  "recoveryKey.reason.routine":
+    "Só quero uma chave nova: o kit dela está seguro",
+  "recoveryKey.continue": "Continuar",
+  "recoveryKey.keyboardHint":
+    "A tecla Esc sai desta configuração. Na primeira configuração, ela pergunta antes, porque sair bloqueia o cofre e uma chave inacabada não vai funcionar.",
+  "recoveryKey.instructions":
+    "Anote-a, ou salve ou imprima o kit, e guarde-a em um lugar reservado, longe deste dispositivo. Esta é a única vez que o myCarlos a mostra. Em seguida, você vai digitá-la inteira para verificá-la. Fique no myCarlos até terminar a verificação: sair ou bloquear cancela esta chave.",
+  "recoveryKey.hiddenWhileSaving": "Oculta enquanto o kit é salvo.",
+  "recoveryKey.group": "Grupo {number}: {characters}",
+  "recoveryKey.label":
+    "Etiqueta da chave: {label}. Anote-a ao lado da chave. Ela não é secreta: em Segurança, o myCarlos mostra a etiqueta da chave que funciona, para você saber qual kit é o atual.",
+  "recoveryKey.saveKit": "Salvar o kit de recuperação…",
+  "recoveryKey.printKit": "Imprimir o kit de recuperação",
+  "recoveryKey.next": "Próximo: verificar sua chave de recuperação",
+  "recoveryKey.check.label": "Sua chave de recuperação",
+  "recoveryKey.check.hint":
+    "Digite sua chave de recuperação inteira, como você a anotou ou salvou: 7 grupos de 4 letras e números. Traços, espaços e outros sinais de pontuação não importam.",
+  "recoveryKey.back": "Voltar: ler sua chave de recuperação",
+  "recoveryKey.checkAndSave": "Verificar e salvar",
+  "kit.title": "Kit de recuperação do myCarlos",
+  "kit.printed": "Impresso em {date}",
+  "kit.labelPrinted": "Etiqueta da chave: {label} · Impresso em {date}",
+  "kit.labelNote":
+    "A etiqueta não é secreta. Em Segurança, o myCarlos mostra a etiqueta da chave de recuperação que funciona agora: um kit com outra etiqueta não abre mais o cofre.",
+  "kit.use":
+    "Se você esquecer sua frase secreta do myCarlos, esta chave abre seu cofre neste dispositivo e permite escolher uma nova frase secreta. Ela funciona depois que você terminar a verificação no myCarlos.",
+  "kit.keep":
+    "Guarde-a em um lugar reservado e longe do dispositivo. Qualquer pessoa com esta chave e uma cópia do seu cofre pode abri-lo. Se você configurar uma nova chave de recuperação, esta não abre mais o cofre neste dispositivo.",
 };

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Icon } from "../Icon";
+import { useI18n } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 
@@ -30,6 +31,7 @@ export function LibrarySidebar({
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
+  const { t } = useI18n();
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
   const sidebarFolders = useMemo(() => {
     const children = new Map<string | null, VaultFolder[]>();
@@ -64,7 +66,7 @@ export function LibrarySidebar({
           <small>{profileName}</small>
         </span>
       </div>
-      <nav className="side-nav" aria-label="Record library">
+      <nav className="side-nav" aria-label={t("sidebar.label")}>
         <button
           className={dropClass(
             section === "records" && !currentFolderId ? "selected" : "",
@@ -75,12 +77,12 @@ export function LibrarySidebar({
           onDragOver={(event) => dragOver(event, "sidebar:root")}
           onDrop={(event) => dropInto(event, null)}
         >
-          <Icon name="folder" /> My records{" "}
+          <Icon name="folder" /> {t("sidebar.myRecords")}{" "}
           <span className="nav-count">
             {records.filter((record) => !record.folderIds.length).length}
           </span>
         </button>
-        <span className="nav-label">Folders</span>
+        <span className="nav-label">{t("sidebar.folders")}</span>
         {sidebarFolders.map(({ folder, depth }) => (
           <button
             className={dropClass(
@@ -108,26 +110,28 @@ export function LibrarySidebar({
           </button>
         ))}
         {!folders.length && (
-          <small className="native-sidebar-empty">No folders yet</small>
+          <small className="native-sidebar-empty">
+            {t("sidebar.noFolders")}
+          </small>
         )}
-        <span className="nav-label">Settings</span>
+        <span className="nav-label">{t("sidebar.settings")}</span>
         <button
           className={section === "security" ? "selected" : ""}
           type="button"
           onClick={onOpenSecurity}
         >
-          <Icon name="shield" /> Security
+          <Icon name="shield" /> {t("security.title")}
         </button>
         <button
           className={section === "preferences" ? "selected" : ""}
           type="button"
           onClick={onOpenPreferences}
         >
-          <Icon name="text-size" /> Preferences
+          <Icon name="text-size" /> {t("sidebar.preferences")}
         </button>
       </nav>
       <div className="storage">
-        <span>Encrypted local vault</span>
+        <span>{t("sidebar.storage")}</span>
         <div className="storage-meter">
           <span
             style={{
@@ -136,8 +140,8 @@ export function LibrarySidebar({
           />
         </div>
         <small>
-          {records.length} document{records.length === 1 ? "" : "s"} ·{" "}
-          {folders.length} folder{folders.length === 1 ? "" : "s"}
+          {t("sidebar.documents", { count: records.length })} ·{" "}
+          {t("sidebar.folderCount", { count: folders.length })}
         </small>
       </div>
     </aside>

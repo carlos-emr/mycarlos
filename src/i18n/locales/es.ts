@@ -109,4 +109,227 @@ export const es: Record<MessageKey, Message> = {
   "restore.restoring":
     "Restaurando la copia de seguridad. Puede tardar un rato si la bóveda es grande…",
   "restore.cancelled": "Restauración cancelada. No se cambió nada.",
+
+  // Shared
+  "common.cancel": "Cancelar",
+
+  // Library sidebar
+  "sidebar.label": "Biblioteca de documentos",
+  "sidebar.myRecords": "Mis documentos",
+  "sidebar.folders": "Carpetas",
+  "sidebar.noFolders": "Todavía no hay carpetas",
+  "sidebar.settings": "Configuración",
+  "sidebar.preferences": "Preferencias",
+  "sidebar.storage": "Bóveda local cifrada",
+  "sidebar.documents": {
+    one: "{count} documento",
+    many: "{count} de documentos",
+    other: "{count} documentos",
+  },
+  "sidebar.folderCount": {
+    one: "{count} carpeta",
+    many: "{count} de carpetas",
+    other: "{count} carpetas",
+  },
+
+  // Text size (Settings > Preferences)
+  "textSize.title": "Tamaño del texto",
+  "textSize.announce": "Tamaño del texto {percent}",
+  "textSize.help":
+    "Agranda o reduce todo el contenido de myCarlos, del {min}% al {max}%. myCarlos recuerda el tamaño en este equipo. También puede mantener pulsada la tecla {modifier} y pulsar más, menos o 0.",
+  "textSize.key.command": "Comando",
+  "textSize.smaller": "Texto más pequeño",
+  "textSize.larger": "Texto más grande",
+  "textSize.box": "Tamaño del texto en porcentaje",
+  "textSize.reset": "Volver al tamaño normal",
+  "textSize.notNumber": "Escriba un número del {min} al {max}.",
+  "textSize.smallest": "El tamaño más pequeño es {min}%.",
+  "textSize.largest": "El tamaño más grande es {max}%.",
+  "textSize.between": "{typed}% está entre dos tamaños, así que se usa {size}.",
+
+  // Rename a document or folder
+  "rename.title.document": "Cambiar el nombre del documento",
+  "rename.title.folder": "Cambiar el nombre de la carpeta",
+  "rename.label.folder": "Nombre de la carpeta",
+  "rename.label.document": "Nombre del archivo",
+  "rename.help.folder":
+    "La carpeta y su contenido permanecen en el mismo lugar.",
+  "rename.help.document":
+    "Esto cambia el nombre en myCarlos y el nombre sugerido al exportar.",
+  "rename.help.documentExtension":
+    "Esto cambia el nombre en myCarlos y el nombre sugerido al exportar. La extensión {extension} no cambia.",
+  "rename.stemMissing": "Escriba un nombre antes de {extension}.",
+  "rename.gainsExtension":
+    "El nombre de este documento no tiene la extensión .pdf, así que no puede terminar en .pdf.",
+  "rename.tooLong": "Este nombre es demasiado largo. Acórtelo para guardarlo.",
+  "rename.unsafe":
+    "Los nombres de documento no pueden contener {characters} ni caracteres de control invisibles, ni terminar en punto.",
+  "rename.reserved":
+    "“{word}” no se puede usar como nombre de documento, porque Windows lo reserva para su propio uso. Elija otro nombre.",
+  "rename.saving": "Guardando…",
+  "rename.save": "Guardar el nombre",
+
+  // Settings > Security
+  "security.title": "Seguridad",
+  "security.subtitle": "Su bóveda cifrada y la configuración de acceso",
+  "security.devBuild.title": "Versión de desarrollo.",
+  "security.devBuild.body": "Use solo archivos ficticios.",
+  "security.encryption.title": "Cifrado",
+  "security.encryption.state": "Activado — siempre",
+  "security.encryption.body":
+    "Los archivos, los nombres, las carpetas y los detalles de los documentos se cifran en este dispositivo.",
+  "security.autoLock.title": "Bloqueo automático",
+  "security.autoLock.minutes": {
+    one: "{count} minuto",
+    many: "{count} de minutos",
+    other: "{count} minutos",
+  },
+  "security.autoLock.body":
+    "La bóveda se bloquea tras el periodo elegido sin actividad del teclado, el puntero o la pantalla táctil. Esta configuración no médica está limitada a entre 1 y 15 minutos.",
+  "security.autoLock.label": "Tiempo para el bloqueo automático",
+  "security.lockNow": "Bloquear ahora",
+  "security.recoveryKey.title": "Clave de recuperación",
+  "security.recoveryKey.setUpOn": "Configurada el {date}",
+  "security.recoveryKey.notSetUp": "No configurada",
+  "security.recoveryKey.body":
+    "Abre su bóveda si olvida su frase de contraseña. Solo usted la tiene: nadie en su clínica ni en myCarlos puede abrir su bóveda por usted. Al reemplazarla, la anterior deja de funcionar.",
+  "security.recoveryKey.current":
+    "Su clave actual tiene la etiqueta {label}. El kit o la nota con esta etiqueta es el que funciona; uno con otra etiqueta no abre esta bóveda. Los kits y las notas hechos antes de que se mostraran las etiquetas no tienen ninguna: uno sin etiqueta puede seguir siendo esta clave, configurada el {date}.",
+  "security.recoveryKey.replace": "Reemplazar la clave de recuperación",
+  "security.recoveryKey.setUp": "Configurar una clave de recuperación",
+  "security.backup.title": "Copia de seguridad cifrada",
+  "security.backup.body":
+    "Un solo archivo con toda su bóveda, todavía cifrada. Guárdelo en un lugar distinto de este dispositivo, como una unidad USB. Se abre con la frase de contraseña o la clave de recuperación que tenga al guardarlo, y se sigue abriendo con ellas aunque después las cambie aquí. Para restaurar una copia, bloquee la bóveda y elija Restaurar desde una copia de seguridad.",
+  "security.oldBackups.title": "Sus copias de seguridad anteriores",
+  "security.oldBackups.intro":
+    "Es posible que el kit de una clave de recuperación anterior se haya perdido o que alguien lo haya visto, y todavía abre las copias de seguridad guardadas antes de reemplazar esa clave.",
+  "security.oldBackups.saveWhenWritable":
+    "Cuando la bóveda vuelva a aceptar cambios, guarde una nueva copia de seguridad: elija Guardar copia de seguridad cifrada.",
+  "security.oldBackups.saveNow":
+    "Guarde ahora una nueva copia de seguridad: elija Guardar copia de seguridad cifrada.",
+  "security.oldBackups.keepCopy":
+    "Guárdela, o una copia de ella, en un lugar distinto de este dispositivo, como una memoria USB o un almacenamiento en la nube.",
+  "security.oldBackups.thenDelete":
+    "Luego elimine las copias de seguridad anteriores. Cuando la nueva esté guardada, aquí se explica cómo.",
+  "security.oldBackups.none": "No tengo copias de seguridad anteriores",
+  "security.oldBackups.named": "Su nueva copia de seguridad es “{name}”.",
+  "security.oldBackups.namedWithSize":
+    "Su nueva copia de seguridad es “{name}” ({size}).",
+  "security.oldBackups.justSaved":
+    "Su nueva copia de seguridad es la que acaba de guardar, el {date} hacia las {time}: su aplicación de archivos muestra cuándo se guardó cada archivo y su tamaño.",
+  "security.oldBackups.justSavedWithSize":
+    "Su nueva copia de seguridad es la que acaba de guardar, el {date} hacia las {time} ({size}): su aplicación de archivos muestra cuándo se guardó cada archivo y su tamaño.",
+  "security.oldBackups.deleteOlder":
+    "Elimine las copias de seguridad anteriores: los archivos cuyo nombre empieza por “myCarlos backup” y las que haya cambiado de nombre, salvo la nueva y sus copias. Están donde las guardó: una carpeta, una memoria USB o, en un teléfono, la aplicación Archivos o un almacenamiento en la nube.",
+  "security.oldBackups.inPlace":
+    "Si la guardó en lugar de una copia de seguridad anterior, ese archivo es ahora su nueva copia de seguridad: consérvelo.",
+  "security.oldBackups.done": "He terminado con las copias anteriores",
+  "security.backup.save": "Guardar copia de seguridad cifrada…",
+  "security.passphrase.title": "Cambiar la frase de contraseña",
+  "security.passphrase.rules":
+    "Use al menos {min} caracteres y evite nombres comunes o frases previsibles. Su clave de recuperación, si tiene una, sigue funcionando; sin ella, olvidar la nueva frase de contraseña significa borrar la bóveda.",
+  "security.passphrase.copies":
+    "Cambiar la frase de contraseña impide el acceso a quien solo conoce la anterior. Si esa persona también podría tener una copia de su bóveda, como una copia de seguridad de este dispositivo o un archivo de copia de seguridad guardado, una nueva frase de contraseña no basta: la anterior sigue abriendo esa copia, y con esa copia podría abrir una más reciente que consiga después. Para dejarla fuera hace falta una bóveda nueva, y cuidado de no perder documentos por el camino. Pida ayuda antes de borrar nada.",
+  "security.passphrase.current": "Frase de contraseña actual",
+  "security.passphrase.currentTooLong":
+    "La frase de contraseña actual es más larga que cualquier frase de contraseña de bóveda. Revise lo que escribió.",
+  "security.passphrase.mismatch":
+    "Las nuevas frases de contraseña no coinciden.",
+  "security.passphrase.newTooLong":
+    "La nueva frase de contraseña es demasiado larga. Acórtela.",
+  "security.passphrase.newTooShort":
+    "La nueva frase de contraseña es demasiado corta. Use al menos {min} caracteres.",
+  "security.passphrase.submit": "Cambiar la frase de contraseña",
+  "security.speed.title": "Prueba de velocidad, para quienes hacen pruebas",
+  "security.speed.body":
+    "Mide cuánto tarda este dispositivo en comprobar una frase de contraseña. Usa una frase de contraseña inventada, no la suya, y no cambia nada. Tarda unos segundos, más en un teléfono antiguo. Cierre antes las demás aplicaciones y permanezca en esta pantalla hasta que termine. Envíe el resultado con la marca y el modelo del dispositivo.",
+  "security.speed.run": "Hacer la prueba de velocidad",
+  "security.speed.measuring": "Midiendo…",
+  "security.copies.title": "Copias legibles y capturas de pantalla",
+  "security.copies.body":
+    "Las exportaciones y las capturas de pantalla quedan fuera de la protección de la bóveda. Eliminar un documento de myCarlos no puede borrar esas copias ni el expediente médico original de la clínica.",
+  "security.profiles.title": "Perfiles de paciente",
+  "security.profiles.body":
+    "Mantenga separados los documentos de cada persona dentro de esta bóveda.",
+  "security.profiles.label": "Nombre del nuevo perfil",
+  "security.profiles.add": "Añadir perfil",
+  "security.erase.title": "Borrar toda la bóveda",
+  "security.erase.body":
+    "Elimina de forma permanente todos los documentos, perfiles y carpetas cifrados. No se puede deshacer.",
+  "security.erase.show": "Mostrar los controles de borrado",
+  "security.erase.submit": "Borrar toda la bóveda",
+
+  // Recovery key setup, and the printed kit
+  "recoveryKey.printUnavailable":
+    "Aquí no se puede imprimir. Guarde el kit o anote la clave.",
+  "recoveryKey.chooseReason":
+    "Elija por qué reemplaza su clave de recuperación.",
+  "recoveryKey.kitSaved":
+    "Kit de recuperación guardado. La clave empezará a funcionar cuando termine la comprobación.",
+  "recoveryKey.typedCount": {
+    one: "Escribió {count} letra o dígito. Su clave de recuperación tiene {total} letras y dígitos: 7 grupos de 4. Revise lo que anotó.",
+    many: "Escribió {count} de letras y dígitos. Su clave de recuperación tiene {total} letras y dígitos: 7 grupos de 4. Revise lo que anotó.",
+    other:
+      "Escribió {count} letras y dígitos. Su clave de recuperación tiene {total} letras y dígitos: 7 grupos de 4. Revise lo que anotó.",
+  },
+  "recoveryKey.notChanged":
+    "Su clave de recuperación no se cambió. Su clave actual sigue funcionando. Para cambiarla, pulse de nuevo Comprobar y guardar.",
+  "recoveryKey.threeMisses":
+    "No coincidió tres veces. Vuelva a mirar su clave de recuperación y luego compruébela.",
+  "recoveryKey.leave.required": "Bloquear la bóveda y terminar más tarde",
+  "recoveryKey.leave.offered": "Configurar más tarde",
+  "recoveryKey.title.replace": "Reemplace su clave de recuperación",
+  "recoveryKey.title.setUp": "Configure una clave de recuperación",
+  "recoveryKey.title.key": "Su clave de recuperación",
+  "recoveryKey.title.check": "Compruebe su clave de recuperación",
+  "recoveryKey.discard.title": "¿Descartar esta clave de recuperación?",
+  "recoveryKey.discard.body":
+    "Esta clave de recuperación todavía no está configurada, así que nunca abrirá la bóveda. myCarlos bloquea ahora la bóveda. Después de desbloquearla, podrá configurar una clave nueva.",
+  "recoveryKey.discard.confirm": "Descartar la clave y bloquear",
+  "recoveryKey.about.offered":
+    "Su bóveda está abierta. Todavía no tiene clave de recuperación. Sin ella, si olvida su frase de contraseña, la única forma de volver a entrar es borrar la bóveda.",
+  "recoveryKey.about.what":
+    "Una clave de recuperación abre su bóveda si olvida su frase de contraseña. Solo usted la tendrá: nadie en su clínica ni en myCarlos puede abrir su bóveda por usted.",
+  "recoveryKey.about.replacing":
+    "Su clave de recuperación actual dejará de funcionar cuando haya comprobado la nueva.",
+  "recoveryKey.about.type":
+    "Escriba su frase de contraseña para crear su clave de recuperación. Se mostrará a continuación: elija Continuar solo cuando nadie más pueda ver su pantalla.",
+  "recoveryKey.about.typeAgain":
+    "Escriba de nuevo su frase de contraseña para crear su clave de recuperación. Se mostrará a continuación: elija Continuar solo cuando nadie más pueda ver su pantalla.",
+  "recoveryKey.about.typeNew":
+    "Escriba su frase de contraseña para crear su nueva clave de recuperación. Se mostrará a continuación: elija Continuar solo cuando nadie más pueda ver su pantalla.",
+  "recoveryKey.about.typeAgainNew":
+    "Escriba de nuevo su frase de contraseña para crear su nueva clave de recuperación. Se mostrará a continuación: elija Continuar solo cuando nadie más pueda ver su pantalla.",
+  "recoveryKey.reason.legend": "¿Por qué la reemplaza?",
+  "recoveryKey.reason.hint": "Si no está seguro, elija la primera.",
+  "recoveryKey.reason.exposed":
+    "Es posible que su kit o su nota se haya perdido o que otra persona lo haya visto",
+  "recoveryKey.reason.routine":
+    "Solo quiero una clave nueva: su kit está a salvo",
+  "recoveryKey.continue": "Continuar",
+  "recoveryKey.keyboardHint":
+    "La tecla Esc sale de esta configuración. En la primera configuración, antes pide confirmación, porque salir bloquea la bóveda y una clave sin terminar no funcionará.",
+  "recoveryKey.instructions":
+    "Anótela, o guarde o imprima el kit, y consérvela en un lugar privado, lejos de este dispositivo. Es la única vez que myCarlos la muestra. Después, la escribirá completa para comprobarla. Permanezca en myCarlos hasta terminar la comprobación: salir o bloquear cancela esta clave.",
+  "recoveryKey.hiddenWhileSaving": "Oculta mientras se guarda el kit.",
+  "recoveryKey.group": "Grupo {number}: {characters}",
+  "recoveryKey.label":
+    "Etiqueta de la clave: {label}. Anótela junto a la clave. No es secreta: en Seguridad, myCarlos muestra la etiqueta de la clave que funciona, para que sepa qué kit es el vigente.",
+  "recoveryKey.saveKit": "Guardar el kit de recuperación…",
+  "recoveryKey.printKit": "Imprimir el kit de recuperación",
+  "recoveryKey.next": "Siguiente: comprobar su clave de recuperación",
+  "recoveryKey.check.label": "Su clave de recuperación",
+  "recoveryKey.check.hint":
+    "Escriba su clave de recuperación completa, tal como la anotó o la guardó: 7 grupos de 4 letras y dígitos. Los guiones, los espacios y otros signos de puntuación no importan.",
+  "recoveryKey.back": "Atrás: leer su clave de recuperación",
+  "recoveryKey.checkAndSave": "Comprobar y guardar",
+  "kit.title": "Kit de recuperación de myCarlos",
+  "kit.printed": "Impreso el {date}",
+  "kit.labelPrinted": "Etiqueta de la clave: {label} · Impreso el {date}",
+  "kit.labelNote":
+    "La etiqueta no es secreta. En Seguridad, myCarlos muestra la etiqueta de la clave de recuperación que funciona ahora: un kit con otra etiqueta ya no abre la bóveda.",
+  "kit.use":
+    "Si olvida su frase de contraseña de myCarlos, esta clave abre su bóveda en este dispositivo y le permite elegir una nueva frase de contraseña. Funciona una vez que haya terminado la comprobación en myCarlos.",
+  "kit.keep":
+    "Guárdela en un lugar privado y lejos del dispositivo. Cualquier persona con esta clave y una copia de su bóveda puede abrirla. Si configura una nueva clave de recuperación, esta ya no abrirá la bóveda en este dispositivo.",
 };
