@@ -159,31 +159,33 @@ export function RecordDetails({
           {notice}
         </p>
         <footer className="dialog-actions native-dialog-actions">
-          <label>
-            Move to
-            <select
-              disabled={busy || readOnly}
-              value={destination}
-              onChange={(event) =>
-                setChoice({ placement, folderId: event.target.value })
-              }
+          <div className="native-dialog-move">
+            <label>
+              Move to
+              <select
+                disabled={busy || readOnly}
+                value={destination}
+                onChange={(event) =>
+                  setChoice({ placement, folderId: event.target.value })
+                }
+              >
+                <option value="">My records</option>
+                {folders.map((folder) => (
+                  <option value={folder.id} key={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly || destination === currentFolderId}
+              onClick={() => void onMove(destination || null)}
             >
-              <option value="">My records</option>
-              {folders.map((folder) => (
-                <option value={folder.id} key={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="button"
-            type="button"
-            disabled={busy || readOnly || destination === currentFolderId}
-            onClick={() => void onMove(destination || null)}
-          >
-            Move
-          </button>
+              Move
+            </button>
+          </div>
           <button
             className="button danger"
             type="button"

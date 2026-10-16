@@ -583,10 +583,11 @@ h1, h2, p { margin: 0; }
   .button, .side-nav button, .unlock-pill, .native-rename-button, .bulkbar button,
   .native-dialog-actions select, .native-move-actions select, .native-folder-move select,
   .native-setting-form input, .native-inline-form input, .native-danger-setting input,
-  .vault-card input, .file-name
+  .vault-card input, .file-name, .native-rename-fields input
 ) { min-height: 44px; }
 .native-vault-page .breadcrumb { display: inline-flex; align-items: center; min-height: 44px; }
-.native-vault-page details > summary { display: flex; align-items: center; min-height: 44px; }
+/* A summary stays a list item, so it keeps its disclosure triangle. */
+.native-vault-page details > summary { min-height: 44px; padding-block: 10px; }
 .native-vault-page .search input { min-height: 44px; }
 /* A document's name keeps its line in the row; padding makes its target 44px tall. */
 .native-vault-page .record-open { padding-block: 13px; margin-block: -13px; }
@@ -683,7 +684,11 @@ h1, h2, p { margin: 0; }
 .native-sort-choice legend { float: left; margin-right: 2px; padding: 0; color: var(--ink-soft); font-weight: 700; }
 .native-sort-choice label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--ink); font-weight: 600; cursor: pointer; }
 .native-sort-choice input { flex: none; width: 18px; height: 18px; margin: 0; }
-.native-view-segment button { grid-auto-flow: column; gap: 6px; width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; font: inherit; font-weight: 600; }
+/* With words on List and Grid, the radios and the segment can need more than a
+   narrow window's width, so the segment moves to its own line, whole. */
+.native-vault-page .view-controls { flex-wrap: wrap; row-gap: 0; }
+.native-view-segment { flex: none; }
+.native-view-segment button { flex: none; grid-auto-flow: column; gap: 6px; width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; font: inherit; font-weight: 600; }
 .native-details-button { min-height: 44px; padding: 6px 12px; color: var(--teal-dark); font: inherit; font-weight: 700; }
 .native-dialog-close { width: auto; min-width: 44px; height: auto; min-height: 44px; padding: 0 14px; font-size: 0.875rem; font-weight: 700; line-height: 1; }
 .native-move-actions { align-items: center; }
@@ -742,7 +747,11 @@ h1, h2, p { margin: 0; }
 @media (max-width: 56.25em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
 }
-.native-dialog-actions label { margin-right: auto; }
+/* #67: Move to and its Move button have a row of their own. */
+.native-dialog-actions { flex-wrap: wrap; }
+.native-dialog-move { display: flex; flex-basis: 100%; grid-column: 1 / -1; align-items: end; gap: 8px; }
+.native-dialog-move label { flex: 1; min-width: 0; }
+.native-dialog-move select { width: 100%; }
 
 @media (max-width: 56.25em) {
   .native-vault-page .page-wrap { padding: 12px; }
