@@ -35,6 +35,7 @@
     "allow-vault-import-picked",
     "allow-received-list",
     "allow-received-import",
+    "allow-received-unlock",
     "allow-received-discard",
     "allow-vault-export-pick",
     "allow-vault-export-picked",

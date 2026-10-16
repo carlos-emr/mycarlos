@@ -103,6 +103,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     importReceived: vi
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+    unlockReceived: vi
+      .fn()
+      .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     discardReceived: vi.fn().mockResolvedValue(undefined),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
@@ -521,6 +524,162 @@ describe("durable vault UI", () => {
         screen.queryByRole("region", { name: "Shared with myCarlos" }),
       ).toBeNull(),
     );
+  });
+
+  it("asks once for a locked shared file's password, then adds it and the rest", async () => {
+    const user = userEvent.setup();
+    const file = (id: string, name: string) => ({
+      id,
+      name,
+      sourceLabel: "Manual import — unverified",
+    });
+    let waiting = [
+      file("shared-1", "FAKE_Bloodwork.pdf"),
+      file("shared-2", "FAKE_Locked.pdf"),
+      file("shared-3", "FAKE_Xray.pdf"),
+    ];
+    const locked = (id: string) =>
+      Object.assign(new Error("FAKE"), {
+        code: "pdf_locked",
+        message:
+          "One of the files is locked with a password, so nothing was added yet.",
+        receivedId: id,
+      });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      listReceived: vi.fn().mockImplementation(async () => ({
+        files: waiting,
+        notice: { dropped: 0, refusedShares: 0 },
+      })),
+      importReceived: vi.fn().mockImplementation(async (ids: string[]) => {
+        if (ids.includes("shared-2")) throw locked("shared-2");
+        waiting = waiting.filter((waits) => !ids.includes(waits.id));
+        return { imported: ids, skippedDuplicates: [] };
+      }),
+      unlockReceived: vi
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error("FAKE"), {
+            code: "pdf_wrong_password",
+            message: "FAKE",
+            receivedId: "shared-2",
+          }),
+        )
+        .mockImplementation(async () => {
+          waiting = waiting.filter((waits) => waits.id !== "shared-2");
+          return { imported: ["record-2"], skippedDuplicates: [] };
+        }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    const panel = await screen.findByRole("region", {
+      name: "Shared with myCarlos",
+    });
+    await user.click(
+      within(panel).getByRole("button", { name: "Add 3 files" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Unlock FAKE_Locked.pdf",
+    });
+    const field = within(dialog).getByLabelText("Document password");
+    expect(field).toHaveFocus();
+    expect(field).toHaveAttribute("type", "password");
+
+    await user.type(field, "FAKE-wrong");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Unlock and add" }),
+    );
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "That password did not open the document.",
+    );
+    // The typed password is not kept, not even in the field, which is ready
+    // for the next try.
+    expect(field).toHaveValue("");
+    await waitFor(() => expect(field).toHaveFocus());
+
+    await user.type(field, "FAKE-portal-2026");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Unlock and add" }),
+    );
+    expect(
+      await screen.findByText(
+        "FAKE_Locked.pdf unlocked and added. 2 shared file(s) encrypted and added.",
+      ),
+    ).toBeVisible();
+    expect(bridge.unlockReceived).toHaveBeenLastCalledWith(
+      "shared-2",
+      "FAKE-portal-2026",
+      "profile-1",
+      [],
+    );
+    expect(bridge.importReceived).toHaveBeenLastCalledWith(
+      ["shared-1", "shared-3"],
+      "profile-1",
+      [],
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it('leaves a locked shared file waiting with "Not now", and adds the rest', async () => {
+    const user = userEvent.setup();
+    let waiting = [
+      {
+        id: "shared-1",
+        name: "FAKE_Bloodwork.pdf",
+        sourceLabel: "Manual import — unverified",
+      },
+      {
+        id: "shared-2",
+        name: "FAKE_Locked.pdf",
+        sourceLabel: "Manual import — unverified",
+      },
+    ];
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      listReceived: vi.fn().mockImplementation(async () => ({
+        files: waiting,
+        notice: { dropped: 0, refusedShares: 0 },
+      })),
+      importReceived: vi.fn().mockImplementation(async (ids: string[]) => {
+        if (ids.includes("shared-2"))
+          throw Object.assign(new Error("FAKE"), {
+            code: "pdf_locked",
+            message: "FAKE",
+            receivedId: "shared-2",
+          });
+        waiting = waiting.filter((waits) => !ids.includes(waits.id));
+        return { imported: ids, skippedDuplicates: [] };
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    const panel = await screen.findByRole("region", {
+      name: "Shared with myCarlos",
+    });
+    await user.click(
+      within(panel).getByRole("button", { name: "Add 2 files" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Unlock FAKE_Locked.pdf",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Not now" }));
+    expect(
+      await screen.findByText("1 shared file(s) encrypted and added."),
+    ).toBeVisible();
+    expect(bridge.unlockReceived).not.toHaveBeenCalled();
+    // Still waiting, marked, and openable later from its own button.
+    expect(
+      await within(panel).findByText("Locked with a password"),
+    ).toBeVisible();
+    expect(
+      within(panel).getByRole("checkbox", { name: "FAKE_Locked.pdf" }),
+    ).not.toBeChecked();
+    await user.click(
+      within(panel).getByRole("button", { name: "Unlock FAKE_Locked.pdf" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Unlock FAKE_Locked.pdf" }),
+    ).toBeVisible();
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {

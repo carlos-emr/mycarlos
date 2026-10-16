@@ -1,0 +1,76 @@
+//! The real myCarlos executable, started as the PDF unlock helper (src/pdf_unlock.rs), answers
+//! one request on stdin and exits. This drives it the way the app does, byte for byte.
+
+use std::io::{Read, Write};
+use std::process::{Command, Stdio};
+
+const HELPER_ARG: &str = "--mycarlos-pdf-helper";
+const PASSWORD: &str = "FAKE-portal-2026";
+
+fn fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/locked-pdf")
+            .join(name),
+    )
+    .unwrap()
+}
+
+/// Sends one request; returns the exit code and what came back.
+fn ask(request: &[u8]) -> (Option<i32>, Vec<u8>) {
+    let mut helper = Command::new(env!("CARGO_BIN_EXE_mycarlos-tauri-poc"))
+        .arg(HELPER_ARG)
+        .env_clear()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = helper.stdin.take().unwrap();
+    let request = request.to_vec();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&request);
+    });
+    let mut answer = Vec::new();
+    helper
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_end(&mut answer)
+        .unwrap();
+    writer.join().unwrap();
+    (helper.wait().unwrap().code(), answer)
+}
+
+fn request(password: &str, pdf: &[u8]) -> Vec<u8> {
+    let mut request = b"MCPDFRQ1".to_vec();
+    request.extend_from_slice(&(password.len() as u32).to_le_bytes());
+    request.extend_from_slice(password.as_bytes());
+    request.extend_from_slice(&(pdf.len() as u64).to_le_bytes());
+    request.extend_from_slice(pdf);
+    request
+}
+
+#[test]
+fn the_helper_unlocks_a_document_and_names_a_wrong_password() {
+    let (code, answer) = ask(&request(PASSWORD, &fixture("text-aes256.pdf")));
+    assert_eq!(code, Some(0));
+    assert_eq!(&answer[..9], b"MCPDFRS1\0");
+    let length = u64::from_le_bytes(answer[9..17].try_into().unwrap()) as usize;
+    let unlocked = &answer[17..];
+    assert_eq!(unlocked.len(), length);
+    let document = lopdf::Document::load_mem(unlocked).unwrap();
+    assert!(!document.is_encrypted());
+    assert!(!unlocked.windows(8).any(|window| window == b"/Encrypt"));
+
+    let (code, answer) = ask(&request("FAKE-wrong", &fixture("text-aes256.pdf")));
+    assert_eq!(code, Some(0));
+    assert_eq!(answer, b"MCPDFRS1\x01\0\0\0\0\0\0\0\0");
+}
+
+#[test]
+fn the_helper_answers_nothing_to_a_request_it_cannot_read() {
+    let (code, answer) = ask(b"not a request");
+    assert_ne!(code, Some(0));
+    assert!(answer.is_empty());
+}

@@ -445,3 +445,26 @@ If initial Enter or Space leaves a Linux dialog open, it records that behavior a
 with Escape; no destructive operation may occur. These checks cover the tested Windows
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
+
+## Password-protected shared PDFs
+
+Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
+locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluation, not approval for PHI.
+
+1. On Windows, macOS or Linux, share or open `text-aes256.pdf` with myCarlos and press **Add**. The
+   patient is asked for "the document password from your patient portal".
+2. A wrong password asks again and says so. The correct one adds the document. Saved again with
+   **Save a copy**, it opens with no password.
+3. **Not now** leaves the file waiting, marked "Locked with a password", with an **Unlock** button. The
+   other ticked files are added.
+4. The password is never shown again, never kept and never written to a log. Check that the app's data
+   folder holds no unlocked copy outside the vault.
+5. While the password is being checked, lock the vault or close myCarlos. Nothing is added, and the
+   file stays waiting (or is gone, after closing).
+6. On a phone, a locked PDF is marked "Locked: cannot be opened on this device yet". It is not
+   added, and it can be declined.
+
+The Rust tests unlock every fixture and compare page text and content with the originals. They also
+start the real executable as the helper, and check in a child process that, once confined, it can
+open no file, socket or pipe. The Windows job object and the macOS limits still need a run on those
+systems.

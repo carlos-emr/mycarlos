@@ -230,6 +230,16 @@ pub enum VaultError {
     ImportBatchLimit,
     #[error("a file to import is not a PDF")]
     NotPdf,
+    #[error("a file to import is locked with a password")]
+    PdfLocked,
+    #[error("the password did not open the locked document")]
+    PdfWrongPassword,
+    #[error("the locked document could not be opened")]
+    PdfUnlockFailed,
+    #[error("locked documents cannot be opened on this device")]
+    PdfUnlockUnavailable,
+    #[error("the locked document is too large to open")]
+    PdfTooLarge,
     #[error("there is not enough space to complete the operation")]
     NoSpace,
     #[error("the storage operation could not be completed")]

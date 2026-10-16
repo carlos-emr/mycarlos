@@ -239,6 +239,15 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<ImportOutcome>;
+  /** Adds one waiting file that is locked with a password, opened with
+   * `password` by myCarlos's separate PDF helper. Only the unlocked copy is
+   * stored; the password is not kept. */
+  unlockReceived(
+    id: string,
+    password: string,
+    profileId: string,
+    folderIds: string[],
+  ): Promise<ImportOutcome>;
   /** Forgets waiting files the patient declined. */
   discardReceived(ids: string[]): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
@@ -321,6 +330,39 @@ function hasErrorCode(error: unknown, code: string): boolean {
 }
 
 /** The waiting shared file an import refused as not a PDF, if that was why. */
+/** Why an add left a waiting file out: not a PDF, or locked with a password
+ * that is still needed, could not be opened, cannot be opened on this device,
+ * or is too large to open. */
+export type ReceivedRefusalReason =
+  | "not_pdf"
+  | "pdf_locked"
+  | "pdf_unlock_failed"
+  | "pdf_unlock_unavailable"
+  | "pdf_too_large";
+
+const RECEIVED_REFUSALS: ReceivedRefusalReason[] = [
+  "not_pdf",
+  "pdf_locked",
+  "pdf_unlock_failed",
+  "pdf_unlock_unavailable",
+  "pdf_too_large",
+];
+
+/** The waiting file an add refused, and why, or null. */
+export function receivedRefusal(
+  error: unknown,
+): { id: string; reason: ReceivedRefusalReason } | null {
+  const reason = RECEIVED_REFUSALS.find((code) => hasErrorCode(error, code));
+  if (!reason) return null;
+  const { receivedId } = error as PublicError;
+  return typeof receivedId === "string" ? { id: receivedId, reason } : null;
+}
+
+/** True when a password typed for a locked document did not open it. */
+export function isWrongPdfPassword(error: unknown): boolean {
+  return hasErrorCode(error, "pdf_wrong_password");
+}
+
 export function notPdfReceivedId(error: unknown): string | null {
   if (!hasErrorCode(error, "not_pdf")) return null;
   const { receivedId } = error as PublicError;
@@ -443,6 +485,10 @@ export function createVaultBridge(): VaultBridge {
     importReceived: (ids, profileId, folderIds) =>
       invoke<ImportOutcome>("received_import", {
         request: { ids, profileId, folderIds },
+      }),
+    unlockReceived: (id, password, profileId, folderIds) =>
+      invoke<ImportOutcome>("received_unlock", {
+        request: { id, password, profileId, folderIds },
       }),
     discardReceived: (ids) =>
       invoke<void>("received_discard", { request: { ids } }),
