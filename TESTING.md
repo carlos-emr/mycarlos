@@ -465,6 +465,8 @@ locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluat
    added, and it can be declined.
 
 The Rust tests unlock every fixture and compare page text and content with the originals. They also
-start the real executable as the helper, and check in a child process that, once confined, it can
-open no file, socket or pipe. The Windows job object and the macOS limits still need a run on those
-systems.
+start the real executable as the helper. In child processes they check two things. First, the helper's
+limits stop an ordinary open of a file, socket or pipe; these are resource limits, not a sandbox.
+Second, myCarlos is not dumpable, and as an ordinary user (as CI runs) a limited helper cannot read
+its memory. On Windows, CI checks that a low-integrity helper cannot open myCarlos to read it. The
+macOS limits still need a run there.

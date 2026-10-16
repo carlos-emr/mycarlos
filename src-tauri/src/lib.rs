@@ -8,7 +8,9 @@ mod windows_navigation;
 
 /// For `main`: the first argument that starts this executable as the PDF unlock helper, and
 /// the helper itself (see `pdf_unlock`).
-pub use pdf_unlock::{helper_main as pdf_helper_main, HELPER_ARG as PDF_HELPER_ARG};
+pub use pdf_unlock::{
+    helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
+};
 
 use idle::{IdleDeadline, Opening};
 use received::{ReceivedFiles, ReceivedSource};

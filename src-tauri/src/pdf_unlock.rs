@@ -2,9 +2,16 @@
 //!
 //! Decrypting means parsing a PDF from an untrusted sender, so it never happens in the process
 //! that holds vault keys (THREAT_MODEL IMP-02). The app starts its own executable again with
-//! `HELPER_ARG`: a fresh process with no vault, keys or window. It confines itself, reads one
+//! `HELPER_ARG`: a fresh process with no vault, keys or window. It limits itself, reads one
 //! document and its password from stdin, writes the document without its password to stdout,
 //! and exits. Only the unlocked copy is kept, in the vault; the password is never stored.
+//!
+//! What protects the vault keys is that they are in another process, which other processes of
+//! the user cannot read (`protect_process_memory`; on Windows the helper runs at low
+//! integrity). The helper's limits (see `confine`) bound what a malformed document costs and
+//! stop the helper's own code from opening files or connections. They are not a sandbox:
+//! code that took over the helper could get around them. A real sandbox (seccomp and Landlock,
+//! AppContainer, the App Sandbox) is a separate step.
 //!
 //! The limits and the confinement are all here, so that they are easy to review and change.
 
@@ -84,29 +91,94 @@ pub(crate) enum Outcome {
 }
 
 /// Whether a document might be password-protected: its trailer then names an `/Encrypt`
-/// dictionary. This is a byte search, not a parse, so it is safe beside the vault keys. A match
-/// is only a hint; the helper decides.
+/// dictionary. This reads PDF names and nothing else (`/` and the name's characters, with
+/// `#hh` escapes decoded, so `/Encr#79pt` counts too). It parses no object, so it is safe
+/// beside the vault keys. A match is only a hint; the helper decides.
 pub(crate) fn may_be_locked(mut reader: impl Read) -> io::Result<bool> {
-    const MARKER: &[u8] = b"/Encrypt";
+    let mut scanner = NameScanner::default();
     let mut buffer = vec![0u8; 64 * 1024];
-    let mut kept = 0;
     loop {
-        let read = match reader.read(&mut buffer[kept..]) {
-            Ok(0) => return Ok(false),
+        let read = match reader.read(&mut buffer) {
+            Ok(0) => return Ok(scanner.end_name()),
             Ok(read) => read,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => return Err(error),
         };
-        let filled = kept + read;
-        if buffer[..filled]
-            .windows(MARKER.len())
-            .any(|window| window == MARKER)
-        {
+        if buffer[..read].iter().any(|&byte| scanner.push(byte)) {
             return Ok(true);
         }
-        // Keep the tail, in case the marker is split between two reads.
-        kept = (MARKER.len() - 1).min(filled);
-        buffer.copy_within(filled - kept..filled, 0);
+    }
+}
+
+/// Reads PDF names out of a byte stream, one byte at a time, decoding `#hh` escapes, and tells
+/// when a name `Encrypt` ends. Names longer than `NAME_LIMIT` bytes are not kept.
+#[derive(Default)]
+struct NameScanner {
+    name: [u8; NAME_LIMIT],
+    length: usize,
+    in_name: bool,
+    too_long: bool,
+    /// Hex digits read after `#`: the first one's value, if one has been.
+    escape: Option<Option<u8>>,
+}
+
+const NAME_LIMIT: usize = 16;
+
+impl NameScanner {
+    /// Takes one byte; true when it ends the name `Encrypt`.
+    fn push(&mut self, byte: u8) -> bool {
+        let delimiter = byte.is_ascii_whitespace()
+            || byte == 0
+            || matches!(
+                byte,
+                b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
+            );
+        if delimiter {
+            let ended = self.end_name();
+            self.in_name = byte == b'/';
+            return ended;
+        }
+        if !self.in_name {
+            return false;
+        }
+        let digit = (byte as char).to_digit(16).map(|digit| digit as u8);
+        match (self.escape, digit) {
+            (None, _) if byte == b'#' => self.escape = Some(None),
+            (None, _) => self.keep(byte),
+            (Some(None), Some(high)) => self.escape = Some(Some(high)),
+            (Some(Some(high)), Some(low)) => {
+                self.escape = None;
+                self.keep(high << 4 | low);
+            }
+            // Not an escape after all. Such a name is malformed; it cannot be `Encrypt`.
+            (Some(_), None) => {
+                self.escape = None;
+                self.too_long = true;
+            }
+        }
+        false
+    }
+
+    /// Ends the current name, if any; true when it was `Encrypt`.
+    fn end_name(&mut self) -> bool {
+        let matched = self.in_name
+            && !self.too_long
+            && self.escape.is_none()
+            && &self.name[..self.length] == b"Encrypt";
+        self.in_name = false;
+        self.too_long = false;
+        self.length = 0;
+        self.escape = None;
+        matched
+    }
+
+    fn keep(&mut self, byte: u8) {
+        if self.length == NAME_LIMIT {
+            self.too_long = true;
+        } else {
+            self.name[self.length] = byte;
+            self.length += 1;
+        }
     }
 }
 
@@ -258,6 +330,19 @@ fn read_response(input: &mut impl Read) -> Option<Result<Zeroizing<Vec<u8>>, Ref
     matches!(input.read(&mut extra), Ok(0)).then_some(Ok(unlocked))
 }
 
+/// Keeps other processes of the same user, a taken-over PDF helper among them, from reading
+/// this one's memory, where the vault keys are, and keeps those keys out of core dumps. On
+/// Linux a process that is not dumpable cannot be traced or read by them. (On macOS reading
+/// another process already needs privileges; on Windows the helper runs at low integrity.)
+/// Called first in `main`.
+pub fn protect_process_memory() {
+    #[cfg(target_os = "linux")]
+    // SAFETY: a plain prctl call with constant arguments.
+    unsafe {
+        libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0);
+    }
+}
+
 /// The helper: confines itself, answers one request on stdin and stdout, and returns the exit
 /// code. Started by `main` when the first argument is `HELPER_ARG`.
 pub fn helper_main() -> i32 {
@@ -364,9 +449,15 @@ pub(crate) fn run_helper(
     }
 }
 
-/// How the helper is confined. Unix: no new file or socket can be opened, no file written, no
-/// core dump, and CPU and data memory are capped. Windows: a job object caps memory, stops
-/// any child process, and ends the helper when myCarlos lets go of it.
+/// The helper's limits. They bound what a malformed document can cost and stop the helper's
+/// own code from opening a file or connection by mistake; they are not a sandbox against code
+/// that has taken the helper over (for example, closing a descriptor frees a slot under
+/// RLIMIT_NOFILE). Unix: descriptors it did not need are closed, a new one cannot be opened
+/// while three are in use, no file can be written, no process started (unless run as root),
+/// no core dumped, and CPU time and data memory are capped. Windows: it runs at low integrity,
+/// so it cannot open myCarlos's process or write the user's files, and a job object caps its
+/// memory, allows no child process, and ends it when myCarlos lets go. It can still read files
+/// the user can read; there is no network block on Windows yet.
 mod confine {
     #[cfg(all(unix, desktop))]
     pub(super) fn this_process() -> std::io::Result<()> {
@@ -420,10 +511,56 @@ mod confine {
         Ok(())
     }
 
+    /// Drops this process to low integrity before it reads anything: it can then open no
+    /// process or file of normal integrity for writing, or any process for reading memory.
+    /// The job object `after_start` puts it in does the rest.
     #[cfg(windows)]
     pub(super) fn this_process() -> std::io::Result<()> {
-        // Confined from outside, by the job object `after_start` puts it in.
-        Ok(())
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::Security::{
+            CreateWellKnownSid, SetTokenInformation, TokenIntegrityLevel, WinLowLabelSid, PSID,
+            SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, TOKEN_ADJUST_DEFAULT, TOKEN_MANDATORY_LABEL,
+            TOKEN_QUERY,
+        };
+        use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+        // winnt.h's SE_GROUP_INTEGRITY, without the crate feature that names it.
+        const SE_GROUP_INTEGRITY: u32 = 0x20;
+        let to_io = |error: windows::core::Error| std::io::Error::other(error);
+        // SAFETY: the token handle is closed below; the SID buffer outlives the call that
+        // reads it; the label struct points into that buffer.
+        unsafe {
+            let mut token = HANDLE::default();
+            OpenProcessToken(
+                GetCurrentProcess(),
+                TOKEN_ADJUST_DEFAULT | TOKEN_QUERY,
+                &mut token,
+            )
+            .map_err(to_io)?;
+            let mut sid = [0u8; SECURITY_MAX_SID_SIZE as usize];
+            let mut sid_size = sid.len() as u32;
+            let lowered = CreateWellKnownSid(
+                WinLowLabelSid,
+                None,
+                Some(PSID(sid.as_mut_ptr().cast())),
+                &mut sid_size,
+            )
+            .and_then(|()| {
+                let label = TOKEN_MANDATORY_LABEL {
+                    Label: SID_AND_ATTRIBUTES {
+                        Sid: PSID(sid.as_mut_ptr().cast()),
+                        Attributes: SE_GROUP_INTEGRITY,
+                    },
+                };
+                SetTokenInformation(
+                    token,
+                    TokenIntegrityLevel,
+                    &label as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<TOKEN_MANDATORY_LABEL>() as u32 + sid_size,
+                )
+            });
+            let _ = CloseHandle(token);
+            lowered.map_err(to_io)
+        }
     }
 
     #[cfg(all(unix, desktop))]
@@ -648,6 +785,28 @@ mod tests {
     }
 
     #[test]
+    fn finds_the_encrypt_name_however_it_is_written_or_read() {
+        for (text, expected) in [
+            (&b"<< /Encrypt 5 0 R >>"[..], true),
+            (b"<</Size 9/Encr#79pt 5 0 R>>", true),
+            (b"<</#45#6e#63#72#79#70#74 5 0 R>>", true),
+            (b"trailer<</Encrypt", true),
+            (b"<< /EncryptMetadata false >>", false),
+            (b"<< /Encrypted 5 0 R >>", false),
+            (b"(Encrypt) Tj", false),
+            (b"<< /Encr#7 9pt >>", false),
+            (b"<< /Encr#zzypt >>", false),
+        ] {
+            assert_eq!(
+                may_be_locked(text).unwrap(),
+                expected,
+                "{}",
+                String::from_utf8_lossy(text)
+            );
+        }
+    }
+
+    #[test]
     fn finds_the_encrypt_marker_even_split_between_reads() {
         struct Trickle<'a>(&'a [u8]);
         impl Read for Trickle<'_> {
@@ -660,6 +819,7 @@ mod tests {
         }
         assert!(may_be_locked(&fixture("text-aes256.pdf")[..]).unwrap());
         assert!(may_be_locked(Trickle(&fixture("text-rc4-40.pdf"))).unwrap());
+        assert!(may_be_locked(Trickle(b"<</Size 9/Encr#79pt 5 0 R>>")).unwrap());
         assert!(!may_be_locked(&fixture("text-original.pdf")[..]).unwrap());
         assert!(!may_be_locked(Trickle(&fixture("form-original.pdf"))).unwrap());
         let mut padded = vec![b'x'; 64 * 1024 - 3];
@@ -722,8 +882,8 @@ mod tests {
         assert!(matches!(outcome, Outcome::Refused(Refusal::TooLarge)));
     }
 
-    /// Run in its own process by the test below: confines itself as the helper does, then
-    /// tries what a hostile document would want.
+    /// Run in its own process by the test below: limits itself as the helper does, then tries
+    /// the opens the limits are meant to stop.
     #[cfg(all(unix, desktop))]
     #[test]
     #[ignore = "invoked as a subprocess by the helper confinement test"]
@@ -748,7 +908,7 @@ mod tests {
 
     #[cfg(all(unix, desktop))]
     #[test]
-    fn the_helper_cannot_open_files_or_sockets() {
+    fn the_limited_helper_opens_no_file_or_socket() {
         // Through pipes: no file may grow in there, and a test failure is written out.
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -756,6 +916,113 @@ mod tests {
                 "--exact",
                 "pdf_unlock::tests::confinement_child",
             ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "invoked as a subprocess by the process memory test"]
+    fn protected_child() {
+        protect_process_memory();
+        assert_eq!(unsafe { libc::prctl(libc::PR_GET_DUMPABLE, 0, 0, 0, 0) }, 0);
+        // A confined helper of the same user cannot read this process's memory. Root may,
+        // so that part runs only for an ordinary user, as myCarlos does.
+        if unsafe { libc::geteuid() } != 0 {
+            let parent = std::process::id();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--ignored", "--exact", "pdf_unlock::tests::reader_child"])
+                .env("MYCARLOS_TEST_PARENT", parent.to_string())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "invoked as a subprocess by protected_child"]
+    fn reader_child() {
+        let parent: libc::pid_t = std::env::var("MYCARLOS_TEST_PARENT")
+            .unwrap()
+            .parse()
+            .unwrap();
+        confine::this_process().unwrap();
+        let mut byte = 0u8;
+        let local = libc::iovec {
+            iov_base: (&mut byte as *mut u8).cast(),
+            iov_len: 1,
+        };
+        // Any address: the call is refused before it is looked at.
+        let remote = libc::iovec {
+            iov_base: 0x1000 as *mut libc::c_void,
+            iov_len: 1,
+        };
+        let read = unsafe { libc::process_vm_readv(parent, &local, 1, &remote, 1, 0) };
+        assert_eq!(read, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EPERM)
+        );
+        let none = std::ptr::null_mut::<libc::c_void>();
+        assert_eq!(
+            unsafe { libc::ptrace(libc::PTRACE_ATTACH, parent, none, none) },
+            -1
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mycarlos_is_not_dumpable_and_a_helper_cannot_read_it() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "pdf_unlock::tests::protected_child"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Windows CI runs this: at low integrity, the helper cannot open myCarlos to read it.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "invoked as a subprocess by the low integrity test"]
+    fn low_integrity_child() {
+        use windows::Win32::System::Threading::{OpenProcess, PROCESS_VM_READ};
+        let parent: u32 = std::env::var("MYCARLOS_TEST_PARENT")
+            .unwrap()
+            .parse()
+            .unwrap();
+        confine::this_process().unwrap();
+        // SAFETY: OpenProcess only returns a handle or an error.
+        assert!(unsafe { OpenProcess(PROCESS_VM_READ, false, parent) }.is_err());
+        assert!(std::fs::File::create(std::env::temp_dir().join("mycarlos-helper-probe")).is_err());
+        assert!(unlock(&fixture("text-aes256.pdf"), PASSWORD).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_low_integrity_helper_cannot_read_mycarlos() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "pdf_unlock::tests::low_integrity_child",
+            ])
+            .env("MYCARLOS_TEST_PARENT", std::process::id().to_string())
             .output()
             .unwrap();
         assert!(

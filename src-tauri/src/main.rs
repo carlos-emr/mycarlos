@@ -2,6 +2,9 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() {
+    // Before anything else: no other process of the user, such as a PDF helper, can read this
+    // one's memory.
+    mycarlos_tauri_poc_lib::protect_process_memory();
     // Started again by myCarlos itself to open one password-protected PDF, away from the vault
     // keys: no window, no vault, one request on stdin, then exit.
     if std::env::args_os().nth(1).as_deref()
