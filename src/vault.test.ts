@@ -8,9 +8,11 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isWrongPdfPassword,
   localDateText,
   namedDamage,
   notPdfReceivedId,
+  receivedRefusal,
   vaultErrorMessage,
   type VaultRecord,
 } from "./vault";
@@ -38,6 +40,12 @@ describe("native idle deadline bridge", () => {
     await bridge.listReceived();
     await bridge.importReceived(["shared-1"], "profile-1", ["folder-1"]);
     await bridge.discardReceived(["shared-2"]);
+    await bridge.unlockReceived(
+      "shared-3",
+      "FAKE-portal-2026",
+      "profile-1",
+      [],
+    );
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
       [
@@ -51,7 +59,42 @@ describe("native idle deadline bridge", () => {
         },
       ],
       ["received_discard", { request: { ids: ["shared-2"] } }],
+      [
+        "received_unlock",
+        {
+          request: {
+            id: "shared-3",
+            password: "FAKE-portal-2026",
+            profileId: "profile-1",
+            folderIds: [],
+          },
+        },
+      ],
     ]);
+  });
+
+  it("names the shared file an add left out, and why", () => {
+    for (const reason of [
+      "not_pdf",
+      "pdf_locked",
+      "pdf_unlock_failed",
+      "pdf_unlock_unavailable",
+      "pdf_too_large",
+    ] as const)
+      expect(
+        receivedRefusal({ code: reason, message: "FAKE", receivedId: "s-1" }),
+      ).toEqual({ id: "s-1", reason });
+    expect(receivedRefusal({ code: "pdf_locked", message: "FAKE" })).toBeNull();
+    expect(
+      receivedRefusal({ code: "storage", message: "FAKE", receivedId: "s-1" }),
+    ).toBeNull();
+    // A wrong password is asked again, not marked on the file.
+    expect(
+      receivedRefusal({ code: "pdf_wrong_password", receivedId: "s-1" }),
+    ).toBeNull();
+    expect(isWrongPdfPassword({ code: "pdf_wrong_password" })).toBe(true);
+    expect(isWrongPdfPassword({ code: "pdf_locked" })).toBe(false);
+    expect(isWrongPdfPassword(null)).toBe(false);
   });
 
   it("names the shared file an import refused as not a PDF", () => {

@@ -92,6 +92,7 @@ fn main() {
             "vault_import_picked",
             "received_list",
             "received_import",
+            "received_unlock",
             "received_discard",
             "vault_export_pick",
             "vault_export_picked",

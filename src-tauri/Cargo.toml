@@ -21,6 +21,9 @@ chacha20poly1305 = { version = "0.10", features = ["std"] }
 hkdf = "0.12"
 hmac = "0.12"
 libc = "0.2"
+# Opens a password-protected PDF, only ever in the separate helper process (src/pdf_unlock.rs).
+# Pinned: it parses untrusted input, so an update is a reviewed change.
+lopdf = { version = "=0.45.0", default-features = false }
 percent-encoding = "2"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -38,7 +41,13 @@ zxcvbn = { version = "3.1.1", default-features = false }
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
-windows = { version = "=0.61.3", features = ["Win32_System_Com"] }
+windows = { version = "=0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }

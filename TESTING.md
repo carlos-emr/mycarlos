@@ -445,3 +445,31 @@ If initial Enter or Space leaves a Linux dialog open, it records that behavior a
 with Escape; no destructive operation may occur. These checks cover the tested Windows
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
+
+## Password-protected shared PDFs
+
+Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
+locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluation, not approval for PHI.
+
+1. On Windows, macOS or Linux, share or open `text-aes256.pdf` with myCarlos and press **Add**. The
+   patient is asked for "the document password from your patient portal".
+2. A wrong password asks again and says so. The correct one adds the document. Saved again with
+   **Save a copy**, it opens with no password.
+3. **Not now** leaves the file waiting, marked "Locked with a password", with an **Unlock** button. The
+   other ticked files are added.
+4. The password is never shown again, never kept and never written to a log. Check that the app's data
+   folder holds no unlocked copy outside the vault.
+5. While the password is being checked, lock the vault or close myCarlos. Nothing is added, and the
+   file stays waiting (or is gone, after closing).
+6. On a phone, a locked PDF is marked "Locked: cannot be opened on this device yet". It is not
+   added, and it can be declined.
+
+The Rust tests unlock every fixture and compare page text and content with the originals. They also
+start the real executable as the helper, once exactly as myCarlos does on each desktop system (with
+the job object on Windows). In child processes they check two things. First, the helper's
+limits stop an ordinary open of a file, socket or pipe; these are resource limits, not a sandbox.
+Second, myCarlos is not dumpable, and as an ordinary user (as CI runs) a limited helper cannot read
+its memory. On Windows, CI checks that a low-integrity helper cannot open myCarlos to read it. A
+helper that grows past its memory limit is stopped well before its time limit: on Linux by its data
+limit, and on macOS, which refuses a data limit, by myCarlos checking its footprint. macOS CI runs
+the Unix checks.

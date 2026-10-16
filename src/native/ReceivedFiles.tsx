@@ -1,38 +1,54 @@
 import { useEffect, useState } from "react";
-import type { ReceivedFile } from "../vault";
+import type { ReceivedFile, ReceivedRefusalReason } from "../vault";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 /** Files shared from another app, waiting for the patient. Nothing of them is
  * in the vault until "Add" is pressed; they go where the library is open, so
  * the patient chooses the person and folder by opening them. */
+/** What a refused file's row says, in place of the label it would carry. */
+const REFUSED: Record<ReceivedRefusalReason, string> = {
+  not_pdf: "Not a PDF document",
+  pdf_locked: "Locked with a password",
+  pdf_unlock_failed: "Locked, and could not be opened",
+  pdf_unlock_unavailable: "Locked: cannot be opened on this device yet",
+  pdf_too_large: "Locked, and too large to open",
+};
+
 export function ReceivedFiles({
   files,
   destination,
-  notPdfId,
+  refusals,
   disabled,
   onAdd,
   onDecline,
+  onUnlock,
 }: {
   files: ReceivedFile[];
   /** Where an add puts them: the person and folder open now. */
   destination: string;
-  /** A file an add refused as not a PDF: it is marked and left unticked. */
-  notPdfId: string | null;
+  /** Files an add left out, and why: each is marked and left unticked. */
+  refusals: Partial<Record<string, ReceivedRefusalReason>>;
   disabled: boolean;
   onAdd: (ids: string[]) => void;
   onDecline: (ids: string[]) => void;
+  /** Asks for the password of a file left out because it is locked. */
+  onUnlock: (id: string) => void;
 }) {
-  // Ticked by default, except one already refused as not a PDF. A file that
-  // arrives later is ticked too; one that has gone is dropped.
+  // Ticked by default, except files already refused. A file that arrives
+  // later is ticked too; one that has gone is dropped.
   const [unticked, setUnticked] = useState<string[]>([]);
+  const refusedIds = Object.keys(refusals).join(" ");
   useEffect(() => {
     setUnticked((current) => {
       const kept = current.filter((id) => files.some((file) => file.id === id));
-      return notPdfId && !kept.includes(notPdfId) ? [...kept, notPdfId] : kept;
+      const refused = refusedIds
+        .split(" ")
+        .filter((id) => id && !kept.includes(id));
+      return [...kept, ...refused];
     });
-  }, [files, notPdfId]);
-  // The files a confirmation would decline: the ticked ones, or the one
-  // refused as not a PDF, from its own button.
+  }, [files, refusedIds]);
+  // The files a confirmation would decline: the ticked ones, or one refused
+  // file, from its own button.
   const [confirmDecline, setConfirmDecline] = useState<string[] | null>(null);
   const ticked = files
     .filter((file) => !unticked.includes(file.id))
@@ -67,9 +83,20 @@ export function ReceivedFiles({
               />
               <span className="native-received-name">{file.name}</span>
             </label>
-            {file.id === notPdfId ? (
+            {refusals[file.id] ? (
               <span className="column native-received-refused">
-                Not a PDF document
+                {REFUSED[refusals[file.id]!]}
+                {refusals[file.id] === "pdf_locked" && (
+                  <button
+                    className="button"
+                    type="button"
+                    aria-label={`Unlock ${file.name}`}
+                    disabled={disabled}
+                    onClick={() => onUnlock(file.id)}
+                  >
+                    Unlock
+                  </button>
+                )}
                 <button
                   className="button"
                   type="button"

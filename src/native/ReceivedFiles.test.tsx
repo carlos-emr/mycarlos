@@ -17,10 +17,11 @@ function renderPanel(
   const props = {
     files,
     destination: "Jamie's records, folder FAKE Labs",
-    notPdfId: null,
+    refusals: {},
     disabled: false,
     onAdd: vi.fn(),
     onDecline: vi.fn(),
+    onUnlock: vi.fn(),
     ...overrides,
   };
   const view = render(<ReceivedFiles {...props} />);
@@ -80,7 +81,7 @@ describe("shared files waiting", () => {
 
   it("marks a file refused as not a PDF and leaves it unticked", async () => {
     const user = userEvent.setup();
-    const { onAdd } = renderPanel({ notPdfId: "shared-2" });
+    const { onAdd } = renderPanel({ refusals: { "shared-2": "not_pdf" } });
     expect(screen.getByText("Not a PDF document")).toBeVisible();
     expect(
       screen.getByRole("checkbox", { name: "FAKE_Notes.pdf" }),
@@ -91,7 +92,7 @@ describe("shared files waiting", () => {
 
   it("declines the refused file from its own button, naming it", async () => {
     const user = userEvent.setup();
-    const { onDecline } = renderPanel({ notPdfId: "shared-2" });
+    const { onDecline } = renderPanel({ refusals: { "shared-2": "not_pdf" } });
     // The ticked files are the good ones: the bulk button names them.
     await user.click(screen.getByRole("button", { name: "Decline 2 files" }));
     expect(
@@ -119,5 +120,27 @@ describe("shared files waiting", () => {
     expect(
       screen.getByRole("button", { name: "Decline 3 files" }),
     ).toBeDisabled();
+  });
+
+  it("marks a locked file, offers its password prompt, and says why others were left out", async () => {
+    const user = userEvent.setup();
+    const { onUnlock, onAdd } = renderPanel({
+      refusals: {
+        "shared-1": "pdf_locked",
+        "shared-3": "pdf_unlock_unavailable",
+      },
+    });
+    expect(screen.getByText("Locked with a password")).toBeVisible();
+    expect(
+      screen.getByText("Locked: cannot be opened on this device yet"),
+    ).toBeVisible();
+    // Only a file whose password is still needed offers Unlock.
+    expect(screen.getAllByRole("button", { name: /^Unlock / })).toHaveLength(1);
+    await user.click(
+      screen.getByRole("button", { name: "Unlock FAKE_Bloodwork.pdf" }),
+    );
+    expect(onUnlock).toHaveBeenCalledWith("shared-1");
+    await user.click(screen.getByRole("button", { name: "Add 1 file" }));
+    expect(onAdd).toHaveBeenCalledWith(["shared-2"]);
   });
 });

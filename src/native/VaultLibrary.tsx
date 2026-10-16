@@ -4,7 +4,10 @@ import { Icon } from "../Icon";
 import {
   localDateText,
   namedDamage,
-  notPdfReceivedId,
+  isWrongPdfPassword,
+  receivedRefusal,
+  type ImportOutcome,
+  type ReceivedRefusalReason,
   type ReceivedFile,
   type SavedBackup,
   type VaultBridge,
@@ -19,6 +22,7 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ReceivedFiles } from "./ReceivedFiles";
+import { UnlockReceivedDialog } from "./UnlockReceivedDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -351,28 +355,112 @@ export function VaultLibrary({
     });
   };
 
-  // A shared file an add refused as not a PDF, marked in the list.
-  const [notPdfId, setNotPdfId] = useState<string | null>(null);
+  // Shared files an add left out, and why, marked in the list.
+  const [refusals, setRefusals] = useState<
+    Partial<Record<string, ReceivedRefusalReason>>
+  >({});
+  const refuse = (refusal: ReturnType<typeof receivedRefusal>) => {
+    if (refusal)
+      setRefusals((current) => ({ ...current, [refusal.id]: refusal.reason }));
+  };
+  // A shared file found locked with a password, whose password is being
+  // asked for, and the files the same add is to bring in after it.
+  const [unlocking, setUnlocking] = useState<{
+    file: ReceivedFile;
+    rest: string[];
+    wrongTries: number;
+  } | null>(null);
+  const added = (outcome: ImportOutcome) =>
+    `${outcome.imported.length} shared file(s) encrypted and added.${
+      outcome.skippedDuplicates.length
+        ? ` ${outcome.skippedDuplicates.length} duplicate(s) skipped.`
+        : ""
+    }`;
+  // Adds `ids`. A file locked with a password stops the add before anything
+  // is stored, and its password is asked for; the others follow once it is
+  // added or left for later. `before` is said ahead of the result.
+  const addReceivedFiles = async (ids: string[], before = "") => {
+    if (!ids.length) {
+      setNotice(before);
+      return;
+    }
+    const folderIds = currentFolderId ? [currentFolderId] : [];
+    try {
+      const outcome = await bridge.importReceived(ids, profileId, folderIds);
+      await refresh();
+      setNotice(`${before ? `${before} ` : ""}${added(outcome)}`);
+    } catch (error) {
+      const refusal = receivedRefusal(error);
+      const locked =
+        refusal?.reason === "pdf_locked"
+          ? received.find((file) => file.id === refusal.id)
+          : undefined;
+      if (locked) {
+        setNotice(before);
+        setUnlocking({
+          file: locked,
+          rest: ids.filter((id) => id !== locked.id),
+          wrongTries: 0,
+        });
+        return;
+      }
+      refuse(refusal);
+      throw error;
+    }
+  };
   const addReceived = (ids: string[]) =>
     run(async () => {
-      const folderIds = currentFolderId ? [currentFolderId] : [];
       try {
-        const outcome = await bridge.importReceived(ids, profileId, folderIds);
-        setNotPdfId(null);
-        await refresh();
-        const skipped = outcome.skippedDuplicates.length
-          ? ` ${outcome.skippedDuplicates.length} duplicate(s) skipped.`
-          : "";
-        setNotice(
-          `${outcome.imported.length} shared file(s) encrypted and added.${skipped}`,
-        );
-      } catch (error) {
-        setNotPdfId(notPdfReceivedId(error));
-        throw error;
+        await addReceivedFiles(ids);
       } finally {
         onReceivedChanged?.();
       }
     });
+  const unlockReceived = (password: string) => {
+    const current = unlocking;
+    if (!current) return;
+    void run(async () => {
+      try {
+        let outcome: ImportOutcome;
+        try {
+          outcome = await bridge.unlockReceived(
+            current.file.id,
+            password,
+            profileId,
+            currentFolderId ? [currentFolderId] : [],
+          );
+        } catch (error) {
+          if (isWrongPdfPassword(error)) {
+            setUnlocking({ ...current, wrongTries: current.wrongTries + 1 });
+            return;
+          }
+          setUnlocking(null);
+          refuse(receivedRefusal(error));
+          throw error;
+        }
+        setUnlocking(null);
+        await refresh();
+        await addReceivedFiles(
+          current.rest,
+          `${current.file.name} unlocked and added.${
+            outcome.skippedDuplicates.length
+              ? " It was already in your records, so it was skipped."
+              : ""
+          }`,
+        );
+      } finally {
+        onReceivedChanged?.();
+      }
+    });
+  };
+  // Leaves the locked file waiting, marked, and adds the others.
+  const notNowUnlock = () => {
+    const current = unlocking;
+    if (!current) return;
+    setUnlocking(null);
+    setRefusals((now) => ({ ...now, [current.file.id]: "pdf_locked" }));
+    if (current.rest.length) void addReceived(current.rest);
+  };
   const declineReceived = (ids: string[]) =>
     run(async () => {
       try {
@@ -1097,10 +1185,29 @@ export function VaultLibrary({
                   <ReceivedFiles
                     files={received}
                     destination={`${profileName(profileId)}'s records${currentFolder ? `, folder ${currentFolder.name}` : ""}`}
-                    notPdfId={notPdfId}
+                    refusals={Object.fromEntries(
+                      Object.entries(refusals).filter(([id]) =>
+                        received.some((file) => file.id === id),
+                      ),
+                    )}
                     disabled={busy}
                     onAdd={(ids) => void addReceived(ids)}
                     onDecline={(ids) => void declineReceived(ids)}
+                    onUnlock={(id) => {
+                      const file = received.find(
+                        (candidate) => candidate.id === id,
+                      );
+                      if (file) setUnlocking({ file, rest: [], wrongTries: 0 });
+                    }}
+                  />
+                )}
+                {unlocking && (
+                  <UnlockReceivedDialog
+                    name={unlocking.file.name}
+                    wrongTries={unlocking.wrongTries}
+                    busy={busy}
+                    onUnlock={unlockReceived}
+                    onNotNow={notNowUnlock}
                   />
                 )}
                 <p className="status-line" role="status" aria-live="polite">

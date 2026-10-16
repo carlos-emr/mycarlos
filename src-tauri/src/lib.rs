@@ -1,9 +1,21 @@
 mod idle;
+mod pdf_unlock;
 mod received;
 mod throttle;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
+
+/// For `main`: the first argument that starts this executable as the PDF unlock helper, and
+/// the helper itself (see `pdf_unlock`).
+pub use pdf_unlock::{
+    helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
+};
+
+/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at`).
+#[doc(hidden)]
+#[cfg(desktop)]
+pub use pdf_unlock::unlock_with_helper_at as pdf_unlock_with_helper_at;
 
 use idle::{IdleDeadline, Opening};
 use received::{ReceivedFiles, ReceivedSource};
@@ -211,6 +223,26 @@ impl From<VaultError> for PublicText {
             VaultError::NotPdf => Self {
                 code: "not_pdf",
                 message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
+            },
+            VaultError::PdfLocked => Self {
+                code: "pdf_locked",
+                message: "One of the files is locked with a password, so nothing was added yet.",
+            },
+            VaultError::PdfWrongPassword => Self {
+                code: "pdf_wrong_password",
+                message: "That password did not open the document. Check the document password in your patient portal, then try again.",
+            },
+            VaultError::PdfUnlockFailed => Self {
+                code: "pdf_unlock_failed",
+                message: "myCarlos could not open this locked document. It may be damaged, or locked in a way myCarlos cannot open. Nothing was added.",
+            },
+            VaultError::PdfUnlockUnavailable => Self {
+                code: "pdf_unlock_unavailable",
+                message: "myCarlos cannot open password-protected documents on this device yet. Nothing was added.",
+            },
+            VaultError::PdfTooLarge => Self {
+                code: "pdf_too_large",
+                message: "This locked document is larger than 100 MB, so myCarlos cannot open it. Nothing was added.",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
@@ -1740,14 +1772,69 @@ fn open_received_source(
     app: &tauri::AppHandle,
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
-    let path = match file.source {
-        ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path),
-        ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url),
-    };
     Ok(ImportSource {
+        reader: require_pdf(open_received_reader(app, &file)?)?,
         display_name: file.name,
-        reader: require_pdf(open_source_reader(app, path)?)?,
     })
+}
+
+fn open_received_reader(
+    app: &tauri::AppHandle,
+    file: &received::ReceivedFile,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    let path = match &file.source {
+        ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path.clone()),
+        ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url.clone()),
+    };
+    open_source_reader(app, path)
+}
+
+/// A received file, ready to import. One that may be locked with a password is opened by the
+/// PDF helper first (`pdf_unlock`), never here beside the vault keys: with the patient's
+/// `password`, or with none, which opens a document locked only against changes and finds out
+/// whether a password is needed. Only the unlocked copy reaches the vault.
+fn prepare_received(
+    app: &tauri::AppHandle,
+    file: received::ReceivedFile,
+    password: Option<&str>,
+) -> Result<ImportSource, VaultError> {
+    use pdf_unlock::{Outcome, Refusal};
+    let source = open_received_source(app, file.clone())?;
+    if !pdf_unlock::may_be_locked(open_received_reader(app, &file)?)? {
+        return Ok(source);
+    }
+    let Ok(bytes) = pdf_unlock::read_limited(open_received_reader(app, &file)?)? else {
+        return Err(VaultError::PdfTooLarge);
+    };
+    match pdf_unlock::unlock_in_helper(&bytes, password.unwrap_or_default()) {
+        // The marker was only text: the file as it is.
+        Outcome::Refused(Refusal::NotEncrypted) => Ok(source),
+        Outcome::Unlocked(unlocked) => Ok(ImportSource {
+            display_name: file.name,
+            reader: Box::new(std::io::Cursor::new(unlocked)),
+        }),
+        Outcome::Refused(Refusal::WrongPassword) if password.is_some() => {
+            Err(VaultError::PdfWrongPassword)
+        }
+        Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+        Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+        Outcome::Unavailable => Err(VaultError::PdfUnlockUnavailable),
+        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported) | Outcome::Failed => {
+            Err(VaultError::PdfUnlockFailed)
+        }
+    }
+}
+
+/// Whether an import refusal names one received file, which the page then marks.
+fn names_a_received_file(error: &VaultError) -> bool {
+    matches!(
+        error,
+        VaultError::NotPdf
+            | VaultError::PdfLocked
+            | VaultError::PdfUnlockFailed
+            | VaultError::PdfUnlockUnavailable
+            | VaultError::PdfTooLarge
+    )
 }
 
 fn open_source_reader(
@@ -1852,9 +1939,9 @@ async fn received_import(
         {
             let _opening = Opening::new(store.idle());
             for (id, file) in files {
-                match open_received_source(&app, file) {
+                match prepare_received(&app, file, None) {
                     Ok(source) => sources.push(source),
-                    Err(VaultError::NotPdf) => return Ok(Err(id)),
+                    Err(error) if names_a_received_file(&error) => return Ok(Err((id, error))),
                     Err(error) => return Err(error),
                 }
             }
@@ -1869,16 +1956,74 @@ async fn received_import(
             received.finish(&taken);
             Ok(outcome)
         }
-        Ok(Err(not_pdf)) => {
+        Ok(Err((refused, error))) => {
             received.restore(taken);
             Err(PublicError {
-                received_id: Some(not_pdf),
-                ..PublicError::from(VaultError::NotPdf)
+                received_id: Some(refused),
+                ..PublicError::from(error)
             })
         }
         Err(error) => {
             received.restore(taken);
             Err(error)
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedUnlockRequest {
+    id: Uuid,
+    password: String,
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ReceivedUnlockRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
+/// Adds one received file that is locked with a password, opened with the password the patient
+/// typed. Only the unlocked copy is stored; the password is used once and wiped.
+#[tauri::command]
+async fn received_unlock(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    mut request: ReceivedUnlockRequest,
+) -> CommandResult<vault::ImportOutcome> {
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let id = request.id;
+    let profile_id = request.profile_id;
+    let folder_ids = std::mem::take(&mut request.folder_ids);
+    let password = zeroize::Zeroizing::new(std::mem::take(&mut request.password));
+    drop(request);
+    let taken = received
+        .take(&[id])
+        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
+    let file = taken[0].1.clone();
+    let result = run_blocking(store.inner(), move |store| {
+        let source = {
+            let _opening = Opening::new(store.idle());
+            prepare_received(&app, file, Some(&password))?
+        };
+        store.import(profile_id, folder_ids, vec![source], now_ms())
+    })
+    .await;
+    match result {
+        Ok(outcome) => {
+            received.finish(&taken);
+            Ok(outcome)
+        }
+        Err(error) => {
+            received.restore(taken);
+            Err(PublicError {
+                received_id: Some(id),
+                ..error
+            })
         }
     }
 }
@@ -2252,6 +2397,7 @@ pub fn run() {
             vault_import_picked,
             received_list,
             received_import,
+            received_unlock,
             received_discard,
             vault_export_pick,
             vault_export_picked,
@@ -3445,6 +3591,7 @@ mod tests {
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<ReceivedImportRequest>(&payload);
             let _ = serde_json::from_slice::<ReceivedDiscardRequest>(&payload);
+            let _ = serde_json::from_slice::<ReceivedUnlockRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);

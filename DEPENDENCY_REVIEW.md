@@ -50,6 +50,30 @@ has been suppressed or marked acceptable.
   keyboard produces. It adds one package to the Rust lockfile (485 → 486); its
   only dependency, `tinyvec`, was already locked.
 
+## Added for password-protected PDFs (#54)
+
+`lopdf` 0.45.0 (MIT) opens a PDF that a sender locked with a password, so that
+only the unlocked copy is stored. It is pinned exactly (`=0.45.0`) because it
+parses untrusted input: each update is a reviewed change. Default features are
+off, so neither `rayon` threads nor `chrono` come with it.
+
+It runs only in the separate helper process (`src-tauri/src/pdf_unlock.rs`),
+never next to the vault keys. Choosing it over `pdf` (whose writing is still
+experimental), `qpdf` (a C++ build for each phone platform) and
+`pdfium-render` (a native PDFium for each platform) is explained in the #23
+design.
+
+The lockfile grows from 486 to 515 packages. They are `lopdf`, `nom`,
+`encoding_rs`, `stringprep`, `weezl`, `rangemap`, `simdutf8` and their Unicode
+tables, plus newer RustCrypto releases (`aes`, `cbc`, `ecb`, `md-5`, `sha2`,
+`digest`, `cipher`, `rand` and their support crates) beside the versions the
+vault already uses. The vault's own encryption is unchanged.
+
+Every new package is MIT, Apache-2.0 or BSD-3-Clause (the WHATWG data in
+`encoding_rs`), all compatible with AGPL-3.0-or-later. CI's dependency job
+(`cargo audit`, the SBOM and the graph check) covers them; the graph check
+passes locally.
+
 ## Native remediation
 
 ### Mobile live reload restored
