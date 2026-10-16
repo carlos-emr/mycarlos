@@ -78,12 +78,28 @@ passes locally.
 
 `hayro` 0.8.0 draws a page of a PDF as a picture, so that myCarlos can show
 stored documents. It is pinned exactly (`=0.8.0`) because it parses untrusted
-input. It is pure Rust, forbids unsafe code in its own crates, and runs only in
-the separate PDF helper (`src-tauri/src/pdf_view.rs`), as `lopdf` does.
+input, and it runs only in the separate PDF helper (`src-tauri/src/pdf_view.rs`),
+as `lopdf` does.
 
-Its `simd` feature is off, which leaves out the SIMD paths of `pic-scale`.
-`image` 0.25 (already present through `hayro`) writes the page picture as PNG,
-with only the `png` feature.
+**Where there is unsafe code:**
+- `hayro` and `hayro-interpret` forbid unsafe code in their own crates.
+- `hayro-syntax`, the PDF parser underneath them, does not.
+  - It has an unsafe lifetime extension of its own (`page.rs`).
+  - `hayro-interpret` always turns on its `unsafe` feature, so turning off
+    `hayro`'s default features cannot avoid it. That feature brings in `flate2`
+    with the `zlib-rs` backend, `memchr`, and the SIMD paths of the JBIG2,
+    JPEG 2000 and JPEG decoders.
+  - `pic-scale`, `moxcms`, `zune-jpeg` and `fearless_simd` use unsafe code
+    internally too.
+- Turning off `hayro`'s own `simd` feature removes only `pic-scale`'s SIMD
+  paths.
+- Feature unification also moves the app's whole `flate2` to `zlib-rs`. Before
+  this, its only other user, `png` (for the app's own trusted icons), used
+  `miniz_oxide`.
+
+This is why the reader parses PDFs only in the helper, never beside the vault
+keys. The helper's real sandbox is #63. `image` 0.25 (already present through
+`hayro`) writes the page picture as PNG, with only the `png` feature.
 
 pdf.js was not chosen. Product decisions forbid rendering an untrusted PDF in
 the privileged webview, and running it in a second webview would need CSP and

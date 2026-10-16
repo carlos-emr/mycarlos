@@ -423,7 +423,7 @@ pub(crate) fn run_helper(
     if write_request(&mut *request, password.as_bytes(), pdf).is_err() {
         return Outcome::Failed;
     }
-    match exchange(command, request, time_limit, read_response) {
+    match exchange(command, request, time_limit, read_response, &|| false) {
         Some(Ok(unlocked)) => Outcome::Unlocked(unlocked),
         Some(Err(refusal)) => Outcome::Refused(refusal),
         None => Outcome::Failed,
@@ -432,13 +432,15 @@ pub(crate) fn run_helper(
 
 /// Sends one `request` to the helper started by `command` and reads its answer with `read`,
 /// all within `time_limit`. `None` when the helper could not be started, ran too long, failed,
-/// or answered wrongly. The request is wiped once sent.
+/// answered wrongly, or `cancelled` came true meanwhile, which stops it at once. The request is
+/// wiped once sent.
 #[cfg(desktop)]
 pub(crate) fn exchange<T: Send + 'static>(
     mut command: std::process::Command,
     request: Zeroizing<Vec<u8>>,
     time_limit: Duration,
     read: fn(&mut std::process::ChildStdout) -> Option<T>,
+    cancelled: &dyn Fn() -> bool,
 ) -> Option<T> {
     use std::process::Stdio;
     use std::time::Instant;
@@ -475,7 +477,9 @@ pub(crate) fn exchange<T: Send + 'static>(
     let exited = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) if Instant::now() < deadline && !cancelled() => {
+                std::thread::sleep(Duration::from_millis(20))
+            }
             _ => {
                 confine::stop(&mut child);
                 break None;
@@ -890,6 +894,21 @@ mod tests {
             Duration::from_millis(300),
         );
         assert!(matches!(outcome, Outcome::Failed));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn stops_a_helper_as_soon_as_it_is_cancelled() {
+        let started = std::time::Instant::now();
+        let answer = exchange(
+            shell("sleep 20"),
+            Zeroizing::new(b"FAKE".to_vec()),
+            HELPER_TIME_LIMIT,
+            read_response,
+            &|| started.elapsed() > Duration::from_millis(200),
+        );
+        assert!(answer.is_none());
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

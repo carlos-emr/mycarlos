@@ -34,10 +34,16 @@ function renderReader(
   ),
 ) {
   const onClose = vi.fn();
-  render(
-    <DocumentReader record={record} viewPage={viewPage} onClose={onClose} />,
+  const cancelView = vi.fn();
+  const view = render(
+    <DocumentReader
+      record={record}
+      viewPage={viewPage}
+      cancelView={cancelView}
+      onClose={onClose}
+    />,
   );
-  return { viewPage, onClose };
+  return { viewPage, onClose, cancelView, unmount: view.unmount };
 }
 
 describe("the document reader", () => {
@@ -52,7 +58,9 @@ describe("the document reader", () => {
     // Fitted to the reader, the page does not scroll sideways.
     const area = picture.parentElement!;
     expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth);
-    expect(screen.getByText("Page 1 of 2")).toBeVisible();
+    // The page count beside the buttons, and said once the page is shown.
+    expect(screen.getAllByText("Page 1 of 2")).toHaveLength(2);
+    expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2");
     expect(viewPage).toHaveBeenCalledTimes(1);
     const [index, width, password] = viewPage.mock.calls[0];
     expect(index).toBe(0);
@@ -88,7 +96,9 @@ describe("the document reader", () => {
     expect(screen.getByText("125%")).toBeVisible();
     await vi.waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
     expect(viewPage.mock.calls[1][1]).toBeGreaterThan(fitted);
-    await user.click(screen.getByRole("button", { name: "Fit width" }));
+    const fit = screen.getByRole("button", { name: "Fit width" });
+    await vi.waitFor(() => expect(fit).toBeEnabled());
+    await user.click(fit);
     expect(screen.getByText("100%")).toBeVisible();
     // Back to the width already drawn.
     expect(viewPage).toHaveBeenCalledTimes(2);
@@ -141,5 +151,78 @@ describe("the document reader", () => {
     );
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws one page at a time, and stops it when the reader closes", async () => {
+    const user = userEvent.setup();
+    let finish: (value: ViewedPage) => void = () => undefined;
+    const viewPage = vi.fn(
+      (_index: number, _width: number, _password?: string) =>
+        new Promise<ViewedPage>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { cancelView, unmount } = renderReader(viewPage);
+    expect(await screen.findByText("Opening page 1…")).toBeVisible();
+    // Sizes and pages cannot be asked for while one is being drawn.
+    for (const name of ["Larger", "Smaller", "Next page"])
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Larger" }));
+    expect(viewPage).toHaveBeenCalledTimes(1);
+    finish(page(0));
+    // Once shown, the page is said, for screen readers.
+    await vi.waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2"),
+    );
+    expect(cancelView).not.toHaveBeenCalled();
+    unmount();
+    expect(cancelView).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps only the last few pages drawn", async () => {
+    const user = userEvent.setup();
+    const viewPage = vi.fn(
+      async (index: number, _width: number, _password?: string) => ({
+        ...page(index),
+        pageCount: 10,
+      }),
+    );
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: /^Page 1 of 10/ });
+    for (let next = 2; next <= 8; next++) {
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+      await screen.findByRole("img", { name: new RegExp(`^Page ${next} of`) });
+    }
+    for (let back = 7; back >= 1; back--) {
+      await user.click(screen.getByRole("button", { name: "Previous page" }));
+      await screen.findByRole("img", { name: new RegExp(`^Page ${back} of`) });
+    }
+    // Pages 3 to 8 were kept; 1 and 2 had to be drawn again.
+    expect(viewPage).toHaveBeenCalledTimes(10);
+  });
+
+  it("lets the keyboard reach a zoomed page, to move it with the arrow keys", async () => {
+    renderReader();
+    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    const area = screen.getByRole("region", { name: "Page 1" });
+    expect(area).toHaveAttribute("tabindex", "0");
+    area.focus();
+    expect(area).toHaveFocus();
+  });
+
+  it("does not leave the last page's picture under a page that failed", async () => {
+    const user = userEvent.setup();
+    const viewPage = vi
+      .fn()
+      .mockImplementationOnce(async () => page(0))
+      .mockRejectedValueOnce(refusal("pdf_view_failed"));
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "FAKE pdf_view_failed",
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.queryByText("Text on this page")).toBeNull();
   });
 });

@@ -13,6 +13,12 @@ const ZOOM_MAX = 4;
 const ZOOM_STEP = 1.25;
 /** The widest picture the helper draws (pdf_view::MAX_SIDE). */
 const MAX_PICTURE_WIDTH = 4096;
+/** Pages kept while the reader is open, so that going back is quick: at most
+ * this many, and at most this many characters of picture data. */
+const CACHED_PAGES = 6;
+const CACHED_CHARACTERS = 48 * 1024 * 1024;
+/** A resize settles before the page is measured again. */
+const RESIZE_SETTLE_MS = 150;
 
 /** Reads a stored document inside myCarlos, one page at a time. Each page is
  * drawn by the separate PDF helper, as a picture with its text beside it for
@@ -22,6 +28,7 @@ const MAX_PICTURE_WIDTH = 4096;
 export function DocumentReader({
   record,
   viewPage,
+  cancelView,
   onClose,
 }: {
   record: VaultRecord;
@@ -30,6 +37,8 @@ export function DocumentReader({
     width: number,
     password?: string,
   ) => Promise<ViewedPage>;
+  /** Stops a page still being drawn, when the reader closes. */
+  cancelView?: () => void;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -56,6 +65,10 @@ export function DocumentReader({
   // The latest way to ask for a page; a new function alone asks for nothing.
   const viewPageRef = useRef(viewPage);
   viewPageRef.current = viewPage;
+  const cancelViewRef = useRef(cancelView);
+  cancelViewRef.current = cancelView;
+  // A page still being drawn when the reader closes is stopped.
+  useEffect(() => () => cancelViewRef.current?.(), []);
 
   useEffect(() => {
     // The width inside the page area's padding, so that a page fitted to it
@@ -69,9 +82,34 @@ export function DocumentReader({
       setFitWidth(Math.max(1, Math.floor(area.clientWidth - padding)));
     };
     measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    // Measured again once a resize settles, not on each step of it.
+    let settle: number | undefined;
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(measure, RESIZE_SETTLE_MS);
+    });
+    if (pageRef.current) observer.observe(pageRef.current);
+    return () => {
+      window.clearTimeout(settle);
+      observer.disconnect();
+    };
   }, []);
+
+  // Keeps a page drawn, within the cache's bounds: the least recently shown
+  // pages go first.
+  const remember = (key: string, result: ViewedPage) => {
+    const cache = drawn.current;
+    cache.delete(key);
+    cache.set(key, result);
+    let characters = 0;
+    for (const kept of cache.values()) characters += kept.image.length;
+    for (const [oldest, kept] of cache) {
+      if (cache.size <= CACHED_PAGES && characters <= CACHED_CHARACTERS) break;
+      if (oldest === key) continue;
+      cache.delete(oldest);
+      characters -= kept.image.length;
+    }
+  };
 
   const cssWidth = Math.max(1, Math.round(fitWidth * zoom));
   const pictureWidth = Math.min(
@@ -84,7 +122,9 @@ export function DocumentReader({
     const key = `${page}:${pictureWidth}`;
     const known = drawn.current.get(key);
     if (known) {
+      remember(key, known);
       setShown({ ...known, page });
+      setError("");
       setLoading(false);
       return;
     }
@@ -94,7 +134,7 @@ export function DocumentReader({
     viewPageRef.current(page, pictureWidth, password).then(
       (result) => {
         if (!current) return;
-        drawn.current.set(key, result);
+        remember(key, result);
         setShown({ ...result, page });
         setPageCount(result.pageCount);
         setLoading(false);
@@ -126,6 +166,8 @@ export function DocumentReader({
 
   const last = pageCount === null ? null : pageCount - 1;
   const where = pageCount === null ? "" : `Page ${page + 1} of ${pageCount}`;
+  // The picture shown is the page asked for, not one left from before.
+  const current = shown && shown.page === page && !asking && !error;
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -172,7 +214,7 @@ export function DocumentReader({
             <button
               className="button"
               type="button"
-              disabled={zoom <= ZOOM_MIN}
+              disabled={loading || zoom <= ZOOM_MIN}
               onClick={() =>
                 setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
               }
@@ -183,7 +225,7 @@ export function DocumentReader({
             <button
               className="button"
               type="button"
-              disabled={zoom >= ZOOM_MAX}
+              disabled={loading || zoom >= ZOOM_MAX}
               onClick={() =>
                 setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
               }
@@ -193,7 +235,7 @@ export function DocumentReader({
             <button
               className="button"
               type="button"
-              disabled={zoom === 1}
+              disabled={loading || zoom === 1}
               onClick={() => setZoom(1)}
             >
               Fit width
@@ -201,7 +243,11 @@ export function DocumentReader({
           </span>
         </div>
         <p className="native-dialog-status" role="status">
-          {loading && !asking ? `Opening page ${page + 1}…` : ""}
+          {loading && !asking
+            ? `Opening page ${page + 1}…`
+            : current
+              ? `Page ${shown.page + 1} of ${shown.pageCount}`
+              : ""}
         </p>
         {asking && (
           <form
@@ -240,8 +286,16 @@ export function DocumentReader({
           </form>
         )}
         {error && <p role="alert">{error}</p>}
-        <div className="native-reader-page" ref={pageRef}>
-          {shown && !asking && (
+        {/* Focusable, so that a zoomed page can be moved with the arrow keys
+            where the webview does not focus scrolling areas itself. */}
+        <div
+          className="native-reader-page"
+          ref={pageRef}
+          tabIndex={0}
+          role="region"
+          aria-label={current ? `Page ${shown.page + 1}` : "Page"}
+        >
+          {current && (
             <img
               src={shown.image}
               alt={`Page ${shown.page + 1} of ${shown.pageCount}. The page's text follows.`}
@@ -249,7 +303,7 @@ export function DocumentReader({
             />
           )}
         </div>
-        {shown && !asking && (
+        {current && (
           <details className="native-reader-text">
             <summary>Text on this page</summary>
             <div>

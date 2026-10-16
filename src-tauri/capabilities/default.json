@@ -38,6 +38,7 @@
     "allow-received-unlock",
     "allow-received-discard",
     "allow-vault-view-page",
+    "allow-vault-view-cancel",
     "allow-vault-export-pick",
     "allow-vault-export-picked",
     "allow-vault-delete-record",

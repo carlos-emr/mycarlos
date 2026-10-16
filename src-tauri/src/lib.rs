@@ -859,6 +859,8 @@ async fn vault_lock(
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
+    // A page still being drawn stops with the lock.
+    pdf_view::cancel_views();
     run_blocking(store.inner(), |store| {
         store.lock();
         Ok(())
@@ -882,6 +884,7 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
+        pdf_view::cancel_views();
         picks.clear();
     }
     locked
@@ -2075,6 +2078,8 @@ async fn vault_view_page(
     let given = request.password.is_some();
     let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
     drop(request);
+    // Taken now: a newer page request, a lock or the reader closing stops this one.
+    let ticket = pdf_view::ViewTicket::new();
     run_blocking(store.inner(), move |store| {
         let size = store
             .snapshot()?
@@ -2089,7 +2094,7 @@ async fn vault_view_page(
         // Sized up front, so the document is never copied by a growing buffer.
         let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
         store.export(record_id, &mut *document)?;
-        match pdf_view::view_in_helper(&document, &password, page, width) {
+        match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
             pdf_view::Outcome::Shown(shown) => Ok(ViewedPage {
                 page_count: shown.page_count,
                 width: shown.width,
@@ -2107,12 +2112,19 @@ async fn vault_view_page(
             pdf_view::Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
             pdf_view::Outcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
             pdf_view::Outcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            pdf_view::Outcome::Cancelled => Err(VaultError::Cancelled),
             pdf_view::Outcome::Refused(_) | pdf_view::Outcome::Failed => {
                 Err(VaultError::PdfViewFailed)
             }
         }
     })
     .await
+}
+
+/// Stops any page being drawn: the reader closed.
+#[tauri::command]
+fn vault_view_cancel() {
+    pdf_view::cancel_views();
 }
 
 /// Forgets received files the patient declined. Nothing of them was ever stored.
@@ -2487,6 +2499,7 @@ pub fn run() {
             received_unlock,
             received_discard,
             vault_view_page,
+            vault_view_cancel,
             vault_export_pick,
             vault_export_picked,
             vault_delete_record,

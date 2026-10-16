@@ -1387,6 +1387,7 @@ export function VaultLibrary({
               viewPage={(page, width, password) =>
                 bridge.viewPage(readerRecord.id, page, width, password)
               }
+              cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}
             />
           )}

@@ -22,6 +22,7 @@ import type {
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
+  ViewedPage,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 
@@ -110,6 +111,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     viewPage: vi
       .fn()
       .mockRejectedValue(new Error("FAKE: no reader in this test")),
+    cancelView: vi.fn().mockResolvedValue(undefined),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
@@ -733,6 +735,44 @@ describe("durable vault UI", () => {
     await user.click(within(reader).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  });
+
+  it("closes the reader, and stops its page, when the vault locks", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      // Still drawing when the lock comes.
+      viewPage: vi.fn(() => new Promise<ViewedPage>(() => undefined)),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Letter.pdf"));
+    await user.click(screen.getByRole("button", { name: "Read" }));
+    expect(
+      await screen.findByRole("dialog", { name: "FAKE_Letter.pdf" }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bridge.cancelView).toHaveBeenCalled();
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {

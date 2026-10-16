@@ -259,6 +259,8 @@ export interface VaultBridge {
     width: number,
     password?: string,
   ): Promise<ViewedPage>;
+  /** Stops a page still being drawn: the reader closed. */
+  cancelView(): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -520,6 +522,7 @@ export function createVaultBridge(): VaultBridge {
       invoke<ViewedPage>("vault_view_page", {
         request: { recordId, page, width, password: password ?? null },
       }),
+    cancelView: () => invoke<void>("vault_view_cancel"),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },

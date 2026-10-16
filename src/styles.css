@@ -311,7 +311,9 @@ h1, h2, p { margin: 0; }
 .native-reader-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
 .native-reader-where { min-width: 7em; text-align: center; font-weight: 700; }
 .native-reader-zoom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
-.native-reader-page { flex: 1; min-height: 0; overflow: auto; padding: 12px; background: var(--canvas-2); text-align: center; }
+/* The gutter is kept, so that a page fitted to the width does not scroll sideways once a tall page
+   brings a classic scrollbar. */
+.native-reader-page { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 12px; background: var(--canvas-2); text-align: center; }
 .native-reader-page img { display: inline-block; max-width: none; height: auto; box-shadow: var(--shadow-sm); background: var(--paper); }
 .native-reader-text { max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }

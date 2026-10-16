@@ -4,12 +4,41 @@
 //! the vault keys and never in the app's webview: the helper gets one decrypted document, its
 //! password if it has one, a page number and a width, and answers with that page as a PNG
 //! picture plus the page's text, for screen readers and copying. Nothing is written to disk.
-//! `hayro` draws the page and `lopdf` reads its text; both forbid unsafe code. PDF scripts,
-//! links, attachments and forms are not run or followed: the picture has none of them.
+//! `hayro` draws the page and `lopdf` reads its text. `hayro`, `hayro-interpret` and `lopdf`
+//! forbid unsafe code in their own crates; `hayro-syntax` and the decoders below it do not
+//! (flate2 with zlib-rs, memchr, SIMD image decoders; see DEPENDENCY_REVIEW). That is one more
+//! reason all of it runs only in the helper. PDF scripts, links, attachments and forms are not
+//! run or followed: the picture has none of them.
+//!
+//! One page is drawn at a time: each request takes a `ViewTicket`, and a newer request, a lock
+//! or the reader closing (`cancel_views`) stops the helper still drawing an older one.
 
 use crate::pdf_unlock::{self, Refusal, Request, RESPONSE_MAGIC};
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(desktop)]
 use zeroize::Zeroizing;
+
+/// The latest page request; an older one still drawing is stopped.
+static VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// One page request. It stays current until a newer request, a lock or the reader closing.
+pub(crate) struct ViewTicket(u64);
+
+impl ViewTicket {
+    pub(crate) fn new() -> Self {
+        Self(VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1)
+    }
+
+    pub(crate) fn is_current(&self) -> bool {
+        VIEW_GENERATION.load(Ordering::SeqCst) == self.0
+    }
+}
+
+/// Stops any page being drawn: when the vault locks and when the reader closes.
+pub(crate) fn cancel_views() {
+    VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
 
 /// The request that asks the helper for a page.
 pub(crate) const VIEW_MAGIC: &[u8; 8] = b"MCPDFVW1";
@@ -39,6 +68,8 @@ pub(crate) enum Outcome {
     Unavailable,
     /// The helper could not be started, ran out of time or memory, or answered wrongly.
     Failed,
+    /// A newer request, a lock or the reader closing stopped it.
+    Cancelled,
 }
 
 /// Draws page `index` (from 0) of `pdf`, `width` pixels wide at most, opening it with
@@ -120,6 +151,7 @@ fn page_text(pdf: &[u8], index: u32) -> String {
     text
 }
 
+#[cfg(any(desktop, test))]
 fn write_view_request(
     out: &mut impl Write,
     pdf: &[u8],
@@ -172,7 +204,9 @@ fn write_view_response(out: &mut impl Write, result: &Result<Page, Refusal>) -> 
     out.flush()
 }
 
-/// The helper's answer to a page request, or `None` when it is not one.
+/// The helper's answer to a page request, or `None` when it is not one. The picture must be a
+/// PNG of the size declared, so the webview is never handed anything else.
+#[cfg(any(desktop, test))]
 fn read_view_response(input: &mut impl Read) -> Option<Result<Page, Refusal>> {
     let mut head = [0u8; 9];
     input.read_exact(&mut head).ok()?;
@@ -190,6 +224,9 @@ fn read_view_response(input: &mut impl Read) -> Option<Result<Page, Refusal>> {
             return None;
         }
         let png = read_sized(input, MAX_PNG_BYTES)?;
+        if !png_of_size(&png, width, height) {
+            return None;
+        }
         let text = String::from_utf8(read_sized(input, MAX_PAGE_TEXT_BYTES)?).ok()?;
         Ok(Page {
             page_count,
@@ -204,6 +241,17 @@ fn read_view_response(input: &mut impl Read) -> Option<Result<Page, Refusal>> {
     matches!(input.read(&mut extra), Ok(0)).then_some(answer)
 }
 
+/// Whether `png` starts as a PNG does, with an IHDR of `width` x `height`. Nothing is decoded.
+#[cfg(any(desktop, test))]
+fn png_of_size(png: &[u8], width: u32, height: u32) -> bool {
+    png.len() >= 24
+        && png.starts_with(b"\x89PNG\r\n\x1a\n")
+        && &png[12..16] == b"IHDR"
+        && png[16..20] == width.to_be_bytes()
+        && png[20..24] == height.to_be_bytes()
+}
+
+#[cfg(any(desktop, test))]
 fn read_sized(input: &mut impl Read, limit: usize) -> Option<Vec<u8>> {
     let mut length = [0u8; 8];
     input.read_exact(&mut length).ok()?;
@@ -216,10 +264,20 @@ fn read_sized(input: &mut impl Read, limit: usize) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// Shows page `index` of `pdf` through the helper. Phones cannot start it: `Unavailable`.
-pub(crate) fn view_in_helper(pdf: &[u8], password: &str, index: u32, width: u32) -> Outcome {
+/// Shows page `index` of `pdf` through the helper, unless `ticket` stops being current. Phones
+/// cannot start it: `Unavailable`.
+pub(crate) fn view_in_helper(
+    pdf: &[u8],
+    password: &str,
+    index: u32,
+    width: u32,
+    ticket: &ViewTicket,
+) -> Outcome {
     #[cfg(desktop)]
     {
+        if !ticket.is_current() {
+            return Outcome::Cancelled;
+        }
         if pdf.len() > pdf_unlock::MAX_LOCKED_PDF_BYTES {
             return Outcome::Refused(Refusal::TooLarge);
         }
@@ -237,15 +295,17 @@ pub(crate) fn view_in_helper(pdf: &[u8], password: &str, index: u32, width: u32)
             request,
             pdf_unlock::HELPER_TIME_LIMIT,
             read_view_response,
+            &|| !ticket.is_current(),
         ) {
             Some(Ok(page)) => Outcome::Shown(page),
             Some(Err(refusal)) => Outcome::Refused(refusal),
+            None if !ticket.is_current() => Outcome::Cancelled,
             None => Outcome::Failed,
         }
     }
     #[cfg(mobile)]
     {
-        let _ = (pdf, password, index, width);
+        let _ = (pdf, password, index, width, ticket);
         Outcome::Unavailable
     }
 }
@@ -340,13 +400,61 @@ mod tests {
         );
     }
 
+    /// The start of a PNG of `width` x `height`: enough for the parent's check.
+    fn png_head(width: u32, height: u32) -> Vec<u8> {
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+        png.extend_from_slice(&width.to_be_bytes());
+        png.extend_from_slice(&height.to_be_bytes());
+        png.extend_from_slice(b"FAKE");
+        png
+    }
+
+    #[test]
+    fn takes_only_a_png_of_the_size_declared() {
+        assert!(png_of_size(&png_head(10, 20), 10, 20));
+        assert!(!png_of_size(&png_head(10, 21), 10, 20));
+        assert!(!png_of_size(b"GIF89a FAKE FAKE FAKE FAKE", 10, 20));
+        assert!(!png_of_size(&png_head(10, 20)[..20], 10, 20));
+        let page = render(&fixture("text-original.pdf"), "", 0, 300).unwrap();
+        assert!(png_of_size(&page.png, page.width, page.height));
+        let mut response = Vec::new();
+        write_view_response(
+            &mut response,
+            &Ok(Page {
+                png: png_head(11, 20),
+                width: 10,
+                height: 20,
+                page_count: 1,
+                text: String::new(),
+            }),
+        )
+        .unwrap();
+        assert!(read_view_response(&mut &response[..]).is_none());
+    }
+
+    #[test]
+    fn a_newer_request_a_lock_or_closing_stops_a_page_being_drawn() {
+        let older = ViewTicket::new();
+        assert!(older.is_current());
+        let newer = ViewTicket::new();
+        assert!(!older.is_current());
+        assert!(newer.is_current());
+        cancel_views();
+        assert!(!newer.is_current());
+        // A request already stopped never starts the helper.
+        assert!(matches!(
+            view_in_helper(&fixture("text-original.pdf"), "", 0, 300, &newer),
+            Outcome::Cancelled
+        ));
+    }
+
     #[test]
     fn the_page_protocol_carries_a_page_and_each_refusal() {
         let page = Page {
             page_count: 3,
             width: 10,
             height: 20,
-            png: b"\x89PNG\r\n\x1a\nFAKE".to_vec(),
+            png: png_head(10, 20),
             text: "FAKE text é".to_owned(),
         };
         let mut response = Vec::new();
