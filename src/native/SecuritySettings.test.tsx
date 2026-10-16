@@ -326,3 +326,38 @@ describe("SecuritySettings backup", () => {
     expect(props.onSaveBackup).toHaveBeenCalledOnce();
   });
 });
+
+describe("Automatic lock delay (#67)", () => {
+  it("steps by one minute with minus and plus, within 1 to 15", () => {
+    const props = renderSettings({ autoLockMinutes: 5 });
+    const group = screen.getByRole("group", { name: "Automatic lock delay" });
+    expect(screen.queryByRole("combobox", { name: /lock delay/i })).toBeNull();
+    expect(within(group).getByText("5 minutes")).toBeVisible();
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Longer delay" }),
+    );
+    expect(props.onAutoLockMinutes).toHaveBeenLastCalledWith(6);
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Shorter delay" }),
+    );
+    expect(props.onAutoLockMinutes).toHaveBeenLastCalledWith(4);
+  });
+
+  it("goes no further at either end, and keeps the button usable for focus", () => {
+    for (const [minutes, name] of [
+      [1, "Shorter delay"],
+      [15, "Longer delay"],
+    ] as const) {
+      const props = renderSettings({ autoLockMinutes: minutes });
+      const group = screen.getAllByRole("group", {
+        name: "Automatic lock delay",
+      })[0];
+      const end = within(group).getByRole("button", { name });
+      expect(end).toHaveAttribute("aria-disabled", "true");
+      expect(end).toBeEnabled();
+      fireEvent.click(end);
+      expect(props.onAutoLockMinutes).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+});

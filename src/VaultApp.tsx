@@ -13,6 +13,7 @@ import {
   type VaultStatus,
 } from "./vault";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
+import { ComfortSetup } from "./native/ComfortSetup";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
@@ -112,6 +113,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<string | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
+  // A new setup starts by making myCarlos comfortable (#69): once per run of
+  // the app, before the passphrase. A vault that exists never shows it.
+  const [comfortChosen, setComfortChosen] = useState(false);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
   // must not put its decrypted results or document names back on screen.
@@ -620,6 +624,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <VaultAuthFrame state="Opening">
         <p>Opening myCarlos…</p>
       </VaultAuthFrame>
+    );
+  }
+
+  if (status === "absent" && !comfortChosen) {
+    return (
+      <ComfortSetup
+        autoLockMinutes={autoLockMinutes}
+        onAutoLockMinutes={(minutes) => {
+          // Said by the control itself, not as a notice on the next screen.
+          const normalized = normalizeAutoLockMinutes(minutes);
+          setAutoLockMinutes(normalized);
+          persistAutoLockMinutes(normalized);
+        }}
+        onDone={() => setComfortChosen(true)}
+      />
     );
   }
 

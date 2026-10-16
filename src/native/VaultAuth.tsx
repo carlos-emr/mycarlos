@@ -146,6 +146,13 @@ export function CreateVault({
   const [profile, setProfile] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  // Opened by a button that is gone now (Continue on the comfort screen):
+  // the focus goes to the first box rather than nowhere.
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) nameRef.current?.focus();
+  }, []);
   // #69: each box can show what was typed in it.
   const [shown, setShown] = useState(false);
   const [confirmationShown, setConfirmationShown] = useState(false);
@@ -207,6 +214,7 @@ export function CreateVault({
           <label>
             Whose records will you keep here?
             <input
+              ref={nameRef}
               required
               maxLength={NAME_INPUT_MAX_LENGTH}
               value={profile}

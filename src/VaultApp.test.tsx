@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  cleanup,
   within,
 } from "@testing-library/react";
 import axe from "axe-core";
@@ -44,6 +45,12 @@ const emptySnapshot: VaultSnapshot = {
   records: [],
   recovery: null,
 };
+
+/** A new setup starts on the comfort screen (#69); Continue leads on to the
+ * passphrase. */
+async function continuePastComfort() {
+  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+}
 
 function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
   return {
@@ -306,6 +313,7 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("absent") })}
       />,
     );
+    await continuePastComfort();
     await screen.findByRole("heading", {
       name: "Set up myCarlos on this computer",
     });
@@ -314,12 +322,59 @@ describe("durable vault UI", () => {
     );
   });
 
+  it("starts a new setup on the comfort screen, and only a new one (#69)", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    onTestFinished(() =>
+      window.localStorage.removeItem("mycarlos.autoLockMinutes.v1"),
+    );
+    render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("absent") })}
+      />,
+    );
+    await screen.findByRole("heading", {
+      name: "Make myCarlos comfortable for you",
+    });
+    // A choice applies at once, and is kept as Settings keeps it.
+    const delay = screen.getByRole("group", { name: "Automatic lock delay" });
+    for (let press = 0; press < 2; press++)
+      await user.click(
+        within(delay).getByRole("button", { name: "Longer delay" }),
+      );
+    expect(within(delay).getByText("7 minutes")).toBeVisible();
+    expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
+      "7",
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
+    });
+    // The focus goes on to the first box, not nowhere; the choice was
+    // said where it was made, not again here.
+    expect(
+      screen.getByLabelText("Whose records will you keep here?"),
+    ).toHaveFocus();
+    expect(screen.queryByText(/Automatic locking set/)).not.toBeInTheDocument();
+    cleanup();
+
+    // A vault that exists never shows it.
+    render(<VaultApp bridge={nativeBridge()} />);
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    expect(
+      screen.queryByRole("heading", {
+        name: "Make myCarlos comfortable for you",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("creates the vault only when passphrases match", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("absent"),
     });
     render(<VaultApp bridge={bridge} />);
 
+    await continuePastComfort();
     await screen.findByRole("heading", {
       name: "Set up myCarlos on this computer",
     });
@@ -352,6 +407,7 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("absent"),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     const create = await screen.findByRole("button", { name: "Create vault" });
     // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
     const long = "字".repeat(600);
@@ -385,6 +441,7 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
 
+    await continuePastComfort();
     expect(
       await screen.findByRole("heading", {
         name: "Set up myCarlos on this computer",
@@ -888,6 +945,7 @@ describe("durable vault UI", () => {
         lock,
       });
       render(<VaultApp bridge={bridge} />);
+      await continuePastComfort();
       await user.type(
         await screen.findByLabelText("Whose records will you keep here?"),
         "FAKE Patient",
@@ -975,6 +1033,7 @@ describe("durable vault UI", () => {
         .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     await user.type(
       await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Test Patient",
@@ -1275,6 +1334,7 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     await screen.findByRole("heading", {
       name: "Set up myCarlos on this computer",
     });
@@ -1373,6 +1433,7 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
       screen.getByRole("button", { name: "Choose backup file…" }),
@@ -2211,6 +2272,10 @@ describe("durable vault UI", () => {
         await act(async () => {
           render(<VaultApp bridge={bridge} />);
         });
+        if (initial === "absent")
+          await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+          });
         await act(async () => {
           if (initial === "absent")
             fireEvent.change(
@@ -2571,6 +2636,7 @@ describe("durable vault UI", () => {
         "RESET MYCARLOS VAULT",
       );
       await user.click(screen.getByRole("button", { name: "Erase vault" }));
+      await continuePastComfort();
       await user.type(
         await screen.findByLabelText("Whose records will you keep here?"),
         "FAKE Tester",
@@ -3795,12 +3861,14 @@ describe("durable vault UI", () => {
       expect(bridge.touch).toHaveBeenCalledTimes(2);
 
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
-      await act(async () => {
-        fireEvent.change(
-          screen.getByRole("combobox", { name: "Automatic lock delay" }),
-          { target: { value: "1" } },
-        );
-      });
+      // From 5 minutes down to 1, one press at a time (#67).
+      const shorter = within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByRole("button", { name: "Shorter delay" });
+      for (let press = 0; press < 4; press++)
+        await act(async () => {
+          fireEvent.click(shorter);
+        });
       expect(bridge.setAutoLock).toHaveBeenLastCalledWith(1);
     } finally {
       vi.useRealTimers();
@@ -4301,13 +4369,16 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
 
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
-    const delay = screen.getByRole("combobox", {
+    const delay = screen.getByRole("group", {
       name: "Automatic lock delay",
     });
-    expect(delay).toHaveValue("5");
-    fireEvent.change(delay, { target: { value: "1" } });
+    expect(within(delay).getByText("5 minutes")).toBeVisible();
+    const shorter = within(delay).getByRole("button", {
+      name: "Shorter delay",
+    });
+    for (let press = 0; press < 4; press++) fireEvent.click(shorter);
 
-    expect(delay).toHaveValue("1");
+    expect(within(delay).getByText("1 minute")).toBeVisible();
     expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
       "1",
     );
@@ -4344,8 +4415,10 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(
-      screen.getByRole("combobox", { name: "Automatic lock delay" }),
-    ).toHaveValue("15");
+      within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByText("15 minutes"),
+    ).toBeVisible();
     first.unmount();
 
     window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "999");
@@ -4357,8 +4430,10 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(
-      screen.getByRole("combobox", { name: "Automatic lock delay" }),
-    ).toHaveValue("5");
+      within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByText("5 minutes"),
+    ).toBeVisible();
   });
 
   it("requires the exact destructive reset phrase", async () => {
@@ -4435,6 +4510,7 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: "Erase entire vault" }),
     );
+    await continuePastComfort();
     expect(
       await screen.findByRole("heading", {
         name: "Set up myCarlos on this computer",
@@ -5142,6 +5218,7 @@ describe("durable vault UI", () => {
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await continuePastComfort();
     await user.type(
       await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Tester",

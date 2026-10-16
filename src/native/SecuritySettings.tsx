@@ -8,7 +8,7 @@ import {
   vaultErrorMessage,
   type SpeedTestReport,
 } from "../vault";
-import { AUTO_LOCK_OPTIONS } from "./autoLock";
+import { AutoLockSetting } from "./AutoLockSetting";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import {
   MIN_PASSPHRASE_CHARS,
@@ -194,19 +194,10 @@ export function SecuritySettings({
             </p>
           </div>
           <div>
-            <label>
-              Automatic lock delay
-              <select
-                value={autoLockMinutes}
-                onChange={(event) => onAutoLockMinutes(event.target.value)}
-              >
-                {AUTO_LOCK_OPTIONS.map((minutes) => (
-                  <option value={minutes} key={minutes}>
-                    {minutes} minute{minutes === 1 ? "" : "s"}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AutoLockSetting
+              minutes={autoLockMinutes}
+              onMinutes={onAutoLockMinutes}
+            />
             <button
               className="button"
               type="button"
