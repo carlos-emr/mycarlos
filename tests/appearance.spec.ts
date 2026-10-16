@@ -104,6 +104,67 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
   });
 }
 
+/**
+ * WCAG 1.4.11 for the unchecked Appearance radios: the browser draws each
+ * ring from color-scheme (or system colours), so there is no CSS border to
+ * read. Each unchecked radio is photographed, and its pixel furthest from the
+ * corner (the row behind it) must differ by at least 3:1.
+ */
+async function radioRingsReadable(page: Page) {
+  const radios = page
+    .getByRole("group", { name: "Appearance" })
+    .getByRole("radio", { checked: false });
+  const shots = await Promise.all(
+    (await radios.all()).map(async (radio) =>
+      (await radio.screenshot({ animations: "disabled" })).toString("base64"),
+    ),
+  );
+  expect(shots).toHaveLength(2);
+  // A blank page decodes them, out of reach of the app's own policies.
+  const scratch = await page.context().newPage();
+  try {
+    const ratios = await scratch.evaluate(async (images) => {
+      const luminance = (r: number, g: number, b: number) =>
+        [r, g, b]
+          .map((v) => {
+            const c = v / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          })
+          .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const ratios: number[] = [];
+      for (const data of images) {
+        const image = new Image();
+        image.src = `data:image/png;base64,${data}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(
+          0,
+          0,
+          image.width,
+          image.height,
+        ).data;
+        const back = luminance(pixels[0], pixels[1], pixels[2]);
+        let best = 1;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const value = luminance(pixels[i], pixels[i + 1], pixels[i + 2]);
+          const ratio =
+            (Math.max(value, back) + 0.05) / (Math.min(value, back) + 0.05);
+          best = Math.max(best, ratio);
+        }
+        ratios.push(best);
+      }
+      return ratios;
+    }, shots);
+    for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(3);
+  } finally {
+    await scratch.close();
+  }
+}
+
 /** The three Appearance radio buttons (#67), by the mode each one chooses. */
 function appearanceChoices(page: Page) {
   const group = page.getByRole("group", { name: "Appearance" });
@@ -319,8 +380,9 @@ for (const theme of ["light", "dark"] as const) {
     await expect(choice).toHaveCSS("outline-style", "solid");
     await contrast(page, text);
     // The radio's ring is drawn by the browser from color-scheme, not from a
-    // CSS border, so only the focus outline has a colour to measure here.
+    // CSS border: radioRingsReadable measures it from pixels.
     await contrast(page, ".appearance-choice input:focus", "outline-color", 3);
+    await radioRingsReadable(page);
     await accessible(page);
     await screenshot(page, info, `${theme}-preferences-focus`);
     await section(page, info, "records");
@@ -405,6 +467,7 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await expect(choice).toBeChecked();
   await expect(choice).toHaveCSS("outline-style", "solid");
   await contrast(page, ".appearance-choice input:focus", "outline-color", 3);
+  await radioRingsReadable(page);
   await readableOnBackplate(page);
   await screenshot(page, info, "forced-preferences-focus");
   await section(page, info, "records");
