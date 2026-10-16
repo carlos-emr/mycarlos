@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
+import { userEvent as realKeys } from "vitest/browser";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   forgetRecoveryOffer,
@@ -684,6 +685,38 @@ describe("durable vault UI", () => {
     },
   );
 
+  it("moves a document from its details only when Move is pressed", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+    );
+    const details = screen.getByRole("dialog", { name: "FAKE Old.pdf" });
+    const destination = within(details).getByRole("combobox", {
+      name: "Move to",
+    });
+    const move = within(details).getByRole("button", { name: "Move" });
+    expect(destination).toHaveValue("parent");
+    expect(move).toBeDisabled();
+    // Real arrow keys: Chromium changes a closed list's value on each press,
+    // which used to move the document at once, once per press (#67).
+    destination.focus();
+    await realKeys.keyboard("{ArrowDown}{ArrowDown}");
+    expect(destination).toHaveValue("child");
+    expect(bridge.assignFolders).not.toHaveBeenCalled();
+    expect(move).toBeEnabled();
+    await user.click(move);
+    await waitFor(() =>
+      expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("record", [
+        "child",
+      ]),
+    );
+  });
+
   it("renames a document from its details, keeps failed input for retry, and supports cancellation", async () => {
     const user = userEvent.setup();
     const bridge = renameBridge();
@@ -695,7 +728,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -740,7 +773,7 @@ describe("durable vault UI", () => {
     // The document's details are replaced while it is renamed. Their status
     // line comes back empty, and the result is written into it after.
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -809,7 +842,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: "More options for FAKE Results.pdf",
+            name: "Details for FAKE Results.pdf",
           }),
         );
       });
@@ -831,7 +864,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -2343,7 +2376,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Rename folder" }),
     ).toBeDisabled();
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     expect(
       screen.getByRole("button", { name: "Rename document" }),
@@ -3775,12 +3808,14 @@ describe("durable vault UI", () => {
       expect(bridge.touch).toHaveBeenCalledTimes(2);
 
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
-      await act(async () => {
-        fireEvent.change(
-          screen.getByRole("combobox", { name: "Automatic lock delay" }),
-          { target: { value: "1" } },
-        );
-      });
+      // From 5 minutes down to 1, one press at a time (#67).
+      const shorter = within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByRole("button", { name: "Shorter delay" });
+      for (let press = 0; press < 4; press++)
+        await act(async () => {
+          fireEvent.click(shorter);
+        });
       expect(bridge.setAutoLock).toHaveBeenLastCalledWith(1);
     } finally {
       vi.useRealTimers();
@@ -4281,13 +4316,16 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
 
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
-    const delay = screen.getByRole("combobox", {
+    const delay = screen.getByRole("group", {
       name: "Automatic lock delay",
     });
-    expect(delay).toHaveValue("5");
-    fireEvent.change(delay, { target: { value: "1" } });
+    expect(within(delay).getByText("5 minutes")).toBeVisible();
+    const shorter = within(delay).getByRole("button", {
+      name: "Shorter delay",
+    });
+    for (let press = 0; press < 4; press++) fireEvent.click(shorter);
 
-    expect(delay).toHaveValue("1");
+    expect(within(delay).getByText("1 minute")).toBeVisible();
     expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
       "1",
     );
@@ -4324,8 +4362,10 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(
-      screen.getByRole("combobox", { name: "Automatic lock delay" }),
-    ).toHaveValue("15");
+      within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByText("15 minutes"),
+    ).toBeVisible();
     first.unmount();
 
     window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "999");
@@ -4337,8 +4377,10 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(
-      screen.getByRole("combobox", { name: "Automatic lock delay" }),
-    ).toHaveValue("5");
+      within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByText("5 minutes"),
+    ).toBeVisible();
   });
 
   it("requires the exact destructive reset phrase", async () => {
