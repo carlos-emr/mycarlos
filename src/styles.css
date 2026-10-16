@@ -568,6 +568,13 @@ h1, h2, p { margin: 0; }
   .trash-list .file-row .restore-button { grid-column: 3; grid-row: 2; }
 }
 
+/* #67: in the app, buttons keep their words on narrow windows and wrap instead. */
+@media (max-width: 24.375em) {
+  .native-vault-page .head-actions { flex-wrap: wrap; }
+  .native-vault-page .head-actions .button { width: auto; padding-inline: 11px; }
+  .native-vault-page .head-actions .button span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+}
+
 /* The native vault uses the mock-aligned filing-cabinet shell with durable data. */
 .native-vault-page .page-wrap { max-width: 1440px; }
 .native-vault-page .app-window { min-height: calc(100vh - 76px); }
@@ -625,8 +632,16 @@ h1, h2, p { margin: 0; }
 .native-draggable:active { cursor: grabbing; }
 .native-dragging { opacity: .45; }
 .native-drop-target { background: var(--teal-soft) !important; box-shadow: inset 0 0 0 2px var(--teal) !important; }
+/* #67: all choices in view, and words on every button. */
 .native-sort { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .native-sort .icon { width: 16px; height: 16px; }
+.native-sort-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: 0; padding: 0; border: 0; }
+.native-sort-choice legend { float: left; margin-right: 2px; padding: 0; color: var(--ink-soft); font-weight: 700; }
+.native-sort-choice label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--ink); font-weight: 600; cursor: pointer; }
+.native-sort-choice input { flex: none; width: 18px; height: 18px; margin: 0; }
+.native-view-segment button { grid-auto-flow: column; gap: 6px; width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; font: inherit; font-weight: 600; }
+.native-details-button { min-height: 44px; padding: 6px 12px; color: var(--teal-dark); font: inherit; font-weight: 700; }
+.native-dialog-close { width: auto; min-width: 44px; height: auto; min-height: 44px; padding: 0 14px; font-size: 0.875rem; font-weight: 700; line-height: 1; }
 .native-move-actions { align-items: center; }
 .native-move-actions select { max-width: 220px; min-height: 31px; border-color: rgb(255 255 255 / 32%); background: var(--paper); color: var(--ink); }
 .native-file-open { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
@@ -639,7 +654,7 @@ h1, h2, p { margin: 0; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 4.5rem; }
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem auto; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -681,7 +696,7 @@ h1, h2, p { margin: 0; }
 .native-rename-fields [role="alert"] { color: var(--ink); font-weight: 700; }
 .native-record-rename { padding: 0 20px 16px; }
 @media (max-width: 56.25em) {
-  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) 4.5rem; }
+  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) auto; }
 }
 .native-dialog-actions label { margin-right: auto; }
 

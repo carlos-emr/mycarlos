@@ -40,6 +40,10 @@ import {
 type NativeSection = "records" | "security" | "preferences";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
+const SORT_CHOICES: ReadonlyArray<[NativeSort, string]> = [
+  ["newest", "Newest first"],
+  ["name", "Name A–Z"],
+];
 
 /** The ids of a folder and of every folder beneath it. */
 function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
@@ -984,20 +988,26 @@ export function VaultLibrary({
                     Hold and drag a document or folder to move it
                   </span>
                   <div className="view-controls">
-                    <label className="native-sort">
-                      <Icon name="sort" />
-                      <span className="sr-only">Sort records</span>
-                      <select
-                        value={sort}
-                        onChange={(event) =>
-                          setSort(event.target.value as NativeSort)
-                        }
-                      >
-                        <option value="newest">Newest first</option>
-                        <option value="name">Name A–Z</option>
-                      </select>
-                    </label>
-                    <span className="segment" aria-label="Choose record view">
+                    {/* Both choices in view, with words (#67). */}
+                    <fieldset className="native-sort-choice">
+                      <legend>Sort by</legend>
+                      {SORT_CHOICES.map(([value, label]) => (
+                        <label key={value}>
+                          <input
+                            type="radio"
+                            name="native-sort"
+                            value={value}
+                            checked={sort === value}
+                            onChange={() => setSort(value)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </fieldset>
+                    <span
+                      className="segment native-view-segment"
+                      aria-label="Choose record view"
+                    >
                       <button
                         className={view === "list" ? "selected" : ""}
                         type="button"
@@ -1005,7 +1015,7 @@ export function VaultLibrary({
                         aria-pressed={view === "list"}
                         onClick={() => setView("list")}
                       >
-                        <Icon name="list" />
+                        <Icon name="list" /> List
                       </button>
                       <button
                         className={view === "grid" ? "selected" : ""}
@@ -1014,7 +1024,7 @@ export function VaultLibrary({
                         aria-pressed={view === "grid"}
                         onClick={() => setView("grid")}
                       >
-                        <Icon name="grid" />
+                        <Icon name="grid" /> Grid
                       </button>
                     </span>
                   </div>

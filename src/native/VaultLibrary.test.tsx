@@ -32,21 +32,21 @@ const snapshot: VaultSnapshot = {
   recovery: null,
 };
 
-function renderLibrary() {
+function renderLibrary(shown: VaultSnapshot = snapshot) {
   const bridge = {
     updateFolder: vi.fn().mockResolvedValue(undefined),
-    snapshot: vi.fn().mockResolvedValue(snapshot),
+    snapshot: vi.fn().mockResolvedValue(shown),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
     <VaultLibrary
       bridge={bridge}
-      snapshot={snapshot}
+      snapshot={shown}
       busy={false}
       notice=""
       setNotice={setNotice}
       run={async (operation) => operation()}
-      refresh={async () => snapshot}
+      refresh={async () => shown}
       onLock={vi.fn().mockResolvedValue(undefined)}
       autoLockMinutes={5}
       onAutoLockMinutes={vi.fn()}
@@ -114,5 +114,54 @@ describe("VaultLibrary folders", () => {
       new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
     );
     expect(row).not.toHaveTextContent(/\bFolder\b/);
+  });
+});
+
+describe("VaultLibrary controls for older patients (#67)", () => {
+  const withRecord: VaultSnapshot = {
+    ...snapshot,
+    records: [
+      {
+        id: "record-1",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE Results.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: Date.UTC(2026, 0, 16, 12),
+        available: true,
+      },
+    ],
+  };
+
+  it("puts words on its buttons and shows both sort choices", () => {
+    renderLibrary(withRecord);
+    const details = screen.getByRole("button", {
+      name: "Details for FAKE Results.pdf",
+    });
+    expect(details).toHaveTextContent(/^Details$/);
+    expect(screen.getByRole("button", { name: "List view" })).toHaveTextContent(
+      "List",
+    );
+    expect(screen.getByRole("button", { name: "Grid view" })).toHaveTextContent(
+      "Grid",
+    );
+    // Sort is a row of radio buttons, not a dropdown with only an icon.
+    const sort = screen.getByRole("group", { name: "Sort by" });
+    expect(
+      within(sort)
+        .getAllByRole("radio")
+        .map((choice) => choice.closest("label")?.textContent),
+    ).toEqual(["Newest first", "Name A–Z"]);
+    expect(
+      within(sort).getByRole("radio", { name: "Newest first" }),
+    ).toBeChecked();
+    fireEvent.click(within(sort).getByRole("radio", { name: "Name A–Z" }));
+    expect(within(sort).getByRole("radio", { name: "Name A–Z" })).toBeChecked();
+    fireEvent.click(details);
+    expect(
+      screen.getByRole("button", { name: "Close document details" }),
+    ).toHaveTextContent(/^Close$/);
   });
 });

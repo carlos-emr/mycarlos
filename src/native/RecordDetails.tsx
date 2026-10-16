@@ -72,12 +72,12 @@ export function RecordDetails({
           </div>
           <button
             ref={closeRef}
-            className="dialog-close"
+            className="dialog-close native-dialog-close"
             type="button"
             aria-label="Close document details"
             onClick={onClose}
           >
-            ×
+            Close
           </button>
         </header>
         <div

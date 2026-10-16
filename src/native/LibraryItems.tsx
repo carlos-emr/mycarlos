@@ -161,12 +161,12 @@ export function LibraryItems({
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
             <button
-              className="more-button"
+              className="more-button native-details-button"
               type="button"
-              aria-label={`More options for ${record.displayName}`}
+              aria-label={`Details for ${record.displayName}`}
               onClick={() => onOpenRecord(record.id)}
             >
-              <Icon name="more" />
+              Details
             </button>
           </article>
         );

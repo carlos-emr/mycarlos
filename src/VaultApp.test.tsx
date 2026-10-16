@@ -693,7 +693,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     const details = screen.getByRole("dialog", { name: "FAKE Old.pdf" });
     const destination = within(details).getByRole("combobox", {
@@ -728,7 +728,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -773,7 +773,7 @@ describe("durable vault UI", () => {
     // The document's details are replaced while it is renamed. Their status
     // line comes back empty, and the result is written into it after.
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -842,7 +842,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: "More options for FAKE Results.pdf",
+            name: "Details for FAKE Results.pdf",
           }),
         );
       });
@@ -864,7 +864,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -2376,7 +2376,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Rename folder" }),
     ).toBeDisabled();
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     expect(
       screen.getByRole("button", { name: "Rename document" }),
