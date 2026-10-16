@@ -117,9 +117,21 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** Which rules a new passphrase meets, as the vault judges it (#69). */
+export interface PassphraseRules {
+  longEnough: boolean;
+  notAName: boolean;
+  hardToGuess: boolean;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
+  /** First setup's checklist: refused once a vault exists. */
+  passphraseRules(
+    passphrase: string,
+    initialProfileName: string,
+  ): Promise<PassphraseRules>;
   create(
     passphrase: string,
     initialProfileName: string,
@@ -328,6 +340,10 @@ export function createVaultBridge(): VaultBridge {
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
+    passphraseRules: (passphrase, initialProfileName) =>
+      invoke<PassphraseRules>("vault_passphrase_rules", {
+        request: { passphrase, initialProfileName },
+      }),
     create: (passphrase, initialProfileName) =>
       invoke<VaultSnapshot>("vault_create", {
         request: { passphrase, initialProfileName },

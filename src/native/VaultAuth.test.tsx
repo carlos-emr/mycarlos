@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreateVault, ResetConfirmation, UnlockVault } from "./VaultAuth";
 
 const restoreBridge = {
@@ -102,7 +102,7 @@ describe("CreateVault", () => {
       />,
     );
     expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      /^0 character password Use at least 15 characters\./,
+      /^0 character password Your passphrase needs to be: At least 15 characters\s*, not yet/,
     );
   });
 
@@ -122,7 +122,7 @@ describe("CreateVault", () => {
     expect(status.getBoundingClientRect().height).toBe(0);
     // The same 12px as between the other fields.
     const above = screen
-      .getByText("Confirm passphrase")
+      .getByRole("button", { name: "Show passphrase in Confirm passphrase" })
       .getBoundingClientRect();
     const create = screen
       .getByRole("button", { name: "Create vault" })
@@ -154,6 +154,159 @@ describe("CreateVault", () => {
     }
     expect(screen.getByRole("alert")).toHaveTextContent("too long");
     expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+  });
+});
+
+describe("CreateVault passphrase help (#69)", () => {
+  const allMet = { longEnough: true, notAName: true, hardToGuess: true };
+  const strong = "river azimuth cobalt sparrow 934";
+
+  function renderCreate(
+    checkRules = vi.fn().mockResolvedValue(allMet),
+    onCreate = vi.fn().mockResolvedValue(undefined),
+  ) {
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={onCreate}
+        checkRules={checkRules}
+      />,
+    );
+    return { checkRules, onCreate };
+  }
+  const type = (label: string, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const rule = (name: string) => screen.getByText(name).closest("li")!;
+  // Lets the pause pass, then the answer arrive.
+  const pause = (ms = 300) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows the rules before typing, read with the passphrase box", () => {
+    renderCreate();
+    for (const name of [
+      "At least 15 characters",
+      "Not easy to guess",
+      "Not your name",
+    ])
+      expect(rule(name)).toHaveAttribute("data-met", "false");
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /At least 15 characters\s*, not yet Not easy to guess\s*, not yet Not your name\s*, not yet/,
+    );
+  });
+
+  it("says too short while typing, before the confirmation is filled in", () => {
+    renderCreate();
+    type("Passphrase", "river");
+    expect(screen.getByRole("alert")).toHaveTextContent("too short");
+    expect(rule("At least 15 characters")).toHaveAttribute("data-met", "false");
+    type("Passphrase", strong);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(rule("At least 15 characters")).toHaveAttribute("data-met", "true");
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /At least 15 characters\s*, done/,
+    );
+  });
+
+  it("asks the vault once typing pauses, about what is typed now", async () => {
+    vi.useFakeTimers();
+    const { checkRules } = renderCreate(
+      vi.fn().mockResolvedValue({ ...allMet, notAName: false }),
+    );
+    type("Whose records will you keep here?", "Jamie Rivers");
+    type("Passphrase", "river azimuth");
+    await pause(299);
+    type("Passphrase", "river azimuth cobalt jamie 934");
+    await pause(299);
+    expect(checkRules).not.toHaveBeenCalled();
+    await pause(1);
+    expect(checkRules).toHaveBeenCalledExactlyOnceWith(
+      "river azimuth cobalt jamie 934",
+      "Jamie Rivers",
+    );
+    expect(rule("Not easy to guess")).toHaveAttribute("data-met", "true");
+    expect(rule("Not your name")).toHaveAttribute("data-met", "false");
+    // Create would only be refused, so it waits for a passphrase that passes.
+    type("Confirm passphrase", "river azimuth cobalt jamie 934");
+    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+
+    // A change forgets the answer until the vault answers again.
+    checkRules.mockResolvedValue(allMet);
+    type("Passphrase", strong);
+    expect(rule("Not easy to guess")).toHaveAttribute("data-met", "false");
+    type("Confirm passphrase", strong);
+    await pause();
+    expect(rule("Not your name")).toHaveAttribute("data-met", "true");
+    expect(screen.getByRole("button", { name: "Create vault" })).toBeEnabled();
+  });
+
+  it("drops an answer about a passphrase since changed", async () => {
+    vi.useFakeTimers();
+    let answer: (rules: typeof allMet) => void = () => undefined;
+    const checkRules = vi.fn(
+      () => new Promise<typeof allMet>((resolve) => (answer = resolve)),
+    );
+    renderCreate(checkRules);
+    type("Passphrase", "password password");
+    await pause();
+    expect(checkRules).toHaveBeenCalledOnce();
+    type("Passphrase", strong);
+    await act(async () => answer(allMet));
+    expect(rule("Not easy to guess")).toHaveAttribute("data-met", "false");
+  });
+
+  it("never asks again once Create is pressed", async () => {
+    vi.useFakeTimers();
+    const { checkRules, onCreate } = renderCreate();
+    type("Whose records will you keep here?", "Jamie");
+    type("Passphrase", strong);
+    type("Confirm passphrase", strong);
+    await pause();
+    expect(checkRules).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
+    expect(onCreate).toHaveBeenCalledWith("Jamie", strong);
+    await pause(5_000);
+    expect(checkRules).toHaveBeenCalledOnce();
+    // Nothing of the passphrase stays in the boxes.
+    expect(screen.getByLabelText("Passphrase")).toHaveValue("");
+  });
+
+  it("shows each box on its own, and hides both when the app is hidden", () => {
+    renderCreate();
+    const passphrase = screen.getByLabelText("Passphrase");
+    const confirmation = screen.getByLabelText("Confirm passphrase");
+    const show = screen.getByRole("button", { name: "Show passphrase" });
+    const showConfirmation = screen.getByRole("button", {
+      name: "Show passphrase in Confirm passphrase",
+    });
+    expect(show).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(show);
+    expect(passphrase).toHaveAttribute("type", "text");
+    expect(show).toHaveAttribute("aria-pressed", "true");
+    expect(confirmation).toHaveAttribute("type", "password");
+    fireEvent.click(showConfirmation);
+    expect(confirmation).toHaveAttribute("type", "text");
+    expect(showConfirmation).toHaveAttribute("aria-pressed", "true");
+
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      fireEvent(document, new Event("visibilitychange"));
+    } finally {
+      visibility.mockRestore();
+    }
+    expect(passphrase).toHaveAttribute("type", "password");
+    expect(confirmation).toHaveAttribute("type", "password");
+    expect(show).toHaveAttribute("aria-pressed", "false");
   });
 });
 

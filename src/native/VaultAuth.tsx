@@ -10,19 +10,22 @@ import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import { RestoreBackup } from "./RestoreBackup";
+import {
+  MIN_PASSPHRASE_CHARS,
+  PassphraseChecklist,
+  tooShortPassphrase,
+  useNewPassphraseRules,
+  type CheckPassphraseRules,
+} from "./PassphraseChecklist";
 import type { VaultBridge } from "../vault";
+
+export { MIN_PASSPHRASE_CHARS, tooShortPassphrase };
 
 /** What restoring a backup needs from the bridge. */
 export type RestoreBridge = Pick<
   VaultBridge,
   "pickRestoreSource" | "inspectRestore" | "restore"
 >;
-
-// The vault counts a new passphrase's characters (Unicode code points) after
-// NFC normalization, so the same visible text is judged alike from any keyboard.
-export const MIN_PASSPHRASE_CHARS = 15;
-export const tooShortPassphrase = (value: string) =>
-  [...value.normalize("NFC")].length < MIN_PASSPHRASE_CHARS;
 
 export function VaultAuthFrame({
   state,
@@ -127,26 +130,53 @@ export function CreateVault({
   busy,
   notice,
   onCreate,
+  checkRules,
   restoreBridge,
   onRestored,
 }: {
   busy: boolean;
   notice: string;
   onCreate: (profile: string, passphrase: string) => Promise<void>;
+  /** The vault's own judgement of a passphrase being typed (#69). Without
+   * it, the checklist ticks only the length; Create still judges it all. */
+  checkRules?: CheckPassphraseRules;
   restoreBridge: RestoreBridge;
   onRestored: () => void;
 }) {
   const [profile, setProfile] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  // #69: each box can show what was typed in it.
+  const [shown, setShown] = useState(false);
+  const [confirmationShown, setConfirmationShown] = useState(false);
+  // Shown text must not wait on screen, or in an app switcher's picture.
+  useEffect(() => {
+    const hideWhenHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      setShown(false);
+      setConfirmationShown(false);
+    };
+    document.addEventListener("visibilitychange", hideWhenHidden);
+    return () =>
+      document.removeEventListener("visibilitychange", hideWhenHidden);
+  }, []);
+  const { rules, forget } = useNewPassphraseRules(
+    checkRules,
+    passphrase,
+    profile,
+    busy,
+  );
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const tooShort = tooShortPassphrase(passphrase);
   const profileTooLong = nameTooLong(profile);
+  // A rule the vault has said is not met: Create would only be refused.
+  const unmet = rules !== null && !(rules.notAName && rules.hardToGuess);
   const invalid =
     !profile.trim() ||
     profileTooLong ||
     tooLong ||
     tooShort ||
+    unmet ||
     passphrase !== confirmation;
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -154,6 +184,9 @@ export function CreateVault({
     const secret = passphrase;
     setPassphrase("");
     setConfirmation("");
+    setShown(false);
+    setConfirmationShown(false);
+    forget();
     void onCreate(profile, secret);
   };
   return (
@@ -177,7 +210,10 @@ export function CreateVault({
               required
               maxLength={NAME_INPUT_MAX_LENGTH}
               value={profile}
-              onChange={(e) => setProfile(e.target.value)}
+              onChange={(e) => {
+                setProfile(e.target.value);
+                forget();
+              }}
             />
           </label>
           {profileTooLong && (
@@ -188,40 +224,61 @@ export function CreateVault({
             <SecretInput
               aria-label="Passphrase"
               required
-              type="password"
+              type={shown ? "text" : "password"}
               autoComplete="new-password"
               aria-describedby="passphrase-rules"
               value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
+              onChange={(e) => {
+                setPassphrase(e.target.value);
+                forget();
+              }}
             />
           </label>
-          <small id="passphrase-rules">
-            Use at least {MIN_PASSPHRASE_CHARS} characters. Spaces are allowed;
-            common passwords, names, and predictable patterns are rejected
-            locally.
-          </small>
+          <button
+            className="button show-secret"
+            type="button"
+            aria-pressed={shown}
+            onClick={() => setShown((current) => !current)}
+          >
+            Show passphrase
+          </button>
+          <PassphraseChecklist
+            id="passphrase-rules"
+            passphrase={passphrase}
+            rules={rules}
+          />
+          {/* While typing, not only once the confirmation is filled in. */}
+          {passphrase && tooShort && (
+            <p role="alert">
+              This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
+              characters.
+            </p>
+          )}
+          {tooLong && (
+            <p role="alert">This passphrase is too long. Shorten it.</p>
+          )}
           <label>
             Confirm passphrase
             <SecretInput
               aria-label="Confirm passphrase"
               required
-              type="password"
+              type={confirmationShown ? "text" : "password"}
               autoComplete="new-password"
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
             />
           </label>
+          <button
+            className="button show-secret"
+            type="button"
+            aria-pressed={confirmationShown}
+            onClick={() => setConfirmationShown((current) => !current)}
+          >
+            Show passphrase
+            <span className="sr-only"> in Confirm passphrase</span>
+          </button>
           {confirmation && passphrase !== confirmation && (
             <p role="alert">Passphrases do not match.</p>
-          )}
-          {tooLong && (
-            <p role="alert">This passphrase is too long. Shorten it.</p>
-          )}
-          {tooShort && confirmation && (
-            <p role="alert">
-              This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
-              characters.
-            </p>
           )}
           <AuthNotice notice={notice} />
           <button className="button primary" disabled={busy || invalid}>

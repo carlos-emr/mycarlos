@@ -49,6 +49,11 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
   return {
     native: true,
     status: vi.fn().mockResolvedValue("locked"),
+    passphraseRules: vi.fn().mockResolvedValue({
+      longEnough: true,
+      notAName: true,
+      hardToGuess: true,
+    }),
     create: vi.fn().mockResolvedValue(emptySnapshot),
     unlock: vi.fn().mockResolvedValue(emptySnapshot),
     lock: vi.fn().mockResolvedValue(undefined),

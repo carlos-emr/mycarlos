@@ -628,6 +628,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       <CreateVault
         busy={busy}
         notice={notice}
+        checkRules={bridge.passphraseRules}
         restoreBridge={trackedBridge}
         onRestored={restored}
         onCreate={(profile, passphrase) =>

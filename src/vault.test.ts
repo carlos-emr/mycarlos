@@ -26,6 +26,18 @@ describe("native idle deadline bridge", () => {
       ["vault_touch"],
       ["vault_set_auto_lock", { request: { minutes: 3 } }],
     ]);
+    invoke.mockResolvedValue({
+      longEnough: true,
+      notAName: true,
+      hardToGuess: true,
+    });
+    await bridge.passphraseRules("river azimuth cobalt", "Jamie");
+    expect(invoke).toHaveBeenLastCalledWith("vault_passphrase_rules", {
+      request: {
+        passphrase: "river azimuth cobalt",
+        initialProfileName: "Jamie",
+      },
+    });
     invoke.mockResolvedValue({ platform: "ios", architecture: "arm64" });
     await expect(bridge.platform()).resolves.toBe("ios");
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");

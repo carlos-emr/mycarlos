@@ -71,6 +71,15 @@
 /* Kept on the page while empty, so that its messages are read out, but out of
    the grid, so that it takes no row or gap. */
 .vault-card form > [role="status"]:empty { position: absolute; }
+/* #69: Show passphrase under each box, and the rules as a checklist that
+   ticks itself. */
+.vault-card .show-secret { justify-self: start; min-height: 44px; margin-top: -4px; }
+.passphrase-checklist { display: grid; gap: 6px; color: var(--ink-soft); }
+.passphrase-checklist p { margin: 0; font-size: 0.875rem; }
+.passphrase-checklist ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.passphrase-checklist li { display: flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 600; }
+.passphrase-rule-mark { flex: none; width: 1.25em; color: var(--ink-faint); text-align: center; }
+.passphrase-checklist li[data-met="true"] .passphrase-rule-mark { color: var(--teal); font-weight: 800; }
 .vault-kicker {
   margin: 0;
   color: var(--teal) !important;
