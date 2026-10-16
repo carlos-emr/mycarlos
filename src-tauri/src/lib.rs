@@ -178,7 +178,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::WrongPassphrase => Self {
                 code: "wrong_passphrase",
-                message: "That passphrase did not unlock the vault.",
+                message: "That passphrase didn't open myCarlos. Check Caps Lock and try again.",
             },
             VaultError::Corrupt => Self {
                 code: "corrupt",
@@ -190,7 +190,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Invalid => Self {
                 code: "invalid",
-                message: "Check the requested information and try again.",
+                message: "Something you typed wasn't accepted. Check it and try again.",
             },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
@@ -206,7 +206,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Storage => Self {
                 code: "storage",
-                message: "The storage operation could not be completed. Review the current vault state before retrying.",
+                message: "myCarlos couldn't read or write its files on this computer. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",

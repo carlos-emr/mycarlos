@@ -226,7 +226,18 @@ interface PublicError {
   retryAfterMs?: number;
 }
 
-export function vaultErrorMessage(error: unknown): string {
+/** "a", "a and b", "a, b and c". */
+const listed = (items: string[]) =>
+  items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+
+/** The message for a failed vault operation. `boxes` names, in plain words,
+ * what the patient typed for it ("the folder name"): a refusal of what was
+ * typed then says which box to check (#69). */
+export function vaultErrorMessage(error: unknown, boxes?: string[]): string {
+  if (boxes?.length && hasErrorCode(error, "invalid"))
+    return `Check ${listed(boxes)}, then try again.`;
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {

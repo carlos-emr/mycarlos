@@ -85,7 +85,8 @@ export function VaultLibrary({
   busy: boolean;
   notice: string;
   setNotice: (value: string) => void;
-  run: (operation: () => Promise<void>) => Promise<void>;
+  /** Runs a vault operation; `boxes` names what was typed for it. */
+  run: (operation: () => Promise<void>, boxes?: string[]) => Promise<void>;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -561,7 +562,7 @@ export function VaultLibrary({
       await bridge.changePassphrase(current, replacement);
       await refresh();
       setNotice("Passphrase changed.");
-    });
+    }, ["the current passphrase", "the new passphrase"]);
   const createProfile = async (name: string) => {
     let created = false;
     await run(async () => {
@@ -569,7 +570,7 @@ export function VaultLibrary({
       created = true;
       await refresh();
       setNotice(`${name} was added.`);
-    });
+    }, ["the profile name"]);
     return created;
   };
   const resetVault = (confirmation: string) =>
@@ -586,7 +587,7 @@ export function VaultLibrary({
       }
       if (erased) window.location.reload();
       else setNotice("Vault erase cancelled. Nothing changed.");
-    });
+    }, ["the words you typed"]);
   const moveRecord = (recordId: string, folderId: string | null) =>
     run(async () => {
       await bridge.assignFolders(recordId, folderId ? [folderId] : []);
@@ -604,7 +605,7 @@ export function VaultLibrary({
       await refresh();
       setShowFolderForm(false);
       setNotice(`${name} was created.`);
-    });
+    }, ["the folder name"]);
   };
   const moveFolder = () =>
     run(async () => {
@@ -903,12 +904,11 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Read-only recovery mode.</strong> Some encrypted
-                      files are missing from this device. Documents marked
-                      damaged cannot be opened or copied; save copies of the
-                      others now. To make changes again, restore the myCarlos
-                      data folder from a backup, or remove the damaged
-                      documents.
+                      <strong>Changes are paused.</strong> Some encrypted files
+                      are missing from this device. Documents marked damaged
+                      cannot be opened or copied; save copies of the others now.
+                      To make changes again, restore the myCarlos data folder
+                      from a backup, or remove the damaged documents.
                     </span>
                     <button
                       className="button danger"
@@ -924,9 +924,9 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Read-only recovery mode.</strong> Some of the
-                      vault's files could not be read, and they may be newer or
-                      intact, so nothing can be changed for now, including your
+                      <strong>Changes are paused.</strong> Some of the vault's
+                      files could not be read, and they may be newer or intact,
+                      so nothing can be changed for now, including your
                       passphrase and recovery key. Your documents can still be
                       opened and saved as copies, except any marked “File
                       unavailable”. Check that the drive holding the myCarlos
@@ -940,10 +940,10 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Read-only recovery mode.</strong> A write to the
-                      vault failed. Free storage or check the disk, then lock
-                      and unlock again; the vault repairs itself when it can
-                      write.
+                      <strong>Changes are paused.</strong> myCarlos could not
+                      save a change to this computer. Free up storage or check
+                      the disk, then lock and unlock again; the vault repairs
+                      itself when it can write.
                     </span>
                   </div>
                 )}

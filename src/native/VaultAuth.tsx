@@ -97,6 +97,12 @@ export function ResetConfirmation({
   const [resetText, setResetText] = useState("");
   return (
     <>
+      {/* #69: what erasing does, in plain words, before the typed check. */}
+      <p className="reset-plainly">
+        Erasing deletes all your documents, folders and patient profiles from
+        myCarlos on this computer, and it cannot be undone. To be sure, type the
+        words below exactly.
+      </p>
       <label>
         Type {RESET_CONFIRMATION}
         <input
@@ -154,7 +160,7 @@ export function CreateVault({
     <VaultAuthFrame state="Setting up">
       <section className="vault-card" aria-labelledby="create-title">
         <p className="vault-kicker">myCarlos private records</p>
-        <h1 id="create-title">Create your encrypted vault</h1>
+        <h1 id="create-title">Set up myCarlos on this computer</h1>
         <p>
           Your files and record details are encrypted on this device. Your
           passphrase opens the vault. Next, you can set up a recovery key in
@@ -166,7 +172,7 @@ export function CreateVault({
         </p>
         <form onSubmit={submit}>
           <label>
-            First patient profile
+            Whose records will you keep here?
             <input
               required
               maxLength={NAME_INPUT_MAX_LENGTH}
@@ -314,8 +320,8 @@ export function UnlockVault({
           />
           <h2 className="vault-reset-heading">No recovery key?</h2>
           <p>
-            Without one, the only way back in is to erase this vault, which
-            permanently deletes everything in it, and start again.
+            Without one, the only way back in is to erase myCarlos and start
+            again.
           </p>
           <ResetConfirmation
             busy={busy}

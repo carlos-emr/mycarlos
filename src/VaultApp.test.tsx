@@ -301,7 +301,9 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("absent") })}
       />,
     );
-    await screen.findByRole("heading", { name: "Create your encrypted vault" });
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
+    });
     expect(screen.getByText(/stays on this device/)).toHaveTextContent(
       /another device/,
     );
@@ -313,10 +315,15 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await screen.findByRole("heading", { name: "Create your encrypted vault" });
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "Jamie" },
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
     });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "Jamie" },
+      },
+    );
     const passwords = screen.getAllByLabelText(/passphrase/i);
     fireEvent.change(passwords[0], {
       target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -375,7 +382,7 @@ describe("durable vault UI", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Create your encrypted vault",
+        name: "Set up myCarlos on this computer",
       }),
     ).toBeInTheDocument();
     expect(
@@ -877,7 +884,7 @@ describe("durable vault UI", () => {
       });
       render(<VaultApp bridge={bridge} />);
       await user.type(
-        await screen.findByLabelText("First patient profile"),
+        await screen.findByLabelText("Whose records will you keep here?"),
         "FAKE Patient",
       );
       await user.type(
@@ -964,7 +971,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.type(
-      await screen.findByLabelText("First patient profile"),
+      await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Test Patient",
     );
     await user.type(
@@ -1263,10 +1270,15 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "Create your encrypted vault" });
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "Jamie" },
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
     });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "Jamie" },
+      },
+    );
     for (const field of screen.getAllByLabelText(/passphrase/i)) {
       fireEvent.change(field, {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -2196,9 +2208,12 @@ describe("durable vault UI", () => {
         });
         await act(async () => {
           if (initial === "absent")
-            fireEvent.change(screen.getByLabelText("First patient profile"), {
-              target: { value: "FAKE Test Patient" },
-            });
+            fireEvent.change(
+              screen.getByLabelText("Whose records will you keep here?"),
+              {
+                target: { value: "FAKE Test Patient" },
+              },
+            );
           for (const field of screen.getAllByLabelText(/passphrase/i))
             fireEvent.change(field, {
               target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -2552,7 +2567,7 @@ describe("durable vault UI", () => {
       );
       await user.click(screen.getByRole("button", { name: "Erase vault" }));
       await user.type(
-        await screen.findByLabelText("First patient profile"),
+        await screen.findByLabelText("Whose records will you keep here?"),
         "FAKE Tester",
       );
       await user.type(
@@ -4417,7 +4432,7 @@ describe("durable vault UI", () => {
     );
     expect(
       await screen.findByRole("heading", {
-        name: "Create your encrypted vault",
+        name: "Set up myCarlos on this computer",
       }),
     ).toBeVisible();
     expect(screen.getByText("No vault exists on this device.")).toBeVisible();
@@ -4472,7 +4487,7 @@ describe("durable vault UI", () => {
       .fn()
       .mockRejectedValueOnce({
         code: "invalid",
-        message: "Check the requested information and try again.",
+        message: "Something you typed wasn't accepted. Check it and try again.",
       })
       .mockResolvedValue(undefined);
     const bridge = nativeBridge({
@@ -4488,6 +4503,10 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: "Add profile" }));
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
+    // The refusal names the box to check (#69).
+    expect(
+      await screen.findByText("Check the profile name, then try again."),
+    ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Add profile" }));
     await waitFor(() => expect(name).toHaveValue(""));
@@ -4779,9 +4798,7 @@ describe("durable vault UI", () => {
         "1 damaged document removed. The vault accepts changes again.",
       ),
     ).toBeVisible();
-    expect(
-      screen.queryByText(/Read-only recovery mode/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Changes are paused/)).not.toBeInTheDocument();
     expect(screen.queryByText("FAKE_Lost.pdf")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
   });
@@ -4824,7 +4841,9 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(/1 damaged document removed/),
     ).not.toHaveTextContent(/accepts changes/);
-    expect(screen.getByText(/A write to the vault failed/)).toBeVisible();
+    expect(
+      screen.getByText(/myCarlos could not save a change to this computer/),
+    ).toBeVisible();
   });
 
   it("offers no removal when recovery is not about missing files", async () => {
@@ -5038,9 +5057,7 @@ describe("durable vault UI", () => {
     expect(
       document.querySelector('img[src="https://attacker.invalid/leak"]'),
     ).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Read-only recovery mode",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Changes are paused.");
     expect(
       screen.getByRole("button", { name: "Choose files to import" }),
     ).toBeDisabled();
@@ -5121,7 +5138,7 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
     await user.type(
-      await screen.findByLabelText("First patient profile"),
+      await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Tester",
     );
     await user.type(

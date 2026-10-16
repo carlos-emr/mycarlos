@@ -505,7 +505,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setNotice(message);
   };
 
-  const run = async (operation: () => Promise<void>) => {
+  /** Runs a vault operation; `boxes` names what the patient typed for it,
+   * so that a refusal of it says which box to check. */
+  const run = async (operation: () => Promise<void>, boxes?: string[]) => {
     setBusy(true);
     setNotice("");
     transferHold.operationStarted();
@@ -538,8 +540,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // something to act on: a transfer's, such as a partial copy, after the
         // next unlock; any other now, as the person who asked for it is here.
         if (!lockedOut) {
-          if (transferHold.active) holdForUnlock(vaultErrorMessage(error));
-          else setNotice(vaultErrorMessage(error));
+          if (transferHold.active)
+            holdForUnlock(vaultErrorMessage(error, boxes));
+          else setNotice(vaultErrorMessage(error, boxes));
         } else if (cutOff) holdForUnlock(cutOff);
         return;
       }
@@ -563,7 +566,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         requestLock(true);
         return;
       }
-      report(vaultErrorMessage(error));
+      report(vaultErrorMessage(error, boxes));
       // A transfer failure that is neither "locked" nor "cancelled" can still
       // mean the native deadline locked the vault (a provider export's partial
       // copy): confirm, and lock so that the lock keeps it.
@@ -663,7 +666,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                   "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
                 outcome: null,
               });
-          })
+          }, ["the name", "the passphrase"])
         }
       />
     );
@@ -709,7 +712,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : "Vault unlocked.",
               outcome,
             });
-          })
+          }, ["the passphrase"])
         }
         onRecover={(recoveryKey, newPassphrase) =>
           run(async () => {
@@ -727,7 +730,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
               outcome,
             });
-          })
+          }, ["the recovery key", "the new passphrase"])
         }
         onReset={(confirmation) =>
           run(async () => {
@@ -740,7 +743,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             } else {
               setNotice("Vault erase cancelled. Nothing changed.");
             }
-          })
+          }, ["the words you typed"])
         }
       />
     );

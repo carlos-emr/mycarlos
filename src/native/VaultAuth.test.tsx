@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { CreateVault, UnlockVault } from "./VaultAuth";
+import { CreateVault, ResetConfirmation, UnlockVault } from "./VaultAuth";
 
 const restoreBridge = {
   pickRestoreSource: vi.fn().mockResolvedValue(null),
@@ -20,9 +20,12 @@ describe("CreateVault", () => {
         onCreate={onCreate}
       />,
     );
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "Jamie" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "Jamie" },
+      },
+    );
     // Fifteen code points typed with a decomposed accent are fourteen after NFC
     // normalization, which is the form the vault checks.
     const short = "café lanterns!";
@@ -54,7 +57,7 @@ describe("CreateVault", () => {
         onCreate={vi.fn()}
       />,
     );
-    const profile = screen.getByLabelText("First patient profile");
+    const profile = screen.getByLabelText("Whose records will you keep here?");
     fireEvent.change(profile, { target: { value: "\u{1F332}".repeat(120) } });
     expect(profile).toHaveValue("\u{1F332}".repeat(120));
     expect((profile as HTMLInputElement).maxLength).toBe(240);
@@ -75,9 +78,12 @@ describe("CreateVault", () => {
         onCreate={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "   " },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "   " },
+      },
+    );
     for (const field of screen.getAllByLabelText(/passphrase/i))
       fireEvent.change(field, {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -135,9 +141,12 @@ describe("CreateVault", () => {
         onCreate={onCreate}
       />,
     );
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "Jamie" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "Jamie" },
+      },
+    );
     const long = "a".repeat(1025);
     for (const field of screen.getAllByLabelText(/passphrase/i)) {
       fireEvent.change(field, { target: { value: long } });
@@ -303,5 +312,30 @@ describe("UnlockVault", () => {
     }
     expect(field).toHaveValue("");
     expect(field).toHaveAttribute("type", "password");
+  });
+});
+
+describe("ResetConfirmation", () => {
+  it("says what erasing does in plain words before the typed check (#69)", () => {
+    const onReset = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResetConfirmation
+        busy={false}
+        actionLabel="Erase vault"
+        onReset={onReset}
+      />,
+    );
+    const plainly = screen.getByText(/Erasing deletes all your documents/);
+    const typed = screen.getByLabelText("Type RESET MYCARLOS VAULT");
+    expect(plainly).toHaveTextContent("it cannot be undone");
+    // The sentence comes first, so it is read before the box.
+    expect(
+      plainly.compareDocumentPosition(typed) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const erase = screen.getByRole("button", { name: "Erase vault" });
+    expect(erase).toBeDisabled();
+    fireEvent.change(typed, { target: { value: "RESET MYCARLOS VAULT" } });
+    fireEvent.click(erase);
+    expect(onReset).toHaveBeenCalledWith("RESET MYCARLOS VAULT");
   });
 });

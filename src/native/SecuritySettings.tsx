@@ -190,8 +190,7 @@ export function SecuritySettings({
             </h2>
             <p>
               The vault locks after the selected period without keyboard,
-              pointer, or touch activity. This non-medical setting is clamped to
-              1–15 minutes.
+              pointer, or touch activity. Choose from 1 to 15 minutes.
             </p>
           </div>
           <div>

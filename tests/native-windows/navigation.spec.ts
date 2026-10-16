@@ -171,7 +171,7 @@ test("installed app keeps navigation and popups inside its native boundary", asy
       });
       safeToCapture = true;
       await expect(
-        page.getByRole("heading", { name: "Create your encrypted vault" }),
+        page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
       ).toBeVisible();
     });
     await context.tracing.start({ screenshots: true, snapshots: true });
@@ -186,7 +186,7 @@ test("installed app keeps navigation and popups inside its native boundary", asy
     await test.step("bundled pages can reload and still call Rust", async () => {
       await page.goto(`${origin}/index.html?navigation-smoke=1`);
       await expect(
-        page.getByRole("heading", { name: "Create your encrypted vault" }),
+        page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
       ).toBeVisible();
       expect(await invoke(page, "vault_status")).toBe("absent");
     });
@@ -280,7 +280,7 @@ test("installed app keeps navigation and popups inside its native boundary", asy
       await assertContained();
       expect(await invoke(page, "vault_status")).toBe("absent");
       await expect(
-        page.getByRole("heading", { name: "Create your encrypted vault" }),
+        page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
       ).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("native-window.png") });
     });

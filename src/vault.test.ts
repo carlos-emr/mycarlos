@@ -116,6 +116,28 @@ describe("error messages", () => {
     expect(vaultErrorMessage({ code: "storage", message: "No." })).toBe("No.");
   });
 
+  it("names the boxes to check when what was typed is refused (#69)", () => {
+    const refused = {
+      code: "invalid",
+      message: "Something you typed wasn't accepted. Check it and try again.",
+    };
+    expect(vaultErrorMessage(refused, ["the folder name"])).toBe(
+      "Check the folder name, then try again.",
+    );
+    expect(
+      vaultErrorMessage(refused, ["the recovery key", "the new passphrase"]),
+    ).toBe("Check the recovery key and the new passphrase, then try again.");
+    expect(vaultErrorMessage(refused, ["a", "b", "c"])).toBe(
+      "Check a, b and c, then try again.",
+    );
+    // Without boxes, and for any other failure, the message is as it was.
+    expect(vaultErrorMessage(refused)).toBe(refused.message);
+    expect(vaultErrorMessage(refused, [])).toBe(refused.message);
+    expect(
+      vaultErrorMessage({ code: "storage", message: "No." }, ["the name"]),
+    ).toBe("No.");
+  });
+
   it("says how long to wait after several wrong tries", () => {
     const waiting = {
       code: "too_many_attempts",
