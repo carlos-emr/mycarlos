@@ -8,7 +8,7 @@ import {
   vaultErrorMessage,
   type SpeedTestReport,
 } from "../vault";
-import { AUTO_LOCK_OPTIONS } from "./autoLock";
+import { AUTO_LOCK_MAX, AUTO_LOCK_MIN } from "./autoLock";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import {
   MIN_PASSPHRASE_CHARS,
@@ -195,19 +195,41 @@ export function SecuritySettings({
             </p>
           </div>
           <div>
-            <label>
-              Automatic lock delay
-              <select
-                value={autoLockMinutes}
-                onChange={(event) => onAutoLockMinutes(event.target.value)}
+            {/* Minus and plus, like Text size, instead of a list of 15 (#67).
+                The ends are not disabled, which would drop the focus on them. */}
+            <div
+              className="text-size-control auto-lock-control"
+              role="group"
+              aria-label="Automatic lock delay"
+            >
+              <button
+                className="button text-size-step"
+                type="button"
+                aria-label="Shorter delay"
+                aria-disabled={autoLockMinutes <= AUTO_LOCK_MIN}
+                onClick={() => {
+                  if (autoLockMinutes > AUTO_LOCK_MIN)
+                    onAutoLockMinutes(autoLockMinutes - 1);
+                }}
               >
-                {AUTO_LOCK_OPTIONS.map((minutes) => (
-                  <option value={minutes} key={minutes}>
-                    {minutes} minute{minutes === 1 ? "" : "s"}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <span aria-hidden="true">−</span>
+              </button>
+              <span className="auto-lock-value" aria-live="polite">
+                {autoLockMinutes} minute{autoLockMinutes === 1 ? "" : "s"}
+              </span>
+              <button
+                className="button text-size-step"
+                type="button"
+                aria-label="Longer delay"
+                aria-disabled={autoLockMinutes >= AUTO_LOCK_MAX}
+                onClick={() => {
+                  if (autoLockMinutes < AUTO_LOCK_MAX)
+                    onAutoLockMinutes(autoLockMinutes + 1);
+                }}
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+            </div>
             <button
               className="button"
               type="button"

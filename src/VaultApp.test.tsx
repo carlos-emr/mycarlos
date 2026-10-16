@@ -3808,12 +3808,14 @@ describe("durable vault UI", () => {
       expect(bridge.touch).toHaveBeenCalledTimes(2);
 
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
-      await act(async () => {
-        fireEvent.change(
-          screen.getByRole("combobox", { name: "Automatic lock delay" }),
-          { target: { value: "1" } },
-        );
-      });
+      // From 5 minutes down to 1, one press at a time (#67).
+      const shorter = within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByRole("button", { name: "Shorter delay" });
+      for (let press = 0; press < 4; press++)
+        await act(async () => {
+          fireEvent.click(shorter);
+        });
       expect(bridge.setAutoLock).toHaveBeenLastCalledWith(1);
     } finally {
       vi.useRealTimers();
@@ -4314,13 +4316,16 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
 
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
-    const delay = screen.getByRole("combobox", {
+    const delay = screen.getByRole("group", {
       name: "Automatic lock delay",
     });
-    expect(delay).toHaveValue("5");
-    fireEvent.change(delay, { target: { value: "1" } });
+    expect(within(delay).getByText("5 minutes")).toBeVisible();
+    const shorter = within(delay).getByRole("button", {
+      name: "Shorter delay",
+    });
+    for (let press = 0; press < 4; press++) fireEvent.click(shorter);
 
-    expect(delay).toHaveValue("1");
+    expect(within(delay).getByText("1 minute")).toBeVisible();
     expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
       "1",
     );
@@ -4357,8 +4362,10 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(
-      screen.getByRole("combobox", { name: "Automatic lock delay" }),
-    ).toHaveValue("15");
+      within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByText("15 minutes"),
+    ).toBeVisible();
     first.unmount();
 
     window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "999");
@@ -4370,8 +4377,10 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(
-      screen.getByRole("combobox", { name: "Automatic lock delay" }),
-    ).toHaveValue("5");
+      within(
+        screen.getByRole("group", { name: "Automatic lock delay" }),
+      ).getByText("5 minutes"),
+    ).toBeVisible();
   });
 
   it("requires the exact destructive reset phrase", async () => {
