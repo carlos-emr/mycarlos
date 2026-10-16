@@ -568,6 +568,15 @@ h1, h2, p { margin: 0; }
   .trash-list .file-row .restore-button { grid-column: 3; grid-row: 2; }
 }
 
+/* #67: the select tick is a 44px target around a 24px box, in list and grid view. */
+.native-check { position: relative; width: 44px; height: 44px; margin: 0; border: 0; background: transparent; }
+.native-check::before { content: ""; position: absolute; inset: 10px; border: 2px solid #b7c6c3; border-radius: 6px; background: var(--paper); }
+.native-check.checked { border: 0; background: transparent; }
+.native-check.checked::before { border-color: var(--teal); background: var(--teal); }
+.native-check.checked::after { position: relative; color: #fff; font-size: 0.875rem; }
+.native-file-grid .file-tile { position: relative; }
+.native-check.tile-check { position: absolute; top: 8px; left: 8px; z-index: 1; margin: 0; }
+
 /* #67: one button per patient, and the narrow-window sections as a row of tabs. */
 .native-profile-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
 .native-profile-choice-label { flex-basis: 100%; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
@@ -666,7 +675,7 @@ h1, h2, p { margin: 0; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem auto; }
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem auto; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -708,7 +717,7 @@ h1, h2, p { margin: 0; }
 .native-rename-fields [role="alert"] { color: var(--ink); font-weight: 700; }
 .native-record-rename { padding: 0 20px 16px; }
 @media (max-width: 56.25em) {
-  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) auto; }
+  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
 }
 .native-dialog-actions label { margin-right: auto; }
 

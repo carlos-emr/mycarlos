@@ -173,6 +173,52 @@ describe("VaultLibrary controls for older patients (#67)", () => {
   });
 });
 
+describe("VaultLibrary moving and selecting without dragging (#67)", () => {
+  const withRecord: VaultSnapshot = {
+    ...snapshot,
+    records: [
+      {
+        id: "record-1",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE Results.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: Date.UTC(2026, 0, 16, 12),
+        available: true,
+      },
+    ],
+  };
+
+  it("says how to move without dragging", () => {
+    renderLibrary(withRecord);
+    expect(
+      screen.getByText(
+        "Hold and drag a document or folder to move it, or open it and choose Move to.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("selects a document in grid view as in list view, with a 44px target", () => {
+    renderLibrary(withRecord);
+    const listTick = screen.getByRole("button", {
+      name: "Select FAKE Results.pdf",
+    });
+    const box = listTick.getBoundingClientRect();
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    const gridTick = screen.getByRole("button", {
+      name: "Select FAKE Results.pdf",
+    });
+    const tile = gridTick.getBoundingClientRect();
+    expect(Math.min(tile.width, tile.height)).toBeGreaterThanOrEqual(44);
+    fireEvent.click(gridTick);
+    expect(gridTick).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("1 selected")).toBeVisible();
+  });
+});
+
 describe("VaultLibrary choices without dropdowns (#67)", () => {
   const twoPatients: VaultSnapshot = {
     ...snapshot,

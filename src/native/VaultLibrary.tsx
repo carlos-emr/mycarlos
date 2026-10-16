@@ -992,7 +992,8 @@ export function VaultLibrary({
                     {currentFolder ? "Inside folder" : "Top level"}
                   </span>
                   <span className="native-drag-hint">
-                    Hold and drag a document or folder to move it
+                    Hold and drag a document or folder to move it, or open it
+                    and choose Move to.
                   </span>
                   <div className="view-controls">
                     {/* Both choices in view, with words (#67). */}
