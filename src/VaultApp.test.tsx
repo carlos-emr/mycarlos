@@ -107,6 +107,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     discardReceived: vi.fn().mockResolvedValue(undefined),
+    viewPage: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no reader in this test")),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
@@ -680,6 +683,56 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: "Unlock FAKE_Locked.pdf" }),
     ).toBeVisible();
+  });
+
+  it("reads a stored document inside myCarlos, then goes back to the library", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      viewPage: vi.fn().mockResolvedValue({
+        pageCount: 1,
+        width: 800,
+        height: 1035,
+        image:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        text: "FAKE letter text",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Letter.pdf"));
+    await user.click(screen.getByRole("button", { name: "Read" }));
+    const reader = await screen.findByRole("dialog", {
+      name: "FAKE_Letter.pdf",
+    });
+    expect(
+      await within(reader).findByRole("img", {
+        name: "Page 1 of 1. The page's text follows.",
+      }),
+    ).toBeVisible();
+    expect(bridge.viewPage).toHaveBeenCalledWith(
+      "record-1",
+      0,
+      expect.any(Number),
+      undefined,
+    );
+    await user.click(within(reader).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {

@@ -1,0 +1,256 @@
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useModalFocus } from "../useModalFocus";
+import {
+  hasVaultErrorCode,
+  vaultErrorMessage,
+  type VaultRecord,
+  type ViewedPage,
+} from "../vault";
+
+/** Zoom steps, as a share of the reader's width: 1 fits the page to it. */
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 1.25;
+/** The widest picture the helper draws (pdf_view::MAX_SIDE). */
+const MAX_PICTURE_WIDTH = 4096;
+
+/** Reads a stored document inside myCarlos, one page at a time. Each page is
+ * drawn by the separate PDF helper, as a picture with its text beside it for
+ * screen readers and copying: nothing in the document runs here, and nothing
+ * is saved. A document locked with its own password asks for it; the
+ * password is held only while the reader is open. */
+export function DocumentReader({
+  record,
+  viewPage,
+  onClose,
+}: {
+  record: VaultRecord;
+  viewPage: (
+    page: number,
+    width: number,
+    password?: string,
+  ) => Promise<ViewedPage>;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  useModalFocus(true, dialogRef, onClose, closeRef);
+  const [page, setPage] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [fitWidth, setFitWidth] = useState(0);
+  const [shown, setShown] = useState<(ViewedPage & { page: number }) | null>(
+    null,
+  );
+  const [pageCount, setPageCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  // The document's own password, once given: kept while the reader is open,
+  // for the pages that follow, and gone with it.
+  const [password, setPassword] = useState<string | undefined>(undefined);
+  const [asking, setAsking] = useState(false);
+  const [wrongTries, setWrongTries] = useState(0);
+  const [typed, setTyped] = useState("");
+  // Pages already drawn at a width, so that going back is quick. Memory only.
+  const drawn = useRef(new Map<string, ViewedPage>());
+  // The latest way to ask for a page; a new function alone asks for nothing.
+  const viewPageRef = useRef(viewPage);
+  viewPageRef.current = viewPage;
+
+  useEffect(() => {
+    const measure = () =>
+      setFitWidth(Math.max(1, pageRef.current?.clientWidth ?? 0));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const cssWidth = Math.max(1, Math.round(fitWidth * zoom));
+  const pictureWidth = Math.min(
+    MAX_PICTURE_WIDTH,
+    Math.max(1, Math.round(cssWidth * (window.devicePixelRatio || 1))),
+  );
+
+  useEffect(() => {
+    if (!fitWidth || asking) return;
+    const key = `${page}:${pictureWidth}`;
+    const known = drawn.current.get(key);
+    if (known) {
+      setShown({ ...known, page });
+      setLoading(false);
+      return;
+    }
+    let current = true;
+    setLoading(true);
+    setError("");
+    viewPageRef.current(page, pictureWidth, password).then(
+      (result) => {
+        if (!current) return;
+        drawn.current.set(key, result);
+        setShown({ ...result, page });
+        setPageCount(result.pageCount);
+        setLoading(false);
+      },
+      (failure: unknown) => {
+        if (!current) return;
+        setLoading(false);
+        const wrong = hasVaultErrorCode(failure, "pdf_wrong_password");
+        if (wrong || hasVaultErrorCode(failure, "pdf_locked")) {
+          if (wrong) setWrongTries((count) => count + 1);
+          setAsking(true);
+          return;
+        }
+        setError(vaultErrorMessage(failure));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [asking, fitWidth, page, password, pictureWidth]);
+
+  const giveDocumentPassword = (event: FormEvent) => {
+    event.preventDefault();
+    if (!typed) return;
+    setPassword(typed);
+    setTyped("");
+    setAsking(false);
+  };
+
+  const last = pageCount === null ? null : pageCount - 1;
+  const where = pageCount === null ? "" : `Page ${page + 1} of ${pageCount}`;
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section
+        ref={dialogRef}
+        className="record-dialog native-reader"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reader-title"
+        aria-describedby="reader-trust"
+      >
+        <header className="dialog-head native-reader-head">
+          <div>
+            <h2 id="reader-title">{record.displayName}</h2>
+            <p id="reader-trust">{record.sourceLabel}</p>
+          </div>
+          <button
+            ref={closeRef}
+            className="button"
+            type="button"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </header>
+        <div className="native-reader-controls">
+          <button
+            className="button"
+            type="button"
+            disabled={loading || page === 0}
+            onClick={() => setPage((current) => current - 1)}
+          >
+            Previous page
+          </button>
+          <span className="native-reader-where">{where}</span>
+          <button
+            className="button"
+            type="button"
+            disabled={loading || last === null || page >= last}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            Next page
+          </button>
+          <span className="native-reader-zoom">
+            <button
+              className="button"
+              type="button"
+              disabled={zoom <= ZOOM_MIN}
+              onClick={() =>
+                setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
+              }
+            >
+              Smaller
+            </button>
+            <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+            <button
+              className="button"
+              type="button"
+              disabled={zoom >= ZOOM_MAX}
+              onClick={() =>
+                setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
+              }
+            >
+              Larger
+            </button>
+            <button
+              className="button"
+              type="button"
+              disabled={zoom === 1}
+              onClick={() => setZoom(1)}
+            >
+              Fit width
+            </button>
+          </span>
+        </div>
+        <p className="native-dialog-status" role="status">
+          {loading && !asking ? `Opening page ${page + 1}…` : ""}
+        </p>
+        {asking && (
+          <form
+            className="native-reader-password"
+            onSubmit={giveDocumentPassword}
+          >
+            <p id="reader-password-help">
+              This document is locked with its own password. Enter the document
+              password from your patient portal. It is not kept after you close
+              the document.
+            </p>
+            <label htmlFor="reader-password">Document password</label>
+            <input
+              id="reader-password"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={typed}
+              aria-describedby={
+                wrongTries
+                  ? "reader-password-help reader-password-error"
+                  : "reader-password-help"
+              }
+              aria-invalid={wrongTries ? true : undefined}
+              onChange={(event) => setTyped(event.target.value)}
+            />
+            {wrongTries > 0 && (
+              <p id="reader-password-error" role="alert" key={wrongTries}>
+                That password did not open the document. Check it in your
+                patient portal, then try again.
+              </p>
+            )}
+            <button className="button primary" disabled={!typed}>
+              Open
+            </button>
+          </form>
+        )}
+        {error && <p role="alert">{error}</p>}
+        <div className="native-reader-page" ref={pageRef}>
+          {shown && !asking && (
+            <img
+              src={shown.image}
+              alt={`Page ${shown.page + 1} of ${shown.pageCount}. The page's text follows.`}
+              style={{ width: `${cssWidth}px` }}
+            />
+          )}
+        </div>
+        {shown && !asking && (
+          <details className="native-reader-text">
+            <summary>Text on this page</summary>
+            <div>
+              {shown.text.trim() ||
+                "No text could be read on this page. It may be a scan."}
+            </div>
+          </details>
+        )}
+      </section>
+    </div>
+  );
+}

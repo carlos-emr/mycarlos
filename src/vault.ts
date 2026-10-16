@@ -250,6 +250,15 @@ export interface VaultBridge {
   ): Promise<ImportOutcome>;
   /** Forgets waiting files the patient declined. */
   discardReceived(ids: string[]): Promise<void>;
+  /** Page `page` (from 0) of a stored document, about `width` pixels wide,
+   * drawn by the separate PDF helper. `password` is the document's own, when
+   * it is locked with one; it is not kept. */
+  viewPage(
+    recordId: string,
+    page: number,
+    width: number,
+    password?: string,
+  ): Promise<ViewedPage>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -356,6 +365,21 @@ export function receivedRefusal(
   if (!reason) return null;
   const { receivedId } = error as PublicError;
   return typeof receivedId === "string" ? { id: receivedId, reason } : null;
+}
+
+/** One page of a stored document, drawn by myCarlos's PDF helper: a `data:`
+ * URL of its picture, and its text for screen readers and copying. */
+export interface ViewedPage {
+  pageCount: number;
+  width: number;
+  height: number;
+  image: string;
+  text: string;
+}
+
+/** True when the native side refused with `code`. */
+export function hasVaultErrorCode(error: unknown, code: string): boolean {
+  return hasErrorCode(error, code);
 }
 
 /** True when a password typed for a locked document did not open it. */
@@ -492,6 +516,10 @@ export function createVaultBridge(): VaultBridge {
       }),
     discardReceived: (ids) =>
       invoke<void>("received_discard", { request: { ids } }),
+    viewPage: (recordId, page, width, password) =>
+      invoke<ViewedPage>("vault_view_page", {
+        request: { recordId, page, width, password: password ?? null },
+      }),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },

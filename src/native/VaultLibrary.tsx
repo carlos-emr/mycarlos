@@ -26,6 +26,7 @@ import { UnlockReceivedDialog } from "./UnlockReceivedDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
+import { DocumentReader } from "./DocumentReader";
 import { LibraryItems } from "./LibraryItems";
 import {
   NAME_INPUT_MAX_LENGTH,
@@ -149,6 +150,8 @@ export function VaultLibrary({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  // The document open in the reader, if any.
+  const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   // The result of a dialog's action (a rename, a recovery key), given once the
   // dialog has closed (see the effect below), and the document whose details
@@ -238,6 +241,8 @@ export function VaultLibrary({
   );
   const activeRecord =
     records.find((record) => record.id === activeRecordId) ?? null;
+  const readerRecord =
+    records.find((record) => record.id === readerRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
@@ -1370,6 +1375,19 @@ export function VaultLibrary({
               onExport={() =>
                 setConfirmation({ action: "export", recordId: activeRecord.id })
               }
+              onRead={() => {
+                setReaderRecordId(activeRecord.id);
+                setActiveRecordId(null);
+              }}
+            />
+          )}
+          {readerRecord && (
+            <DocumentReader
+              record={readerRecord}
+              viewPage={(page, width, password) =>
+                bridge.viewPage(readerRecord.id, page, width, password)
+              }
+              onClose={() => setReaderRecordId(null)}
             />
           )}
           {activeRecord && pendingAction === "delete" && (
