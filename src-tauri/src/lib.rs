@@ -13,6 +13,11 @@ pub use pdf_unlock::{
     helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
 };
 
+/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at`).
+#[doc(hidden)]
+#[cfg(desktop)]
+pub use pdf_unlock::unlock_with_helper_at as pdf_unlock_with_helper_at;
+
 use idle::{IdleDeadline, Opening};
 use received::{ReceivedFiles, ReceivedSource};
 use serde::{Deserialize, Serialize};

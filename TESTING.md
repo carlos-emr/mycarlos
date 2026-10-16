@@ -465,11 +465,14 @@ locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluat
    added, and it can be declined.
 
 The Rust tests unlock every fixture and compare page text and content with the originals. They also
-start the real executable as the helper. In child processes they check two things. First, the helper's
+start the real executable as the helper, once exactly as myCarlos does on each desktop system (with
+the job object on Windows). In child processes they check two things. First, the helper's
 limits stop an ordinary open of a file, socket or pipe; these are resource limits, not a sandbox.
 Second, myCarlos is not dumpable, and as an ordinary user (as CI runs) a limited helper cannot read
-its memory. On Windows, CI checks that a low-integrity helper cannot open myCarlos to read it. The
-macOS limits still need a run there.
+its memory. On Windows, CI checks that a low-integrity helper cannot open myCarlos to read it. A
+helper that grows past its memory limit is stopped well before its time limit: on Linux by its data
+limit, and on macOS, which refuses a data limit, by myCarlos checking its footprint. macOS CI runs
+the Unix checks.
 
 ## Reading a document inside myCarlos
 

@@ -68,6 +68,22 @@ fn the_helper_unlocks_a_document_and_names_a_wrong_password() {
     assert_eq!(answer, b"MCPDFRS1\x01\0\0\0\0\0\0\0\0");
 }
 
+/// Started as myCarlos starts it: limited before and after it starts (on Windows, the job
+/// object), its memory watched (on macOS), and the request and answer handled by myCarlos's own
+/// code.
+#[test]
+fn mycarlos_starts_the_helper_and_takes_its_answer() {
+    let executable = std::path::Path::new(env!("CARGO_BIN_EXE_mycarlos-tauri-poc"));
+    let locked = fixture("text-aes256.pdf");
+    let unlocked =
+        mycarlos_tauri_poc_lib::pdf_unlock_with_helper_at(executable, &locked, PASSWORD).unwrap();
+    assert!(!lopdf::Document::load_mem(&unlocked).unwrap().is_encrypted());
+    assert_eq!(
+        mycarlos_tauri_poc_lib::pdf_unlock_with_helper_at(executable, &locked, "FAKE-wrong"),
+        Err("WrongPassword".to_owned())
+    );
+}
+
 #[test]
 fn the_helper_answers_nothing_to_a_request_it_cannot_read() {
     let (code, answer) = ask(b"not a request");
