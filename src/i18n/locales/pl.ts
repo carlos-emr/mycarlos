@@ -204,7 +204,7 @@ export const pl: Record<MessageKey, Message> = {
   "security.recoveryKey.body":
     "Otwiera sejf w razie zapomnienia hasła głównego. Ma go tylko jego właściciel: nikt w przychodni ani w myCarlos nie otworzy sejfu w jego imieniu. Zastąpienie go sprawia, że stary przestaje działać.",
   "security.recoveryKey.current":
-    "Obecny klucz ma etykietę {label}. Działa zestaw lub notatka z tą etykietą; z inną etykietą nie otworzy tego sejfu. Zestawy i notatki sprzed wprowadzenia etykiet ich nie mają: taki bez etykiety może nadal być tym kluczem, skonfigurowanym {date}.",
+    "Obecny klucz ma etykietę {label}. Działa zestaw lub notatka z tą etykietą; zestaw z inną etykietą nie otworzy tego sejfu. Zestawy i notatki sprzed wprowadzenia etykiet ich nie mają: taki bez etykiety może nadal być tym kluczem, skonfigurowanym {date}.",
   "security.recoveryKey.replace": "Zastąp klucz odzyskiwania",
   "security.recoveryKey.setUp": "Skonfiguruj klucz odzyskiwania",
   "security.backup.title": "Zaszyfrowana kopia zapasowa",

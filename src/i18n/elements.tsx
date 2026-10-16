@@ -4,7 +4,9 @@ import { Fragment, type ReactNode } from "react";
  * `{name}` placeholders that `t` left as written because they had no value.
  * The text around them stays plain text for React: nothing is read as HTML,
  * and a placeholder with no element here is left as written, so a gap is
- * visible rather than blank. */
+ * visible rather than blank. Use it only on texts whose filled-in values are
+ * the app's own (dates, counts): a value the patient typed that contained
+ * `{name}` would be read as a placeholder here. */
 export function withElements(
   text: string,
   elements: Record<string, ReactNode>,
