@@ -429,9 +429,9 @@ pub fn unlock_with_helper_at(
     }
 }
 
-/// Starts `executable` as the helper.
+/// Starts `executable` as the helper: for unlocking, and for drawing pages (`pdf_view`).
 #[cfg(desktop)]
-fn helper_command(executable: &std::path::Path) -> std::process::Command {
+pub(crate) fn helper_command(executable: &std::path::Path) -> std::process::Command {
     let mut command = std::process::Command::new(executable);
     command.arg(HELPER_ARG);
     command

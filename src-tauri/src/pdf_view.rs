@@ -284,8 +284,7 @@ pub(crate) fn view_in_helper(
         let Ok(executable) = std::env::current_exe() else {
             return Outcome::Failed;
         };
-        let mut command = std::process::Command::new(executable);
-        command.arg(pdf_unlock::HELPER_ARG);
+        let command = pdf_unlock::helper_command(&executable);
         let mut request = Zeroizing::new(Vec::with_capacity(pdf.len() + password.len() + 28));
         if write_view_request(&mut *request, pdf, password, index, width).is_err() {
             return Outcome::Failed;
