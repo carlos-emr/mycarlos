@@ -434,11 +434,11 @@ mod tests {
 
     #[test]
     fn a_newer_request_a_lock_or_closing_stops_a_page_being_drawn() {
+        // Only what other tests in this binary cannot disturb: they may move the shared
+        // counter on, never back.
         let older = ViewTicket::new();
-        assert!(older.is_current());
         let newer = ViewTicket::new();
         assert!(!older.is_current());
-        assert!(newer.is_current());
         cancel_views();
         assert!(!newer.is_current());
         // A request already stopped never starts the helper.

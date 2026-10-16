@@ -863,6 +863,8 @@ async fn vault_lock(
     pdf_view::cancel_views();
     run_blocking(store.inner(), |store| {
         store.lock();
+        // Again once locked: a request that came in meanwhile stops too.
+        pdf_view::cancel_views();
         Ok(())
     })
     .await
@@ -2090,6 +2092,10 @@ async fn vault_view_page(
             .plaintext_size;
         if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
             return Err(VaultError::PdfTooLarge);
+        }
+        // Already replaced by a newer request: nothing to decrypt.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
         }
         // Sized up front, so the document is never copied by a growing buffer.
         let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
