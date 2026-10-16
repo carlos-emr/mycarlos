@@ -369,15 +369,43 @@ pub(crate) fn unlock_in_helper(pdf: &[u8], password: &str) -> Outcome {
         let Ok(executable) = std::env::current_exe() else {
             return Outcome::Failed;
         };
-        let mut command = std::process::Command::new(executable);
-        command.arg(HELPER_ARG);
-        run_helper(command, pdf, password, HELPER_TIME_LIMIT)
+        run_helper(
+            helper_command(&executable),
+            pdf,
+            password,
+            HELPER_TIME_LIMIT,
+        )
     }
     #[cfg(mobile)]
     {
         let _ = (pdf, password);
         Outcome::Unavailable
     }
+}
+
+/// For tests/pdf_helper.rs only: `unlock_in_helper` with the helper at `executable`, so that
+/// CI starts the real helper, limits it and reads its answer exactly as myCarlos does, on each
+/// desktop system. It is no command, so nothing in the webview can reach it.
+#[doc(hidden)]
+#[cfg(desktop)]
+pub fn unlock_with_helper_at(
+    executable: &std::path::Path,
+    pdf: &[u8],
+    password: &str,
+) -> Result<Zeroizing<Vec<u8>>, String> {
+    match run_helper(helper_command(executable), pdf, password, HELPER_TIME_LIMIT) {
+        Outcome::Unlocked(unlocked) => Ok(unlocked),
+        Outcome::Refused(refusal) => Err(format!("{refusal:?}")),
+        Outcome::Failed | Outcome::Unavailable => Err("Failed".to_owned()),
+    }
+}
+
+/// Starts `executable` as the helper.
+#[cfg(desktop)]
+fn helper_command(executable: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new(executable);
+    command.arg(HELPER_ARG);
+    command
 }
 
 /// Runs `command` as the helper: limited, given the request, stopped after `time_limit`.
