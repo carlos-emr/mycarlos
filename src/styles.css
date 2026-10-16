@@ -568,6 +568,19 @@ h1, h2, p { margin: 0; }
   .trash-list .file-row .restore-button { grid-column: 3; grid-row: 2; }
 }
 
+/* #67: one button per patient, and the narrow-window sections as a row of tabs. */
+.native-profile-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
+.native-profile-choice-label { flex-basis: 100%; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+.native-profile-choice .button { min-height: 44px; }
+.native-profile-choice .button[aria-pressed="true"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
+.native-profile-choice-narrow { display: none; }
+.native-section-tabs button { flex: 1; min-width: 0; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; font-weight: 700; }
+.native-section-tabs button[aria-current="page"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
+@media (max-width: 56.25em) {
+  .native-profile-choice-narrow { display: flex; flex-basis: 100%; margin: 8px 0 0; }
+  .native-profile-choice-narrow .native-profile-choice-label { flex-basis: auto; }
+}
+
 /* #67: in the app, buttons keep their words on narrow windows and wrap instead. */
 @media (max-width: 24.375em) {
   .native-vault-page .head-actions { flex-wrap: wrap; }
@@ -591,8 +604,7 @@ h1, h2, p { margin: 0; }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
 .native-breadcrumb { margin: 0; padding: 3px 7px; border: 0; background: transparent; color: var(--teal-dark); font: inherit; font-weight: 700; }
 .native-breadcrumb:hover { text-decoration: underline; }
-.native-profile-select { display: flex; align-items: center; gap: 7px; margin-left: auto; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
-.native-profile-select select, .native-sort select, .native-move-actions select, .native-dialog-actions select {
+.native-sort select, .native-move-actions select, .native-dialog-actions select {
   min-height: 35px;
   padding: 6px 28px 6px 9px;
   border: 1px solid var(--line);
@@ -708,8 +720,6 @@ h1, h2, p { margin: 0; }
 
 @media (max-width: 40em) {
   .native-profile-row { flex-wrap: wrap; }
-  .native-profile-select { width: 100%; margin-left: 0; }
-  .native-profile-select select { flex: 1; min-width: 0; }
   .native-drag-hint { width: 100%; }
   .native-inline-form { grid-template-columns: 1fr 1fr; }
   .native-inline-form label { grid-column: 1 / -1; }

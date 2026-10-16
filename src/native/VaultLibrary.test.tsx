@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
@@ -163,5 +170,57 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     expect(
       screen.getByRole("button", { name: "Close document details" }),
     ).toHaveTextContent(/^Close$/);
+  });
+});
+
+describe("VaultLibrary choices without dropdowns (#67)", () => {
+  const twoPatients: VaultSnapshot = {
+    ...snapshot,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 },
+      { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+    ],
+  };
+
+  it("offers one button per patient in the sidebar, and none for a single patient", () => {
+    renderLibrary(twoPatients);
+    expect(screen.queryByRole("combobox", { name: /patient/i })).toBeNull();
+    const patients = screen.getByRole("group", { name: "Patient" });
+    const avery = within(patients).getByRole("button", { name: "FAKE Avery" });
+    const blake = within(patients).getByRole("button", { name: "FAKE Blake" });
+    expect(avery).toHaveAttribute("aria-pressed", "true");
+    expect(blake).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(blake);
+    expect(blake).toHaveAttribute("aria-pressed", "true");
+    // Blake's library has none of Avery's folders.
+    expect(screen.queryByText("FAKE Letters")).toBeNull();
+    cleanup();
+
+    renderLibrary(snapshot);
+    expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
+  });
+
+  it("shows the sections as a row of tabs on a narrow window", async () => {
+    await page.viewport(390, 844);
+    try {
+      renderLibrary(twoPatients);
+      expect(screen.queryByRole("combobox", { name: "Section" })).toBeNull();
+      const sections = screen.getByRole("navigation", { name: "Section" });
+      const tabs = within(sections).getAllByRole("button");
+      expect(tabs.map((tab) => tab.textContent)).toEqual([
+        "My records",
+        "Security",
+        "Preferences",
+      ]);
+      expect(tabs[0]).toHaveAttribute("aria-current", "page");
+      // The sidebar is hidden here, so the patient buttons sit under the path:
+      // exactly one Patient group is in reach.
+      expect(screen.getAllByRole("group", { name: "Patient" })).toHaveLength(1);
+      fireEvent.click(tabs[1]);
+      expect(tabs[1]).toHaveAttribute("aria-current", "page");
+      expect(tabs[0]).not.toHaveAttribute("aria-current");
+    } finally {
+      await page.viewport(1100, 760);
+    }
   });
 });

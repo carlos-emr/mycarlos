@@ -1,4 +1,5 @@
 import { LibrarySidebar } from "./LibrarySidebar";
+import { ProfileChoice } from "./ProfileChoice";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
@@ -38,6 +39,11 @@ import {
 } from "./oldBackups";
 
 type NativeSection = "records" | "security" | "preferences";
+const SECTION_CHOICES: ReadonlyArray<[NativeSection, string]> = [
+  ["records", "My records"],
+  ["security", "Security"],
+  ["preferences", "Preferences"],
+];
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
 const SORT_CHOICES: ReadonlyArray<[NativeSort, string]> = [
@@ -681,8 +687,11 @@ export function VaultLibrary({
             </button>
           </header>
 
-          <label
-            className="mobile-section-picker"
+          {/* On narrow windows, where the sidebar is hidden: a row of
+              tabs instead of a dropdown (#67). */}
+          <nav
+            className="mobile-section-picker native-section-tabs"
+            aria-label="Section"
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
@@ -690,19 +699,17 @@ export function VaultLibrary({
                 recoverySetup,
             )}
           >
-            <span>Section</span>
-            <select
-              aria-label="Section"
-              value={section}
-              onChange={(event) =>
-                setSection(event.target.value as NativeSection)
-              }
-            >
-              <option value="records">My records</option>
-              <option value="security">Security</option>
-              <option value="preferences">Preferences</option>
-            </select>
-          </label>
+            {SECTION_CHOICES.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-current={section === value ? "page" : undefined}
+                onClick={() => setSection(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
 
           <div
             className="app-body"
@@ -715,6 +722,13 @@ export function VaultLibrary({
           >
             <LibrarySidebar
               profileName={profile?.displayName ?? "Private vault"}
+              profileChoice={
+                <ProfileChoice
+                  profiles={snapshot.profiles}
+                  profileId={profileId}
+                  onChoose={setProfileId}
+                />
+              }
               section={section}
               currentFolderId={currentFolderId}
               folders={folders}
@@ -760,19 +774,12 @@ export function VaultLibrary({
                       <strong>{currentFolder.name}</strong>
                     </>
                   )}
-                  <label className="native-profile-select">
-                    <span>Patient</span>
-                    <select
-                      value={profileId}
-                      onChange={(event) => setProfileId(event.target.value)}
-                    >
-                      {snapshot.profiles.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <ProfileChoice
+                    className="native-profile-choice-narrow"
+                    profiles={snapshot.profiles}
+                    profileId={profileId}
+                    onChoose={setProfileId}
+                  />
                 </div>
                 <div className="main-head">
                   <div>
