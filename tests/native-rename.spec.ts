@@ -95,9 +95,10 @@ test("renames native-library folders and documents with accessible dialogs", asy
     .getByRole("button", { name: "Rename folder FAKE Results" })
     .click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  // The tile opens the document; its Select tick is the other button (#67).
   await page
     .getByRole("article", { name: "FAKE Old.pdf document" })
-    .getByRole("button")
+    .getByRole("button", { name: /^FAKE Old\.pdf/ })
     .click();
   await page.getByRole("button", { name: "Rename document" }).click();
   const documentDialog = page.getByRole("dialog", { name: "Rename document" });
