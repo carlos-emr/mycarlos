@@ -2765,7 +2765,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         let mut seen = HashSet::new();
         let mut depth = 1;
         while let Some(id) = parent_id {
-            if !seen.insert(id) || depth >= 32 {
+            if !seen.insert(id) || depth >= MAX_FOLDER_DEPTH {
                 return Err(VaultError::Corrupt);
             }
             let (parent_profile_id, next_parent_id) =
