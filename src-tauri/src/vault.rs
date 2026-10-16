@@ -240,6 +240,10 @@ pub enum VaultError {
     PdfUnlockUnavailable,
     #[error("the locked document is too large to open")]
     PdfTooLarge,
+    #[error("the document could not be shown")]
+    PdfViewFailed,
+    #[error("documents cannot be shown on this device yet")]
+    PdfViewUnavailable,
     #[error("there is not enough space to complete the operation")]
     NoSpace,
     #[error("the storage operation could not be completed")]

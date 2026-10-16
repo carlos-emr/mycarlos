@@ -24,6 +24,11 @@ libc = "0.2"
 # Opens a password-protected PDF, only ever in the separate helper process (src/pdf_unlock.rs).
 # Pinned: it parses untrusted input, so an update is a reviewed change.
 lopdf = { version = "=0.45.0", default-features = false }
+# Draws a page of a PDF, only ever in the separate helper process (src/pdf_view.rs). Pinned for
+# the same reason; pure Rust that forbids unsafe code. Without "simd": fewer unsafe dependencies.
+hayro = { version = "=0.8.0", default-features = false, features = ["embed-fonts", "embed-cmaps"] }
+# Writes the page picture as PNG (already in the tree through hayro).
+image = { version = "0.25", default-features = false, features = ["png"] }
 percent-encoding = "2"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }

@@ -74,6 +74,32 @@ Every new package is MIT, Apache-2.0 or BSD-3-Clause (the WHATWG data in
 (`cargo audit`, the SBOM and the graph check) covers them; the graph check
 passes locally.
 
+## Added for the document reader (#48)
+
+`hayro` 0.8.0 draws a page of a PDF as a picture, so that myCarlos can show
+stored documents. It is pinned exactly (`=0.8.0`) because it parses untrusted
+input. It is pure Rust, forbids unsafe code in its own crates, and runs only in
+the separate PDF helper (`src-tauri/src/pdf_view.rs`), as `lopdf` does.
+
+Its `simd` feature is off, which leaves out the SIMD paths of `pic-scale`.
+`image` 0.25 (already present through `hayro`) writes the page picture as PNG,
+with only the `png` feature.
+
+pdf.js was not chosen. Product decisions forbid rendering an untrusted PDF in
+the privileged webview, and running it in a second webview would need CSP and
+capability changes. A native PDFium or MuPDF build would add a C or C++ parser
+for each platform.
+
+The lockfile grows from 515 to 550 packages: `hayro` and its `hayro-*` parts
+(fonts, CMaps, CCITT, JBIG2, JPEG 2000), the Linebender drawing crates
+(`vello_cpu`, `vello_common`, `kurbo`, `peniko`, `color`, `fearless_simd`),
+font readers (`skrifa`, `read-fonts`, `font-types`), image decoders
+(`zune-jpeg`, `moxcms`, `pic-scale`, `pxfm`) and `zlib-rs`.
+
+Every new package is Apache-2.0, MIT, BSD-3-Clause, Zlib or Unlicense, all
+compatible with AGPL-3.0-or-later. The graph check passes locally; CI's
+`cargo audit` and SBOM jobs cover the rest.
+
 ## Native remediation
 
 ### Mobile live reload restored

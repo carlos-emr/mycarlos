@@ -1,5 +1,6 @@
 mod idle;
 mod pdf_unlock;
+mod pdf_view;
 mod received;
 mod throttle;
 mod vault;
@@ -238,6 +239,14 @@ impl From<VaultError> for PublicText {
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message: "This locked document is larger than 100 MB, so myCarlos cannot open it. Nothing was added.",
+            },
+            VaultError::PdfViewFailed => Self {
+                code: "pdf_view_failed",
+                message: "myCarlos could not show this document. It may be damaged, or use features myCarlos cannot show yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewUnavailable => Self {
+                code: "pdf_view_unavailable",
+                message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
@@ -1814,9 +1823,8 @@ fn prepare_received(
         Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
         Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
         Outcome::Unavailable => Err(VaultError::PdfUnlockUnavailable),
-        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported) | Outcome::Failed => {
-            Err(VaultError::PdfUnlockFailed)
-        }
+        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported | Refusal::NoSuchPage)
+        | Outcome::Failed => Err(VaultError::PdfUnlockFailed),
     }
 }
 
@@ -2021,6 +2029,90 @@ async fn received_unlock(
             })
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewPageRequest {
+    record_id: Uuid,
+    page: u32,
+    width: u32,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ViewPageRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// One page of a stored document, drawn by the PDF helper, and its text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewedPage {
+    page_count: u32,
+    width: u32,
+    height: u32,
+    /// A `data:` URL of the PNG picture: the page's CSP allows only those for pictures.
+    image: String,
+    text: String,
+}
+
+/// Shows one page of a stored document. The record is decrypted into memory only and handed to
+/// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
+#[tauri::command]
+async fn vault_view_page(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: ViewPageRequest,
+) -> CommandResult<ViewedPage> {
+    use base64::Engine;
+    use pdf_unlock::Refusal;
+    let (record_id, page, width) = (request.record_id, request.page, request.width);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        // Sized up front, so the document is never copied by a growing buffer.
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.export(record_id, &mut *document)?;
+        match pdf_view::view_in_helper(&document, &password, page, width) {
+            pdf_view::Outcome::Shown(shown) => Ok(ViewedPage {
+                page_count: shown.page_count,
+                width: shown.width,
+                height: shown.height,
+                image: format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(&shown.png)
+                ),
+                text: shown.text,
+            }),
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            pdf_view::Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            pdf_view::Outcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            pdf_view::Outcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            pdf_view::Outcome::Refused(_) | pdf_view::Outcome::Failed => {
+                Err(VaultError::PdfViewFailed)
+            }
+        }
+    })
+    .await
 }
 
 /// Forgets received files the patient declined. Nothing of them was ever stored.
@@ -2394,6 +2486,7 @@ pub fn run() {
             received_import,
             received_unlock,
             received_discard,
+            vault_view_page,
             vault_export_pick,
             vault_export_picked,
             vault_delete_record,
@@ -3587,6 +3680,7 @@ mod tests {
             let _ = serde_json::from_slice::<ReceivedImportRequest>(&payload);
             let _ = serde_json::from_slice::<ReceivedDiscardRequest>(&payload);
             let _ = serde_json::from_slice::<ReceivedUnlockRequest>(&payload);
+            let _ = serde_json::from_slice::<ViewPageRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);

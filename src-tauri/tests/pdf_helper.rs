@@ -74,3 +74,21 @@ fn the_helper_answers_nothing_to_a_request_it_cannot_read() {
     assert_ne!(code, Some(0));
     assert!(answer.is_empty());
 }
+
+#[test]
+fn the_helper_draws_a_page_of_a_locked_document() {
+    let mut view = b"MCPDFVW1".to_vec();
+    view.extend_from_slice(&request(PASSWORD, &fixture("text-aes256.pdf"))[8..]);
+    view.extend_from_slice(&1u32.to_le_bytes());
+    view.extend_from_slice(&500u32.to_le_bytes());
+    let (code, answer) = ask(&view);
+    assert_eq!(code, Some(0));
+    assert_eq!(&answer[..9], b"MCPDFRS1\0");
+    let number = |at: usize| u32::from_le_bytes(answer[at..at + 4].try_into().unwrap());
+    assert_eq!((number(9), number(13)), (2, 500), "2 pages, drawn 500 wide");
+    let png_length = u64::from_le_bytes(answer[21..29].try_into().unwrap()) as usize;
+    let png = &answer[29..29 + png_length];
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let text = &answer[29 + png_length + 8..];
+    assert!(String::from_utf8_lossy(text).contains("Page 2 of 2"));
+}
