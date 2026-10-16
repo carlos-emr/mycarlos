@@ -28,7 +28,8 @@ const MAX_UNLOCKED_PDF_BYTES: usize = 2 * MAX_LOCKED_PDF_BYTES;
 const MAX_DECOMPRESSED_STREAM_BYTES: usize = 256 * 1024 * 1024;
 /// How long the helper may run, from start to answer, before it is stopped.
 pub(crate) const HELPER_TIME_LIMIT: Duration = Duration::from_secs(30);
-/// The memory the helper may use: Unix data limit, Windows job limit.
+/// The memory the helper may use: a data limit on Linux, a job limit on Windows, and on macOS
+/// its footprint as myCarlos checks it (`confine::over_memory`).
 #[cfg(desktop)]
 const HELPER_MEMORY_LIMIT: u64 = 1 << 30;
 /// The first argument that starts the executable as the helper.
@@ -429,7 +430,9 @@ pub(crate) fn run_helper(
     let exited = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) if Instant::now() < deadline && !confine::over_memory(&child) => {
+                std::thread::sleep(Duration::from_millis(20))
+            }
             _ => {
                 confine::stop(&mut child);
                 break None;
@@ -454,7 +457,8 @@ pub(crate) fn run_helper(
 /// that has taken the helper over (for example, closing a descriptor frees a slot under
 /// RLIMIT_NOFILE). Unix: descriptors it did not need are closed, a new one cannot be opened
 /// while three are in use, no file can be written, no process started (unless run as root),
-/// no core dumped, and CPU time and data memory are capped. Windows: it runs at low integrity,
+/// no core dumped, and CPU time and memory are capped (on macOS, which refuses a data limit,
+/// myCarlos checks the helper's memory instead and stops it). Windows: it runs at low integrity,
 /// so it cannot open myCarlos's process or write the user's files, and a job object caps its
 /// memory, allows no child process, and ends it when myCarlos lets go. It can still read files
 /// the user can read; there is no network block on Windows yet.
@@ -567,6 +571,7 @@ mod confine {
     pub(super) fn before_start(command: &mut std::process::Command) {
         use std::os::unix::process::CommandExt;
         let cpu_seconds = super::HELPER_TIME_LIMIT.as_secs() as libc::rlim_t;
+        #[cfg(not(target_os = "macos"))]
         let data = super::HELPER_MEMORY_LIMIT as libc::rlim_t;
         // SAFETY: only setpgid and setrlimit, which are async-signal-safe, run between fork
         // and exec.
@@ -578,6 +583,10 @@ mod confine {
                 }
                 for (resource, value) in [
                     (libc::RLIMIT_CPU, cpu_seconds),
+                    // macOS refuses a data limit below the address space a process already
+                    // has, which there includes the shared system libraries: hundreds of GB on
+                    // Apple silicon. `over_memory` checks the helper's memory there instead.
+                    #[cfg(not(target_os = "macos"))]
                     (libc::RLIMIT_DATA, data),
                     (libc::RLIMIT_CORE, 0),
                 ] {
@@ -592,6 +601,32 @@ mod confine {
                 Ok(())
             });
         }
+    }
+
+    /// Whether the helper uses more memory than it may, checked each time myCarlos looks at
+    /// it while it runs (every 20 ms), so it may pass the limit briefly before it is stopped.
+    /// macOS only: its footprint, the memory macOS counts against it. A footprint that cannot
+    /// be read counts as over, so that the check cannot quietly stop working. It can always be
+    /// read: the helper is myCarlos's own child, of the same user, and not yet waited for, and
+    /// macOS answers for such a process even once it has exited.
+    #[cfg(target_os = "macos")]
+    pub(super) fn over_memory(child: &std::process::Child) -> bool {
+        let Ok(pid) = libc::c_int::try_from(child.id()) else {
+            return true;
+        };
+        let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
+        // SAFETY: the buffer is a rusage_info_v2, the flavour asked for, and is read only
+        // after the call filled it.
+        unsafe {
+            libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V2, usage.as_mut_ptr().cast()) != 0
+                || usage.assume_init().ri_phys_footprint > super::HELPER_MEMORY_LIMIT
+        }
+    }
+
+    /// Elsewhere the limit was set before the helper started: a data limit, or the job.
+    #[cfg(all(desktop, not(target_os = "macos")))]
+    pub(super) fn over_memory(_child: &std::process::Child) -> bool {
+        false
     }
 
     /// Stops the helper and anything it started: its whole process group.
@@ -851,10 +886,15 @@ mod tests {
     #[cfg(all(unix, desktop))]
     #[test]
     fn takes_only_a_whole_answer_from_a_helper_that_ended_well() {
-        const REFUSAL: &str = r"MCPDFRS1\001\000\000\000\000\000\000\000\000";
+        // A refusal as the helper writes it, sent by the shell from a file: the bytes are
+        // written here, not by the shell's printf, whose escapes differ between systems.
+        let mut refusal = tempfile::NamedTempFile::new().unwrap();
+        refusal.write_all(b"MCPDFRS1\x01\0\0\0\0\0\0\0\0").unwrap();
+        let refusal = refusal.path().to_str().unwrap();
+        assert!(!refusal.contains('\''), "{refusal}");
         for script in [
             "cat >/dev/null; printf 'not an answer'".to_owned(),
-            format!("cat >/dev/null; printf '{REFUSAL}'; exit 1"),
+            format!("cat >/dev/null; cat '{refusal}'; exit 1"),
             "exit 0".to_owned(),
         ] {
             let outcome = run_helper(
@@ -866,7 +906,7 @@ mod tests {
             assert!(matches!(outcome, Outcome::Failed), "{script}");
         }
         let outcome = run_helper(
-            shell(&format!("cat >/dev/null; printf '{REFUSAL}'")),
+            shell(&format!("cat >/dev/null; cat '{refusal}'")),
             b"%PDF-1.7 FAKE",
             PASSWORD,
             HELPER_TIME_LIMIT,
@@ -880,6 +920,50 @@ mod tests {
             HELPER_TIME_LIMIT,
         );
         assert!(matches!(outcome, Outcome::Refused(Refusal::TooLarge)));
+    }
+
+    /// Run as the helper by the test below: takes more memory than the helper may, writing to
+    /// each page so that it counts, then waits to be stopped.
+    #[cfg(all(unix, desktop))]
+    #[test]
+    #[ignore = "invoked as a subprocess by the helper memory test"]
+    fn growing_child() {
+        const STEP: usize = 64 * 1024 * 1024;
+        let mut held = Vec::new();
+        for _ in 0..HELPER_MEMORY_LIMIT as usize / STEP + 4 {
+            let mut step = vec![0u8; STEP];
+            for page in step.chunks_mut(4096) {
+                page[0] = 1;
+            }
+            held.push(std::hint::black_box(step));
+        }
+        std::thread::sleep(Duration::from_secs(60));
+        std::hint::black_box(&held);
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn stops_a_helper_that_grows_past_its_memory_limit() {
+        // Started as myCarlos starts the helper. Linux refuses it the memory (its data limit);
+        // macOS has no such limit, so myCarlos sees the footprint and stops it. Either way well
+        // before the time limit.
+        let child = ["--ignored", "--exact", "pdf_unlock::tests::growing_child"];
+        // A name that matched no test would run nothing, and this would pass.
+        let listed = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(child)
+            .arg("--list")
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&listed.stdout)
+            .lines()
+            .any(|line| line == "pdf_unlock::tests::growing_child: test"));
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command.args(child);
+        let started = std::time::Instant::now();
+        let outcome = run_helper(command, b"%PDF-1.7 FAKE", PASSWORD, HELPER_TIME_LIMIT);
+        assert!(matches!(outcome, Outcome::Failed));
+        let elapsed = started.elapsed();
+        assert!(elapsed < Duration::from_secs(15), "{elapsed:?}");
     }
 
     /// Run in its own process by the test below: limits itself as the helper does, then tries
