@@ -1014,15 +1014,13 @@ mod tests {
         assert!(matches!(outcome, Outcome::Refused(Refusal::TooLarge)));
     }
 
-    /// Run as the helper by the test below: takes more memory than the helper may, writing to
-    /// each page so that it counts, then waits to be stopped.
+    /// Takes `bytes` of memory, writing to each page so that it counts, then waits to be
+    /// stopped. Run as the helper by the memory test below.
     #[cfg(all(unix, desktop))]
-    #[test]
-    #[ignore = "invoked as a subprocess by the helper memory test"]
-    fn growing_child() {
+    fn take_memory_and_wait(bytes: usize) {
         const STEP: usize = 64 * 1024 * 1024;
         let mut held = Vec::new();
-        for _ in 0..HELPER_MEMORY_LIMIT as usize / STEP + 4 {
+        for _ in 0..bytes.div_ceil(STEP) {
             let mut step = vec![0u8; STEP];
             for page in step.chunks_mut(4096) {
                 page[0] = 1;
@@ -1035,22 +1033,54 @@ mod tests {
 
     #[cfg(all(unix, desktop))]
     #[test]
-    fn stops_a_helper_that_grows_past_its_memory_limit() {
-        // Started as myCarlos starts the helper. Linux refuses it the memory (its data limit);
-        // macOS has no such limit, so myCarlos sees the footprint and stops it. Either way well
-        // before the time limit.
-        let child = ["--ignored", "--exact", "pdf_unlock::tests::growing_child"];
-        // A name that matched no test would run nothing, and this would pass.
+    #[ignore = "invoked as a subprocess by the helper memory test"]
+    fn growing_child() {
+        take_memory_and_wait(HELPER_MEMORY_LIMIT as usize + 256 * 1024 * 1024);
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    #[ignore = "invoked as a subprocess by the helper memory test"]
+    fn small_child() {
+        take_memory_and_wait(256 * 1024 * 1024);
+    }
+
+    /// This test binary, to be started as the helper, running only the ignored test `name`.
+    #[cfg(all(unix, desktop))]
+    fn helper_running(name: &str) -> std::process::Command {
+        let test = format!("pdf_unlock::tests::{name}");
+        let child = ["--ignored", "--exact", test.as_str()];
+        // A name that matched no test would run nothing, and end at once.
         let listed = std::process::Command::new(std::env::current_exe().unwrap())
             .args(child)
             .arg("--list")
             .output()
             .unwrap();
+        let listing = format!("{test}: test");
         assert!(String::from_utf8_lossy(&listed.stdout)
             .lines()
-            .any(|line| line == "pdf_unlock::tests::growing_child: test"));
+            .any(|line| line == listing));
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
         command.args(child);
+        command
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn stops_a_helper_that_grows_past_its_memory_limit() {
+        // Each is started as myCarlos starts the helper. First one well under the limit: it
+        // lives until its time limit, so the child really runs as the helper, and the memory
+        // check does not stop it early.
+        let command = helper_running("small_child");
+        let started = std::time::Instant::now();
+        let outcome = run_helper(command, b"%PDF-1.7 FAKE", PASSWORD, Duration::from_secs(2));
+        assert!(matches!(outcome, Outcome::Failed));
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_secs(2), "{elapsed:?}");
+        // Then one that grows past it. Linux refuses it the memory (its data limit); macOS has
+        // no such limit, so myCarlos sees the footprint and stops it. Either way well before
+        // the time limit.
+        let command = helper_running("growing_child");
         let started = std::time::Instant::now();
         let outcome = run_helper(command, b"%PDF-1.7 FAKE", PASSWORD, HELPER_TIME_LIMIT);
         assert!(matches!(outcome, Outcome::Failed));
