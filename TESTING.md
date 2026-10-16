@@ -473,3 +473,21 @@ its memory. On Windows, CI checks that a low-integrity helper cannot open myCarl
 helper that grows past its memory limit is stopped well before its time limit: on Linux by its data
 limit, and on macOS, which refuses a data limit, by myCarlos checking its footprint. macOS CI runs
 the Unix checks.
+
+## Reading a document inside myCarlos
+
+Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-pdf/`.
+
+1. Open a document's details and choose **Read**. The first page shows with "Page 1 of N". The page's
+   text is under **Text on this page**.
+2. **Next page** and **Previous page** move through the document. **Larger**, **Smaller** and
+   **Fit width** change the size; a larger page scrolls inside the reader.
+3. A document stored with its own password (imported with **Import** while still locked) asks for
+   "the document password from your patient portal". A wrong one asks again. The password is used
+   for the pages that follow and is gone when the reader closes.
+4. Lock the vault, or let it lock, while a document is open: the reader closes with the library.
+5. With a screen reader, each page picture is named "Page N of M"; read the page with **Text on this
+   page**. A scanned page may have no text. That is a limitation of this first version.
+6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+
+The helper draws pages and has no vault keys (THREAT_MODEL IMP-02, D-04). Its stronger sandbox is #63.

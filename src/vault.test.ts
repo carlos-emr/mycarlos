@@ -46,6 +46,8 @@ describe("native idle deadline bridge", () => {
       "profile-1",
       [],
     );
+    await bridge.viewPage("record-1", 0, 800);
+    await bridge.viewPage("record-1", 1, 800, "FAKE-portal-2026");
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
       [
@@ -67,6 +69,28 @@ describe("native idle deadline bridge", () => {
             password: "FAKE-portal-2026",
             profileId: "profile-1",
             folderIds: [],
+          },
+        },
+      ],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 0,
+            width: 800,
+            password: null,
+          },
+        },
+      ],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 1,
+            width: 800,
+            password: "FAKE-portal-2026",
           },
         },
       ],

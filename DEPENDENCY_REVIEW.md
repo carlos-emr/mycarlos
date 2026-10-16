@@ -74,6 +74,48 @@ Every new package is MIT, Apache-2.0 or BSD-3-Clause (the WHATWG data in
 (`cargo audit`, the SBOM and the graph check) covers them; the graph check
 passes locally.
 
+## Added for the document reader (#48)
+
+`hayro` 0.8.0 draws a page of a PDF as a picture, so that myCarlos can show
+stored documents. It is pinned exactly (`=0.8.0`) because it parses untrusted
+input, and it runs only in the separate PDF helper (`src-tauri/src/pdf_view.rs`),
+as `lopdf` does.
+
+**Where there is unsafe code:**
+- `hayro` and `hayro-interpret` forbid unsafe code in their own crates.
+- `hayro-syntax`, the PDF parser underneath them, does not.
+  - It has an unsafe lifetime extension of its own (`page.rs`).
+  - `hayro-interpret` always turns on its `unsafe` feature, so turning off
+    `hayro`'s default features cannot avoid it. That feature brings in `flate2`
+    with the `zlib-rs` backend, `memchr`, and the SIMD paths of the JBIG2,
+    JPEG 2000 and JPEG decoders.
+  - `pic-scale`, `moxcms`, `zune-jpeg` and `fearless_simd` use unsafe code
+    internally too.
+- Turning off `hayro`'s own `simd` feature removes only `pic-scale`'s SIMD
+  paths.
+- Feature unification also moves the app's whole `flate2` to `zlib-rs`. Before
+  this, its only other user, `png` (for the app's own trusted icons), used
+  `miniz_oxide`.
+
+This is why the reader parses PDFs only in the helper, never beside the vault
+keys. The helper's real sandbox is #63. `image` 0.25 (already present through
+`hayro`) writes the page picture as PNG, with only the `png` feature.
+
+pdf.js was not chosen. Product decisions forbid rendering an untrusted PDF in
+the privileged webview, and running it in a second webview would need CSP and
+capability changes. A native PDFium or MuPDF build would add a C or C++ parser
+for each platform.
+
+The lockfile grows from 515 to 550 packages: `hayro` and its `hayro-*` parts
+(fonts, CMaps, CCITT, JBIG2, JPEG 2000), the Linebender drawing crates
+(`vello_cpu`, `vello_common`, `kurbo`, `peniko`, `color`, `fearless_simd`),
+font readers (`skrifa`, `read-fonts`, `font-types`), image decoders
+(`zune-jpeg`, `moxcms`, `pic-scale`, `pxfm`) and `zlib-rs`.
+
+Every new package is Apache-2.0, MIT, BSD-3-Clause, Zlib or Unlicense, all
+compatible with AGPL-3.0-or-later. The graph check passes locally; CI's
+`cargo audit` and SBOM jobs cover the rest.
+
 ## Native remediation
 
 ### Mobile live reload restored

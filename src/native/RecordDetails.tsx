@@ -20,6 +20,8 @@ interface RecordDetailsProps {
   onMove: (folderId: string | null) => Promise<void>;
   onDelete: () => void;
   onExport: () => void;
+  /** Opens the document in myCarlos's reader. */
+  onRead?: () => void;
 }
 export function RecordDetails({
   record,
@@ -33,6 +35,7 @@ export function RecordDetails({
   onMove,
   onDelete,
   onExport,
+  onRead,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -169,8 +172,18 @@ export function RecordDetails({
           >
             Permanently delete
           </button>
+          {onRead && (
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy || !record.available}
+              onClick={onRead}
+            >
+              Read
+            </button>
+          )}
           <button
-            className="button primary"
+            className={onRead ? "button" : "button primary"}
             type="button"
             disabled={busy || !record.available}
             onClick={onExport}

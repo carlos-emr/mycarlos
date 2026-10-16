@@ -38,7 +38,7 @@ pub const HELPER_ARG: &str = "--mycarlos-pdf-helper";
 const MAX_PASSWORD_BYTES: usize = 4096;
 
 const REQUEST_MAGIC: &[u8; 8] = b"MCPDFRQ1";
-const RESPONSE_MAGIC: &[u8; 8] = b"MCPDFRS1";
+pub(crate) const RESPONSE_MAGIC: &[u8; 8] = b"MCPDFRS1";
 const UNLOCKED: u8 = 0;
 
 /// Why the helper gave no unlocked document.
@@ -54,26 +54,30 @@ pub(crate) enum Refusal {
     TooLarge,
     /// It is protected in a way `lopdf` cannot open, such as a certificate.
     Unsupported,
+    /// The page asked for is not in it.
+    NoSuchPage,
 }
 
 impl Refusal {
-    fn code(self) -> u8 {
+    pub(crate) fn code(self) -> u8 {
         match self {
             Refusal::WrongPassword => 1,
             Refusal::NotEncrypted => 2,
             Refusal::Damaged => 3,
             Refusal::TooLarge => 4,
             Refusal::Unsupported => 5,
+            Refusal::NoSuchPage => 6,
         }
     }
 
-    fn from_code(code: u8) -> Option<Self> {
+    pub(crate) fn from_code(code: u8) -> Option<Self> {
         Some(match code {
             1 => Refusal::WrongPassword,
             2 => Refusal::NotEncrypted,
             3 => Refusal::Damaged,
             4 => Refusal::TooLarge,
             5 => Refusal::Unsupported,
+            6 => Refusal::NoSuchPage,
             _ => return None,
         })
     }
@@ -238,6 +242,15 @@ pub(crate) fn unlock(pdf: &[u8], password: &str) -> Result<Zeroizing<Vec<u8>>, R
 
 fn write_request(out: &mut impl Write, password: &[u8], pdf: &[u8]) -> io::Result<()> {
     out.write_all(REQUEST_MAGIC)?;
+    write_password_and_pdf(out, password, pdf)
+}
+
+/// The body every request starts with: the password, then the document.
+pub(crate) fn write_password_and_pdf(
+    out: &mut impl Write,
+    password: &[u8],
+    pdf: &[u8],
+) -> io::Result<()> {
     out.write_all(&(password.len() as u32).to_le_bytes())?;
     out.write_all(password)?;
     out.write_all(&(pdf.len() as u64).to_le_bytes())?;
@@ -246,7 +259,7 @@ fn write_request(out: &mut impl Write, password: &[u8], pdf: &[u8]) -> io::Resul
 }
 
 /// A request as the helper reads it, or why it could not be.
-enum Request {
+pub(crate) enum Request {
     Read {
         password: Zeroizing<String>,
         pdf: Vec<u8>,
@@ -255,12 +268,18 @@ enum Request {
     Malformed,
 }
 
+#[cfg(test)]
 fn read_request(input: &mut impl Read) -> io::Result<Request> {
     let mut magic = [0u8; 8];
     input.read_exact(&mut magic)?;
     if &magic != REQUEST_MAGIC {
         return Ok(Request::Malformed);
     }
+    read_password_and_pdf(input)
+}
+
+/// Reads the body `write_password_and_pdf` wrote.
+pub(crate) fn read_password_and_pdf(input: &mut impl Read) -> io::Result<Request> {
     let mut length = [0u8; 4];
     input.read_exact(&mut length)?;
     let length = u32::from_le_bytes(length) as usize;
@@ -351,7 +370,17 @@ pub fn helper_main() -> i32 {
         return 2;
     }
     let mut input = io::stdin().lock();
-    let result = match read_request(&mut input) {
+    let mut magic = [0u8; 8];
+    if input.read_exact(&mut magic).is_err() {
+        return 3;
+    }
+    if &magic == crate::pdf_view::VIEW_MAGIC {
+        return crate::pdf_view::answer(&mut input, &mut io::stdout().lock());
+    }
+    if &magic != REQUEST_MAGIC {
+        return 3;
+    }
+    let result = match read_password_and_pdf(&mut input) {
         Ok(Request::Read { password, pdf }) => unlock(&pdf, &password),
         Ok(Request::TooLarge) => Err(Refusal::TooLarge),
         Ok(Request::Malformed) | Err(_) => return 3,
@@ -400,9 +429,9 @@ pub fn unlock_with_helper_at(
     }
 }
 
-/// Starts `executable` as the helper.
+/// Starts `executable` as the helper: for unlocking, and for drawing pages (`pdf_view`).
 #[cfg(desktop)]
-fn helper_command(executable: &std::path::Path) -> std::process::Command {
+pub(crate) fn helper_command(executable: &std::path::Path) -> std::process::Command {
     let mut command = std::process::Command::new(executable);
     command.arg(HELPER_ARG);
     command
@@ -411,54 +440,75 @@ fn helper_command(executable: &std::path::Path) -> std::process::Command {
 /// Runs `command` as the helper: limited, given the request, stopped after `time_limit`.
 #[cfg(desktop)]
 pub(crate) fn run_helper(
-    mut command: std::process::Command,
+    command: std::process::Command,
     pdf: &[u8],
     password: &str,
     time_limit: Duration,
 ) -> Outcome {
-    use std::process::Stdio;
-    use std::time::Instant;
     if pdf.len() > MAX_LOCKED_PDF_BYTES {
         return Outcome::Refused(Refusal::TooLarge);
     }
+    let mut request = Zeroizing::new(Vec::with_capacity(pdf.len() + password.len() + 20));
+    if write_request(&mut *request, password.as_bytes(), pdf).is_err() {
+        return Outcome::Failed;
+    }
+    match exchange(command, request, time_limit, read_response, &|| false) {
+        Some(Ok(unlocked)) => Outcome::Unlocked(unlocked),
+        Some(Err(refusal)) => Outcome::Refused(refusal),
+        None => Outcome::Failed,
+    }
+}
+
+/// Sends one `request` to the helper started by `command` and reads its answer with `read`,
+/// all within `time_limit`. `None` when the helper could not be started, ran too long, failed,
+/// answered wrongly, or `cancelled` came true meanwhile, which stops it at once. The request is
+/// wiped once sent.
+#[cfg(desktop)]
+pub(crate) fn exchange<T: Send + 'static>(
+    mut command: std::process::Command,
+    request: Zeroizing<Vec<u8>>,
+    time_limit: Duration,
+    read: fn(&mut std::process::ChildStdout) -> Option<T>,
+    cancelled: &dyn Fn() -> bool,
+) -> Option<T> {
+    use std::process::Stdio;
+    use std::time::Instant;
     command
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     confine::before_start(&mut command);
-    let Ok(mut child) = command.spawn() else {
-        return Outcome::Failed;
-    };
+    let mut child = command.spawn().ok()?;
     // Held until the end: closing it stops the helper on Windows.
     let _job = match confine::after_start(&child) {
         Ok(job) => job,
         Err(_) => {
             confine::stop(&mut child);
-            return Outcome::Failed;
+            return None;
         }
     };
     let (Some(mut stdin), Some(mut stdout)) = (child.stdin.take(), child.stdout.take()) else {
         confine::stop(&mut child);
-        return Outcome::Failed;
+        return None;
     };
     let deadline = Instant::now() + time_limit;
     // Written and read on threads of their own, holding their own copies: the helper may
     // answer before it has read everything, neither side may wait on a full pipe while the
     // clock runs, and nothing the helper leaves behind can keep myCarlos waiting.
-    let request = (Zeroizing::new(password.as_bytes().to_vec()), pdf.to_vec());
     std::thread::spawn(move || {
-        let (password, pdf) = request;
-        let _ = write_request(&mut stdin, &password, &pdf);
+        let _ = stdin.write_all(&request);
     });
     let (answered, answer) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = answered.send(read_response(&mut stdout));
+        let _ = answered.send(read(&mut stdout));
     });
     let exited = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() < deadline && !confine::over_memory(&child) => {
+            Ok(None)
+                if Instant::now() < deadline && !cancelled() && !confine::over_memory(&child) =>
+            {
                 std::thread::sleep(Duration::from_millis(20))
             }
             _ => {
@@ -473,10 +523,9 @@ pub(crate) fn run_helper(
         )
         .ok()
         .flatten();
-    match (exited, answer) {
-        (Some(status), Some(Ok(unlocked))) if status.success() => Outcome::Unlocked(unlocked),
-        (Some(status), Some(Err(refusal))) if status.success() => Outcome::Refused(refusal),
-        _ => Outcome::Failed,
+    match exited {
+        Some(status) if status.success() => answer,
+        _ => None,
     }
 }
 
@@ -908,6 +957,21 @@ mod tests {
             Duration::from_millis(300),
         );
         assert!(matches!(outcome, Outcome::Failed));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn stops_a_helper_as_soon_as_it_is_cancelled() {
+        let started = std::time::Instant::now();
+        let answer = exchange(
+            shell("sleep 20"),
+            Zeroizing::new(b"FAKE".to_vec()),
+            HELPER_TIME_LIMIT,
+            read_response,
+            &|| started.elapsed() > Duration::from_millis(200),
+        );
+        assert!(answer.is_none());
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

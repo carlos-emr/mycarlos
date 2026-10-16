@@ -303,6 +303,24 @@ h1, h2, p { margin: 0; }
 .native-received-refused { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .native-received-declining { max-height: 12em; margin: 0 0 8px; padding-left: 20px; overflow-y: auto; overflow-wrap: anywhere; }
 
+/* The document reader: the page picture scrolls inside it when zoomed in. */
+.record-dialog.native-reader { display: flex; flex-direction: column; width: min(1100px, 100%); max-width: none; height: 92vh; }
+.native-reader-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.native-reader-head h2 { overflow-wrap: anywhere; }
+.native-reader-head p { margin: 2px 0 0; color: var(--ink-soft); font-size: 0.875rem; }
+.native-reader-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.native-reader-where { min-width: 7em; text-align: center; font-weight: 700; }
+.native-reader-zoom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+/* The gutter is kept, so that a page fitted to the width does not scroll sideways once a tall page
+   brings a classic scrollbar. */
+.native-reader-page { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 12px; background: var(--canvas-2); text-align: center; }
+.native-reader-page img { display: inline-block; max-width: none; height: auto; box-shadow: var(--shadow-sm); background: var(--paper); }
+.native-reader-text { max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
+.native-reader-text summary { cursor: pointer; font-weight: 700; }
+.native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
+.native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
   display: grid;
