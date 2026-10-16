@@ -49,6 +49,9 @@ describe("the document reader", () => {
       name: "Page 1 of 2. The page's text follows.",
     });
     expect(picture).toHaveAttribute("src", PNG);
+    // Fitted to the reader, the page does not scroll sideways.
+    const area = picture.parentElement!;
+    expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth);
     expect(screen.getByText("Page 1 of 2")).toBeVisible();
     expect(viewPage).toHaveBeenCalledTimes(1);
     const [index, width, password] = viewPage.mock.calls[0];

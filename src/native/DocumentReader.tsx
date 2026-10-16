@@ -58,8 +58,16 @@ export function DocumentReader({
   viewPageRef.current = viewPage;
 
   useEffect(() => {
-    const measure = () =>
-      setFitWidth(Math.max(1, pageRef.current?.clientWidth ?? 0));
+    // The width inside the page area's padding, so that a page fitted to it
+    // does not scroll.
+    const measure = () => {
+      const area = pageRef.current;
+      if (!area) return;
+      const style = getComputedStyle(area);
+      const padding =
+        parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      setFitWidth(Math.max(1, Math.floor(area.clientWidth - padding)));
+    };
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
