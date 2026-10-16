@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
+import { userEvent as realKeys } from "vitest/browser";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   forgetRecoveryOffer,
@@ -683,6 +684,38 @@ describe("durable vault UI", () => {
       expect(screen.queryByText("FAKE Old folder")).not.toBeInTheDocument();
     },
   );
+
+  it("moves a document from its details only when Move is pressed", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+    );
+    const details = screen.getByRole("dialog", { name: "FAKE Old.pdf" });
+    const destination = within(details).getByRole("combobox", {
+      name: "Move to",
+    });
+    const move = within(details).getByRole("button", { name: "Move" });
+    expect(destination).toHaveValue("parent");
+    expect(move).toBeDisabled();
+    // Real arrow keys: Chromium changes a closed list's value on each press,
+    // which used to move the document at once, once per press (#67).
+    destination.focus();
+    await realKeys.keyboard("{ArrowDown}{ArrowDown}");
+    expect(destination).toHaveValue("child");
+    expect(bridge.assignFolders).not.toHaveBeenCalled();
+    expect(move).toBeEnabled();
+    await user.click(move);
+    await waitFor(() =>
+      expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("record", [
+        "child",
+      ]),
+    );
+  });
 
   it("renames a document from its details, keeps failed input for retry, and supports cancellation", async () => {
     const user = userEvent.setup();

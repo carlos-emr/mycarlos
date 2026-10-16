@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -35,6 +35,19 @@ export function RecordDetails({
   onExport,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
+  // Choosing in the list only picks a destination; Move moves (#67). In
+  // Chromium every arrow key on a closed list changes its value, which moved
+  // the document at once.
+  const currentFolderId = record.folderIds[0] ?? "";
+  // A choice made for this document where it is now; a move or another
+  // document starts again from where the document is.
+  const placement = `${record.id}:${currentFolderId}`;
+  const [choice, setChoice] = useState({
+    placement,
+    folderId: currentFolderId,
+  });
+  const destination =
+    choice.placement === placement ? choice.folderId : currentFolderId;
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
   const kind = recordKind(record.displayName);
@@ -150,8 +163,10 @@ export function RecordDetails({
             Move to
             <select
               disabled={busy || readOnly}
-              value={record.folderIds[0] ?? ""}
-              onChange={(event) => void onMove(event.target.value || null)}
+              value={destination}
+              onChange={(event) =>
+                setChoice({ placement, folderId: event.target.value })
+              }
             >
               <option value="">My records</option>
               {folders.map((folder) => (
@@ -161,6 +176,14 @@ export function RecordDetails({
               ))}
             </select>
           </label>
+          <button
+            className="button"
+            type="button"
+            disabled={busy || readOnly || destination === currentFolderId}
+            onClick={() => void onMove(destination || null)}
+          >
+            Move
+          </button>
           <button
             className="button danger"
             type="button"
