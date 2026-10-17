@@ -5949,13 +5949,12 @@ describe("the warning before the automatic lock (#68)", () => {
     window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "1");
   });
 
-  async function openLibrary() {
+  async function openLibrary(
+    bridge = nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") }),
+  ) {
     vi.useFakeTimers();
     onTestFinished(() => {
       vi.useRealTimers();
-    });
-    const bridge = nativeBridge({
-      status: vi.fn().mockResolvedValue("unlocked"),
     });
     await act(async () => {
       render(<VaultApp bridge={bridge} />);
@@ -5964,7 +5963,8 @@ describe("the warning before the automatic lock (#68)", () => {
     return bridge;
   }
   const wait = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
-  const warning = () => screen.queryByRole("alertdialog");
+  const warning = () =>
+    screen.queryByRole("alertdialog", { name: /^myCarlos will lock in/ });
 
   it("warns 30 seconds before, with Keep open focused, and locks if nobody answers", async () => {
     const bridge = await openLibrary();
@@ -6003,6 +6003,65 @@ describe("the warning before the automatic lock (#68)", () => {
     expect(bridge.lock).not.toHaveBeenCalled();
     await wait(1);
     expect(bridge.lock).toHaveBeenCalledOnce();
+  });
+
+  it("leaves Rename beneath it as it was: Escape and Keep open answer only the warning", async () => {
+    await openLibrary(renameBridge());
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Rename folder FAKE Parent" }),
+      );
+    });
+    const typed = () =>
+      within(
+        screen.getByRole("dialog", { name: "Rename folder" }),
+      ).getByLabelText("Folder name");
+    fireEvent.change(typed(), { target: { value: "FAKE New name" } });
+    expect(typed()).toHaveFocus();
+
+    await wait(30_000);
+    expect(warning()).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(warning()).not.toBeInTheDocument();
+    // Rename is still open, with what was typed, and has the focus back.
+    expect(typed()).toHaveValue("FAKE New name");
+    expect(typed()).toHaveFocus();
+
+    // The Escape was use: the next warning comes a full delay later.
+    await wait(30_000);
+    fireEvent.click(screen.getByRole("button", { name: "Keep open" }));
+    expect(warning()).not.toBeInTheDocument();
+    expect(typed()).toHaveValue("FAKE New name");
+  });
+
+  it("leaves a confirmation beneath it open, and unanswered, on Escape", async () => {
+    const bridge = await openLibrary(
+      nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      }),
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText("FAKE_Results.pdf"));
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Permanently delete" }),
+      );
+    });
+    const confirmation = () =>
+      screen.queryByRole("alertdialog", {
+        name: "Permanently delete this document?",
+      });
+    expect(confirmation()).toBeInTheDocument();
+
+    await wait(30_000);
+    expect(warning()).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(warning()).not.toBeInTheDocument();
+    expect(confirmation()).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(bridge.deleteRecord).not.toHaveBeenCalled();
   });
 
   it("counts any key as use, and puts the warning away", async () => {
