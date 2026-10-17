@@ -248,7 +248,11 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    that the key does not work.
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
    over from the library, and the reader says "Vault locked." with the field. Check the same
-   after an automatic lock.
+   after an automatic lock, where the reader gives the reason instead: "Locked after 1 minute
+   without use." With the delay at 1 minute, after 30 seconds without touching anything the
+   reader reads "myCarlos will lock in 30 seconds to keep your records private." and the focus
+   is on **Keep open**; pressing it, or any key, keeps the vault open for another minute. Check
+   the warning again at 400% text size: **Keep open** can be reached and pressed.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
