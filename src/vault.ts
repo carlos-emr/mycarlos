@@ -207,6 +207,20 @@ export interface VaultBridge {
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
+  /** Saves a photo taken with the camera (a JPEG) under `name`, in the
+   * folders given or in My records. The vault cleans and checks it first. */
+  savePhoto(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+    jpeg: Uint8Array,
+  ): Promise<ImportOutcome>;
+  /** Whether a document's file starts as a JPEG does. Only its first bytes
+   * are read; the photo itself stays native. */
+  isPhoto(recordId: string): Promise<boolean>;
+  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
+   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  viewPhoto(recordId: string): Promise<string>;
   deleteRecord(recordId: string): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
@@ -395,6 +409,20 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
+    // The photo goes as the raw body, not as JSON; the rest in headers, the
+    // name percent-encoded, as a header holds ASCII only.
+    savePhoto: (profileId, folderIds, name, jpeg) =>
+      invoke<ImportOutcome>("vault_save_photo", jpeg, {
+        headers: {
+          "Mycarlos-Profile-Id": profileId,
+          "Mycarlos-Folder-Ids": folderIds.join(","),
+          "Mycarlos-Photo-Name": encodeURIComponent(name),
+        },
+      }),
+    isPhoto: (recordId) =>
+      invoke<boolean>("vault_is_photo", { request: { recordId } }),
+    viewPhoto: (recordId) =>
+      invoke<string>("vault_view_photo", { request: { recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
     removeUnavailableRecords: (confirmed) =>

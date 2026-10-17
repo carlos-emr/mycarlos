@@ -19,6 +19,9 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
+import { CameraDialog } from "./CameraDialog";
+import { PhotoViewer } from "./PhotoViewer";
+import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
   NAME_INPUT_MAX_LENGTH,
@@ -79,6 +82,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   sizesIn1024s = false,
+  cameraPlatform = null,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -109,6 +113,9 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** The desktop platform the camera dialog runs on, or null where photos
+   * cannot be taken yet (phones and tablets). */
+  cameraPlatform?: string | null;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -137,6 +144,14 @@ export function VaultLibrary({
   const [moveFolderId, setMoveFolderId] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  // The open document, when its file is a photo, and the photo while it is
+  // shown: it is fetched for the photo view and dropped when that closes.
+  const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
+  const [shownPhoto, setShownPhoto] = useState<{
+    recordId: string;
+    url: string;
+  } | null>(null);
   // The result of a dialog's action (a rename, a recovery key), given once the
   // dialog has closed (see the effect below), and the document whose details
   // it was started from, if any.
@@ -235,6 +250,36 @@ export function VaultLibrary({
     if (profile && profile.id !== profileId) setProfileId(profile.id);
   }, [profile, profileId]);
 
+  // A document whose file is a JPEG can be viewed as a photo. The vault
+  // decides from the file's first bytes, whatever its name, so it is asked
+  // when the document's details open (it reads only those bytes); a PDF is
+  // not asked about. The photo itself is fetched only for the photo view.
+  const photoCandidate =
+    activeRecord?.available && !namedAsPdf(activeRecord.displayName)
+      ? activeRecord.id
+      : null;
+  useEffect(() => {
+    setPhotoRecordId(null);
+    setShownPhoto(null);
+    if (!photoCandidate) return;
+    let current = true;
+    bridge.isPhoto(photoCandidate).then(
+      (photo) => {
+        if (current && photo) setPhotoRecordId(photoCandidate);
+      },
+      // No longer readable: the details say what they can.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, photoCandidate]);
+  const viewPhoto = (recordId: string) =>
+    run(async () => {
+      const url = await bridge.viewPhoto(recordId);
+      setShownPhoto({ recordId, url });
+    });
+
   useEffect(() => {
     setCurrentFolderId(null);
     setSelectedIds([]);
@@ -281,6 +326,8 @@ export function VaultLibrary({
     if (
       !dialogResult ||
       renameTarget ||
+      cameraOpen ||
+      shownPhoto ||
       confirmation ||
       confirmRemoveDamaged ||
       recoverySetup ||
@@ -310,6 +357,8 @@ export function VaultLibrary({
     dialogResult,
     recoverySetup,
     renameTarget,
+    cameraOpen,
+    shownPhoto,
   ]);
 
   const renameFolder = (folder: VaultFolder) =>
@@ -366,6 +415,37 @@ export function VaultLibrary({
       setNotice(
         `${outcome.imported.length} file(s) encrypted and imported.${skipped}`,
       );
+    });
+
+  // Saved into the folder that is open, as an import is. The details of the
+  // new document open, so that it can be renamed at once.
+  const savePhoto = (jpeg: Uint8Array) =>
+    run(async () => {
+      const folderIds = currentFolderId ? [currentFolderId] : [];
+      const outcome = await bridge.savePhoto(
+        profileId,
+        folderIds,
+        photoName(new Date()),
+        jpeg,
+      );
+      const next = await refresh();
+      setCameraOpen(false);
+      const saved = next.records.find(
+        (record) => record.id === outcome.imported[0],
+      );
+      if (!saved) {
+        setNotice(
+          "This photo is already in the vault, so it was not saved again.",
+        );
+        return;
+      }
+      setActiveRecordId(saved.id);
+      // Cleared now, so that the result is a change even when it repeats.
+      setNotice("");
+      setDialogResult({
+        message: `Photo saved as ${saved.displayName}.`,
+        recordId: saved.id,
+      });
     });
 
   const toggleSelected = (id: string) =>
@@ -658,6 +738,7 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
+                cameraOpen ||
                 confirmRemoveDamaged ||
                 recoverySetup,
             )}
@@ -682,6 +763,7 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
+                cameraOpen ||
                 confirmRemoveDamaged ||
                 recoverySetup,
             )}
@@ -705,6 +787,7 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
+                cameraOpen ||
                 confirmRemoveDamaged ||
                 recoverySetup,
             )}
@@ -800,6 +883,17 @@ export function VaultLibrary({
                       <Icon name="folder-plus" />
                       <span>New folder</span>
                     </button>
+                    {cameraPlatform && (
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy || readOnly || !profileId}
+                        onClick={() => setCameraOpen(true)}
+                      >
+                        <Icon name="camera" />
+                        <span>Take a photo</span>
+                      </button>
+                    )}
                     <button
                       className="button primary"
                       type="button"
@@ -1189,7 +1283,23 @@ export function VaultLibrary({
               onClose={() => setRenameTarget(null)}
             />
           )}
-          {activeRecord && !renameTarget && !pendingAction && (
+          {cameraOpen && cameraPlatform && (
+            <CameraDialog
+              platform={cameraPlatform}
+              notice={notice}
+              saving={busy}
+              onUse={savePhoto}
+              onClose={() => setCameraOpen(false)}
+            />
+          )}
+          {activeRecord && shownPhoto?.recordId === activeRecord.id && (
+            <PhotoViewer
+              name={activeRecord.displayName}
+              url={shownPhoto.url}
+              onClose={() => setShownPhoto(null)}
+            />
+          )}
+          {activeRecord && !renameTarget && !pendingAction && !shownPhoto && (
             <RecordDetails
               record={activeRecord}
               folders={folders}
@@ -1211,6 +1321,11 @@ export function VaultLibrary({
               }
               onExport={() =>
                 setConfirmation({ action: "export", recordId: activeRecord.id })
+              }
+              onViewPhoto={
+                photoRecordId === activeRecord.id
+                  ? () => void viewPhoto(activeRecord.id)
+                  : undefined
               }
             />
           )}
