@@ -12,11 +12,14 @@
  * detail appears.
  *
  * It is rules, not understanding: a rare condition, an unusual job or a small
- * town in free text can still point to a person, and a name with no title or
- * label that is not a profile name is not found. A word of a profile name that
- * is also an ordinary word ("Major", "Iris", "Rose") is removed only as part of
- * the whole name. The patient's preview, where more can be removed by hand
- * (`removeMore`), is the last check.
+ * town in free text can still point to a person, and a name that never has a
+ * title or a label, and is not a profile name, is not found; one found once is
+ * removed everywhere else, its words in any case. A word of a name that is
+ * also an ordinary or everyday clinical word ("Major", "Rose", "Ward") is
+ * removed only as part of the whole name, so standing alone it stays. A date
+ * with a two-digit year ("1/2/24") is read as one only after a date label.
+ * The patient's preview, where more can be removed by hand (`removeMore`), is
+ * the last check.
  */
 
 export type RemovedKind =
@@ -116,6 +119,14 @@ interface Finding {
   /** For names: the person they belong to, so that every part of one
    * person's name shares a placeholder. */
   person?: string;
+  /** For a name a rule found, and every other place it stands: what makes
+   * them one placeholder. */
+  group?: string;
+  /** For those other places: the whole name they came from. */
+  whole?: string;
+  /** Found as another place a name stands: loses to anything a rule found
+   * there. */
+  swept?: true;
   /** Already decided (when more is removed later): kept as it was. */
   replacement?: string;
 }
@@ -199,6 +210,8 @@ const MONTH = `(?:${[...MONTH_WORDS.keys()]
 /** A date form: how to find it, and how to read it back as numbers. */
 interface DateForm {
   pattern: string;
+  /** Read only after a date label (see RULES). */
+  labelOnly?: true;
   read: (
     match: RegExpExecArray,
     dayFirst: boolean,
@@ -246,8 +259,11 @@ const DATE_FORMS: DateForm[] = [
     read: (m, dayFirst) => dayMonth(+m[1], +m[3], +m[4], dayFirst),
   },
   {
-    // 08/10/26: slashes only, so that a range such as 12.5-15.0 is not one
+    // 08/10/26: slashes only, so that a range such as 12.5-15.0 is not one.
+    // Bare, "1/2/24" is as likely a ratio or a dose as a date: read only
+    // after a date label, or as a date of birth.
     pattern: "\\b(\\d{1,2})/(\\d{1,2})/(\\d{2})\\b",
+    labelOnly: true,
     read: (m, dayFirst) =>
       dayMonth(+m[1], +m[2], twoDigitYear(+m[3]), dayFirst),
   },
@@ -364,6 +380,7 @@ const NAME_WORD = `${UPPER}[\\p{L}'’-]+`;
 const PARTICLE =
   "(?:de|du|des|la|le|les|van|von|der|den|ter|ten|bin|ibn|al|el|da|dos|das|di|del|della|degli)";
 const NAME_PART = `(?:[dD]['’])?${NAME_WORD}`;
+const PARTICLES = new Set(PARTICLE.slice(3, -1).split("|"));
 const CAPITALIZED_NAME = `${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){0,3}`;
 // "EXAMPLE, Avery" and "Avery EXAMPLE" both come after a label.
 const LABELLED_NAME = `(?:${UPPER}[\\p{Lu}'’-]+,[ \\t]+${NAME_PART}(?:[ \\t]+${NAME_PART})?|${CAPITALIZED_NAME})`;
@@ -467,7 +484,142 @@ const ORDINARY_WORDS = new Set([
   "grand",
   "roy",
   "pierre",
+  // Everyday clinical words, which a name found once would otherwise take
+  // out wherever they stand ("admitted to the ward").
+  "ward",
+  "day",
+  "short",
+  "long",
+  "head",
+  "hand",
+  "foot",
+  "back",
+  "heart",
+  "stone",
+  "bone",
+  "fall",
+  "cross",
+  "field",
+  "little",
+  "small",
+  "low",
+  "high",
+  "sharp",
+  "wells",
+  "nurse",
+  "care",
+  "rest",
 ]);
+// Words that follow a label or a family word but start no name: "Re:
+// Follow-up visit", "Patient: Seen today", "Contact: Mother …".
+const NOT_NAMES = new Set([
+  "follow-up",
+  "followup",
+  "seen",
+  "see",
+  "visit",
+  "review",
+  "results",
+  "result",
+  "referral",
+  "consultation",
+  "consult",
+  "new",
+  "unknown",
+  "none",
+  "nil",
+  "not",
+  "self",
+  "same",
+  "above",
+  "below",
+  "annual",
+  "assessment",
+  "request",
+  "report",
+  "update",
+  "appointment",
+  "discharge",
+  "admission",
+  "test",
+  "tests",
+  "exam",
+  "lab",
+  "labs",
+  "please",
+  "thank",
+  "thanks",
+  "today",
+  "the",
+  "this",
+  "her",
+  "his",
+  "their",
+  "she",
+  "he",
+  "they",
+  "mother",
+  "father",
+  "husband",
+  "wife",
+  "son",
+  "daughter",
+  "brother",
+  "sister",
+  "spouse",
+  "partner",
+  "parent",
+  "guardian",
+  "patient",
+  "urgent",
+  "routine",
+  "history",
+  "plan",
+  "suivi",
+  "voir",
+  "vu",
+  "vue",
+  "rendez-vous",
+  "demande",
+  "résultats",
+  "rapport",
+  "aucun",
+  "aucune",
+  "inconnu",
+  "patiente",
+  "mère",
+  "père",
+  "fils",
+  "fille",
+  "conjoint",
+  "conjointe",
+  "elle",
+  "il",
+  "merci",
+]);
+
+/** The words of a name worth finding alone: three letters or more, and
+ * neither a surname particle nor an ordinary word; a hyphenated surname's
+ * parts too, and a surname without its d'. */
+function nameWords(name: string): string[] {
+  const words = new Set<string>();
+  for (const word of name.split(/[^\p{L}'’-]+/u))
+    for (const part of [
+      word,
+      ...word.split("-"),
+      word.replace(/^[dD]['’]/, ""),
+    ]) {
+      const bare = part.replace(/^['’-]+|['’-]+$/gu, "");
+      const lower = bare.toLowerCase();
+      if (
+        bare.length >= 3 &&
+        !PARTICLES.has(lower) &&
+        !ORDINARY_WORDS.has(lower)
+      )
+        words.add(bare);
+    }
+  return [...words];
+}
 
 /** A rule: what it finds, and which part of a match is the detail. */
 interface Rule {
@@ -631,9 +783,18 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
-  ...DATE_FORMS.map((form) => ({
+  ...DATE_FORMS.filter((form) => !form.labelOnly).map((form) => ({
     kind: "date" as const,
     pattern: new RegExp(form.pattern, "giu"),
+  })),
+  // "Date: 17/10/26", "Visit date: …", "Date de la visite : …", "dated …".
+  ...DATE_FORMS.filter((form) => form.labelOnly).map((form) => ({
+    kind: "date" as const,
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Dd]ate(?![\\p{L}])[^\\n:]{0,30}:|[Dd]ated|(?:[Cc]ollected|[Rr]eceived|[Rr]eported|[Aa]dmitted|[Dd]ischarged|[Ss]igned)[ \\t]*:)[ \\t]*(${form.pattern})`,
+      "gu",
+    ),
+    group: 1,
   })),
 ];
 
@@ -665,6 +826,11 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
         )
           continue;
       }
+      if (
+        (rule.kind === "name" || rule.kind === "doctor") &&
+        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
+      )
+        continue;
       found.push({ kind: rule.kind, start, end: start + trimmed.length });
     }
   }
@@ -683,35 +849,108 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
           end: match.index + match[0].length,
           person,
         });
-    const words = name
-      .split(/[^\p{L}'’-]+/u)
-      .filter((word) => word.length >= 3)
-      .filter((word) => !ORDINARY_WORDS.has(word.toLowerCase()));
+    // Written as a name: a capital first ("Avery", "AVERY", "O'Neil-Smith",
+    // "d'Amours").
+    for (const word of nameWords(name))
+      for (const match of text.matchAll(wordPattern(word)))
+        if (/^(?:[dD]['’])?\p{Lu}/u.test(match[0]))
+          found.push({
+            kind: "name",
+            start: match.index,
+            end: match.index + match[0].length,
+            person,
+          });
+  }
+  return found;
+}
+
+const wordPattern = (word: string) =>
+  new RegExp(`(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`, "giu");
+
+/**
+ * A name a rule found (after a title, a label, a family word or a closing) is
+ * that person wherever else it stands, with or without one (#72 review): the
+ * whole name, and each word of it alone, in any case. Each place takes the
+ * placeholder of the name it came from; a doctor's, the doctor's. Words of a
+ * profile name are left to the profile name. Only names that won where they
+ * were found count: "Mother Teresa Clinic" after "Contact:" is a clinic.
+ */
+function otherPlaces(
+  text: string,
+  found: Finding[],
+  options: DeidentifyOptions,
+): Finding[] {
+  const known = new Set(
+    options.knownNames.flatMap((name) =>
+      nameWords(name).map((word) => word.toLowerCase()),
+    ),
+  );
+  const named = found
+    .filter((f) => (f.kind === "name" || f.kind === "doctor") && !f.person)
+    .sort((a, b) => a.start - b.start);
+  // Names by the words that make them one: "Mrs. Example" is the "Avery
+  // Example" before it.
+  const groups: { words: Set<string>; key: string }[] = [];
+  const claimed = new Map<string, string>();
+  const places: Finding[] = [];
+  for (const finding of named) {
+    const whole = text.slice(finding.start, finding.end);
+    const words = nameWords(whole);
+    const lower = words.map((word) => word.toLowerCase());
+    let group: string;
+    if (finding.kind === "doctor") {
+      // A doctor by surname, as the placeholders have it.
+      const parts = whole.toLowerCase().split(/\s+/);
+      group = parts[parts.length - 1];
+    } else {
+      group =
+        groups.find(
+          (other) =>
+            lower.length > 0 && lower.every((word) => other.words.has(word)),
+        )?.key ??
+        (lower.length ? [...lower].sort().join(" ") : whole.toLowerCase());
+      groups.push({ words: new Set(lower), key: group });
+    }
+    finding.group = group;
+    const pattern = whole.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
+    for (const match of text.matchAll(
+      new RegExp(`(?<![\\p{L}])${pattern}(?![\\p{L}])`, "giu"),
+    ))
+      places.push({
+        kind: finding.kind,
+        start: match.index,
+        end: match.index + match[0].length,
+        group,
+        whole,
+        swept: true,
+      });
     for (const word of words) {
-      const lower = word.toLowerCase();
-      const capitalized = lower[0].toUpperCase() + lower.slice(1);
-      const pattern = new RegExp(
-        `(?<![\\p{L}])(?:${escapeRegExp(capitalized)}|${escapeRegExp(word.toUpperCase())})(?![\\p{L}])`,
-        "gu",
-      );
-      for (const match of text.matchAll(pattern))
-        found.push({
-          kind: "name",
+      if (known.has(word.toLowerCase())) continue;
+      // A word in two names stays with the first.
+      const key = `${finding.kind}:${word.toLowerCase()}`;
+      if (!claimed.has(key)) claimed.set(key, group);
+      for (const match of text.matchAll(wordPattern(word)))
+        places.push({
+          kind: finding.kind,
           start: match.index,
           end: match.index + match[0].length,
-          person,
+          group: claimed.get(key),
+          whole,
+          swept: true,
         });
     }
   }
-  return found;
+  return places;
 }
 
 /** Keeps the findings that win where they overlap: the higher priority, then
  * the longer. */
 function resolve(findings: Finding[]): Finding[] {
+  const rank = (finding: Finding) =>
+    finding.swept ? PRIORITY.name + 0.5 : PRIORITY[finding.kind];
   const ranked = [...findings].sort(
     (a, b) =>
-      PRIORITY[a.kind] - PRIORITY[b.kind] ||
+      rank(a) - rank(b) ||
       b.end - b.start - (a.end - a.start) ||
       a.start - b.start,
   );
@@ -751,9 +990,10 @@ export function deidentify(
   options: DeidentifyOptions,
 ): Deidentified {
   const dateShiftDays = options.dateShiftDays ?? randomShift();
+  const found = resolve(find(text, options));
   return build(
     text,
-    resolve(find(text, options)),
+    resolve([...found, ...otherPlaces(text, found, options)]),
     dateShiftDays,
     options.dayFirst ?? true,
   );
@@ -776,6 +1016,7 @@ function build(
     const words = original.toLowerCase().split(/\s+/);
     const identity = `${kind}:${
       finding.person ??
+      finding.group ??
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
     let number = numbers.get(identity);
@@ -813,7 +1054,7 @@ function build(
     } else {
       const person =
         finding.kind === "name" || finding.kind === "doctor"
-          ? (finding.person ?? personOf(original))
+          ? (finding.person ?? personOf(finding.whole ?? original))
           : undefined;
       replacement = placeholder(
         person ? { ...finding, kind: "name", person } : finding,

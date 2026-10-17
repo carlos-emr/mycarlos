@@ -43,6 +43,7 @@ const documents = [
       "(613) 555-0188",
       "Casey Placeholder",
       "613-555-0142 ext. 21",
+      "Blake.",
     ],
     kept: [
       "65-year-old woman with exertional chest pain",
@@ -85,6 +86,7 @@ const documents = [
       "Robin Fakename",
       "Blake Sample",
       "Riverside Cardiology Clinic",
+      "with Robin",
     ],
     kept: ["CT chest with contrast", "A 6 mm nodule in the right upper lobe"],
   },
@@ -107,6 +109,7 @@ const documents = [
       "Maplewood Family Health Team",
       "(613) 555-0142",
       "Taylor Notreal",
+      "Sam will",
     ],
     kept: [
       "community-acquired pneumonia",
@@ -145,6 +148,7 @@ const documents = [
       "1234 567 890",
       "Pierre d'Amours",
       "d'Amours",
+      "Jean l'accompagnera",
     ],
     kept: [
       "douleur thoracique",
@@ -258,7 +262,7 @@ describe("the name remover (#72)", () => {
     expect(out("Seen 2026/10/17.")).toBe("Seen 2026/11/26.");
     expect(out("Seen 2026-Oct-17.")).toBe("Seen 2026-Nov-26.");
     expect(out("Vu le 17 octobre 2026.")).toBe("Vu le 26 novembre 2026.");
-    expect(out("Seen 17/10/26.")).toBe("Seen 26/11/26.");
+    expect(out("Date: 17/10/26.")).toBe("Date: 26/11/26.");
     // Bare ten-digit numbers: a phone, an Ontario card, a BC PHN.
     expect(out("Call 6135550199 or HCN 1234567890")).not.toMatch(/\d{4}/);
     expect(out("Card 1234 567 890 on file")).toBe(
@@ -283,6 +287,66 @@ describe("the name remover (#72)", () => {
     expect(out("CT Imaging shows no mass. Diagnostic Imaging reviewed.")).toBe(
       "CT Imaging shows no mass. Diagnostic Imaging reviewed.",
     );
+  });
+
+  it("removes a name found once wherever else it stands, in any case (#72 review)", () => {
+    const out = (text: string) =>
+      deidentify(text, { knownNames: [], dateShiftDays: 10 }).toSend;
+    expect(out("Mrs. Avery Example and Avery")).toBe(
+      "Mrs. [NAME 1] and [NAME 1]",
+    );
+    expect(
+      out("Mrs. Avery Example came in. Later Avery said AVERY and avery."),
+    ).toBe("Mrs. [NAME 1] came in. Later [NAME 1] said [NAME 1] and [NAME 1].");
+    // Before the label, too, and each part of a hyphenated surname.
+    expect(
+      out("Renée O'Neil-Smith, Patient: Renée O'Neil-Smith. Smith agreed."),
+    ).toBe("[NAME 1], Patient: [NAME 1]. [NAME 1] agreed.");
+    // A doctor's first name keeps the doctor's placeholder.
+    expect(
+      out("Dr. Blake Sample saw her. Blake will call; Sample agrees."),
+    ).toBe("Dr. [DOCTOR 1] saw her. [DOCTOR 1] will call; [DOCTOR 1] agrees.");
+    // A surname particle is not a name, and neither is an ordinary word.
+    expect(
+      out("Son conjoint, Jean de la Cruz. Jean viendra. La date de la visite."),
+    ).toBe("Son conjoint, [NAME 1]. [NAME 1] viendra. La date de la visite.");
+    expect(out("Mrs. Rose Major. Major depressive disorder; rose 2 kg.")).toBe(
+      "Mrs. [NAME 1]. Major depressive disorder; rose 2 kg.",
+    );
+    // What follows a label but is no name is not swept through the text.
+    for (const text of [
+      "Re: Follow-up visit for chest pain. Follow-up in 2 weeks; follow-up booked.",
+      "Patient: Seen today for review. Seen again; seen by the nurse.",
+    ])
+      expect(out(text)).toBe(text);
+    expect(out("Contact: Mother Teresa Clinic staff. Her mother called.")).toBe(
+      "Contact: [CLINIC 1] staff. Her mother called.",
+    );
+    // A surname that is an everyday clinical word is swept only whole.
+    expect(out("Dr. Casey Ward saw her. Admitted to the ward on day 3.")).toBe(
+      "Dr. [DOCTOR 1] saw her. Admitted to the ward on day 3.",
+    );
+  });
+
+  it("shifts a two-digit-year date only after a date label (#72 review)", () => {
+    const out = (text: string) =>
+      deidentify(text, { knownNames: [], dateShiftDays: 40 }).toSend;
+    // Bare, "1/2/24" is as likely a ratio or a dose as a date.
+    for (const text of [
+      "Ratio 1/2/24 today.",
+      "Seen 17/10/26.",
+      "Titrate 5/10/20 mg.",
+    ])
+      expect(out(text)).toBe(text);
+    expect(out("Date: 17/10/26.")).toBe("Date: 26/11/26.");
+    expect(out("Visit date: 17/10/26")).toBe("Visit date: 26/11/26");
+    expect(out("Date de la visite : 17/10/26")).toBe(
+      "Date de la visite : 26/11/26",
+    );
+    expect(out("Letter dated 17/10/26.")).toBe("Letter dated 26/11/26.");
+    // A four-digit year needs no label; a date of birth is removed either way.
+    expect(out("Seen 17/10/2026.")).toBe("Seen 26/11/2026.");
+    expect(out("DOB: 02/03/58")).toBe("DOB: [DATE OF BIRTH 1]");
   });
 
   it("leaves clinical numbers alone", () => {
