@@ -80,6 +80,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   sizesIn1024s = false,
+  platform = "",
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -110,6 +111,8 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** The operating system, for where vaults set aside are (#71). */
+  platform?: string;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -609,7 +612,7 @@ export function VaultLibrary({
         throw error;
       }
       if (erased) window.location.reload();
-      else setNotice("Vault erase cancelled. Nothing changed.");
+      else setNotice("Nothing changed: the vault was not set aside.");
     });
   const moveRecord = (recordId: string, folderId: string | null) =>
     run(async () => {
@@ -978,8 +981,8 @@ export function VaultLibrary({
                     <Icon name="info" />
                     <span>
                       <strong>No recovery key yet.</strong> If you forget your
-                      passphrase without one, the only way back in is to erase
-                      the vault.
+                      passphrase without one, the only way back in is to set the
+                      vault aside and start again.
                     </span>
                     <button
                       className="button"
@@ -1138,6 +1141,7 @@ export function VaultLibrary({
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
                 sizesIn1024s={sizesIn1024s}
+                platform={platform}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
                 onSpeedTest={() => bridge.benchmarkKdf()}

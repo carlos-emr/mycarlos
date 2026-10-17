@@ -2551,7 +2551,7 @@ describe("durable vault UI", () => {
         screen.getByLabelText("Type RESET MYCARLOS VAULT"),
         "RESET MYCARLOS VAULT",
       );
-      await user.click(screen.getByRole("button", { name: "Erase vault" }));
+      await user.click(screen.getByRole("button", { name: "Set vault aside" }));
       await user.type(
         await screen.findByLabelText("First patient profile"),
         "FAKE Tester",
@@ -4348,7 +4348,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await user.click(screen.getByText("Forgot your passphrase?"));
-    const erase = screen.getByRole("button", { name: "Erase vault" });
+    const erase = screen.getByRole("button", { name: "Set vault aside" });
     expect(erase).toBeDisabled();
     await user.type(
       screen.getByLabelText("Type RESET MYCARLOS VAULT"),
@@ -4380,9 +4380,7 @@ describe("durable vault UI", () => {
       screen.getByLabelText("Type RESET MYCARLOS VAULT"),
       "RESET MYCARLOS VAULT",
     );
-    await user.click(
-      screen.getByRole("button", { name: "Erase entire vault" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Set vault aside" }));
     expect(bridge.reset).toHaveBeenCalledOnce();
 
     expect(
@@ -4410,9 +4408,7 @@ describe("durable vault UI", () => {
       screen.getByLabelText("Type RESET MYCARLOS VAULT"),
       "RESET MYCARLOS VAULT",
     );
-    await user.click(
-      screen.getByRole("button", { name: "Erase entire vault" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Set vault aside" }));
     expect(
       await screen.findByRole("heading", {
         name: "Create your encrypted vault",

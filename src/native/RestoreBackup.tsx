@@ -21,14 +21,14 @@ function consequence(preview: RestorePreview): string {
       return "Restoring puts this vault on this device.";
     case "sameVault":
       if (!preview.differsFromThisDevice)
-        return "The vault on this device holds the same documents. Restoring replaces it with this backup.";
+        return "The vault on this device holds the same documents. Restoring sets it aside and puts this backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
       // Which of the two is the later one is not said: the vault may have
       // been restored and changed elsewhere since.
-      return "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.";
+      return "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring sets the vault aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
     case "otherVault":
-      return "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.";
+      return "This device has a different vault. Restoring sets it aside and puts the backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
     case "unreadable":
-      return "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring erases it, permanently, and puts the backup in its place.";
+      return "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets it aside and puts the backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
   }
 }
 
@@ -292,8 +292,8 @@ export function RestoreBackup({
               />
               {preview.replaces === "otherVault" ||
               preview.replaces === "unreadable"
-                ? "Erase the vault on this device and restore the backup"
-                : "Replace the vault on this device with this backup and lose what changed since"}
+                ? "Set the vault on this device aside and restore the backup"
+                : "Set the vault on this device aside, with what changed since, and restore this backup"}
             </label>
           )}
           <button

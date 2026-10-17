@@ -738,7 +738,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               setStatus("absent");
               setNotice("");
             } else {
-              setNotice("Vault erase cancelled. Nothing changed.");
+              setNotice("Nothing changed: the vault was not set aside.");
             }
           })
         }
@@ -806,6 +806,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       canPrint={DESKTOP_PLATFORMS.has(platform)}
       keyboardHints={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
+      platform={platform}
     />
   );
 }

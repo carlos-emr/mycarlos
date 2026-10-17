@@ -42,8 +42,8 @@ independent review and target-device verification.
 5. Native commands expose the minimum capability required and authorize every operation.
 6. Tampering, corruption, rollback, incomplete writes, and false provenance are detected.
 7. Nothing a patient hides is lost: documents are never deleted, only hidden, and stay encrypted
-   and restorable (#71, decided 16 October). A whole-vault reset is the one remaining erase, until
-   #71's third part sets vaults aside instead.
+   and restorable (#71, decided 16 October). A whole-vault reset or a restore sets the vault aside,
+   whole and encrypted, instead of erasing it; only the patient, by hand, deletes one.
 8. Security failures are explicit and fail closed without silently destroying recoverable data.
 9. The patient can understand when a record is verified, unverified, locked, backed up, or hidden,
    and that hidden documents are kept.

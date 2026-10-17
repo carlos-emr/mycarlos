@@ -33,8 +33,11 @@ from Start does not also open a terminal. CI checks the installed executable's s
 publishing the download. Earlier evaluation installers only hid the console in release builds;
 install a newer build if a terminal appears alongside the app.
 
-To erase evaluation data, use **Security > Erase entire vault** before uninstalling. App removal
-can leave app-data files behind, and vault reset cannot erase readable exports.
+To remove evaluation data, close myCarlos and delete its vault folder,
+`%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`, before uninstalling. **Security > Set vault aside**
+does not remove anything (#71): it moves the vault, whole and encrypted, into a `set-aside` folder
+there. App removal can leave app-data files behind, and nothing in the app removes readable
+exports.
 
 ## Moving documents with drag and drop
 

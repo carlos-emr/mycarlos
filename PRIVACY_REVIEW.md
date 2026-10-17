@@ -56,9 +56,21 @@ with where it was saved (a file path, or a document provider's address on Androi
 backups were saved, and where. It keeps the names as they were at each moment, so a document
 renamed or hidden can still be read off the history. The history is never shown in the app, and
 the app never changes or removes an entry. It is in every backup. The app tells the patient this
-in Security, under "What myCarlos keeps". Erasing the whole vault still deletes it until the vault
-is set aside instead (#71's third part). The step that would let the patient save the history for
+in Security, under "What myCarlos keeps". The step that would let the patient save the history for
 an auditor is not built yet.
+
+**Nothing erases a vault either** (#71's third part). Starting again ("Set vault aside", in
+Security or, without the passphrase, on the unlock screen) and restoring a backup over a vault both
+set the vault aside: it moves, whole and still encrypted, into a `set-aside` folder next to it,
+with its documents, names, history and keys, and its passphrase or recovery key still opens it. The
+app cannot open it again yet, and never deletes it: storage grows with each one. On a computer,
+freeing the space, or making sure it is gone, means deleting its folder by hand; Security and the
+confirmation dialog name the folder. On Android and iPhone the folder is private to the app: the
+only way to remove a vault set aside is to clear myCarlos's data, or uninstall it, which removes
+every vault on the device, the one in use too. This matters when someone else knows the old
+passphrase and can reach the device: a new vault does not shut them out of the old one until it
+is removed, and on a phone that means losing the new vault as well. The screens and the native
+dialogs say what is kept, who can still open it, and how to remove it on that platform.
 
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
@@ -257,8 +269,9 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 `MVP_STATUS.md`, `SECURITY_OPERATIONS.md`, `PRODUCT_DECISIONS.md`, `TESTING.md`, `WINDOWS.md`):
 - **No document can be deleted** (#71). A patient who wants something gone from the device can
   only hide it; it stays in the vault and in its backups, and the vault grows with what is
-  hidden. The history keeps each document's names, and where copies were saved, for good. Erasing the whole vault still deletes it until the vault is set aside instead (#71's
-  third part).
+  hidden. The history keeps each document's names, and where copies were saved, for good. A vault
+  set aside (when starting again, or restoring over it) stays on the device until its folder is
+  deleted by hand.
 - **An old passphrase can still work.** Changing the passphrase, or replacing the recovery key,
   does not shut out someone who knows the old one and has a copy of the vault from before the
   change (a device backup, a copied folder, a backup file). The vault's own key never changes: the
@@ -269,9 +282,9 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
   while a file window it opened is showing) and the passphrase.
-- **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place
-  until the vault is erased, and some app files, such as the lock-delay setting, even after; the
-  app's instructions say to erase the vault first. On
+- **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
+  vaults set aside included, and some app files, such as the lock-delay setting; the app's
+  instructions say to delete the vault's folder by hand. On
   Android and iPhone, removing the app removes the vault too (as the platforms' guides say; not
   yet seen on a device).
 - **Rolling back the vault's files from outside the app** (for example restoring older copies of

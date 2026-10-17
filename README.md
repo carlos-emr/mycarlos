@@ -115,8 +115,9 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - Nothing is deleted (#71): a document is hidden, which marks it in both manifest slots and keeps
   its encrypted file and key, and it can be restored from **Hidden**. Direct file removal is
   disallowed crate-wide by clippy; the one removal helper names what it may remove (stages,
-  uncommitted ciphertext, export staging, superseded files, and, until vaults are set aside, a
-  reset vault).
+  uncommitted ciphertext, export staging, superseded files). Starting again, or restoring a backup
+  over a vault, sets the vault aside, whole and encrypted, in a `set-aside` folder beside it; the
+  app never deletes one.
 - An encrypted history records each unlock and what happens to each document (added, renamed,
   moved, hidden, restored, saved outside the vault), hash-chained so that a changed or missing
   entry shows. It is never shown in the app (#71).

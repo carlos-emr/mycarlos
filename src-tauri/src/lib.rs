@@ -223,7 +223,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Unreadable => Self {
                 code: "unreadable",
-                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not erase the vault. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not set the vault aside. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -1493,23 +1493,23 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
     match preview.replaces {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device is not the vault this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::Unreadable => Some(format!(
-            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring sets it aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault => Some(format!(
-            "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
+            "Restoring sets the vault on this device aside and puts the backup in its place, which holds the same {documents}. {SET_ASIDE_KEPT}"
         )),
     }
 }
 
-/// Restores the chosen backup. Replacing a vault erases it, so, as for a
-/// reset, a trusted native dialog confirms that first, and says what would be
-/// lost; the renderer's own agreement is not enough. Returns false if the
+/// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
+/// for a reset, a trusted native dialog confirms that first, and says what
+/// would change; the renderer's own agreement is not enough. Returns false if the
 /// patient cancelled there.
 #[tauri::command]
 async fn vault_restore(
@@ -1868,7 +1868,27 @@ async fn vault_unhide_record(
     .await
 }
 
-const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+/// What a vault set aside (#71) keeps, said wherever one is set aside.
+const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
+
+/// What starting again does (#71), who can still open the vault set aside,
+/// and how to remove it on this platform: on a computer, by deleting its
+/// folder, named here (the dialog is native, never the screen); on a phone,
+/// where the folder is private to the app, only by clearing the app's data
+/// or uninstalling it, which removes every vault.
+fn set_aside_vault_warning(folder: &std::path::Path) -> String {
+    let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
+        "On this phone, vaults set aside stay in myCarlos's private storage, and myCarlos cannot remove them: the only way is to clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone.".to_owned()
+    } else {
+        format!(
+            "To remove a vault set aside, and free its space, close myCarlos and delete its folder in {}.",
+            folder.display()
+        )
+    };
+    format!(
+        "This sets the whole vault aside and starts again with an empty one. {SET_ASIDE_KEPT} myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. {removal}"
+    )
+}
 
 #[tauri::command]
 async fn vault_reset(
@@ -1881,14 +1901,15 @@ async fn vault_reset(
     if request.confirmation != "RESET MYCARLOS VAULT" {
         return Err(PublicError::from(VaultError::Invalid));
     }
+    let warning = set_aside_vault_warning(&store.set_aside_folder().ok_or(VaultError::Storage)?);
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
         confirmed_natively(
             &dialog_app,
-            "Erase the entire myCarlos vault?",
-            ERASE_VAULT_WARNING,
+            "Set this myCarlos vault aside and start again?",
+            warning,
             "Keep this vault",
-            "Erase vault",
+            "Set it aside",
         )
     })
     .await
@@ -3027,11 +3048,11 @@ mod tests {
     #[test]
     fn only_the_button_that_goes_ahead_counts_as_agreement() {
         let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
-        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        assert!(agreed_natively(&custom("Set it aside"), "Set it aside"));
         for answer in [
             custom("Keep this vault"),
             custom(NATIVE_CANCEL),
-            custom("erase vault"),
+            custom("set it aside"),
             custom(""),
             // What the dialog reports when it is closed, or could not be
             // shown, and what another layout's buttons would report.
@@ -3040,7 +3061,7 @@ mod tests {
             MessageDialogResult::Yes,
             MessageDialogResult::No,
         ] {
-            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+            assert!(!agreed_natively(&answer, "Set it aside"), "{answer:?}");
         }
     }
 
@@ -3059,12 +3080,35 @@ mod tests {
                 && other.contains("3 documents")
         );
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
-        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
+        assert!(
+            unreadable.contains("cannot tell")
+                && unreadable.contains("sets the vault on this device aside")
+        );
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("may not be the same as") && changed.contains("passphrase"));
         assert!(changed.contains("could not be read"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
         assert!(same.contains("the same 3 documents"));
+        // Nothing is erased (#71): every warning says the vault is kept.
+        for warning in [&other, &unreadable, &changed, &same] {
+            assert!(warning.contains(SET_ASIDE_KEPT), "{warning}");
+            assert!(
+                !warning.contains("erase") && !warning.contains("cannot be undone"),
+                "{warning}"
+            );
+        }
+        // Starting again names who can still open the vault set aside, and
+        // how to remove it here: its folder on a computer.
+        let folder =
+            std::path::Path::new("/home/FAKE/.local/share/ca.carlos.mycarlos/vault-home/set-aside");
+        let warning = set_aside_vault_warning(folder);
+        assert!(warning.contains(SET_ASIDE_KEPT));
+        assert!(!warning.contains("erase"));
+        assert!(warning.contains("someone else may know your passphrase, they can still open it"));
+        assert!(warning.ends_with(&format!(
+            "close myCarlos and delete its folder in {}.",
+            folder.display()
+        )));
     }
 
     #[test]
