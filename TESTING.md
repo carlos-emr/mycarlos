@@ -6,7 +6,7 @@ iOS Simulator.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
-> forgotten one can be replaced only with the vault's recovery key, or else erased with the vault
+> forgotten one can be replaced only with the vault's recovery key, or else the vault set aside
 > (see [Start over](#start-over)).
 
 **Help improve this guide.** So far these builds have only been tried on Windows, so the steps for
@@ -291,11 +291,15 @@ what you expected it to read.
 
 ## Start over
 
-To remove everything while unlocked, open **Security**, choose **Show reset controls**, type
-`RESET MYCARLOS VAULT`, choose **Erase entire vault**, and confirm **Erase vault** in the dialog
-that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the unlock
-screen, type `RESET MYCARLOS VAULT`, choose **Erase vault**, and confirm **Erase vault** in the
-dialog, whose buttons are **Keep this vault**, **Erase vault** and **Cancel**.
+To start again with an empty vault while unlocked, open **Security**, choose **Show reset
+controls**, type `RESET MYCARLOS VAULT`, choose **Set vault aside**, and confirm **Set it aside**
+in the dialog that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the
+unlock screen, type `RESET MYCARLOS VAULT`, choose **Set vault aside**, and confirm **Set it aside**
+in the dialog, whose buttons are **Keep this vault**, **Set it aside** and **Cancel**.
+
+Nothing is erased (#71): the old vault moves, whole and encrypted, into a `set-aside` folder in the
+vault's folder (below), and myCarlos never deletes it. To remove a test vault for good, close
+myCarlos and delete that folder, or the whole vault folder, by hand.
 
 ### The "are you sure?" dialogs (please try on Windows, on a Mac and on Linux)
 
@@ -311,7 +315,7 @@ please also try these steps on each target computer, especially macOS and with a
 3. Open it again and press Space. Nothing should change.
 4. Open it again and press Escape. Nothing should change.
 5. Open it again and close it with its X, if it has one. Nothing should change.
-6. Each time, nothing should change. Erase and restore should report cancellation. For recovery-key
+6. Each time, nothing should change. Setting aside and restore should report cancellation. For recovery-key
    replacement, setup should stay open and say the current key still works.
 7. On a Mac, turn on **Keyboard navigation** in System Settings, then do steps 1 to 4 again, and
    say which button has the ring around it.
@@ -325,8 +329,8 @@ please also try these steps on each target computer, especially macOS and with a
 On a phone: note the order of the buttons, then tap outside the dialog, and press Back on
 Android. Nothing should change.
 
-Uninstalling also removes the vault on Android and iOS. On desktop the vault stays until erased;
-it lives in:
+Uninstalling also removes the vault on Android and iOS. On desktop the vault, and every vault set
+aside, stays until you delete the folder by hand; it lives in:
 
 - Windows: `%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`
 - macOS: `~/Library/Application Support/ca.carlos.mycarlos/vault-home`
