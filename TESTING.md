@@ -164,7 +164,20 @@ On every platform:
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. On a computer with a camera (Windows, macOS or Linux), choose **Take a photo** next to
+    **New**. The first time, the window explains why myCarlos uses the camera; choose **Use the
+    camera**. On a Mac, macOS then asks whether myCarlos may use the camera, with the same reason;
+    Windows and Linux ask nothing more. The camera's light comes on. Point it at a FAKE document,
+    choose **Take photo**: the light goes off and the photo shows. Try **Retake**, then **Use
+    photo**. The photo's details open, named like `Photo, 17 Oct 2026, 3.05 PM.jpg`, in the folder
+    that was open. Choose **View photo**, try **Zoom in** and **Zoom out**, then **Close**. Rename
+    the photo without `.jpg`: **View photo** still shows it. Save a copy and open it in another
+    app: its details there show no place, camera or date taken.
+    Then turn the camera off for apps in the computer's privacy settings and try again: the window
+    says where to turn it back on, and the rest of the app keeps working. Also check that the
+    light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
+    is on, or let the vault lock.
+13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the

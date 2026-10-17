@@ -31,6 +31,51 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
   });
 
+  it("sends a photo as the raw body, with its folder and name in headers", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue({ imported: ["photo-1"], skippedDuplicates: [] });
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    await bridge.savePhoto(
+      "profile-1",
+      ["folder-1"],
+      "Photo, 17 paź 2026, 3.05 PM.jpg",
+      jpeg,
+    );
+    await bridge.savePhoto("profile-1", [], "Photo.jpg", jpeg);
+    expect(invoke.mock.calls).toEqual([
+      [
+        "vault_save_photo",
+        jpeg,
+        {
+          headers: {
+            "Mycarlos-Profile-Id": "profile-1",
+            "Mycarlos-Folder-Ids": "folder-1",
+            "Mycarlos-Photo-Name":
+              "Photo%2C%2017%20pa%C5%BA%202026%2C%203.05%20PM.jpg",
+          },
+        },
+      ],
+      [
+        "vault_save_photo",
+        jpeg,
+        {
+          headers: {
+            "Mycarlos-Profile-Id": "profile-1",
+            "Mycarlos-Folder-Ids": "",
+            "Mycarlos-Photo-Name": "Photo.jpg",
+          },
+        },
+      ],
+    ]);
+    invoke.mockResolvedValue("data:image/jpeg;base64,/9j/");
+    await expect(bridge.viewPhoto("record-1")).resolves.toBe(
+      "data:image/jpeg;base64,/9j/",
+    );
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_photo", {
+      request: { recordId: "record-1" },
+    });
+  });
+
   it("reads error codes only from objects that carry them", () => {
     for (const check of [
       isLockedError,

@@ -95,6 +95,12 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     pickExportDestination: vi.fn().mockResolvedValue(null),
     exportToPicked: vi.fn().mockResolvedValue(undefined),
+    savePhoto: vi
+      .fn()
+      .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+    viewPhoto: vi
+      .fn()
+      .mockRejectedValue({ code: "not_a_photo", message: "FAKE not a photo." }),
     deleteRecord: vi.fn().mockResolvedValue(undefined),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),

@@ -35,6 +35,8 @@
     "allow-vault-import-picked",
     "allow-vault-export-pick",
     "allow-vault-export-picked",
+    "allow-vault-save-photo",
+    "allow-vault-view-photo",
     "allow-vault-delete-record",
     "allow-vault-remove-unavailable-records",
     "allow-vault-reset"
