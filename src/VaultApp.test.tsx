@@ -95,8 +95,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     pickExportDestination: vi.fn().mockResolvedValue(null),
     exportToPicked: vi.fn().mockResolvedValue(undefined),
-    deleteRecord: vi.fn().mockResolvedValue(undefined),
-    removeUnavailableRecords: vi.fn().mockResolvedValue([]),
+    hideRecord: vi.fn().mockResolvedValue(undefined),
+    unhideRecord: vi.fn().mockResolvedValue(undefined),
+    hideUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
@@ -2599,7 +2600,7 @@ describe("durable vault UI", () => {
     }
   });
 
-  it("requires confirmation before permanently deleting a durable record", async () => {
+  it("hides a document at once, never deletes it, and restores it from Hidden (#71)", async () => {
     const user = userEvent.setup();
     const record = {
       id: "record-1",
@@ -2612,49 +2613,46 @@ describe("durable vault UI", () => {
       importedAtMs: 1,
       available: true,
     };
-    const deleteRecord = vi.fn().mockResolvedValue(undefined);
+    const hideRecord = vi.fn().mockResolvedValue(undefined);
+    const unhideRecord = vi.fn().mockResolvedValue(undefined);
+    const hidden = { ...record, hidden: { atMs: 5, reason: "patient" } };
     const snapshot = vi
       .fn()
       .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
-      .mockResolvedValueOnce(emptySnapshot);
+      .mockResolvedValueOnce({ ...emptySnapshot, records: [hidden] })
+      .mockResolvedValue({ ...emptySnapshot, records: [record] });
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot,
-      deleteRecord,
+      hideRecord,
+      unhideRecord,
     });
     const shim = tauriConfirmShim();
     render(<VaultApp bridge={bridge} />);
 
+    // Hiding is undone from Hidden, so it asks nothing first (#71).
     await user.click(await screen.findByText("FAKE_Report.pdf"));
-    await user.click(
-      screen.getByRole("button", { name: "Permanently delete" }),
-    );
-    const warning = screen.getByRole("alertdialog", {
-      name: "Permanently delete this document?",
-    });
-    expect(warning).toHaveTextContent("FAKE_Report.pdf");
-    expect(warning).toHaveTextContent("clinic's source medical record");
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
-    expect(deleteRecord).not.toHaveBeenCalled();
-
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(deleteRecord).not.toHaveBeenCalled();
-
-    await user.click(
-      screen.getByRole("button", { name: "Permanently delete" }),
-    );
-    await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", {
-        name: "Permanently delete",
-      }),
-    );
-    await waitFor(() => expect(deleteRecord).toHaveBeenCalledWith("record-1"));
+    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await waitFor(() => expect(hideRecord).toHaveBeenCalledWith("record-1"));
     expect(
-      await screen.findByText("FAKE_Report.pdf was permanently deleted."),
+      await screen.findByText(
+        "FAKE_Report.pdf was hidden. It is listed under Hidden, where you can restore it.",
+      ),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("FAKE_Report.pdf")).not.toBeInTheDocument();
+
+    // Under Hidden, with its size, and back with Restore.
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    expect(screen.getByRole("heading", { name: "Hidden" })).toBeVisible();
+    expect(screen.getByText("1 document · 2 KB")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Restore FAKE_Report.pdf" }),
+    );
+    await waitFor(() => expect(unhideRecord).toHaveBeenCalledWith("record-1"));
+    expect(
+      await screen.findByText("FAKE_Report.pdf was restored to where it was."),
+    ).toBeVisible();
     expect(shim).not.toHaveBeenCalled();
   });
 
@@ -4688,7 +4686,7 @@ describe("durable vault UI", () => {
     ).toBeDisabled();
   });
 
-  it("removes damaged documents from the recovery banner after confirmation", async () => {
+  it("hides damaged documents from the recovery banner after confirmation", async () => {
     const user = userEvent.setup();
     const lost = {
       id: "record-lost",
@@ -4707,7 +4705,7 @@ describe("durable vault UI", () => {
       displayName: "FAKE_Kept.pdf",
       available: true,
     };
-    const removeUnavailableRecords = vi.fn().mockResolvedValue(["record-lost"]);
+    const hideUnavailableRecords = vi.fn().mockResolvedValue(["record-lost"]);
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
@@ -4722,18 +4720,19 @@ describe("durable vault UI", () => {
           recovery: null,
           records: [kept],
         }),
-      removeUnavailableRecords,
+      hideUnavailableRecords,
     });
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Remove damaged documents" }),
+      await screen.findByRole("button", { name: "Hide damaged documents" }),
     );
     const warning = screen.getByRole("alertdialog", {
-      name: "Permanently remove 1 damaged document?",
+      name: "Hide 1 damaged document?",
     });
-    expect(warning).toHaveAccessibleDescription(/permanently/);
-    expect(warning).toHaveTextContent(/cannot be undone/);
+    expect(warning).toHaveAccessibleDescription(/stay listed under Hidden/);
+    // Nothing is deleted any more (#71), so nothing says it cannot be undone.
+    expect(warning).not.toHaveTextContent(/cannot be undone|permanently/);
     // The files may only be out of reach, which is not the same as gone.
     expect(warning).toHaveTextContent(/drive that is disconnected/);
     expect(warning).toHaveTextContent(/backup/);
@@ -4744,39 +4743,38 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     // Enter straight away presses Cancel, which has focus.
     await user.click(
-      screen.getByRole("button", { name: "Remove damaged documents" }),
+      screen.getByRole("button", { name: "Hide damaged documents" }),
     );
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Remove damaged documents" }),
+      screen.getByRole("button", { name: "Hide damaged documents" }),
     );
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Remove damaged documents" }),
+      screen.getByRole("button", { name: "Hide damaged documents" }),
     );
     await user.pointer({
       keys: "[MouseLeft]",
       target: screen.getByRole("alertdialog").parentElement!,
     });
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(removeUnavailableRecords).not.toHaveBeenCalled();
+    expect(hideUnavailableRecords).not.toHaveBeenCalled();
 
     await user.click(
-      screen.getByRole("button", { name: "Remove damaged documents" }),
+      screen.getByRole("button", { name: "Hide damaged documents" }),
     );
-    const remove = screen.getByRole("button", { name: "Permanently remove" });
-    expect(remove).toHaveClass("danger");
+    const remove = screen.getByRole("button", { name: "Hide" });
+    // Hiding can be undone, so it is not styled as a danger (#71).
+    expect(remove).not.toHaveClass("danger");
     await user.click(remove);
-    await waitFor(() =>
-      expect(removeUnavailableRecords).toHaveBeenCalledOnce(),
-    );
+    await waitFor(() => expect(hideUnavailableRecords).toHaveBeenCalledOnce());
     // It names the documents that were shown as damaged.
-    expect(removeUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
+    expect(hideUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
     expect(
       await screen.findByText(
-        "1 damaged document removed. The vault accepts changes again.",
+        "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
       ),
     ).toBeVisible();
     expect(
@@ -4810,19 +4808,17 @@ describe("durable vault UI", () => {
         })
         // The removal committed, but its redundant write failed.
         .mockResolvedValue({ ...emptySnapshot, recovery: "writeFailed" }),
-      removeUnavailableRecords: vi.fn().mockResolvedValue(["record-lost"]),
+      hideUnavailableRecords: vi.fn().mockResolvedValue(["record-lost"]),
     });
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Remove damaged documents" }),
+      await screen.findByRole("button", { name: "Hide damaged documents" }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Permanently remove" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Hide" }));
 
     expect(
-      await screen.findByText(/1 damaged document removed/),
+      await screen.findByText(/1 damaged document hidden/),
     ).not.toHaveTextContent(/accepts changes/);
     expect(screen.getByText(/A write to the vault failed/)).toBeVisible();
   });
@@ -4838,7 +4834,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     expect(await screen.findByText(/could not be read/)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Remove damaged documents" }),
+      screen.queryByRole("button", { name: "Hide damaged documents" }),
     ).not.toBeInTheDocument();
   });
 
@@ -4865,14 +4861,14 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
-      name: "Remove damaged documents",
+      name: "Hide damaged documents",
     });
     await user.click(opener);
     const dialog = screen.getByRole("alertdialog", {
-      name: "Permanently remove 30 damaged documents?",
+      name: "Hide 30 damaged documents?",
     });
     const list = within(dialog).getByRole("list", {
-      name: "Documents to remove",
+      name: "Documents to hide",
     });
     // It overflows, and a region that scrolls must be reachable by keyboard.
     expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
@@ -4917,22 +4913,22 @@ describe("durable vault UI", () => {
           recovery: "lostObjects",
           records: [record("a", false), record("b", false)],
         }),
-      removeUnavailableRecords: vi.fn().mockRejectedValue({
+      hideUnavailableRecords: vi.fn().mockRejectedValue({
         code: "removal_changed",
         message: "FAKE the vault changed.",
       }),
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Remove damaged documents" }),
+      await screen.findByRole("button", { name: "Hide damaged documents" }),
     );
     const confirmation = screen.getByRole("alertdialog", {
-      name: "Permanently remove 1 damaged document?",
+      name: "Hide 1 damaged document?",
     });
     expect(confirmation).toBeVisible();
     // It names what would be removed, and nothing else.
     const named = within(confirmation).getByRole("list", {
-      name: "Documents to remove",
+      name: "Documents to hide",
     });
     expect(within(named).getAllByRole("listitem")).toHaveLength(1);
     expect(named).toHaveTextContent("FAKE_a.pdf");
@@ -4944,9 +4940,7 @@ describe("durable vault UI", () => {
     await user.tab({ shift: true });
     expect(named).toHaveFocus();
     await user.tab({ shift: true });
-    expect(
-      screen.getByRole("button", { name: "Permanently remove" }),
-    ).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Hide" })).toHaveFocus();
     await user.tab();
     expect(named).toHaveFocus();
     await user.tab();
@@ -4956,20 +4950,18 @@ describe("durable vault UI", () => {
     );
     expect(confirmation).not.toHaveAccessibleDescription(/FAKE_a\.pdf/);
     const asked = vi.mocked(bridge.snapshot).mock.calls.length;
-    await user.click(
-      screen.getByRole("button", { name: "Permanently remove" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Hide" }));
     expect(await screen.findByText("FAKE the vault changed.")).toBeVisible();
     // The refusal itself made the screen ask the vault again.
     expect(vi.mocked(bridge.snapshot).mock.calls.length).toBeGreaterThan(asked);
-    expect(bridge.removeUnavailableRecords).toHaveBeenCalledWith(["a"]);
+    expect(bridge.hideUnavailableRecords).toHaveBeenCalledWith(["a"]);
     // The next confirmation counts what is damaged now.
     await user.click(
-      screen.getByRole("button", { name: "Remove damaged documents" }),
+      screen.getByRole("button", { name: "Hide damaged documents" }),
     );
     expect(
       screen.getByRole("alertdialog", {
-        name: "Permanently remove 2 damaged documents?",
+        name: "Hide 2 damaged documents?",
       }),
     ).toBeVisible();
   });

@@ -1,6 +1,6 @@
 # myCarlos vault migration protocol
 
-- **Status:** protocol defined; no migration is needed while only format v1 exists
+- **Status:** protocol defined; manifest format 2 (#71) uses the manifest-additions rule below, not the staged copy
 - **Data restriction:** synthetic fixtures only until independent review and physical-device testing
 - **Applies to:** both header slots, both encrypted manifest slots, and encrypted object envelopes
 
@@ -35,6 +35,30 @@ unknown ones), and a vault moves to the new format at its next header write. Bui
 change are outside this guarantee while the two slots hold different formats; `VAULT_FORMAT.md`
 ("Header formats") says what they do. Manifest and object
 format changes still require the full protocol.
+
+## Manifest additions (format 1 → 2)
+
+Manifest format 2 (#71) adds an optional field to records (`hidden`) and pads the manifest; it
+rewrites no object. Like a header-only change, it relies on the two-slot commit instead of the
+staged-copy sequence below, with one more rule, because an older build ignores fields it does not
+know and, opening a manifest it can read, removes as orphans the objects it does not see named:
+
+1. **The upgrade is a commit of its own.** It writes the unchanged state at format 2 into both
+   slots (two consecutive generations) before anything only format 2 can hold is written. A crash
+   between those two writes leaves one format 2 slot whose state equals the other, format 1
+   slot's, so an older build that opens the format 1 slot loses nothing. Once both slots are
+   format 2, an older build refuses both and never reaches its cleanup.
+2. **When:** at the first writable unlock, after repair and cleanup; for a vault opened in
+   lost-objects recovery mode, just before its damaged documents are hidden. An upgrade that
+   cannot write leaves the session read-only, and the next unlock tries again.
+3. **Readers** accept formats 1 and 2; rule 1 still refuses anything else, and a format 1
+   manifest carrying a format 2 field.
+4. **Tests:** a format 1 vault opens and is upgraded with its state unchanged; termination after
+   each upgrade write leaves both slots holding that state; an upgrade that cannot write leaves the
+   vault read-only and whole; format 3 is refused.
+
+The same rule applies to the next manifest addition (the history, #71's second part): it bumps the
+format, and its first commit carries nothing the older format could lose.
 
 ## Transaction layout
 

@@ -1,0 +1,9 @@
+# #71: nothing a vault holds is ever deleted. Removal goes through
+# `remove_owned_file` / `remove_owned_dir_all` in src/vault.rs, each with the
+# kind of thing it removes; CI runs clippy with -D warnings, so a direct call
+# anywhere else fails the build. Tests that simulate damage allow it.
+disallowed-methods = [
+  { path = "std::fs::remove_file", reason = "#71: remove only through remove_owned_file, naming what is removed" },
+  { path = "std::fs::remove_dir", reason = "#71: remove only through remove_owned_dir_all, naming what is removed" },
+  { path = "std::fs::remove_dir_all", reason = "#71: remove only through remove_owned_dir_all, naming what is removed" },
+]

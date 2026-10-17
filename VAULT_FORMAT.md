@@ -226,6 +226,8 @@ vault-home/               holds only what the vault manages; back up as a whole
     manifest-0.bin       authenticated encrypted metadata slot
     manifest-1.bin       authenticated encrypted metadata slot
     objects/<uuid>.mcobj authenticated encrypted record stream
+    quarantine/<uuid>.mcobj  an object no manifest named at a writable unlock, moved aside,
+                         never removed (#71)
     staging/<job-id>/    incomplete imports, removed after failure or next unlock
 ```
 
@@ -255,19 +257,23 @@ generation is durable, the logical mutation is committed; failure of the redunda
 reported in the snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
 the highest valid generation whose objects exist, rejects divergent authenticated states at the same
 generation, and repairs only missing or damaged redundancy. If repair cannot write because storage
-is full, unlock still permits read/export access in recovery mode. Staging and definite precommit
-orphan objects are removed without relying on a later unlock. The atomic replacement primitive
+is full, unlock still permits read/export access in recovery mode. Staging, and ciphertext an
+import wrote but never committed (a duplicate, or a batch that failed before its commit), are
+removed without relying on a later unlock. Any other object that the opened manifest does not
+name, found at a writable unlock, is moved to `quarantine/` rather than removed (#71): it may be
+a crash's leftover, or a document a mistake in collecting references would otherwise lose. The
+app never removes anything from there. The atomic replacement primitive
 stages each header or manifest in an `.atomicwrite*` directory beside it; one that a killed process
 left behind may still hold a superseded wrapped key, so a writable unlock and reset remove them.
 
 Three cases open the vault in recovery mode without writing to the vault at all: no repair, no
-staging cleanup, and no orphan removal. (Before any header is read, an unlock takes the lock file
+staging cleanup, and no orphan quarantine. (Before any header is read, an unlock takes the lock file
 beside the vault and finishes a reset or restore that an earlier run left unfinished.) First, if no authentic generation has all of its objects, unlock
 selects the newest authentic manifest anyway, reports each record whose object is missing or is not
 a regular file as unavailable, and refuses to export those records; the remaining records stay
 exportable, so one lost object no longer leaves whole-vault reset as the only action. The same
 applies when an older generation is complete but the newest authentic one also references an intact
-object the older one lacks: falling back would overwrite the newer manifest and delete that object
+object the older one lacks: falling back would overwrite the newer manifest and treat that object
 as an orphan, so the newest generation is opened read-only instead. Second, if a
 manifest slot exists but cannot be read (for example a sharing violation or device error), that
 slot may hold the newest committed state, so unlock does not repair over it or remove the objects
@@ -292,10 +298,13 @@ here: it opens the vault read-only, but a passphrase that only it holds is repor
 
 The snapshot names the reason for recovery mode, because each has its own way out. `lostObjects`:
 some records' ciphertext is missing; the patient can restore the vault folder from a backup, or
-choose to remove the damaged documents. Removal re-checks the disk first, drops only records that
-were shown as damaged and whose object is still missing (if another has gone missing since, it
-removes nothing and shows that one too), commits the now-complete manifest through the ordinary two-generation
-write, and leaves recovery mode; a file that came back is kept. `unreadableSlot`: a manifest or
+choose to hide the damaged documents (#71; they used to be dropped). Hiding re-checks the disk
+first, marks as hidden as damaged only records that were shown as damaged and whose object is
+still missing (if another has gone missing since, it hides nothing and shows that one too),
+commits that manifest through the ordinary two-generation write, and leaves recovery mode: the
+vault no longer requires those records' objects. A file that came back keeps its document in view;
+one that comes back later lets the hidden document be restored. A format 1 vault in this mode is
+upgraded first, in a commit of its own. `unreadableSlot`: a manifest or
 header slot could not be read and may be newer than what was opened, or a record's object could not
 be looked up and may be intact, so nothing is written, not even a removal, until a later unlock can
 read it.
@@ -361,14 +370,41 @@ the vault's disk is full, the export still runs, untracked. Content-provider des
 atomic rename is unavailable, receive a second streaming pass only after a complete authentication
 pass. The UI warns that the exported copy is outside vault protection.
 
-Individual deletion commits a manifest without the record into one slot, unlinks the ciphertext,
-then commits the same state at a newer generation into the other slot. Both live manifests
-therefore omit the wrapped per-object key after a successful operation. If unlinking fails, the
-second commit still makes the object an undecryptable orphan and unlock cleanup retries its
-removal. This local cryptographic-erasure
-property does not remove previously exported plaintext or old copies held by filesystem snapshots,
-device backups, or a future synchronization service. Those systems require explicit tombstones and
-retention rules. No viewer, synchronization, analytics, or CARLOS provenance is implemented.
+Nothing is deleted (#71, Ben's decision of 16 October). Hiding a document commits, through the
+ordinary two-generation write, a manifest that marks its record hidden, with when and why
+(`patient` or `damaged`); its ciphertext, wrapped key and every other detail stay. The library
+leaves hidden documents out of every view but **Hidden**, which lists them with their size and
+offers Restore, which clears the mark. A document hidden as damaged whose file is still missing
+cannot be restored, since the vault would require that file again. Backups carry hidden documents
+and their objects; a document hidden as damaged is carried with its object only if the file is
+there, and a restore accepts it without one. Plaintext exported earlier, and copies in filesystem
+snapshots, device backups or a future synchronization service, are outside the app's control.
+No viewer, synchronization, analytics, or CARLOS provenance is implemented.
+
+Every removal from storage goes through one helper that names what it removes: a create or
+restore stage, an import's staging or uncommitted ciphertext, an export's stage or journal
+entry, the superseded `header.json`, what the atomic replacement primitive left, and (until #71's
+third part sets vaults aside) a vault a confirmed reset retired or a restore replaced. Direct
+`std::fs` removal is disallowed crate-wide by `src-tauri/clippy.toml`, which CI enforces, and a
+scripted session of every document command checks that every object a record ever named is
+still there, byte for byte.
+
+### Manifest format 2
+
+Format 2 (#71) adds each record's optional `hidden: {atMs, reason}`, and pads the manifest's JSON
+plaintext with spaces, which JSON ignores, to a size class: the next power of two, at least
+4 KiB, at most the 16 MiB slot limit less its 40 bytes of nonce and tag. A manifest file's size
+then tells only roughly how much the vault holds. Format 1 manifests are still read, unpadded; a
+format 1 manifest with a hidden record is refused.
+
+A writable unlock of a format 1 vault upgrades it at once, in a commit of its own that changes
+nothing but the format and the generation: both slots hold format 2 before anything only format 2
+can hold is written. A crash between the two upgrade writes leaves one format 2 slot holding the
+same state as the format 1 slot, so an older build that opens the format 1 slot loses nothing;
+once both slots are format 2, an older build refuses both (it reports the vault as damaged), and
+never reaches its orphan cleanup. An upgrade that cannot write leaves the session read-only, as a
+failed repair does; the next unlock tries again. A vault opened in lost-objects recovery mode is
+upgraded when its damaged documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
 
 ## Backup and restore behavior
 
@@ -475,7 +511,7 @@ is already retired, then finish erasing a retired vault, then activate a restore
 A failure to erase the retired vault after the restore is in place is not a failed restore; the
 erasing is retried at every start. The restored
 vault is left locked; it opens with the passphrase or recovery key it was backed up with. The
-restore always takes the whole backup: an older backup brings back documents deleted since, and
+restore always takes the whole backup: an older backup brings documents hidden since back into view, and
 the passphrase and recovery key it was made with, and the screen and the native dialog say so
 before the patient agrees. On Android a backup is written straight to the document the provider
 returns, so a failed or cancelled save leaves an incomplete file there (which a restore refuses)
@@ -515,8 +551,9 @@ state, described in the recovery-key sections above.
 - Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
   recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.
-- Individual deletion has no backup/synchronization tombstone or verified secure-erasure guarantee
-  for storage media, snapshots, exported plaintext, or copies outside the live vault.
+- There is no way to delete a document (#71): hidden documents, quarantined objects and their
+  names stay in the vault and its backups, and storage grows with them. Exported plaintext and
+  copies outside the live vault are beyond the app's control.
 - Crash-injection, power-loss, low-disk, physical-device backup/restore, and filesystem-permission
   matrices remain release-gate tests. Abrupt subprocess termination at the application-controlled
   chunk, staging, rename, manifest, and deletion boundaries is automated, along with deterministic

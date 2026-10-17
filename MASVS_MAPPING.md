@@ -36,8 +36,8 @@ Status means:
 | RESILIENCE-4 Anti-dynamic-analysis | Open | None | Owner/security review must decide proportional debugging/hooking defenses and test profile |
 | PRIVACY-1 Minimize sensitive access | Partial | Local-only design; no analytics; narrow commands/capabilities; ciphertext-at-rest | Data-flow/privacy review once identity, CARLOS, sync, support or viewer boundaries exist |
 | PRIVACY-2 Prevent user identification | Partial | No remote identifier or tracking exists | Inspect app/OS metadata and define privacy-preserving remote identifiers before integration |
-| PRIVACY-3 Transparency | Partial | Synthetic-only warning and plaintext/loss/deletion boundaries are shown in-product | Approved privacy notice, app-store disclosures, consent/retention and legal review |
-| PRIVACY-4 User control | Partial | Patient can import, organize, export and cryptographically delete from the live vault | Recovery/backup/sync deletion semantics, portable export, account/device deletion and policy approval |
+| PRIVACY-3 Transparency | Partial | Synthetic-only warning and plaintext/loss boundaries are shown in-product; Security says what myCarlos keeps (hidden documents, #71) | Approved privacy notice, app-store disclosures, consent/retention and legal review |
+| PRIVACY-4 User control | Partial | Patient can import, organize, export, hide and restore; nothing is deleted (#71), and the patient is told what is kept | Recovery/backup/sync deletion semantics, portable export, account/device deletion and policy approval |
 
 ## Review rule
 

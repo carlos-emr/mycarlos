@@ -18,7 +18,8 @@ interface RecordDetailsProps {
   onClose: () => void;
   onRename: () => void;
   onMove: (folderId: string | null) => Promise<void>;
-  onDelete: () => void;
+  /** Takes the document out of view (#71); it is never deleted. */
+  onHide: () => void;
   onExport: () => void;
 }
 export function RecordDetails({
@@ -31,7 +32,7 @@ export function RecordDetails({
   onClose,
   onRename,
   onMove,
-  onDelete,
+  onHide,
   onExport,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -162,12 +163,12 @@ export function RecordDetails({
             </select>
           </label>
           <button
-            className="button danger"
+            className="button"
             type="button"
             disabled={busy || readOnly}
-            onClick={onDelete}
+            onClick={onHide}
           >
-            Permanently delete
+            Hide
           </button>
           <button
             className="button primary"

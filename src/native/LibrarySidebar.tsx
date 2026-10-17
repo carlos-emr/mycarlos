@@ -5,14 +5,17 @@ import type { VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibrarySidebarProps {
   profileName: string;
-  section: "records" | "security" | "preferences";
+  section: "records" | "hidden" | "security" | "preferences";
   currentFolderId: string | null;
   folders: VaultFolder[];
   records: VaultRecord[];
   disabled: boolean;
   drag: VaultDragDrop;
   folderCount: (folderId: string) => number;
+  /** How many of this patient's documents are hidden (#71). */
+  hiddenCount: number;
   onOpenFolder: (folderId: string | null) => void;
+  onOpenHidden: () => void;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
 }
@@ -26,7 +29,9 @@ export function LibrarySidebar({
   disabled,
   drag,
   folderCount,
+  hiddenCount,
   onOpenFolder,
+  onOpenHidden,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
@@ -124,6 +129,16 @@ export function LibrarySidebar({
           onClick={onOpenPreferences}
         >
           <Icon name="text-size" /> Preferences
+        </button>
+        {/* At the bottom of the sidebar, set apart, like the mocks' Trash
+            (#71): out of view, not a folder or a setting. */}
+        <button
+          className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
+          type="button"
+          onClick={onOpenHidden}
+        >
+          <Icon name="hidden" /> Hidden{" "}
+          <span className="nav-count">{hiddenCount}</span>
         </button>
       </nav>
       <div className="storage">

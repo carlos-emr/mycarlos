@@ -11,6 +11,7 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { HiddenDocuments } from "./HiddenDocuments";
 import {
   RecoveryKeySetup,
   type OpeningRecoverySetup,
@@ -37,7 +38,7 @@ import {
   type OldBackupsGuide,
 } from "./oldBackups";
 
-type NativeSection = "records" | "security" | "preferences";
+type NativeSection = "records" | "hidden" | "security" | "preferences";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
 
@@ -146,10 +147,10 @@ export function VaultLibrary({
   } | null>(null);
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
-    action: "delete" | "export";
+    action: "export";
     recordId: string;
   } | null>(null);
-  const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
+  const [confirmHideDamaged, setConfirmHideDamaged] = useState(false);
   // Setting up a recovery key. A vault just created starts with its key, which
   // must be set up before the library can be used. A vault unlocked without
   // one is offered a key, which can be left for later: the setup opens on the
@@ -180,8 +181,19 @@ export function VaultLibrary({
     () => snapshot.folders.filter((folder) => folder.profileId === profileId),
     [snapshot.folders, profileId],
   );
+  // Hidden documents (#71) are left out of every view but Hidden.
   const records = useMemo(
-    () => snapshot.records.filter((record) => record.profileId === profileId),
+    () =>
+      snapshot.records.filter(
+        (record) => record.profileId === profileId && !record.hidden,
+      ),
+    [snapshot.records, profileId],
+  );
+  const hiddenRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (record) => record.profileId === profileId && record.hidden,
+      ),
     [snapshot.records, profileId],
   );
   const currentFolder =
@@ -282,7 +294,7 @@ export function VaultLibrary({
       !dialogResult ||
       renameTarget ||
       confirmation ||
-      confirmRemoveDamaged ||
+      confirmHideDamaged ||
       recoverySetup ||
       busy
     )
@@ -305,7 +317,7 @@ export function VaultLibrary({
     activeRecordId,
     busy,
     confirmation,
-    confirmRemoveDamaged,
+    confirmHideDamaged,
     notice,
     dialogResult,
     recoverySetup,
@@ -506,19 +518,21 @@ export function VaultLibrary({
 
   // Every damaged document in the vault, not only those in view: removal
   // takes them all, so the confirmation names them all.
-  const damaged = snapshot.records.filter((record) => !record.available);
+  const damaged = snapshot.records.filter(
+    (record) => !record.available && !record.hidden,
+  );
   const damagedIds = damaged.map((record) => record.id);
   const damagedCount = damagedIds.length;
   const profileName = (id: string) =>
     snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
     "";
-  const removeDamaged = () => {
-    setConfirmRemoveDamaged(false);
+  const hideDamaged = () => {
+    setConfirmHideDamaged(false);
     void run(async () => {
       let removed: string[];
       try {
         // The vault removes only what this screen showed as damaged.
-        removed = await bridge.removeUnavailableRecords(damagedIds);
+        removed = await bridge.hideUnavailableRecords(damagedIds);
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -532,8 +546,8 @@ export function VaultLibrary({
       const next = await refresh();
       const outcome =
         removed.length === 0
-          ? "Every file is back on this device. Nothing was removed."
-          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} removed.`;
+          ? "Every file is back on this device. Nothing was hidden."
+          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} hidden. ${removed.length === 1 ? "It is" : "They are"} listed under Hidden.`;
       // The removal can commit and still leave the vault read-only, when its
       // redundant write fails. The banner then says why; only claim the vault
       // is writable when it is.
@@ -545,14 +559,24 @@ export function VaultLibrary({
     });
   };
 
-  const deleteRecord = (record: VaultRecord) => {
-    setConfirmation(null);
+  // Nothing is ever deleted (#71): a document is hidden, and can be
+  // restored from Hidden. Taking it out of view needs no confirmation.
+  const hideRecord = (record: VaultRecord) => {
     void run(async () => {
-      await bridge.deleteRecord(record.id);
+      await bridge.hideRecord(record.id);
       setActiveRecordId(null);
       setSelectedIds((current) => current.filter((id) => id !== record.id));
       await refresh();
-      setNotice(`${record.displayName} was permanently deleted.`);
+      setNotice(
+        `${record.displayName} was hidden. It is listed under Hidden, where you can restore it.`,
+      );
+    });
+  };
+  const unhideRecord = (record: VaultRecord) => {
+    void run(async () => {
+      await bridge.unhideRecord(record.id);
+      await refresh();
+      setNotice(`${record.displayName} was restored to where it was.`);
     });
   };
 
@@ -658,7 +682,7 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
-                confirmRemoveDamaged ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
@@ -682,7 +706,7 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
-                confirmRemoveDamaged ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
@@ -695,6 +719,7 @@ export function VaultLibrary({
               }
             >
               <option value="records">My records</option>
+              <option value="hidden">Hidden</option>
               <option value="security">Security</option>
               <option value="preferences">Preferences</option>
             </select>
@@ -705,7 +730,7 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
-                confirmRemoveDamaged ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
@@ -718,10 +743,12 @@ export function VaultLibrary({
               disabled={busy || readOnly}
               drag={drag}
               folderCount={folderCount}
+              hiddenCount={hiddenRecords.length}
               onOpenFolder={(folderId) => {
                 setSection("records");
                 setCurrentFolderId(folderId);
               }}
+              onOpenHidden={() => setSection("hidden")}
               onOpenSecurity={() => setSection("security")}
               onOpenPreferences={() => setSection("preferences")}
             />
@@ -907,16 +934,15 @@ export function VaultLibrary({
                       files are missing from this device. Documents marked
                       damaged cannot be opened or copied; save copies of the
                       others now. To make changes again, restore the myCarlos
-                      data folder from a backup, or remove the damaged
-                      documents.
+                      data folder from a backup, or hide the damaged documents.
                     </span>
                     <button
-                      className="button danger"
+                      className="button"
                       type="button"
                       disabled={busy}
-                      onClick={() => setConfirmRemoveDamaged(true)}
+                      onClick={() => setConfirmHideDamaged(true)}
                     >
-                      Remove damaged documents
+                      Hide damaged documents
                     </button>
                   </div>
                 )}
@@ -1084,6 +1110,17 @@ export function VaultLibrary({
               </main>
             )}
 
+            {section === "hidden" && (
+              <HiddenDocuments
+                records={hiddenRecords}
+                folderNameById={folderNameById}
+                busy={busy}
+                readOnly={readOnly}
+                notice={notice}
+                onRestore={unhideRecord}
+              />
+            )}
+
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "security" && (
@@ -1206,46 +1243,25 @@ export function VaultLibrary({
                 })
               }
               onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
-              onDelete={() =>
-                setConfirmation({ action: "delete", recordId: activeRecord.id })
-              }
+              onHide={() => hideRecord(activeRecord)}
               onExport={() =>
                 setConfirmation({ action: "export", recordId: activeRecord.id })
               }
             />
           )}
-          {activeRecord && pendingAction === "delete" && (
+          {confirmHideDamaged && (
             <ConfirmDialog
-              title="Permanently delete this document?"
-              confirmLabel="Permanently delete"
-              danger
-              onConfirm={() => deleteRecord(activeRecord)}
-              onCancel={() => setConfirmation(null)}
-            >
-              <p>
-                <strong>{activeRecord.displayName}</strong> will be permanently
-                deleted from this vault. This cannot be undone here.
-              </p>
-              <p>
-                Readable exports and the clinic's source medical record are not
-                deleted.
-              </p>
-            </ConfirmDialog>
-          )}
-          {confirmRemoveDamaged && (
-            <ConfirmDialog
-              title={`Permanently remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Permanently remove"
-              danger
-              onConfirm={removeDamaged}
-              onCancel={() => setConfirmRemoveDamaged(false)}
+              title={`Hide ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Hide"
+              onConfirm={hideDamaged}
+              onCancel={() => setConfirmHideDamaged(false)}
               details={
                 // It scrolls when it is long, so it takes focus, to be
                 // scrolled with the keyboard. It is not read out with the
                 // dialog: the title counts the documents.
                 <ul
                   className="native-confirm-list"
-                  aria-label="Documents to remove"
+                  aria-label="Documents to hide"
                   tabIndex={0}
                 >
                   {damaged.map((record) => (
@@ -1259,10 +1275,10 @@ export function VaultLibrary({
               }
             >
               <p>
-                Their encrypted files are missing from this device, so their
-                content is already gone from here. Removing them also deletes
-                their names and details from the vault, permanently. This cannot
-                be undone.
+                Their encrypted files are missing from this device. Hiding them
+                lets the vault take changes again. They stay listed under
+                Hidden, with their names and details, and if a file comes back
+                its document can be restored.
               </p>
               <p>
                 First check that the files are not just out of reach: if the
@@ -1282,7 +1298,7 @@ export function VaultLibrary({
             >
               <p>
                 Saving creates a readable file outside the encrypted vault.
-                myCarlos cannot erase that copy later, and deleting this record
+                myCarlos cannot erase that copy later, and hiding this record
                 will not remove it.
               </p>
             </ConfirmDialog>

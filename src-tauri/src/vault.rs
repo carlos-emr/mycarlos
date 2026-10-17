@@ -32,7 +32,14 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
-const VAULT_FORMAT: u32 = 1;
+/// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
+/// size class. Format 1 manifests are still read; an unlock that can write
+/// upgrades one at once, in a commit of its own, before anything only format
+/// 2 can hold is written. An older build refuses a format 2 manifest.
+const VAULT_FORMAT: u32 = 2;
+const MANIFEST_FORMAT_V1: u32 = 1;
+/// The smallest size class a format 2 manifest's plaintext is padded to.
+const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
 /// are still read; every header written now is format 2, so a vault moves to
 /// format 2 at its next header write. An older build refuses a format 2 header.
@@ -357,6 +364,41 @@ struct StoredRecord {
     object_name: String,
     fingerprint: String,
     wrapped_object_key: WrappedSecret,
+    /// Set while the document is hidden (#71). Format 2 only. A hidden
+    /// document keeps its encrypted file; nothing is ever deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hidden: Option<Hidden>,
+}
+
+/// When, and why, a document was hidden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hidden {
+    pub at_ms: u64,
+    pub reason: HiddenReason,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HiddenReason {
+    /// The patient hid it.
+    Patient,
+    /// Its encrypted file was missing, and the patient hid it so that the
+    /// vault could take changes again. The file is not required to exist;
+    /// if it comes back, the document can be restored.
+    Damaged,
+}
+
+/// Whether the vault needs a record's encrypted file to be there. Only a
+/// document hidden as damaged does not.
+fn object_required(record: &StoredRecord) -> bool {
+    !matches!(
+        record.hidden,
+        Some(Hidden {
+            reason: HiddenReason::Damaged,
+            ..
+        })
+    )
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -383,6 +425,8 @@ pub struct VaultRecord {
     pub imported_at_ms: u64,
     /// False when the encrypted object was missing at unlock and cannot be exported.
     pub available: bool,
+    /// Set while the document is hidden (#71).
+    pub hidden: Option<Hidden>,
 }
 
 #[derive(Clone, Serialize)]
@@ -404,7 +448,7 @@ pub struct VaultSnapshot {
 #[serde(rename_all = "camelCase")]
 pub enum RecoveryReason {
     /// Some records' ciphertext is missing. Their intact neighbours can be
-    /// exported, and `remove_unavailable_records` makes the vault writable
+    /// exported, and `hide_unavailable_records` (#71: hiding them as damaged) makes the vault writable
     /// again once the user gives them up (or restores them from a backup).
     LostObjects,
     /// A manifest or header slot exists but could not be read, or a document's
@@ -717,7 +761,7 @@ impl VaultStore {
             Ok(())
         })();
         if result.is_err() {
-            let _ = fs::remove_dir_all(&stage);
+            let _ = remove_owned_dir_all(&stage, Removable::CreateStage);
         }
         result
     }
@@ -832,14 +876,25 @@ impl VaultStore {
             // superseded. Its removal is best effort where the slots are written;
             // retry here so a failure then does not leave a key wrapped under an
             // earlier passphrase on disk for good.
-            let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
+            let _ = remove_owned_file(self.root.join(LEGACY_HEADER), Removable::LegacyHeader);
         }
         if ensure_objects_dir(&self.root).is_err() {
             recovery = Some(RecoveryReason::WriteFailed);
         }
         remove_staging(&self.root);
         remove_abandoned_atomic_writes(&self.root);
-        remove_orphan_objects(&self.root, &manifest);
+        quarantine_orphan_objects(&self.root, &manifest);
+        // A format 1 vault becomes format 2 here, in a commit of its own (#71).
+        let mut manifest = manifest;
+        if recovery.is_none() {
+            match upgrade_manifest(&self.root, &master_key, &mut manifest) {
+                Ok(true) => {}
+                Ok(false) | Err(VaultError::NoSpace | VaultError::Storage) => {
+                    recovery = Some(RecoveryReason::WriteFailed);
+                }
+                Err(error) => return Err(error),
+            }
+        }
         self.open_session(
             guard,
             UnlockedVault {
@@ -911,10 +966,13 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        Ok(Self::snapshot_of(guard.as_ref().ok_or(VaultError::Locked)?))
+        Ok(Self::snapshot_of(
+            &self.root,
+            guard.as_ref().ok_or(VaultError::Locked)?,
+        ))
     }
 
-    fn snapshot_of(unlocked: &UnlockedVault) -> VaultSnapshot {
+    fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
         VaultSnapshot {
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
@@ -931,7 +989,14 @@ impl VaultStore {
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
-                    available: !unlocked.unavailable.contains(&record.id),
+                    // A document hidden as damaged is not looked for at unlock:
+                    // its file may have come back since.
+                    available: if object_required(record) {
+                        !unlocked.unavailable.contains(&record.id)
+                    } else {
+                        object_is_present(root, record)
+                    },
+                    hidden: record.hidden,
                 })
                 .collect(),
             recovery: unlocked.recovery,
@@ -1161,7 +1226,7 @@ impl VaultStore {
                 if existing.contains(&fingerprint)
                     || !batch_fingerprints.insert(fingerprint.clone())
                 {
-                    fs::remove_file(&object_path)?;
+                    remove_owned_file(&object_path, Removable::UncommittedObject)?;
                     skipped_duplicates.push(sanitize_basename(&source.display_name));
                     continue;
                 }
@@ -1190,6 +1255,7 @@ impl VaultStore {
                         object_name,
                         fingerprint,
                         wrapped_object_key,
+                        hidden: None,
                     },
                 ));
             }
@@ -1240,11 +1306,14 @@ impl VaultStore {
         if result.is_err() {
             let objects = self.root.join("objects");
             for (_, record) in &staged {
-                let _ = fs::remove_file(objects.join(&record.object_name));
+                let _ = remove_owned_file(
+                    objects.join(&record.object_name),
+                    Removable::UncommittedObject,
+                );
             }
             sync_parent(&objects);
         }
-        let _ = fs::remove_dir_all(&stage);
+        let _ = remove_owned_dir_all(&stage, Removable::ImportStaging);
         result
     }
 
@@ -1321,7 +1390,7 @@ impl VaultStore {
         let entry = journal_export(&self.root, id, &stage).ok();
         if let Err(error) = create_stage_dir(&stage) {
             if let Some(entry) = &entry {
-                let _ = fs::remove_file(entry);
+                let _ = remove_owned_file(entry, Removable::ExportStage);
             }
             return Err(error);
         }
@@ -1349,56 +1418,77 @@ impl VaultStore {
         result
     }
 
-    pub fn delete_record(&self, record_id: Uuid) -> Result<(), VaultError> {
+    /// Hides a document (#71). It leaves every view but the Hidden list, and
+    /// keeps its encrypted file: nothing is ever deleted. Hiding a hidden
+    /// document changes nothing.
+    pub fn hide_record(&self, record_id: Uuid, now_ms: u64) -> Result<(), VaultError> {
+        self.set_hidden(
+            record_id,
+            Some(Hidden {
+                at_ms: now_ms,
+                reason: HiddenReason::Patient,
+            }),
+        )
+    }
+
+    /// Puts a hidden document back where it was. One hidden as damaged comes
+    /// back only once its file is there again, or the vault would lose the
+    /// changes it took since.
+    pub fn unhide_record(&self, record_id: Uuid) -> Result<(), VaultError> {
+        self.set_hidden(record_id, None)
+    }
+
+    fn set_hidden(&self, record_id: Uuid, hidden: Option<Hidden>) -> Result<(), VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        let mut next = unlocked.manifest.clone();
-        let index = next
+        let record = unlocked
+            .manifest
             .records
             .iter()
-            .position(|record| record.id == record_id)
+            .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
-        let object_name = next.records.remove(index).object_name;
-
-        // The ciphertext is unlinked between the two manifest writes. Once the
-        // first is durable, the newest manifest records the deletion and the
-        // older one cannot decrypt a ciphertext that was removed. Unlock repairs
-        // slot redundancy before it considers orphan cleanup, so an unlink that
-        // fails here is retried there.
-        let objects = self.root.join("objects");
+        if record.hidden.is_some() == hidden.is_some() {
+            return Ok(());
+        }
+        if hidden.is_none() && !object_required(record) && !object_is_present(&self.root, record) {
+            return Err(VaultError::Invalid);
+        }
+        let mut next = unlocked.manifest.clone();
+        for record in &mut next.records {
+            if record.id == record_id {
+                record.hidden = hidden;
+            }
+        }
         let redundant = commit_manifest_redundant(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || {
-                match fs::remove_file(objects.join(&object_name)) {
-                    Ok(()) => sync_parent(&objects),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    // The second manifest commit still performs cryptographic erasure.
-                    Err(_) => {}
-                }
-                terminate_at_test_boundary("delete.after-object-unlink");
-                fail_at_test_boundary("delete.after-object-unlink")
-            },
+            || Ok(()),
         )?;
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(())
     }
 
-    /// Drops the records shown as damaged whose ciphertext is still missing,
-    /// and returns their ids. The vault is then complete again and leaves recovery mode. Files
-    /// that have come back since unlock, from a backup restore, are kept.
+    /// Hides, as damaged, the records shown as damaged whose ciphertext is
+    /// still missing, and returns their ids (#71: before, they were dropped).
+    /// The vault no longer needs their files, so it is complete again and
+    /// leaves recovery mode. Files that have come back since unlock, from a
+    /// backup restore, keep their documents in view.
     ///
     /// Only for the lost-objects reason: with an unreadable slot the commit
     /// could replace a newer state, and after a write failure it would fail.
     ///
     /// `confirmed` is the set of documents the patient was shown as damaged
     /// when they agreed. If the session's set differs, nothing is removed.
-    pub fn remove_unavailable_records(&self, confirmed: &[Uuid]) -> Result<Vec<Uuid>, VaultError> {
+    pub fn hide_unavailable_records(
+        &self,
+        confirmed: &[Uuid],
+        now_ms: u64,
+    ) -> Result<Vec<Uuid>, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         match unlocked.recovery {
@@ -1442,20 +1532,28 @@ impl VaultStore {
         if confirmed != unlocked.unavailable {
             return Err(VaultError::RemovalChanged);
         }
+        // Hidden documents are format 2 only: a format 1 vault opened in this
+        // recovery mode is upgraded first, in a commit of its own (#71).
+        if !upgrade_manifest(&self.root, &unlocked.master_key, &mut unlocked.manifest)? {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            return Err(VaultError::RecoveryMode);
+        }
         let mut next = unlocked.manifest.clone();
         let mut removed = Vec::new();
-        // Of those, only an object that is really gone is given up. One that
-        // came back is kept.
+        // Of those, only a document whose object is really gone is hidden.
+        // One whose file came back stays in view.
         let shown = &unlocked.unavailable;
-        next.records.retain(|record| {
-            if !shown.contains(&record.id)
-                || object_presence(&self.root, record) != ObjectPresence::Missing
+        for record in &mut next.records {
+            if shown.contains(&record.id)
+                && object_presence(&self.root, record) == ObjectPresence::Missing
             {
-                return true;
+                record.hidden = Some(Hidden {
+                    at_ms: now_ms,
+                    reason: HiddenReason::Damaged,
+                });
+                removed.push(record.id);
             }
-            removed.push(record.id);
-            false
-        });
+        }
         let redundant = commit_manifest_redundant(
             &self.root,
             &unlocked.master_key,
@@ -1767,7 +1865,7 @@ impl VaultStore {
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
-        Ok(Self::snapshot_of(unlocked))
+        Ok(Self::snapshot_of(&self.root, unlocked))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -1921,7 +2019,9 @@ impl VaultStore {
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
         for record in &unlocked.manifest.records {
-            self.verify_for_backup_object(unlocked, &parts.keys, record)?;
+            if self.backs_up_object(record) {
+                self.verify_for_backup_object(unlocked, &parts.keys, record)?;
+            }
         }
         Ok(())
     }
@@ -1950,6 +2050,9 @@ impl VaultStore {
             &mut parts.manifest_data.as_slice(),
         )?;
         for record in &manifest.records {
+            if !self.backs_up_object(record) {
+                continue;
+            }
             // A restore refuses the whole backup over one object that does not
             // authenticate, so a damaged one is found now, while the vault
             // and its other documents are still here, not when it is needed.
@@ -1965,6 +2068,12 @@ impl VaultStore {
             manifest.generation,
             now_ms,
         )
+    }
+
+    /// Whether a backup carries a record's object: every one the vault needs,
+    /// and a document hidden as damaged only if its file came back (#71).
+    fn backs_up_object(&self, record: &StoredRecord) -> bool {
+        object_required(record) || object_is_present(&self.root, record)
     }
 
     /// Every check that refuses a backup before its documents are read, and
@@ -2245,6 +2354,13 @@ impl VaultStore {
                 .iter()
                 .map(|record| (record.object_name.as_str(), record.plaintext_size))
                 .collect();
+            // A document hidden as damaged may come without its file (#71).
+            let optional: HashSet<&str> = manifest
+                .records
+                .iter()
+                .filter(|record| !object_required(record))
+                .map(|record| record.object_name.as_str())
+                .collect();
             while let Some((kind, name, length)) = reader.next_entry()? {
                 // Only the manifest's objects, each once, and no larger than
                 // the document the authenticated manifest describes: an
@@ -2263,7 +2379,7 @@ impl VaultStore {
                 reader.copy_entry(kind, &name, length, &mut file)?;
                 file.sync_all()?;
             }
-            if !wanted.is_empty() {
+            if wanted.keys().any(|name| !optional.contains(name)) {
                 return Err(VaultError::BackupUnreadable);
             }
             reader.finish(&master_key, header.vault_id, manifest.generation)?;
@@ -2286,6 +2402,9 @@ impl VaultStore {
             }
             let keys = derive_keys(header.vault_id, &master_key)?;
             for record in &manifest.records {
+                if !object_required(record) && !object_is_present(&stage, record) {
+                    continue;
+                }
                 let object_key = unwrap_secret(
                     &keys.object_wrap,
                     &record.wrapped_object_key,
@@ -2308,10 +2427,10 @@ impl VaultStore {
             Ok(())
         })();
         if let Err(error) = staged {
-            if remove_key_envelopes(&stage).is_ok() {
+            if remove_key_envelopes(&stage, Removable::RestoreStage).is_ok() {
                 sync_parent(&stage);
             }
-            let _ = fs::remove_dir_all(&stage);
+            let _ = remove_owned_dir_all(&stage, Removable::RestoreStage);
             sync_parent(home);
             return Err(error);
         }
@@ -2319,10 +2438,10 @@ impl VaultStore {
         // discarding it: the verified copy takes a fixed name first.
         let ready = restore_ready_path(&self.root)?;
         let discard = |directory: &Path| {
-            if remove_key_envelopes(directory).is_ok() {
+            if remove_key_envelopes(directory, Removable::RestoreStage).is_ok() {
                 sync_parent(directory);
             }
-            let _ = fs::remove_dir_all(directory);
+            let _ = remove_owned_dir_all(directory, Removable::RestoreStage);
             sync_parent(home);
         };
         if let Err(error) = fs::rename(&stage, &ready) {
@@ -2350,7 +2469,7 @@ impl VaultStore {
                     // Its header goes first: without one, nothing puts it in
                     // place, however much of the rest a removal leaves.
                     let removed = fail_at_test_boundary("restore.before-envelope-removal")
-                        .and_then(|()| remove_key_envelopes(&ready));
+                        .and_then(|()| remove_key_envelopes(&ready, Removable::RestoreStage));
                     sync_parent(&ready);
                     let header_gone = HEADER_SLOTS.iter().all(|slot| {
                         fs::symlink_metadata(ready.join(slot))
@@ -2362,7 +2481,7 @@ impl VaultStore {
                         // start puts it in place: that is what to report.
                         return Err(VaultError::RestoreUnfinished);
                     }
-                    let _ = fs::remove_dir_all(&ready);
+                    let _ = remove_owned_dir_all(&ready, Removable::RestoreStage);
                     sync_parent(home);
                 }
             }
@@ -2648,6 +2767,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest, vault_id: Uuid) -> Result
     if manifest
         .records
         .iter()
+        .filter(|record| object_required(record))
         .all(|record| object_is_present(root, record))
     {
         Ok(())
@@ -2703,7 +2823,7 @@ fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
-    if manifest.format_version != VAULT_FORMAT
+    if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
         || manifest.vault_id != vault_id
         || manifest.generation == 0
         || manifest.profiles.is_empty()
@@ -2765,6 +2885,8 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !object_names.insert(record.object_name.as_str())
             || !valid_fingerprint(&record.fingerprint)
             || !valid_wrapped_secret(&record.wrapped_object_key)
+            // Format 1 has no hidden documents.
+            || (record.hidden.is_some() && manifest.format_version == MANIFEST_FORMAT_V1)
         {
             return Err(VaultError::Corrupt);
         }
@@ -3765,7 +3887,7 @@ fn write_header_pair(
     if atomic_json(&header_path(root, second.generation), second).is_err() {
         return Ok(HeaderPairWrite::FirstOnly);
     }
-    let _ = fs::remove_file(root.join(LEGACY_HEADER));
+    let _ = remove_owned_file(root.join(LEGACY_HEADER), Removable::LegacyHeader);
     Ok(HeaderPairWrite::Both)
 }
 
@@ -3802,7 +3924,7 @@ fn repair_header_redundancy(
     )?;
     atomic_json(&header_path(root, first_generation), &first)?;
     atomic_json(&header_path(root, second.generation), &second)?;
-    let _ = fs::remove_file(root.join(LEGACY_HEADER));
+    let _ = remove_owned_file(root.join(LEGACY_HEADER), Removable::LegacyHeader);
     Ok(())
 }
 
@@ -3827,11 +3949,21 @@ fn write_valid_manifest_at(
     if !manifest
         .records
         .iter()
+        .filter(|record| object_required(record))
         .all(|record| object_is_present(root, record))
     {
         return Err(VaultError::Corrupt);
     }
     write_manifest_at(root, master_key, manifest)
+}
+
+/// The padded size of a manifest's plaintext: the next power of two, at least
+/// `MANIFEST_SIZE_CLASS_MIN`.
+fn manifest_size_class(length: usize) -> usize {
+    length
+        .max(MANIFEST_SIZE_CLASS_MIN)
+        .checked_next_power_of_two()
+        .unwrap_or(usize::MAX)
 }
 
 fn write_manifest_at(
@@ -3840,9 +3972,22 @@ fn write_manifest_at(
     manifest: &Manifest,
 ) -> Result<(), VaultError> {
     let keys = derive_keys(manifest.vault_id, master_key)?;
-    let plaintext = Zeroizing::new(serde_json::to_vec(manifest).map_err(|_| VaultError::Storage)?);
-    if plaintext.len() > MAX_MANIFEST_BYTES.saturating_sub(40) {
+    let mut plaintext =
+        Zeroizing::new(serde_json::to_vec(manifest).map_err(|_| VaultError::Storage)?);
+    let limit = MAX_MANIFEST_BYTES.saturating_sub(40);
+    if plaintext.len() > limit {
         return Err(VaultError::Storage);
+    }
+    if manifest.format_version >= VAULT_FORMAT {
+        // Padded with spaces, which JSON ignores, to a size class (#71): the
+        // file's size then tells only roughly how much the vault holds. Copied
+        // into a buffer of that size, so that growing it leaves no unwiped
+        // copy behind.
+        let class = manifest_size_class(plaintext.len()).min(limit);
+        let mut padded = Zeroizing::new(Vec::with_capacity(class));
+        padded.extend_from_slice(&plaintext);
+        padded.resize(class, b' ');
+        plaintext = padded;
     }
     let mut nonce = [0_u8; 24];
     OsRng.fill_bytes(&mut nonce);
@@ -3865,10 +4010,12 @@ fn write_manifest_at(
 /// Commits `next` as two consecutive generations, one per slot.
 ///
 /// Once the first write is durable the mutation is committed and `current`
-/// reflects it. `between` runs at that point, before the redundant write: a
-/// deletion unlinks its ciphertext there. Returns whether the redundant write
-/// also succeeded; when it did not, or when `between` failed, the caller's
-/// session must enter write-failed recovery, since unlock repairs the slot redundancy.
+/// reflects it. `between` runs at that point, before the redundant write.
+/// Nothing runs there today: documents are never deleted (#71). The history
+/// (#71's second part) will unlink only a superseded segment of its own there.
+/// Returns whether the redundant write also succeeded; when it did not, or
+/// when `between` failed, the caller's session must enter write-failed
+/// recovery, since unlock repairs the slot redundancy.
 fn commit_manifest_redundant(
     root: &Path,
     master_key: &[u8; 32],
@@ -3895,6 +4042,46 @@ fn commit_manifest_redundant(
     }
     *current = next;
     terminate_at_test_boundary("manifest.after-second-write");
+    Ok(true)
+}
+
+/// Moves a format 1 manifest to format 2 (#71) in a commit of its own, so
+/// that both slots hold format 2 before anything only format 2 can hold is
+/// written: a crash between the two writes leaves a format 2 slot that holds
+/// nothing an older build, opening the other slot, could lose. The state is
+/// the one already authenticated and is not changed, so whether its files
+/// are all there is not checked again (a vault with lost documents is
+/// upgraded before they are hidden). Returns whether both slots were
+/// written; nothing is written for a format 2 manifest.
+fn upgrade_manifest(
+    root: &Path,
+    master_key: &[u8; 32],
+    current: &mut Manifest,
+) -> Result<bool, VaultError> {
+    if current.format_version >= VAULT_FORMAT {
+        return Ok(true);
+    }
+    let mut next = current.clone();
+    next.format_version = VAULT_FORMAT;
+    validate_manifest_structure(&next, next.vault_id).map_err(|_| VaultError::Invalid)?;
+    next.generation = current
+        .generation
+        .checked_add(1)
+        .ok_or(VaultError::Storage)?;
+    let second_generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
+    fail_at_test_boundary("upgrade.before-first-write")?;
+    write_manifest_at(root, master_key, &next)?;
+    *current = next.clone();
+    terminate_at_test_boundary("upgrade.after-first-write");
+    if fail_at_test_boundary("upgrade.after-first-write").is_err() {
+        return Ok(false);
+    }
+    next.generation = second_generation;
+    if write_manifest_at(root, master_key, &next).is_err() {
+        return Ok(false);
+    }
+    *current = next;
+    terminate_at_test_boundary("upgrade.after-second-write");
     Ok(true)
 }
 
@@ -3997,7 +4184,11 @@ fn read_manifest_slot_reading(
     };
     let mut missing = HashSet::new();
     let mut unknown = HashSet::new();
-    for record in &manifest.records {
+    for record in manifest
+        .records
+        .iter()
+        .filter(|record| object_required(record))
+    {
         match object_presence(root, record) {
             ObjectPresence::Present => {}
             ObjectPresence::Missing => {
@@ -4104,7 +4295,8 @@ fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultEr
         .filter(|(manifest, _, _)| manifest.generation > selected.generation)
         .find(|(manifest, missing, unknown)| {
             manifest.records.iter().any(|record| {
-                !kept.contains(record.object_name.as_str())
+                object_required(record)
+                    && !kept.contains(record.object_name.as_str())
                     && (!missing.contains(&record.id) || unknown.contains(&record.id))
             })
         });
@@ -4447,14 +4639,14 @@ fn reset_path(root: &Path) -> Result<PathBuf, VaultError> {
     sibling_path(root, ".reset-pending")
 }
 
-fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
+fn remove_key_envelopes(directory: &Path, kind: Removable) -> Result<(), VaultError> {
     // An interrupted header write leaves a wrapped key in its temporary directory.
     remove_abandoned_atomic_writes(directory);
     // Every envelope wraps the same key, so one that cannot be removed must not
     // keep the others on disk. Try them all and report the first failure.
     let mut failure = None;
     for header in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
-        match fs::remove_file(directory.join(header)) {
+        match remove_owned_file(directory.join(header), kind) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
@@ -4516,7 +4708,7 @@ fn journal_export(root: &Path, id: Uuid, stage: &Path) -> Result<PathBuf, VaultE
         .write_all(&encode_path(stage))
         .and_then(|()| file.sync_all());
     if let Err(error) = written {
-        let _ = fs::remove_file(&entry);
+        let _ = remove_owned_file(&entry, Removable::ExportStage);
         return Err(error.into());
     }
     sync_parent(&journal);
@@ -4538,7 +4730,7 @@ fn create_stage_dir(stage: &Path) -> Result<(), VaultError> {
 /// export succeeded or not. The entry is kept if the folder could not be
 /// removed, so the next start tries again.
 fn finish_export(stage: &Path, entry: Option<&Path>) {
-    match fs::remove_dir_all(stage) {
+    match remove_owned_dir_all(stage, Removable::ExportStage) {
         Ok(()) => {
             if let Some(parent) = stage.parent() {
                 sync_parent(parent);
@@ -4548,7 +4740,7 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
         Err(_) => return,
     }
     if let Some(entry) = entry {
-        if fs::remove_file(entry).is_ok() {
+        if remove_owned_file(entry, Removable::ExportStage).is_ok() {
             if let Some(journal) = entry.parent() {
                 sync_parent(journal);
             }
@@ -4588,7 +4780,7 @@ fn remove_abandoned_exports(home: &Path) {
             Ok(bytes) => bytes,
             // Not a regular file, or too long to be one of ours.
             Err(error) if error.kind() == io::ErrorKind::InvalidData => {
-                let _ = fs::remove_file(&entry_path);
+                let _ = remove_owned_file(&entry_path, Removable::ExportStage);
                 continue;
             }
             // Perhaps held open for a moment by a scanner; try at a later start.
@@ -4598,14 +4790,14 @@ fn remove_abandoned_exports(home: &Path) {
             decode_path(&bytes).filter(|stage| stage.is_absolute() && is_export_stage_name(stage));
         let Some(stage) = stage else {
             // Not an entry this app wrote: drop it, and touch nothing it names.
-            let _ = fs::remove_file(&entry_path);
+            let _ = remove_owned_file(&entry_path, Removable::ExportStage);
             continue;
         };
         let done = match fs::symlink_metadata(&stage) {
             // A link or junction is never followed. Other reparse points, such
             // as OneDrive's on a synced folder, are still real folders.
             Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-                fs::remove_dir_all(&stage).is_ok()
+                remove_owned_dir_all(&stage, Removable::ExportStage).is_ok()
             }
             // Something else has that name; it is not ours to remove.
             Ok(_) => false,
@@ -4615,7 +4807,7 @@ fn remove_abandoned_exports(home: &Path) {
             Err(_) => false,
         };
         if done {
-            let _ = fs::remove_file(&entry_path);
+            let _ = remove_owned_file(&entry_path, Removable::ExportStage);
         }
     }
     sync_parent(&journal);
@@ -4683,10 +4875,10 @@ fn remove_abandoned_create_stages(parent: &Path) {
         if !is_stage || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
         }
-        if remove_key_envelopes(&path).is_ok() {
+        if remove_key_envelopes(&path, Removable::CreateStage).is_ok() {
             sync_parent(&path);
         }
-        if fs::remove_dir_all(&path).is_ok() {
+        if remove_owned_dir_all(&path, Removable::CreateStage).is_ok() {
             sync_parent(parent);
         }
     }
@@ -4736,10 +4928,10 @@ fn erase_retired_vault(root: &Path) -> Result<bool, VaultError> {
         }
         fail_at_test_boundary("reset.before-cleanup")?;
         // Erase key envelopes first. Keep the retired directory until all deletion succeeds.
-        remove_key_envelopes(&path)?;
+        remove_key_envelopes(&path, Removable::RetiredVault)?;
         sync_parent(&path);
         terminate_at_test_boundary("reset.after-key-removal");
-        fs::remove_dir_all(&path)?;
+        remove_owned_dir_all(&path, Removable::RetiredVault)?;
         sync_parent(parent);
         resumed = true;
     }
@@ -4826,6 +5018,47 @@ pub(crate) fn atomic_bytes(path: &Path, data: &[u8]) -> Result<(), VaultError> {
         .write_with_options(|file| file.write_all(data), options)
         .map_err(io::Error::from)?;
     Ok(())
+}
+
+/// What may ever be removed from storage (#71). Nothing that a committed
+/// manifest references, no hidden document and no quarantined object is
+/// among them. `std::fs` removal is disallowed crate-wide (clippy.toml), so
+/// every removal goes through `remove_owned_file` or `remove_owned_dir_all`
+/// and names one of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Removable {
+    /// A vault being created, which failed or which a killed process left.
+    CreateStage,
+    /// Ciphertext an import wrote that no manifest has committed: a
+    /// duplicate, or a batch that failed before its commit.
+    UncommittedObject,
+    /// An import's staging folder.
+    ImportStaging,
+    /// A readable copy's staging folder, or its journal entry.
+    ExportStage,
+    /// `header.json`, superseded by the two header slots.
+    LegacyHeader,
+    /// A restore's stage, or a verified copy being discarded.
+    RestoreStage,
+    /// What the atomic replacement primitive left behind.
+    AtomicWriteLeftover,
+    /// A vault retired by a confirmed reset, or replaced by a restore. Until
+    /// #71's third part sets vaults aside instead.
+    RetiredVault,
+}
+
+/// The one place a file is removed (#71); `kind` says what it is.
+#[allow(clippy::disallowed_methods)]
+fn remove_owned_file(path: impl AsRef<Path>, kind: Removable) -> io::Result<()> {
+    let _ = kind;
+    fs::remove_file(path)
+}
+
+/// The one place a folder is removed (#71); `kind` says what it is.
+#[allow(clippy::disallowed_methods)]
+fn remove_owned_dir_all(path: impl AsRef<Path>, kind: Removable) -> io::Result<()> {
+    let _ = kind;
+    fs::remove_dir_all(path)
 }
 
 fn create_private_dir(path: &Path) -> Result<(), VaultError> {
@@ -4922,7 +5155,7 @@ fn remove_staging(root: &Path) {
     }
     if let Ok(entries) = fs::read_dir(&staging) {
         for entry in entries.flatten() {
-            let _ = fs::remove_dir_all(entry.path());
+            let _ = remove_owned_dir_all(entry.path(), Removable::ImportStaging);
         }
     }
 }
@@ -4944,7 +5177,7 @@ fn remove_abandoned_atomic_writes(directory: &Path) {
         // `DirEntry::file_type` does not follow links, so a link is never entered.
         if is_temporary
             && entry.file_type().is_ok_and(|kind| kind.is_dir())
-            && fs::remove_dir_all(entry.path()).is_ok()
+            && remove_owned_dir_all(entry.path(), Removable::AtomicWriteLeftover).is_ok()
         {
             sync_parent(directory);
         }
@@ -4963,7 +5196,12 @@ fn ensure_objects_dir(root: &Path) -> Result<(), VaultError> {
     }
 }
 
-fn remove_orphan_objects(root: &Path, manifest: &Manifest) {
+/// Moves aside, never deletes, each object that the opened manifest does not
+/// reference (#71): ciphertext a crash left between writing it and its
+/// commit, or one that a mistake in collecting references would otherwise
+/// lose. It goes to `quarantine/` beside `objects/`, still encrypted, where
+/// the app leaves it. A name already there is left where it is.
+fn quarantine_orphan_objects(root: &Path, manifest: &Manifest) {
     let referenced: HashSet<&str> = manifest
         .records
         .iter()
@@ -4973,17 +5211,28 @@ fn remove_orphan_objects(root: &Path, manifest: &Manifest) {
     if !is_real_dir(&objects) {
         return;
     }
-    if let Ok(entries) = fs::read_dir(objects) {
+    let quarantine = root.join("quarantine");
+    let mut moved = false;
+    if let Ok(entries) = fs::read_dir(&objects) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_referenced = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| referenced.contains(name));
-            if path.is_file() && !is_referenced {
-                let _ = fs::remove_file(path);
+            let name = entry.file_name();
+            let is_referenced = name.to_str().is_some_and(|name| referenced.contains(name));
+            if !path.is_file() || is_referenced {
+                continue;
+            }
+            if !is_real_dir(&quarantine) && create_private_dir(&quarantine).is_err() {
+                return;
+            }
+            let target = quarantine.join(&name);
+            if fs::symlink_metadata(&target).is_err() && fs::rename(&path, &target).is_ok() {
+                moved = true;
             }
         }
+    }
+    if moved {
+        sync_parent(&objects);
+        let _ = sync_dir(&quarantine);
     }
 }
 
@@ -5496,7 +5745,7 @@ fn activate_restore(root: &Path) -> Result<bool, VaultError> {
     // A verified copy has a header. Without one this is what is left of a
     // copy that was being discarded, and no vault is given up for it.
     if !HEADER_SLOTS.iter().any(|slot| ready.join(slot).is_file()) {
-        let _ = fs::remove_dir_all(&ready);
+        let _ = remove_owned_dir_all(&ready, Removable::RestoreStage);
         sync_parent(parent);
         return Ok(false);
     }
@@ -5549,16 +5798,18 @@ fn remove_abandoned_restore_stages(parent: &Path) {
             continue;
         }
         let path = entry.path();
-        if remove_key_envelopes(&path).is_ok() {
+        if remove_key_envelopes(&path, Removable::RestoreStage).is_ok() {
             sync_parent(&path);
         }
-        if fs::remove_dir_all(&path).is_ok() {
+        if remove_owned_dir_all(&path, Removable::RestoreStage).is_ok() {
             sync_parent(parent);
         }
     }
 }
 
 #[cfg(test)]
+// Tests remove files on purpose, to simulate damage and loss (#71).
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
@@ -5580,7 +5831,7 @@ mod tests {
             .as_ref()
             .map(|unlocked| unlocked.unavailable.iter().copied().collect())
             .unwrap_or_default();
-        store.remove_unavailable_records(&shown)
+        store.hide_unavailable_records(&shown, 3)
     }
 
     /// Whether two metadata describe the same inode (or, on Windows, the same
@@ -5675,6 +5926,7 @@ mod tests {
                     object_name: first_object,
                     fingerprint: BASE64.encode([0x33_u8; 32]),
                     wrapped_object_key: wrapped.clone(),
+                    hidden: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -5688,6 +5940,7 @@ mod tests {
                     object_name: second_object,
                     fingerprint: BASE64.encode([0x44_u8; 32]),
                     wrapped_object_key: wrapped,
+                    hidden: None,
                 },
             ],
         };
@@ -5805,7 +6058,7 @@ mod tests {
                     )
                     .unwrap();
             }
-            "delete" => store.delete_record(snapshot.records[0].id).unwrap(),
+            "hide" => store.hide_record(snapshot.records[0].id, 3).unwrap(),
             "reset" => store.reset().unwrap(),
             "export" => {
                 let destination = std::env::var("MYCARLOS_TEST_EXPORT_TO").unwrap();
@@ -5868,7 +6121,7 @@ mod tests {
                     2,
                 )
                 .map(|_| ()),
-            "delete" => store.delete_record(snapshot.records[0].id),
+            "hide" => store.hide_record(snapshot.records[0].id, 3),
             "passphrase" => store.change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT),
             "recovery-key" => {
                 let key = store.begin_recovery_key(PASSWORD).unwrap();
@@ -6883,7 +7136,7 @@ mod tests {
             Err(VaultError::Locked)
         ));
         assert!(matches!(
-            store.delete_record(unknown),
+            store.hide_record(unknown, 3),
             Err(VaultError::Locked)
         ));
         assert!(matches!(
@@ -9894,7 +10147,7 @@ mod tests {
         store.lock();
         fs::create_dir(&abandoned).unwrap();
         fs::copy(root.join(HEADER_SLOTS[0]), abandoned.join("tmpfile.tmp")).unwrap();
-        remove_key_envelopes(&root).unwrap();
+        remove_key_envelopes(&root, Removable::RetiredVault).unwrap();
         assert!(!abandoned.exists());
     }
 
@@ -9909,7 +10162,7 @@ mod tests {
         fs::remove_file(root.join(HEADER_SLOTS[0])).unwrap();
         fs::create_dir(root.join(HEADER_SLOTS[0])).unwrap();
 
-        assert!(remove_key_envelopes(&root).is_err());
+        assert!(remove_key_envelopes(&root, Removable::RetiredVault).is_err());
         assert!(!root.join(HEADER_SLOTS[1]).exists());
     }
 
@@ -10049,8 +10302,24 @@ mod tests {
         assert_eq!(removed, vec![imported[1]]);
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.recovery, None);
-        assert_eq!(snapshot.records.len(), 1);
-        assert!(snapshot.records[0].available);
+        // The lost one is hidden as damaged, not dropped (#71).
+        let visible: Vec<_> = snapshot
+            .records
+            .iter()
+            .filter(|record| record.hidden.is_none())
+            .collect();
+        assert_eq!(visible.len(), 1);
+        assert!(visible[0].available);
+        let lost = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == imported[1])
+            .unwrap();
+        assert_eq!(
+            lost.hidden.map(|hidden| hidden.reason),
+            Some(HiddenReason::Damaged)
+        );
+        assert!(!lost.available);
         store.create_profile("Morgan", 3).unwrap();
         store.lock();
         store.unlock(PASSWORD).unwrap();
@@ -10079,9 +10348,17 @@ mod tests {
         assert_eq!(removed, vec![imported[0]]);
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.recovery, None);
-        assert_eq!(snapshot.records.len(), 1);
-        assert_eq!(snapshot.records[0].id, imported[1]);
-        assert_eq!(damaged(&snapshot), 0);
+        // The one still lost is hidden, as damaged; the one that came back
+        // stays in view (#71).
+        let visible: Vec<_> = snapshot
+            .records
+            .iter()
+            .filter(|record| record.hidden.is_none())
+            .collect();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, imported[1]);
+        assert!(visible[0].available);
+        assert_eq!(damaged(&snapshot), 1);
         let mut exported = Vec::new();
         store.export(imported[1], &mut exported).unwrap();
         assert_eq!(exported, b"b");
@@ -10257,7 +10534,7 @@ mod tests {
         store.export(kept, &mut exported).unwrap();
         assert_eq!(exported, b"synthetic kept record");
         assert!(matches!(
-            store.delete_record(lost),
+            store.hide_record(lost, 3),
             Err(VaultError::RecoveryMode)
         ));
         // Recovery mode must leave storage exactly as it was found.
@@ -10581,6 +10858,7 @@ mod tests {
                         nonce: String::new(),
                         ciphertext: String::new(),
                     },
+                    hidden: None,
                 })
                 .collect(),
         }
@@ -10681,7 +10959,16 @@ mod tests {
         let mut expected = vec![ids[0], ids[1]];
         expected.sort();
         assert_eq!(removed, expected);
-        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 3);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .filter(|record| record.hidden.is_none())
+                .count(),
+            1
+        );
         assert!(objects[2].is_file());
     }
 
@@ -10730,7 +11017,7 @@ mod tests {
         // A screen that showed nothing, or more than the vault does.
         for stale in [vec![], vec![ids[0], ids[1]], vec![ids[1]]] {
             assert!(matches!(
-                store.remove_unavailable_records(&stale),
+                store.hide_unavailable_records(&stale, 3),
                 Err(VaultError::RemovalChanged)
             ));
         }
@@ -10739,7 +11026,7 @@ mod tests {
         assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
 
         assert_eq!(
-            store.remove_unavailable_records(&[ids[0]]).unwrap(),
+            store.hide_unavailable_records(&[ids[0]], 3).unwrap(),
             vec![ids[0]]
         );
         assert_eq!(store.snapshot().unwrap().recovery, None);
@@ -11668,7 +11955,7 @@ mod tests {
     }
 
     #[test]
-    fn deletion_abrupt_termination_matrix_finishes_cryptographic_erasure() {
+    fn hiding_abrupt_termination_matrix_keeps_the_document_and_its_file() {
         let temp = tempfile::tempdir().unwrap();
         let template = temp.path().join("template-vault");
         let template_store = VaultStore::new(template.clone());
@@ -11684,24 +11971,23 @@ mod tests {
             .unwrap();
         template_store.lock();
 
-        for boundary in [
-            "manifest.after-first-write",
-            "delete.after-object-unlink",
-            "manifest.after-second-write",
-        ] {
+        // Hiding writes no file but the manifest, and removes none (#71).
+        for boundary in ["manifest.after-first-write", "manifest.after-second-write"] {
             let root = temp.path().join(boundary);
             copy_directory(&template, &root);
-            run_termination_child(&root, "delete", boundary);
+            run_termination_child(&root, "hide", boundary);
 
             let restarted = VaultStore::new(root.clone());
             restarted.unlock(PASSWORD).unwrap();
-            assert!(restarted.snapshot().unwrap().records.is_empty());
-            assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+            let records = restarted.snapshot().unwrap().records;
+            assert_eq!(records.len(), 1);
+            assert!(records[0].hidden.is_some());
+            assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
         }
     }
 
     #[test]
-    fn injected_no_space_deletion_failures_recover_without_half_visible_records() {
+    fn injected_no_space_hiding_failures_recover_without_half_hidden_records() {
         let temp = tempfile::tempdir().unwrap();
         let template = temp.path().join("template-vault");
         let template_store = VaultStore::new(template.clone());
@@ -11717,27 +12003,26 @@ mod tests {
             .unwrap();
         template_store.lock();
 
-        for (boundary, deleted) in [
+        for (boundary, hidden) in [
             ("manifest.before-first-write", false),
             ("manifest.after-first-write", true),
-            ("delete.after-object-unlink", true),
         ] {
             let root = temp.path().join(boundary);
             copy_directory(&template, &root);
-            run_failure_child(&root, "delete", boundary);
+            run_failure_child(&root, "hide", boundary);
 
             let restarted = VaultStore::new(root.clone());
             restarted.unlock(PASSWORD).unwrap();
-            assert_eq!(restarted.snapshot().unwrap().records.is_empty(), deleted);
-            assert_eq!(
-                fs::read_dir(root.join("objects")).unwrap().count(),
-                usize::from(!deleted)
-            );
+            let records = restarted.snapshot().unwrap().records;
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].hidden.is_some(), hidden);
+            // The file stays either way (#71).
+            assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
         }
     }
 
     #[test]
-    fn deleting_a_record_removes_its_key_from_both_manifest_slots() {
+    fn hiding_a_record_keeps_it_its_key_and_its_file_in_both_slots() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let store = VaultStore::new(root.clone());
@@ -11759,9 +12044,22 @@ mod tests {
                 .clone()
         };
 
-        store.delete_record(record).unwrap();
-        assert!(store.snapshot().unwrap().records.is_empty());
-        assert!(!root.join("objects").join(object_name).exists());
+        let bytes = fs::read(root.join("objects").join(&object_name)).unwrap();
+        store.hide_record(record, 7).unwrap();
+        let hidden = store.snapshot().unwrap().records;
+        assert_eq!(hidden.len(), 1);
+        assert_eq!(
+            hidden[0].hidden,
+            Some(Hidden {
+                at_ms: 7,
+                reason: HiddenReason::Patient
+            })
+        );
+        // Nothing is ever deleted (#71): the file is there, byte for byte.
+        assert_eq!(
+            fs::read(root.join("objects").join(&object_name)).unwrap(),
+            bytes
+        );
 
         let (master_key, vault_id, latest_generation) = {
             let guard = store.unlocked.lock().unwrap();
@@ -11777,12 +12075,355 @@ mod tests {
             b"synthetic corruption",
         )
         .unwrap();
+        // Both slots hold the document, its key and its hidden mark.
         let fallback = read_latest_manifest(&root, &master_key, vault_id).unwrap();
-        assert!(fallback.records.is_empty());
+        assert_eq!(fallback.records.len(), 1);
+        assert!(fallback.records[0].hidden.is_some());
+
+        // Restored, it is in view again, with the same file.
+        store.unhide_record(record).unwrap();
+        assert!(store.snapshot().unwrap().records[0].hidden.is_none());
+    }
+
+    /// A vault as an earlier build left it: both manifest slots format 1,
+    /// unpadded. Returns its master key and id, for reading the slots back
+    /// without an unlock, which would upgrade it.
+    fn format_1_vault(root: &Path, names: &[&str]) -> (VaultStore, Vec<Uuid>, [u8; 32], Uuid) {
+        let (store, imported, _) = vault_with_records(root, names);
+        store.unlock(PASSWORD).unwrap();
+        let (master_key, mut manifest) = {
+            let guard = store.unlocked.lock().unwrap();
+            let unlocked = guard.as_ref().unwrap();
+            (*unlocked.master_key, unlocked.manifest.clone())
+        };
+        store.lock();
+        manifest.format_version = MANIFEST_FORMAT_V1;
+        for _ in 0..2 {
+            manifest.generation += 1;
+            write_manifest_at(root, &master_key, &manifest).unwrap();
+        }
+        let vault_id = manifest.vault_id;
+        (store, imported, master_key, vault_id)
+    }
+
+    /// Both slots, decrypted: (format, generation, the state without them).
+    fn slots(root: &Path, master_key: &[u8; 32], vault_id: Uuid) -> Vec<(u32, u64, Manifest)> {
+        let keys = derive_keys(vault_id, master_key).unwrap();
+        (0..2)
+            .map(|slot| {
+                let data = fs::read(manifest_path(root, slot)).unwrap();
+                let mut manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
+                let (format, generation) = (manifest.format_version, manifest.generation);
+                manifest.format_version = 0;
+                manifest.generation = 0;
+                (format, generation, manifest)
+            })
+            .collect()
     }
 
     #[test]
-    fn deleting_a_missing_record_does_not_change_the_manifest() {
+    fn a_format_1_vault_opens_and_is_upgraded_in_a_commit_of_its_own() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, imported, master_key, vault_id) = format_1_vault(&root, &["a.pdf", "b.pdf"]);
+        assert!(slots(&root, &master_key, vault_id)
+            .iter()
+            .all(|(format, _, _)| *format == MANIFEST_FORMAT_V1));
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        assert_eq!(snapshot.records.len(), imported.len());
+        // Both slots are format 2 and hold the same state: nothing but the
+        // format and the generation changed.
+        let both = slots(&root, &master_key, vault_id);
+        assert!(both.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
+        assert!(both[0].2 == both[1].2);
+        assert!(both[0]
+            .2
+            .records
+            .iter()
+            .all(|record| record.hidden.is_none()));
+        // Padded to a size class (#71).
+        for slot in 0..2 {
+            let length = fs::metadata(manifest_path(&root, slot)).unwrap().len() as usize;
+            let plaintext = length - 40;
+            assert!(plaintext.is_power_of_two() && plaintext >= MANIFEST_SIZE_CLASS_MIN);
+        }
+        // Hiding now writes format 2 data on top.
+        store.hide_record(imported[0], 9).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(store.snapshot().unwrap().records[0].hidden.is_some());
+    }
+
+    #[test]
+    fn a_crash_between_the_upgrade_writes_leaves_nothing_an_older_build_could_lose() {
+        let temp = tempfile::tempdir().unwrap();
+        let template = temp.path().join("template");
+        let (_store, imported, master_key, vault_id) =
+            format_1_vault(&template, &["a.pdf", "b.pdf"]);
+        let before = slots(&template, &master_key, vault_id);
+        assert!(before
+            .iter()
+            .all(|(format, _, _)| *format == MANIFEST_FORMAT_V1));
+
+        for boundary in ["upgrade.after-first-write", "upgrade.after-second-write"] {
+            let root = temp.path().join(boundary);
+            copy_directory(&template, &root);
+            run_termination_child(&root, "import", boundary);
+            let after = slots(&root, &master_key, vault_id);
+            // Whatever the slots hold now, it is the state from before the
+            // upgrade: an older build that opens a format 1 slot, and drops
+            // as orphans the objects only the other slot names, loses nothing.
+            assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
+            let formats: Vec<u32> = after.iter().map(|(format, _, _)| *format).collect();
+            if boundary == "upgrade.after-first-write" {
+                assert!(formats.contains(&MANIFEST_FORMAT_V1) && formats.contains(&VAULT_FORMAT));
+            } else {
+                assert_eq!(formats, [VAULT_FORMAT, VAULT_FORMAT]);
+            }
+            // This build opens it, finishes the upgrade, and has everything.
+            let restarted = VaultStore::new(root.clone());
+            restarted.unlock(PASSWORD).unwrap();
+            let snapshot = restarted.snapshot().unwrap();
+            assert_eq!(snapshot.recovery, None);
+            assert_eq!(snapshot.records.len(), imported.len());
+            restarted.lock();
+            assert!(slots(&root, &master_key, vault_id)
+                .iter()
+                .all(|(format, _, state)| *format == VAULT_FORMAT && *state == before[0].2));
+        }
+    }
+
+    #[test]
+    fn an_upgrade_that_cannot_write_leaves_the_vault_read_only_and_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        for boundary in ["upgrade.before-first-write", "upgrade.after-first-write"] {
+            let root = temp.path().join(boundary);
+            let (store, imported, _, _) = format_1_vault(&root, &["a.pdf"]);
+            {
+                let _fail = FailAt::new(boundary);
+                store.unlock(PASSWORD).unwrap();
+            }
+            let snapshot = store.snapshot().unwrap();
+            assert_eq!(
+                snapshot.recovery,
+                Some(RecoveryReason::WriteFailed),
+                "{boundary}"
+            );
+            assert!(matches!(
+                store.hide_record(imported[0], 3),
+                Err(VaultError::RecoveryMode)
+            ));
+            store.lock();
+            // The next unlock upgrades it.
+            store.unlock(PASSWORD).unwrap();
+            assert_eq!(store.snapshot().unwrap().recovery, None, "{boundary}");
+            store.hide_record(imported[0], 3).unwrap();
+        }
+    }
+
+    #[test]
+    fn format_1_cannot_carry_a_hidden_document_and_format_3_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let (vault_id, mut manifest) = valid_manifest_fixture(temp.path());
+        manifest.format_version = MANIFEST_FORMAT_V1;
+        assert!(validate_manifest_structure(&manifest, vault_id).is_ok());
+        manifest.records[0].hidden = Some(Hidden {
+            at_ms: 1,
+            reason: HiddenReason::Patient,
+        });
+        assert!(matches!(
+            validate_manifest_structure(&manifest, vault_id),
+            Err(VaultError::Corrupt)
+        ));
+        manifest.format_version = VAULT_FORMAT;
+        assert!(validate_manifest_structure(&manifest, vault_id).is_ok());
+        manifest.format_version = VAULT_FORMAT + 1;
+        assert!(matches!(
+            validate_manifest_structure(&manifest, vault_id),
+            Err(VaultError::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn a_document_hidden_as_damaged_comes_back_only_with_its_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, imported, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        let kept = temp.path().join("a.mcobj");
+        fs::copy(&objects[0], &kept).unwrap();
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(remove_shown(&store).unwrap(), vec![imported[0]]);
+        assert!(matches!(
+            store.unhide_record(imported[0]),
+            Err(VaultError::Invalid)
+        ));
+        // A vault that no longer needs the file opens writable without it.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        // The file came back: the document can be restored, and read.
+        fs::copy(&kept, &objects[0]).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert!(
+            snapshot
+                .records
+                .iter()
+                .find(|r| r.id == imported[0])
+                .unwrap()
+                .available
+        );
+        store.unhide_record(imported[0]).unwrap();
+        let mut exported = Vec::new();
+        store.export(imported[0], &mut exported).unwrap();
+        assert_eq!(exported, b"a.pdf");
+    }
+
+    #[test]
+    fn a_backup_carries_a_document_hidden_as_damaged_without_its_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, imported, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        remove_shown(&store).unwrap();
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 5).unwrap();
+        store.lock();
+
+        let other = temp.path().join("other-home").join("vault");
+        let restored = VaultStore::new(other.clone());
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        let snapshot = restored.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        let lost = snapshot
+            .records
+            .iter()
+            .find(|r| r.id == imported[0])
+            .unwrap();
+        assert_eq!(lost.hidden.map(|h| h.reason), Some(HiddenReason::Damaged));
+        assert!(!lost.available);
+        let mut exported = Vec::new();
+        restored.export(imported[1], &mut exported).unwrap();
+        assert_eq!(exported, b"b.pdf");
+    }
+
+    #[test]
+    fn an_object_no_manifest_names_is_quarantined_not_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, _, objects) = vault_with_records(&root, &["a.pdf"]);
+        let orphan = root
+            .join("objects")
+            .join(format!("{}.mcobj", Uuid::new_v4()));
+        fs::write(&orphan, b"synthetic orphan ciphertext").unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert!(!orphan.exists());
+        let quarantined = root.join("quarantine").join(orphan.file_name().unwrap());
+        assert_eq!(
+            fs::read(&quarantined).unwrap(),
+            b"synthetic orphan ciphertext"
+        );
+        assert!(objects[0].is_file());
+        // A backup does not carry it; a later unlock leaves it be.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(quarantined.is_file());
+    }
+
+    /// #71: whatever a session does, no document's encrypted file is ever
+    /// removed or changed. A scripted session runs every command that touches
+    /// documents, and every object a record ever named is checked byte for
+    /// byte at the end.
+    #[test]
+    fn no_command_removes_or_changes_a_documents_encrypted_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store
+            .create_folder(profile, None, "FAKE Letters", 2)
+            .unwrap();
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("one.pdf", b"synthetic one"),
+                    source("two.pdf", b"synthetic two"),
+                    source("three.pdf", b"synthetic three"),
+                ],
+                3,
+            )
+            .unwrap()
+            .imported;
+        // A duplicate is not added, and nothing it names is touched.
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("again.pdf", b"synthetic one")],
+                4,
+            )
+            .unwrap();
+        let ever_named = |store: &VaultStore| -> HashMap<String, Vec<u8>> {
+            let guard = store.unlocked.lock().unwrap();
+            guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .map(|record| {
+                    let path = root.join("objects").join(&record.object_name);
+                    (
+                        record.object_name.clone(),
+                        fs::read(path).unwrap_or_default(),
+                    )
+                })
+                .collect()
+        };
+        let before = ever_named(&store);
+        assert_eq!(before.len(), 3);
+
+        store.rename_record(imported[0], "renamed.pdf").unwrap();
+        store.assign_folders(imported[1], vec![folder]).unwrap();
+        store
+            .assign_folders_batch(imported.clone(), vec![])
+            .unwrap();
+        store.hide_record(imported[2], 5).unwrap();
+        store.unhide_record(imported[2]).unwrap();
+        store.hide_record(imported[1], 6).unwrap();
+        store
+            .export_atomic(imported[0], &temp.path().join("copy.pdf"))
+            .unwrap();
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 7).unwrap();
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        store.lock();
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+
+        let after = ever_named(&store);
+        assert_eq!(after, before);
+        assert!(after.values().all(|bytes| !bytes.is_empty()));
+        // And nothing else was quarantined along the way.
+        assert!(!root.join("quarantine").exists());
+    }
+
+    #[test]
+    fn hiding_a_missing_record_does_not_change_the_manifest() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         store.create(PASSWORD, "Jamie", 1).unwrap();
@@ -11792,7 +12433,7 @@ mod tests {
         };
 
         assert!(matches!(
-            store.delete_record(Uuid::new_v4()),
+            store.hide_record(Uuid::new_v4(), 3),
             Err(VaultError::NotFound)
         ));
         let after = {
