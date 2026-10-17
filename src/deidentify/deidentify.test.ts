@@ -289,15 +289,20 @@ describe("the name remover (#72)", () => {
     );
   });
 
-  it("removes a name found once wherever else it stands, in any case (#72 review)", () => {
+  it("removes a name found once wherever else it stands (#72 review)", () => {
     const out = (text: string) =>
       deidentify(text, { knownNames: [], dateShiftDays: 10 }).toSend;
     expect(out("Mrs. Avery Example and Avery")).toBe(
       "Mrs. [NAME 1] and [NAME 1]",
     );
+    // A whole name in any case; one word only written as a name.
     expect(
-      out("Mrs. Avery Example came in. Later Avery said AVERY and avery."),
-    ).toBe("Mrs. [NAME 1] came in. Later [NAME 1] said [NAME 1] and [NAME 1].");
+      out(
+        "Mrs. Avery Example came in. Later Avery said AVERY, avery example and avery.",
+      ),
+    ).toBe(
+      "Mrs. [NAME 1] came in. Later [NAME 1] said [NAME 1], [NAME 1] and avery.",
+    );
     // Before the label, too, and each part of a hyphenated surname.
     expect(
       out("Renée O'Neil-Smith, Patient: Renée O'Neil-Smith. Smith agreed."),
@@ -322,10 +327,58 @@ describe("the name remover (#72)", () => {
     expect(out("Contact: Mother Teresa Clinic staff. Her mother called.")).toBe(
       "Contact: [CLINIC 1] staff. Her mother called.",
     );
-    // A surname that is an everyday clinical word is swept only whole.
     expect(out("Dr. Casey Ward saw her. Admitted to the ward on day 3.")).toBe(
       "Dr. [DOCTOR 1] saw her. Admitted to the ward on day 3.",
     );
+  });
+
+  it("keeps an everyday word that is also a found name, and flags it for the preview (#72 review)", () => {
+    const run10 = (text: string, names: string[] = []) =>
+      deidentify(text, { knownNames: names, dateShiftDays: 10 });
+    /** The flagged words, checked to stand where the preview would show them. */
+    const flagged = (result: ReturnType<typeof run10>) =>
+      result.onDevice.possibleNames.map((possible) => {
+        expect(result.toSend.slice(possible.sentStart, possible.sentEnd)).toBe(
+          possible.original,
+        );
+        return possible.original;
+      });
+    const ward = run10("Dr. Ward saw her. Admitted to the ward on day 3.");
+    expect(ward.toSend).toBe(
+      "Dr. [DOCTOR 1] saw her. Admitted to the ward on day 3.",
+    );
+    expect(flagged(ward)).toEqual(["ward"]);
+    const asthma = run10(
+      "Dr. Young saw Mrs. Long. A young adult with long-standing asthma.",
+    );
+    expect(asthma.toSend).toBe(
+      "Dr. [DOCTOR 1] saw Mrs. [NAME 1]. A young adult with long-standing asthma.",
+    );
+    expect(flagged(asthma)).toEqual(["young", "long"]);
+    const price = run10(
+      "Dr. Price and Dr. Grant agree. The price of the inhaler is high. We will grant the request.",
+    );
+    expect(price.toSend).toBe(
+      "Dr. [DOCTOR 1] and Dr. [DOCTOR 2] agree. The price of the inhaler is high. We will grant the request.",
+    );
+    expect(flagged(price)).toEqual(["price", "grant"]);
+    // Written as a name, it goes.
+    expect(run10("Dr. Grant agrees. Grant will call.").toSend).toBe(
+      "Dr. [DOCTOR 1] agrees. [DOCTOR 1] will call.",
+    );
+    // A profile name's word in lower case is flagged too.
+    const profile = run10("Seen with Avery. For example, avery.", [
+      "Avery Example",
+    ]);
+    expect(profile.toSend).toBe("Seen with [NAME 1]. For example, avery.");
+    expect(flagged(profile)).toEqual(["example", "avery"]);
+    // One tap removes a flagged word; the others stay flagged, in place.
+    const [first] = price.onDevice.possibleNames;
+    const removed = removeMore(price, first.sentStart, first.sentEnd);
+    expect(removed.toSend).toContain("The [REMOVED 1] of the inhaler");
+    expect(flagged(removed)).toEqual(["grant"]);
+    // Nothing flagged is sent as a flag: serializing gives only the text.
+    expect(JSON.parse(JSON.stringify(price))).toEqual({ toSend: price.toSend });
   });
 
   it("shifts a two-digit-year date only after a date label (#72 review)", () => {

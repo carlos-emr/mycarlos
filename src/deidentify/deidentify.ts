@@ -13,13 +13,14 @@
  *
  * It is rules, not understanding: a rare condition, an unusual job or a small
  * town in free text can still point to a person, and a name that never has a
- * title or a label, and is not a profile name, is not found; one found once is
- * removed everywhere else, its words in any case. A word of a name that is
- * also an ordinary or everyday clinical word ("Major", "Rose", "Ward") is
- * removed only as part of the whole name, so standing alone it stays. A date
- * with a two-digit year ("1/2/24") is read as one only after a date label.
- * The patient's preview, where more can be removed by hand (`removeMore`), is
- * the last check.
+ * title or a label, and is not a profile name, is not found. One found once is
+ * removed everywhere else: whole in any case, a single word only written as a
+ * name. A single word in lower case ("the ward", with a Dr. Ward) is left in
+ * and flagged as a possible name for the preview. A word of a name that is
+ * also an ordinary word ("Major", "Iris", "Rose") is removed only as part of
+ * the whole name. A date with a two-digit year ("1/2/24") is read as one only
+ * after a date label. The patient's preview, where more can be removed by
+ * hand (`removeMore`), is the last check.
  */
 
 export type RemovedKind =
@@ -50,11 +51,25 @@ export interface Removed {
   sentEnd: number;
 }
 
+/** A word left in the text that may be a name: a name found elsewhere,
+ * written here in lower case ("the ward", with a Dr. Ward). The preview
+ * shows it, and one tap removes it (`removeMore`). */
+export interface PossibleName {
+  original: string;
+  start: number;
+  end: number;
+  /** Where it is in the text to send. */
+  sentStart: number;
+  sentEnd: number;
+}
+
 /** What stays on the device: everything needed to show the preview, remove
  * more and put the details back. Never sent. */
 export interface OnDevice {
   /** Everything taken out or shifted, in the order it appears. */
   removed: Removed[];
+  /** Words left in that may be names, in the order they appear. */
+  possibleNames: PossibleName[];
   /** How many days every date was moved. */
   dateShiftDays: number;
   /** The document as it was. */
@@ -97,7 +112,7 @@ const LABELS: Record<Exclude<RemovedKind, "manual">, string> = {
 };
 
 /** Lower wins when two findings overlap; then the longer. */
-const PRIORITY: Record<RemovedKind | "date", number> = {
+const PRIORITY: Record<RemovedKind | "date" | "possibleName", number> = {
   manual: 0,
   email: 1,
   healthCard: 2,
@@ -110,10 +125,12 @@ const PRIORITY: Record<RemovedKind | "date", number> = {
   clinic: 8,
   name: 9,
   date: 10,
+  possibleName: 11,
 };
 
 interface Finding {
-  kind: RemovedKind | "date";
+  /** "possibleName": left in the text, and flagged for the preview. */
+  kind: RemovedKind | "date" | "possibleName";
   start: number;
   end: number;
   /** For names: the person they belong to, so that every part of one
@@ -484,31 +501,6 @@ const ORDINARY_WORDS = new Set([
   "grand",
   "roy",
   "pierre",
-  // Everyday clinical words, which a name found once would otherwise take
-  // out wherever they stand ("admitted to the ward").
-  "ward",
-  "day",
-  "short",
-  "long",
-  "head",
-  "hand",
-  "foot",
-  "back",
-  "heart",
-  "stone",
-  "bone",
-  "fall",
-  "cross",
-  "field",
-  "little",
-  "small",
-  "low",
-  "high",
-  "sharp",
-  "wells",
-  "nurse",
-  "care",
-  "rest",
 ]);
 // Words that follow a label or a family word but start no name: "Re:
 // Follow-up visit", "Patient: Seen today", "Contact: Mother …".
@@ -849,20 +841,21 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
           end: match.index + match[0].length,
           person,
         });
-    // Written as a name: a capital first ("Avery", "AVERY", "O'Neil-Smith",
-    // "d'Amours").
+    // Removed written as a name; in lower case, only flagged.
     for (const word of nameWords(name))
       for (const match of text.matchAll(wordPattern(word)))
-        if (/^(?:[dD]['’])?\p{Lu}/u.test(match[0]))
-          found.push({
-            kind: "name",
-            start: match.index,
-            end: match.index + match[0].length,
-            person,
-          });
+        found.push({
+          kind: writtenAsName(match[0]) ? "name" : "possibleName",
+          start: match.index,
+          end: match.index + match[0].length,
+          person,
+        });
   }
   return found;
 }
+
+/** A capital first: "Avery", "AVERY", "O'Neil-Smith", "d'Amours". */
+const writtenAsName = (word: string) => /^(?:[dD]['’])?\p{Lu}/u.test(word);
 
 const wordPattern = (word: string) =>
   new RegExp(`(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`, "giu");
@@ -870,7 +863,10 @@ const wordPattern = (word: string) =>
 /**
  * A name a rule found (after a title, a label, a family word or a closing) is
  * that person wherever else it stands, with or without one (#72 review): the
- * whole name, and each word of it alone, in any case. Each place takes the
+ * whole name in any case, and each word of it alone (or a one-word name)
+ * written as a name. A single word in lower case is more often an everyday
+ * word ("the ward", "grant the request"), so it is only flagged for the
+ * preview. Each place takes the
  * placeholder of the name it came from; a doctor's, the doctor's. Words of a
  * profile name are left to the profile name. Only names that won where they
  * were found count: "Mother Teresa Clinic" after "Contact:" is a clinic.
@@ -912,32 +908,30 @@ function otherPlaces(
       groups.push({ words: new Set(lower), key: group });
     }
     finding.group = group;
+    const place = (match: RegExpExecArray | RegExpMatchArray, as: string) =>
+      places.push({
+        kind:
+          /\s/u.test(match[0]) || writtenAsName(match[0])
+            ? finding.kind
+            : "possibleName",
+        start: match.index ?? 0,
+        end: (match.index ?? 0) + match[0].length,
+        group: as,
+        whole,
+        swept: true,
+      });
     const pattern = whole.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
     for (const match of text.matchAll(
       new RegExp(`(?<![\\p{L}])${pattern}(?![\\p{L}])`, "giu"),
     ))
-      places.push({
-        kind: finding.kind,
-        start: match.index,
-        end: match.index + match[0].length,
-        group,
-        whole,
-        swept: true,
-      });
+      place(match, group);
     for (const word of words) {
       if (known.has(word.toLowerCase())) continue;
       // A word in two names stays with the first.
       const key = `${finding.kind}:${word.toLowerCase()}`;
       if (!claimed.has(key)) claimed.set(key, group);
       for (const match of text.matchAll(wordPattern(word)))
-        places.push({
-          kind: finding.kind,
-          start: match.index,
-          end: match.index + match[0].length,
-          group: claimed.get(key),
-          whole,
-          swept: true,
-        });
+        place(match, claimed.get(key) ?? group);
     }
   }
   return places;
@@ -947,7 +941,9 @@ function otherPlaces(
  * the longer. */
 function resolve(findings: Finding[]): Finding[] {
   const rank = (finding: Finding) =>
-    finding.swept ? PRIORITY.name + 0.5 : PRIORITY[finding.kind];
+    finding.kind !== "possibleName" && finding.swept
+      ? PRIORITY.name + 0.5
+      : PRIORITY[finding.kind];
   const ranked = [...findings].sort(
     (a, b) =>
       rank(a) - rank(b) ||
@@ -1030,7 +1026,9 @@ function build(
   // A profile name seen in full (or in part) after a title is still that
   // person: names found by a rule take the placeholder of a known person
   // whose words they contain.
-  const people = findings.filter((finding) => finding.person);
+  const people = findings.filter(
+    (finding) => finding.person && finding.kind === "name",
+  );
   const personOf = (original: string) =>
     people.find((finding) =>
       original
@@ -1042,8 +1040,21 @@ function build(
   let text = "";
   let at = 0;
   const removed: Removed[] = [];
+  const possibleNames: PossibleName[] = [];
   for (const finding of findings) {
     const original = source.slice(finding.start, finding.end);
+    if (finding.kind === "possibleName") {
+      // Left as it is: where it will stand once the text before it is in.
+      const sentStart = text.length + finding.start - at;
+      possibleNames.push({
+        original,
+        start: finding.start,
+        end: finding.end,
+        sentStart,
+        sentEnd: sentStart + original.length,
+      });
+      continue;
+    }
     let replacement: string;
     if (finding.replacement !== undefined) {
       replacement = finding.replacement;
@@ -1076,7 +1087,7 @@ function build(
     at = finding.end;
   }
   text += source.slice(at);
-  return result(text, { removed, dateShiftDays, source });
+  return result(text, { removed, possibleNames, dateShiftDays, source });
 }
 
 /**
@@ -1089,7 +1100,8 @@ export function removeMore(
   sentStart: number,
   sentEnd: number,
 ): Deidentified {
-  const { removed, dateShiftDays, source } = deidentified.onDevice;
+  const { removed, possibleNames, dateShiftDays, source } =
+    deidentified.onDevice;
   // Map the range back to the document, through what came before it.
   let shift = 0;
   for (const part of removed) {
@@ -1106,6 +1118,7 @@ export function removeMore(
     throw new RangeError("outside the text");
   const manual = removed.filter((part) => part.kind === "manual");
   // Everything already decided stays as it was; only the new part is new.
+  // A flagged word stays flagged unless the new part takes it.
   const findings: Finding[] = [
     ...removed.map((part) => ({
       kind: part.kind,
@@ -1113,6 +1126,13 @@ export function removeMore(
       end: part.end,
       replacement: part.replacement,
     })),
+    ...possibleNames
+      .filter((possible) => possible.end <= start || end <= possible.start)
+      .map((possible) => ({
+        kind: "possibleName" as const,
+        start: possible.start,
+        end: possible.end,
+      })),
     {
       kind: "manual" as const,
       start,
