@@ -636,6 +636,9 @@ struct UnlockedVault {
     recovery: Option<RecoveryReason>,
     // Records whose object was missing at unlock. Only populated in recovery mode.
     unavailable: HashSet<Uuid>,
+    // Whether the history holds this session's start (#71): its unlock, or
+    // the vault's creation.
+    start_recorded: bool,
     // Keep the OS lock until the session (and any operation using it) ends.
     storage_lock: Arc<File>,
 }
@@ -678,16 +681,25 @@ impl VaultStore {
     /// Notes how the session in `guard`, ending now, ended.
     fn note_session_end(&self, guard: &Option<UnlockedVault>, by: &str) {
         if let Some(unlocked) = guard {
-            // A read-only session recorded neither its unlock nor what it did.
-            let note = if unlocked.recovery.is_none() {
-                format!("lockedAt:{}:{by}", crate::now_ms())
-            } else {
-                "notRecorded".to_owned()
-            };
-            *self
+            let mut last = self
                 .last_session
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(note);
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            // A session whose start the history holds, and that wrote all it
+            // did, ends with a note of its own. One that could not keeps the
+            // note waiting from before it, so that the next recorded unlock
+            // still says how that earlier session ended, and adds that a
+            // session went unrecorded after it.
+            let note = if unlocked.start_recorded && unlocked.recovery.is_none() {
+                format!("lockedAt:{}:{by}", crate::now_ms())
+            } else {
+                match last.take() {
+                    Some(kept) if kept.ends_with("notRecorded") => kept,
+                    Some(kept) => format!("{kept};notRecorded"),
+                    None => "notRecorded".to_owned(),
+                }
+            };
+            *last = Some(note);
         }
     }
 
@@ -836,6 +848,7 @@ impl VaultStore {
                     manifest,
                     recovery: None,
                     unavailable: HashSet::new(),
+                    start_recorded: true,
                 },
             );
             Ok(())
@@ -876,17 +889,23 @@ impl VaultStore {
     /// with how the session before it ended, as far as this run of the app
     /// knows. It can never keep the vault shut: if it cannot be written, the
     /// session is read-only, and a read-only session records nothing.
+    ///
+    /// The note of how the session before ended is used up only once it is
+    /// in the history; otherwise it waits for the next unlock that is.
     fn record_unlock(&self, guard: &mut Option<UnlockedVault>, how: &str) {
-        let previous = self
+        let mut last = self
             .last_session
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        if let Some(unlocked) = guard.as_mut() {
-            let mut entry = HistoryEntry::new(HistoryEvent::Unlocked, crate::now_ms());
-            entry.how = Some(how.to_owned());
-            entry.previous_session = Some(previous.unwrap_or_else(|| "notRecorded".to_owned()));
-            record_in_session(&self.root, unlocked, vec![entry]);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(unlocked) = guard.as_mut() else {
+            return;
+        };
+        let mut entry = HistoryEntry::new(HistoryEvent::Unlocked, crate::now_ms());
+        entry.how = Some(how.to_owned());
+        entry.previous_session = Some(last.clone().unwrap_or_else(|| "notRecorded".to_owned()));
+        if record_in_session(&self.root, unlocked, vec![entry]) {
+            unlocked.start_recorded = true;
+            *last = None;
         }
     }
 
@@ -940,6 +959,7 @@ impl VaultStore {
                     manifest,
                     recovery,
                     unavailable,
+                    start_recorded: false,
                 },
             );
             return Ok(());
@@ -1007,6 +1027,7 @@ impl VaultStore {
                 manifest,
                 recovery,
                 unavailable,
+                start_recorded: false,
             },
         );
         Ok(())
@@ -2096,6 +2117,7 @@ impl VaultStore {
                     manifest: selected.manifest,
                     recovery,
                     unavailable: selected.unavailable,
+                    start_recorded: false,
                 },
             );
             return Ok(false);
@@ -2141,6 +2163,7 @@ impl VaultStore {
                         manifest: selected.manifest,
                         recovery: Some(RecoveryReason::WriteFailed),
                         unavailable: selected.unavailable,
+                        start_recorded: false,
                     },
                 );
                 return Ok(false);
@@ -4630,12 +4653,17 @@ fn commit_with_history(
 }
 
 /// Appends events that already happened, such as a readable copy saved, in
-/// a commit of their own (#71). A read-only session records nothing. A write
-/// that fails leaves the session read-only, so that nothing more happens
-/// unrecorded; what was done stays done.
-fn record_in_session(root: &Path, unlocked: &mut UnlockedVault, entries: Vec<HistoryEntry>) {
+/// a commit of their own (#71), and says whether they are in the history. A
+/// read-only session records nothing. A write that fails leaves the session
+/// read-only, so that nothing more happens unrecorded; what was done stays
+/// done.
+fn record_in_session(
+    root: &Path,
+    unlocked: &mut UnlockedVault,
+    entries: Vec<HistoryEntry>,
+) -> bool {
     if unlocked.recovery.is_some() {
-        return;
+        return false;
     }
     let next = unlocked.manifest.clone();
     match commit_with_history(
@@ -4645,8 +4673,18 @@ fn record_in_session(root: &Path, unlocked: &mut UnlockedVault, entries: Vec<His
         next,
         entries,
     ) {
-        Ok(true) => {}
-        Ok(false) | Err(_) => unlocked.recovery = Some(RecoveryReason::WriteFailed),
+        // Committed once the first write is durable, even if the second
+        // was not.
+        Ok(redundant) => {
+            if !redundant {
+                unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            }
+            true
+        }
+        Err(_) => {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            false
+        }
     }
 }
 
@@ -14162,9 +14200,53 @@ mod tests {
         store.unlock(PASSWORD).unwrap();
         let entries = history_events(&store);
         assert_eq!(entries.len(), before + 1);
+        // How the last recorded session ended, then that one was not.
+        let previous = entries.last().unwrap().previous_session.clone().unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app;notRecorded"),
+            "{previous}"
+        );
+    }
+
+    #[test]
+    fn a_lock_note_waits_for_an_unlock_that_is_recorded() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // The unlock's entry cannot be written: the session opens read-only,
+        // and the note of how the session before ended is kept.
+        {
+            let _fail = FailAt::new("history.objects-sync");
+            store.unlock(PASSWORD).unwrap();
+        }
         assert_eq!(
-            entries.last().unwrap().previous_session.as_deref(),
-            Some("notRecorded")
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::WriteFailed)
+        );
+        assert_eq!(events_of(&history_events(&store)), [HistoryEvent::Created]);
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let previous = history_events(&store)
+            .pop()
+            .unwrap()
+            .previous_session
+            .unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app;notRecorded"),
+            "{previous}"
+        );
+        // Used up once recorded: the next lock starts a note of its own.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let previous = history_events(&store)
+            .pop()
+            .unwrap()
+            .previous_session
+            .unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app"),
+            "{previous}"
         );
     }
 

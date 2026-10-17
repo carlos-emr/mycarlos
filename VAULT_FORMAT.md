@@ -432,9 +432,12 @@ the passphrase, profiles and folders themselves are not recorded.
 never waits on a write or fails over one. The app remembers, in memory only, when and how the
 session ended (`lockedAt:<ms>:app`, or `:nativeDeadline` when the native idle backstop locked it),
 and the next unlock in the same run of the app records it as `previousSession`. After the app
-restarts, after a read-only session, or when a write failed and left the session read-only, it
-records `notRecorded`. The vault can therefore show a session's start, but its end only as well
-as this run of the app knew it.
+restarts it records `notRecorded`. A session that could not record its own unlock (a read-only
+one, or one whose unlock entry could not be written), or that left read-only after a failed write,
+leaves no note of its own: the note waiting from before it is kept and `;notRecorded` added, so
+the next recorded unlock says both how the last recorded session ended and that one went
+unrecorded after it. The vault can therefore show a session's start, but its end only as well as
+this run of the app knew it.
 
 **Entries and the chain.** An entry's canonical form is the UTF-8 JSON of these fields, in this
 order, with no whitespace, absent fields left out, integers as integers, and strings escaped as
