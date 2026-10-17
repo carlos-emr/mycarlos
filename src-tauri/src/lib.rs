@@ -1,3 +1,4 @@
+mod history;
 mod idle;
 mod throttle;
 mod vault;
@@ -1374,6 +1375,7 @@ async fn vault_backup_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let output = app
             .fs()
             .open(destination, options)
@@ -1386,7 +1388,9 @@ async fn vault_backup_picked(
                 bytes: counted,
             }),
             now_ms(),
-        )
+        )?;
+        store.record_backup_saved(&place);
+        Ok(())
     })
     .await
     .map(|()| SavedBackup {
@@ -1808,12 +1812,17 @@ async fn vault_export_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let mut output = app
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
         drop(opening);
-        Ok(store.export(record_id, &mut output))
+        let exported = store.export(record_id, &mut output);
+        if exported.is_ok() {
+            store.record_copy_saved(record_id, &place);
+        }
+        Ok(exported)
     })
     .await?
     .map_err(|_| PublicError::partial_export())

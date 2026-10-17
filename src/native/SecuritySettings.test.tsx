@@ -253,6 +253,22 @@ describe("SecuritySettings recovery key", () => {
   });
 });
 
+describe("SecuritySettings privacy notice", () => {
+  it("says that nothing is deleted and that a history is kept (#71)", () => {
+    renderSettings();
+    const notice = screen
+      .getByRole("heading", { name: "What myCarlos keeps" })
+      .closest("section")!;
+    expect(notice).toHaveTextContent(/never deletes a document/);
+    expect(notice).toHaveTextContent(
+      /also keeps a history: when the vault was opened, and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
+    );
+    expect(notice).toHaveTextContent(
+      /does not show it, and never changes or removes it/,
+    );
+  });
+});
+
 describe("SecuritySettings passphrase change", () => {
   it("says what a new passphrase does not protect, without urging an erase", () => {
     renderSettings();
