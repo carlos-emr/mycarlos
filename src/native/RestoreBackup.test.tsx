@@ -70,20 +70,20 @@ describe("RestoreBackup", () => {
   it.each([
     [
       { replaces: "otherVault" as const },
-      /erases it, permanently/,
-      "Erase the vault on this device and restore the backup",
+      /sets it aside.*stays on this device, encrypted/,
+      "Set the vault on this device aside and restore the backup",
     ],
     [
       // A vault whose header cannot be read: it may be the backup's or not.
       { replaces: "unreadable" as const },
-      /could not be read, so myCarlos cannot tell.*erases it, permanently/,
-      "Erase the vault on this device and restore the backup",
+      /could not be read, so myCarlos cannot tell.*sets it aside/,
+      "Set the vault on this device aside and restore the backup",
     ],
     [
       // A changed passphrase or recovery key, with the documents as they were.
       { replaces: "sameVault" as const, differsFromThisDevice: true },
       /may not be the same as this backup.*could not be read.*passphrase and recovery key/,
-      "Replace the vault on this device with this backup and lose what changed since",
+      "Set the vault on this device aside, with what changed since, and restore this backup",
     ],
   ])(
     "asks for agreement before losing anything (%o)",
@@ -109,7 +109,7 @@ describe("RestoreBackup", () => {
     const { bridge } = setUp({ replaces: "sameVault" });
     await chooseAndCheck(user);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "The vault on this device holds the same documents. Restoring replaces it with this backup.",
+      "The vault on this device holds the same documents. Restoring sets it aside and puts this backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.",
     );
     await user.click(screen.getByRole("button", { name: "Restore backup" }));
     expect(bridge.restore).toHaveBeenCalledWith(

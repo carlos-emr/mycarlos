@@ -738,7 +738,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               setStatus("absent");
               setNotice("");
             } else {
-              setNotice("Vault erase cancelled. Nothing changed.");
+              setNotice("Nothing changed: the vault was not set aside.");
             }
           })
         }

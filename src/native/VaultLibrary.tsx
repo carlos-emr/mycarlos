@@ -609,7 +609,7 @@ export function VaultLibrary({
         throw error;
       }
       if (erased) window.location.reload();
-      else setNotice("Vault erase cancelled. Nothing changed.");
+      else setNotice("Nothing changed: the vault was not set aside.");
     });
   const moveRecord = (recordId: string, folderId: string | null) =>
     run(async () => {
@@ -978,8 +978,8 @@ export function VaultLibrary({
                     <Icon name="info" />
                     <span>
                       <strong>No recovery key yet.</strong> If you forget your
-                      passphrase without one, the only way back in is to erase
-                      the vault.
+                      passphrase without one, the only way back in is to set the
+                      vault aside and start again.
                     </span>
                     <button
                       className="button"

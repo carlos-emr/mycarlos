@@ -266,19 +266,34 @@ describe("SecuritySettings privacy notice", () => {
     expect(notice).toHaveTextContent(
       /does not show it, and never changes or removes it/,
     );
+    expect(notice).toHaveTextContent(
+      /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,
+    );
   });
 });
 
 describe("SecuritySettings passphrase change", () => {
-  it("says what a new passphrase does not protect, without urging an erase", () => {
+  it("says what a new passphrase does not protect, without urging a new vault", () => {
     renderSettings();
     const limit =
       screen.getByText(/a new passphrase\s+is not enough/).textContent ?? "";
     expect(limit).toMatch(/the old one still opens that copy/);
-    expect(limit).toMatch(/Ask for help before you erase anything/);
+    expect(limit).toMatch(/Ask for help before you set your vault aside/);
     // The steps are in the documents, not here: nothing on this screen
-    // tells a patient to erase.
-    expect(limit).not.toMatch(/erase this vault/);
+    // tells a patient to do it.
+    expect(limit).not.toMatch(/erase|set this vault aside/);
+  });
+
+  it("sets the vault aside instead of erasing it, and says what is kept (#71)", () => {
+    renderSettings();
+    const section = screen
+      .getByRole("heading", { name: "Set this vault aside and start again" })
+      .closest("section")!;
+    expect(section).toHaveTextContent(
+      /stays on this device, encrypted, with everything in it/,
+    );
+    expect(section).toHaveTextContent(/myCarlos never deletes it/);
+    expect(section).not.toHaveTextContent(/permanently|cannot be undone/i);
   });
 
   it("refuses a replacement under the minimum length before sending it", () => {

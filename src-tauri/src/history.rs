@@ -55,6 +55,9 @@ pub enum HistoryEvent {
     BackupSaved,
     /// This vault was put in place from a backup.
     BackupRestored,
+    /// This vault was set aside (#71's third part): moved, whole and still
+    /// encrypted, into `set-aside/`, never erased.
+    SetAside,
 }
 
 /// A folder as it was named at the time of the event.
@@ -98,7 +101,9 @@ pub struct HistoryEntry {
     /// ("patient" or "damaged").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub how: Option<String>,
-    /// Where a readable copy was saved, cut to `MAX_PLACE_CHARS`.
+    /// Where a readable copy or a backup was saved, cut to
+    /// `MAX_PLACE_CHARS`; for a vault set aside, and for the vault created
+    /// after it in the same run of the app, the folder it was set aside in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<String>,
     /// The SHA-256 of the whole place, when it was cut.

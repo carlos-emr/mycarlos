@@ -664,6 +664,9 @@ pub struct VaultStore {
     /// when the vault locks, so a lock never waits on, or fails over, a write.
     /// Taken under the session lock, after it.
     last_session: Mutex<Option<String>>,
+    /// The folder this run of the app last set a vault aside in, for the
+    /// next vault created (#71's third part). In memory only.
+    last_set_aside: Mutex<Option<String>>,
 }
 
 impl VaultStore {
@@ -675,7 +678,15 @@ impl VaultStore {
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
+            last_set_aside: Mutex::new(None),
         }
+    }
+
+    fn forget_last_session(&self) {
+        *self
+            .last_session
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 
     /// Notes how the session in `guard`, ending now, ended.
@@ -820,14 +831,19 @@ impl VaultStore {
                 records: Vec::new(),
                 history: HistoryState::default(),
             };
-            // The history's first entry (#71), in the stage like the rest.
-            manifest.history = prepare_history(
-                &stage,
-                &master_key,
-                &manifest,
-                vec![HistoryEntry::new(HistoryEvent::Created, now_ms)],
-            )?
-            .state;
+            // The history's first entry (#71), in the stage like the rest. A
+            // vault made after this run set one aside names where it went.
+            let mut created = HistoryEntry::new(HistoryEvent::Created, now_ms);
+            if let Some(folder) = self
+                .last_set_aside
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+            {
+                created = created.with_place(&folder);
+            }
+            manifest.history =
+                prepare_history(&stage, &master_key, &manifest, vec![created])?.state;
             write_valid_manifest_at(&stage, &master_key, &manifest)?;
             manifest.generation = manifest
                 .generation
@@ -837,6 +853,10 @@ impl VaultStore {
             sync_parent(&stage);
             fs::rename(&stage, &self.root)?;
             sync_parent(parent);
+            *self
+                .last_set_aside
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
             self.open_session(
                 &mut guard,
                 UnlockedVault {
@@ -2187,6 +2207,10 @@ impl VaultStore {
         Ok(true)
     }
 
+    /// Sets the vault aside (#71's third part): moves it, whole and still
+    /// encrypted, into `set-aside/` in one rename, so that the passphrase or
+    /// recovery key it had still opens it. Nothing is erased. An open,
+    /// writable vault records it in its history first.
     pub fn reset(&self) -> Result<(), VaultError> {
         self.cancel_io.store(true, Ordering::Release);
         let mut guard = self.session();
@@ -2197,8 +2221,18 @@ impl VaultStore {
             Some(unlocked) => Arc::clone(&unlocked.storage_lock),
             None => acquire_storage_lock(&self.root)?,
         };
+        let target = set_aside_path(&self.root)?;
+        if let Some(unlocked) = guard.as_mut() {
+            // Best effort: the patient asked for this, and it goes ahead
+            // whether or not it can be recorded.
+            let entry = HistoryEntry::new(HistoryEvent::SetAside, crate::now_ms())
+                .with_place(&set_aside_name(&target));
+            record_in_session(&self.root, unlocked, vec![entry]);
+        }
         *guard = None;
         self.idle.disarm();
+        // How that vault's last session ended is nothing to the next one's.
+        self.forget_last_session();
         let resumed = finish_pending_resets(&self.root)?;
         if !self.root.exists() {
             return if resumed {
@@ -2207,13 +2241,13 @@ impl VaultStore {
                 Err(VaultError::Missing)
             };
         }
-        let retired = reset_path(&self.root)?;
-        fs::rename(&self.root, &retired)?;
-        if let Some(parent) = self.root.parent() {
-            sync_parent(parent);
-        }
-        terminate_at_test_boundary("reset.after-rename");
-        finish_pending_resets(&self.root)?;
+        fail_at_test_boundary("reset.before-set-aside")?;
+        set_aside_to(&self.root, &target)?;
+        terminate_at_test_boundary("reset.after-set-aside");
+        *self
+            .last_set_aside
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(set_aside_name(&target));
         Ok(())
     }
 
@@ -2677,15 +2711,12 @@ impl VaultStore {
             // history here; nothing else reads the stage meanwhile.
             let mut restored = manifest.clone();
             restored.format_version = VAULT_FORMAT;
-            let prepared = prepare_history(
-                &stage,
-                &master_key,
-                &restored,
-                vec![HistoryEntry::new(
-                    HistoryEvent::BackupRestored,
-                    crate::now_ms(),
-                )],
-            )?;
+            let mut entry = HistoryEntry::new(HistoryEvent::BackupRestored, crate::now_ms());
+            // The vault it replaces is set aside when it goes in place.
+            if self.root.exists() {
+                entry.how = Some("replaced".to_owned());
+            }
+            let prepared = prepare_history(&stage, &master_key, &restored, vec![entry])?;
             restored.history = prepared.state;
             for _ in 0..2 {
                 restored.generation = restored
@@ -2759,9 +2790,9 @@ impl VaultStore {
             }
             return Err(error);
         }
-        // The restore is in place. Erasing the vault it retired is retried at
-        // every start, so a failure here does not make the restore one.
-        let _ = erase_retired_vault(&self.root);
+        // The restore is in place, and the vault it replaced set aside. How
+        // that vault's last session ended is nothing to the restored one.
+        self.forget_last_session();
         drop(session);
         Ok(())
     }
@@ -5511,58 +5542,92 @@ fn remove_abandoned_create_stages(parent: &Path) {
     }
 }
 
-// The caller holds the stable sibling lock. A retired directory is itself the durable reset
-// intent, so partial deletion and process death can be retried without the passphrase.
+// The caller holds the stable sibling lock.
 fn finish_pending_resets(root: &Path) -> Result<bool, VaultError> {
     let parent = root.parent().ok_or(VaultError::Storage)?;
     remove_abandoned_create_stages(parent);
     remove_abandoned_restore_stages(parent);
     remove_abandoned_exports(parent);
     let mut resumed = false;
-    // A verified restore whose vault was already retired goes in place before
-    // anything is erased: if the erasing then fails, the patient still has a
-    // vault.
+    // A verified restore whose vault was already set aside goes in place.
     if !root.exists() && activate_restore(root)? {
         resumed = true;
     }
-    resumed |= erase_retired_vault(root)?;
+    resumed |= set_aside_retired_vault(root)?;
     // A restore that was verified but not yet in place takes the live vault's
-    // place now; the vault it retires is erased as a reset's is.
+    // place now, and sets it aside.
     if activate_restore(root)? {
-        erase_retired_vault(root)?;
         resumed = true;
     }
     Ok(resumed)
 }
 
-fn erase_retired_vault(root: &Path) -> Result<bool, VaultError> {
-    let parent = root.parent().ok_or(VaultError::Storage)?;
-    let pending = reset_path(root)?;
-    let mut resumed = false;
-    for entry in fs::read_dir(parent)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path != pending {
-            continue;
-        }
-        let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err(VaultError::Storage);
-        }
-        #[cfg(windows)]
-        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err(VaultError::Storage);
-        }
-        fail_at_test_boundary("reset.before-cleanup")?;
-        // Erase key envelopes first. Keep the retired directory until all deletion succeeds.
-        remove_key_envelopes(&path, Removable::RetiredVault)?;
-        sync_parent(&path);
-        terminate_at_test_boundary("reset.after-key-removal");
-        remove_owned_dir_all(&path, Removable::RetiredVault)?;
-        sync_parent(parent);
-        resumed = true;
+/// Where vaults are set aside (#71's third part), beside the live vault in
+/// its home. The app never removes anything from it.
+const SET_ASIDE_DIR: &str = "set-aside";
+
+/// A new folder to set a vault aside in:
+/// `set-aside/<UTC yyyymmddThhmmssZ>-<random id>`, which tells only when.
+fn set_aside_path(root: &Path) -> Result<PathBuf, VaultError> {
+    let folder = vault_home(root)?.join(SET_ASIDE_DIR);
+    match fs::symlink_metadata(&folder) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => create_private_dir(&folder)?,
+        Ok(_) if is_real_dir(&folder) => {}
+        // A file, a link or a reparse point where the folder should be.
+        _ => return Err(VaultError::Storage),
     }
-    Ok(resumed)
+    let ms = crate::now_ms();
+    let (year, month, day) = utc_date(ms);
+    let seconds = (ms / 1000) % 86_400;
+    Ok(folder.join(format!(
+        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z-{}",
+        seconds / 3600,
+        seconds / 60 % 60,
+        seconds % 60,
+        Uuid::new_v4()
+    )))
+}
+
+/// The name a set-aside vault has under the vault home: `set-aside/<name>`.
+fn set_aside_name(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    format!("{SET_ASIDE_DIR}/{name}")
+}
+
+/// Moves a whole vault folder to `target` in `set-aside/`, in one rename on
+/// the same disk. Its headers go with it: nothing is erased.
+fn set_aside_to(from: &Path, target: &Path) -> Result<(), VaultError> {
+    fs::rename(from, target)?;
+    if let Some(folder) = target.parent() {
+        sync_parent(folder);
+    }
+    if let Some(parent) = from.parent() {
+        sync_parent(parent);
+    }
+    Ok(())
+}
+
+/// A vault an older build retired for erasing (`vault-v1.reset-pending`),
+/// perhaps partly erased already, is set aside as it is, not erased.
+fn set_aside_retired_vault(root: &Path) -> Result<bool, VaultError> {
+    let pending = reset_path(root)?;
+    let metadata = match fs::symlink_metadata(&pending) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        result => result?,
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(VaultError::Storage);
+    }
+    #[cfg(windows)]
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(VaultError::Storage);
+    }
+    fail_at_test_boundary("reset.before-set-aside")?;
+    set_aside_to(&pending, &set_aside_path(root)?)?;
+    Ok(true)
 }
 
 pub(crate) fn read_bounded_regular_file(path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
@@ -5674,9 +5739,6 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
-    /// A vault retired by a confirmed reset, or replaced by a restore. Until
-    /// #71's third part sets vaults aside instead.
-    RetiredVault,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.
@@ -6372,9 +6434,8 @@ fn restore_ready_path(root: &Path) -> Result<PathBuf, VaultError> {
 }
 
 /// Puts a verified restore in place of the live vault. Each step is one
-/// rename, and every start repeats whatever is left: the live vault is
-/// retired as a reset retires it (its key envelopes are erased next), then
-/// the verified copy takes its place.
+/// rename, and every start repeats whatever is left: the live vault is set
+/// aside, as a reset sets it aside, then the verified copy takes its place.
 fn activate_restore(root: &Path) -> Result<bool, VaultError> {
     let ready = restore_ready_path(root)?;
     if !is_real_dir(&ready) {
@@ -6390,15 +6451,9 @@ fn activate_restore(root: &Path) -> Result<bool, VaultError> {
     }
     let mut retired_here = None;
     if root.exists() {
-        let retired = reset_path(root)?;
-        // Pending resets finish before this runs, so a retired vault still
-        // here means that could not be done; keep both and report it.
-        if retired.exists() {
-            return Err(VaultError::Storage);
-        }
+        let retired = set_aside_path(root)?;
         fail_at_test_boundary("restore.before-retire")?;
-        fs::rename(root, &retired)?;
-        sync_parent(parent);
+        set_aside_to(root, &retired)?;
         terminate_at_test_boundary("restore.after-retire");
         retired_here = Some(retired);
     }
@@ -6925,49 +6980,169 @@ mod tests {
         assert_eq!(second.status().unwrap(), VaultStatus::Absent);
     }
 
-    #[test]
-    fn interrupted_reset_is_finished_before_startup_or_creation() {
-        for boundary in ["reset.after-rename", "reset.after-key-removal"] {
-            for create_directly in [false, true] {
-                let temp = tempfile::tempdir().unwrap();
-                let root = temp.path().join("vault");
-                let store = VaultStore::new(root.clone());
-                store.create(PASSWORD, "Jamie", 1).unwrap();
-                let profile = store.snapshot().unwrap().profiles[0].id;
-                store
-                    .import(profile, vec![], vec![source("old.pdf", b"old record")], 2)
-                    .unwrap();
-                store.lock();
-                run_termination_child(&root, "reset", boundary);
-                let retired = reset_path(&root).unwrap();
-                assert!(!root.exists());
-                assert!(retired.exists());
-                let restarted = VaultStore::new(root);
-                if create_directly {
-                    restarted.create(PASSWORD, "New profile", 3).unwrap();
-                    assert!(restarted.snapshot().unwrap().records.is_empty());
-                } else {
-                    assert_eq!(restarted.status().unwrap(), VaultStatus::Absent);
-                }
-                assert!(!retired.exists());
-            }
+    /// The folders in `set-aside/` beside `root`.
+    fn set_aside_folders(root: &Path) -> Vec<PathBuf> {
+        let folder = root.parent().unwrap().join(SET_ASIDE_DIR);
+        if !folder.exists() {
+            return Vec::new();
         }
+        // Folders only: a test that opens one in place leaves its lock file.
+        let mut folders: Vec<PathBuf> = fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_dir())
+            .collect();
+        folders.sort();
+        folders
     }
 
     #[test]
-    fn failed_reset_cleanup_blocks_access_and_can_be_retried() {
+    fn a_reset_sets_the_vault_aside_whole_and_its_keys_still_open_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("old.pdf", b"old record")], 2)
+            .unwrap();
+        let key = set_up_recovery_key(&store, 3);
+        // Every document's ciphertext and both headers, which must all go
+        // with it, byte for byte.
+        let mut kept: Vec<PathBuf> = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .map(|record| Path::new("objects").join(&record.object_name))
+            .collect();
+        kept.extend(HEADER_SLOTS.iter().map(PathBuf::from));
+        let before: Vec<Vec<u8>> = kept
+            .iter()
+            .map(|path| fs::read(root.join(path)).unwrap())
+            .collect();
+        store.reset().unwrap();
+        assert_eq!(store.status().unwrap(), VaultStatus::Absent);
+
+        // One folder, named for when, holding the vault.
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        let name = folders[0].file_name().unwrap().to_str().unwrap().to_owned();
+        let (stamp, id) = name.split_once("Z-").unwrap();
+        assert!(stamp.len() == 15 && stamp.as_bytes()[8] == b'T', "{name}");
+        assert!(Uuid::parse_str(id).is_ok(), "{name}");
+        for (path, bytes) in kept.iter().zip(&before) {
+            assert_eq!(
+                &fs::read(folders[0].join(path)).unwrap(),
+                bytes,
+                "{}",
+                path.display()
+            );
+        }
+
+        // Its passphrase and its recovery key still open it, with every
+        // document and the history saying where it went.
+        let aside = VaultStore::new(folders[0].clone());
+        aside.unlock(PASSWORD).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        let entries = history_events(&aside);
+        let set_aside = &entries[entries.len() - 2];
+        assert_eq!(set_aside.event, HistoryEvent::SetAside);
+        assert_eq!(
+            set_aside.place.as_deref(),
+            Some(format!("set-aside/{name}").as_str())
+        );
+        aside.lock();
+        assert!(aside.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        aside.lock();
+
+        // The next vault made in this run names where the last one went.
+        store.create(PASSWORD, "New profile", 4).unwrap();
+        let created = history_events(&store).remove(0);
+        assert_eq!(created.event, HistoryEvent::Created);
+        assert_eq!(
+            created.place.as_deref(),
+            Some(format!("set-aside/{name}").as_str())
+        );
+        // A second reset sets the second vault aside beside the first.
+        store.reset().unwrap();
+        assert_eq!(set_aside_folders(&root).len(), 2);
+    }
+
+    #[test]
+    fn a_reset_from_the_unlock_screen_sets_the_vault_aside_too() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
         store.lock();
+        // Locked, it cannot be written to: nothing is recorded in it.
+        store.reset().unwrap();
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        let aside = VaultStore::new(folders[0].clone());
+        aside.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            events_of(&history_events(&aside)),
+            [HistoryEvent::Created, HistoryEvent::Unlocked]
+        );
+    }
+
+    #[test]
+    fn an_interrupted_reset_leaves_the_vault_whole_in_place_or_set_aside() {
+        for create_directly in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
+            let store = VaultStore::new(root.clone());
+            store.create(PASSWORD, "Jamie", 1).unwrap();
+            store.lock();
+            run_termination_child(&root, "reset", "reset.after-set-aside");
+            assert!(!root.exists());
+            assert_eq!(set_aside_folders(&root).len(), 1);
+            let restarted = VaultStore::new(root.clone());
+            if create_directly {
+                restarted.create(PASSWORD, "New profile", 3).unwrap();
+                assert!(restarted.snapshot().unwrap().records.is_empty());
+            } else {
+                assert_eq!(restarted.status().unwrap(), VaultStatus::Absent);
+            }
+            assert_eq!(set_aside_folders(&root).len(), 1);
+        }
+        // A reset that cannot move the vault leaves it where it was.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        {
+            let _fail = FailAt::new("reset.before-set-aside");
+            assert!(matches!(store.reset(), Err(VaultError::NoSpace)));
+        }
+        assert!(set_aside_folders(&root).is_empty());
+        store.unlock(PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn a_vault_an_older_build_retired_is_set_aside_not_erased() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // What an older build left on its way to erasing a vault.
         let retired = reset_path(&root).unwrap();
         fs::rename(&root, &retired).unwrap();
-        run_failure_child(&root, "reset-recovery", "reset.before-cleanup");
+        // While it cannot be moved, nothing goes ahead.
+        run_failure_child(&root, "reset-recovery", "reset.before-set-aside");
         assert!(retired.join("header-0.json").exists());
-        store.reset().unwrap();
-        assert!(!retired.exists());
         assert_eq!(store.status().unwrap(), VaultStatus::Absent);
+        assert!(!retired.exists());
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        VaultStore::new(folders[0].clone())
+            .unlock(PASSWORD)
+            .unwrap();
     }
 
     #[test]
@@ -10335,7 +10510,7 @@ mod tests {
     }
 
     #[test]
-    fn a_restore_goes_in_place_before_the_vault_it_retired_is_erased() {
+    fn a_restore_cut_short_finishes_and_the_vault_it_replaced_stays_set_aside() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("home").join("vault");
         let (_, backup, _) = backed_up_vault(&root);
@@ -10343,17 +10518,24 @@ mod tests {
         fs::write(&file, &backup).unwrap();
         run_restore_termination_child(&root, &file, "restore.after-retire");
         assert!(!root.exists());
+        assert_eq!(set_aside_folders(&root).len(), 1);
 
-        // The erasing fails at the next start. The restored vault must be in
-        // place all the same, or the patient would have none.
+        // The next start puts the restored vault in place; the one it
+        // replaced stays set aside, and still opens.
         let restarted = VaultStore::new(root.clone());
-        {
-            let _failing = FailAt::new("reset.before-cleanup");
-            assert!(restarted.status().is_err());
-        }
-        assert!(root.exists());
         assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
         restarted.unlock(PASSWORD).unwrap();
+        let entries = history_events(&restarted);
+        let restore = &entries[entries.len() - 2];
+        assert_eq!(
+            (restore.event, restore.how.as_deref()),
+            (HistoryEvent::BackupRestored, Some("replaced"))
+        );
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        VaultStore::new(folders[0].clone())
+            .unlock(PASSWORD)
+            .unwrap();
         assert!(!reset_path(&root).unwrap().exists());
     }
 
@@ -10813,7 +10995,7 @@ mod tests {
         store.lock();
         fs::create_dir(&abandoned).unwrap();
         fs::copy(root.join(HEADER_SLOTS[0]), abandoned.join("tmpfile.tmp")).unwrap();
-        remove_key_envelopes(&root, Removable::RetiredVault).unwrap();
+        remove_key_envelopes(&root, Removable::RestoreStage).unwrap();
         assert!(!abandoned.exists());
     }
 
@@ -10828,7 +11010,7 @@ mod tests {
         fs::remove_file(root.join(HEADER_SLOTS[0])).unwrap();
         fs::create_dir(root.join(HEADER_SLOTS[0])).unwrap();
 
-        assert!(remove_key_envelopes(&root, Removable::RetiredVault).is_err());
+        assert!(remove_key_envelopes(&root, Removable::RestoreStage).is_err());
         assert!(!root.join(HEADER_SLOTS[1]).exists());
     }
 
@@ -14468,6 +14650,8 @@ mod tests {
             events_of(&entries[entries.len() - 2..]),
             [HistoryEvent::BackupRestored, HistoryEvent::Unlocked]
         );
+        // A device with no vault: none was replaced.
+        assert_eq!(entries[entries.len() - 2].how, None);
     }
 
     #[test]

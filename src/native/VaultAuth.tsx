@@ -84,7 +84,8 @@ function AuthNotice({
 // The native side compares the typed text with this exact phrase again.
 const RESET_CONFIRMATION = "RESET MYCARLOS VAULT";
 
-/** The typed confirmation shared by every place that can erase the vault. */
+/** The typed confirmation shared by every place that can set the vault
+ * aside (#71: nothing erases it). */
 export function ResetConfirmation({
   busy,
   actionLabel,
@@ -314,12 +315,13 @@ export function UnlockVault({
           />
           <h2 className="vault-reset-heading">No recovery key?</h2>
           <p>
-            Without one, the only way back in is to erase this vault, which
-            permanently deletes everything in it, and start again.
+            Without one, the only way back in is to set this vault aside and
+            start again. The vault set aside stays on this device, encrypted,
+            but nobody can open it without its passphrase.
           </p>
           <ResetConfirmation
             busy={busy}
-            actionLabel="Erase vault"
+            actionLabel="Set vault aside"
             onReset={(confirmation) => {
               setSource("forgot");
               return onReset(confirmation);

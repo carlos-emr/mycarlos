@@ -442,7 +442,7 @@ export function RecoveryKeySetup({
                   <p>
                     Your vault is open. It has no recovery key yet. Without one,
                     if you forget your passphrase, the only way back in is to
-                    erase the vault.
+                    set the vault aside and start again.
                   </p>
                 )}
                 <p>

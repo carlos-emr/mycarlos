@@ -196,6 +196,11 @@ export function SecuritySettings({
               outside myCarlos, and where. It is encrypted with everything else.
               myCarlos does not show it, and never changes or removes it.
             </p>
+            <p>
+              Starting again, or restoring a backup over this vault, sets the
+              vault aside: it stays on this device, encrypted. myCarlos never
+              deletes a vault.
+            </p>
           </div>
         </section>
         <section className="setting-row native-setting-form">
@@ -378,7 +383,7 @@ export function SecuritySettings({
               Use at least {MIN_PASSPHRASE_CHARS} characters and avoid common
               names or predictable phrases. Your recovery key, if you have one,
               keeps working; without one, forgetting the new passphrase means
-              erasing the vault.
+              setting the vault aside and starting again.
             </p>
             <p>
               Changing your passphrase keeps out someone who only knows the old
@@ -387,7 +392,7 @@ export function SecuritySettings({
               enough: the old one still opens that copy, and with that copy they
               could open a newer one they got later. Shutting them out takes a
               new vault, and care not to lose documents on the way. Ask for help
-              before you erase anything.
+              before you set your vault aside.
             </p>
           </div>
           <form onSubmit={submitPassphrase}>
@@ -524,17 +529,20 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-danger-setting">
           <div>
-            <h2>Erase entire vault</h2>
+            <h2>Set this vault aside and start again</h2>
             <p>
-              Permanently deletes every encrypted document, profile, and folder.
-              This cannot be undone.
+              Moves the whole vault aside and starts an empty one. The vault set
+              aside stays on this device, encrypted, with everything in it, and
+              its passphrase or recovery key still opens it, but myCarlos cannot
+              open it again for you yet. myCarlos never deletes it: to free the
+              space, delete its folder yourself.
             </p>
           </div>
           <details>
             <summary>Show reset controls</summary>
             <ResetConfirmation
               busy={busy}
-              actionLabel="Erase entire vault"
+              actionLabel="Set vault aside"
               onReset={onReset}
             />
           </details>
