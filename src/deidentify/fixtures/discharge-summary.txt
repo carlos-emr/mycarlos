@@ -1,0 +1,19 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+Sampletown General Hospital - Discharge Summary
+
+Patient name: Avery Example
+Born: April 17, 1961
+Visit number: V-2026-554433
+Admitted: 2026-10-01     Discharged: 2026-10-05
+
+Next of kin: Jordan Example (husband), 613-555-0188
+Emergency contact: Sam Testperson, sam.testperson@example.net
+Mailing address: PO Box 4410, Sampletown, Ontario K9Z 9Z9
+
+Course: Admitted with community-acquired pneumonia. Treated with ceftriaxone 1 g IV daily,
+then amoxicillin 1 g PO three times daily for 5 days. Oxygen weaned by day 3.
+
+Follow-up: Family doctor, Dr. Casey Placeholder, within 1 week. Book at the
+Maplewood Family Health Team, (613) 555-0142.
+
+Electronically signed by: Dr. Taylor Notreal, MD

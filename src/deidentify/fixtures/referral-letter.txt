@@ -1,0 +1,34 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+
+Maplewood Family Health Team
+123 Example Street, Unit 4
+Sampletown, ON K9Z 9Z9
+Tel: (613) 555-0142   Fax: 613-555-0143
+referrals@example.com
+
+October 2, 2026
+
+Dr. Blake Sample
+Riverside Cardiology Clinic
+45 Fictional Avenue
+Testville, ON X0X 0X0
+
+Re: Avery EXAMPLE
+DOB: 1961-04-17
+Health card: 1234-567-890-AB
+Address: 77 Placeholder Crescent, Sampletown, ON K9Z 1A1
+Phone: 613-555-0177
+
+Dear Dr. Sample,
+
+Thank you for seeing Mrs. Avery Example, a 65-year-old woman with exertional chest pain
+since September 18, 2026. Her ECG on 2026-09-25 showed sinus rhythm with no acute changes.
+Her LDL was 3.9 mmol/L and her blood pressure 142/88. She takes ramipril 5 mg daily.
+
+Please call me at 613-555-0142 ext. 21 if you need anything else. Avery's husband, Jordan
+Example, can be reached at (613) 555-0188.
+
+Sincerely,
+
+Dr. Casey Placeholder
+Maplewood Family Health Team
