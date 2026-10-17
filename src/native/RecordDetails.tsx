@@ -137,7 +137,12 @@ export function RecordDetails({
         </dl>
         <div className="native-record-rename">
           {onViewPhoto && (
-            <button className="button" type="button" onClick={onViewPhoto}>
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onViewPhoto}
+            >
               <Icon name="image" />
               <span>View photo</span>
             </button>

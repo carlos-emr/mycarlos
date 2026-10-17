@@ -7,7 +7,12 @@ import {
 } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
+import {
+  vaultErrorMessage,
+  type VaultBridge,
+  type VaultRecord,
+  type VaultSnapshot,
+} from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
 const NAME = /^Photo, \d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg$/;
@@ -85,6 +90,7 @@ function renderLibrary(
       };
       return { imported: ["photo-1"], skippedDuplicates: [] };
     }),
+    isPhoto: vi.fn(async () => true),
     viewPhoto: vi.fn(async () => PHOTO_URL),
     snapshot: vi.fn(async () => current),
     ...bridgeOverrides,
@@ -99,7 +105,14 @@ function renderLibrary(
         busy={false}
         notice={notice}
         setNotice={setNotice}
-        run={async (operation) => operation()}
+        // As VaultApp's: a failure is reported as the notice.
+        run={async (operation) => {
+          try {
+            await operation();
+          } catch (error) {
+            setNotice(vaultErrorMessage(error));
+          }
+        }}
         refresh={async () => {
           setSnapshot(current);
           return current;
@@ -216,25 +229,37 @@ describe("viewing a photo", () => {
     ],
   };
 
-  it("is offered when the vault says the file is a JPEG, whatever its name", async () => {
+  const openDetails = (name: string) => {
+    fireEvent.click(
+      screen.getByRole("button", { name: `More options for ${name}` }),
+    );
+    return screen.getByRole("dialog", { name });
+  };
+
+  it("is offered when the vault says the file is a JPEG, whatever its name, and fetched only to be shown", async () => {
     const bridge = renderLibrary(withRecords);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "More options for FAKE insurance card",
-      }),
-    );
-    const details = screen.getByRole("dialog", { name: "FAKE insurance card" });
-    fireEvent.click(
-      await within(details).findByRole("button", { name: "View photo" }),
-    );
+    const details = openDetails("FAKE insurance card");
+    const view = await within(details).findByRole("button", {
+      name: "View photo",
+    });
+    expect(bridge.isPhoto).toHaveBeenCalledWith("card");
+    // The details only ask whether it is a photo; the photo stays native.
+    expect(bridge.viewPhoto).not.toHaveBeenCalled();
+    fireEvent.click(view);
     expect(bridge.viewPhoto).toHaveBeenCalledWith("card");
 
-    const viewer = screen.getByRole("dialog", { name: "FAKE insurance card" });
-    const photo = within(viewer).getByRole("img", {
+    // The viewer replaces the details, under the same name.
+    const photo = await screen.findByRole("img", {
       name: "Photo: FAKE insurance card",
     });
+    const viewer = photo.closest<HTMLElement>('[role="dialog"]')!;
+    expect(viewer).toHaveAccessibleName("FAKE insurance card");
     expect(photo).toHaveAttribute("src", PHOTO_URL);
-    expect(within(viewer).getByRole("button", { name: "Close" })).toHaveFocus();
+    await waitFor(() =>
+      expect(
+        within(viewer).getByRole("button", { name: "Close" }),
+      ).toHaveFocus(),
+    );
     expect(
       within(viewer).getByRole("button", { name: "Zoom out" }),
     ).toBeDisabled();
@@ -246,30 +271,45 @@ describe("viewing a photo", () => {
     expect(
       screen.getByRole("dialog", { name: "FAKE insurance card" }),
     ).toHaveAttribute("aria-describedby", "native-record-about");
+    // Closed, the photo is dropped; showing it again fetches it again.
+    expect(screen.queryByRole("img", { name: /^Photo: / })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "View photo" }));
+    await screen.findByRole("img", { name: "Photo: FAKE insurance card" });
+    expect(bridge.viewPhoto).toHaveBeenCalledTimes(2);
+  });
+
+  it("says why when a file that starts as a photo cannot be shown", async () => {
+    renderLibrary(withRecords, {
+      viewPhoto: vi.fn(async () => {
+        throw { code: "not_a_photo", message: "FAKE This is not a photo." };
+      }),
+    });
+    const details = openDetails("FAKE insurance card");
+    fireEvent.click(
+      await within(details).findByRole("button", { name: "View photo" }),
+    );
+    await waitFor(() =>
+      expect(within(details).getByRole("status")).toHaveTextContent(
+        "FAKE This is not a photo.",
+      ),
+    );
+    expect(screen.queryByRole("img", { name: /^Photo: / })).toBeNull();
   });
 
   it("is not offered when the file is not a photo, and a PDF is not asked about", async () => {
     const bridge = renderLibrary(withRecords, {
-      viewPhoto: vi.fn(async () => {
-        throw { code: "not_a_photo", message: "FAKE not a photo." };
-      }),
+      isPhoto: vi.fn(async () => false),
     });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "More options for FAKE insurance card",
-      }),
-    );
-    await waitFor(() => expect(bridge.viewPhoto).toHaveBeenCalledWith("card"));
+    openDetails("FAKE insurance card");
+    await waitFor(() => expect(bridge.isPhoto).toHaveBeenCalledWith("card"));
     expect(screen.queryByRole("button", { name: "View photo" })).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Close document details" }),
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "More options for FAKE results.pdf" }),
-    );
-    screen.getByRole("dialog", { name: "FAKE results.pdf" });
-    expect(bridge.viewPhoto).toHaveBeenCalledTimes(1);
+    openDetails("FAKE results.pdf");
+    expect(bridge.isPhoto).toHaveBeenCalledTimes(1);
+    expect(bridge.viewPhoto).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "View photo" })).toBeNull();
   });
 });

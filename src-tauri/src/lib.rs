@@ -470,7 +470,7 @@ struct ExportRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ViewPhotoRequest {
+struct PhotoRequest {
     record_id: Uuid,
 }
 
@@ -585,6 +585,51 @@ impl std::io::Write for PhotoBuffer {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+/// The first bytes of a record's file, and no more: once it has them, it stops
+/// the export, so only the first chunk is decrypted.
+#[derive(Default)]
+struct FileStart {
+    bytes: [u8; photo::JPEG_START.len()],
+    seen: usize,
+}
+
+impl FileStart {
+    fn complete(&self) -> bool {
+        self.seen == self.bytes.len()
+    }
+}
+
+impl std::io::Write for FileStart {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let take = data.len().min(self.bytes.len() - self.seen);
+        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
+        self.seen += take;
+        if self.complete() {
+            Err(std::io::Error::other("the first bytes are read"))
+        } else {
+            Ok(data.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
+/// called. A document's details ask this before offering View photo, so the
+/// photo itself stays here until the patient asks to see it; `view_photo` then
+/// checks the whole file.
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    let mut start = FileStart::default();
+    let exported = store.export(record_id, &mut start);
+    if start.complete() {
+        return Ok(start.bytes == photo::JPEG_START);
+    }
+    // Shorter than three bytes, or not read at all.
+    exported.map(|()| false)
 }
 
 /// The photo a record holds, as a `data:image/jpeg` URL for the photo view
@@ -2001,9 +2046,20 @@ async fn vault_save_photo(
 }
 
 #[tauri::command]
+async fn vault_is_photo(
+    store: State<'_, Arc<VaultStore>>,
+    request: PhotoRequest,
+) -> CommandResult<bool> {
+    run_blocking(store.inner(), move |store| {
+        is_photo(store, request.record_id)
+    })
+    .await
+}
+
+#[tauri::command]
 async fn vault_view_photo(
     store: State<'_, Arc<VaultStore>>,
-    request: ViewPhotoRequest,
+    request: PhotoRequest,
 ) -> CommandResult<String> {
     run_blocking(store.inner(), move |store| {
         view_photo(store, request.record_id)
@@ -2266,6 +2322,7 @@ pub fn run() {
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
+            vault_is_photo,
             vault_view_photo,
             vault_delete_record,
             vault_remove_unavailable_records,
@@ -3425,7 +3482,7 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
-            let _ = serde_json::from_slice::<ViewPhotoRequest>(&payload);
+            let _ = serde_json::from_slice::<PhotoRequest>(&payload);
             let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
@@ -3693,6 +3750,54 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn the_details_check_reads_only_a_files_first_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let files: [(&str, Vec<u8>); 5] = [
+            ("FAKE insurance card", tagged()),
+            ("FAKE results.jpg", b"%PDF-1.7 FAKE results".to_vec()),
+            ("FAKE two bytes", vec![0xff, 0xd8]),
+            ("FAKE empty", Vec::new()),
+            ("FAKE cut off", CANVAS[..CANVAS.len() - 2].to_vec()),
+        ];
+        let sources = files
+            .iter()
+            .map(|(name, bytes)| ImportSource {
+                display_name: (*name).to_owned(),
+                reader: Box::new(Cursor::new(bytes.clone())),
+            })
+            .collect();
+        let ids = store
+            .import(profile, Vec::new(), sources, 2)
+            .unwrap()
+            .imported;
+        let checked: Vec<bool> = ids
+            .iter()
+            .map(|id| is_photo(&store, *id).unwrap())
+            .collect();
+        // A JPEG with no extension is a photo; a PDF named ".jpg" is not.
+        assert_eq!(checked, [true, false, false, false, true]);
+        // The check goes by the first bytes only: the view checks the rest.
+        assert!(matches!(
+            view_photo(&store, ids[4]),
+            Err(VaultError::NotPhoto)
+        ));
+        assert!(matches!(
+            is_photo(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
+
+        // It stops the export once it has three bytes.
+        let mut start = FileStart::default();
+        assert_eq!(start.write(&[0xff]).unwrap(), 1);
+        assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
+        assert!(start.complete());
+        assert_eq!(start.bytes, photo::JPEG_START);
+    }
+
+    #[test]
     fn the_photo_buffer_stops_at_the_first_bytes_that_are_not_a_jpeg_or_past_the_cap() {
         let mut pdf = PhotoBuffer::default();
         assert!(pdf.write(b"%PDF-1.7").is_err());
@@ -3734,5 +3839,6 @@ mod photo_command_tests {
         assert!(save.contains("Zeroizing::new(body.clone())"));
         assert!(save.contains("run_blocking("));
         assert!(body("async fn vault_view_photo(").contains("run_blocking("));
+        assert!(body("async fn vault_is_photo(").contains("run_blocking("));
     }
 }

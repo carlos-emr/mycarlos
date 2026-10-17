@@ -215,8 +215,11 @@ export interface VaultBridge {
     name: string,
     jpeg: Uint8Array,
   ): Promise<ImportOutcome>;
-  /** A document's photo, as a `data:image/jpeg` URL, if its file is a JPEG;
-   * rejected with the code "not_a_photo" otherwise. */
+  /** Whether a document's file starts as a JPEG does. Only its first bytes
+   * are read; the photo itself stays native. */
+  isPhoto(recordId: string): Promise<boolean>;
+  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
+   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
   viewPhoto(recordId: string): Promise<string>;
   deleteRecord(recordId: string): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
@@ -416,6 +419,8 @@ export function createVaultBridge(): VaultBridge {
           "Mycarlos-Photo-Name": encodeURIComponent(name),
         },
       }),
+    isPhoto: (recordId) =>
+      invoke<boolean>("vault_is_photo", { request: { recordId } }),
     viewPhoto: (recordId) =>
       invoke<string>("vault_view_photo", { request: { recordId } }),
     deleteRecord: (recordId) =>

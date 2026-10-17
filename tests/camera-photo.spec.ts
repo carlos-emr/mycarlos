@@ -60,6 +60,7 @@ async function fakeVault(page: Page) {
           });
           return { imported: ["photo"], skippedDuplicates: [] };
         }
+        if (command === "vault_is_photo") return Boolean(photoUrl);
         if (command === "vault_view_photo" && photoUrl) return photoUrl;
         throw new Error(`Unexpected IPC command: ${command}`);
       },

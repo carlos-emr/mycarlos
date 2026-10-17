@@ -145,11 +145,13 @@ export function VaultLibrary({
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
-  // The open document's photo, when its file is one, and whether it is shown.
-  const [photo, setPhoto] = useState<{ recordId: string; url: string } | null>(
-    null,
-  );
-  const [viewingPhoto, setViewingPhoto] = useState(false);
+  // The open document, when its file is a photo, and the photo while it is
+  // shown: it is fetched for the photo view and dropped when that closes.
+  const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
+  const [shownPhoto, setShownPhoto] = useState<{
+    recordId: string;
+    url: string;
+  } | null>(null);
   // The result of a dialog's action (a rename, a recovery key), given once the
   // dialog has closed (see the effect below), and the document whose details
   // it was started from, if any.
@@ -250,27 +252,33 @@ export function VaultLibrary({
 
   // A document whose file is a JPEG can be viewed as a photo. The vault
   // decides from the file's first bytes, whatever its name, so it is asked
-  // when the document's details open; a PDF is not asked about.
+  // when the document's details open (it reads only those bytes); a PDF is
+  // not asked about. The photo itself is fetched only for the photo view.
   const photoCandidate =
     activeRecord?.available && !namedAsPdf(activeRecord.displayName)
       ? activeRecord.id
       : null;
   useEffect(() => {
-    setPhoto(null);
-    setViewingPhoto(false);
+    setPhotoRecordId(null);
+    setShownPhoto(null);
     if (!photoCandidate) return;
     let current = true;
-    bridge.viewPhoto(photoCandidate).then(
-      (url) => {
-        if (current) setPhoto({ recordId: photoCandidate, url });
+    bridge.isPhoto(photoCandidate).then(
+      (photo) => {
+        if (current && photo) setPhotoRecordId(photoCandidate);
       },
-      // Not a photo, or no longer readable: the details say what they can.
+      // No longer readable: the details say what they can.
       () => undefined,
     );
     return () => {
       current = false;
     };
   }, [bridge, photoCandidate]);
+  const viewPhoto = (recordId: string) =>
+    run(async () => {
+      const url = await bridge.viewPhoto(recordId);
+      setShownPhoto({ recordId, url });
+    });
 
   useEffect(() => {
     setCurrentFolderId(null);
@@ -319,7 +327,7 @@ export function VaultLibrary({
       !dialogResult ||
       renameTarget ||
       cameraOpen ||
-      viewingPhoto ||
+      shownPhoto ||
       confirmation ||
       confirmRemoveDamaged ||
       recoverySetup ||
@@ -350,7 +358,7 @@ export function VaultLibrary({
     recoverySetup,
     renameTarget,
     cameraOpen,
-    viewingPhoto,
+    shownPhoto,
   ]);
 
   const renameFolder = (folder: VaultFolder) =>
@@ -1284,16 +1292,14 @@ export function VaultLibrary({
               onClose={() => setCameraOpen(false)}
             />
           )}
-          {activeRecord &&
-            viewingPhoto &&
-            photo?.recordId === activeRecord.id && (
-              <PhotoViewer
-                name={activeRecord.displayName}
-                url={photo.url}
-                onClose={() => setViewingPhoto(false)}
-              />
-            )}
-          {activeRecord && !renameTarget && !pendingAction && !viewingPhoto && (
+          {activeRecord && shownPhoto?.recordId === activeRecord.id && (
+            <PhotoViewer
+              name={activeRecord.displayName}
+              url={shownPhoto.url}
+              onClose={() => setShownPhoto(null)}
+            />
+          )}
+          {activeRecord && !renameTarget && !pendingAction && !shownPhoto && (
             <RecordDetails
               record={activeRecord}
               folders={folders}
@@ -1317,8 +1323,8 @@ export function VaultLibrary({
                 setConfirmation({ action: "export", recordId: activeRecord.id })
               }
               onViewPhoto={
-                photo?.recordId === activeRecord.id
-                  ? () => setViewingPhoto(true)
+                photoRecordId === activeRecord.id
+                  ? () => void viewPhoto(activeRecord.id)
                   : undefined
               }
             />

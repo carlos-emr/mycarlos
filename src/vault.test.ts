@@ -67,6 +67,11 @@ describe("native idle deadline bridge", () => {
         },
       ],
     ]);
+    invoke.mockResolvedValue(true);
+    await expect(bridge.isPhoto("record-1")).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_photo", {
+      request: { recordId: "record-1" },
+    });
     invoke.mockResolvedValue("data:image/jpeg;base64,/9j/");
     await expect(bridge.viewPhoto("record-1")).resolves.toBe(
       "data:image/jpeg;base64,/9j/",

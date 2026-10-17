@@ -1,14 +1,17 @@
 //! The camera dialog asks the webview for video, never sound, and only after
 //! the patient chooses "Use the camera". This answers the webview's own
 //! permission question for that request, so no browser-style prompt naming an
-//! origin appears: the camera is allowed for the app's own pages, and the
-//! microphone is refused. The operating system's camera setting still decides
-//! whether the app may use the camera at all.
+//! origin appears: the camera is allowed for the app's own pages, and every
+//! other request (the microphone, location, notifications and the rest) is
+//! refused. The operating system's camera setting still decides whether the
+//! app may use the camera at all.
 //!
 //! macOS needs nothing here: Wry grants a page's capture request, and macOS
 //! then asks the patient, with the reason in Info.plist
-//! (`NSCameraUsageDescription`). The app declares no microphone reason, so
-//! macOS gives it no microphone.
+//! (`NSCameraUsageDescription`). The app declares no microphone reason; macOS
+//! would end an app that used the microphone without one, but the app never
+//! asks for sound. A signed build with the hardened runtime will also need the
+//! `com.apple.security.device.camera` entitlement, or the camera stays off.
 
 use tauri::{Config, Url, WebviewWindow};
 
@@ -46,15 +49,15 @@ pub fn install(window: &WebviewWindow, config: Config) -> tauri::Result<()> {
 }
 
 /// Windows: WebView2 raises PermissionRequested before it would show its own
-/// prompt. Other kinds of request keep WebView2's default; the app makes none.
+/// prompt. Only the camera, for the app's own pages, is allowed; any other
+/// kind, or a request that cannot be read, is refused without a prompt.
 #[cfg(windows)]
 pub fn install(window: &WebviewWindow, config: Config) -> Result<(), Box<dyn std::error::Error>> {
     use webview2_com::{
         take_pwstr,
         Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_CAMERA,
-            COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
-            COREWEBVIEW2_PERMISSION_STATE_DENY,
+            COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
         },
         PermissionRequestedEventHandler,
     };
@@ -73,20 +76,21 @@ pub fn install(window: &WebviewWindow, config: Config) -> Result<(), Box<dyn std
                         let Some(args) = args else {
                             return Ok(());
                         };
-                        let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
-                        args.PermissionKind(&mut kind)?;
-                        if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE {
-                            return args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY);
-                        }
-                        if kind != COREWEBVIEW2_PERMISSION_KIND_CAMERA {
-                            return Ok(());
-                        }
-                        let mut uri = PWSTR::null();
-                        args.Uri(&mut uri)?;
-                        let uri = take_pwstr(uri);
-                        let ours =
-                            Url::parse(&uri).is_ok_and(|url| super::may_navigate(&config, &url));
-                        args.SetState(if ours {
+                        let camera_for_us =
+                            (|| -> windows::core::Result<bool> {
+                                let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                                args.PermissionKind(&mut kind)?;
+                                if kind != COREWEBVIEW2_PERMISSION_KIND_CAMERA {
+                                    return Ok(false);
+                                }
+                                let mut uri = PWSTR::null();
+                                args.Uri(&mut uri)?;
+                                let uri = take_pwstr(uri);
+                                Ok(Url::parse(&uri)
+                                    .is_ok_and(|url| super::may_navigate(&config, &url)))
+                            })()
+                            .unwrap_or(false);
+                        args.SetState(if camera_for_us {
                             COREWEBVIEW2_PERMISSION_STATE_ALLOW
                         } else {
                             COREWEBVIEW2_PERMISSION_STATE_DENY
