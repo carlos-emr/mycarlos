@@ -4010,10 +4010,12 @@ fn write_manifest_at(
 /// Commits `next` as two consecutive generations, one per slot.
 ///
 /// Once the first write is durable the mutation is committed and `current`
-/// reflects it. `between` runs at that point, before the redundant write: a
-/// deletion unlinks its ciphertext there. Returns whether the redundant write
-/// also succeeded; when it did not, or when `between` failed, the caller's
-/// session must enter write-failed recovery, since unlock repairs the slot redundancy.
+/// reflects it. `between` runs at that point, before the redundant write.
+/// Nothing runs there today: documents are never deleted (#71). The history
+/// (#71's second part) will unlink only a superseded segment of its own there.
+/// Returns whether the redundant write also succeeded; when it did not, or
+/// when `between` failed, the caller's session must enter write-failed
+/// recovery, since unlock repairs the slot redundancy.
 fn commit_manifest_redundant(
     root: &Path,
     master_key: &[u8; 32],
