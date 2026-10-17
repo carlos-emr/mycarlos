@@ -714,6 +714,14 @@ impl VaultStore {
         }
     }
 
+    /// The folder vaults are set aside in (#71), for the native dialog that
+    /// confirms a reset to name. Never sent to the screen.
+    pub fn set_aside_folder(&self) -> Option<PathBuf> {
+        vault_home(&self.root)
+            .ok()
+            .map(|home| home.join(SET_ASIDE_DIR))
+    }
+
     /// The session's idle deadline, which the app's native timer checks.
     pub fn idle(&self) -> &Arc<IdleDeadline> {
         &self.idle

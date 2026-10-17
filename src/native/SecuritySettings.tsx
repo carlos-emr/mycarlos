@@ -18,6 +18,7 @@ import {
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
+import { SetAsideRemoval } from "./SetAsideRemoval";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -39,6 +40,8 @@ interface SecuritySettingsProps {
   onOldBackupsGuideDone?: () => void;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** The operating system, for where vaults set aside are (#71). */
+  platform?: string;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
   onSpeedTest: () => Promise<SpeedTestReport>;
@@ -75,6 +78,7 @@ export function SecuritySettings({
   oldBackupsGuide = null,
   onOldBackupsGuideDone,
   sizesIn1024s = false,
+  platform = "",
   onSetUpRecoveryKey,
   onSaveBackup,
   onSpeedTest,
@@ -534,9 +538,9 @@ export function SecuritySettings({
               Moves the whole vault aside and starts an empty one. The vault set
               aside stays on this device, encrypted, with everything in it, and
               its passphrase or recovery key still opens it, but myCarlos cannot
-              open it again for you yet. myCarlos never deletes it: to free the
-              space, delete its folder yourself.
+              open it again for you yet. myCarlos never deletes it.
             </p>
+            <SetAsideRemoval platform={platform} />
           </div>
           <details>
             <summary>Show reset controls</summary>

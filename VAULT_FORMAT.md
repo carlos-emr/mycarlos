@@ -253,7 +253,13 @@ aside. An open, writable vault first records `setAside`, with that folder's name
 the next vault created in the same run of the app names it in its `created` entry. The app cannot
 open a vault set aside yet: the way back is to copy its folder into place by hand, with myCarlos
 closed. The app never removes anything from `set-aside/`, so storage grows with each vault set
-aside; freeing the space means deleting a folder by hand. A `vault-v1.reset-pending/` an older
+aside. On a computer, freeing the space means deleting a folder by hand: Security names the
+folder (as the file app's address bar takes it, so it can be copied there; the native side gives
+the screen no paths), and the confirmation dialog names it in full. On Android and iPhone the
+folder is private to the app: only clearing myCarlos's data in the system settings, or
+uninstalling it, removes a vault set aside, and that removes every vault on the device, the one in
+use too. Both say so, and say that someone who knows the old passphrase can still open the vault
+set aside until it is removed. A `vault-v1.reset-pending/` an older
 build left on its way to erasing a vault, whole or partly erased, is set aside too, at the next
 status, create, unlock or reset, under the same lock; while that cannot be done, access and
 creation are blocked. Symlink/reparse-point reset directories, and a `set-aside` that is not a real
@@ -669,8 +675,9 @@ state, described in the recovery-key sections above.
   #55) would catch that. The number of segment-sized files shows the history's length to about a
   power of two. Locks are recorded only at the next unlock in the same run of the app.
 - Nothing erases a vault (#71): every vault set aside stays on the device, encrypted, and opens
-  with the passphrase or recovery key it had, until its folder is deleted by hand. Storage grows
-  with each one. The app cannot open one yet (reopening is a follow-up).
+  with the passphrase or recovery key it had, until its folder is deleted by hand, or, on Android
+  and iPhone, until myCarlos's data is cleared or it is uninstalled, which removes every vault.
+  Storage grows with each one. The app cannot open one yet (reopening is a follow-up).
 - Crash-injection, power-loss, low-disk, physical-device backup/restore, and filesystem-permission
   matrices remain release-gate tests. Abrupt subprocess termination at the application-controlled
   chunk, staging, rename, manifest, and deletion boundaries is automated, along with deterministic

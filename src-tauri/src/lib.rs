@@ -1871,7 +1871,24 @@ async fn vault_unhide_record(
 /// What a vault set aside (#71) keeps, said wherever one is set aside.
 const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
 
-const SET_ASIDE_VAULT_WARNING: &str = "This sets the whole vault aside and starts again with an empty one. The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet. myCarlos never deletes it: to free the space, delete its folder yourself.";
+/// What starting again does (#71), who can still open the vault set aside,
+/// and how to remove it on this platform: on a computer, by deleting its
+/// folder, named here (the dialog is native, never the screen); on a phone,
+/// where the folder is private to the app, only by clearing the app's data
+/// or uninstalling it, which removes every vault.
+fn set_aside_vault_warning(folder: &std::path::Path) -> String {
+    let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
+        "On this phone, vaults set aside stay in myCarlos's private storage, and myCarlos cannot remove them: the only way is to clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone.".to_owned()
+    } else {
+        format!(
+            "To remove a vault set aside, and free its space, close myCarlos and delete its folder in {}.",
+            folder.display()
+        )
+    };
+    format!(
+        "This sets the whole vault aside and starts again with an empty one. {SET_ASIDE_KEPT} myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. {removal}"
+    )
+}
 
 #[tauri::command]
 async fn vault_reset(
@@ -1884,12 +1901,13 @@ async fn vault_reset(
     if request.confirmation != "RESET MYCARLOS VAULT" {
         return Err(PublicError::from(VaultError::Invalid));
     }
+    let warning = set_aside_vault_warning(&store.set_aside_folder().ok_or(VaultError::Storage)?);
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
         confirmed_natively(
             &dialog_app,
             "Set this myCarlos vault aside and start again?",
-            SET_ASIDE_VAULT_WARNING,
+            warning,
             "Keep this vault",
             "Set it aside",
         )
@@ -3079,8 +3097,18 @@ mod tests {
                 "{warning}"
             );
         }
-        assert!(SET_ASIDE_VAULT_WARNING.contains(SET_ASIDE_KEPT));
-        assert!(!SET_ASIDE_VAULT_WARNING.contains("erase"));
+        // Starting again names who can still open the vault set aside, and
+        // how to remove it here: its folder on a computer.
+        let folder =
+            std::path::Path::new("/home/FAKE/.local/share/ca.carlos.mycarlos/vault-home/set-aside");
+        let warning = set_aside_vault_warning(folder);
+        assert!(warning.contains(SET_ASIDE_KEPT));
+        assert!(!warning.contains("erase"));
+        assert!(warning.contains("someone else may know your passphrase, they can still open it"));
+        assert!(warning.ends_with(&format!(
+            "close myCarlos and delete its folder in {}.",
+            folder.display()
+        )));
     }
 
     #[test]

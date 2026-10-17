@@ -806,6 +806,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       canPrint={DESKTOP_PLATFORMS.has(platform)}
       keyboardHints={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
+      platform={platform}
     />
   );
 }

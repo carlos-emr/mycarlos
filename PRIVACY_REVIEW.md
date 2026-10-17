@@ -63,10 +63,14 @@ an auditor is not built yet.
 Security or, without the passphrase, on the unlock screen) and restoring a backup over a vault both
 set the vault aside: it moves, whole and still encrypted, into a `set-aside` folder next to it,
 with its documents, names, history and keys, and its passphrase or recovery key still opens it. The
-app cannot open it again yet, and never deletes it: storage grows with each one, and freeing the
-space, or making sure it is gone, means deleting its folder by hand. This matters when someone
-else knows the old passphrase and can reach the device: a new vault does not shut them out of the
-old one until its folder is deleted. The screens and the native dialogs say what is kept.
+app cannot open it again yet, and never deletes it: storage grows with each one. On a computer,
+freeing the space, or making sure it is gone, means deleting its folder by hand; Security and the
+confirmation dialog name the folder. On Android and iPhone the folder is private to the app: the
+only way to remove a vault set aside is to clear myCarlos's data, or uninstall it, which removes
+every vault on the device, the one in use too. This matters when someone else knows the old
+passphrase and can reach the device: a new vault does not shut them out of the old one until it
+is removed, and on a phone that means losing the new vault as well. The screens and the native
+dialogs say what is kept, who can still open it, and how to remove it on that platform.
 
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
