@@ -234,7 +234,7 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
    appear. Renaming a document from its details reads out "Document renamed to…" once you are
    back in the details.
-6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
+6. **Dialogs.** Opening a document's details, **Rename**, **Hide**,
    **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
    group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). The recovery key
    setup of a new vault is the exception: there, Escape asks "Discard this recovery key?" first,

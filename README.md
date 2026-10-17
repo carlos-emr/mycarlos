@@ -112,12 +112,13 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   takes while it makes progress (or while a chosen file is still opening). A native idle deadline also drops the keys shortly after the
   renderer's (the lock delay plus 15 seconds after the last activity it heard of) if the webview
   stops responding.
-- Confirmed individual record deletion updates one durable manifest, unlinks the encrypted object,
-  and then updates the redundant manifest. Both live slots omit the wrapped per-object key when the
-  operation succeeds. Old external backups and future synchronized copies remain outside that
-  local deletion guarantee.
+- Nothing is deleted (#71): a document is hidden, which marks it in both manifest slots and keeps
+  its encrypted file and key, and it can be restored from **Hidden**. Direct file removal is
+  disallowed crate-wide by clippy; the one removal helper names what it may remove (stages,
+  uncommitted ciphertext, export staging, superseded files, and, until vaults are set aside, a
+  reset vault).
 - Abrupt-termination tests exercise recovery after chunk writes, staging, object rename, redundant
-  manifest commits, and each deletion boundary. Corruption tests cover bit flips, truncation,
+  manifest commits, and each hiding boundary. Corruption tests cover bit flips, truncation,
   ciphertext swapping, exact chunk boundaries, structured semantic manifest mutations,
   authenticated-generation recovery selection, a preserved malformed-object corpus, one-slot
   recovery, and two-slot fail-closed behavior.
@@ -132,8 +133,8 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 
 It deliberately does **not** implement an in-app document viewer, accounts, synchronization,
 Android cloud backup, CARLOS integration, verified provenance, HealthKit/Health Connect, release
-signing, or app-store packaging. Deletion does not yet propagate tombstones to backups or other
-devices. Apple OS backup may carry the encrypted app-data vault, but restore still requires the
+signing, or app-store packaging. There is no way to delete a document; hidden documents stay in
+the vault and its backups. Apple OS backup may carry the encrypted app-data vault, but restore still requires the
 patient passphrase or recovery key. A successful build and test run is not evidence that the app is ready to hold
 PHI.
 

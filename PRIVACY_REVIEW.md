@@ -35,12 +35,19 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 
 | What | Examples | Kept encrypted? |
 |---|---|---|
-| Documents | The PDF files the patient adds | Yes, each with its own key |
+| Documents | The PDF files the patient adds, including those the patient has **hidden** | Yes, each with its own key |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in | Yes |
 | Profiles | A display name for each person the patient keeps records for | Yes |
 | Folders | Folder names and how they nest | Yes |
 | Passphrase | Never stored. The vault's key is stored locked with a key worked out from the passphrase each time it is typed | The vault's key is locked with it |
 | Recovery key | Never stored in the vault. The vault's key is stored locked with the recovery key, with a random id and the date it was set up | The vault's key is locked with it |
+
+**Nothing is deleted** (#71, decided 16 October). A document the patient no longer wants to see
+is hidden: it leaves every view but the **Hidden** list, and stays in the vault, encrypted, with
+its name and details, until the patient restores it. This holds even for a document about someone
+else sent by mistake. A document whose encrypted file went missing is hidden in the same way, as
+damaged. The app tells the patient this in Security, under "What myCarlos keeps". Hidden
+documents are in every backup, like the rest.
 
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
@@ -237,6 +244,10 @@ where the patient puts it.
 
 These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FORMAT.md`,
 `MVP_STATUS.md`, `SECURITY_OPERATIONS.md`, `PRODUCT_DECISIONS.md`, `TESTING.md`, `WINDOWS.md`):
+- **No document can be deleted** (#71). A patient who wants something gone from the device can
+  only hide it; it stays in the vault and in its backups, and the vault grows with what is
+  hidden. Erasing the whole vault still deletes it until the vault is set aside instead (#71's
+  third part).
 - **An old passphrase can still work.** Changing the passphrase, or replacing the recovery key,
   does not shut out someone who knows the old one and has a copy of the vault from before the
   change (a device backup, a copied folder, a backup file). The vault's own key never changes: the
