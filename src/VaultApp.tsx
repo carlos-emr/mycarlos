@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import App from "./App";
 import {
+  boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
   isLockedError,
@@ -13,6 +14,7 @@ import {
   type VaultStatus,
 } from "./vault";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
+import { ComfortSetup } from "./native/ComfortSetup";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
@@ -112,6 +114,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<string | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
+  // A new setup starts by making myCarlos comfortable (#69): once per run of
+  // the app, before the passphrase. A vault that exists never shows it.
+  const [comfortChosen, setComfortChosen] = useState(false);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
   // must not put its decrypted results or document names back on screen.
@@ -505,7 +510,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setNotice(message);
   };
 
-  const run = async (operation: () => Promise<void>) => {
+  /** Runs a vault operation; `boxes` names what the patient typed for it,
+   * so that a refusal of it says which box to check. */
+  const run = async (operation: () => Promise<void>, boxes?: string[]) => {
     setBusy(true);
     setNotice("");
     transferHold.operationStarted();
@@ -538,8 +545,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // something to act on: a transfer's, such as a partial copy, after the
         // next unlock; any other now, as the person who asked for it is here.
         if (!lockedOut) {
-          if (transferHold.active) holdForUnlock(vaultErrorMessage(error));
-          else setNotice(vaultErrorMessage(error));
+          if (transferHold.active)
+            holdForUnlock(vaultErrorMessage(error, boxes));
+          else setNotice(vaultErrorMessage(error, boxes));
         } else if (cutOff) holdForUnlock(cutOff);
         return;
       }
@@ -563,7 +571,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         requestLock(true);
         return;
       }
-      report(vaultErrorMessage(error));
+      report(vaultErrorMessage(error, boxes));
       // A transfer failure that is neither "locked" nor "cancelled" can still
       // mean the native deadline locked the vault (a provider export's partial
       // copy): confirm, and lock so that the lock keeps it.
@@ -620,50 +628,80 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
   }
 
+  if (status === "absent" && !comfortChosen) {
+    return (
+      <ComfortSetup
+        autoLockMinutes={autoLockMinutes}
+        onAutoLockMinutes={(minutes) => {
+          // Said by the control itself, not as a notice on the next screen.
+          const normalized = normalizeAutoLockMinutes(minutes);
+          setAutoLockMinutes(normalized);
+          persistAutoLockMinutes(normalized);
+        }}
+        onDone={() => setComfortChosen(true)}
+      />
+    );
+  }
+
+  // A refusal of what was typed at setup names only a box holding text the
+  // vault refuses (#69).
+  const setupBoxes = (profile: string, passphrase: string) =>
+    boxesWithControlCharacters([
+      [profile, "the name"],
+      [passphrase, "the passphrase"],
+    ]);
+
   if (status === "absent") {
     return (
       <CreateVault
         busy={busy}
         notice={notice}
+        checkRules={bridge.passphraseRules}
         restoreBridge={trackedBridge}
         onRestored={restored}
         onCreate={(profile, passphrase) =>
-          run(async () => {
-            setSnapshot(await bridge.create(passphrase, profile));
-            // Nothing from a vault that is gone.
-            pendingOutcomeRef.current = null;
-            rememberUnfinishedRecoveryKey(null);
-            rememberOldBackupsGuide(null);
-            // The passphrase was just typed, so it authorizes the recovery key
-            // at once. If that fails, the library offers to set one up.
-            const begun = await bridge.beginRecoveryKey(passphrase).then(
-              (key) => ({ key, locked: false }),
-              (error: unknown) => ({ key: null, locked: isLockedError(error) }),
-            );
-            if (begun.locked) {
-              // The vault locked meanwhile (its automatic lock): it is shown
-              // locked, not open on what the lock ended.
-              setSnapshot(null);
-              setStatus("locked");
-              setNotice(
-                "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+          run(
+            async () => {
+              setSnapshot(await bridge.create(passphrase, profile));
+              // Nothing from a vault that is gone.
+              pendingOutcomeRef.current = null;
+              rememberUnfinishedRecoveryKey(null);
+              rememberOldBackupsGuide(null);
+              // The passphrase was just typed, so it authorizes the recovery key
+              // at once. If that fails, the library offers to set one up.
+              const begun = await bridge.beginRecoveryKey(passphrase).then(
+                (key) => ({ key, locked: false }),
+                (error: unknown) => ({
+                  key: null,
+                  locked: isLockedError(error),
+                }),
               );
-              return;
-            }
-            const recoveryKey = begun.key;
-            setOpeningRecoverySetup(
-              recoveryKey ? { vault: "created", key: recoveryKey } : null,
-            );
-            setConcealed(false);
-            setStatus("unlocked");
-            // With a key to set up, its dialog says what happened instead.
-            if (!recoveryKey)
-              setLibraryNotice({
-                message:
-                  "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
-                outcome: null,
-              });
-          })
+              if (begun.locked) {
+                // The vault locked meanwhile (its automatic lock): it is shown
+                // locked, not open on what the lock ended.
+                setSnapshot(null);
+                setStatus("locked");
+                setNotice(
+                  "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+                );
+                return;
+              }
+              const recoveryKey = begun.key;
+              setOpeningRecoverySetup(
+                recoveryKey ? { vault: "created", key: recoveryKey } : null,
+              );
+              setConcealed(false);
+              setStatus("unlocked");
+              // With a key to set up, its dialog says what happened instead.
+              if (!recoveryKey)
+                setLibraryNotice({
+                  message:
+                    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+                  outcome: null,
+                });
+            },
+            setupBoxes(profile, passphrase),
+          )
         }
       />
     );
@@ -709,7 +747,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : "Vault unlocked.",
               outcome,
             });
-          })
+          }, ["the passphrase"])
         }
         onRecover={(recoveryKey, newPassphrase) =>
           run(async () => {
@@ -727,7 +765,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
               outcome,
             });
-          })
+          }, ["the recovery key", "the new passphrase"])
         }
         onReset={(confirmation) =>
           run(async () => {
@@ -740,7 +778,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             } else {
               setNotice("Vault erase cancelled. Nothing changed.");
             }
-          })
+          }, ["the words you typed"])
         }
       />
     );
