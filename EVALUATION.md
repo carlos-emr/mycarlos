@@ -92,7 +92,7 @@ Record evidence for these questions rather than treating a successful build as a
 | Shared UI | Can one responsive React interface serve the target form factors? | Yes, at POC depth |
 | Native bridge | Can the UI call a narrow, typed Rust command? | Yes |
 | File chooser | Does the platform picker work consistently? | Implemented; real devices still required |
-| Accessibility | Is the experience usable with target assistive technology? | Automated WCAG A/AA checks pass across browser and durable-vault states; modal focus and keyboard folder movement are implemented; manual testing required |
+| Accessibility | Is the experience usable with target assistive technology? | Automated WCAG 2.0–2.2 A/AA checks pass across browser and durable-vault states, and at 200% text size; modal focus and keyboard folder movement are implemented; manual testing required |
 | Secure vault | Can records be encrypted, recovered, backed up, and deleted safely? | Local encrypted import/export and live-vault deletion implemented; independent review, device restore, and backup tombstones remain |
 | Mobile APIs | Do biometrics, notifications, deep links, and background work meet requirements? | Not evaluated |
 | Operations | Can the app be signed, observed safely, updated, and supported? | No-egress/incident/support-bundle baseline and dependency SBOM CI recorded; signing, updating, ownership and drills remain |
