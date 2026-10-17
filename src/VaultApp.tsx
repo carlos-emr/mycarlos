@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import App from "./App";
 import {
+  boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
   isLockedError,
@@ -642,6 +643,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
   }
 
+  // A refusal of what was typed at setup names only a box holding text the
+  // vault refuses (#69).
+  const setupBoxes = (profile: string, passphrase: string) =>
+    boxesWithControlCharacters([
+      [profile, "the name"],
+      [passphrase, "the passphrase"],
+    ]);
+
   if (status === "absent") {
     return (
       <CreateVault
@@ -651,42 +660,48 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         restoreBridge={trackedBridge}
         onRestored={restored}
         onCreate={(profile, passphrase) =>
-          run(async () => {
-            setSnapshot(await bridge.create(passphrase, profile));
-            // Nothing from a vault that is gone.
-            pendingOutcomeRef.current = null;
-            rememberUnfinishedRecoveryKey(null);
-            rememberOldBackupsGuide(null);
-            // The passphrase was just typed, so it authorizes the recovery key
-            // at once. If that fails, the library offers to set one up.
-            const begun = await bridge.beginRecoveryKey(passphrase).then(
-              (key) => ({ key, locked: false }),
-              (error: unknown) => ({ key: null, locked: isLockedError(error) }),
-            );
-            if (begun.locked) {
-              // The vault locked meanwhile (its automatic lock): it is shown
-              // locked, not open on what the lock ended.
-              setSnapshot(null);
-              setStatus("locked");
-              setNotice(
-                "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+          run(
+            async () => {
+              setSnapshot(await bridge.create(passphrase, profile));
+              // Nothing from a vault that is gone.
+              pendingOutcomeRef.current = null;
+              rememberUnfinishedRecoveryKey(null);
+              rememberOldBackupsGuide(null);
+              // The passphrase was just typed, so it authorizes the recovery key
+              // at once. If that fails, the library offers to set one up.
+              const begun = await bridge.beginRecoveryKey(passphrase).then(
+                (key) => ({ key, locked: false }),
+                (error: unknown) => ({
+                  key: null,
+                  locked: isLockedError(error),
+                }),
               );
-              return;
-            }
-            const recoveryKey = begun.key;
-            setOpeningRecoverySetup(
-              recoveryKey ? { vault: "created", key: recoveryKey } : null,
-            );
-            setConcealed(false);
-            setStatus("unlocked");
-            // With a key to set up, its dialog says what happened instead.
-            if (!recoveryKey)
-              setLibraryNotice({
-                message:
-                  "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
-                outcome: null,
-              });
-          }, ["the name", "the passphrase"])
+              if (begun.locked) {
+                // The vault locked meanwhile (its automatic lock): it is shown
+                // locked, not open on what the lock ended.
+                setSnapshot(null);
+                setStatus("locked");
+                setNotice(
+                  "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+                );
+                return;
+              }
+              const recoveryKey = begun.key;
+              setOpeningRecoverySetup(
+                recoveryKey ? { vault: "created", key: recoveryKey } : null,
+              );
+              setConcealed(false);
+              setStatus("unlocked");
+              // With a key to set up, its dialog says what happened instead.
+              if (!recoveryKey)
+                setLibraryNotice({
+                  message:
+                    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+                  outcome: null,
+                });
+            },
+            setupBoxes(profile, passphrase),
+          )
         }
       />
     );

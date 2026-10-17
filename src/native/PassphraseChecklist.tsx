@@ -73,6 +73,14 @@ export function PassphraseChecklist({
   passphrase: string;
   rules: PassphraseRules | null;
 }) {
+  // Said once when every rule is met (#69), not again for each pause in
+  // typing while they stay met: only a rule known to fail, or too short a
+  // passphrase, takes it back.
+  const [allMet, setAllMet] = useState(false);
+  const long = Boolean(passphrase) && !tooShortPassphrase(passphrase);
+  const judged = rules !== null && rules.notAName && rules.hardToGuess;
+  if (!allMet && long && judged) setAllMet(true);
+  if (allMet && (!long || (rules !== null && !judged))) setAllMet(false);
   return (
     <div className="passphrase-checklist" id={id}>
       <p>Your passphrase needs to be:</p>
@@ -86,6 +94,9 @@ export function PassphraseChecklist({
       <p>
         Spaces are allowed, so a few unrelated words make a good one. myCarlos
         checks these rules on this computer.
+      </p>
+      <p className="sr-only" role="status">
+        {allMet ? "Your passphrase meets all the rules." : ""}
       </p>
     </div>
   );

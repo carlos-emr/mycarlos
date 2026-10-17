@@ -244,6 +244,19 @@ const listed = (items: string[]) =>
     ? (items[0] ?? "")
     : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
+/** Of the boxes named with what was typed in them, those holding a control
+ * character: at setup, the one refusal of typed text that the screen does not
+ * catch first. None: a refusal is not about what was typed, as far as the
+ * screen can tell, and is not blamed on a box. */
+export function boxesWithControlCharacters(
+  typed: [value: string, box: string][],
+): string[] | undefined {
+  const boxes = typed
+    .filter(([value]) => /\p{Cc}/u.test(value))
+    .map(([, box]) => box);
+  return boxes.length ? boxes : undefined;
+}
+
 /** The message for a failed vault operation. `boxes` names, in plain words,
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */

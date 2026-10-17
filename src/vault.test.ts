@@ -4,6 +4,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import {
+  boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
   isLockedError,
@@ -148,6 +149,22 @@ describe("error messages", () => {
     expect(
       vaultErrorMessage({ code: "storage", message: "No." }, ["the name"]),
     ).toBe("No.");
+  });
+
+  it("names at setup only a box whose text the vault refuses (#69)", () => {
+    expect(
+      boxesWithControlCharacters([
+        ["Jamie", "the name"],
+        ["river azimuth cobalt\tsparrow", "the passphrase"],
+      ]),
+    ).toEqual(["the passphrase"]);
+    // Nothing typed that the vault refuses: no box takes the blame.
+    expect(
+      boxesWithControlCharacters([
+        ["Jamie", "the name"],
+        ["river azimuth cobalt sparrow", "the passphrase"],
+      ]),
+    ).toBeUndefined();
   });
 
   it("says how long to wait after several wrong tries", () => {

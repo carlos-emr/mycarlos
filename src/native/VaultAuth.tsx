@@ -233,7 +233,7 @@ export function CreateVault({
               aria-label="Passphrase"
               required
               type={shown ? "text" : "password"}
-              autoComplete="new-password"
+              autoComplete={shown ? "off" : "new-password"}
               aria-describedby="passphrase-rules"
               value={passphrase}
               onChange={(e) => {
@@ -271,7 +271,7 @@ export function CreateVault({
               aria-label="Confirm passphrase"
               required
               type={confirmationShown ? "text" : "password"}
-              autoComplete="new-password"
+              autoComplete={confirmationShown ? "off" : "new-password"}
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
             />

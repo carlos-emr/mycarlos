@@ -116,8 +116,9 @@ describe("CreateVault", () => {
         onCreate={vi.fn()}
       />,
     );
-    // The Create form's; the other is under "Restore from a backup".
-    const status = screen.getAllByRole("status")[0];
+    // The Create form's own; the checklist's is read by screen readers only,
+    // and the last is under "Restore from a backup".
+    const status = document.querySelector<HTMLElement>("form > [role=status]")!;
     expect(status).toBeEmptyDOMElement();
     expect(status.getBoundingClientRect().height).toBe(0);
     // The same 12px as between the other fields.
@@ -248,6 +249,28 @@ describe("CreateVault passphrase help (#69)", () => {
     expect(screen.getByRole("button", { name: "Create vault" })).toBeEnabled();
   });
 
+  it("says once, politely, when every rule is met", async () => {
+    vi.useFakeTimers();
+    renderCreate();
+    const said = () =>
+      screen
+        .getAllByRole("status")
+        .find((status) => status.closest(".passphrase-checklist"))!;
+    expect(said()).toBeEmptyDOMElement();
+    type("Passphrase", strong);
+    expect(said()).toBeEmptyDOMElement();
+    await pause();
+    expect(said()).toHaveTextContent("Your passphrase meets all the rules.");
+    // Typing on, the answer is forgotten until the next pause, but what was
+    // said stands: it is not said again at every pause.
+    type("Passphrase", `${strong} more`);
+    expect(rule("Not easy to guess")).toHaveAttribute("data-met", "false");
+    expect(said()).toHaveTextContent("Your passphrase meets all the rules.");
+    // Too short again takes it back.
+    type("Passphrase", "river");
+    expect(said()).toBeEmptyDOMElement();
+  });
+
   it("drops an answer about a passphrase since changed", async () => {
     vi.useFakeTimers();
     let answer: (rules: typeof allMet) => void = () => undefined;
@@ -295,6 +318,14 @@ describe("CreateVault passphrase help (#69)", () => {
     fireEvent.click(showConfirmation);
     expect(confirmation).toHaveAttribute("type", "text");
     expect(showConfirmation).toHaveAttribute("aria-pressed", "true");
+    // Shown, a passphrase is not handed to the spell checker, autocorrection
+    // or keyboard learning.
+    for (const box of [passphrase, confirmation]) {
+      expect(box).toHaveAttribute("spellcheck", "false");
+      expect(box).toHaveAttribute("autocorrect", "off");
+      expect(box).toHaveAttribute("autocapitalize", "off");
+      expect(box).toHaveAttribute("autocomplete", "off");
+    }
 
     const visibility = vi
       .spyOn(document, "visibilityState", "get")
