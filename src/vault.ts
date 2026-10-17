@@ -27,6 +27,16 @@ export interface VaultRecord {
   importedAtMs: number;
   /** False when the encrypted file was missing at unlock and cannot be saved. */
   available: boolean;
+  /** Set while the document is hidden (#71): out of every view but Hidden,
+   * with its encrypted file kept. Nothing is ever deleted. */
+  hidden?: HiddenRecord | null;
+}
+
+/** When, and why, a document was hidden (#71). */
+export interface HiddenRecord {
+  atMs: number;
+  /** "damaged": hidden because its encrypted file was missing. */
+  reason: "patient" | "damaged";
 }
 
 /** Why the vault refuses changes: some encrypted files are missing, a copy of
@@ -207,11 +217,16 @@ export interface VaultBridge {
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
-  deleteRecord(recordId: string): Promise<void>;
-  /** Drops the records in `confirmed`, those shown as damaged, whose
-   * encrypted file is still missing, so the vault leaves recovery mode.
-   * Refused when the vault's own list differs. Resolves to the ids removed. */
-  removeUnavailableRecords(confirmed: string[]): Promise<string[]>;
+  /** Hides a document (#71). There is no way to delete one. */
+  hideRecord(recordId: string): Promise<void>;
+  /** Puts a hidden document back. One hidden as damaged only once its file
+   * is back. */
+  unhideRecord(recordId: string): Promise<void>;
+  /** Hides, as damaged, the records in `confirmed`, those shown as damaged,
+   * whose encrypted file is still missing, so the vault leaves recovery
+   * mode. Refused when the vault's own list differs. Resolves to the ids
+   * hidden. */
+  hideUnavailableRecords(confirmed: string[]): Promise<string[]>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -395,10 +410,12 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
-    deleteRecord: (recordId) =>
-      invoke<void>("vault_delete_record", { request: { recordId } }),
-    removeUnavailableRecords: (confirmed) =>
-      invoke<string[]>("vault_remove_unavailable_records", {
+    hideRecord: (recordId) =>
+      invoke<void>("vault_hide_record", { request: { recordId } }),
+    unhideRecord: (recordId) =>
+      invoke<void>("vault_unhide_record", { request: { recordId } }),
+    hideUnavailableRecords: (confirmed) =>
+      invoke<string[]>("vault_hide_unavailable_records", {
         request: { confirmed },
       }),
     reset: (confirmation) =>

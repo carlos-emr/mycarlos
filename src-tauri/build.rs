@@ -92,8 +92,9 @@ fn main() {
             "vault_import_picked",
             "vault_export_pick",
             "vault_export_picked",
-            "vault_delete_record",
-            "vault_remove_unavailable_records",
+            "vault_hide_record",
+            "vault_unhide_record",
+            "vault_hide_unavailable_records",
             "vault_reset",
         ]),
     ))

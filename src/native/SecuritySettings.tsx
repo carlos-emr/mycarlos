@@ -180,6 +180,18 @@ export function SecuritySettings({
             </p>
           </div>
         </section>
+        {/* #71: the privacy notice says what is kept. */}
+        <section className="setting-row" aria-labelledby="what-is-kept">
+          <div>
+            <h2 id="what-is-kept">What myCarlos keeps</h2>
+            <p>
+              myCarlos never deletes a document. Hiding one takes it out of
+              view: it stays in the encrypted vault, listed under Hidden, and
+              can be restored. Readable copies you save outside myCarlos are
+              yours to keep or delete.
+            </p>
+          </div>
+        </section>
         <section className="setting-row native-setting-form">
           <div>
             <h2>

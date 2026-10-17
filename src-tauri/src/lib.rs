@@ -145,7 +145,7 @@ impl PublicError {
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
-            message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            message: "Nothing was hidden. The vault cannot be changed right now; the notice above the documents says why.",
             record_id: None,
             note: None,
             retry_after_ms: None,
@@ -292,7 +292,7 @@ impl Drop for CreateVaultRequest {
 }
 
 #[derive(Deserialize)]
-struct RemoveUnavailableRequest {
+struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
 }
 
@@ -635,7 +635,7 @@ impl PendingPicks {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeleteRecordRequest {
+struct RecordIdRequest {
     record_id: Uuid,
 }
 
@@ -1819,13 +1819,14 @@ async fn vault_export_picked(
     .map_err(|_| PublicError::partial_export())
 }
 
+/// Hides the documents shown as damaged (#71: they used to be removed).
 #[tauri::command]
-async fn vault_remove_unavailable_records(
+async fn vault_hide_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
-    request: RemoveUnavailableRequest,
+    request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     run_blocking(store.inner(), move |store| {
-        store.remove_unavailable_records(&request.confirmed)
+        store.hide_unavailable_records(&request.confirmed, now_ms())
     })
     .await
     .map_err(|error| match error.code {
@@ -1834,13 +1835,26 @@ async fn vault_remove_unavailable_records(
     })
 }
 
+/// Hides a document (#71). There is no command that deletes one.
 #[tauri::command]
-async fn vault_delete_record(
+async fn vault_hide_record(
     store: State<'_, Arc<VaultStore>>,
-    request: DeleteRecordRequest,
+    request: RecordIdRequest,
 ) -> CommandResult<()> {
     run_blocking(store.inner(), move |store| {
-        store.delete_record(request.record_id)
+        store.hide_record(request.record_id, now_ms())
+    })
+    .await
+}
+
+/// Puts a hidden document back (#71).
+#[tauri::command]
+async fn vault_unhide_record(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.unhide_record(request.record_id)
     })
     .await
 }
@@ -2084,8 +2098,9 @@ pub fn run() {
             vault_import_picked,
             vault_export_pick,
             vault_export_picked,
-            vault_delete_record,
-            vault_remove_unavailable_records,
+            vault_hide_record,
+            vault_unhide_record,
+            vault_hide_unavailable_records,
             vault_reset
         ])
         .run(tauri::generate_context!())
@@ -3242,8 +3257,8 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
-            let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
-            let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
+            let _ = serde_json::from_slice::<RecordIdRequest>(&payload);
+            let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
     }
