@@ -1,3 +1,4 @@
+use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
@@ -33,11 +34,16 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
-/// size class. Format 1 manifests are still read; an unlock that can write
-/// upgrades one at once, in a commit of its own, before anything only format
-/// 2 can hold is written. An older build refuses a format 2 manifest.
-const VAULT_FORMAT: u32 = 2;
+/// size class; format 3 adds the history. Formats 1 and 2 are still read; an
+/// unlock that can write upgrades one at once, in a commit of its own, before
+/// anything only the newer format can hold is written. An older build refuses
+/// a newer manifest.
+const VAULT_FORMAT: u32 = 3;
 const MANIFEST_FORMAT_V1: u32 = 1;
+/// The first format that can hold hidden documents.
+const MANIFEST_FORMAT_HIDDEN: u32 = 2;
+/// The first format that can hold a history.
+const MANIFEST_FORMAT_HISTORY: u32 = 3;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -131,9 +137,17 @@ const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 #[cfg(test)]
 const TEST_TERMINATION_EXIT_CODE: i32 = 86;
 
+/// Set while a test child unlocks, so that the boundary its environment
+/// names is reached in the operation under test, not in the unlock's own
+/// history commit (#71), which has its own matrix.
+#[cfg(test)]
+static ENV_BOUNDARIES_HELD: AtomicBool = AtomicBool::new(false);
+
 #[cfg(test)]
 fn terminate_at_test_boundary(boundary: &str) {
-    if std::env::var("MYCARLOS_TEST_TERMINATE_AT").as_deref() == Ok(boundary) {
+    if !ENV_BOUNDARIES_HELD.load(Ordering::Acquire)
+        && std::env::var("MYCARLOS_TEST_TERMINATE_AT").as_deref() == Ok(boundary)
+    {
         std::process::exit(TEST_TERMINATION_EXIT_CODE);
     }
 }
@@ -178,7 +192,8 @@ thread_local! {
 #[cfg(test)]
 fn fail_at_test_boundary(boundary: &str) -> Result<(), VaultError> {
     if FAIL_AT_TEST_BOUNDARY.get().contains(&boundary)
-        || std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref() == Ok(boundary)
+        || (!ENV_BOUNDARIES_HELD.load(Ordering::Acquire)
+            && std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref() == Ok(boundary))
     {
         Err(VaultError::NoSpace)
     } else {
@@ -410,6 +425,40 @@ struct Manifest {
     profiles: Vec<PatientProfile>,
     folders: Vec<VaultFolder>,
     records: Vec<StoredRecord>,
+    /// The history (#71): where its segments are, and the end of its chain.
+    /// Format 3 only.
+    #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
+    history: HistoryState,
+}
+
+/// Where the history's entries are, and what pins its chain: how many there
+/// are and the hash of the last. Its segments are objects beside the
+/// documents', encrypted the same way under keys of their own.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryState {
+    count: u64,
+    head: String,
+    segments: Vec<HistorySegment>,
+}
+
+impl HistoryState {
+    fn is_empty(&self) -> bool {
+        self.count == 0 && self.head.is_empty() && self.segments.is_empty()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistorySegment {
+    id: Uuid,
+    object_name: String,
+    wrapped_key: WrappedSecret,
+    /// The sequence number of its first entry.
+    first_seq: u64,
+    /// Its entries; none for a filler segment, which only pads the number of
+    /// segments to a power of two.
+    entry_count: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -607,6 +656,11 @@ pub struct VaultStore {
     kdf_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
+    /// How the last session of this run of the app ended, for the next
+    /// unlock's history entry (#71). Kept in memory only: nothing is written
+    /// when the vault locks, so a lock never waits on, or fails over, a write.
+    /// Taken under the session lock, after it.
+    last_session: Mutex<Option<String>>,
 }
 
 impl VaultStore {
@@ -617,6 +671,23 @@ impl VaultStore {
             kdf_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
+            last_session: Mutex::new(None),
+        }
+    }
+
+    /// Notes how the session in `guard`, ending now, ended.
+    fn note_session_end(&self, guard: &Option<UnlockedVault>, by: &str) {
+        if let Some(unlocked) = guard {
+            // A read-only session recorded neither its unlock nor what it did.
+            let note = if unlocked.recovery.is_none() {
+                format!("lockedAt:{}:{by}", crate::now_ms())
+            } else {
+                "notRecorded".to_owned()
+            };
+            *self
+                .last_session
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(note);
         }
     }
 
@@ -735,7 +806,16 @@ impl VaultStore {
                 }],
                 folders: Vec::new(),
                 records: Vec::new(),
+                history: HistoryState::default(),
             };
+            // The history's first entry (#71), in the stage like the rest.
+            manifest.history = prepare_history(
+                &stage,
+                &master_key,
+                &manifest,
+                vec![HistoryEntry::new(HistoryEvent::Created, now_ms)],
+            )?
+            .state;
             write_valid_manifest_at(&stage, &master_key, &manifest)?;
             manifest.generation = manifest
                 .generation
@@ -787,7 +867,27 @@ impl VaultStore {
             master_key,
             wrapping_key,
             header_unreadable,
-        )
+        )?;
+        self.record_unlock(&mut guard, "passphrase");
+        Ok(())
+    }
+
+    /// Records the unlock that just opened the session in `guard` (#71),
+    /// with how the session before it ended, as far as this run of the app
+    /// knows. It can never keep the vault shut: if it cannot be written, the
+    /// session is read-only, and a read-only session records nothing.
+    fn record_unlock(&self, guard: &mut Option<UnlockedVault>, how: &str) {
+        let previous = self
+            .last_session
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        if let Some(unlocked) = guard.as_mut() {
+            let mut entry = HistoryEntry::new(HistoryEvent::Unlocked, crate::now_ms());
+            entry.how = Some(how.to_owned());
+            entry.previous_session = Some(previous.unwrap_or_else(|| "notRecorded".to_owned()));
+            record_in_session(&self.root, unlocked, vec![entry]);
+        }
     }
 
     /// The rest of an unlock, once a header and its keys are authenticated:
@@ -884,7 +984,8 @@ impl VaultStore {
         remove_staging(&self.root);
         remove_abandoned_atomic_writes(&self.root);
         quarantine_orphan_objects(&self.root, &manifest);
-        // A format 1 vault becomes format 2 here, in a commit of its own (#71).
+        // A format 1 or 2 vault becomes format 3 here, in a commit of its
+        // own (#71).
         let mut manifest = manifest;
         if recovery.is_none() {
             match upgrade_manifest(&self.root, &master_key, &mut manifest) {
@@ -919,13 +1020,13 @@ impl VaultStore {
     }
 
     pub fn lock(&self) {
-        self.lock_if(|| true);
+        self.lock_if(|| true, "app");
     }
 
     /// Locks the vault if it has been idle past its deadline at `now`. Returns
     /// whether it locked.
     pub fn lock_if_idle(&self, now: Instant) -> bool {
-        self.idle.is_due(now) && self.lock_if(|| self.idle.is_due(now))
+        self.idle.is_due(now) && self.lock_if(|| self.idle.is_due(now), "nativeDeadline")
     }
 
     /// Cancels any transfer, then clears the session if `due` still holds once
@@ -934,7 +1035,7 @@ impl VaultStore {
     /// transfer holds the session lock until it stops; in the rare race where
     /// a new session starts, or activity arrives, while it waits, it can stop
     /// a transfer without locking.
-    fn lock_if(&self, due: impl Fn() -> bool) -> bool {
+    fn lock_if(&self, due: impl Fn() -> bool, by: &str) -> bool {
         self.cancel_io.store(true, Ordering::Release);
         let locked = {
             let mut guard = self.session();
@@ -942,6 +1043,7 @@ impl VaultStore {
             // the two and be left unlocked with no deadline.
             let due = due();
             if due {
+                self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
             }
@@ -1099,7 +1201,7 @@ impl VaultStore {
         if !valid_record_name(name) || sanitize_basename(name) != name {
             return Err(VaultError::Invalid);
         }
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let record = manifest
                 .records
                 .iter_mut()
@@ -1117,7 +1219,13 @@ impl VaultStore {
             {
                 return Err(VaultError::Invalid);
             }
-            record.display_name = name.to_owned();
+            if record.display_name != name {
+                let mut entry = HistoryEntry::new(HistoryEvent::Renamed, crate::now_ms());
+                entry.record_id = Some(record_id);
+                entry.old_name = Some(std::mem::replace(&mut record.display_name, name.to_owned()));
+                entry.name = Some(name.to_owned());
+                entries.push(entry);
+            }
             Ok(())
         })
     }
@@ -1137,7 +1245,7 @@ impl VaultStore {
         {
             return Err(VaultError::Invalid);
         }
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let unique_record_ids: HashSet<Uuid> = record_ids.into_iter().collect();
             // Folder validity depends only on the owning profile, so check each
             // profile once rather than once per record. Record ids are unique
@@ -1156,6 +1264,17 @@ impl VaultStore {
             let assignments = unique(folder_ids);
             for profile_id in profile_ids {
                 validate_folder_ids(manifest, profile_id, &assignments)?;
+            }
+            // One entry for each document whose folders change.
+            let at_ms = crate::now_ms();
+            let to = folders_at_the_time(manifest, &assignments);
+            for record in &manifest.records {
+                if unique_record_ids.contains(&record.id) && record.folder_ids != assignments {
+                    entries.push(record_entry(HistoryEvent::Moved, at_ms, record).with_move(
+                        folders_at_the_time(manifest, &record.folder_ids),
+                        to.clone(),
+                    ));
+                }
             }
             for record in &mut manifest.records {
                 if unique_record_ids.contains(&record.id) {
@@ -1290,12 +1409,20 @@ impl VaultStore {
             let mut next = unlocked.manifest.clone();
             next.records
                 .extend(staged.iter().map(|(_, record)| record.clone()));
-            let redundant = commit_manifest_redundant(
+            let entries = staged
+                .iter()
+                .map(|(_, record)| {
+                    let mut entry = record_entry(HistoryEvent::Imported, now_ms, record);
+                    entry.how = Some("picked".to_owned());
+                    entry
+                })
+                .collect();
+            let redundant = commit_with_history(
                 &self.root,
                 &unlocked.master_key,
                 &mut unlocked.manifest,
                 next,
-                || Ok(()),
+                entries,
             )?;
             unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
             Ok(ImportOutcome {
@@ -1415,7 +1542,42 @@ impl VaultStore {
             });
         terminate_at_test_boundary("export.after-rename");
         finish_export(&stage, entry.as_deref());
+        if result.is_ok() {
+            self.record_copy_saved(record_id, &destination.to_string_lossy());
+        }
         result
+    }
+
+    /// Records a readable copy saved outside the vault, and where (#71). For
+    /// a copy saved through a document provider, which `export_atomic` does
+    /// not see.
+    pub fn record_copy_saved(&self, record_id: Uuid, place: &str) {
+        let mut guard = self.session();
+        let Some(unlocked) = guard.as_mut() else {
+            return;
+        };
+        let Some(record) = unlocked
+            .manifest
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+        else {
+            return;
+        };
+        let entry =
+            record_entry(HistoryEvent::CopySaved, crate::now_ms(), record).with_place(place);
+        record_in_session(&self.root, unlocked, vec![entry]);
+    }
+
+    /// Records a backup saved, and where (#71). For a backup saved through a
+    /// document provider, which `backup_atomic` does not see.
+    pub fn record_backup_saved(&self, place: &str) {
+        let mut guard = self.session();
+        if let Some(unlocked) = guard.as_mut() {
+            let entry =
+                HistoryEntry::new(HistoryEvent::BackupSaved, crate::now_ms()).with_place(place);
+            record_in_session(&self.root, unlocked, vec![entry]);
+        }
     }
 
     /// Hides a document (#71). It leaves every view but the Hidden list, and
@@ -1456,18 +1618,26 @@ impl VaultStore {
         if hidden.is_none() && !object_required(record) && !object_is_present(&self.root, record) {
             return Err(VaultError::Invalid);
         }
+        let entry = match hidden.as_ref() {
+            Some(hidden) => {
+                let mut entry = record_entry(HistoryEvent::Hidden, hidden.at_ms, record);
+                entry.how = Some("patient".to_owned());
+                entry
+            }
+            None => record_entry(HistoryEvent::Restored, crate::now_ms(), record),
+        };
         let mut next = unlocked.manifest.clone();
         for record in &mut next.records {
             if record.id == record_id {
                 record.hidden = hidden;
             }
         }
-        let redundant = commit_manifest_redundant(
+        let redundant = commit_with_history(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || Ok(()),
+            vec![entry],
         )?;
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(())
@@ -1532,14 +1702,19 @@ impl VaultStore {
         if confirmed != unlocked.unavailable {
             return Err(VaultError::RemovalChanged);
         }
-        // Hidden documents are format 2 only: a format 1 vault opened in this
-        // recovery mode is upgraded first, in a commit of its own (#71).
-        if !upgrade_manifest(&self.root, &unlocked.master_key, &mut unlocked.manifest)? {
+        // Hidden documents are format 2 only, and their entries format 3: a
+        // vault opened in this recovery mode is upgraded first, in a commit
+        // of its own (#71). The history's segments need `objects/`, which a
+        // vault that lost every document may have lost too.
+        if ensure_objects_dir(&self.root).is_err()
+            || !upgrade_manifest(&self.root, &unlocked.master_key, &mut unlocked.manifest)?
+        {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
             return Err(VaultError::RecoveryMode);
         }
         let mut next = unlocked.manifest.clone();
         let mut removed = Vec::new();
+        let mut entries = Vec::new();
         // Of those, only a document whose object is really gone is hidden.
         // One whose file came back stays in view.
         let shown = &unlocked.unavailable;
@@ -1552,14 +1727,17 @@ impl VaultStore {
                     reason: HiddenReason::Damaged,
                 });
                 removed.push(record.id);
+                let mut entry = record_entry(HistoryEvent::Hidden, now_ms, record);
+                entry.how = Some("damaged".to_owned());
+                entries.push(entry);
             }
         }
-        let redundant = commit_manifest_redundant(
+        let redundant = commit_with_history(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || Ok(()),
+            entries,
         )?;
         unlocked.unavailable.clear();
         // The session becomes writable without passing through the writable
@@ -1862,6 +2040,11 @@ impl VaultStore {
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
+        record_in_session(
+            &self.root,
+            unlocked,
+            vec![HistoryEntry::new(HistoryEvent::RecoveryKeySet, now_ms)],
+        );
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
@@ -1977,6 +2160,7 @@ impl VaultStore {
             wrapping_key,
             false,
         )?;
+        self.record_unlock(&mut guard, "recoveryKey");
         Ok(true)
     }
 
@@ -2061,6 +2245,25 @@ impl VaultStore {
             let mut object = open_regular_read(&path)?;
             let length = object.metadata()?.len();
             backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
+        }
+        // The history's segments (#71). One that is gone or damaged is left
+        // out rather than failing the backup: a restore takes segments as
+        // optional, and a check of the history shows the gap.
+        for segment in &manifest.history.segments {
+            match read_history_segment(&self.root, &parts.keys, manifest.vault_id, segment) {
+                Ok(_) => {}
+                Err(VaultError::Corrupt) => continue,
+                Err(error) => return Err(error),
+            }
+            let path = self.root.join("objects").join(&segment.object_name);
+            let mut object = open_regular_read(&path)?;
+            let length = object.metadata()?.len();
+            backup.entry(
+                BACKUP_KIND_OBJECT,
+                &segment.object_name,
+                length,
+                &mut object,
+            )?;
         }
         backup.finish(
             &unlocked.master_key,
@@ -2160,6 +2363,7 @@ impl VaultStore {
         );
         outcome?;
         written.map_err(io::Error::from)?;
+        self.record_backup_saved(&destination.to_string_lossy());
         Ok(())
     }
 
@@ -2243,9 +2447,14 @@ impl VaultStore {
             });
             // Redundancy repair moves the generation on without changing
             // anything else, so the generation is left out of the comparison.
+            // So are the history and the format (#71): every unlock adds to
+            // the history, a backup saved too, and an unlock can upgrade the
+            // format. None of that is a change restoring would lose.
             let same_content = live_manifest.as_ref().is_some_and(|live| {
                 let mut live = live.clone();
                 live.generation = manifest.generation;
+                live.format_version = manifest.format_version;
+                live.history = manifest.history.clone();
                 live == *manifest
             });
             // Which of the two is the later one is not told: a generation
@@ -2349,17 +2558,26 @@ impl VaultStore {
         let staged = (|| {
             create_private_dir(&stage.join("objects"))?;
             create_private_dir(&stage.join("staging"))?;
+            let segments = &manifest.history.segments;
             let mut wanted: HashMap<&str, u64> = manifest
                 .records
                 .iter()
                 .map(|record| (record.object_name.as_str(), record.plaintext_size))
+                .chain(segments.iter().map(|segment| {
+                    (
+                        segment.object_name.as_str(),
+                        history::SEGMENT_PLAINTEXT_BYTES as u64,
+                    )
+                }))
                 .collect();
-            // A document hidden as damaged may come without its file (#71).
+            // A document hidden as damaged may come without its file, and a
+            // history segment that was gone or damaged is left out (#71).
             let optional: HashSet<&str> = manifest
                 .records
                 .iter()
                 .filter(|record| !object_required(record))
                 .map(|record| record.object_name.as_str())
+                .chain(segments.iter().map(|segment| segment.object_name.as_str()))
                 .collect();
             while let Some((kind, name, length)) = reader.next_entry()? {
                 // Only the manifest's objects, each once, and no larger than
@@ -2423,6 +2641,37 @@ impl VaultStore {
                     _ => VaultError::BackupUnreadable,
                 })?;
             }
+            for segment in segments {
+                if fs::symlink_metadata(stage.join("objects").join(&segment.object_name)).is_err() {
+                    continue;
+                }
+                read_history_segment(&stage, &keys, header.vault_id, segment)
+                    .map_err(|_| VaultError::BackupUnreadable)?;
+            }
+            // The restore goes in the restored vault's history (#71), written
+            // here, where the keys are, before the vault is put in place. A
+            // backup an earlier build made becomes format 3 and starts its
+            // history here; nothing else reads the stage meanwhile.
+            let mut restored = manifest.clone();
+            restored.format_version = VAULT_FORMAT;
+            let prepared = prepare_history(
+                &stage,
+                &master_key,
+                &restored,
+                vec![HistoryEntry::new(
+                    HistoryEvent::BackupRestored,
+                    crate::now_ms(),
+                )],
+            )?;
+            restored.history = prepared.state;
+            for _ in 0..2 {
+                restored.generation = restored
+                    .generation
+                    .checked_add(1)
+                    .ok_or(VaultError::Storage)?;
+                write_valid_manifest_at(&stage, &master_key, &restored)?;
+            }
+            remove_objects(&stage, &prepared.superseded, Removable::SupersededSegment);
             sync_dir(&stage)?;
             Ok(())
         })();
@@ -2503,19 +2752,29 @@ impl VaultStore {
         &self,
         mutation: impl FnOnce(&mut Manifest) -> Result<T, VaultError>,
     ) -> Result<T, VaultError> {
+        self.mutate_recorded(|manifest, _| mutation(manifest))
+    }
+
+    /// As `mutate_manifest`, with the history entries the mutation adds for
+    /// what it changed, in the same commit (#71).
+    fn mutate_recorded<T>(
+        &self,
+        mutation: impl FnOnce(&mut Manifest, &mut Vec<HistoryEntry>) -> Result<T, VaultError>,
+    ) -> Result<T, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
         let mut next = unlocked.manifest.clone();
-        let result = mutation(&mut next)?;
-        let redundant = commit_manifest_redundant(
+        let mut entries = Vec::new();
+        let result = mutation(&mut next, &mut entries)?;
+        let redundant = commit_with_history(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || Ok(()),
+            entries,
         )?;
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(result)
@@ -2546,6 +2805,13 @@ struct ObjectContext {
     vault_id: Uuid,
     record_id: Uuid,
     profile_id: Uuid,
+}
+
+impl ObjectContext {
+    /// A history segment belongs to no profile (#71); a document always does.
+    fn is_history_segment(&self) -> bool {
+        self.profile_id.is_nil()
+    }
 }
 
 /// A word of a profile name long enough that its presence in a passphrase is
@@ -2886,7 +3152,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !valid_fingerprint(&record.fingerprint)
             || !valid_wrapped_secret(&record.wrapped_object_key)
             // Format 1 has no hidden documents.
-            || (record.hidden.is_some() && manifest.format_version == MANIFEST_FORMAT_V1)
+            || (record.hidden.is_some() && manifest.format_version < MANIFEST_FORMAT_HIDDEN)
         {
             return Err(VaultError::Corrupt);
         }
@@ -2900,6 +3166,56 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    validate_history(manifest, &mut object_names)
+}
+
+/// The history's place in the manifest (#71): format 3 only; its data
+/// segments in order, each starting where the one before ended, with their
+/// entries adding up to `count`; then the filler segments that make the
+/// number of segments a power of two; and every segment's object its own.
+fn validate_history<'a>(
+    manifest: &'a Manifest,
+    object_names: &mut HashSet<&'a str>,
+) -> Result<(), VaultError> {
+    let state = &manifest.history;
+    if state.is_empty() {
+        return Ok(());
+    }
+    let data = state
+        .segments
+        .iter()
+        .take_while(|segment| segment.entry_count > 0)
+        .count();
+    let mut next_seq = 0_u64;
+    let mut ids = HashSet::new();
+    for (index, segment) in state.segments.iter().enumerate() {
+        let filler = index >= data;
+        if segment.id.is_nil()
+            || !ids.insert(segment.id)
+            || !valid_object_name(&segment.object_name)
+            || !object_names.insert(segment.object_name.as_str())
+            || !valid_wrapped_secret(&segment.wrapped_key)
+            || (filler && (segment.entry_count != 0 || segment.first_seq != 0))
+            || (!filler && segment.first_seq != next_seq)
+        {
+            return Err(VaultError::Corrupt);
+        }
+        next_seq = next_seq
+            .checked_add(segment.entry_count)
+            .ok_or(VaultError::Corrupt)?;
+    }
+    if manifest.format_version < MANIFEST_FORMAT_HISTORY
+        || state.count == 0
+        || next_seq != state.count
+        || state.segments.len() != history::padded_segment_count(data)
+        || state.head.len() != 64
+        || !state
+            .head
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(VaultError::Corrupt);
     }
     Ok(())
 }
@@ -3978,7 +4294,7 @@ fn write_manifest_at(
     if plaintext.len() > limit {
         return Err(VaultError::Storage);
     }
-    if manifest.format_version >= VAULT_FORMAT {
+    if manifest.format_version >= MANIFEST_FORMAT_HIDDEN {
         // Padded with spaces, which JSON ignores, to a size class (#71): the
         // file's size then tells only roughly how much the vault holds. Copied
         // into a buffer of that size, so that growing it leaves no unwiped
@@ -4011,8 +4327,8 @@ fn write_manifest_at(
 ///
 /// Once the first write is durable the mutation is committed and `current`
 /// reflects it. `between` runs at that point, before the redundant write.
-/// Nothing runs there today: documents are never deleted (#71). The history
-/// (#71's second part) will unlink only a superseded segment of its own there.
+/// Documents are never deleted (#71); only the history unlinks there, and
+/// only a superseded segment of its own (`commit_with_history`).
 /// Returns whether the redundant write also succeeded; when it did not, or
 /// when `between` failed, the caller's session must enter write-failed
 /// recovery, since unlock repairs the slot redundancy.
@@ -4045,14 +4361,15 @@ fn commit_manifest_redundant(
     Ok(true)
 }
 
-/// Moves a format 1 manifest to format 2 (#71) in a commit of its own, so
-/// that both slots hold format 2 before anything only format 2 can hold is
-/// written: a crash between the two writes leaves a format 2 slot that holds
-/// nothing an older build, opening the other slot, could lose. The state is
-/// the one already authenticated and is not changed, so whether its files
-/// are all there is not checked again (a vault with lost documents is
-/// upgraded before they are hidden). Returns whether both slots were
-/// written; nothing is written for a format 2 manifest.
+/// Moves a format 1 or 2 manifest to format 3 (#71) in a commit of its own,
+/// so that both slots hold format 3 before anything only format 3 can hold
+/// (a history; for format 1, a hidden document) is written: a crash between
+/// the two writes leaves a format 3 slot that holds nothing an older build,
+/// opening the other slot, could lose. The state is the one already
+/// authenticated and is not changed, so whether its files are all there is
+/// not checked again (a vault with lost documents is upgraded before they
+/// are hidden). Returns whether both slots were written; nothing is written
+/// for a format 3 manifest.
 fn upgrade_manifest(
     root: &Path,
     master_key: &[u8; 32],
@@ -4083,6 +4400,273 @@ fn upgrade_manifest(
     *current = next;
     terminate_at_test_boundary("upgrade.after-second-write");
     Ok(true)
+}
+
+/// A history segment's key is wrapped with this before its id: it can then
+/// be unwrapped only for the segment it was made for, never for a document.
+const SEGMENT_KEY_DOMAIN: &[u8] = b"mycarlos-history-segment-v1:";
+
+fn segment_key_aad(segment_id: Uuid) -> Vec<u8> {
+    [SEGMENT_KEY_DOMAIN, segment_id.as_bytes()].concat()
+}
+
+/// Encrypts one history segment into a new object, in the envelope a
+/// document has, under a random key of its own (#71). Its id stands where a
+/// document's would in each chunk's associated data. On disk it looks like a
+/// document of 64 KiB.
+fn write_history_segment(
+    root: &Path,
+    keys: &DerivedKeys,
+    vault_id: Uuid,
+    entries: &[HistoryEntry],
+) -> Result<HistorySegment, VaultError> {
+    let plaintext = history::pack(entries).ok_or(VaultError::Invalid)?;
+    let id = Uuid::new_v4();
+    let object_name = format!("{}.mcobj", Uuid::new_v4());
+    let mut segment_key = Zeroizing::new([0_u8; 32]);
+    OsRng.fill_bytes(segment_key.as_mut());
+    let wrapped_key = wrap_secret(&keys.object_wrap, &segment_key, &segment_key_aad(id))?;
+    let path = root.join("objects").join(&object_name);
+    let written = encrypt_object(
+        Box::new(io::Cursor::new(plaintext)),
+        &path,
+        ObjectContext {
+            vault_id,
+            record_id: id,
+            profile_id: Uuid::nil(),
+        },
+        &segment_key,
+        &keys.fingerprint,
+    );
+    if let Err(error) = written {
+        let _ = remove_owned_file(&path, Removable::UncommittedObject);
+        return Err(error);
+    }
+    Ok(HistorySegment {
+        id,
+        object_name,
+        wrapped_key,
+        first_seq: entries.first().map_or(0, |entry| entry.seq),
+        entry_count: entries.len() as u64,
+    })
+}
+
+/// The entries in one segment. `Corrupt` when its object is gone or does not
+/// authenticate, or holds other entries than the manifest says.
+fn read_history_segment(
+    root: &Path,
+    keys: &DerivedKeys,
+    vault_id: Uuid,
+    segment: &HistorySegment,
+) -> Result<Vec<HistoryEntry>, VaultError> {
+    let segment_key = unwrap_secret(
+        &keys.object_wrap,
+        &segment.wrapped_key,
+        &segment_key_aad(segment.id),
+    )?;
+    let mut plaintext = Zeroizing::new(Vec::with_capacity(history::SEGMENT_PLAINTEXT_BYTES));
+    verify_object(
+        &root.join("objects").join(&segment.object_name),
+        &mut *plaintext,
+        vault_id,
+        segment.id,
+        &segment_key,
+        history::SEGMENT_PLAINTEXT_BYTES as u64,
+    )?;
+    let entries = history::unpack(&plaintext).ok_or(VaultError::Corrupt)?;
+    if entries.len() as u64 != segment.entry_count
+        || entries
+            .first()
+            .is_some_and(|entry| entry.seq != segment.first_seq)
+    {
+        return Err(VaultError::Corrupt);
+    }
+    Ok(entries)
+}
+
+/// What appending to the history writes besides the manifest.
+struct PreparedHistory {
+    /// The next manifest's history.
+    state: HistoryState,
+    /// Objects written for it: removed again if the commit fails before its
+    /// first write.
+    written: Vec<String>,
+    /// Segments the new state no longer names: removed between the two
+    /// manifest writes.
+    superseded: Vec<String>,
+}
+
+/// Chains `entries` onto the manifest's history and writes the segments that
+/// hold them (#71): the last segment rewritten with the new entries after
+/// its own, new segments when it is full, and filler segments up to the next
+/// power of two. A last segment that is gone or damaged is kept as it is,
+/// and the new entries start a segment of their own: the chain still goes on
+/// from the head the manifest pins, and a check shows the gap. A history not
+/// started yet, in a vault an earlier build made, starts with an entry
+/// saying so.
+fn prepare_history(
+    root: &Path,
+    master_key: &[u8; 32],
+    current: &Manifest,
+    mut entries: Vec<HistoryEntry>,
+) -> Result<PreparedHistory, VaultError> {
+    let vault_id = current.vault_id;
+    let keys = derive_keys(vault_id, master_key)?;
+    let state = &current.history;
+    if state.count == 0
+        && entries
+            .first()
+            .is_some_and(|entry| entry.event != HistoryEvent::Created)
+    {
+        let at_ms = entries[0].at_ms;
+        entries.insert(0, HistoryEntry::new(HistoryEvent::HistoryStarted, at_ms));
+    }
+    let added = entries.len() as u64;
+    let head = if state.count == 0 {
+        history::genesis(vault_id)
+    } else {
+        state.head.clone()
+    };
+    let head = history::chain(&mut entries, state.count, head);
+    let (mut data, mut fillers): (Vec<HistorySegment>, Vec<HistorySegment>) = state
+        .segments
+        .iter()
+        .cloned()
+        .partition(|segment| segment.entry_count > 0);
+    let mut superseded = Vec::new();
+    if let Some(last) = data.last() {
+        match read_history_segment(root, &keys, vault_id, last) {
+            Ok(mut kept) => {
+                kept.append(&mut entries);
+                entries = kept;
+                superseded.push(last.object_name.clone());
+                data.pop();
+            }
+            Err(VaultError::Corrupt) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut written = Vec::new();
+    let write = || -> Result<(), VaultError> {
+        for segment in history::into_segments(entries) {
+            let segment = write_history_segment(root, &keys, vault_id, &segment)?;
+            written.push(segment.object_name.clone());
+            data.push(segment);
+        }
+        let wanted = history::padded_segment_count(data.len()) - data.len();
+        while fillers.len() > wanted {
+            if let Some(filler) = fillers.pop() {
+                superseded.push(filler.object_name);
+            }
+        }
+        while fillers.len() < wanted {
+            let filler = write_history_segment(root, &keys, vault_id, &[])?;
+            written.push(filler.object_name.clone());
+            fillers.push(filler);
+        }
+        // The manifest about to be committed names them: their directory
+        // entries must be durable first, as an import's are.
+        fail_at_test_boundary("history.objects-sync")?;
+        sync_dir(&root.join("objects"))
+    };
+    if let Err(error) = write() {
+        remove_objects(root, &written, Removable::UncommittedObject);
+        return Err(error);
+    }
+    terminate_at_test_boundary("history.after-segment-write");
+    data.extend(fillers);
+    Ok(PreparedHistory {
+        state: HistoryState {
+            count: state.count + added,
+            head,
+            segments: data,
+        },
+        written,
+        superseded,
+    })
+}
+
+fn remove_objects(root: &Path, names: &[String], kind: Removable) {
+    if names.is_empty() {
+        return;
+    }
+    let objects = root.join("objects");
+    for name in names {
+        let _ = remove_owned_file(objects.join(name), kind);
+    }
+    let _ = sync_dir(&objects);
+}
+
+/// Commits `next` with `entries` appended to the history, in the same commit
+/// (#71): a change is never committed without its entries, nor entries
+/// without their change. Superseded segments are unlinked between the two
+/// manifest writes; one a failure leaves is quarantined at the next unlock.
+/// Returns as `commit_manifest_redundant` does.
+fn commit_with_history(
+    root: &Path,
+    master_key: &[u8; 32],
+    current: &mut Manifest,
+    mut next: Manifest,
+    entries: Vec<HistoryEntry>,
+) -> Result<bool, VaultError> {
+    if entries.is_empty() {
+        return commit_manifest_redundant(root, master_key, current, next, || Ok(()));
+    }
+    // A writable session's manifest is upgraded at unlock.
+    if next.format_version < MANIFEST_FORMAT_HISTORY {
+        return Err(VaultError::Invalid);
+    }
+    let prepared = prepare_history(root, master_key, current, entries)?;
+    next.history = prepared.state;
+    let superseded = prepared.superseded;
+    let committed = commit_manifest_redundant(root, master_key, current, next, || {
+        remove_objects(root, &superseded, Removable::SupersededSegment);
+        Ok(())
+    });
+    if committed.is_err() {
+        remove_objects(root, &prepared.written, Removable::UncommittedObject);
+    }
+    committed
+}
+
+/// Appends events that already happened, such as a readable copy saved, in
+/// a commit of their own (#71). A read-only session records nothing. A write
+/// that fails leaves the session read-only, so that nothing more happens
+/// unrecorded; what was done stays done.
+fn record_in_session(root: &Path, unlocked: &mut UnlockedVault, entries: Vec<HistoryEntry>) {
+    if unlocked.recovery.is_some() {
+        return;
+    }
+    let next = unlocked.manifest.clone();
+    match commit_with_history(
+        root,
+        &unlocked.master_key,
+        &mut unlocked.manifest,
+        next,
+        entries,
+    ) {
+        Ok(true) => {}
+        Ok(false) | Err(_) => unlocked.recovery = Some(RecoveryReason::WriteFailed),
+    }
+}
+
+/// The folders `ids` name, as they are named now, for a move's entry.
+fn folders_at_the_time(manifest: &Manifest, ids: &[Uuid]) -> Vec<history::FolderAtTheTime> {
+    ids.iter()
+        .filter_map(|id| manifest.folders.iter().find(|folder| folder.id == *id))
+        .map(|folder| history::FolderAtTheTime {
+            id: folder.id,
+            name: folder.name.clone(),
+        })
+        .collect()
+}
+
+/// An entry about one document, with its name now.
+fn record_entry(event: HistoryEvent, at_ms: u64, record: &StoredRecord) -> HistoryEntry {
+    let mut entry = HistoryEntry::new(event, at_ms);
+    entry.record_id = Some(record.id);
+    entry.name = Some(record.display_name.clone());
+    entry
 }
 
 fn repair_manifest_redundancy(
@@ -4123,7 +4707,7 @@ enum SlotReading {
     /// it and no orphan cleanup may run.
     Unreadable,
     Authentic {
-        manifest: Manifest,
+        manifest: Box<Manifest>,
         /// Records whose object is missing, is not a regular file, or could
         /// not be looked up.
         missing: HashSet<Uuid>,
@@ -4138,7 +4722,7 @@ impl SlotReading {
         match self {
             Self::Authentic {
                 manifest, missing, ..
-            } => Some((manifest, missing)),
+            } => Some((manifest.as_ref(), missing)),
             _ => None,
         }
     }
@@ -4201,7 +4785,7 @@ fn read_manifest_slot_reading(
         }
     }
     SlotReading::Authentic {
-        manifest,
+        manifest: Box::new(manifest),
         missing,
         unknown,
     }
@@ -4461,8 +5045,13 @@ fn encrypt_object(
         writer.write_all(&(ciphertext.len() as u32).to_be_bytes())?;
         writer.write_all(&[u8::from(final_chunk)])?;
         writer.write_all(&ciphertext)?;
-        terminate_at_test_boundary("object.after-chunk-write");
-        fail_at_test_boundary("object.after-chunk-write")?;
+        let boundary = if context.is_history_segment() {
+            "history.after-chunk-write"
+        } else {
+            "object.after-chunk-write"
+        };
+        terminate_at_test_boundary(boundary);
+        fail_at_test_boundary(boundary)?;
         if final_chunk {
             break;
         }
@@ -5029,9 +5618,14 @@ pub(crate) fn atomic_bytes(path: &Path, data: &[u8]) -> Result<(), VaultError> {
 enum Removable {
     /// A vault being created, which failed or which a killed process left.
     CreateStage,
-    /// Ciphertext an import wrote that no manifest has committed: a
-    /// duplicate, or a batch that failed before its commit.
+    /// Ciphertext an import or a history append wrote that no manifest has
+    /// committed: a duplicate, or a batch or append that failed before its
+    /// commit.
     UncommittedObject,
+    /// A history segment the committed manifest no longer names: the last
+    /// segment, rewritten with new entries after its own, or a filler no
+    /// longer needed (#71). Never a document's object.
+    SupersededSegment,
     /// An import's staging folder.
     ImportStaging,
     /// A readable copy's staging folder, or its journal entry.
@@ -5206,6 +5800,13 @@ fn quarantine_orphan_objects(root: &Path, manifest: &Manifest) {
         .records
         .iter()
         .map(|record| record.object_name.as_str())
+        .chain(
+            manifest
+                .history
+                .segments
+                .iter()
+                .map(|segment| segment.object_name.as_str()),
+        )
         .collect();
     let objects = root.join("objects");
     if !is_real_dir(&objects) {
@@ -5943,6 +6544,7 @@ mod tests {
                     hidden: None,
                 },
             ],
+            history: HistoryState::default(),
         };
         (vault_id, manifest)
     }
@@ -5997,6 +6599,30 @@ mod tests {
         files
     }
 
+    /// Unlocks with the environment's boundary held, so that it is reached
+    /// in the operation that follows, not in the unlock's history commit.
+    fn unlock_with_boundaries_held(store: &VaultStore) {
+        ENV_BOUNDARIES_HELD.store(true, Ordering::Release);
+        let unlocked = store.unlock(PASSWORD);
+        ENV_BOUNDARIES_HELD.store(false, Ordering::Release);
+        unlocked.unwrap();
+    }
+
+    /// The size every history segment's object has (#71): a 64 KiB plaintext
+    /// in one chunk.
+    const SEGMENT_OBJECT_LEN: u64 =
+        (OBJECT_MAGIC.len() + 4 + 16 + 4 + 1 + history::SEGMENT_PLAINTEXT_BYTES + 16) as u64;
+
+    /// The files in `objects/` that are documents' ciphertext, not history
+    /// segments, told apart by size: every segment's object is the same
+    /// size, and no test document is that large.
+    fn document_files(root: &Path) -> usize {
+        fs::read_dir(root.join("objects"))
+            .unwrap()
+            .filter(|entry| entry.as_ref().unwrap().metadata().unwrap().len() != SEGMENT_OBJECT_LEN)
+            .count()
+    }
+
     fn run_termination_child(root: &Path, operation: &str, boundary: &str) {
         let status = Command::new(std::env::current_exe().unwrap())
             .args(["--ignored", "--exact", "vault::tests::termination_child"])
@@ -6045,7 +6671,11 @@ mod tests {
         };
         let operation = std::env::var("MYCARLOS_TEST_OPERATION").unwrap();
         let store = VaultStore::new(PathBuf::from(root));
-        store.unlock(PASSWORD).unwrap();
+        if operation == "unlock" {
+            let _ = store.unlock(PASSWORD);
+            panic!("configured termination boundary was not reached");
+        }
+        unlock_with_boundaries_held(&store);
         let snapshot = store.snapshot().unwrap();
         match operation.as_str() {
             "import" => {
@@ -6099,7 +6729,11 @@ mod tests {
             assert_eq!(store.snapshot().unwrap().recovery, None);
             return;
         }
-        store.unlock(PASSWORD).unwrap();
+        if operation == "unlock-degraded" {
+            store.unlock(PASSWORD).unwrap();
+        } else {
+            unlock_with_boundaries_held(&store);
+        }
         let snapshot = store.snapshot().unwrap();
         if operation == "unlock-degraded" {
             assert!(snapshot.recovery.is_some());
@@ -6146,7 +6780,7 @@ mod tests {
             assert!(matches!(outcome, Err(VaultError::NoSpace)));
             if operation == "import" {
                 let root = PathBuf::from(std::env::var("MYCARLOS_TEST_ROOT").unwrap());
-                assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+                assert_eq!(document_files(&root), 0);
             }
         }
     }
@@ -7240,7 +7874,7 @@ mod tests {
             generation
         );
         assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
+        assert_eq!(document_files(&root), 1);
     }
 
     #[test]
@@ -7265,7 +7899,7 @@ mod tests {
 
         assert!(matches!(result, Err(VaultError::Storage)));
         assert!(store.snapshot().unwrap().records.is_empty());
-        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+        assert_eq!(document_files(&root), 0);
         assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
     }
 
@@ -7631,7 +8265,7 @@ mod tests {
         assert!(matches!(import.join().unwrap(), Err(VaultError::Cancelled)));
         lock.join().unwrap();
         assert_eq!(store.status().unwrap(), VaultStatus::Locked);
-        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+        assert_eq!(document_files(&root), 0);
         assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
     }
 
@@ -8212,10 +8846,7 @@ mod tests {
                 usize::from(committed)
             );
             assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-            assert_eq!(
-                fs::read_dir(root.join("objects")).unwrap().count(),
-                usize::from(committed)
-            );
+            assert_eq!(document_files(&root), usize::from(committed));
         }
     }
 
@@ -8244,10 +8875,7 @@ mod tests {
                 usize::from(committed)
             );
             assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-            assert_eq!(
-                fs::read_dir(root.join("objects")).unwrap().count(),
-                usize::from(committed)
-            );
+            assert_eq!(document_files(&root), usize::from(committed));
         }
     }
 
@@ -10861,6 +11489,7 @@ mod tests {
                     hidden: None,
                 })
                 .collect(),
+            history: HistoryState::default(),
         }
     }
 
@@ -10872,7 +11501,7 @@ mod tests {
             .map(|record| record.id)
             .collect();
         SlotReading::Authentic {
-            manifest,
+            manifest: Box::new(manifest),
             missing,
             unknown: HashSet::new(),
         }
@@ -10886,7 +11515,7 @@ mod tests {
         };
         let slots = [
             SlotReading::Authentic {
-                manifest,
+                manifest: Box::new(manifest),
                 unknown: missing.clone(),
                 missing,
             },
@@ -10911,7 +11540,7 @@ mod tests {
             .collect();
         let slots = [
             SlotReading::Authentic {
-                manifest: newer,
+                manifest: Box::new(newer),
                 missing: unknown.clone(),
                 unknown: unknown.clone(),
             },
@@ -11982,7 +12611,7 @@ mod tests {
             let records = restarted.snapshot().unwrap().records;
             assert_eq!(records.len(), 1);
             assert!(records[0].hidden.is_some());
-            assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
+            assert_eq!(document_files(&root), 1);
         }
     }
 
@@ -12017,7 +12646,7 @@ mod tests {
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].hidden.is_some(), hidden);
             // The file stays either way (#71).
-            assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
+            assert_eq!(document_files(&root), 1);
         }
     }
 
@@ -12085,10 +12714,15 @@ mod tests {
         assert!(store.snapshot().unwrap().records[0].hidden.is_none());
     }
 
-    /// A vault as an earlier build left it: both manifest slots format 1,
-    /// unpadded. Returns its master key and id, for reading the slots back
-    /// without an unlock, which would upgrade it.
-    fn format_1_vault(root: &Path, names: &[&str]) -> (VaultStore, Vec<Uuid>, [u8; 32], Uuid) {
+    /// A vault as an earlier build left it: both manifest slots `format`,
+    /// with no history; a format 1 one unpadded, a format 2 one with its
+    /// first document hidden. Returns its master key and id, for reading the
+    /// slots back without an unlock, which would upgrade it.
+    fn old_format_vault(
+        root: &Path,
+        names: &[&str],
+        format: u32,
+    ) -> (VaultStore, Vec<Uuid>, [u8; 32], Uuid) {
         let (store, imported, _) = vault_with_records(root, names);
         store.unlock(PASSWORD).unwrap();
         let (master_key, mut manifest) = {
@@ -12097,7 +12731,18 @@ mod tests {
             (*unlocked.master_key, unlocked.manifest.clone())
         };
         store.lock();
-        manifest.format_version = MANIFEST_FORMAT_V1;
+        manifest.format_version = format;
+        if format == MANIFEST_FORMAT_HIDDEN {
+            manifest.records[0].hidden = Some(Hidden {
+                at_ms: 5,
+                reason: HiddenReason::Patient,
+            });
+        }
+        // An earlier build kept no history: its segments go, as if never
+        // written.
+        for segment in std::mem::take(&mut manifest.history).segments {
+            fs::remove_file(root.join("objects").join(segment.object_name)).unwrap();
+        }
         for _ in 0..2 {
             manifest.generation += 1;
             write_manifest_at(root, &master_key, &manifest).unwrap();
@@ -12106,7 +12751,8 @@ mod tests {
         (store, imported, master_key, vault_id)
     }
 
-    /// Both slots, decrypted: (format, generation, the state without them).
+    /// Both slots, decrypted: (format, generation, the state without them or
+    /// the history, which every writable unlock adds to).
     fn slots(root: &Path, master_key: &[u8; 32], vault_id: Uuid) -> Vec<(u32, u64, Manifest)> {
         let keys = derive_keys(vault_id, master_key).unwrap();
         (0..2)
@@ -12116,91 +12762,148 @@ mod tests {
                 let (format, generation) = (manifest.format_version, manifest.generation);
                 manifest.format_version = 0;
                 manifest.generation = 0;
+                manifest.history = HistoryState::default();
                 (format, generation, manifest)
             })
             .collect()
     }
 
+    /// The events in the session's history, from its segments.
+    fn history_events(store: &VaultStore) -> Vec<HistoryEntry> {
+        let guard = store.session();
+        let unlocked = guard.as_ref().unwrap();
+        let manifest = &unlocked.manifest;
+        let keys = derive_keys(manifest.vault_id, &unlocked.master_key).unwrap();
+        let entries: Vec<HistoryEntry> = manifest
+            .history
+            .segments
+            .iter()
+            .flat_map(|segment| {
+                read_history_segment(&store.root, &keys, manifest.vault_id, segment).unwrap()
+            })
+            .collect();
+        assert_eq!(
+            history::verify(
+                manifest.vault_id,
+                &entries,
+                manifest.history.count,
+                &manifest.history.head
+            ),
+            Ok(())
+        );
+        entries
+    }
+
+    fn events_of(entries: &[HistoryEntry]) -> Vec<HistoryEvent> {
+        entries.iter().map(|entry| entry.event).collect()
+    }
+
     #[test]
-    fn a_format_1_vault_opens_and_is_upgraded_in_a_commit_of_its_own() {
+    fn an_older_vault_opens_and_is_upgraded_in_a_commit_of_its_own() {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("vault");
-        let (store, imported, master_key, vault_id) = format_1_vault(&root, &["a.pdf", "b.pdf"]);
-        assert!(slots(&root, &master_key, vault_id)
-            .iter()
-            .all(|(format, _, _)| *format == MANIFEST_FORMAT_V1));
-        store.unlock(PASSWORD).unwrap();
-        let snapshot = store.snapshot().unwrap();
-        assert_eq!(snapshot.recovery, None);
-        assert_eq!(snapshot.records.len(), imported.len());
-        // Both slots are format 2 and hold the same state: nothing but the
-        // format and the generation changed.
-        let both = slots(&root, &master_key, vault_id);
-        assert!(both.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
-        assert!(both[0].2 == both[1].2);
-        assert!(both[0]
-            .2
-            .records
-            .iter()
-            .all(|record| record.hidden.is_none()));
-        // Padded to a size class (#71).
-        for slot in 0..2 {
-            let length = fs::metadata(manifest_path(&root, slot)).unwrap().len() as usize;
-            let plaintext = length - 40;
-            assert!(plaintext.is_power_of_two() && plaintext >= MANIFEST_SIZE_CLASS_MIN);
+        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+            let root = temp.path().join(format!("format-{from}"));
+            let (store, imported, master_key, vault_id) =
+                old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            let before = slots(&root, &master_key, vault_id);
+            assert!(before.iter().all(|(format, _, _)| *format == from));
+            store.unlock(PASSWORD).unwrap();
+            let snapshot = store.snapshot().unwrap();
+            assert_eq!(snapshot.recovery, None);
+            assert_eq!(snapshot.records.len(), imported.len());
+            // Both slots are format 3 and hold the same state: nothing but
+            // the format, the generation and the history changed.
+            let both = slots(&root, &master_key, vault_id);
+            assert!(both.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
+            assert!(both[0].2 == before[0].2 && both[1].2 == before[0].2);
+            // Padded to a size class (#71).
+            for slot in 0..2 {
+                let length = fs::metadata(manifest_path(&root, slot)).unwrap().len() as usize;
+                let plaintext = length - 40;
+                assert!(plaintext.is_power_of_two() && plaintext >= MANIFEST_SIZE_CLASS_MIN);
+            }
+            // Its history starts at this unlock, and says so.
+            let entries = history_events(&store);
+            assert_eq!(
+                events_of(&entries),
+                [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+            );
+            // Hiding now writes format 3 data on top.
+            store.hide_record(imported[1], 9).unwrap();
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let records = store.snapshot().unwrap().records;
+            assert!(records
+                .iter()
+                .find(|record| record.id == imported[1])
+                .unwrap()
+                .hidden
+                .is_some());
         }
-        // Hiding now writes format 2 data on top.
-        store.hide_record(imported[0], 9).unwrap();
-        store.lock();
-        store.unlock(PASSWORD).unwrap();
-        assert!(store.snapshot().unwrap().records[0].hidden.is_some());
     }
 
     #[test]
     fn a_crash_between_the_upgrade_writes_leaves_nothing_an_older_build_could_lose() {
         let temp = tempfile::tempdir().unwrap();
-        let template = temp.path().join("template");
-        let (_store, imported, master_key, vault_id) =
-            format_1_vault(&template, &["a.pdf", "b.pdf"]);
-        let before = slots(&template, &master_key, vault_id);
-        assert!(before
-            .iter()
-            .all(|(format, _, _)| *format == MANIFEST_FORMAT_V1));
+        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+            let template = temp.path().join(format!("template-{from}"));
+            let (_store, imported, master_key, vault_id) =
+                old_format_vault(&template, &["a.pdf", "b.pdf"], from);
+            let before = slots(&template, &master_key, vault_id);
+            assert!(before.iter().all(|(format, _, _)| *format == from));
 
-        for boundary in ["upgrade.after-first-write", "upgrade.after-second-write"] {
-            let root = temp.path().join(boundary);
-            copy_directory(&template, &root);
-            run_termination_child(&root, "import", boundary);
-            let after = slots(&root, &master_key, vault_id);
-            // Whatever the slots hold now, it is the state from before the
-            // upgrade: an older build that opens a format 1 slot, and drops
-            // as orphans the objects only the other slot names, loses nothing.
-            assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
-            let formats: Vec<u32> = after.iter().map(|(format, _, _)| *format).collect();
-            if boundary == "upgrade.after-first-write" {
-                assert!(formats.contains(&MANIFEST_FORMAT_V1) && formats.contains(&VAULT_FORMAT));
-            } else {
-                assert_eq!(formats, [VAULT_FORMAT, VAULT_FORMAT]);
+            for boundary in ["upgrade.after-first-write", "upgrade.after-second-write"] {
+                let root = temp.path().join(format!("{from}-{boundary}"));
+                copy_directory(&template, &root);
+                run_termination_child(&root, "unlock", boundary);
+                let after = slots(&root, &master_key, vault_id);
+                // Whatever the slots hold now, it is the state from before the
+                // upgrade, with no history: an older build that opens the
+                // older slot, and drops as orphans the objects only the other
+                // slot names, loses nothing.
+                assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
+                let keys = derive_keys(vault_id, &master_key).unwrap();
+                for slot in 0..2 {
+                    let data = fs::read(manifest_path(&root, slot)).unwrap();
+                    let manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
+                    assert!(manifest.history.is_empty(), "{from} {boundary}");
+                }
+                let formats: Vec<u32> = after.iter().map(|(format, _, _)| *format).collect();
+                if boundary == "upgrade.after-first-write" {
+                    assert!(formats.contains(&from) && formats.contains(&VAULT_FORMAT));
+                } else {
+                    assert_eq!(formats, [VAULT_FORMAT, VAULT_FORMAT]);
+                }
+                // This build opens it, finishes the upgrade, and has
+                // everything, with a history from here on.
+                let restarted = VaultStore::new(root.clone());
+                restarted.unlock(PASSWORD).unwrap();
+                let snapshot = restarted.snapshot().unwrap();
+                assert_eq!(snapshot.recovery, None);
+                assert_eq!(snapshot.records.len(), imported.len());
+                assert_eq!(
+                    events_of(&history_events(&restarted)),
+                    [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+                );
+                restarted.lock();
+                assert!(slots(&root, &master_key, vault_id)
+                    .iter()
+                    .all(|(format, _, state)| *format == VAULT_FORMAT && *state == before[0].2));
             }
-            // This build opens it, finishes the upgrade, and has everything.
-            let restarted = VaultStore::new(root.clone());
-            restarted.unlock(PASSWORD).unwrap();
-            let snapshot = restarted.snapshot().unwrap();
-            assert_eq!(snapshot.recovery, None);
-            assert_eq!(snapshot.records.len(), imported.len());
-            restarted.lock();
-            assert!(slots(&root, &master_key, vault_id)
-                .iter()
-                .all(|(format, _, state)| *format == VAULT_FORMAT && *state == before[0].2));
         }
     }
 
     #[test]
     fn an_upgrade_that_cannot_write_leaves_the_vault_read_only_and_whole() {
         let temp = tempfile::tempdir().unwrap();
-        for boundary in ["upgrade.before-first-write", "upgrade.after-first-write"] {
-            let root = temp.path().join(boundary);
-            let (store, imported, _, _) = format_1_vault(&root, &["a.pdf"]);
+        for (from, boundary) in [
+            (MANIFEST_FORMAT_V1, "upgrade.before-first-write"),
+            (MANIFEST_FORMAT_V1, "upgrade.after-first-write"),
+            (MANIFEST_FORMAT_HIDDEN, "upgrade.before-first-write"),
+            (MANIFEST_FORMAT_HIDDEN, "upgrade.after-first-write"),
+        ] {
+            let root = temp.path().join(format!("{from}-{boundary}"));
+            let (store, imported, _, _) = old_format_vault(&root, &["a.pdf", "b.pdf"], from);
             {
                 let _fail = FailAt::new(boundary);
                 store.unlock(PASSWORD).unwrap();
@@ -12212,19 +12915,19 @@ mod tests {
                 "{boundary}"
             );
             assert!(matches!(
-                store.hide_record(imported[0], 3),
+                store.hide_record(imported[1], 3),
                 Err(VaultError::RecoveryMode)
             ));
             store.lock();
             // The next unlock upgrades it.
             store.unlock(PASSWORD).unwrap();
             assert_eq!(store.snapshot().unwrap().recovery, None, "{boundary}");
-            store.hide_record(imported[0], 3).unwrap();
+            store.hide_record(imported[1], 3).unwrap();
         }
     }
 
     #[test]
-    fn format_1_cannot_carry_a_hidden_document_and_format_3_is_refused() {
+    fn format_1_cannot_carry_a_hidden_document_and_a_newer_format_is_refused() {
         let temp = tempfile::tempdir().unwrap();
         let (vault_id, mut manifest) = valid_manifest_fixture(temp.path());
         manifest.format_version = MANIFEST_FORMAT_V1;
@@ -12585,14 +13288,15 @@ mod tests {
 
     #[test]
     fn unlock_restores_a_missing_objects_directory() {
-        // Backup and sync tools commonly drop empty directories.
+        // Backup and sync tools commonly drop empty directories. With a
+        // history (#71) it is never empty, but it can still be lost whole.
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
         store.lock();
-        fs::remove_dir(root.join("objects")).unwrap();
+        fs::remove_dir_all(root.join("objects")).unwrap();
 
         store.unlock(PASSWORD).unwrap();
         let outcome = store
@@ -13307,6 +14011,433 @@ mod tests {
                 &[0x44_u8; 32],
                 u64::from(expected_size),
             ).is_err());
+        }
+    }
+
+    // ------------------------------------------------------------ history (#71)
+
+    /// Every file under `root`, read whole.
+    fn every_file(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut files = Vec::new();
+        let mut folders = vec![root.to_path_buf()];
+        while let Some(folder) = folders.pop() {
+            for entry in fs::read_dir(&folder).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else {
+                    files.push((path.clone(), fs::read(&path).unwrap()));
+                }
+            }
+        }
+        files
+    }
+
+    #[test]
+    fn every_event_goes_in_the_history_with_what_it_was_about() {
+        use HistoryEvent::*;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store.create_folder(profile, None, "Heart", 2).unwrap();
+        let record = store
+            .import(profile, vec![], vec![source("scan.pdf", b"fake")], 3)
+            .unwrap()
+            .imported[0];
+        store.rename_record(record, "Echo report.pdf").unwrap();
+        store.assign_folders(record, vec![folder]).unwrap();
+        // Changing nothing records nothing.
+        store.rename_record(record, "Echo report.pdf").unwrap();
+        store.assign_folders(record, vec![folder]).unwrap();
+        store.hide_record(record, 4).unwrap();
+        store.unhide_record(record).unwrap();
+        // Copies go outside the vault's home.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let out = elsewhere.path();
+        store.export_atomic(record, &out.join("copy.pdf")).unwrap();
+        store.backup_atomic(&out.join("backup.mcbak"), 5).unwrap();
+        set_up_recovery_key(&store, 6);
+
+        let entries = history_events(&store);
+        assert_eq!(
+            events_of(&entries),
+            [
+                Created,
+                Imported,
+                Renamed,
+                Moved,
+                Hidden,
+                Restored,
+                CopySaved,
+                BackupSaved,
+                RecoveryKeySet
+            ]
+        );
+        assert!(entries
+            .iter()
+            .all(|entry| entry.app == env!("CARGO_PKG_VERSION")));
+        let about = |index: usize| (entries[index].record_id, entries[index].name.as_deref());
+        assert_eq!(about(1), (Some(record), Some("scan.pdf")));
+        assert_eq!(entries[1].how.as_deref(), Some("picked"));
+        assert_eq!(entries[2].old_name.as_deref(), Some("scan.pdf"));
+        assert_eq!(about(2), (Some(record), Some("Echo report.pdf")));
+        assert_eq!(entries[3].from, Some(vec![]));
+        assert_eq!(
+            entries[3].to,
+            Some(vec![history::FolderAtTheTime {
+                id: folder,
+                name: "Heart".to_owned()
+            }])
+        );
+        assert_eq!(
+            (entries[4].at_ms, entries[4].how.as_deref()),
+            (4, Some("patient"))
+        );
+        assert_eq!(about(5), (Some(record), Some("Echo report.pdf")));
+        assert!(entries[6].place.as_deref().unwrap().ends_with("copy.pdf"));
+        assert!(entries[7]
+            .place
+            .as_deref()
+            .unwrap()
+            .ends_with("backup.mcbak"));
+        assert_eq!(entries[8].at_ms, 6);
+
+        // The next unlock says how the session before it ended: asked for,
+        // at the native deadline, or not known to this run of the app.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let unlocked = history_events(&store).pop().unwrap();
+        assert_eq!(
+            (unlocked.event, unlocked.how.as_deref()),
+            (Unlocked, Some("passphrase"))
+        );
+        let previous = unlocked.previous_session.unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app"),
+            "{previous}"
+        );
+        assert!(store.lock_if_idle(idle_past(Instant::now())));
+        store.unlock(PASSWORD).unwrap();
+        let previous = history_events(&store)
+            .pop()
+            .unwrap()
+            .previous_session
+            .unwrap();
+        assert!(previous.ends_with(":nativeDeadline"), "{previous}");
+        drop(store);
+        let restarted = VaultStore::new(root.clone());
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            history_events(&restarted)
+                .pop()
+                .unwrap()
+                .previous_session
+                .as_deref(),
+            Some("notRecorded")
+        );
+        // Its segments are its own objects, never taken for orphans.
+        assert!(!root.join("quarantine").exists());
+    }
+
+    #[test]
+    fn a_read_only_session_records_nothing_and_the_next_unlock_says_so() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, _, objects) = vault_with_records(&root, &["a.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        let before = history_events(&store).len();
+        store.lock();
+        let aside = temp.path().join("aside");
+        fs::rename(&objects[0], &aside).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+        assert_eq!(history_events(&store).len(), before);
+        store.lock();
+        fs::rename(&aside, &objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        let entries = history_events(&store);
+        assert_eq!(entries.len(), before + 1);
+        assert_eq!(
+            entries.last().unwrap().previous_session.as_deref(),
+            Some("notRecorded")
+        );
+    }
+
+    #[test]
+    fn segments_close_by_size_all_look_alike_and_come_in_powers_of_two() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let long = "n".repeat(MAX_RECORD_NAME_LEN);
+        let mut shapes = Vec::new();
+        for round in 0..3_u64 {
+            // A batch of long entries in one commit, as a large import makes.
+            {
+                let mut guard = store.session();
+                let unlocked = guard.as_mut().unwrap();
+                let entries = (0..150)
+                    .map(|at| {
+                        let mut entry = HistoryEntry::new(HistoryEvent::Renamed, round * 1000 + at);
+                        entry.name = Some(long.clone());
+                        entry.old_name = Some(long.clone());
+                        entry
+                    })
+                    .collect();
+                let next = unlocked.manifest.clone();
+                assert!(commit_with_history(
+                    &root,
+                    &unlocked.master_key,
+                    &mut unlocked.manifest,
+                    next,
+                    entries
+                )
+                .unwrap());
+            }
+            let state = store.session().as_ref().unwrap().manifest.history.clone();
+            let data = state.segments.iter().filter(|s| s.entry_count > 0).count();
+            assert_eq!(state.segments.len(), data.next_power_of_two());
+            assert!(state.segments[data..]
+                .iter()
+                .all(|filler| filler.entry_count == 0));
+            shapes.push((data, state.segments.len()));
+            // Every object on disk is a segment the manifest names, all the
+            // same size: a superseded one is gone, a filler looks like data.
+            let on_disk: HashSet<String> = fs::read_dir(root.join("objects"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+            let named: HashSet<String> = state
+                .segments
+                .iter()
+                .map(|segment| segment.object_name.clone())
+                .collect();
+            assert_eq!(on_disk, named);
+            for name in on_disk {
+                assert_eq!(
+                    fs::metadata(root.join("objects").join(name)).unwrap().len(),
+                    SEGMENT_OBJECT_LEN
+                );
+            }
+        }
+        assert_eq!(shapes, [(2, 2), (3, 4), (5, 8)]);
+        assert_eq!(history_events(&store).len(), 1 + 450);
+    }
+
+    #[test]
+    fn a_locked_vault_holds_no_name_from_its_history_in_the_clear() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store
+            .create_folder(profile, None, "FAKE-Echidna-Folder", 2)
+            .unwrap();
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE-Quokka-Report.pdf", b"x")],
+                3,
+            )
+            .unwrap()
+            .imported[0];
+        store
+            .rename_record(record, "FAKE-Wombat-Letter.pdf")
+            .unwrap();
+        store.assign_folders(record, vec![folder]).unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let out = elsewhere.path().join("FAKE-Platypus-Place");
+        fs::create_dir(&out).unwrap();
+        store.export_atomic(record, &out.join("copy.pdf")).unwrap();
+        store.lock();
+        for (path, bytes) in every_file(&root) {
+            for needle in ["Quokka", "Wombat", "Echidna", "Platypus", "Jamie"] {
+                assert!(
+                    !bytes
+                        .windows(needle.len())
+                        .any(|window| window == needle.as_bytes()),
+                    "{needle} in {}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_crash_in_an_unlocks_history_commit_leaves_a_whole_vault_and_chain() {
+        let temp = tempfile::tempdir().unwrap();
+        let template = temp.path().join("template");
+        let (store, _, _) = vault_with_records(&template, &["a.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        let before = history_events(&store).len();
+        store.lock();
+        for (boundary, committed) in [
+            ("history.after-chunk-write", false),
+            ("history.after-segment-write", false),
+            ("manifest.after-first-write", true),
+            ("manifest.after-second-write", true),
+        ] {
+            let root = temp.path().join(boundary);
+            copy_directory(&template, &root);
+            run_termination_child(&root, "unlock", boundary);
+            let restarted = VaultStore::new(root.clone());
+            restarted.unlock(PASSWORD).unwrap();
+            assert_eq!(restarted.snapshot().unwrap().recovery, None, "{boundary}");
+            assert_eq!(restarted.snapshot().unwrap().records.len(), 1);
+            // The chain checks; the interrupted unlock is in it only once
+            // its commit was durable.
+            let entries = history_events(&restarted);
+            assert_eq!(
+                entries.len(),
+                before + usize::from(committed) + 1,
+                "{boundary}"
+            );
+            assert_eq!(document_files(&root), 1);
+        }
+    }
+
+    #[test]
+    fn a_failed_history_write_commits_neither_the_change_nor_its_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let segments =
+            |store: &VaultStore| store.session().as_ref().unwrap().manifest.history.clone();
+        let before = segments(&store);
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
+            {
+                let _fail = FailAt::new(boundary);
+                assert!(matches!(
+                    store.import(profile, vec![], vec![source("a.pdf", b"a")], 2),
+                    Err(VaultError::NoSpace)
+                ));
+            }
+            assert!(store.snapshot().unwrap().records.is_empty(), "{boundary}");
+            assert!(segments(&store) == before, "{boundary}");
+            // Nothing it wrote is left: neither the document nor a segment.
+            let on_disk = fs::read_dir(root.join("objects")).unwrap().count();
+            assert_eq!(on_disk, before.segments.len(), "{boundary}");
+        }
+        store
+            .import(profile, vec![], vec![source("a.pdf", b"a")], 2)
+            .unwrap();
+        assert_eq!(
+            events_of(&history_events(&store)),
+            [HistoryEvent::Created, HistoryEvent::Imported]
+        );
+    }
+
+    #[test]
+    fn a_restore_goes_in_the_restored_vaults_history_and_an_unlock_is_no_change() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home-a").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        // Opened since the backup: only the history moved on, which is not
+        // a change restoring would lose.
+        store.unlock(PASSWORD).unwrap();
+        store.lock();
+        let preview = store
+            .inspect_backup(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        assert_eq!(preview.replaces, RestoreReplaces::SameVault);
+        assert!(!preview.differs_from_this_device);
+        // A real change still counts.
+        store.unlock(PASSWORD).unwrap();
+        let record = store.snapshot().unwrap().records[0].id;
+        store.rename_record(record, "renamed.pdf").unwrap();
+        store.lock();
+        let preview = store
+            .inspect_backup(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        assert!(preview.differs_from_this_device);
+
+        // Restored elsewhere: the backup's history, then the restore.
+        let fresh = VaultStore::new(temp.path().join("home-b").join("vault"));
+        fresh
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        fresh.unlock(PASSWORD).unwrap();
+        let entries = history_events(&fresh);
+        assert_eq!(entries[0].event, HistoryEvent::Created);
+        assert_eq!(
+            events_of(&entries[entries.len() - 2..]),
+            [HistoryEvent::BackupRestored, HistoryEvent::Unlocked]
+        );
+    }
+
+    #[test]
+    fn a_damaged_last_segment_is_kept_and_the_history_goes_on_in_a_new_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let first = store.session().as_ref().unwrap().manifest.history.segments[0].clone();
+        store.lock();
+        let path = root.join("objects").join(&first.object_name);
+        let mut bytes = fs::read(&path).unwrap();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 1;
+        fs::write(&path, bytes).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        let state = store.session().as_ref().unwrap().manifest.history.clone();
+        // The damaged one is still named, and kept; the unlock is in a new one.
+        assert!(state.segments[0] == first);
+        assert!(path.exists());
+        assert_eq!(state.count, 2);
+        assert_eq!(state.segments[1].first_seq, 1);
+        assert_eq!(state.segments[1].entry_count, 1);
+    }
+
+    #[test]
+    fn the_history_test_vectors_match_vault_format_md() {
+        let vault_id = Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap();
+        let genesis = history::genesis(vault_id);
+        let mut entries = vec![HistoryEntry::new(HistoryEvent::Created, 1_767_225_600_000)];
+        entries[0].app = "0.1.0".to_owned();
+        let mut renamed = HistoryEntry::new(HistoryEvent::Renamed, 1_767_225_660_000);
+        renamed.app = "0.1.0".to_owned();
+        renamed.record_id = Some(Uuid::parse_str("10000000-0000-4000-8000-000000000001").unwrap());
+        renamed.name = Some("Écho \"cardiaque\".pdf".to_owned());
+        renamed.old_name = Some("scan.pdf".to_owned());
+        entries.push(renamed);
+        let head = history::chain(&mut entries, 0, genesis.clone());
+        let canonical: Vec<String> = entries
+            .iter()
+            .map(|entry| String::from_utf8(entry.canonical()).unwrap())
+            .collect();
+        let documented = include_str!("../../VAULT_FORMAT.md");
+        for value in [
+            &genesis,
+            &canonical[0],
+            &entries[0].hash(),
+            &canonical[1],
+            &head,
+        ] {
+            assert!(documented.contains(value.as_str()), "{value}");
         }
     }
 }

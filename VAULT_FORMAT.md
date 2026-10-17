@@ -383,8 +383,9 @@ No viewer, synchronization, analytics, or CARLOS provenance is implemented.
 
 Every removal from storage goes through one helper that names what it removes: a create or
 restore stage, an import's staging or uncommitted ciphertext, an export's stage or journal
-entry, the superseded `header.json`, what the atomic replacement primitive left, and (until #71's
-third part sets vaults aside) a vault a confirmed reset retired or a restore replaced. Direct
+entry, the superseded `header.json`, what the atomic replacement primitive left, a history segment
+the committed manifest no longer names (below), and (until #71's third part sets vaults aside) a
+vault a confirmed reset retired or a restore replaced. Direct
 `std::fs` removal is disallowed crate-wide by `src-tauri/clippy.toml`, which CI enforces, and a
 scripted session of every document command checks that every object a record ever named is
 still there, byte for byte.
@@ -397,14 +398,103 @@ plaintext with spaces, which JSON ignores, to a size class: the next power of tw
 then tells only roughly how much the vault holds. Format 1 manifests are still read, unpadded; a
 format 1 manifest with a hidden record is refused.
 
-A writable unlock of a format 1 vault upgrades it at once, in a commit of its own that changes
-nothing but the format and the generation: both slots hold format 2 before anything only format 2
-can hold is written. A crash between the two upgrade writes leaves one format 2 slot holding the
-same state as the format 1 slot, so an older build that opens the format 1 slot loses nothing;
-once both slots are format 2, an older build refuses both (it reports the vault as damaged), and
-never reaches its orphan cleanup. An upgrade that cannot write leaves the session read-only, as a
-failed repair does; the next unlock tries again. A vault opened in lost-objects recovery mode is
-upgraded when its damaged documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
+### Manifest format 3 and the history
+
+Format 3 (#71) adds the history: `history: {count, head, segments: [{id, objectName, wrappedKey,
+firstSeq, entryCount}]}`, left out while empty. Formats 1 and 2 are still read; a format 1 or 2
+manifest with a history is refused. It is a format of its own, not an addition to format 2,
+because format 2 can be released before the history is: a build that knows only format 2 reads
+unknown fields as absent, so it would open a format 2 vault with a history, write its manifest
+back without one, and move the segments to `quarantine/` as orphans, losing the record with no
+error. It refuses format 3 instead.
+
+A writable unlock of a format 1 or 2 vault upgrades it to format 3 at once, in a commit of its own
+that changes nothing but the format and the generation: both slots hold format 3 before anything
+only format 3 can hold (a history; for format 1, a hidden document) is written. A crash between
+the two upgrade writes leaves one format 3 slot holding the same state as the older slot, with no
+history, so an older build that opens the older slot loses nothing; once both slots are format 3,
+an older build refuses both (it reports the vault as damaged), and never reaches its orphan
+cleanup. An upgrade that cannot write leaves the session read-only, as a failed repair does; the
+next unlock tries again. A vault opened in lost-objects recovery mode is upgraded when its damaged
+documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
+
+**What is recorded.** One entry per event, appended in the same commit as the change it records,
+so that neither is ever committed without the other: the vault created; the history started (in a
+vault an earlier build made, at its first recorded event); each unlock, with the secret that opened
+it (`passphrase` or `recoveryKey`) and how the session before it ended; a document imported
+(`how: "picked"`), renamed (old and new name), moved (the folders before and after, by id and by
+their names then), hidden (`how: "patient"` or `"damaged"`) or shown again; a readable copy saved,
+and where; a recovery key set; a backup saved, and where; and a backup restored. An entry about a
+document names it as it was called at that moment. Read-only sessions record nothing. Changing
+the passphrase, profiles and folders themselves are not recorded.
+
+**Locks are recorded at the next unlock.** Nothing is written when the vault locks, so that a lock
+never waits on a write or fails over one. The app remembers, in memory only, when and how the
+session ended (`lockedAt:<ms>:app`, or `:nativeDeadline` when the native idle backstop locked it),
+and the next unlock in the same run of the app records it as `previousSession`. After the app
+restarts, after a read-only session, or when a write failed and left the session read-only, it
+records `notRecorded`. The vault can therefore show a session's start, but its end only as well
+as this run of the app knew it.
+
+**Entries and the chain.** An entry's canonical form is the UTF-8 JSON of these fields, in this
+order, with no whitespace, absent fields left out, integers as integers, and strings escaped as
+JSON requires and no more (non-ASCII characters are written as themselves; there is no Unicode
+normalization, so the bytes are hashed as written):
+
+`seq, atMs, app, event, recordId, name, oldName, from, fromTotal, to, toTotal, how, place,
+placeSha256, previousSession, prev`
+
+`event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
+`hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`. A folder is
+`{"id", "name"}`. A move names at most 32 folders on each side and then gives `fromTotal` or
+`toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
+the whole, so that no entry can outgrow a segment.
+
+- `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
+- `prev` is the previous entry's hash. The first entry's is the genesis value,
+  `SHA-256("mycarlos/history/genesis/v1" ‖ the vault id's 16 bytes)`.
+- `seq` counts from 0. The manifest's authenticated `count` and `head` (the last entry's hash) pin
+  the end, so a changed, missing, reordered or cut-off entry shows, at the first `seq` that does
+  not follow.
+
+Test vectors, which a test in `src-tauri/src/vault.rs` checks against this file. For the vault id
+`00112233-4455-6677-8899-aabbccddeeff`:
+
+- genesis: `c5ecb0cf1c9d1c151c148ab3ab2f3b7deca1fc15094948bb486eced0c990fa60`
+- entry 0: `{"seq":0,"atMs":1767225600000,"app":"0.1.0","event":"created","prev":"c5ecb0cf1c9d1c151c148ab3ab2f3b7deca1fc15094948bb486eced0c990fa60"}`
+- its hash: `1577ce4e606eab3176352f79ffcfaf9b5597ecfdd6bc02601430fd3211573f7c`
+- entry 1: `{"seq":1,"atMs":1767225660000,"app":"0.1.0","event":"renamed","recordId":"10000000-0000-4000-8000-000000000001","name":"Écho \"cardiaque\".pdf","oldName":"scan.pdf","prev":"1577ce4e606eab3176352f79ffcfaf9b5597ecfdd6bc02601430fd3211573f7c"}`
+- its hash, the head: `0178d36064227e0af099fb7c2d51cf80da017fca9e41a96cd59ccb5a18348c78`
+
+**Segments.** Entries are kept in segments of exactly 64 KiB of plaintext: entries one per line,
+then spaces. A segment is closed when the next entry would not fit. Each is an object in
+`objects/`, named like a document's and encrypted in the same chunked envelope under a random key
+of its own, wrapped by the object-wrap key with the associated data
+`"mycarlos-history-segment-v1:" ‖ segment id`; the segment id stands where a document's id does in
+each chunk's associated data. Every segment's file is the same size. Filler segments, holding no
+entry (`entryCount` 0, `firstSeq` 0) and listed after the others, make the number of segments a
+power of two, so that the count of segment-sized files shows only about log₂ of the history's
+length.
+
+**Appending.** The last segment is rewritten copy-on-write with the new entries after its own,
+with new segments when it is full and new fillers when the count passes a power of two: the new
+objects are written and made durable, the manifest naming them is committed, and the superseded
+segment is unlinked between the two manifest writes. A failure before the commit removes what it
+wrote; a crash there leaves objects that orphan cleanup moves to `quarantine/`. A last segment that
+is gone or does not authenticate is kept as it is, and the new entries start a segment of their
+own: the chain goes on from the head the manifest pins, and a check shows the gap. Segments are
+not required objects: a missing one never stops the vault opening.
+
+**Backups and restore.** A backup carries every segment that authenticates; one that is gone or
+damaged is left out. A restore takes segments as optional, authenticates those present, and, before
+the restored vault is put in place, appends `backupRestored` to its history (a backup made by an
+earlier build becomes format 3 there and starts its history). Whether the vault on this device
+"differs from the backup" leaves the history and the format out of the comparison, since every
+unlock, and every backup saved, adds to the history.
+
+**Never shown, and the auditor's step.** No command returns the history to the app's screens. The
+step that saves it for an auditor (each entry and its hash, one per line, then the chain check) is
+not built yet: how it is reached is waiting on Ben's decision (#71, D84).
 
 ## Backup and restore behavior
 
@@ -554,6 +644,12 @@ state, described in the recovery-key sections above.
 - There is no way to delete a document (#71): hidden documents, quarantined objects and their
   names stay in the vault and its backups, and storage grows with them. Exported plaintext and
   copies outside the live vault are beyond the app's control.
+- The history (#71) cannot prove the patient did not rewrite it: a copy of the whole vault put back
+  (a backup, or the folder copied back) passes the chain check, since that copy's chain is whole
+  in itself, and the device clock can be changed. Only an anchor outside the device (the portal,
+  #55) would catch that. The number of segment-sized files shows the history's length to about a
+  power of two. Locks are recorded only at the next unlock in the same run of the app. Until #71's
+  third part sets vaults aside, a reset or a restore still erases a vault and its history with it.
 - Crash-injection, power-loss, low-disk, physical-device backup/restore, and filesystem-permission
   matrices remain release-gate tests. Abrupt subprocess termination at the application-controlled
   chunk, staging, rename, manifest, and deletion boundaries is automated, along with deterministic
