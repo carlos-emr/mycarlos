@@ -5,10 +5,11 @@ import discharge from "./fixtures/discharge-summary.txt?raw";
 import imaging from "./fixtures/imaging-report.txt?raw";
 import lab from "./fixtures/lab-report.txt?raw";
 import referral from "./fixtures/referral-letter.txt?raw";
+import quebec from "./fixtures/quebec-referral.txt?raw";
 
 // #72. Synthetic documents only: FAKE names, 555-01xx numbers, example.com
 // addresses, made-up card and record numbers.
-const knownNames = ["Avery Example", "Jordan Example"];
+const knownNames = ["Avery Example", "Jordan Example", "Renée Côté"];
 const run = (text: string) =>
   deidentify(text, { knownNames, dateShiftDays: 10 });
 
@@ -113,6 +114,45 @@ const documents = [
       "amoxicillin 1 g PO three times daily for 5 days",
     ],
   },
+  {
+    name: "Quebec referral, in French",
+    text: quebec,
+    gone: [
+      "Clinique médicale Saint-Laurent",
+      "Saint-Laurent",
+      "1234, rue Sherbrooke Est",
+      "Sherbrooke",
+      "app. 5",
+      "Montréal",
+      "H2X 1A1",
+      "514 555-0123",
+      "5145550124",
+      "Émilie Tremblay",
+      "Tremblay",
+      "Centre hospitalier de Fictiveville",
+      "Fictiveville",
+      "88, boul. René-Lévesque Ouest",
+      "René-Lévesque",
+      "G1R 9Z9",
+      "Renée",
+      "Côté",
+      "1958/03/02",
+      "COTR 5803 0299",
+      "0077123",
+      "Jean de la Cruz",
+      "de la Cruz",
+      "4185550177",
+      "1234 567 890",
+      "Pierre d'Amours",
+      "d'Amours",
+    ],
+    kept: [
+      "douleur thoracique",
+      "rythme sinusal",
+      "68 ans",
+      "médecin de famille",
+    ],
+  },
 ];
 
 const kinds = (removed: Removed[]) => new Set(removed.map((part) => part.kind));
@@ -122,15 +162,15 @@ describe("the name remover (#72)", () => {
     it(`takes every listed detail out of the ${name}, and keeps the clinical text`, () => {
       const result = run(text);
       for (const detail of gone)
-        expect(result.text, detail).not.toContain(detail);
-      // Nor any word of the patient's or her husband's name, in any case.
-      expect(result.text).not.toMatch(/avery|jordan|\bexample\b/i);
-      for (const clinical of kept) expect(result.text).toContain(clinical);
+        expect(result.toSend, detail).not.toContain(detail);
+      // Nor any word of a profile name, in any case.
+      expect(result.toSend).not.toMatch(/avery|jordan|\bexample\b|renée|côté/i);
+      for (const clinical of kept) expect(result.toSend).toContain(clinical);
     });
 
   it("finds every kind of detail the ticket lists, across the documents", () => {
     const found = new Set(
-      documents.flatMap(({ text }) => [...kinds(run(text).removed)]),
+      documents.flatMap(({ text }) => [...kinds(run(text).onDevice.removed)]),
     );
     for (const kind of [
       "name",
@@ -149,7 +189,7 @@ describe("the name remover (#72)", () => {
   });
 
   it("gives one detail one placeholder, and a person's whole name one too", () => {
-    const { text } = run(referral);
+    const text = run(referral).toSend;
     // "Avery EXAMPLE", "Avery Example" and "Avery's" are the patient.
     expect(text).toContain("Re: [NAME 1]");
     expect(text).toContain("Thank you for seeing Mrs. [NAME 1],");
@@ -164,7 +204,8 @@ describe("the name remover (#72)", () => {
   });
 
   it("removes a date of birth, and shifts every other date by the same days", () => {
-    const { text, removed } = run(referral);
+    const { toSend: text, onDevice } = run(referral);
+    const { removed } = onDevice;
     expect(removed.find((part) => part.kind === "dateOfBirth")?.original).toBe(
       "1961-04-17",
     );
@@ -173,10 +214,10 @@ describe("the name remover (#72)", () => {
     expect(text).toContain("October 12, 2026");
     expect(text).toContain("since September 28, 2026");
     expect(text).toContain("ECG on 2026-10-05");
-    const lab10 = run(lab).text;
+    const lab10 = run(lab).toSend;
     expect(lab10).toContain("Collected: 2026-10-18 07:40");
     expect(lab10).toContain("(on or after 2026-11-01)");
-    const imaging10 = run(imaging).text;
+    const imaging10 = run(imaging).toSend;
     expect(imaging10).toContain("Date: 22 October 2026");
     expect(imaging10).toContain("CT chest, 13 Mar 2025.");
     expect(imaging10).toContain("around Oct. 22, 2027.");
@@ -184,7 +225,7 @@ describe("the name remover (#72)", () => {
 
   it("reads a date like 03/04/2026 day first unless told otherwise", () => {
     const shift = (text: string, dayFirst?: boolean) =>
-      deidentify(text, { knownNames: [], dateShiftDays: 1, dayFirst }).text;
+      deidentify(text, { knownNames: [], dateShiftDays: 1, dayFirst }).toSend;
     expect(shift("Seen 03/04/2026.")).toBe("Seen 04/04/2026.");
     expect(shift("Seen 03/04/2026.", false)).toBe("Seen 03/05/2026.");
     // A day over 12 settles it either way.
@@ -192,21 +233,74 @@ describe("the name remover (#72)", () => {
     expect(shift("Seen 12/25/2026.")).toBe("Seen 12/26/2026.");
   });
 
+  it("takes out the details root-c2's probe found missed (#72 review)", () => {
+    const out = (text: string, names: string[] = []) =>
+      deidentify(text, { knownNames: names, dateShiftDays: 40 }).toSend;
+    // Accented names, and surnames after a particle.
+    expect(out("Patient: Émilie Tremblay")).toBe("Patient: [NAME 1]");
+    expect(out("Patient: Jean de la Cruz")).toBe("Patient: [NAME 1]");
+    expect(out("Patient: Renée O'Brien-Lévesque")).toBe("Patient: [NAME 1]");
+    // A French street address, street type first.
+    expect(
+      out("Address 1234, rue Sherbrooke Est, Montréal, QC H2X 1A1"),
+    ).not.toMatch(/Sherbrooke|1234|Montréal|H2X/);
+    // Dates of birth in every common form, and other dates in them shifted.
+    for (const dob of [
+      "Born 1958/03/02.",
+      "DOB: 1958-Mar-02",
+      "DOB 02-Mar-1958",
+      "Date of birth: March 2, 1958",
+      "Date de naissance : 2 mars 1958",
+      "Née le 2 mars 1958",
+      "DOB: 02/03/58",
+    ])
+      expect(out(dob), dob).not.toMatch(/1958|\b58\b/);
+    expect(out("Seen 2026/10/17.")).toBe("Seen 2026/11/26.");
+    expect(out("Seen 2026-Oct-17.")).toBe("Seen 2026-Nov-26.");
+    expect(out("Vu le 17 octobre 2026.")).toBe("Vu le 26 novembre 2026.");
+    expect(out("Seen 17/10/26.")).toBe("Seen 26/11/26.");
+    // Bare ten-digit numbers: a phone, an Ontario card, a BC PHN.
+    expect(out("Call 6135550199 or HCN 1234567890")).not.toMatch(/\d{4}/);
+    expect(out("Card 1234 567 890 on file")).toBe(
+      "Card [HEALTH CARD 1] on file",
+    );
+    expect(out("PHN 9123456789")).not.toMatch(/\d{4}/);
+    // A labelled card number stops at its digits and version code.
+    expect(
+      out(
+        "Health card: 1234567890 AB Seen for follow-up of major depressive disorder",
+      ),
+    ).toBe(
+      "Health card: [HEALTH CARD 1] Seen for follow-up of major depressive disorder",
+    );
+    // A profile name made of common words is removed as a name, not as words.
+    expect(
+      out("Major Iris came in. Major depressive disorder. Iris normal.", [
+        "Major Iris",
+      ]),
+    ).toBe("[NAME 1] came in. Major depressive disorder. Iris normal.");
+    // A department or a modality is not a clinic.
+    expect(out("CT Imaging shows no mass. Diagnostic Imaging reviewed.")).toBe(
+      "CT Imaging shows no mass. Diagnostic Imaging reviewed.",
+    );
+  });
+
   it("leaves clinical numbers alone", () => {
     const text =
       "BP 120/80, HR 72, Hb 132 g/L, K 5.4 mmol/L, eGFR 61. Ramipril 10 mg, " +
       "1/2 tablet twice daily, 2 x 500 mg. ICD-10 I10. Weight 72.5 kg. " +
-      "Next dose in 3-4 days. Ref range 3.5-5.0.";
+      "Next dose in 3-4 days. Ref range 3.5-5.0, 12.5-15.0. Platelets 250 x10^9/L. " +
+      "INR 1.1. Glucose 5.6. Lot 4471. Pager 2231.";
     const result = deidentify(text, { knownNames: [], dateShiftDays: 10 });
-    expect(result.text).toBe(text);
-    expect(result.removed).toEqual([]);
+    expect(result.toSend).toBe(text);
+    expect(result.onDevice.removed).toEqual([]);
   });
 
   it("chooses a shift of 30 to 365 days, earlier or later, when none is given", () => {
     for (let round = 0; round < 20; round++) {
       const { dateShiftDays } = deidentify("Seen 2026-10-01.", {
         knownNames: [],
-      });
+      }).onDevice;
       expect(Math.abs(dateShiftDays)).toBeGreaterThanOrEqual(30);
       expect(Math.abs(dateShiftDays)).toBeLessThanOrEqual(365);
     }
@@ -214,18 +308,20 @@ describe("the name remover (#72)", () => {
 
   it("lets the patient remove more from the preview", () => {
     const result = run(referral);
-    const age = result.text.indexOf("65-year-old");
+    const age = result.toSend.indexOf("65-year-old");
     const more = removeMore(result, age, age + "65-year-old".length);
-    expect(more.text).toContain("Mrs. [NAME 1], a [REMOVED 1] woman");
-    expect(more.text).not.toContain("65-year-old");
+    expect(more.toSend).toContain("Mrs. [NAME 1], a [REMOVED 1] woman");
+    expect(more.toSend).not.toContain("65-year-old");
     // Nothing else changed: every other placeholder is where it was.
-    expect(more.text.replace("[REMOVED 1]", "65-year-old")).toBe(result.text);
+    expect(more.toSend.replace("[REMOVED 1]", "65-year-old")).toBe(
+      result.toSend,
+    );
     // Positions stay right for a second removal after the first.
-    const ramipril = more.text.indexOf("ramipril");
+    const ramipril = more.toSend.indexOf("ramipril");
     const again = removeMore(more, ramipril, ramipril + "ramipril".length);
-    expect(again.text).toContain("She takes [REMOVED 2] 5 mg daily.");
+    expect(again.toSend).toContain("She takes [REMOVED 2] 5 mg daily.");
     // A part that is already a placeholder cannot be removed again.
-    const placeholder = result.text.indexOf("[NAME 1]");
+    const placeholder = result.toSend.indexOf("[NAME 1]");
     expect(() => removeMore(result, placeholder, placeholder + 3)).toThrow(
       RangeError,
     );
@@ -244,6 +340,17 @@ describe("the name remover (#72)", () => {
     expect(restore("[NAME 9] and [PHONE 99]", result)).toBe(
       "[NAME 9] and [PHONE 99]",
     );
+  });
+
+  it("gives only the text to send when the result is serialized", () => {
+    const result = run(referral);
+    // A caller that sends the whole object, by mistake, sends no original.
+    const serialized = JSON.stringify(result);
+    expect(JSON.parse(serialized)).toEqual({ toSend: result.toSend });
+    for (const part of result.onDevice.removed)
+      if (part.kind !== "date")
+        expect(serialized, part.original).not.toContain(part.original);
+    expect(Object.keys(result)).toEqual(["toSend"]);
   });
 
   it("uses no network: plain text in, plain text out", () => {

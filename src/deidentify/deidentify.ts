@@ -6,14 +6,17 @@
  * It removes names (the patient's profile names, and names after a title or
  * a label such as "Patient:"), health card and record numbers, dates of
  * birth, addresses, postal codes, phone numbers, email addresses, and clinic
- * and doctor names. Every other date is shifted by the same number of days,
- * so the gaps between them stay. Each removed detail becomes a placeholder,
- * such as "[NAME 1]", the same one each time the same detail appears.
+ * and doctor names, in English and French. Every other date is shifted by
+ * the same number of days, so the gaps between them stay. Each removed detail
+ * becomes a placeholder, such as "[NAME 1]", the same one each time the same
+ * detail appears.
  *
  * It is rules, not understanding: a rare condition, an unusual job or a small
  * town in free text can still point to a person, and a name with no title or
- * label that is not a profile name is not found. The patient's preview, where
- * more can be removed by hand (`removeMore`), is the last check.
+ * label that is not a profile name is not found. A word of a profile name that
+ * is also an ordinary word ("Major", "Iris", "Rose") is removed only as part of
+ * the whole name. The patient's preview, where more can be removed by hand
+ * (`removeMore`), is the last check.
  */
 
 export type RemovedKind =
@@ -44,21 +47,30 @@ export interface Removed {
   sentEnd: number;
 }
 
-export interface Deidentified {
-  /** The text to send, with placeholders and shifted dates. */
-  text: string;
+/** What stays on the device: everything needed to show the preview, remove
+ * more and put the details back. Never sent. */
+export interface OnDevice {
   /** Everything taken out or shifted, in the order it appears. */
   removed: Removed[];
-  /** How many days every date was moved; kept on the device. */
+  /** How many days every date was moved. */
   dateShiftDays: number;
-  /** The document as it was; kept on the device, for `removeMore`. */
+  /** The document as it was. */
   source: string;
+}
+
+export interface Deidentified {
+  /** The text that may be sent, with placeholders and shifted dates. */
+  readonly toSend: string;
+  /** Kept on the device. Not enumerable: serializing the result, by mistake,
+   * gives only `toSend`. */
+  readonly onDevice: OnDevice;
 }
 
 export interface DeidentifyOptions {
   /** Names known to be the patient's or a family member's: every profile
-   * name. Each word of three or more letters is removed wherever it stands
-   * alone. */
+   * name. The whole name is removed wherever it stands, and each word of
+   * three or more letters wherever it stands alone, written as a name
+   * (capitalized, or in capitals), unless it is also an ordinary word. */
   knownNames: string[];
   /** Days to move every other date by. Chosen at random (30 to 365 days,
    * earlier or later) when not given; tests give one. */
@@ -108,7 +120,15 @@ interface Finding {
   replacement?: string;
 }
 
-const MONTHS = [
+// ---------------------------------------------------------------- dates
+
+interface MonthWord {
+  month: number;
+  language: "en" | "fr";
+  full: boolean;
+}
+const MONTH_WORDS = new Map<string, MonthWord>();
+const ENGLISH = [
   "january",
   "february",
   "march",
@@ -122,29 +142,332 @@ const MONTHS = [
   "november",
   "december",
 ];
-const MONTH_WORD =
-  "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?";
-// Every date form read: ISO, day-month-year with a month name, month-day-year
-// with a month name, and day/month/year with slashes or dashes.
-const DATE_FORMS = [
-  "\\b\\d{4}-\\d{2}-\\d{2}\\b",
-  `\\b\\d{1,2}[ -]${MONTH_WORD}[ ,-]*\\d{4}\\b`,
-  `\\b${MONTH_WORD} \\d{1,2},? \\d{4}\\b`,
-  "\\b\\d{1,2}[/.]\\d{1,2}[/.]\\d{4}\\b",
+const FRENCH = [
+  "janvier",
+  "février",
+  "mars",
+  "avril",
+  "mai",
+  "juin",
+  "juillet",
+  "août",
+  "septembre",
+  "octobre",
+  "novembre",
+  "décembre",
 ];
-const DATE = `(?:${DATE_FORMS.join("|")})`;
+const FRENCH_SHORT = [
+  "janv.",
+  "févr.",
+  "mars",
+  "avr.",
+  "mai",
+  "juin",
+  "juil.",
+  "août",
+  "sept.",
+  "oct.",
+  "nov.",
+  "déc.",
+];
+ENGLISH.forEach((word, index) => {
+  MONTH_WORDS.set(word, { month: index + 1, language: "en", full: true });
+  if (word.length > 3)
+    MONTH_WORDS.set(word.slice(0, 3), {
+      month: index + 1,
+      language: "en",
+      full: false,
+    });
+});
+MONTH_WORDS.set("sept", { month: 9, language: "en", full: false });
+FRENCH.forEach((word, index) =>
+  MONTH_WORDS.set(word, { month: index + 1, language: "fr", full: true }),
+);
+FRENCH_SHORT.forEach((word, index) => {
+  const bare = word.replace(".", "");
+  if (!MONTH_WORDS.has(bare))
+    MONTH_WORDS.set(bare, { month: index + 1, language: "fr", full: false });
+});
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Longest first, so that "mars" is not read as "mar" and "sept" as "sep".
+const MONTH = `(?:${[...MONTH_WORDS.keys()]
+  .sort((a, b) => b.length - a.length)
+  .map(escapeRegExp)
+  .join("|")})\\.?`;
 
-const NAME_WORD = "[A-Z][A-Za-z'’-]+";
-const CAPITALIZED_NAME = `${NAME_WORD}(?: ${NAME_WORD}){0,3}`;
+/** A date form: how to find it, and how to read it back as numbers. */
+interface DateForm {
+  pattern: string;
+  read: (
+    match: RegExpExecArray,
+    dayFirst: boolean,
+  ) => { year: number; month: number; day: number } | null;
+}
+const monthOf = (word: string) =>
+  MONTH_WORDS.get(word.toLowerCase().replace(/\.$/, ""))?.month ?? 0;
+const twoDigitYear = (year: number) => {
+  // Within the last 100 years, up to next year.
+  const now = new Date().getUTCFullYear();
+  const century = Math.floor(now / 100) * 100;
+  return century + year > now + 1 ? century - 100 + year : century + year;
+};
+const DATE_FORMS: DateForm[] = [
+  {
+    // 2026-10-08
+    pattern: "\\b(\\d{4})-(\\d{2})-(\\d{2})\\b",
+    read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
+  },
+  {
+    // 2026/10/08
+    pattern: "\\b(\\d{4})/(\\d{1,2})/(\\d{1,2})\\b",
+    read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
+  },
+  {
+    // 2026-Oct-08
+    pattern: `\\b(\\d{4})-(${MONTH})-(\\d{1,2})\\b`,
+    read: (m) => ({ year: +m[1], month: monthOf(m[2]), day: +m[3] }),
+  },
+  {
+    // 8 October 2026, 17-Apr-1961, 2 mars 1958, 1er mars 1958
+    pattern: `\\b(\\d{1,2})(?:er)?([ -])(${MONTH})[ ,-]*(\\d{4})\\b`,
+    read: (m) => ({ year: +m[4], month: monthOf(m[3]), day: +m[1] }),
+  },
+  {
+    // October 8, 2026 and Oct. 8 2026
+    pattern: `(?<![\\p{L}])(${MONTH}) (\\d{1,2}),? (\\d{4})\\b`,
+    read: (m) => ({ year: +m[3], month: monthOf(m[1]), day: +m[2] }),
+  },
+  {
+    // 08/10/2026 or 10/08/2026, and with full stops
+    // No backreference: the forms are joined into one pattern for dates of
+    // birth, where group numbers move.
+    pattern: "\\b(\\d{1,2})([/.])(\\d{1,2})[/.](\\d{4})\\b",
+    read: (m, dayFirst) => dayMonth(+m[1], +m[3], +m[4], dayFirst),
+  },
+  {
+    // 08/10/26: slashes only, so that a range such as 12.5-15.0 is not one
+    pattern: "\\b(\\d{1,2})/(\\d{1,2})/(\\d{2})\\b",
+    read: (m, dayFirst) =>
+      dayMonth(+m[1], +m[2], twoDigitYear(+m[3]), dayFirst),
+  },
+];
+function dayMonth(
+  first: number,
+  second: number,
+  year: number,
+  dayFirst: boolean,
+) {
+  // One of them over 12 settles it; otherwise the option does.
+  const firstIsDay = first > 12 || (second <= 12 && dayFirst);
+  return firstIsDay
+    ? { year, month: second, day: first }
+    : { year, month: first, day: second };
+}
+const DATE = `(?:${DATE_FORMS.map((form) => form.pattern).join("|")})`;
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+/** A month word written as the original one was: its language, full or
+ * short, its full stop and its capitals. */
+function monthLike(original: string, month: number): string {
+  const bare = original.replace(/\.$/, "");
+  const known = MONTH_WORDS.get(bare.toLowerCase());
+  const language = known?.language ?? "en";
+  let word: string;
+  if (language === "fr")
+    word = (known?.full ? FRENCH : FRENCH_SHORT)[month - 1];
+  else if (known?.full) word = ENGLISH[month - 1];
+  else
+    word = ENGLISH[month - 1].slice(0, 3) + (original.endsWith(".") ? "." : "");
+  if (bare === bare.toUpperCase()) return word.toUpperCase();
+  if (bare[0] === bare[0].toUpperCase())
+    return word[0].toUpperCase() + word.slice(1);
+  return word;
+}
+
+/** The date in `text`, shifted by `days` and written as it was; null if it
+ * is no date. */
+function shiftDate(
+  text: string,
+  days: number,
+  dayFirst: boolean,
+): string | null {
+  for (const form of DATE_FORMS) {
+    const match = new RegExp(`^${form.pattern}$`, "iu").exec(text);
+    if (!match) continue;
+    const parts = form.read(match, dayFirst);
+    if (!parts) return null;
+    const { year, month, day } = parts;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCMonth() !== month - 1) return null;
+    const shifted = new Date(date.getTime() + days * 86_400_000);
+    const y = shifted.getUTCFullYear();
+    const m = shifted.getUTCMonth() + 1;
+    const d = shifted.getUTCDate();
+    // Each part replaced in place, so that the separators and the order stay.
+    return rewrite(text, match, form, { y, m, d }, dayFirst);
+  }
+  return null;
+}
+
+function rewrite(
+  text: string,
+  match: RegExpExecArray,
+  form: DateForm,
+  { y, m, d }: { y: number; m: number; d: number },
+  dayFirst: boolean,
+): string {
+  const index = DATE_FORMS.indexOf(form);
+  switch (index) {
+    case 0:
+      return `${y}-${pad(m)}-${pad(d)}`;
+    case 1:
+      return `${y}/${pad(m)}/${pad(d)}`;
+    case 2:
+      return `${y}-${monthLike(match[2], m)}-${pad(d)}`;
+    case 3: {
+      const separator = match[2];
+      const ordinal = /^\d{1,2}er/.test(text) && d === 1 ? "er" : "";
+      const between = text.slice(
+        text.indexOf(match[3]) + match[3].length,
+        text.lastIndexOf(match[4]),
+      );
+      return `${d}${ordinal}${separator}${monthLike(match[3], m)}${between}${y}`;
+    }
+    case 4:
+      return `${monthLike(match[1], m)} ${d}${text.includes(",") ? "," : ""} ${y}`;
+    case 5: {
+      const separator = match[2];
+      const firstIsDay = +match[1] > 12 || (+match[3] <= 12 && dayFirst);
+      return firstIsDay
+        ? `${pad(d)}${separator}${pad(m)}${separator}${y}`
+        : `${pad(m)}${separator}${pad(d)}${separator}${y}`;
+    }
+    default: {
+      const firstIsDay = +match[1] > 12 || (+match[2] <= 12 && dayFirst);
+      const yy = pad(y % 100);
+      return firstIsDay
+        ? `${pad(d)}/${pad(m)}/${yy}`
+        : `${pad(m)}/${pad(d)}/${yy}`;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- names, places
+
+const UPPER = "\\p{Lu}";
+// A word of a name: a capital, then letters, apostrophes or hyphens.
+const NAME_WORD = `${UPPER}[\\p{L}'’-]+`;
+// "de la Cruz", "van der Berg", "d'Amours", "bin Saleh", "St-Pierre".
+const PARTICLE =
+  "(?:de|du|des|la|le|les|van|von|der|den|ter|ten|bin|ibn|al|el|da|dos|das|di|del|della|degli)";
+const NAME_PART = `(?:[dD]['’])?${NAME_WORD}`;
+const CAPITALIZED_NAME = `${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){0,3}`;
 // "EXAMPLE, Avery" and "Avery EXAMPLE" both come after a label.
-const LABELLED_NAME = `(?:[A-Z][A-Z'’-]+, ${NAME_WORD}(?: ${NAME_WORD})?|${CAPITALIZED_NAME})`;
+const LABELLED_NAME = `(?:${UPPER}[\\p{Lu}'’-]+,[ \\t]+${NAME_PART}(?:[ \\t]+${NAME_PART})?|${CAPITALIZED_NAME})`;
 
 const PROVINCES =
-  "(?:ON|BC|QC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU|Ontario|British Columbia|Qu[eé]bec|Alberta|Manitoba|Saskatchewan|Nova Scotia|New Brunswick|Newfoundland and Labrador|Prince Edward Island|Yukon|Northwest Territories|Nunavut)";
+  "(?:ON|BC|QC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU|Ontario|British Columbia|Colombie-Britannique|Qu[eé]bec|Alberta|Manitoba|Saskatchewan|Nova Scotia|Nouvelle-[ÉE]cosse|New Brunswick|Nouveau-Brunswick|Newfoundland and Labrador|Terre-Neuve-et-Labrador|Prince Edward Island|[ÎI]le-du-Prince-[ÉE]douard|Yukon|Northwest Territories|Territoires du Nord-Ouest|Nunavut)";
 const STREET_TYPE =
   "(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Court|Ct|Crescent|Cres|Place|Pl|Terrace|Parkway|Pkwy|Highway|Hwy|Circle|Cir|Trail|Square|Sq|Gate|Row)";
+// French street types come first, in lower case or capitalized.
+const either = (word: string) =>
+  `[${word[0].toUpperCase()}${word[0]}]${escapeRegExp(word.slice(1))}`;
+const FRENCH_STREET_TYPE = `(?:${[
+  "rue",
+  "boulevard",
+  "boul.",
+  "boul",
+  "bd",
+  "avenue",
+  "av.",
+  "chemin",
+  "ch.",
+  "route",
+  "rang",
+  "montée",
+  "côte",
+  "place",
+  "allée",
+  "impasse",
+  "promenade",
+  "croissant",
+  "terrasse",
+  "carré",
+]
+  .map(either)
+  .join("|")})`;
+const UNIT = `(?:,?[ \\t]*(?:Unit|Apt\\.?|Apartment|Suite|app\\.?|apt\\.?|appartement|bureau|unité|local|#)[ \\t]*[\\w-]+)?`;
 const CLINIC_WORDS =
   "(?:Family Health Team|Family Practice|Medical Clinic|Medical Centre|Medical Center|Health Centre|Health Center|Health Sciences Centre|Clinic|Hospital|Laboratories|Laboratory|Imaging|Diagnostics|Pharmacy)";
+// Words that, alone before a clinic word, make a heading, not a name.
+const GENERIC_BEFORE_CLINIC = new Set([
+  "diagnostic",
+  "medical",
+  "clinical",
+  "general",
+  "family",
+  "community",
+  "regional",
+  "department",
+  "the",
+  "ct",
+  "mri",
+  "mr",
+  "pet",
+  "us",
+  "x-ray",
+  "nuclear",
+  "breast",
+  "cardiac",
+  "vascular",
+]);
+// Profile-name words that are also ordinary words: removed only as part of
+// the whole name.
+const ORDINARY_WORDS = new Set([
+  "major",
+  "iris",
+  "mark",
+  "may",
+  "grace",
+  "brown",
+  "rose",
+  "will",
+  "hope",
+  "faith",
+  "joy",
+  "june",
+  "april",
+  "august",
+  "bill",
+  "pat",
+  "dawn",
+  "summer",
+  "river",
+  "white",
+  "black",
+  "green",
+  "young",
+  "king",
+  "page",
+  "rich",
+  "guy",
+  "ray",
+  "lane",
+  "dale",
+  "glen",
+  "art",
+  "frank",
+  "sunny",
+  "claire",
+  "blanc",
+  "petit",
+  "grand",
+  "roy",
+  "pierre",
+]);
 
 /** A rule: what it finds, and which part of a match is the detail. */
 interface Rule {
@@ -154,43 +477,51 @@ interface Rule {
   group?: number;
 }
 
+const HEALTH_CARD_LABEL =
+  "(?:[Hh]ealth [Cc]ard(?: [Nn]umber| [Nn]o\\.?| #)?|[Hh]ealth (?:[Ii]nsurance )?[Nn]umber|HCN|PHN|OHIP|RAMQ|MSP|AHCIP|NAM|[Hh]ealth #|[Cc]arte d'assurance maladie|[Nn]uméro d'assurance maladie)";
+// Digit groups with an optional two-letter version code, or Quebec's form:
+// nothing after them on the line is taken.
+const HEALTH_CARD_VALUE =
+  "(?:[A-Z]{4}[ -]?\\d{4}[ -]?\\d{4}|(?:\\d{4,5}[ -]?\\d{3,4}[ -]?\\d{3,4}|\\d{8,12})(?:[ -]?[A-Z]{2}(?![\\p{L}]))?)";
+
 const RULES: Rule[] = [
   {
     kind: "email",
     pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
   },
-  // Labelled first: whatever follows the label, in any form.
   {
     kind: "healthCard",
-    pattern:
-      /\b(?:Health card(?: number| no\.?| #)?|Health (?:insurance )?number|HCN|PHN|OHIP|RAMQ|MSP|AHCIP|Health #)\s*[:#]?\s*([A-Z0-9][A-Z0-9 -]{5,}[A-Z0-9])/gi,
+    pattern: new RegExp(
+      `\\b${HEALTH_CARD_LABEL}[ \\t]*[:#]?[ \\t]*(${HEALTH_CARD_VALUE})`,
+      "gu",
+    ),
     group: 1,
   },
-  // Ontario (10 digits and a version code) and Quebec (4 letters, 8 digits),
-  // unlabelled.
+  // Ontario and BC (ten digits in 4-3-3 groups, maybe a version code), and
+  // Quebec (four letters, eight digits), unlabelled.
   {
     kind: "healthCard",
     pattern:
-      /\b\d{4}[- ]?\d{3}[- ]?\d{3}[- ]?[A-Z]{2}\b|\b[A-Z]{4} ?\d{4} ?\d{4}\b/g,
+      /\b\d{4}[- ]\d{3}[- ]\d{3}(?:[- ]?[A-Z]{2})?\b|\b\d{10}[- ]?[A-Z]{2}\b|\b[A-Z]{4}[ -]?\d{4}[ -]?\d{4}\b/g,
   },
   {
     kind: "recordNumber",
     pattern:
-      /\b(?:MRN|Medical record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient ID|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #))\s*[:#]?\s*([A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/gi,
+      /\b(?:MRN|Medical record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient ID|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Dossier(?: no\.?| n°| #)?|N[o°] de dossier|Numéro de dossier)[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
     group: 1,
   },
   {
     kind: "dateOfBirth",
     pattern: new RegExp(
-      `\\b(?:DOB|D\\.O\\.B\\.?|Date of birth|Birth ?date|Born)\\s*[:]?\\s*(${DATE})`,
-      "gi",
+      `(?:\\bDOB|\\bD\\.O\\.B\\.?|\\bDate of birth|\\bBirth ?date|\\bBorn|\\bDate de naissance|\\bDDN|\\bN[ée]e? le)[ \\t]*:?[ \\t]*(${DATE})`,
+      "giu",
     ),
     group: 1,
   },
   {
     kind: "phone",
     pattern:
-      /(?:\+?1[ .-]?)?(?:\(\d{3}\)|\b\d{3})[ .-]?\d{3}[ .-]\d{4}\b(?:\s*(?:ext\.?|x)\s*\d{1,5}\b)?/gi,
+      /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
   {
     kind: "postalCode",
@@ -205,60 +536,89 @@ const RULES: Rule[] = [
   },
   {
     kind: "address",
-    pattern: /\b(?:Address|Mailing address|Home address)\s*:\s*([^\n]+)/gi,
+    pattern:
+      /\b(?:Address|Mailing address|Home address|Adresse)[ \t]*:[ \t]*([^\n]+)/giu,
     group: 1,
   },
   {
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})? (?:[A-Z][A-Za-z'’]+\\.? ){1,4}${STREET_TYPE}\\b\\.?(?: (?:East|West|North|South|E|W|N|S)\\b)?(?:,? (?:Unit|Apt|Apartment|Suite|#) ?\\w+)?`,
-      "g",
+      `\\b\\d{1,6}(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}`,
+      "gu",
+    ),
+  },
+  {
+    // 1234, rue Sherbrooke Est; 88, boul. René-Lévesque Ouest, app. 5
+    kind: "address",
+    pattern: new RegExp(
+      `\\b\\d{1,6}(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}`,
+      "gu",
     ),
   },
   {
     kind: "address",
-    pattern: /\b(?:P\.?O\.? Box|Box) \d+\b/gi,
+    pattern: /\b(?:P\.?O\.? Box|Box|C\.?P\.?|Case postale) \d+\b/giu,
   },
   {
     kind: "address",
     pattern: new RegExp(
-      `\\b[A-Z][a-zà-ÿ]+(?:[ -][A-Z][a-zà-ÿ]+)*, ${PROVINCES}\\b`,
-      "g",
+      `(?<![\\p{L}])${NAME_WORD}(?:[ -]${NAME_WORD})*(?:,[ \\t]*${PROVINCES}\\b|[ \\t]*\\(${PROVINCES}\\))`,
+      "gu",
     ),
   },
   {
     kind: "clinic",
     pattern: new RegExp(
-      `\\b(?:[A-Z][A-Za-zà-ÿ'’]+ ){1,5}${CLINIC_WORDS}\\b(?: (?:of|de) (?:[A-Z][A-Za-zà-ÿ'’]+ ?){1,3})?|\\b(?:Hôpital|Clinique|Centre hospitalier)(?: [A-Za-zà-ÿ'’]+){1,5}`,
-      "g",
+      `(?:${NAME_WORD}\\.?[ \\t]+){1,5}${CLINIC_WORDS}\\b(?:[ \\t]+(?:of|de)[ \\t]+(?:${NAME_WORD}[ \\t]?){1,3})?`,
+      "gu",
+    ),
+  },
+  {
+    // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Hôpital|Clinique|Centre hospitalier|Centre de santé|CLSC|CHSLD|Pharmacie|Laboratoire)(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
+      "gu",
     ),
   },
   {
     kind: "doctor",
-    pattern: new RegExp(`\\b(?:Dr|Doctor)\\.? (${CAPITALIZED_NAME})`, "g"),
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Dr|Dre|Doctor|Docteur|Docteure)\\.?[ \\t]+(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
     group: 1,
   },
   {
     kind: "name",
     pattern: new RegExp(
-      `\\b(?:Mr|Mrs|Ms|Miss|Mx|Prof)\\.? (${CAPITALIZED_NAME})`,
-      "g",
+      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Mme|Mlle)\\.?|M\\.)[ \\t]+(${CAPITALIZED_NAME})`,
+      "gu",
     ),
     group: 1,
   },
   {
     kind: "name",
     pattern: new RegExp(
-      `\\b(?:Patient(?: name)?|Name|Re|Next of kin|Emergency contact|Contact|Spouse|Parent|Guardian)\\s*:\\s*(${LABELLED_NAME})`,
-      "g",
+      `(?<![\\p{L}])(?:Patient(?: name)?|Patiente|Name|Nom|Re|Next of kin|Emergency contact|Contact|Spouse|Parent|Guardian|Conjointe?|Personne à contacter)[ \\t]*:[ \\t]*(${LABELLED_NAME})`,
+      "gu",
     ),
     group: 1,
   },
   {
     kind: "doctor",
     pattern: new RegExp(
-      `\\b(?:Referred by|Referring physician|Physician|Provider|Ordering provider|Attending|Signed|Electronically signed by|Reported by|Family doctor|cc|Copy to)\\s*:\\s*(?:Dr\\.? )?(${CAPITALIZED_NAME})`,
-      "gi",
+      `(?<![\\p{L}])(?:[Rr]eferred by|[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ee]lectronically signed by|[Rr]eported by|[Ff]amily doctor|cc|CC|[Cc]opy to|[Mm]édecin traitant|[Rr]éféré par|[Ss]igné par)[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A relative named in passing: "her husband, Jordan", "son conjoint, Jean".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Hh]usband|[Ww]ife|[Ss]pouse|[Pp]artner|[Ss]on|[Dd]aughter|[Mm]other|[Ff]ather|[Bb]rother|[Ss]ister|[Cc]onjointe?|[ÉéEe]poux|[ÉéEe]pouse|[Ff]ils|[Ff]ille|[Mm]ère|[Pp]ère|[Ff]rère|[Ss]œur)[ \\t]*,?[ \\t]+(${CAPITALIZED_NAME})`,
+      "gu",
     ),
     group: 1,
   },
@@ -266,17 +626,16 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `\\b(?:Sincerely|Yours truly|Regards|Best regards|Kind regards),\\s*\\n(?:\\s*\\n)*\\s*(?:Dr\\.? )?(${CAPITALIZED_NAME})`,
-      "g",
+      `(?<![\\p{L}])(?:Sincerely|Yours truly|Regards|Best regards|Kind regards|Cordialement|Salutations distinguées),[ \\t]*\\n(?:[ \\t]*\\n)*[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
+      "gu",
     ),
     group: 1,
   },
-  { kind: "date", pattern: new RegExp(DATE, "gi") },
+  ...DATE_FORMS.map((form) => ({
+    kind: "date" as const,
+    pattern: new RegExp(form.pattern, "giu"),
+  })),
 ];
-
-function escapeRegExp(text: string) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = [];
@@ -286,14 +645,31 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
       if (!detail) continue;
       const offset = rule.group ? match[0].indexOf(detail) : 0;
       const start = match.index + offset;
-      // A label's value may run past the detail into trailing spaces.
-      const trimmed = detail.replace(/[\s,;.]+$/, "");
+      // A label's value may run past the detail into trailing punctuation,
+      // and a French clinic's name into connecting words.
+      let trimmed = detail.replace(/[\s,;.]+$/u, "");
+      if (rule.kind === "clinic") {
+        trimmed = trimmed.replace(
+          /(?:[ \t]+(?:de|du|des|la|le|l['’]|d['’]|of))+$/u,
+          "",
+        );
+        // "CT Imaging", "Diagnostic Imaging": a heading, not a name.
+        const before = trimmed
+          .replace(new RegExp(`${CLINIC_WORDS}.*$`, "u"), "")
+          .trim()
+          .split(/[ \t]+/)
+          .filter(Boolean);
+        if (
+          before.length &&
+          before.every((word) => GENERIC_BEFORE_CLINIC.has(word.toLowerCase()))
+        )
+          continue;
+      }
       found.push({ kind: rule.kind, start, end: start + trimmed.length });
     }
   }
-  // Every word of a known name, wherever it stands alone, as that person;
-  // and the whole name first, even across a line break, so that it is one
-  // placeholder.
+  // Each known name: whole wherever it stands (even across a line break),
+  // and each word written as a name, unless it is also an ordinary word.
   for (const name of options.knownNames) {
     const person = name.trim().toLowerCase();
     const whole = name.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
@@ -309,11 +685,14 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
         });
     const words = name
       .split(/[^\p{L}'’-]+/u)
-      .filter((word) => word.length >= 3);
+      .filter((word) => word.length >= 3)
+      .filter((word) => !ORDINARY_WORDS.has(word.toLowerCase()));
     for (const word of words) {
+      const lower = word.toLowerCase();
+      const capitalized = lower[0].toUpperCase() + lower.slice(1);
       const pattern = new RegExp(
-        `(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`,
-        "giu",
+        `(?<![\\p{L}])(?:${escapeRegExp(capitalized)}|${escapeRegExp(word.toUpperCase())})(?![\\p{L}])`,
+        "gu",
       );
       for (const match of text.matchAll(pattern))
         found.push({
@@ -350,79 +729,20 @@ function resolve(findings: Finding[]): Finding[] {
   return kept.sort((a, b) => a.start - b.start);
 }
 
-function parseDate(text: string, dayFirst: boolean): Date | null {
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  if (iso) return utc(+iso[1], +iso[2], +iso[3]);
-  const numeric = /^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/.exec(text);
-  if (numeric) {
-    let [day, month] = [+numeric[1], +numeric[2]];
-    // One of them over 12 settles it; otherwise the option does.
-    if (day <= 12 && (month > 12 || !dayFirst)) [day, month] = [month, day];
-    return utc(+numeric[3], month, day);
-  }
-  const words = text
-    .toLowerCase()
-    .replace(/[.,]/g, " ")
-    .split(/[\s-]+/)
-    .filter(Boolean);
-  const monthIndex = (word: string) =>
-    MONTHS.findIndex((month) => month.startsWith(word.slice(0, 3)));
-  if (words.length !== 3) return null;
-  const [a, b, c] = words;
-  if (/^\d+$/.test(a)) return utc(+c, monthIndex(b) + 1, +a);
-  return utc(+c, monthIndex(a) + 1, +b);
-}
-
-function utc(year: number, month: number, day: number): Date | null {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCMonth() === month - 1 ? date : null;
-}
-
-const pad = (value: number) => String(value).padStart(2, "0");
-const MONTH_NAMES = MONTHS.map(
-  (month) => month[0].toUpperCase() + month.slice(1),
-);
-
-/** The shifted date, written as the original was. */
-function formatLike(original: string, date: Date, dayFirst: boolean): string {
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1;
-  const day = date.getUTCDate();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(original))
-    return `${year}-${pad(month)}-${pad(day)}`;
-  const numeric = /^(\d{1,2})([/.])(\d{1,2})[/.]\d{4}$/.exec(original);
-  if (numeric) {
-    const separator = numeric[2];
-    const first = +numeric[1];
-    const second = +numeric[3];
-    const wasDayFirst = first > 12 || (second <= 12 && dayFirst);
-    return wasDayFirst
-      ? `${pad(day)}${separator}${pad(month)}${separator}${year}`
-      : `${pad(month)}${separator}${pad(day)}${separator}${year}`;
-  }
-  const name = MONTH_NAMES[month - 1];
-  // Abbreviated if the original was, with its full stop if it had one.
-  const word = /[A-Za-z]+/.exec(original)?.[0] ?? "";
-  const abbreviated =
-    word.length <= 4 &&
-    word.toLowerCase() !== "june" &&
-    word.toLowerCase() !== "july";
-  const monthText = abbreviated
-    ? name.slice(0, 3) + (/[A-Za-z]{3}\./.test(original) ? "." : "")
-    : name;
-  if (/^\d/.test(original)) {
-    const separator = original.includes("-") ? "-" : " ";
-    return `${day}${separator}${monthText}${separator}${year}`;
-  }
-  return `${monthText} ${day}${original.includes(",") ? "," : ""} ${year}`;
-}
-
 function randomShift(): number {
   const values = new Uint32Array(2);
   crypto.getRandomValues(values);
   const days = 30 + (values[0] % 336);
   return values[1] % 2 ? days : -days;
+}
+
+function result(toSend: string, onDevice: OnDevice): Deidentified {
+  const value = { toSend } as Deidentified;
+  Object.defineProperty(value, "onDevice", {
+    value: onDevice,
+    enumerable: false,
+  });
+  return Object.freeze(value);
 }
 
 /** Takes identifying details out of `text` (#72). */
@@ -487,10 +807,9 @@ function build(
     if (finding.replacement !== undefined) {
       replacement = finding.replacement;
     } else if (finding.kind === "date") {
-      const date = parseDate(original, dayFirst);
-      if (!date) continue;
-      const shifted = new Date(date.getTime() + dateShiftDays * 86_400_000);
-      replacement = formatLike(original, shifted, dayFirst);
+      const shifted = shiftDate(original, dateShiftDays, dayFirst);
+      if (shifted === null) continue;
+      replacement = shifted;
     } else {
       const person =
         finding.kind === "name" || finding.kind === "doctor"
@@ -516,7 +835,7 @@ function build(
     at = finding.end;
   }
   text += source.slice(at);
-  return { text, removed, dateShiftDays, source };
+  return result(text, { removed, dateShiftDays, source });
 }
 
 /**
@@ -525,13 +844,14 @@ function build(
  * placeholder and shifted date already there. It becomes "[REMOVED n]".
  */
 export function removeMore(
-  result: Deidentified,
+  deidentified: Deidentified,
   sentStart: number,
   sentEnd: number,
 ): Deidentified {
+  const { removed, dateShiftDays, source } = deidentified.onDevice;
   // Map the range back to the document, through what came before it.
   let shift = 0;
-  for (const part of result.removed) {
+  for (const part of removed) {
     if (part.sentEnd <= sentStart) {
       shift += part.end - part.start - (part.sentEnd - part.sentStart);
       continue;
@@ -541,12 +861,12 @@ export function removeMore(
   }
   const start = sentStart + shift;
   const end = sentEnd + shift;
-  if (start < 0 || end > result.source.length || end <= start)
+  if (start < 0 || end > source.length || end <= start)
     throw new RangeError("outside the text");
-  const manual = result.removed.filter((part) => part.kind === "manual");
+  const manual = removed.filter((part) => part.kind === "manual");
   // Everything already decided stays as it was; only the new part is new.
   const findings: Finding[] = [
-    ...result.removed.map((part) => ({
+    ...removed.map((part) => ({
       kind: part.kind,
       start: part.start,
       end: part.end,
@@ -559,7 +879,7 @@ export function removeMore(
       replacement: `[REMOVED ${manual.length + 1}]`,
     },
   ].sort((a, b) => a.start - b.start);
-  return build(result.source, findings, result.dateShiftDays, true);
+  return build(source, findings, dateShiftDays, true);
 }
 
 /**
@@ -568,9 +888,9 @@ export function removeMore(
  * shifted date the date it was. A date the answer wrote some other way is
  * left shifted.
  */
-export function restore(answer: string, result: Deidentified): string {
+export function restore(answer: string, deidentified: Deidentified): string {
   const back = new Map<string, string>();
-  for (const part of result.removed)
+  for (const part of deidentified.onDevice.removed)
     if (!back.has(part.replacement)) back.set(part.replacement, part.original);
   // Longest first, so that "[NAME 1]" never stands inside "[NAME 10]"'s place.
   const keys = [...back.keys()].sort((a, b) => b.length - a.length);
