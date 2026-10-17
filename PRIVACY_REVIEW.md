@@ -49,6 +49,17 @@ else sent by mistake. A document whose encrypted file went missing is hidden in 
 damaged. The app tells the patient this in Security, under "What myCarlos keeps". Hidden
 documents are in every backup, like the rest.
 
+**A history is kept** (#71's second part). The vault records, encrypted with everything else,
+when it was opened (and with which secret), and each document added, renamed (both names),
+moved (the folders' names then), hidden, restored, or saved outside the vault as a readable copy,
+with where it was saved (a file path, or a document provider's address on Android), and when
+backups were saved, and where. It keeps the names as they were at each moment, so a document
+renamed or hidden can still be read off the history. The history is never shown in the app, and
+the app never changes or removes an entry. It is in every backup. The app tells the patient this
+in Security, under "What myCarlos keeps". Erasing the whole vault still deletes it until the vault
+is set aside instead (#71's third part). The step that would let the patient save the history for
+an auditor is not built yet.
+
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
 patient that it is there.
@@ -246,7 +257,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 `MVP_STATUS.md`, `SECURITY_OPERATIONS.md`, `PRODUCT_DECISIONS.md`, `TESTING.md`, `WINDOWS.md`):
 - **No document can be deleted** (#71). A patient who wants something gone from the device can
   only hide it; it stays in the vault and in its backups, and the vault grows with what is
-  hidden. Erasing the whole vault still deletes it until the vault is set aside instead (#71's
+  hidden. The history keeps each document's names, and where copies were saved, for good. Erasing the whole vault still deletes it until the vault is set aside instead (#71's
   third part).
 - **An old passphrase can still work.** Changing the passphrase, or replacing the recovery key,
   does not shut out someone who knows the old one and has a copy of the vault from before the

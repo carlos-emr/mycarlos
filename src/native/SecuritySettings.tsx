@@ -190,6 +190,12 @@ export function SecuritySettings({
               can be restored. Readable copies you save outside myCarlos are
               yours to keep or delete.
             </p>
+            <p>
+              myCarlos also keeps a history: when the vault was opened, and when
+              each document was added, renamed, moved, hidden, restored or saved
+              outside myCarlos, and where. It is encrypted with everything else.
+              myCarlos does not show it, and never changes or removes it.
+            </p>
           </div>
         </section>
         <section className="setting-row native-setting-form">

@@ -40,6 +40,10 @@ privacy, accessibility, or clinical review.
       ciphertext and key; Restore clears the mark. Manifest format 2, upgraded from format 1 in a
       commit of its own; orphan objects quarantined, never removed; direct file removal refused by
       clippy outside one named-kind helper; a scripted session checks no object is removed or changed.
+- [x] An encrypted history (#71 part B): every event the ticket lists, hash-chained and pinned by
+      the manifest, in uniform segments padded to a power of two; manifest format 3, upgraded from
+      formats 1 and 2 in a commit of its own; locks recorded at the next unlock. Not shown in the
+      app; saving it for an auditor waits on Ben (D84). Must not ship before part C (set aside).
 - [x] Abrupt-process-termination recovery matrix after object chunk writes, staging, object rename,
       both manifest commits, each hiding boundary, and each upgrade write.
 - [x] Deterministic `NoSpace` failure injection during object writing and before/after durable
