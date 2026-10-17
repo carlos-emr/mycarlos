@@ -161,6 +161,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
       recoveryKeySetAtMs: 1,
       recoveryKeyLabel: "FAKE-KEY1",
     };
+    Reflect.set(window, "__unexpectedIpc", []);
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
@@ -176,10 +177,19 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return;
         // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
+        // Kept as well as thrown: a screen showing an error notice could still pass axe.
+        (Reflect.get(window, "__unexpectedIpc") as string[]).push(command);
         throw new Error(`Unexpected IPC command: ${command}`);
       },
     });
   }, status);
+}
+
+/** The bridge commands a page asked for that the mock does not answer: none. */
+async function expectOnlyMockedCommands(page: Page) {
+  expect(
+    await page.evaluate(() => Reflect.get(window, "__unexpectedIpc")),
+  ).toEqual([]);
 }
 
 async function walkTheVault(large: LargeText) {
@@ -191,6 +201,7 @@ async function walkTheVault(large: LargeText) {
     create.getByRole("heading", { name: "Create your encrypted vault" }),
   ).toBeVisible();
   await expectNoViolations(create, "create the vault");
+  await expectOnlyMockedCommands(create);
   await create.close();
 
   const page = await large.newPage();
@@ -228,6 +239,7 @@ async function walkTheVault(large: LargeText) {
     page.getByRole("heading", { name: "Preferences" }),
   ).toBeVisible();
   await expectNoViolations(page, "Preferences");
+  await expectOnlyMockedCommands(page);
 }
 
 test("has no automatically detectable WCAG violations with the app's text size at 200%", async ({
