@@ -607,7 +607,10 @@ h1, h2, p { margin: 0; }
 .native-profile-choice .button { min-height: 44px; }
 .native-profile-choice .button[aria-pressed="true"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
 .native-profile-choice-narrow { display: none; }
-.native-section-tabs button { flex: 1; min-width: 0; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; font-weight: 700; }
+/* #67: the tabs share the row equally, but none is narrower than its longest word; when
+   the words don't fit side by side (a narrow phone, a wide font), the last tab wraps. */
+.native-section-tabs { flex-wrap: wrap; }
+.native-section-tabs button { flex: 1; min-width: min-content; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; font-weight: 700; }
 .native-section-tabs button[aria-current="page"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
 @media (max-width: 56.25em) {
   .native-profile-choice-narrow { display: flex; flex-basis: 100%; margin: 8px 0 0; }
@@ -746,6 +749,10 @@ h1, h2, p { margin: 0; }
 .native-record-rename { padding: 0 20px 16px; }
 @media (max-width: 56.25em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
+  /* #67: the source and date columns are hidden here, so the name is the only way to
+     tell items apart. At 16px a phone leaves it about 8rem, so a folder's or a
+     document's name wraps instead of being cut short. */
+  .native-filelist :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
 }
 /* #67: Move to and its Move button have a row of their own. */
 .native-dialog-actions { flex-wrap: wrap; }

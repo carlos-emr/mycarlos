@@ -101,6 +101,17 @@ function clipped() {
       found.push(`${describeControl(control)} overflows its own box`);
       continue;
     }
+    // Words cut short inside it, such as a folder's name in its Open button.
+    const cut = Array.from(control.querySelectorAll<HTMLElement>("*")).find(
+      (inner) =>
+        inner.checkVisibility() && inner.scrollWidth > inner.clientWidth + 1,
+    );
+    if (cut) {
+      found.push(
+        `${describeControl(control)} cuts off "${cut.textContent!.trim()}"`,
+      );
+      continue;
+    }
     const box = control.getBoundingClientRect();
     // A fixed dialog is not clipped by the boxes it sits in.
     for (
@@ -166,6 +177,9 @@ describe("targets and text sizes in the app (#67)", () => {
   for (const [label, width, height] of [
     ["desktop", 1100, 760],
     ["phone", 390, 844],
+    // The narrowest width content must reflow to (WCAG 1.4.10), and the room a
+    // wider phone font leaves: the section tabs and document names must still fit.
+    ["narrow phone", 320, 640],
   ] as const) {
     it(`are comfortable on ${label}: library, grid, details, Security and Preferences`, async () => {
       await page.viewport(width, height);
@@ -196,7 +210,7 @@ describe("targets and text sizes in the app (#67)", () => {
       press("Cancel");
       press("Close document details");
       const open = (name: string) =>
-        press(label === "phone" ? name : new RegExp(`^${name}`));
+        press(label === "desktop" ? new RegExp(`^${name}`) : name);
       open("Security");
       expectComfortable("Security");
       open("Preferences");
