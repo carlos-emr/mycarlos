@@ -31,6 +31,10 @@
 .vault-auth {
   min-height: 100vh;
   display: grid;
+  /* One column no wider than the window: with very large text (#84) the
+     card's fields would otherwise widen it past the window's edge, which
+     hides what overflows it, and cut off the Create button. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 24px;
   background: linear-gradient(145deg, #e5f1ef, #f7f9f8 58%, #e8efed);
@@ -55,6 +59,7 @@
   font-weight: 650;
 }
 .vault-card input {
+  min-width: 0;
   min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line);
