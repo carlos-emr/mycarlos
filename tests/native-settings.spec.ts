@@ -43,13 +43,12 @@ async function fakeNative(page: Page, status: "unlocked" | "locked") {
  * today, tabs once #75 is in). */
 async function openSecurity(page: Page) {
   const picker = page.getByRole("combobox", { name: "Section" });
+  const button = page.getByRole("button", { name: /^Security/ });
+  // Wait for the library first: before it renders, neither is there.
+  await expect(picker.or(button).first()).toBeVisible();
   if (await picker.isVisible())
     await picker.selectOption({ label: "Security" });
-  else
-    await page
-      .getByRole("button", { name: /^Security/ })
-      .first()
-      .click();
+  else await button.first().click();
 }
 
 const scan = (page: Page) =>
