@@ -20,6 +20,32 @@ production end-of-support schedule remain an owner decision and release gate.
 - Adding any network, analytics, crash, support or update dependency requires a threat-model and
   `MASVS_MAPPING.md` update before code lands.
 
+## The PDF helper's sandbox
+
+PDFs from senders are parsed only in the PDF helper, a separate process with no vault keys
+([THREAT_MODEL](THREAT_MODEL.md) IMP-02). Since #63 it is sandboxed before it reads anything:
+seccomp (required) and Landlock (where the kernel has it) on Linux, `sandbox_init` on macOS, and an
+AppContainer with no capabilities, inside a job object, on Windows. The code is in one place, the
+`confine` module of `src-tauri/src/pdf_unlock.rs`.
+
+- **It fails closed.** Where the sandbox cannot be set up, the helper reads nothing, and the patient
+  is told the document cannot be opened (or shown) safely on this system. Nothing is added. Known
+  causes: a Linux kernel without seccomp filters, or a processor other than x86_64 or aarch64; on
+  Windows, an install folder that AppContainers may not read (see below). A report of these messages
+  is a support case, not a reason to weaken the sandbox.
+- **Windows install folder.** An AppContainer can only start a program that
+  `ALL APPLICATION PACKAGES` (S-1-15-2-1) may read and run. The installer grants read and run on the
+  install folder (`src-tauri/windows/hooks.nsh`); nothing private is kept there. Its uninstaller
+  deletes the helper's AppContainer profile, `mycarlos.pdfhelper`. A build run from source needs the
+  same grant ([WINDOWS.md](WINDOWS.md)).
+- **Keeping it working.** The Linux allowlist names the calls the helper makes after it starts. A new
+  Rust, glibc, `lopdf` or `hayro` release can make others. The helper then fails (no document, never
+  an open sandbox), and the escape and "still works" tests in CI show it. Update the list only with a
+  reviewed change that says why the call is needed. `landlock` and `seccompiler` are pinned
+  ([DEPENDENCY_REVIEW](DEPENDENCY_REVIEW.md)).
+- **macOS.** `sandbox_init` is deprecated by Apple, though still supported. The helper moves to an
+  embedded helper with App Sandbox entitlements of its own once myCarlos is signed (#24).
+
 ## Vulnerability intake and response
 
 Follow [SECURITY.md](SECURITY.md) for private reporting; never place a suspected patient-data issue

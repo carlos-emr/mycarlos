@@ -116,6 +116,41 @@ Every new package is Apache-2.0, MIT, BSD-3-Clause, Zlib or Unlicense, all
 compatible with AGPL-3.0-or-later. The graph check passes locally; CI's
 `cargo audit` and SBOM jobs cover the rest.
 
+## Added for the PDF helper's sandbox (#63)
+
+Two crates, Linux only, each pinned exactly because the sandbox depends on
+what they do: each update is a reviewed change. Both are used only by the
+helper's `confine` module (`src-tauri/src/pdf_unlock.rs`), before it reads a
+document.
+
+- **`landlock` 0.4.7** (MIT OR Apache-2.0, Rust 1.71). From the Landlock
+  project, whose lead also maintains Landlock in the Linux kernel. It builds a
+  Landlock ruleset that handles every file and network access right and the
+  signal and abstract-socket scopes, with no rule allowing any of them, and
+  applies it to the helper. Best-effort: a kernel without Landlock, or with an
+  older Landlock, enforces what it has. Its unsafe code is the three Landlock
+  system calls and `prctl`. It brings `enumflags2` and `enumflags2_derive`
+  0.7.12 (MIT OR Apache-2.0); `libc` and `thiserror` were already locked.
+- **`seccompiler` 0.5.0** (Apache-2.0 OR BSD-3-Clause). From rust-vmm, and
+  used by Firecracker and Cloud Hypervisor. It compiles the helper's seccomp
+  allowlist to a BPF program for x86_64 or aarch64 and installs it. Required:
+  without it the helper reads nothing. Its unsafe code is the `prctl` and
+  `seccomp` system calls. Its optional `json` feature (`serde`) is off; `libc`
+  was already locked.
+
+Hand-written BPF or `libseccomp` were not chosen: the first is easy to get
+wrong (argument widths, the architecture check), and the second is a C library
+to build and ship. `extrasafe` and `birdcage` wrap the same two kernel features
+with more policy than the helper needs.
+
+On Windows the AppContainer uses the `windows` crate already in the tree, with
+its `Win32_Security_Isolation` feature turned on. macOS calls `sandbox_init`
+from the system library; nothing is added.
+
+The lockfile grows from 550 to 554 packages: `landlock`, `seccompiler`,
+`enumflags2` and `enumflags2_derive`. All are MIT, Apache-2.0 or BSD-3-Clause,
+compatible with AGPL-3.0-or-later.
+
 ## Native remediation
 
 ### Mobile live reload restored
