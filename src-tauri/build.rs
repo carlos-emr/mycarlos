@@ -64,6 +64,7 @@ fn main() {
             "runtime_info",
             "kdf_benchmark",
             "vault_status",
+            "vault_passphrase_rules",
             "vault_create",
             "vault_unlock",
             "vault_lock",

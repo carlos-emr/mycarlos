@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  cleanup,
   within,
 } from "@testing-library/react";
 import axe from "axe-core";
@@ -46,10 +47,21 @@ const emptySnapshot: VaultSnapshot = {
   recovery: null,
 };
 
+/** A new setup starts on the comfort screen (#69); Continue leads on to the
+ * passphrase. */
+async function continuePastComfort() {
+  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+}
+
 function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
   return {
     native: true,
     status: vi.fn().mockResolvedValue("locked"),
+    passphraseRules: vi.fn().mockResolvedValue({
+      longEnough: true,
+      notAName: true,
+      hardToGuess: true,
+    }),
     create: vi.fn().mockResolvedValue(emptySnapshot),
     unlock: vi.fn().mockResolvedValue(emptySnapshot),
     lock: vi.fn().mockResolvedValue(undefined),
@@ -302,10 +314,59 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("absent") })}
       />,
     );
-    await screen.findByRole("heading", { name: "Create your encrypted vault" });
+    await continuePastComfort();
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
+    });
     expect(screen.getByText(/stays on this device/)).toHaveTextContent(
       /another device/,
     );
+  });
+
+  it("starts a new setup on the comfort screen, and only a new one (#69)", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    onTestFinished(() =>
+      window.localStorage.removeItem("mycarlos.autoLockMinutes.v1"),
+    );
+    render(
+      <VaultApp
+        bridge={nativeBridge({ status: vi.fn().mockResolvedValue("absent") })}
+      />,
+    );
+    await screen.findByRole("heading", {
+      name: "Make myCarlos comfortable for you",
+    });
+    // A choice applies at once, and is kept as Settings keeps it.
+    const delay = screen.getByRole("group", { name: "Automatic lock delay" });
+    for (let press = 0; press < 2; press++)
+      await user.click(
+        within(delay).getByRole("button", { name: "Longer delay" }),
+      );
+    expect(within(delay).getByText("7 minutes")).toBeVisible();
+    expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
+      "7",
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
+    });
+    // The focus goes on to the first box, not nowhere; the choice was
+    // said where it was made, not again here.
+    expect(
+      screen.getByLabelText("Whose records will you keep here?"),
+    ).toHaveFocus();
+    expect(screen.queryByText(/Automatic locking set/)).not.toBeInTheDocument();
+    cleanup();
+
+    // A vault that exists never shows it.
+    render(<VaultApp bridge={nativeBridge()} />);
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    expect(
+      screen.queryByRole("heading", {
+        name: "Make myCarlos comfortable for you",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("creates the vault only when passphrases match", async () => {
@@ -314,10 +375,16 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await screen.findByRole("heading", { name: "Create your encrypted vault" });
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "Jamie" },
+    await continuePastComfort();
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
     });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "Jamie" },
+      },
+    );
     const passwords = screen.getAllByLabelText(/passphrase/i);
     fireEvent.change(passwords[0], {
       target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -336,11 +403,44 @@ describe("durable vault UI", () => {
     );
   });
 
+  it("starts again on the comfort screen after erasing from the unlock screen (#69)", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    fireEvent.change(
+      await screen.findByLabelText("Whose records will you keep here?"),
+      { target: { value: "Jamie" } },
+    );
+    for (const field of screen.getAllByLabelText(/passphrase/i))
+      fireEvent.change(field, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
+    await screen.findByRole("heading", { name: "My records" });
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.click(screen.getByText("Forgot your passphrase?"));
+    await user.type(
+      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+      "RESET MYCARLOS VAULT",
+    );
+    await user.click(screen.getByRole("button", { name: "Erase vault" }));
+    expect(
+      await screen.findByRole("heading", {
+        name: "Make myCarlos comfortable for you",
+      }),
+    ).toBeVisible();
+  });
+
   it("says when a new passphrase exceeds the vault's byte limit instead of sending it", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("absent"),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     const create = await screen.findByRole("button", { name: "Create vault" });
     // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
     const long = "字".repeat(600);
@@ -374,9 +474,10 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
 
+    await continuePastComfort();
     expect(
       await screen.findByRole("heading", {
-        name: "Create your encrypted vault",
+        name: "Set up myCarlos on this computer",
       }),
     ).toBeInTheDocument();
     expect(
@@ -920,8 +1021,9 @@ describe("durable vault UI", () => {
         lock,
       });
       render(<VaultApp bridge={bridge} />);
+      await continuePastComfort();
       await user.type(
-        await screen.findByLabelText("First patient profile"),
+        await screen.findByLabelText("Whose records will you keep here?"),
         "FAKE Patient",
       );
       await user.type(
@@ -1007,8 +1109,9 @@ describe("durable vault UI", () => {
         .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     await user.type(
-      await screen.findByLabelText("First patient profile"),
+      await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Test Patient",
     );
     await user.type(
@@ -1307,10 +1410,16 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "Create your encrypted vault" });
-    fireEvent.change(screen.getByLabelText("First patient profile"), {
-      target: { value: "Jamie" },
+    await continuePastComfort();
+    await screen.findByRole("heading", {
+      name: "Set up myCarlos on this computer",
     });
+    fireEvent.change(
+      screen.getByLabelText("Whose records will you keep here?"),
+      {
+        target: { value: "Jamie" },
+      },
+    );
     for (const field of screen.getAllByLabelText(/passphrase/i)) {
       fireEvent.change(field, {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -1400,6 +1509,7 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
       screen.getByRole("button", { name: "Choose backup file…" }),
@@ -2238,11 +2348,18 @@ describe("durable vault UI", () => {
         await act(async () => {
           render(<VaultApp bridge={bridge} />);
         });
+        if (initial === "absent")
+          await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+          });
         await act(async () => {
           if (initial === "absent")
-            fireEvent.change(screen.getByLabelText("First patient profile"), {
-              target: { value: "FAKE Test Patient" },
-            });
+            fireEvent.change(
+              screen.getByLabelText("Whose records will you keep here?"),
+              {
+                target: { value: "FAKE Test Patient" },
+              },
+            );
           for (const field of screen.getAllByLabelText(/passphrase/i))
             fireEvent.change(field, {
               target: { value: "river-azimuth-cobalt-sparrow-934" },
@@ -2595,8 +2712,9 @@ describe("durable vault UI", () => {
         "RESET MYCARLOS VAULT",
       );
       await user.click(screen.getByRole("button", { name: "Erase vault" }));
+      await continuePastComfort();
       await user.type(
-        await screen.findByLabelText("First patient profile"),
+        await screen.findByLabelText("Whose records will you keep here?"),
         "FAKE Tester",
       );
       await user.type(
@@ -4468,9 +4586,10 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: "Erase entire vault" }),
     );
+    await continuePastComfort();
     expect(
       await screen.findByRole("heading", {
-        name: "Create your encrypted vault",
+        name: "Set up myCarlos on this computer",
       }),
     ).toBeVisible();
     expect(screen.getByText("No vault exists on this device.")).toBeVisible();
@@ -4525,7 +4644,7 @@ describe("durable vault UI", () => {
       .fn()
       .mockRejectedValueOnce({
         code: "invalid",
-        message: "Check the requested information and try again.",
+        message: "Something you typed wasn't accepted. Check it and try again.",
       })
       .mockResolvedValue(undefined);
     const bridge = nativeBridge({
@@ -4541,6 +4660,10 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: "Add profile" }));
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
+    // The refusal names the box to check (#69).
+    expect(
+      await screen.findByText("Check the profile name, then try again."),
+    ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Add profile" }));
     await waitFor(() => expect(name).toHaveValue(""));
@@ -4832,9 +4955,7 @@ describe("durable vault UI", () => {
         "1 damaged document removed. The vault accepts changes again.",
       ),
     ).toBeVisible();
-    expect(
-      screen.queryByText(/Read-only recovery mode/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Changes are paused/)).not.toBeInTheDocument();
     expect(screen.queryByText("FAKE_Lost.pdf")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
   });
@@ -4877,7 +4998,9 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(/1 damaged document removed/),
     ).not.toHaveTextContent(/accepts changes/);
-    expect(screen.getByText(/A write to the vault failed/)).toBeVisible();
+    expect(
+      screen.getByText(/myCarlos could not save a change to this computer/),
+    ).toBeVisible();
   });
 
   it("offers no removal when recovery is not about missing files", async () => {
@@ -5091,9 +5214,7 @@ describe("durable vault UI", () => {
     expect(
       document.querySelector('img[src="https://attacker.invalid/leak"]'),
     ).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Read-only recovery mode",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Changes are paused.");
     expect(
       screen.getByRole("button", { name: "Choose files to import" }),
     ).toBeDisabled();
@@ -5173,8 +5294,9 @@ describe("durable vault UI", () => {
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await continuePastComfort();
     await user.type(
-      await screen.findByLabelText("First patient profile"),
+      await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Tester",
     );
     await user.type(

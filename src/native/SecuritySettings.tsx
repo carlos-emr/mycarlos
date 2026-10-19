@@ -1,5 +1,5 @@
 import { SecretInput } from "./SecretInput";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -8,7 +8,7 @@ import {
   vaultErrorMessage,
   type SpeedTestReport,
 } from "../vault";
-import { AUTO_LOCK_MAX, AUTO_LOCK_MIN } from "./autoLock";
+import { AutoLockSetting } from "./AutoLockSetting";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import {
   MIN_PASSPHRASE_CHARS,
@@ -79,8 +79,6 @@ export function SecuritySettings({
   onSaveBackup,
   onSpeedTest,
 }: SecuritySettingsProps) {
-  // Minus and plus each say, on focus, what the delay is now.
-  const autoLockValueId = useId();
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
     result: string;
@@ -192,52 +190,14 @@ export function SecuritySettings({
             </h2>
             <p>
               The vault locks after the selected period without keyboard,
-              pointer, or touch activity. This non-medical setting is clamped to
-              1–15 minutes.
+              pointer, or touch activity. Choose from 1 to 15 minutes.
             </p>
           </div>
           <div>
-            {/* Minus and plus, like Text size, instead of a list of 15 (#67).
-                The ends are not disabled, which would drop the focus on them. */}
-            <div
-              className="text-size-control auto-lock-control"
-              role="group"
-              aria-label="Automatic lock delay"
-            >
-              <button
-                className="button text-size-step"
-                type="button"
-                aria-label="Shorter delay"
-                aria-describedby={autoLockValueId}
-                aria-disabled={autoLockMinutes <= AUTO_LOCK_MIN}
-                onClick={() => {
-                  if (autoLockMinutes > AUTO_LOCK_MIN)
-                    onAutoLockMinutes(autoLockMinutes - 1);
-                }}
-              >
-                <span aria-hidden="true">−</span>
-              </button>
-              <span
-                className="auto-lock-value"
-                id={autoLockValueId}
-                aria-live="polite"
-              >
-                {autoLockMinutes} minute{autoLockMinutes === 1 ? "" : "s"}
-              </span>
-              <button
-                className="button text-size-step"
-                type="button"
-                aria-label="Longer delay"
-                aria-describedby={autoLockValueId}
-                aria-disabled={autoLockMinutes >= AUTO_LOCK_MAX}
-                onClick={() => {
-                  if (autoLockMinutes < AUTO_LOCK_MAX)
-                    onAutoLockMinutes(autoLockMinutes + 1);
-                }}
-              >
-                <span aria-hidden="true">+</span>
-              </button>
-            </div>
+            <AutoLockSetting
+              minutes={autoLockMinutes}
+              onMinutes={onAutoLockMinutes}
+            />
             <button
               className="button"
               type="button"

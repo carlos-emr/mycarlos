@@ -1,4 +1,4 @@
-const DEFAULT_AUTO_LOCK_MINUTES = 5;
+export const DEFAULT_AUTO_LOCK_MINUTES = 5;
 const AUTO_LOCK_STORAGE_KEY = "mycarlos.autoLockMinutes.v1";
 export const AUTO_LOCK_MIN = 1;
 export const AUTO_LOCK_MAX = 15;
