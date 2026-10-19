@@ -10,15 +10,10 @@ import {
 } from "../vault";
 import { AUTO_LOCK_OPTIONS } from "./autoLock";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
-import {
-  MIN_PASSPHRASE_CHARS,
-  ResetConfirmation,
-  tooShortPassphrase,
-} from "./VaultAuth";
+import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
-import { SetAsideRemoval } from "./SetAsideRemoval";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -29,7 +24,6 @@ interface SecuritySettingsProps {
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
-  onReset: (confirmation: string) => Promise<void>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -40,8 +34,6 @@ interface SecuritySettingsProps {
   onOldBackupsGuideDone?: () => void;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
-  /** The operating system, for where vaults set aside are (#71). */
-  platform?: string;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
   onSpeedTest: () => Promise<SpeedTestReport>;
@@ -72,13 +64,11 @@ export function SecuritySettings({
   onLock,
   onChangePassphrase,
   onCreateProfile,
-  onReset,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
   onOldBackupsGuideDone,
   sizesIn1024s = false,
-  platform = "",
   onSetUpRecoveryKey,
   onSaveBackup,
   onSpeedTest,
@@ -530,26 +520,6 @@ export function SecuritySettings({
               Add profile
             </button>
           </form>
-        </section>
-        <section className="setting-row native-danger-setting">
-          <div>
-            <h2>Set this vault aside and start again</h2>
-            <p>
-              Moves the whole vault aside and starts an empty one. The vault set
-              aside stays on this device, encrypted, with everything in it, and
-              its passphrase or recovery key still opens it, but myCarlos cannot
-              open it again for you yet. myCarlos never deletes it.
-            </p>
-            <SetAsideRemoval platform={platform} />
-          </div>
-          <details>
-            <summary>Show reset controls</summary>
-            <ResetConfirmation
-              busy={busy}
-              actionLabel="Set vault aside"
-              onReset={onReset}
-            />
-          </details>
         </section>
       </div>
     </main>

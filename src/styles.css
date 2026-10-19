@@ -640,7 +640,6 @@ h1, h2, p { margin: 0; }
 .native-danger-setting details { width: min(100%, 330px); }
 .native-danger-setting summary { margin-bottom: 10px; cursor: pointer; font-weight: 700; }
 .native-danger-setting .button { margin-top: 9px; }
-.copyable-path { overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }

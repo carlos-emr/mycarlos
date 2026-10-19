@@ -4362,61 +4362,6 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(window.localStorage.getItem(guide)).toBeNull());
   });
 
-  it("shows the unlock screen when erasing the vault fails, because the session is already closed", async () => {
-    const user = userEvent.setup();
-    const bridge = nativeBridge({
-      status: vi.fn().mockResolvedValue("unlocked"),
-      reset: vi.fn().mockRejectedValue({
-        code: "storage",
-        message: "The storage operation could not be completed.",
-      }),
-    });
-    render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "My records" });
-
-    await user.click(screen.getByRole("button", { name: "Security" }));
-    await user.click(screen.getByText("Show reset controls"));
-    await user.type(
-      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
-      "RESET MYCARLOS VAULT",
-    );
-    await user.click(screen.getByRole("button", { name: "Set vault aside" }));
-    expect(bridge.reset).toHaveBeenCalledOnce();
-
-    expect(
-      await screen.findByRole("heading", { name: "Unlock your vault" }),
-    ).toBeVisible();
-    expect(
-      screen.getByText("The storage operation could not be completed."),
-    ).toBeVisible();
-  });
-
-  it("offers to create a vault when erasing from the library finds none", async () => {
-    const user = userEvent.setup();
-    const bridge = nativeBridge({
-      status: vi.fn().mockResolvedValue("unlocked"),
-      reset: vi.fn().mockRejectedValue({
-        code: "missing",
-        message: "No vault exists on this device.",
-      }),
-    });
-    render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "My records" });
-    await user.click(screen.getByRole("button", { name: "Security" }));
-    await user.click(screen.getByText("Show reset controls"));
-    await user.type(
-      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
-      "RESET MYCARLOS VAULT",
-    );
-    await user.click(screen.getByRole("button", { name: "Set vault aside" }));
-    expect(
-      await screen.findByRole("heading", {
-        name: "Create your encrypted vault",
-      }),
-    ).toBeVisible();
-    expect(screen.getByText("No vault exists on this device.")).toBeVisible();
-  });
-
   it("stays in the library when a command there finds no vault", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({

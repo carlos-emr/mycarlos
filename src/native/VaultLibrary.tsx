@@ -80,7 +80,6 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   sizesIn1024s = false,
-  platform = "",
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -111,8 +110,6 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
-  /** The operating system, for where vaults set aside are (#71). */
-  platform?: string;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -599,21 +596,6 @@ export function VaultLibrary({
     });
     return created;
   };
-  const resetVault = (confirmation: string) =>
-    run(async () => {
-      let erased: boolean;
-      try {
-        erased = await bridge.reset(confirmation);
-      } catch (error) {
-        // A reset closes the native session before it erases anything, so a
-        // failed one leaves the vault locked. Show that instead of a library
-        // whose every action would be refused.
-        await onLock();
-        throw error;
-      }
-      if (erased) window.location.reload();
-      else setNotice("Nothing changed: the vault was not set aside.");
-    });
   const moveRecord = (recordId: string, folderId: string | null) =>
     run(async () => {
       await bridge.assignFolders(recordId, folderId ? [folderId] : []);
@@ -1136,12 +1118,10 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
-                onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
                 sizesIn1024s={sizesIn1024s}
-                platform={platform}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
                 onSpeedTest={() => bridge.benchmarkKdf()}

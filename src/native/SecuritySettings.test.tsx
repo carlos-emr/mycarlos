@@ -34,7 +34,6 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     onLock: vi.fn().mockResolvedValue(undefined),
     onChangePassphrase: vi.fn().mockResolvedValue(undefined),
     onCreateProfile: vi.fn().mockResolvedValue(true),
-    onReset: vi.fn().mockResolvedValue(undefined),
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
@@ -284,59 +283,18 @@ describe("SecuritySettings passphrase change", () => {
     expect(limit).not.toMatch(/erase|set this vault aside/);
   });
 
-  it("sets the vault aside instead of erasing it, and says what is kept (#71)", () => {
+  it("offers no way to set the vault aside from here (D89)", () => {
+    // Starting again is only on the unlock screen ("Forgot your
+    // passphrase?"): on a phone a vault set aside can't be removed without
+    // removing every vault, so Security doesn't offer it as a fresh start.
     renderSettings();
-    const section = screen
-      .getByRole("heading", { name: "Set this vault aside and start again" })
-      .closest("section")!;
-    expect(section).toHaveTextContent(
-      /stays on this device, encrypted, with everything in it/,
-    );
-    expect(section).toHaveTextContent(/myCarlos never deletes it/);
-    expect(section).not.toHaveTextContent(/permanently|cannot be undone/i);
+    expect(
+      screen.queryByRole("button", { name: /set vault aside/i }),
+    ).toBeNull();
+    expect(screen.queryByText("Show reset controls")).toBeNull();
+    expect(screen.queryByLabelText(/RESET MYCARLOS VAULT/)).toBeNull();
+    expect(document.body).not.toHaveTextContent(/start again/i);
   });
-
-  it.each([
-    ["windows", "%LOCALAPPDATA%\\ca.carlos.mycarlos\\vault-home\\set-aside"],
-    [
-      "macos",
-      "~/Library/Application Support/ca.carlos.mycarlos/vault-home/set-aside",
-    ],
-    ["linux", "~/.local/share/ca.carlos.mycarlos/vault-home/set-aside"],
-  ])(
-    "on %s, names the folder to delete to remove a vault set aside (#71)",
-    (platform, folder) => {
-      renderSettings({ platform });
-      const removal = document.querySelector(".set-aside-removal")!;
-      // Who can still open it, then how to remove it.
-      expect(removal).toHaveTextContent(
-        /someone else may know your passphrase, they can still open the vault set aside, so remove it/,
-      );
-      expect(removal).toHaveTextContent(
-        /close myCarlos and delete its folder in/,
-      );
-      // The path, whole, to copy into the file app.
-      expect(removal.querySelector(".copyable-path")).toHaveTextContent(folder);
-    },
-  );
-
-  it.each(["android", "ios"])(
-    "on %s, says only clearing the app's data removes it, and every vault with it (#71)",
-    (platform) => {
-      renderSettings({ platform });
-      const removal = document.querySelector(".set-aside-removal")!;
-      expect(removal).toHaveTextContent(
-        /they can still open the vault set aside/,
-      );
-      expect(removal).toHaveTextContent(
-        /stay in myCarlos's private storage, and myCarlos cannot remove them/,
-      );
-      expect(removal).toHaveTextContent(
-        /clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone, the one you use too/,
-      );
-      expect(removal.querySelector(".copyable-path")).toBeNull();
-    },
-  );
 
   it("refuses a replacement under the minimum length before sending it", () => {
     const props = renderSettings();
