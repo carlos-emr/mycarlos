@@ -718,6 +718,9 @@ h1, h2, p { margin: 0; }
 .photo-viewer-frame.zoom-2 img { width: 200%; }
 .photo-viewer-frame.zoom-3 img { width: 300%; }
 .photo-viewer-frame.zoom-4 img { width: 400%; }
+/* Zoomed in, a mouse or pen drags the photo to move around (#73). */
+.photo-viewer-frame.can-drag { cursor: grab; }
+.photo-viewer-frame.dragging { cursor: grabbing; user-select: none; }
 @media (max-width: 56.25em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) 4.5rem; }
 }
