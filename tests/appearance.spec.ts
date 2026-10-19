@@ -175,10 +175,11 @@ function appearanceChoices(page: Page) {
   };
 }
 
+/** axe's WCAG 2.0, 2.1 and 2.2 A/AA rules, as #78 runs them. */
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+
 async function accessible(page: Page) {
-  const result = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
+  const result = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(result.violations).toEqual([]);
 }
 
@@ -360,6 +361,38 @@ test("remembers appearance and follows live system changes without vault mutatio
   );
   if (phone) expect(themes).toEqual([]);
   else expect(themes).toContain(null);
+});
+
+// The browser preview's screens, as the smoke test's axe run walks them, in
+// dark mode too: System follows the device, so a dark device gets them dark.
+test("the browser preview has no WCAG A/AA violations in dark mode", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  async function openSection(value: string, label: string) {
+    if (info.project.name === "phone")
+      await page.getByRole("combobox", { name: "Section" }).selectOption(value);
+    else
+      await page.getByRole("button", { name: new RegExp(`^${label}`) }).click();
+  }
+  await page.goto("/");
+  await accessible(page);
+  await contrast(page, text);
+  await screenshot(page, info, "dark-preview-library");
+  await openSection("security", "Security & backup");
+  await accessible(page);
+  await contrast(page, text);
+  await openSection("health", "Health data");
+  await accessible(page);
+  await contrast(page, text);
+  await openSection("records", "My records");
+  await page
+    .getByRole("button", {
+      name: "More options for Prescription — ramipril 5mg",
+    })
+    .click();
+  await accessible(page);
+  await contrast(page, text);
 });
 
 for (const theme of ["light", "dark"] as const) {
