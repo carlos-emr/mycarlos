@@ -280,6 +280,9 @@ async function contrast(
 
 const text =
   "h1,h2,h3,p,label,button,select,input,small,strong,.eyebrow,.nav-count,.tag,.chip";
+/** A field's edge is the only thing that shows where to type: 3:1 (1.4.11). */
+const fields =
+  "input:not([type=radio]):not([type=checkbox]):not([type=file]):not([type=hidden]),select,.search";
 
 /** In forced colours, Chromium draws text on a Canvas backplate, whatever
  * the background behind it: text the colour of Canvas would vanish. */
@@ -422,6 +425,7 @@ for (const theme of ["light", "dark"] as const) {
     await accessible(page);
     await contrast(page, text);
     await screenshot(page, info, `${theme}-library`);
+    await contrast(page, fields, "border-top-color", 3);
     const selected = page.getByRole("button", {
       name: "Select FAKE Example.pdf",
     });
@@ -447,11 +451,13 @@ for (const theme of ["light", "dark"] as const) {
     await contrast(page, "input:focus", "outline-color", 3);
     await accessible(page);
     await screenshot(page, info, `${theme}-rename-dialog-focus`);
+    await contrast(page, fields, "border-top-color", 3);
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await section(page, info, "security");
     await contrast(page, text);
     await accessible(page);
     await screenshot(page, info, `${theme}-security`);
+    await contrast(page, fields, "border-top-color", 3);
   });
 
   test(`${theme} locked screen keeps System live`, async ({ page }, info) => {

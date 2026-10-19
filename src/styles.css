@@ -842,7 +842,8 @@ h1, h2, p { margin: 0; }
 .appearance-choice .appearance-option input { flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; }
 .appearance-error { color: var(--red); font-size: 0.875rem; }
 .vault-card input, .native-inline-form input, .native-setting-form input, .native-danger-setting input,
-.native-profile-select select, .native-sort select, .native-dialog-actions select, .native-folder-move select, .native-setting-form select { border-color: var(--control-line); }
+.native-profile-select select, .native-sort select, .native-dialog-actions select, .native-folder-move select, .native-setting-form select,
+.native-rename-fields input, .recovery-key-body input, .select-control select, .search, .mobile-section-picker select { border-color: var(--control-line); }
 button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; background: var(--disabled-bg); color: var(--disabled-ink); border-color: var(--control-line); }
 
 /* System colours retain outlines and selection when Windows removes shadows and gradients. */
