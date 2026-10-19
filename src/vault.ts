@@ -117,9 +117,21 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** Which rules a new passphrase meets, as the vault judges it (#69). */
+export interface PassphraseRules {
+  longEnough: boolean;
+  notAName: boolean;
+  hardToGuess: boolean;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
+  /** First setup's checklist: refused once a vault exists. */
+  passphraseRules(
+    passphrase: string,
+    initialProfileName: string,
+  ): Promise<PassphraseRules>;
   create(
     passphrase: string,
     initialProfileName: string,
@@ -240,7 +252,31 @@ interface PublicError {
   retryAfterMs?: number;
 }
 
-export function vaultErrorMessage(error: unknown): string {
+/** "a", "a and b", "a, b and c". */
+const listed = (items: string[]) =>
+  items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+
+/** Of the boxes named with what was typed in them, those holding a control
+ * character: at setup, the one refusal of typed text that the screen does not
+ * catch first. None: a refusal is not about what was typed, as far as the
+ * screen can tell, and is not blamed on a box. */
+export function boxesWithControlCharacters(
+  typed: [value: string, box: string][],
+): string[] | undefined {
+  const boxes = typed
+    .filter(([value]) => /\p{Cc}/u.test(value))
+    .map(([, box]) => box);
+  return boxes.length ? boxes : undefined;
+}
+
+/** The message for a failed vault operation. `boxes` names, in plain words,
+ * what the patient typed for it ("the folder name"): a refusal of what was
+ * typed then says which box to check (#69). */
+export function vaultErrorMessage(error: unknown, boxes?: string[]): string {
+  if (boxes?.length && hasErrorCode(error, "invalid"))
+    return `Check ${listed(boxes)}, then try again.`;
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {
@@ -331,6 +367,10 @@ export function createVaultBridge(): VaultBridge {
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
+    passphraseRules: (passphrase, initialProfileName) =>
+      invoke<PassphraseRules>("vault_passphrase_rules", {
+        request: { passphrase, initialProfileName },
+      }),
     create: (passphrase, initialProfileName) =>
       invoke<VaultSnapshot>("vault_create", {
         request: { passphrase, initialProfileName },

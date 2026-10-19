@@ -4,6 +4,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import {
+  boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
   isLockedError,
@@ -26,6 +27,18 @@ describe("native idle deadline bridge", () => {
       ["vault_touch"],
       ["vault_set_auto_lock", { request: { minutes: 3 } }],
     ]);
+    invoke.mockResolvedValue({
+      longEnough: true,
+      notAName: true,
+      hardToGuess: true,
+    });
+    await bridge.passphraseRules("river azimuth cobalt", "Jamie");
+    expect(invoke).toHaveBeenLastCalledWith("vault_passphrase_rules", {
+      request: {
+        passphrase: "river azimuth cobalt",
+        initialProfileName: "Jamie",
+      },
+    });
     invoke.mockResolvedValue({ platform: "ios", architecture: "arm64" });
     await expect(bridge.platform()).resolves.toBe("ios");
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
@@ -164,6 +177,44 @@ describe("error messages", () => {
       }),
     ).toBe("No backup was saved. An empty file (0 bytes) may be left.");
     expect(vaultErrorMessage({ code: "storage", message: "No." })).toBe("No.");
+  });
+
+  it("names the boxes to check when what was typed is refused (#69)", () => {
+    const refused = {
+      code: "invalid",
+      message: "Something you typed wasn't accepted. Check it and try again.",
+    };
+    expect(vaultErrorMessage(refused, ["the folder name"])).toBe(
+      "Check the folder name, then try again.",
+    );
+    expect(
+      vaultErrorMessage(refused, ["the recovery key", "the new passphrase"]),
+    ).toBe("Check the recovery key and the new passphrase, then try again.");
+    expect(vaultErrorMessage(refused, ["a", "b", "c"])).toBe(
+      "Check a, b and c, then try again.",
+    );
+    // Without boxes, and for any other failure, the message is as it was.
+    expect(vaultErrorMessage(refused)).toBe(refused.message);
+    expect(vaultErrorMessage(refused, [])).toBe(refused.message);
+    expect(
+      vaultErrorMessage({ code: "storage", message: "No." }, ["the name"]),
+    ).toBe("No.");
+  });
+
+  it("names at setup only a box whose text the vault refuses (#69)", () => {
+    expect(
+      boxesWithControlCharacters([
+        ["Jamie", "the name"],
+        ["river azimuth cobalt\tsparrow", "the passphrase"],
+      ]),
+    ).toEqual(["the passphrase"]);
+    // Nothing typed that the vault refuses: no box takes the blame.
+    expect(
+      boxesWithControlCharacters([
+        ["Jamie", "the name"],
+        ["river azimuth cobalt sparrow", "the passphrase"],
+      ]),
+    ).toBeUndefined();
   });
 
   it("says how long to wait after several wrong tries", () => {
