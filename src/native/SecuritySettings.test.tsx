@@ -333,6 +333,11 @@ describe("Automatic lock delay (#67)", () => {
     const group = screen.getByRole("group", { name: "Automatic lock delay" });
     expect(screen.queryByRole("combobox", { name: /lock delay/i })).toBeNull();
     expect(within(group).getByText("5 minutes")).toBeVisible();
+    // On focus, each step says what the delay is now.
+    for (const name of ["Shorter delay", "Longer delay"])
+      expect(
+        within(group).getByRole("button", { name }),
+      ).toHaveAccessibleDescription("5 minutes");
     fireEvent.click(
       within(group).getByRole("button", { name: "Longer delay" }),
     );

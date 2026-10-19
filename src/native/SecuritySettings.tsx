@@ -1,5 +1,5 @@
 import { SecretInput } from "./SecretInput";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -79,6 +79,8 @@ export function SecuritySettings({
   onSaveBackup,
   onSpeedTest,
 }: SecuritySettingsProps) {
+  // Minus and plus each say, on focus, what the delay is now.
+  const autoLockValueId = useId();
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
     result: string;
@@ -206,6 +208,7 @@ export function SecuritySettings({
                 className="button text-size-step"
                 type="button"
                 aria-label="Shorter delay"
+                aria-describedby={autoLockValueId}
                 aria-disabled={autoLockMinutes <= AUTO_LOCK_MIN}
                 onClick={() => {
                   if (autoLockMinutes > AUTO_LOCK_MIN)
@@ -214,13 +217,18 @@ export function SecuritySettings({
               >
                 <span aria-hidden="true">−</span>
               </button>
-              <span className="auto-lock-value" aria-live="polite">
+              <span
+                className="auto-lock-value"
+                id={autoLockValueId}
+                aria-live="polite"
+              >
                 {autoLockMinutes} minute{autoLockMinutes === 1 ? "" : "s"}
               </span>
               <button
                 className="button text-size-step"
                 type="button"
                 aria-label="Longer delay"
+                aria-describedby={autoLockValueId}
                 aria-disabled={autoLockMinutes >= AUTO_LOCK_MAX}
                 onClick={() => {
                   if (autoLockMinutes < AUTO_LOCK_MAX)
