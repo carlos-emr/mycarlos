@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -50,6 +50,16 @@ export function RecordDetails({
     choice.placement === placement ? choice.folderId : currentFolderId;
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
+  // Pressing Move disables it while the move runs, and it stays disabled
+  // after (the document is where the list says), so focus would fall out of
+  // the dialog. It goes back to "Move to" once the move has finished.
+  const moveToRef = useRef<HTMLSelectElement | null>(null);
+  const refocusMoveTo = useRef(false);
+  useEffect(() => {
+    if (busy || !refocusMoveTo.current) return;
+    refocusMoveTo.current = false;
+    moveToRef.current?.focus();
+  }, [busy, placement]);
   const kind = recordKind(record.displayName);
   const folderNameById = new Map(
     folders.map((folder) => [folder.id, folder.name]),
@@ -163,6 +173,7 @@ export function RecordDetails({
             <label>
               Move to
               <select
+                ref={moveToRef}
                 disabled={busy || readOnly}
                 value={destination}
                 onChange={(event) =>
@@ -181,7 +192,10 @@ export function RecordDetails({
               className="button"
               type="button"
               disabled={busy || readOnly || destination === currentFolderId}
-              onClick={() => void onMove(destination || null)}
+              onClick={() => {
+                refocusMoveTo.current = true;
+                void onMove(destination || null);
+              }}
             >
               Move
             </button>

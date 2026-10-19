@@ -709,11 +709,22 @@ describe("durable vault UI", () => {
     expect(destination).toHaveValue("child");
     expect(bridge.assignFolders).not.toHaveBeenCalled();
     expect(move).toBeEnabled();
-    await user.click(move);
+    // Pressed from the keyboard: Move is disabled while it runs and after,
+    // so focus goes back to "Move to", inside the dialog, not to the page.
+    move.focus();
+    await realKeys.keyboard("{Enter}");
     await waitFor(() =>
       expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("record", [
         "child",
       ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("dialog", { name: "FAKE Old.pdf" })).getByRole(
+          "combobox",
+          { name: "Move to" },
+        ),
+      ).toHaveFocus(),
     );
   });
 
