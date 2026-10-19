@@ -24,8 +24,8 @@ use tauri_plugin_fs::{FsExt, OpenOptions};
 use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
 use vault::{
-    ImportSource, RestoreCredential, RestorePreview, RestoreReplaces, VaultError, VaultSnapshot,
-    VaultStatus, VaultStore,
+    ImportSource, PassphraseRules, RestoreCredential, RestorePreview, RestoreReplaces, VaultError,
+    VaultSnapshot, VaultStatus, VaultStore,
 };
 use zeroize::Zeroize;
 
@@ -178,7 +178,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::WrongPassphrase => Self {
                 code: "wrong_passphrase",
-                message: "That passphrase did not unlock the vault.",
+                message: "That passphrase didn't open myCarlos. Check Caps Lock and try again.",
             },
             VaultError::Corrupt => Self {
                 code: "corrupt",
@@ -190,7 +190,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Invalid => Self {
                 code: "invalid",
-                message: "Check the requested information and try again.",
+                message: "Something you typed wasn't accepted. Check it and try again.",
             },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
@@ -206,7 +206,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Storage => Self {
                 code: "storage",
-                message: "The storage operation could not be completed. Review the current vault state before retrying.",
+                message: "myCarlos couldn't read or write its files on this computer. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",
@@ -274,6 +274,20 @@ impl From<VaultError> for PublicError {
             note: None,
             retry_after_ms: None,
         }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PassphraseRulesRequest {
+    passphrase: String,
+    initial_profile_name: String,
+}
+
+// Wiped however the command ends.
+impl Drop for PassphraseRulesRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
     }
 }
 
@@ -751,6 +765,20 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
 #[tauri::command]
 async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultStatus> {
     run_blocking(store.inner(), VaultStore::status).await
+}
+
+/// First setup's passphrase checklist (#69): three answers, only while no
+/// vault exists. The request, passphrase and all, is wiped as the judgement
+/// returns; nothing is kept, logged, or echoed in an error.
+#[tauri::command]
+async fn vault_passphrase_rules(
+    store: State<'_, Arc<VaultStore>>,
+    request: PassphraseRulesRequest,
+) -> CommandResult<PassphraseRules> {
+    run_blocking(store.inner(), move |store| {
+        store.new_passphrase_rules(&request.passphrase, &request.initial_profile_name)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -2056,6 +2084,7 @@ pub fn run() {
             runtime_info,
             kdf_benchmark,
             vault_status,
+            vault_passphrase_rules,
             vault_create,
             vault_unlock,
             vault_lock,
@@ -3228,6 +3257,7 @@ mod tests {
             payload in prop::collection::vec(any::<u8>(), 0..8192),
         ) {
             let _ = serde_json::from_slice::<CreateVaultRequest>(&payload);
+            let _ = serde_json::from_slice::<PassphraseRulesRequest>(&payload);
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
