@@ -616,6 +616,11 @@ h1, h2, p { margin: 0; }
 /* #67: the chosen section, patient and view say so by more than a tint: a
    3px teal bar along the bottom, 6.4:1 on white. */
 .native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-profile-choice .button[aria-pressed="true"], .segment button.selected) { box-shadow: inset 0 -3px 0 var(--teal); }
+/* High contrast drops box shadows, so there the bar is a real border, in the
+   system's Highlight colour (an outline would hide the focus ring). */
+@media (forced-colors: active) {
+  .native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-profile-choice .button[aria-pressed="true"], .segment button.selected) { border-bottom: 3px solid Highlight; }
+}
 @media (max-width: 56.25em) {
   .native-profile-choice-narrow { display: flex; flex-basis: 100%; margin: 8px 0 0; }
   .native-profile-choice-narrow .native-profile-choice-label { flex-basis: auto; }
