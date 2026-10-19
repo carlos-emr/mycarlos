@@ -265,6 +265,18 @@ describe("SecuritySettings passphrase change", () => {
     expect(limit).not.toMatch(/erase this vault/);
   });
 
+  it("says hiding a document leaves copies outside the vault, not that it deletes (#71)", () => {
+    renderSettings();
+    const section = screen
+      .getByRole("heading", { name: "Readable copies and screenshots" })
+      .closest("section")!;
+    expect(section).toHaveTextContent(
+      /Hiding a document in myCarlos does not erase those copies/,
+    );
+    // Nothing in myCarlos deletes a document since #71.
+    expect(section).not.toHaveTextContent(/delet/i);
+  });
+
   it("refuses a replacement under the minimum length before sending it", () => {
     const props = renderSettings();
     change("Current passphrase", "river-azimuth-cobalt-sparrow-934");

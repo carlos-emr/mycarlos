@@ -479,8 +479,8 @@ export function SecuritySettings({
           <div>
             <h2>Readable copies and screenshots</h2>
             <p>
-              Exports and screenshots leave vault protection. Deleting a record
-              from myCarlos cannot erase those copies or the clinic's source
+              Exports and screenshots leave vault protection. Hiding a document
+              in myCarlos does not erase those copies or the clinic's source
               medical record.
             </p>
           </div>
