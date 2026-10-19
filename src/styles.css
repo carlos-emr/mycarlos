@@ -626,8 +626,35 @@ h1, h2, p { margin: 0; }
   .native-profile-choice-narrow .native-profile-choice-label { flex-basis: auto; }
 }
 
+/* #67, Ben's review: an even rhythm on a phone. The patient choice gets a line
+   of its own and room before the heading; the location line uses the full
+   width, with New folder and New on their own row; the section tabs fit their
+   words on one line where they can. Steps of 6, 8 and 12px, as elsewhere. */
+@media (max-width: 40em) {
+  .native-vault-page .native-profile-choice-narrow { row-gap: 8px; column-gap: 8px; margin: 12px 0 16px; }
+  .native-vault-page .native-profile-choice-narrow .native-profile-choice-label { flex-basis: 100%; }
+  .native-vault-page .main-head { flex-wrap: wrap; align-items: flex-start; row-gap: 12px; }
+  .native-vault-page .main-head p { max-width: none; }
+  .native-vault-page .head-actions { flex-basis: 100%; flex-wrap: wrap; margin-left: 0; }
+  .native-vault-page .native-section-tabs { gap: 6px; }
+  .native-vault-page .native-section-tabs button { padding-inline: 6px; }
+  /* An empty status line takes no room; a notice pushes the list down. */
+  .native-vault-page .status-line:empty { min-height: 0; margin-bottom: 0; }
+}
+
+/* #67, #84: when the text is large for the width (a phone at 200% text, or a
+   320px phone), a document's name gets the row's full width, with Rename or
+   Details under it, and the lock button wraps under the window's title instead
+   of running off its edge. In em, so that it follows the reader's text size. */
+@media (max-width: 22em) {
+  .native-vault-page .titlebar { flex-wrap: wrap; row-gap: 6px; }
+  .native-vault-page .titlebar .native-lock-button { margin-left: 0; }
+}
+
 /* #67: in the app, buttons keep their words on narrow windows and wrap instead. */
 @media (max-width: 24.375em) {
+  /* The tabs' edges line up with the page's (.library-main). */
+  .native-vault-page .native-section-tabs { padding-inline: 14px; }
   .native-vault-page .head-actions { flex-wrap: wrap; }
   .native-vault-page .head-actions .button { width: auto; padding-inline: 11px; }
   .native-vault-page .head-actions .button span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
@@ -762,6 +789,12 @@ h1, h2, p { margin: 0; }
      tell items apart. At 16px a phone leaves it about 8rem, so a folder's or a
      document's name wraps instead of being cut short. */
   .native-filelist :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
+}
+/* After the rule above, which it narrows further (see #84 above). */
+@media (max-width: 22em) {
+  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr); row-gap: 4px; }
+  .native-filelist .file-row > :last-child { grid-column: 2; justify-self: start; }
+  .native-filelist .file-head > :last-child:not(:nth-child(2)) { display: none; }
 }
 /* #67: Move to and its Move button have a row of their own. */
 .native-dialog-actions { flex-wrap: wrap; }
