@@ -79,6 +79,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   sizesIn1024s = false,
+  covered = false,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -109,6 +110,9 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** A dialog of the app's own is over the library (the warning before the
+   * automatic lock, #68): the library and any dialog in it are inert. */
+  covered?: boolean;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -641,7 +645,7 @@ export function VaultLibrary({
   const locationTitle = currentFolder?.name ?? "My records";
 
   return (
-    <div className="evaluation-page native-vault-page">
+    <div className="evaluation-page native-vault-page" inert={covered}>
       <div className="evaluation-banner" role="note">
         <strong>Synthetic-data development build</strong>
         <span>

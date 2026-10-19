@@ -5975,6 +5975,11 @@ describe("the warning before the automatic lock (#68)", () => {
       "myCarlos will lock in 30 seconds to keep your records private.",
     );
     expect(screen.getByRole("button", { name: "Keep open" })).toHaveFocus();
+    // Nothing beneath it can be reached, by Tab or by a screen reader's
+    // browse or touch mode, which may not honour aria-modal.
+    expect(document.querySelector(".native-vault-page")).toHaveAttribute(
+      "inert",
+    );
     expect(bridge.lock).not.toHaveBeenCalled();
 
     await wait(30_000);
@@ -6021,8 +6026,17 @@ describe("the warning before the automatic lock (#68)", () => {
 
     await wait(30_000);
     expect(warning()).toBeInTheDocument();
+    // Rename beneath it is out of reach while the warning is up.
+    expect(
+      screen
+        .getByRole("dialog", { name: "Rename folder", hidden: true })
+        .closest("[inert]"),
+    ).not.toBeNull();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(warning()).not.toBeInTheDocument();
+    expect(document.querySelector(".native-vault-page")).not.toHaveAttribute(
+      "inert",
+    );
     // Rename is still open, with what was typed, and has the focus back.
     expect(typed()).toHaveValue("FAKE New name");
     expect(typed()).toHaveFocus();
