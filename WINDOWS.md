@@ -34,8 +34,8 @@ publishing the download. Earlier evaluation installers only hid the console in r
 install a newer build if a terminal appears alongside the app.
 
 To remove evaluation data, close myCarlos and delete its vault folder,
-`%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`, before uninstalling. **Security > Set vault aside**
-does not remove anything (#71): it moves the vault, whole and encrypted, into a `set-aside` folder
+`%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`, before uninstalling. Starting again
+(**Forgot your passphrase?** > **Set vault aside**, on the unlock screen) does not remove anything (#71): it moves the vault, whole and encrypted, into a `set-aside` folder
 there. App removal can leave app-data files behind, and nothing in the app removes readable
 exports.
 

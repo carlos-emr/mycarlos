@@ -253,13 +253,13 @@ aside. An open, writable vault first records `setAside`, with that folder's name
 the next vault created in the same run of the app names it in its `created` entry. The app cannot
 open a vault set aside yet: the way back is to copy its folder into place by hand, with myCarlos
 closed. The app never removes anything from `set-aside/`, so storage grows with each vault set
-aside. On a computer, freeing the space means deleting a folder by hand: Security names the
-folder (as the file app's address bar takes it, so it can be copied there; the native side gives
-the screen no paths), and the confirmation dialog names it in full. On Android and iPhone the
-folder is private to the app: only clearing myCarlos's data in the system settings, or
-uninstalling it, removes a vault set aside, and that removes every vault on the device, the one in
-use too. Both say so, and say that someone who knows the old passphrase can still open the vault
-set aside until it is removed. A `vault-v1.reset-pending/` an older
+aside. On a computer, freeing the space means deleting a folder by hand: the confirmation dialog
+names it in full. On Android and iPhone the folder is private to the app: only clearing myCarlos's
+data in the system settings, or uninstalling it, removes a vault set aside, and that removes every
+vault on the device, the one in use too. The dialog says so, and says that someone who knows the
+old passphrase can still open the vault set aside until it is removed. This phone limit is accepted
+(decided 19 October), and Security no longer offers starting again: only the unlock screen's
+"Forgot your passphrase?" does, so no screen sets an open vault aside. A `vault-v1.reset-pending/` an older
 build left on its way to erasing a vault, whole or partly erased, is set aside too, at the next
 status, create, unlock or reset, under the same lock; while that cannot be done, access and
 creation are blocked. Symlink/reparse-point reset directories, and a `set-aside` that is not a real
@@ -656,7 +656,8 @@ state, described in the recovery-key sections above.
   planned for after the first release, and until then this limit is accepted. The
   only remedy is a new vault, which the app does not guide: save a readable copy of every document
   (one at a time, in every profile; a damaged document cannot be saved), check that each copy
-  opens, set the vault aside, create a new one and import the copies. The vault set aside stays
+  opens, lock it and set it aside ("Forgot your passphrase?" on the unlock screen), create a new
+  one and import the copies. The vault set aside stays
   on the device (#71), and the earlier passphrase still opens it: to keep it from someone who knows
   that passphrase and can reach the device, delete its folder in `set-aside/` by hand. Folders, profiles and the dates
   added are not kept, the saved copies are not encrypted while they wait, and the recovery key and

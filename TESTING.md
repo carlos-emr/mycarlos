@@ -291,15 +291,17 @@ what you expected it to read.
 
 ## Start over
 
-To start again with an empty vault while unlocked, open **Security**, choose **Show reset
-controls**, type `RESET MYCARLOS VAULT`, choose **Set vault aside**, and confirm **Set it aside**
-in the dialog that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the
-unlock screen, type `RESET MYCARLOS VAULT`, choose **Set vault aside**, and confirm **Set it aside**
-in the dialog, whose buttons are **Keep this vault**, **Set it aside** and **Cancel**.
+To start again with an empty vault, lock myCarlos, choose **Forgot your passphrase?** on the unlock
+screen, type `RESET MYCARLOS VAULT`, choose **Set vault aside**, and confirm **Set it aside** in the
+dialog, whose buttons are **Keep this vault**, **Set it aside** and **Cancel**. **Security** has no
+way to start again (#71, decided 19 October); check that it shows none.
 
 Nothing is erased (#71): the old vault moves, whole and encrypted, into a `set-aside` folder in the
 vault's folder (below), and myCarlos never deletes it. To remove a test vault for good, close
-myCarlos and delete that folder, or the whole vault folder, by hand.
+myCarlos and delete that folder, or the whole vault folder, by hand. On Android and iPhone the
+folder is private to the app: only clearing myCarlos's data in the phone's settings, or
+uninstalling it, removes a vault set aside, and that removes every vault on the phone, the one in
+use too. This limit is accepted (decided 19 October).
 
 ### The "are you sure?" dialogs (please try on Windows, on a Mac and on Linux)
 
