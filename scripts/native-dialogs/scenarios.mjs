@@ -78,8 +78,10 @@ export async function runDialogScenarios({ backupPath }) {
       passphrase: password,
       initialProfileName: "FAKE Native dialog test",
     });
-  const eraseTitle = "Erase the entire myCarlos vault?";
-  const erase = { confirmation: "RESET MYCARLOS VAULT" };
+  // Starting again sets the vault aside (#71), and is offered only on the
+  // unlock screen, so the vault is locked when it is asked.
+  const setAsideTitle = "Set this myCarlos vault aside and start again?";
+  const setAside = { confirmation: "RESET MYCARLOS VAULT" };
   const cases = [
     ["enter", ""],
     ["space", ""],
@@ -94,33 +96,34 @@ export async function runDialogScenarios({ backupPath }) {
       "Refusing to test an existing vault",
     );
     await create();
+    await call("vault_lock");
     for (const [action, value] of cases) {
       const before = await fingerprint();
       assert(
         (await dialog(
           "vault_reset",
-          erase,
-          eraseTitle,
+          setAside,
+          setAsideTitle,
           action,
           value === "KEEP" ? "Keep this vault" : value,
         )) === false,
-        `Erase was authorized by ${action}`,
+        `Setting the vault aside was authorized by ${action}`,
       );
-      await unchanged(before, `erase ${action}`);
+      await unchanged(before, `set aside ${action}`);
     }
     assert(
       (await dialog(
         "vault_reset",
-        erase,
-        eraseTitle,
+        setAside,
+        setAsideTitle,
         "button",
-        "Erase vault",
+        "Set it aside",
       )) === true,
-      "Explicit erase did not succeed",
+      "Explicitly setting the vault aside did not succeed",
     );
     assert(
       (await call("vault_status")) === "absent",
-      "Erased vault still exists",
+      "The vault set aside is still in use",
     );
     await create();
     const groups = (key) => ({
@@ -228,10 +231,10 @@ export async function runDialogScenarios({ backupPath }) {
     assert(
       (await dialog(
         "vault_reset",
-        erase,
-        eraseTitle,
+        setAside,
+        setAsideTitle,
         "button",
-        "Erase vault",
+        "Set it aside",
       )) === true,
       "Final test vault cleanup failed",
     );
