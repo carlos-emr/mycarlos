@@ -103,6 +103,7 @@ describe("native idle deadline bridge", () => {
       "pdf_locked",
       "pdf_unlock_failed",
       "pdf_unlock_unavailable",
+      "pdf_unlock_no_sandbox",
       "pdf_too_large",
     ] as const)
       expect(

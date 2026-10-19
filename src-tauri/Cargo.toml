@@ -44,12 +44,19 @@ uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
 
+# The PDF helper's sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter
+# it cannot run without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "=0.4.7"
+seccompiler = "=0.5.0"
+
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Isolation",
     "Win32_System_Com",
     "Win32_System_JobObjects",
     "Win32_System_Threading",

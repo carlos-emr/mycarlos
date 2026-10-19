@@ -143,4 +143,13 @@ describe("shared files waiting", () => {
     await user.click(screen.getByRole("button", { name: "Add 1 file" }));
     expect(onAdd).toHaveBeenCalledWith(["shared-2"]);
   });
+
+  it("says when a locked file cannot be opened safely on this system", () => {
+    renderPanel({ refusals: { "shared-1": "pdf_unlock_no_sandbox" } });
+    expect(
+      screen.getByText("Locked: cannot be opened safely on this system"),
+    ).toBeVisible();
+    // A password would not help, so none is asked for.
+    expect(screen.queryByRole("button", { name: /^Unlock / })).toBeNull();
+  });
 });

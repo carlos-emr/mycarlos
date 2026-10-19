@@ -11,6 +11,7 @@ const REFUSED: Record<ReceivedRefusalReason, string> = {
   pdf_locked: "Locked with a password",
   pdf_unlock_failed: "Locked, and could not be opened",
   pdf_unlock_unavailable: "Locked: cannot be opened on this device yet",
+  pdf_unlock_no_sandbox: "Locked: cannot be opened safely on this system",
   pdf_too_large: "Locked, and too large to open",
 };
 

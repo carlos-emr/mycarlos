@@ -343,12 +343,13 @@ function hasErrorCode(error: unknown, code: string): boolean {
 /** The waiting shared file an import refused as not a PDF, if that was why. */
 /** Why an add left a waiting file out: not a PDF, or locked with a password
  * that is still needed, could not be opened, cannot be opened on this device,
- * or is too large to open. */
+ * cannot be opened safely on this system, or is too large to open. */
 export type ReceivedRefusalReason =
   | "not_pdf"
   | "pdf_locked"
   | "pdf_unlock_failed"
   | "pdf_unlock_unavailable"
+  | "pdf_unlock_no_sandbox"
   | "pdf_too_large";
 
 const RECEIVED_REFUSALS: ReceivedRefusalReason[] = [
@@ -356,6 +357,7 @@ const RECEIVED_REFUSALS: ReceivedRefusalReason[] = [
   "pdf_locked",
   "pdf_unlock_failed",
   "pdf_unlock_unavailable",
+  "pdf_unlock_no_sandbox",
   "pdf_too_large",
 ];
 

@@ -13,10 +13,12 @@ pub use pdf_unlock::{
     helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
 };
 
-/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at`).
+/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at` and `ask_helper_at`).
 #[doc(hidden)]
 #[cfg(desktop)]
-pub use pdf_unlock::unlock_with_helper_at as pdf_unlock_with_helper_at;
+pub use pdf_unlock::{
+    ask_helper_at as pdf_ask_helper_at, unlock_with_helper_at as pdf_unlock_with_helper_at,
+};
 
 use idle::{IdleDeadline, Opening};
 use received::{ReceivedFiles, ReceivedSource};
@@ -241,6 +243,10 @@ impl From<VaultError> for PublicText {
                 code: "pdf_unlock_unavailable",
                 message: "myCarlos cannot open password-protected documents on this device yet. Nothing was added.",
             },
+            VaultError::PdfUnlockNoSandbox => Self {
+                code: "pdf_unlock_no_sandbox",
+                message: "myCarlos cannot open locked documents safely on this system, so this one was not opened. Nothing was added.",
+            },
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message: "This locked document is larger than 100 MB, so myCarlos cannot open it. Nothing was added.",
@@ -252,6 +258,10 @@ impl From<VaultError> for PublicText {
             VaultError::PdfViewUnavailable => Self {
                 code: "pdf_view_unavailable",
                 message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewNoSandbox => Self {
+                code: "pdf_view_no_sandbox",
+                message: "myCarlos cannot show documents safely on this system. Save a copy to read it in another app.",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
@@ -1833,6 +1843,7 @@ fn prepare_received(
         Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
         Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
         Outcome::Unavailable => Err(VaultError::PdfUnlockUnavailable),
+        Outcome::NoSandbox => Err(VaultError::PdfUnlockNoSandbox),
         Outcome::Refused(Refusal::Damaged | Refusal::Unsupported | Refusal::NoSuchPage)
         | Outcome::Failed => Err(VaultError::PdfUnlockFailed),
     }
@@ -1846,6 +1857,7 @@ fn names_a_received_file(error: &VaultError) -> bool {
             | VaultError::PdfLocked
             | VaultError::PdfUnlockFailed
             | VaultError::PdfUnlockUnavailable
+            | VaultError::PdfUnlockNoSandbox
             | VaultError::PdfTooLarge
     )
 }
@@ -2123,6 +2135,7 @@ async fn vault_view_page(
             pdf_view::Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
             pdf_view::Outcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
             pdf_view::Outcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            pdf_view::Outcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
             pdf_view::Outcome::Cancelled => Err(VaultError::Cancelled),
             pdf_view::Outcome::Refused(_) | pdf_view::Outcome::Failed => {
                 Err(VaultError::PdfViewFailed)
