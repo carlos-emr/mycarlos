@@ -86,6 +86,16 @@ function undersized() {
   return found;
 }
 
+/** Text kept for screen readers only: clipped, or a box of at most 1px. */
+function visuallyHidden(element: HTMLElement) {
+  const style = getComputedStyle(element);
+  return (
+    element.clientWidth <= 1 ||
+    style.clip !== "auto" ||
+    style.clipPath !== "none"
+  );
+}
+
 /** Visible controls whose words spill out of them, or that are partly cut
  * off by a box that hides what overflows it: on a phone, List and Grid were
  * squeezed inside their segment. */
@@ -102,9 +112,12 @@ function clipped() {
       continue;
     }
     // Words cut short inside it, such as a folder's name in its Open button.
+    // Words only a screen reader reads (.sr-only) are clipped on purpose.
     const cut = Array.from(control.querySelectorAll<HTMLElement>("*")).find(
       (inner) =>
-        inner.checkVisibility() && inner.scrollWidth > inner.clientWidth + 1,
+        inner.checkVisibility() &&
+        !visuallyHidden(inner) &&
+        inner.scrollWidth > inner.clientWidth + 1,
     );
     if (cut) {
       found.push(
@@ -170,8 +183,21 @@ const press = (name: string | RegExp) =>
 
 afterEach(async () => {
   cleanup();
+  document.getElementById("wide-font")?.remove();
   await page.viewport(1100, 760);
 });
+
+/** A wide font that every machine has one of (DejaVu Sans on Linux, CI
+ * included; Verdana on Windows and macOS), so a layout that only fits in a
+ * narrower font such as Roboto fails everywhere, not only where it is
+ * missing. */
+function useWideFont() {
+  const style = document.createElement("style");
+  style.id = "wide-font";
+  style.textContent =
+    ':root { font-family: "DejaVu Sans", Verdana, sans-serif !important; }';
+  document.head.append(style);
+}
 
 describe("targets and text sizes in the app (#67)", () => {
   for (const [label, width, height] of [
@@ -181,41 +207,43 @@ describe("targets and text sizes in the app (#67)", () => {
     // wider phone font leaves: the section tabs and document names must still fit.
     ["narrow phone", 320, 640],
   ] as const) {
-    it(`are comfortable on ${label}: library, grid, details, Security and Preferences`, async () => {
-      await page.viewport(width, height);
-      renderLibrary();
-      expectComfortable("library");
-      press("Select FAKE Results.pdf");
-      expectComfortable("selected, with the bulk bar");
-      press("Clear");
-      press(/^New folder/);
-      expectComfortable("new folder form");
-      press("Cancel");
-      press("Rename folder FAKE Letters");
-      expectComfortable("rename folder");
-      press("Cancel");
-      press("Grid view");
-      expectComfortable("grid");
-      press("List view");
-      press("Details for FAKE Results.pdf");
-      expectComfortable("details");
-      press("Rename document");
-      expectComfortable("rename document");
-      press("Cancel");
-      press("Permanently delete");
-      expectComfortable("confirm delete");
-      press("Cancel");
-      press("Save a copy to this computer");
-      expectComfortable("confirm save a copy");
-      press("Cancel");
-      press("Close document details");
-      const open = (name: string) =>
-        press(label === "desktop" ? new RegExp(`^${name}`) : name);
-      open("Security");
-      expectComfortable("Security");
-      open("Preferences");
-      expectComfortable("Preferences");
-    });
+    for (const wide of [false, true])
+      it(`are comfortable on ${label}${wide ? " in a wide font" : ""}: library, grid, details, Security and Preferences`, async () => {
+        if (wide) useWideFont();
+        await page.viewport(width, height);
+        renderLibrary();
+        expectComfortable("library");
+        press("Select FAKE Results.pdf");
+        expectComfortable("selected, with the bulk bar");
+        press("Clear");
+        press(/^New folder/);
+        expectComfortable("new folder form");
+        press("Cancel");
+        press("Rename folder FAKE Letters");
+        expectComfortable("rename folder");
+        press("Cancel");
+        press("Grid view");
+        expectComfortable("grid");
+        press("List view");
+        press("Details for FAKE Results.pdf");
+        expectComfortable("details");
+        press("Rename document");
+        expectComfortable("rename document");
+        press("Cancel");
+        press("Permanently delete");
+        expectComfortable("confirm delete");
+        press("Cancel");
+        press("Save a copy to this computer");
+        expectComfortable("confirm save a copy");
+        press("Cancel");
+        press("Close document details");
+        const open = (name: string) =>
+          press(label === "desktop" ? new RegExp(`^${name}`) : name);
+        open("Security");
+        expectComfortable("Security");
+        open("Preferences");
+        expectComfortable("Preferences");
+      });
   }
 
   it("keeps the disclosure triangle on taller summaries", () => {
@@ -231,6 +259,16 @@ describe("targets and text sizes in the app (#67)", () => {
     expectTriangles();
     press(/^Security/);
     expectTriangles();
+  });
+
+  it("does not count words kept for screen readers as cut off", () => {
+    render(
+      <button type="button" style={{ width: 120 }}>
+        Rename
+        <span className="sr-only"> FAKE Results with a long name.pdf</span>
+      </button>,
+    );
+    expect(clipped()).toEqual([]);
   });
 
   it("shows body text at 16px", () => {
