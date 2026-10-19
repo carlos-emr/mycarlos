@@ -86,14 +86,12 @@ function undersized() {
   return found;
 }
 
-/** Text kept for screen readers only: clipped, or a box of at most 1px. */
+/** Text kept for screen readers only, which is clipped (as .sr-only is).
+ * Not a box squeezed to 1px or less: that is a name crushed out of sight,
+ * the worst way to cut one off. */
 function visuallyHidden(element: HTMLElement) {
   const style = getComputedStyle(element);
-  return (
-    element.clientWidth <= 1 ||
-    style.clip !== "auto" ||
-    style.clipPath !== "none"
-  );
+  return style.clip !== "auto" || style.clipPath !== "none";
 }
 
 /** Visible controls whose words spill out of them, or that are partly cut
