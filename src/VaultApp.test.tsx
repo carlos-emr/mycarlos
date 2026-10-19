@@ -402,6 +402,38 @@ describe("durable vault UI", () => {
     );
   });
 
+  it("starts again on the comfort screen after erasing from the unlock screen (#69)", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    fireEvent.change(
+      await screen.findByLabelText("Whose records will you keep here?"),
+      { target: { value: "Jamie" } },
+    );
+    for (const field of screen.getAllByLabelText(/passphrase/i))
+      fireEvent.change(field, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
+    await screen.findByRole("heading", { name: "My records" });
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.click(screen.getByText("Forgot your passphrase?"));
+    await user.type(
+      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+      "RESET MYCARLOS VAULT",
+    );
+    await user.click(screen.getByRole("button", { name: "Erase vault" }));
+    expect(
+      await screen.findByRole("heading", {
+        name: "Make myCarlos comfortable for you",
+      }),
+    ).toBeVisible();
+  });
+
   it("says when a new passphrase exceeds the vault's byte limit instead of sending it", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("absent"),

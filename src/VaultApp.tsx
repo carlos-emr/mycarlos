@@ -773,6 +773,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
               rememberOldBackupsGuide(null);
+              // Starting again starts with the comfort settings, as the
+              // library's erase does by reloading the app.
+              setComfortChosen(false);
               setStatus("absent");
               setNotice("");
             } else {
