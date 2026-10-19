@@ -511,7 +511,7 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await screenshot(page, info, "forced-preferences-focus");
   await section(page, info, "records");
   await expect(
-    page.getByText("Read-only recovery mode.", { exact: true }),
+    page.getByText("Changes are paused.", { exact: true }),
   ).toBeVisible();
   const selected = page.getByRole("button", {
     name: "Select FAKE Example.pdf",
