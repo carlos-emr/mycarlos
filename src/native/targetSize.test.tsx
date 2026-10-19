@@ -259,6 +259,57 @@ describe("targets and text sizes in the app (#67)", () => {
     expectTriangles();
   });
 
+  it("shows the chosen section, patient and view by more than colour", async () => {
+    await page.viewport(390, 844);
+    renderLibrary();
+    const teal = "rgb(15, 107, 98)";
+    const bar = (element: Element) => getComputedStyle(element).boxShadow;
+    const pairs: [Element, Element][] = [
+      [
+        document.querySelector('.native-section-tabs [aria-current="page"]')!,
+        screen.getByRole("button", { name: "Security" }),
+      ],
+      [
+        screen.getByRole("button", { name: "FAKE Avery", pressed: true }),
+        screen.getByRole("button", { name: "FAKE Blake", pressed: false }),
+      ],
+      [
+        screen.getByRole("button", { name: "List view", pressed: true }),
+        screen.getByRole("button", { name: "Grid view", pressed: false }),
+      ],
+    ];
+    for (const [chosen, other] of pairs) {
+      expect(bar(chosen), chosen.textContent!).toContain("inset");
+      expect(bar(chosen), chosen.textContent!).toContain(teal);
+      expect(bar(other), other.textContent!).not.toContain("inset");
+    }
+  });
+
+  it("draws an unticked box's edge at 3:1 or more (WCAG 1.4.11)", () => {
+    renderLibrary();
+    const tick = screen.getByRole("button", {
+      name: "Select FAKE Results.pdf",
+    });
+    const channels = (colour: string) =>
+      colour
+        .match(/[\d.]+/g)!
+        .slice(0, 3)
+        .map(Number);
+    const luminance = (colour: string) => {
+      const [r, g, b] = channels(colour).map((value) => {
+        const c = value / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const edge = getComputedStyle(tick, "::before").borderTopColor;
+    const inside = getComputedStyle(tick, "::before").backgroundColor;
+    const [light, dark] = [luminance(inside), luminance(edge)].sort(
+      (a, b) => b - a,
+    );
+    expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(3);
+  });
+
   it("does not count words kept for screen readers as cut off", () => {
     render(
       <button type="button" style={{ width: 120 }}>
