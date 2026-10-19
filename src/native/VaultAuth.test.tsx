@@ -33,7 +33,7 @@ describe("CreateVault", () => {
     for (const field of screen.getAllByLabelText(/passphrase/i))
       fireEvent.change(field, { target: { value: short } });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("too short");
+    expect(screen.getByText(/too short/)).toBeVisible();
     const create = screen.getByRole("button", { name: "Create vault" });
     expect(create).toBeDisabled();
     fireEvent.submit(create.closest("form")!);
@@ -207,10 +207,16 @@ describe("CreateVault passphrase help (#69)", () => {
   it("says too short while typing, before the confirmation is filled in", () => {
     renderCreate();
     type("Passphrase", "river");
-    expect(screen.getByRole("alert")).toHaveTextContent("too short");
+    // Shown, and read with the box, but not an alert: that would interrupt a
+    // screen reader at every keystroke.
+    expect(screen.getByText(/too short/)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      /This passphrase is too short/,
+    );
     expect(rule("At least 15 characters")).toHaveAttribute("data-met", "false");
     type("Passphrase", strong);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/too short/)).not.toBeInTheDocument();
     expect(rule("At least 15 characters")).toHaveAttribute("data-met", "true");
     expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
       /At least 15 characters\s*, done/,

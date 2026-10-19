@@ -234,7 +234,11 @@ export function CreateVault({
               required
               type={shown ? "text" : "password"}
               autoComplete={shown ? "off" : "new-password"}
-              aria-describedby="passphrase-rules"
+              aria-describedby={
+                passphrase && tooShort
+                  ? "passphrase-rules passphrase-too-short"
+                  : "passphrase-rules"
+              }
               value={passphrase}
               onChange={(e) => {
                 setPassphrase(e.target.value);
@@ -255,9 +259,11 @@ export function CreateVault({
             passphrase={passphrase}
             rules={rules}
           />
-          {/* While typing, not only once the confirmation is filled in. */}
+          {/* While typing, not only once the confirmation is filled in. Not an
+              alert: it would interrupt a screen reader at every keystroke and
+              repeat the checklist. The box is described by it instead. */}
           {passphrase && tooShort && (
-            <p role="alert">
+            <p id="passphrase-too-short">
               This passphrase is too short. Use at least {MIN_PASSPHRASE_CHARS}{" "}
               characters.
             </p>
