@@ -723,3 +723,44 @@ test("print-only recovery paper remains black on white in all app and contrast m
   await expect(kit).toHaveCSS("color", "rgb(0, 0, 0)");
   await expect(kit).toHaveCSS("background-color", "rgb(255, 255, 255)");
 });
+
+// Ben's review (#60): nothing stays light in dark mode. Every main panel, on
+// every section, has a dark background; accents (the primary button, chips)
+// are not panels and may be light.
+test("dark mode has no light panels on any section", async ({ page }, info) => {
+  await fakeVault(page, info.project.name === "phone" ? "ios" : "windows");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  const light: string[] = [];
+  for (const where of ["preferences", "security", "records"] as const) {
+    await section(page, info, where);
+    light.push(
+      ...(await page.evaluate((where) => {
+        const luminance = (colour: string) => {
+          const [r, g, b, a = 1] = colour.match(/[\d.]+/g)!.map(Number);
+          if (a === 0) return null;
+          const [R, G, B] = [r, g, b].map((v) => {
+            const c = v / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+        };
+        return Array.from(
+          document.querySelectorAll<HTMLElement>(
+            ".app-window, .titlebar, .sidebar, .app-body, main, .library-main, .setting-row, .filelist, .file-row, .file-head, [role=dialog], .mobile-section-picker",
+          ),
+        )
+          .filter((panel) => panel.checkVisibility())
+          .filter((panel) => {
+            const value = luminance(getComputedStyle(panel).backgroundColor);
+            return value !== null && value > 0.4;
+          })
+          .map(
+            (panel) =>
+              `${where}: ${panel.tagName.toLowerCase()}.${String(panel.className)} ${getComputedStyle(panel).backgroundColor}`,
+          );
+      }, where)),
+    );
+  }
+  expect(light).toEqual([]);
+});
