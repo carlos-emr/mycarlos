@@ -6,10 +6,18 @@ import imaging from "./fixtures/imaging-report.txt?raw";
 import lab from "./fixtures/lab-report.txt?raw";
 import referral from "./fixtures/referral-letter.txt?raw";
 import quebec from "./fixtures/quebec-referral.txt?raw";
+import hospital from "./fixtures/hospital-header.txt?raw";
 
 // #72. Synthetic documents only: FAKE names, 555-01xx numbers, example.com
 // addresses, made-up card and record numbers.
-const knownNames = ["Avery Example", "Jordan Example", "Renée Côté"];
+// "Maggie Notreal" is a profile name that is not the legal name in her
+// hospital's header (#80 review).
+const knownNames = [
+  "Avery Example",
+  "Jordan Example",
+  "Renée Côté",
+  "Maggie Notreal",
+];
 const run = (text: string) =>
   deidentify(text, { knownNames, dateShiftDays: 10 });
 
@@ -157,6 +165,35 @@ const documents = [
       "médecin de famille",
     ],
   },
+  {
+    name: "hospital header, surname first and in capitals",
+    text: hospital,
+    gone: [
+      "SAMPLETOWN GENERAL HOSPITAL",
+      "NOTREAL",
+      "MARGARET",
+      "Notreal",
+      "Margaret",
+      "H00099881",
+      "1972-05-09",
+      "O'Sample",
+      "Sean",
+      "MACEXAMPLE",
+      "ROWAN",
+      "613-555-0131",
+      "de la Testa",
+      "Maria",
+      "Testcase",
+      "Quinn",
+    ],
+    kept: [
+      "DIAGNOSTIC IMAGING REPORT",
+      "MRN: ",
+      "Tel: ",
+      "Exam: Ultrasound abdomen",
+      "Normal liver echotexture. No gallstones.",
+    ],
+  },
 ];
 
 const kinds = (removed: Removed[]) => new Set(removed.map((part) => part.kind));
@@ -168,7 +205,9 @@ describe("the name remover (#72)", () => {
       for (const detail of gone)
         expect(result.toSend, detail).not.toContain(detail);
       // Nor any word of a profile name, in any case.
-      expect(result.toSend).not.toMatch(/avery|jordan|\bexample\b|renée|côté/i);
+      expect(result.toSend).not.toMatch(
+        /avery|jordan|\bexample\b|renée|côté|maggie|notreal/i,
+      );
       for (const clinical of kept) expect(result.toSend).toContain(clinical);
     });
 
@@ -287,6 +326,80 @@ describe("the name remover (#72)", () => {
     expect(out("CT Imaging shows no mass. Diagnostic Imaging reviewed.")).toBe(
       "CT Imaging shows no mass. Diagnostic Imaging reviewed.",
     );
+  });
+
+  it("takes the whole name after a label, surname first or in capitals (#80 review)", () => {
+    // The profile name is not the legal name, so only the label finds it.
+    const out = (text: string, names = ["Maggie Notreal"]) =>
+      deidentify(text, { knownNames: names, dateShiftDays: 40 }).toSend;
+    for (const [text, sent] of [
+      ["Patient: Notreal, Margaret", "Patient: [NAME 1]"],
+      ["PATIENT: NOTREAL, MARGARET", "PATIENT: [NAME 1]"],
+      ["PATIENT: MARGARET NOTREAL", "PATIENT: [NAME 1]"],
+      ["Patient Name: Notreal, Margaret A.", "Patient Name: [NAME 1]."],
+      ["Nom : Notreal, Marie-Ève", "Nom : [NAME 1]"],
+      ["Pt: Margaret Notreal", "Pt: [NAME 1]"],
+      ["Patient - Margaret Notreal", "Patient - [NAME 1]"],
+      // The next label on the line is not more of the name.
+      [
+        "RE: NOTREAL, MARGARET  DOB: 1972-05-09",
+        "RE: [NAME 1]  DOB: [DATE OF BIRTH 1]",
+      ],
+      [
+        "Emergency contact: MACEXAMPLE, ROWAN  Tel: 613-555-0131",
+        "Emergency contact: [NAME 1]  Tel: [PHONE 1]",
+      ],
+    ])
+      expect(out(text), text).toBe(sent);
+    // Someone with no profile name: an apostrophe, a Mac, a particle.
+    for (const name of [
+      "O'Sample, Sean",
+      "MacExample, Rowan",
+      "de la Testa, Maria",
+    ])
+      expect(out(`Patient: ${name}`, [])).toBe("Patient: [NAME 1]");
+    // No name follows: a hyphenated word, a subject line, "Not".
+    for (const text of [
+      "Patient-centred care.",
+      "RE: CT CHEST WITH CONTRAST\nChest clear.",
+      "Re: Chest pain",
+      "Patient - Not Applicable",
+    ])
+      expect(out(text, [])).toBe(text);
+  });
+
+  it("takes out clinicians named with initials, in a signature or by their title (#80 review)", () => {
+    const out = (text: string) =>
+      deidentify(text, { knownNames: [], dateShiftDays: 40 }).toSend;
+    expect(out("Dr. J. Testcase reviewed.")).toBe("Dr. [DOCTOR 1] reviewed.");
+    expect(out("cc: Dr. A. Sample; Dr. B. Fakename")).toBe(
+      "cc: Dr. [DOCTOR 1]; Dr. [DOCTOR 2]",
+    );
+    // Surname first: the same doctor as "Dr. Testcase".
+    expect(
+      out("Electronically signed by Testcase, Quinn, MD. Dr. Testcase called."),
+    ).toBe("Electronically signed by [DOCTOR 1], MD. Dr. [DOCTOR 1] called.");
+    expect(out("Jane Notreal, MD\nSigned Morgan Testcase, NP")).toBe(
+      "[DOCTOR 1], MD\nSigned [DOCTOR 2], NP",
+    );
+    expect(out("Nurse Practitioner Jane Notreal saw her.")).toBe(
+      "Nurse Practitioner [NAME 1] saw her.",
+    );
+    // No one is named here.
+    for (const text of [
+      "Referred by Emergency.",
+      "Pharmacist Notes: none. Social Worker Assessment done.",
+      "PLEASE, DO NOT RESUSCITATE.",
+    ])
+      expect(out(text)).toBe(text);
+    // A hospital's header in capitals is a clinic, in English and French.
+    expect(
+      out(
+        "SAMPLETOWN GENERAL HOSPITAL\nCENTRE HOSPITALIER DE FICTIVEVILLE\nDIAGNOSTIC IMAGING",
+      ),
+    ).toBe("[CLINIC 1]\n[CLINIC 2]\nDIAGNOSTIC IMAGING");
+    // A postal code in lower case, without its space.
+    expect(out("Mailing k1a0b1 please")).toBe("Mailing [POSTAL CODE 1] please");
   });
 
   it("removes a name found once wherever else it stands (#72 review)", () => {

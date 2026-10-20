@@ -3,13 +3,15 @@
  * on this device, before any of it could be sent to a cloud model. Nothing
  * here touches the network; it is plain text in, plain text out.
  *
- * It removes names (the patient's profile names, and names after a title or
- * a label such as "Patient:"), health card and record numbers, dates of
- * birth, addresses, postal codes, phone numbers, email addresses, and clinic
- * and doctor names, in English and French. Every other date is shifted by
- * the same number of days, so the gaps between them stay. Each removed detail
- * becomes a placeholder, such as "[NAME 1]", the same one each time the same
- * detail appears.
+ * It removes names (the patient's profile names; names after a title or a
+ * label such as "Patient:", in any case and surname first too, "OKAFOR,
+ * MARGARET A."; clinicians with initials, in a "signed by" line, before
+ * credentials such as "MD", or after a title such as "Nurse Practitioner"),
+ * health card and record numbers, dates of birth, addresses, postal codes,
+ * phone numbers, email addresses, and clinic and doctor names, in English and
+ * French. Every other date is shifted by the same number of days, so the gaps
+ * between them stay. Each removed detail becomes a placeholder, such as
+ * "[NAME 1]", the same one each time the same detail appears.
  *
  * It is rules, not understanding: a rare condition, an unusual job or a small
  * town in free text can still point to a person, and a name that never has a
@@ -399,8 +401,71 @@ const PARTICLE =
 const NAME_PART = `(?:[dD]['’])?${NAME_WORD}`;
 const PARTICLES = new Set(PARTICLE.slice(3, -1).split("|"));
 const CAPITALIZED_NAME = `${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){0,3}`;
-// "EXAMPLE, Avery" and "Avery EXAMPLE" both come after a label.
-const LABELLED_NAME = `(?:${UPPER}[\\p{Lu}'’-]+,[ \\t]+${NAME_PART}(?:[ \\t]+${NAME_PART})?|${CAPITALIZED_NAME})`;
+// The particles in any case: "de la Cruz", "De La Cruz", "DE LA CRUZ".
+const PARTICLE_ANY_CASE = `(?:${[...PARTICLES]
+  .flatMap((particle) => [
+    particle,
+    particle[0].toUpperCase() + particle.slice(1),
+    particle.toUpperCase(),
+  ])
+  .join("|")})`;
+// After a label, a word followed by a colon is the next label ("DOB:",
+// "Tel:"), not more of the name.
+const LABEL_PART = `${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
+// Surname first, as lab, imaging and hospital headers have it (#80 review):
+// "Okafor, Margaret A.", "OKAFOR, MARGARET", "de la Cruz, Maria".
+const SURNAME_FIRST = `(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART},[ \\t]+${LABEL_PART}(?:[ \\t]+${LABEL_PART})?(?:[ \\t]+${UPPER}\\.?(?![\\p{L}]))?`;
+// After a label: surname first, or the name as written, in any case
+// ("Avery EXAMPLE", "MARGARET OKAFOR").
+const LABELLED_NAME = `(?:${SURNAME_FIRST}|${LABEL_PART}(?:[ \\t]+(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART}){0,3})`;
+// Initials before a name: "Dr. J. Smith", "cc: Dr. A. Patel" (#80 review).
+const INITIALS = `(?:${UPPER}\\.[ \\t]*)*`;
+// A clinician after a title or a label: initials and a name, or surname
+// first ("Okafor, Margaret").
+const CLINICIAN_NAME = `(?:${SURNAME_FIRST}|${INITIALS}${CAPITALIZED_NAME})`;
+// Credentials after a name: "Jane Doe, MD", "OKAFOR, MARGARET, NP".
+const CREDENTIAL =
+  "(?:MD|M\\.D\\.|NP|RN|RPN|FRCPC|FRCSC|CCFP|PhD|Ph\\.D\\.|PharmD|RPh|MSW|RSW)";
+// Who wrote, signed or sent a document.
+const BY =
+  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté) par)";
+/** Labels as written, With Capitals and IN CAPITALS, longest first. */
+const anyCase = (labels: string[]) =>
+  `(?:${[
+    ...new Set(
+      labels.flatMap((label) => [
+        label,
+        label.replace(
+          /(^|\s)(\p{L})/gu,
+          (_, space, letter) => space + letter.toUpperCase(),
+        ),
+        label.toUpperCase(),
+      ]),
+    ),
+  ]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join("|")})`;
+// The labels a person's name follows. A dash needs a space before it, so
+// "Patient-centred" is no label.
+const NAME_LABEL = `${anyCase([
+  "Patient name",
+  "Patient",
+  "Patiente",
+  "Pt",
+  "Name",
+  "Nom",
+  "Re",
+  "Next of kin",
+  "Emergency contact",
+  "Contact",
+  "Spouse",
+  "Parent",
+  "Guardian",
+  "Conjoint",
+  "Conjointe",
+  "Personne à contacter",
+])}(?:[ \\t]*:|[ \\t]+[-–—])`;
 
 const PROVINCES =
   "(?:ON|BC|QC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU|Ontario|British Columbia|Colombie-Britannique|Qu[eé]bec|Alberta|Manitoba|Saskatchewan|Nova Scotia|Nouvelle-[ÉE]cosse|New Brunswick|Nouveau-Brunswick|Newfoundland and Labrador|Terre-Neuve-et-Labrador|Prince Edward Island|[ÎI]le-du-Prince-[ÉE]douard|Yukon|Northwest Territories|Territoires du Nord-Ouest|Nunavut)";
@@ -434,8 +499,24 @@ const FRENCH_STREET_TYPE = `(?:${[
   .map(either)
   .join("|")})`;
 const UNIT = `(?:,?[ \\t]*(?:Unit|Apt\\.?|Apartment|Suite|app\\.?|apt\\.?|appartement|bureau|unité|local|#)[ \\t]*[\\w-]+)?`;
-const CLINIC_WORDS =
-  "(?:Family Health Team|Family Practice|Medical Clinic|Medical Centre|Medical Center|Health Centre|Health Center|Health Sciences Centre|Clinic|Hospital|Laboratories|Laboratory|Imaging|Diagnostics|Pharmacy)";
+// In any case: a hospital's header is often in capitals (#80 review).
+const CLINIC_WORDS = anyCase([
+  "Family Health Team",
+  "Family Practice",
+  "Medical Clinic",
+  "Medical Centre",
+  "Medical Center",
+  "Health Centre",
+  "Health Center",
+  "Health Sciences Centre",
+  "Clinic",
+  "Hospital",
+  "Laboratories",
+  "Laboratory",
+  "Imaging",
+  "Diagnostics",
+  "Pharmacy",
+]);
 // Words that, alone before a clinic word, make a heading, not a name.
 const GENERIC_BEFORE_CLINIC = new Set([
   "diagnostic",
@@ -529,6 +610,38 @@ const NOT_NAMES = new Set([
   "assessment",
   "request",
   "report",
+  "notes",
+  "note",
+  // A subject line, often in capitals after "RE:": "RE: CT CHEST".
+  "ct",
+  "mri",
+  "pet",
+  "x-ray",
+  "xray",
+  "ultrasound",
+  "echo",
+  "ecg",
+  "ekg",
+  "eeg",
+  "emg",
+  "mammogram",
+  "mammography",
+  "left",
+  "right",
+  "bilateral",
+  "chest",
+  "abdomen",
+  "abdominal",
+  "pelvis",
+  "pelvic",
+  "head",
+  "neck",
+  "knee",
+  "hip",
+  "shoulder",
+  "spine",
+  "lumbar",
+  "cervical",
   "update",
   "appointment",
   "discharge",
@@ -670,7 +783,7 @@ const RULES: Rule[] = [
   {
     kind: "postalCode",
     pattern:
-      /\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b/g,
+      /\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b/gi,
   },
   {
     kind: "postalCode",
@@ -721,14 +834,14 @@ const RULES: Rule[] = [
     // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Hôpital|Clinique|Centre hospitalier|Centre de santé|CLSC|CHSLD|Pharmacie|Laboratoire)(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
+      `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
       "gu",
     ),
   },
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dre|Doctor|Docteur|Docteure)\\.?[ \\t]+(${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dre|Doctor|Docteur|Docteure)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -736,7 +849,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Mme|Mlle)\\.?|M\\.)[ \\t]+(${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Mme|Mlle)\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -744,7 +857,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Patient(?: name)?|Patiente|Name|Nom|Re|Next of kin|Emergency contact|Contact|Spouse|Parent|Guardian|Conjointe?|Personne à contacter)[ \\t]*:[ \\t]*(${LABELLED_NAME})`,
+      `(?<![\\p{L}])${NAME_LABEL}[ \\t]*(${LABELLED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -752,7 +865,37 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:[Rr]eferred by|[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ee]lectronically signed by|[Rr]eported by|[Ff]amily doctor|cc|CC|[Cc]opy to|[Mm]édecin traitant|[Rr]éféré par|[Ss]igné par)[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ff]amily doctor|cc|CC|[Cc]opy to|[Mm]édecin traitant|${BY})[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CLINICIAN_NAME})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // "Electronically signed by Okafor, Margaret, MD" (#80 review). Without a
+  // colon, only a name of two words or more, or surname first: "Referred by
+  // Emergency" names no one. "By Dr. …" is the title rule's.
+  {
+    kind: "doctor",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${BY}[ \\t]+(${SURNAME_FIRST}|${INITIALS}${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A name with credentials after it: "Jane Doe, MD" (#80 review). Two
+  // words, so a word before the name ("Signed Jane Doe, MD") stays.
+  {
+    kind: "doctor",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(${SURNAME_FIRST}|${NAME_PART}(?:[ \\t]+${UPPER}\\.)?[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}),?[ \\t]+${CREDENTIAL}(?![\\p{L}])`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // Other clinicians by their title: "Nurse Practitioner Jane Doe".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Nurse [Pp]ractitioner|Nurse|Dietitian|Dietician|Pharmacist|Physiotherapist|Physical [Tt]herapist|Occupational [Tt]herapist|Social [Ww]orker|Midwife|Infirmière|Infirmier|Pharmacienne|Pharmacien|Physiothérapeute|Ergothérapeute|Nutritionniste|Diététiste|Travailleuse sociale|Travailleur social|Sage-femme)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -895,8 +1038,12 @@ function otherPlaces(
     const lower = words.map((word) => word.toLowerCase());
     let group: string;
     if (finding.kind === "doctor") {
-      // A doctor by surname, as the placeholders have it.
-      const parts = whole.toLowerCase().split(/\s+/);
+      // A doctor by surname, as the placeholders have it: the last word, or
+      // before a comma when the surname comes first.
+      const surname = whole.includes(",")
+        ? whole.slice(0, whole.indexOf(","))
+        : whole;
+      const parts = surname.toLowerCase().trim().split(/\s+/);
       group = parts[parts.length - 1];
     } else {
       group =
