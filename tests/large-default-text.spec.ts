@@ -109,8 +109,10 @@ test("unlocking and restoring fit their window at 200% default text, with full-s
       ),
     )
       .filter((input) => input.checkVisibility())
-      .map((input) => Math.round(input.getBoundingClientRect().width))
-      .filter((width) => width < 12),
+      .map((input) => input.getBoundingClientRect().width)
+      // Compared unrounded, so 11.6px is squeezed too; shown to 0.1px.
+      .filter((width) => width < 12)
+      .map((width) => Math.round(width * 10) / 10),
   );
   expect(squeezed, "tick boxes or radio buttons squeezed").toEqual([]);
 });
