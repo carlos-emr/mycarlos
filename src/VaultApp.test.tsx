@@ -107,6 +107,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     pickExportDestination: vi.fn().mockResolvedValue(null),
     exportToPicked: vi.fn().mockResolvedValue(undefined),
+    savePhoto: vi
+      .fn()
+      .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
+    isPhoto: vi.fn().mockResolvedValue(false),
+    viewPhoto: vi
+      .fn()
+      .mockRejectedValue({ code: "not_a_photo", message: "FAKE not a photo." }),
     deleteRecord: vi.fn().mockResolvedValue(undefined),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
@@ -5655,7 +5662,7 @@ describe("durable vault UI", () => {
     const results = await axe.run(dialog, {
       runOnly: {
         type: "tag",
-        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
       },
     });
     expect(results.violations).toEqual([]);
@@ -5824,7 +5831,7 @@ describe("durable vault UI", () => {
     const axeOptions = {
       runOnly: {
         type: "tag" as const,
-        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
       },
     };
     const locked = render(<VaultApp bridge={nativeBridge()} />);

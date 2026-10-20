@@ -920,6 +920,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         sizesIn1024s={platform === "windows"}
+        cameraPlatform={DESKTOP_PLATFORMS.has(platform) ? platform : null}
         covered={lockWarning !== null}
       />
       {lockWarning !== null && (
