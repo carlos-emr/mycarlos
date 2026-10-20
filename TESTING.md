@@ -213,8 +213,9 @@ someone listening to it. These checks need a person. Each screen reader below is
 but NVDA are built in.
 
 Two browser tests go part of the way first, in Chromium with a synthetic vault:
-`tests/keyboard-walk.spec.ts` uses only the keyboard through first setup, unlocking, the library
-and Settings (every control reached in order, focus shown, no traps, Escape closes dialogs), and
+`tests/keyboard-walk.spec.ts` uses only the keyboard through first setup, unlocking, the library,
+Settings and the lock warning (every control reached in order, focus shown, no traps, Escape
+closes dialogs), and
 `tests/screen-reader-smoke.spec.ts` checks that controls have names, headings go in order and the
 key events are read out. Problems they find are listed with `test.fail` and an issue number. They
 are not a screen reader: the steps below still apply.

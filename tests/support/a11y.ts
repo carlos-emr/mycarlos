@@ -637,17 +637,25 @@ async function focusShown(page: Page): Promise<boolean> {
     height: Math.min(viewport.height, Math.ceil(box.y + box.height + pad)) - y,
   };
   if (clip.width <= 0 || clip.height <= 0) return false;
-  const focused = await page.screenshot({ clip, animations: "disabled" });
-  await page.evaluate(() => {
-    const element = document.activeElement as HTMLElement;
-    Reflect.set(window, "__walkBlurred", element);
-    element.blur();
-  });
-  const plain = await page.screenshot({ clip, animations: "disabled" });
-  await page.evaluate(() =>
-    (Reflect.get(window, "__walkBlurred") as HTMLElement).focus(),
-  );
-  return !focused.equals(plain);
+  const pair = async () => {
+    const focused = await page.screenshot({ clip, animations: "disabled" });
+    await page.evaluate(() => {
+      const element = document.activeElement as HTMLElement;
+      Reflect.set(window, "__walkBlurred", element);
+      element.blur();
+    });
+    const plain = await page.screenshot({ clip, animations: "disabled" });
+    await page.evaluate(() =>
+      (Reflect.get(window, "__walkBlurred") as HTMLElement).focus(),
+    );
+    return !focused.equals(plain);
+  };
+  if (await pair()) return true;
+  // The same pixels both times can be a page that had not drawn the change
+  // yet, on a busy machine. Look again after a moment of real time: waiting
+  // for animation frames would hang under page.clock, which fakes them.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  return pair();
 }
 
 /**

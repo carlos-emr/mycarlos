@@ -10,12 +10,11 @@ import {
 // Screen-reader smoke (#70 step 3): on each vault screen and dialog, axe finds
 // nothing, every control has a name in the browser's accessibility tree, and
 // the headings go down in order (screenReaderSmoke in support/a11y.ts); and
-// the key events are read out: unlocking, locking, files arriving by import,
-// and moves. This stands in for a person with NVDA or VoiceOver only as far
+// the key events are read out: unlocking, the lock warning, locking, files
+// arriving by import, and moves. This stands in for a person with NVDA or VoiceOver only as far
 // as a browser can tell; the hands-on review in TESTING.md still applies.
 //
-// Not covered yet: "Shared with me" (#61) and the lock warning (#77), which
-// are not on main.
+// Not covered yet: "Shared with me" (#61), which is not on main.
 
 test.beforeEach(({}, testInfo) => {
   test.skip(
@@ -159,11 +158,11 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
   await expectOnlyFakedCommands(page);
 });
 
-// FINDING-SEARCH: typing in the search box changes what is listed and the
+// #92: typing in the search box changes what is listed and the
 // count above it ("… in this location", or "No matching records"), but none
 // of it is a status message, so a screen reader is not told (WCAG 4.1.3).
-test("a search's result is read out (FINDING-SEARCH)", async ({ page }) => {
-  test.fail(true, "FINDING-SEARCH: search results are not announced");
+test("a search's result is read out (#92)", async ({ page }) => {
+  test.fail(true, "#92: search results are not read out");
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
@@ -174,4 +173,37 @@ test("a search's result is read out (FINDING-SEARCH)", async ({ page }) => {
   await search.fill("FAKE nothing like this");
   await expect(page.getByText("No matching records")).toBeVisible();
   await expectAnnounced(page, "No matching records");
+});
+
+test("the lock warning is named, read once, and the lock says why", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+  await page.clock.runFor(4.5 * 60 * 1000 + 1000);
+  const warning = page.getByRole("alertdialog", {
+    name: "myCarlos will lock in 30 seconds to keep your records private.",
+  });
+  await expect(warning).toBeVisible();
+  await expect(warning).toHaveAccessibleDescription(
+    "To keep it open, press Keep open, or any key.",
+  );
+  await screenReaderSmoke(page, "lock warning", warning);
+  // The heading counts down on screen only; a status says once that 10
+  // seconds are left.
+  await page.clock.runFor(21 * 1000);
+  await expectAnnounced(page, "10 seconds left.");
+  await expect(warning).toHaveAccessibleName(
+    "myCarlos will lock in 30 seconds to keep your records private.",
+  );
+  await page.clock.runFor(10 * 1000);
+  const passphrase = page.getByLabel("Passphrase", { exact: true });
+  await expect(passphrase).toBeFocused();
+  await expect(passphrase).toHaveAccessibleDescription(
+    /Locked after 5 minutes without use\./,
+  );
+  await expectOnlyFakedCommands(page);
 });

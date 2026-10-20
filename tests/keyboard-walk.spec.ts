@@ -16,8 +16,7 @@ import {
 // all the way round (walk() in support/a11y.ts). Dialogs keep focus inside,
 // and Escape closes them and gives focus back. The native side is faked.
 //
-// Not covered yet: "Shared with me" (#61) and the lock warning (#77), which
-// are not on main.
+// Not covered yet: "Shared with me" (#61), which is not on main.
 
 test.beforeEach(({}, testInfo) => {
   test.skip(
@@ -240,15 +239,15 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expectOnlyFakedCommands(page);
 });
 
-// FINDING-FOCUS: a control that runs something is disabled while it runs, and
+// #90: a control that runs something is disabled while it runs, and
 // a focused control that is disabled loses the focus to the page itself;
 // nothing puts it back. A new screen or location (after unlocking, opening a
 // folder, or closing details whose document has moved away) also leaves it
 // on the page. Each place is checked, so the failure lists them all.
-test("focus is never left on the page itself after an action (FINDING-FOCUS)", async ({
+test("focus is never left on the page itself after an action (#90)", async ({
   page,
 }) => {
-  test.fail(true, "FINDING-FOCUS: focus is lost after these actions");
+  test.fail(true, "#90: focus is left on the page after these actions");
   await fakeVault(page, "locked");
   await page.goto("/");
   const lostAfter: string[] = [];
@@ -314,18 +313,19 @@ test("focus is never left on the page itself after an action (FINDING-FOCUS)", a
     page.getByRole("heading", { name: "FAKE Letters", level: 1 }),
   ).toBeVisible();
   await after("opening a folder");
+
   expect(lostAfter, "focus is left on the page itself after").toEqual([]);
 });
 
-// FINDING-MOVETO: "Move to" in a document's details moves the document as
+// #91: "Move to" in a document's details moves the document as
 // soon as its value changes, and the arrow keys change it one folder at a
 // time; the box is then disabled while the move runs and loses focus. So the
 // first arrow press moves the document into the next folder, and a folder
 // further down cannot be reached from the keyboard.
-test("Move to in a document's details moves it only where the patient chooses (FINDING-MOVETO)", async ({
+test("Move to in a document's details moves it only where the patient chooses (#91)", async ({
   page,
 }) => {
-  test.fail(true, "FINDING-MOVETO: the first arrow press moves the document");
+  test.fail(true, "#91: the first arrow press moves the document");
   await fakeVault(page, "unlocked");
   await page.goto("/");
   await page
@@ -401,10 +401,29 @@ test("locking, by hand or automatically, leaves focus where unlocking starts", a
 
   await page.keyboard.type("FAKE passphrase for the fake");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
-  // Five minutes without the keyboard or the pointer.
+  const search = page.getByRole("searchbox", { name: "Search this location" });
+  await expect(search).toBeVisible();
+  await search.focus();
+
+  // 30 seconds before the automatic lock, a warning takes focus on Keep
+  // open. Any key keeps myCarlos open, Tab too, so there is nothing to walk.
+  const warning = page.getByRole("alertdialog", { name: /will lock in/ });
+  for (const key of ["Escape", "Tab"]) {
+    await page.clock.runFor(4.5 * 60 * 1000 + 1000);
+    await expect(warning).toBeVisible();
+    await expect(
+      warning.getByRole("button", { name: "Keep open" }),
+    ).toBeFocused();
+    await page.keyboard.press(key);
+    await expect(warning, `${key} keeps myCarlos open`).toBeHidden();
+    await expect(search).toBeVisible();
+  }
+
+  // Left alone, it locks, and says why.
   await page.clock.runFor(5 * 60 * 1000 + 1000);
   await expect(passphrase).toBeFocused();
-  await expect(passphrase).toHaveAccessibleDescription(/Vault locked\./);
+  await expect(passphrase).toHaveAccessibleDescription(
+    /Locked after 5 minutes without use\./,
+  );
   await expectOnlyFakedCommands(page);
 });
