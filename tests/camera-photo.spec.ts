@@ -37,24 +37,30 @@ async function fakeVault(page: Page) {
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
         if (command === "vault_save_photo" && args instanceof Uint8Array) {
-          const headers = options?.headers ?? {};
+          // The vault's framing: the target's length, the target, the JPEG.
+          const length = new DataView(args.buffer, args.byteOffset).getUint32(
+            0,
+          );
+          const target = JSON.parse(
+            new TextDecoder().decode(args.slice(4, 4 + length)),
+          );
+          const jpeg = args.slice(4 + length);
           let binary = "";
-          for (const byte of args) binary += String.fromCharCode(byte);
+          for (const byte of jpeg) binary += String.fromCharCode(byte);
           photoUrl = `data:image/jpeg;base64,${btoa(binary)}`;
           Reflect.set(window, "__savedPhoto", {
-            start: Array.from(args.slice(0, 3)),
-            headers,
+            start: Array.from(jpeg.slice(0, 3)),
+            target,
+            headers: options?.headers ?? null,
           });
           snapshot.records.push({
             id: "photo",
-            profileId: headers["Mycarlos-Profile-Id"],
-            folderIds: headers["Mycarlos-Folder-Ids"]
-              ? headers["Mycarlos-Folder-Ids"].split(",")
-              : [],
-            displayName: decodeURIComponent(headers["Mycarlos-Photo-Name"]),
+            profileId: target.profileId,
+            folderIds: target.folderIds,
+            displayName: target.name,
             sourceLabel: "Manual import — unverified",
             mediaType: "application/octet-stream",
-            plaintextSize: args.length,
+            plaintextSize: jpeg.length,
             importedAtMs: Date.now(),
             available: true,
           });
@@ -112,8 +118,13 @@ test("takes a photo with the camera, saves it and shows it", async ({
   );
   const saved = await page.evaluate(() => Reflect.get(window, "__savedPhoto"));
   expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
-  expect(saved.headers["Mycarlos-Profile-Id"]).toBe("profile");
-  expect(saved.headers["Mycarlos-Folder-Ids"]).toBe("");
+  expect(saved.target).toEqual({
+    profileId: "profile",
+    folderIds: [],
+    name: expect.stringMatching(/^Photo, .+\.jpg$/),
+  });
+  // Nothing rides in custom headers, which WebView2 does not pass on.
+  expect(saved.headers).toBeNull();
 
   await details.getByRole("button", { name: "View photo" }).click();
   const viewer = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
