@@ -1617,7 +1617,16 @@ mod tests {
     /// output.
     #[cfg(desktop)]
     fn run_as_helper(name: &str, input: &[u8]) -> (Option<i32>, String) {
-        let (code, output) = talk(helper_running(name), input.to_vec()).unwrap();
+        #[allow(unused_mut)]
+        let mut command = helper_running(name);
+        // Windows cannot make a socket at all without SystemRoot (myCarlos's helper gets no
+        // environment). Given it, as the control child has it, a refused connection is the
+        // AppContainer's doing.
+        #[cfg(windows)]
+        if let Some(root) = std::env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
+        let (code, output) = talk(command, input.to_vec()).unwrap();
         (code, String::from_utf8_lossy(&output).into_owned())
     }
 
