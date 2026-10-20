@@ -1012,6 +1012,11 @@ mod confine {
         Ok((helper, input, output))
     }
 
+    /// What the helper's LOCALAPPDATA says before Windows adds its AppContainer's folder names:
+    /// a folder that does not exist.
+    #[cfg(windows)]
+    const NO_FOLDER: &str = "C:\\mycarlos-none";
+
     /// Creates the helper suspended, as `start` describes.
     #[cfg(windows)]
     fn create_suspended(
@@ -1047,17 +1052,28 @@ mod confine {
             push_argument(&mut line, argument);
         }
         line.push(0);
-        // Each "name=value" ends with a NUL, and the block with another; empty, it is two NULs.
-        let mut environment = Vec::new();
-        for (name, value) in command.get_envs() {
-            if let Some(value) = value {
-                environment.extend(name.encode_wide());
-                environment.push(u16::from(b'='));
-                environment.extend(value.encode_wide());
-                environment.push(0);
-            }
+        // Windows makes an AppContainer's own folders (LOCALAPPDATA, TEMP, TMP) from LOCALAPPDATA
+        // as it starts it, and without it refuses to (ERROR_ENVVAR_NOT_FOUND). A placeholder is
+        // enough, so the helper is told no folder of the user's: it gets only "C:\mycarlos-none"
+        // with its AppContainer's folder names after it, which name nothing (it writes no file).
+        let mut variables: Vec<(std::ffi::OsString, std::ffi::OsString)> = command
+            .get_envs()
+            .filter_map(|(name, value)| Some((name.to_owned(), value?.to_owned())))
+            .collect();
+        if !variables
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("LOCALAPPDATA"))
+        {
+            variables.push(("LOCALAPPDATA".into(), NO_FOLDER.into()));
         }
-        if environment.is_empty() {
+        // Sorted by name, ignoring case, as Windows expects. Each "name=value" ends with a NUL,
+        // and the block with another.
+        variables.sort_by_key(|(name, _)| name.to_string_lossy().to_uppercase());
+        let mut environment = Vec::new();
+        for (name, value) in &variables {
+            environment.extend(name.encode_wide());
+            environment.push(u16::from(b'='));
+            environment.extend(value.encode_wide());
             environment.push(0);
         }
         environment.push(0);
@@ -1948,83 +1964,31 @@ mod tests {
         }
     }
 
-    /// For diagnosis (#63): Windows fills in an AppContainer's own folders in its environment
-    /// when it starts it, and an empty environment block fails with ERROR_ENVVAR_NOT_FOUND.
-    /// This starts the helper in its AppContainer with several blocks, and writes which start
-    /// and the environment each child got, to the CI log. It fails only if none starts.
+    /// Started as myCarlos starts the helper (no environment of its own), the helper gets only
+    /// its AppContainer's folders, made from a placeholder: no folder or other variable of the
+    /// user's.
     #[cfg(windows)]
     #[test]
-    fn which_environment_an_app_container_start_needs() {
-        let real = |name: &str| (name.to_owned(), std::env::var_os(name).unwrap_or_default());
-        let placeholder = |name: &str| {
-            (
-                name.to_owned(),
-                std::ffi::OsString::from("C:\\mycarlos-none"),
-            )
-        };
-        let mut sets: Vec<(&str, Vec<(String, std::ffi::OsString)>)> = vec![
-            ("empty", vec![]),
-            ("SystemRoot", vec![real("SystemRoot")]),
-            ("LOCALAPPDATA", vec![real("LOCALAPPDATA")]),
-            ("USERPROFILE", vec![real("USERPROFILE")]),
-            ("TEMP+TMP", vec![real("TEMP"), real("TMP")]),
-            (
-                "LOCALAPPDATA+TEMP+TMP",
-                vec![real("LOCALAPPDATA"), real("TEMP"), real("TMP")],
-            ),
-            (
-                "placeholder LOCALAPPDATA+TEMP+TMP",
-                vec![
-                    placeholder("LOCALAPPDATA"),
-                    placeholder("TEMP"),
-                    placeholder("TMP"),
-                ],
-            ),
-            (
-                "placeholder USERPROFILE+LOCALAPPDATA+APPDATA+TEMP+TMP",
-                vec![
-                    placeholder("USERPROFILE"),
-                    placeholder("LOCALAPPDATA"),
-                    placeholder("APPDATA"),
-                    placeholder("TEMP"),
-                    placeholder("TMP"),
-                ],
-            ),
-        ];
-        sets.push((
-            "everything",
-            std::env::vars_os()
-                .map(|(name, value)| (name.to_string_lossy().into_owned(), value))
-                .collect(),
-        ));
-        let mut report = String::from("\nAppContainer start by environment block:\n");
-        let mut started = 0;
-        for (label, variables) in sets {
-            let mut command = helper_running("environment_child");
-            for (name, value) in variables {
-                command.env(name, value);
-            }
-            match confine::try_start(command) {
-                Ok((mut helper, input, mut output)) => {
-                    started += 1;
-                    drop(input);
-                    let mut printed = String::new();
-                    let _ = output.read_to_string(&mut printed);
-                    let code = helper.wait();
-                    let got: Vec<&str> = printed
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("env "))
-                        .collect();
-                    report += &format!("- {label}: started, exit {code:?}; child got {got:?}\n");
-                }
-                Err((step, error)) => {
-                    report += &format!("- {label}: {step:?} {:#x}\n", error.code().0);
-                }
-            }
-        }
-        // Past libtest's capture, so that the CI log shows it even when this passes.
-        let _ = io::stderr().write_all(report.as_bytes());
-        assert!(started > 0, "{report}");
+    fn the_helper_is_told_no_folder_of_the_users() {
+        let mut command = helper_running("environment_child");
+        command.env_clear();
+        let (code, output) = talk(command, Vec::new()).unwrap();
+        let printed = String::from_utf8_lossy(&output);
+        assert_eq!(code, Some(0), "{printed}");
+        let mut got: Vec<&str> = printed
+            .lines()
+            .filter_map(|line| line.strip_prefix("env "))
+            .collect();
+        got.sort_unstable();
+        let folder = "C:\\mycarlos-none\\Packages\\mycarlos.pdfhelper\\AC";
+        assert_eq!(
+            got,
+            [
+                format!("LOCALAPPDATA={folder}"),
+                format!("TEMP={folder}\\Temp"),
+                format!("TMP={folder}\\Temp"),
+            ]
+        );
     }
 
     #[cfg(windows)]
