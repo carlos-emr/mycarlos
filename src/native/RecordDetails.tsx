@@ -20,6 +20,8 @@ interface RecordDetailsProps {
   onMove: (folderId: string | null) => Promise<void>;
   onDelete: () => void;
   onExport: () => void;
+  /** Shows the document as a photo; given only when its file is one. */
+  onViewPhoto?: () => void;
 }
 export function RecordDetails({
   record,
@@ -33,6 +35,7 @@ export function RecordDetails({
   onMove,
   onDelete,
   onExport,
+  onViewPhoto,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
   // Choosing in the list only picks a destination; Move moves (#67). In
@@ -156,6 +159,17 @@ export function RecordDetails({
           </div>
         </dl>
         <div className="native-record-rename">
+          {onViewPhoto && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onViewPhoto}
+            >
+              <Icon name="image" />
+              <span>View photo</span>
+            </button>
+          )}
           <button
             className="button"
             type="button"
