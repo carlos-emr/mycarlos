@@ -115,15 +115,22 @@ This is the one install in this guide that builds myCarlos from source. You need
 - the iPhone or iPad and its cable;
 - an Apple ID (a free one is enough).
 
-The first time takes an hour or more, mostly downloads. These steps have not been tried on a real
-device yet, so please [report](#report-what-you-find) anything that differs.
+The first time takes an hour or more, mostly downloads. As with every build here, use only the FAKE
+sample files and a made-up passphrase. These steps have not been tried on a real device yet: if one
+fails or looks different, [report it](#report-what-you-find) with the last lines Terminal printed.
+
+**About Terminal.** Several steps use **Terminal**, the Mac's built-in app for typing commands
+(press Command-Space, type `Terminal`, press Return; it is also in Applications → Utilities). To
+run a command, copy it from this page, click in the Terminal window, paste with Command-V and press
+Return. A command is finished when the line ending in `%` comes back; wait for that before the
+next one. Lots of scrolling text is normal. A command that asks for your password shows nothing as
+you type: type it anyway and press Return.
 
 **Once, on the Mac:**
 
 1. Install **Xcode** from the App Store (a large download) and open it. Agree to the licence, and
    when it asks which platforms to add, include **iOS**.
-2. Open Terminal (press Command-Space, type `Terminal`, press Return). Paste these lines one at a
-   time, pressing Return after each and waiting for it to finish:
+2. In Terminal, run these one at a time:
 
    ```bash
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -131,15 +138,17 @@ device yet, so please [report](#report-what-you-find) anything that differs.
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
 
-   Homebrew asks for your Mac's password (nothing shows as you type) and for Return to continue.
-   If it ends with **Next steps** (commands that add `brew` to your PATH), run those before the
-   second line. When the Rust installer asks, choose the default. Then quit Terminal, open it
-   again, and run `xcode-select -p`. If the answer doesn't end in `Xcode.app/Contents/Developer`,
-   run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+   - The first one (Homebrew) asks for your Mac's password and for Return to continue. If it ends
+     with **Next steps** (commands that add `brew` to your PATH), run those before the second line.
+   - The last one (Rust) asks how to install: press Return for the default.
+
+   Then quit Terminal (Command-Q), open it again, and run `xcode-select -p`. If the answer doesn't
+   end in `Xcode.app/Contents/Developer`, run
+   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (it asks for your password).
 3. In Xcode, choose **Xcode → Settings → Accounts**, press **+** and sign in with your Apple ID.
    Select the team marked **(Personal Team)**, press **Manage Certificates…**, then
    **+ → Apple Development**, and close the window.
-4. Download myCarlos and its packages (into a `mycarlos` folder in your home folder):
+4. In Terminal, download myCarlos and its packages (into a `mycarlos` folder in your home folder):
 
    ```bash
    git clone https://github.com/carlos-emr/mycarlos.git
@@ -157,11 +166,12 @@ device yet, so please [report](#report-what-you-find) anything that differs.
    echo "$APPLE_DEVELOPMENT_TEAM"
    ```
 
-   It should print a 10-character code. If it prints nothing, repeat step 3. The first time, also
-   run `npm run tauri ios init` to create the iPhone project; it may install a few more tools.
+   It should print a 10-character code. If it prints nothing, repeat step 3. This setting lasts
+   only until that Terminal window closes. The first time, also run `npm run tauri ios init` to
+   create the iPhone project; it may install a few more tools.
 6. Plug in the phone, tap **Trust** on it and enter its passcode. The first time:
-   - Xcode may spend a few minutes preparing the phone (**Window → Devices and Simulators** shows
-     the progress);
+   - Xcode may spend a few minutes preparing the phone (**Window → Devices and Simulators** in Xcode
+     shows the progress);
    - on iOS 16 or later, turn on **Settings → Privacy & Security → Developer Mode**. The phone
      restarts and asks you to confirm. If the switch is missing, open **Window → Devices and
      Simulators** in Xcode with the phone plugged in, then look again.
@@ -171,14 +181,16 @@ device yet, so please [report](#report-what-you-find) anything that differs.
    npm run tauri ios run
    ```
 
-   The first build takes a while. Keep the phone unlocked. If it asks which device to use, pick the
-   phone, not a Simulator (or add its name: `npm run tauri ios run "My iPhone"`). If the Mac asks
-   for your password to sign the app, enter it and choose **Always Allow**. The first time, the
+   The first build takes a while; keep the phone unlocked. If Terminal lists devices and asks
+   which one, type the phone's number (not a Simulator's) and press Return. If the Mac asks for
+   your password to sign the app, enter it and choose **Always Allow**. The first time, the
    install works but the app won't open yet: do step 8, then run this step again.
 8. On the phone, go to **Settings → General → VPN & Device Management**, tap **Apple Development:
-   (your Apple ID)** under **Developer App**, and tap **Trust**.
+   (your Apple ID)** under **Developer App**, and tap **Trust**. Then open **myCarlos Evaluation**.
 
-For sample files, AirDrop the PDFs in the `dev-data` folder to the phone and save them to Files.
+**Sample files:** in Finder, choose **Go → Home**, open **mycarlos → dev-data**, select the PDFs and
+AirDrop them to the phone (right-click → **Share → AirDrop**). On the phone, save them to the Files
+app. Then follow [What to try](#what-to-try).
 
 Good to know:
 
