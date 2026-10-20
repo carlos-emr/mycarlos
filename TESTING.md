@@ -108,29 +108,17 @@ install over it; each build may be signed with a different debug key. Uninstalli
 
 ### iPhone or iPad (build it on a Mac)
 
-This is the one install in this guide that builds myCarlos from source. You need:
-
-- a Mac that can run the current Xcode (the App Store says if yours can't), with about 40 GB of
-  free storage;
-- the iPhone or iPad and its cable;
-- an Apple ID (a free one is enough).
-
-The first time takes an hour or more, mostly downloads. As with every build here, use only the FAKE
-sample files and a made-up passphrase. These steps have not been tried on a real device yet: if one
-fails or looks different, [report it](#report-what-you-find) with the last lines Terminal printed.
-
-**About Terminal.** Several steps use **Terminal**, the Mac's built-in app for typing commands
-(press Command-Space, type `Terminal`, press Return; it is also in Applications → Utilities). To
-run a command, copy it from this page, click in the Terminal window, paste with Command-V and press
-Return. A command is finished when the line ending in `%` comes back; wait for that before the
-next one. Lots of scrolling text is normal. A command that asks for your password shows nothing as
-you type: type it anyway and press Return.
+This is the one install in this guide that builds myCarlos from source. You need a Mac that can
+run the current Xcode, with about 40 GB of free storage; the iPhone or iPad and its cable; and an
+Apple ID (a free one is enough). The first time takes an hour or more, mostly downloads. These
+steps have not been tried on a real device yet: if one fails, [report it](#report-what-you-find)
+with the last lines of output.
 
 **Once, on the Mac:**
 
-1. Install **Xcode** from the App Store (a large download) and open it. Agree to the licence, and
-   when it asks which platforms to add, include **iOS**.
-2. In Terminal, run these one at a time:
+1. Install **Xcode** from the App Store and open it. Agree to the licence, and when it asks which
+   platforms to add, include **iOS**.
+2. In Terminal, install Homebrew, Node, CocoaPods and Rust:
 
    ```bash
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -138,73 +126,60 @@ you type: type it anyway and press Return.
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
 
-   - The first one (Homebrew) asks for your Mac's password and for Return to continue. If it ends
-     with **Next steps** (commands that add `brew` to your PATH), run those before the second line.
-   - The last one (Rust) asks how to install: press Return for the default.
-
-   Then quit Terminal (Command-Q), open it again, and run `xcode-select -p`. If the answer doesn't
-   end in `Xcode.app/Contents/Developer`, run
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (it asks for your password).
+   If Homebrew ends with **Next steps** (adding `brew` to your PATH), run those before the second
+   line; take Rust's default install. Then open a new Terminal window and check that
+   `xcode-select -p` ends in `Xcode.app/Contents/Developer`. If it doesn't, run
+   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
 3. In Xcode, choose **Xcode → Settings → Accounts**, press **+** and sign in with your Apple ID.
    Select the team marked **(Personal Team)**, press **Manage Certificates…**, then
-   **+ → Apple Development**, and close the window.
-4. In Terminal, download myCarlos and its packages (into a `mycarlos` folder in your home folder):
+   **+ → Apple Development**.
+4. Get the code:
 
    ```bash
-   git clone https://github.com/carlos-emr/mycarlos.git
-   cd mycarlos
+   git clone https://github.com/carlos-emr/mycarlos.git ~/mycarlos
+   cd ~/mycarlos
    npm ci
    rustup target add aarch64-apple-ios
    ```
 
-**Each time you install** (open Terminal and run `cd ~/mycarlos` first):
+**Each time you install** (from `~/mycarlos`):
 
-5. Tell the build which Apple team signs it:
+5. Set the signing team. The variable lasts only for that Terminal window. The first time, also
+   create the iPhone project with `npm run tauri ios init`.
 
    ```bash
    export APPLE_DEVELOPMENT_TEAM=$(security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p')
-   echo "$APPLE_DEVELOPMENT_TEAM"
+   echo "$APPLE_DEVELOPMENT_TEAM"   # a 10-character team ID; if empty, redo step 3
    ```
 
-   It should print a 10-character code. If it prints nothing, repeat step 3. This setting lasts
-   only until that Terminal window closes. The first time, also run `npm run tauri ios init` to
-   create the iPhone project; it may install a few more tools.
-6. Plug in the phone, tap **Trust** on it and enter its passcode. The first time:
-   - Xcode may spend a few minutes preparing the phone (**Window → Devices and Simulators** in Xcode
-     shows the progress);
-   - on iOS 16 or later, turn on **Settings → Privacy & Security → Developer Mode**. The phone
-     restarts and asks you to confirm. If the switch is missing, open **Window → Devices and
-     Simulators** in Xcode with the phone plugged in, then look again.
-7. Build and install it:
+6. Plug in the phone, tap **Trust** and enter its passcode. The first time, Xcode may take a few
+   minutes preparing it (**Window → Devices and Simulators**), and on iOS 16 or later you must turn
+   on **Settings → Privacy & Security → Developer Mode** (the phone restarts). If that switch is
+   missing, open the Devices window in Xcode with the phone connected, then look again.
+7. Build and install, with the phone unlocked:
 
    ```bash
    npm run tauri ios run
    ```
 
-   The first build takes a while; keep the phone unlocked. If Terminal lists devices and asks
-   which one, type the phone's number (not a Simulator's) and press Return. If the Mac asks for
-   your password to sign the app, enter it and choose **Always Allow**. The first time, the
-   install works but the app won't open yet: do step 8, then run this step again.
-8. On the phone, go to **Settings → General → VPN & Device Management**, tap **Apple Development:
-   (your Apple ID)** under **Developer App**, and tap **Trust**. Then open **myCarlos Evaluation**.
+   Pick the phone if it lists devices, and allow the keychain prompt (**Always Allow**). The first
+   time, the app installs but won't open until step 8; then run this step again.
+8. On the phone: **Settings → General → VPN & Device Management → Developer App → Apple
+   Development: (your Apple ID) → Trust**.
 
-**Sample files:** in Finder, choose **Go → Home**, open **mycarlos → dev-data**, select the PDFs and
-AirDrop them to the phone (right-click → **Share → AirDrop**). On the phone, save them to the Files
-app. Then follow [What to try](#what-to-try).
+**Sample files:** AirDrop the FAKE PDFs in `~/mycarlos/dev-data` to the phone, save them to Files,
+then follow [What to try](#what-to-try).
 
 Good to know:
 
-- **Free Apple ID:** the app stops opening after 7 days, and only 3 apps installed this way can be
-  on the phone at once. Repeat steps 5 to 7 to renew it; the vault is kept. A paid Apple Developer
-  account makes it last a year.
-- **A newer version:** in `~/mycarlos`, run `git pull` and `npm ci`, then steps 5 to 7.
-- **Removing it:** delete the app on the phone as usual. Its vault is erased with it.
-- **"Identifier not available":** someone else has registered `ca.carlos.mycarlos`. Change
-  `"identifier"` in `src-tauri/tauri.conf.json` to one of your own (for example
-  `ca.carlos.mycarlos.yourname`), run `npm run tauri ios init` again, and don't commit that change.
-  It installs as a separate app.
-- **Not on phones yet:** locked PDFs, the built-in PDF reader and the camera work only on
-  computers for now.
+- **Free Apple ID:** the app stops opening after 7 days, and at most 3 such apps fit on the phone.
+  Repeat steps 5 to 7 to renew it; the vault is kept. A paid developer account makes it a year.
+- **Updating:** `git pull && npm ci`, then steps 5 to 7.
+- **Removing:** delete the app on the phone; its vault goes with it.
+- **"Identifier not available":** set your own `"identifier"` in `src-tauri/tauri.conf.json` (for
+  example `ca.carlos.mycarlos.yourname`), rerun `npm run tauri ios init`, and don't commit it. It
+  installs as a separate app.
+- **Desktop only for now:** locked PDFs, the built-in PDF reader and the camera.
 
 ## What to try
 
