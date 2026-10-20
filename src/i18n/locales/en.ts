@@ -128,6 +128,62 @@ export const en = {
   "sidebar.documents": { one: "{count} document", other: "{count} documents" },
   "sidebar.folderCount": { one: "{count} folder", other: "{count} folders" },
 
+  // Shared with me (#61): the tab, its screen and its notices. #61 adds the
+  // screen; it takes these keys once it and this catalogue are both in main.
+  "shared.title": "Shared with me",
+  "shared.tab.waiting": {
+    one: "Shared with me, {count} waiting",
+    other: "Shared with me, {count} waiting",
+  },
+  "shared.section.waiting": {
+    one: "Shared with me ({count} waiting)",
+    other: "Shared with me ({count} waiting)",
+  },
+  "shared.arrived.one": "A shared file is waiting in Shared with me.",
+  "shared.arrived.many": {
+    one: "{count} shared file is waiting in Shared with me.",
+    other: "{count} shared files are waiting in Shared with me.",
+  },
+  "shared.waiting.none": "Nothing is waiting.",
+  "shared.waiting.count": {
+    one: "{count} file is waiting.",
+    other: "{count} files are waiting.",
+  },
+  "shared.intro.computer": "Files you open with myCarlos wait here.",
+  "shared.intro.phone":
+    "Files you share to myCarlos from another app wait here.",
+  "shared.intro.notAdded": "They are not in your records until you add them.",
+  "shared.empty.computer":
+    "To add a PDF this way, open it with myCarlos from your computer's files.",
+  "shared.empty.phone":
+    "To add a PDF this way, choose Share in the app that has it, then myCarlos.",
+  "shared.list.label": "Files waiting",
+  "shared.origin.computer": "Opened with myCarlos",
+  "shared.origin.phone": "Shared from another app",
+  "shared.row.detail": '{origin} · will be marked "{label}"',
+  "shared.row.notPdf": "Not a PDF document: myCarlos can't add it.",
+  "shared.paused.title": "Changes are paused.",
+  "shared.paused.body":
+    "Files can't be added or declined for now. My records says why, and what to do.",
+  "shared.add": "Add…",
+  "shared.add.name": "Add {name}…",
+  "shared.decline": "Decline",
+  "shared.decline.name": "Decline {name}",
+  "shared.decline.title": "Decline {name}?",
+  "shared.decline.body":
+    "It is not added, and myCarlos forgets it. The app that shared it still has it.",
+  "shared.addTo.label": "Add {name}",
+  "shared.addTo.person": "Whose records",
+  "shared.addTo.folder": "Folder",
+  "shared.addTo.noFolder": "No folder (My records)",
+  "shared.addTo.submit": "Add",
+  "shared.added": "{name} was encrypted and added to {person}'s records.",
+  "shared.addedToFolder":
+    "{name} was encrypted and added to {person}'s records, folder {folder}.",
+  "shared.alreadyThere":
+    "{name} was already in {person}'s records, so it was not added again.",
+  "shared.declined": "{name} declined. Nothing was added.",
+
   // Text size (Settings > Preferences)
   "textSize.title": "Text size",
   "textSize.announce": "Text size {percent}",

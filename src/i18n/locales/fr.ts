@@ -133,6 +133,68 @@ export const fr: Record<MessageKey, Message> = {
     other: "{count} dossiers",
   },
 
+  // Shared with me (#61)
+  "shared.title": "Partagés avec moi",
+  "shared.tab.waiting": {
+    one: "Partagés avec moi, {count} en attente",
+    many: "Partagés avec moi, {count} en attente",
+    other: "Partagés avec moi, {count} en attente",
+  },
+  "shared.section.waiting": {
+    one: "Partagés avec moi ({count} en attente)",
+    many: "Partagés avec moi ({count} en attente)",
+    other: "Partagés avec moi ({count} en attente)",
+  },
+  "shared.arrived.one": "Un fichier partagé attend dans Partagés avec moi.",
+  "shared.arrived.many": {
+    one: "{count} fichier partagé attend dans Partagés avec moi.",
+    many: "{count} de fichiers partagés attendent dans Partagés avec moi.",
+    other: "{count} fichiers partagés attendent dans Partagés avec moi.",
+  },
+  "shared.waiting.none": "Rien n’est en attente.",
+  "shared.waiting.count": {
+    one: "{count} fichier est en attente.",
+    many: "{count} de fichiers sont en attente.",
+    other: "{count} fichiers sont en attente.",
+  },
+  "shared.intro.computer":
+    "Les fichiers que vous ouvrez avec myCarlos attendent ici.",
+  "shared.intro.phone":
+    "Les fichiers que vous partagez avec myCarlos depuis une autre application attendent ici.",
+  "shared.intro.notAdded":
+    "Ils ne font pas partie de vos documents tant que vous ne les ajoutez pas.",
+  "shared.empty.computer":
+    "Pour ajouter un PDF de cette façon, ouvrez-le avec myCarlos à partir des fichiers de votre ordinateur.",
+  "shared.empty.phone":
+    "Pour ajouter un PDF de cette façon, choisissez Partager dans l’application qui le contient, puis myCarlos.",
+  "shared.list.label": "Fichiers en attente",
+  "shared.origin.computer": "Ouvert avec myCarlos",
+  "shared.origin.phone": "Partagé depuis une autre application",
+  "shared.row.detail": "{origin} · sera marqué « {label} »",
+  "shared.row.notPdf":
+    "Ce n’est pas un document PDF : myCarlos ne peut pas l’ajouter.",
+  "shared.paused.title": "Les modifications sont suspendues.",
+  "shared.paused.body":
+    "Les fichiers ne peuvent pas être ajoutés ni refusés pour le moment. Mes documents en indique la raison et ce qu’il faut faire.",
+  "shared.add": "Ajouter…",
+  "shared.add.name": "Ajouter {name}…",
+  "shared.decline": "Refuser",
+  "shared.decline.name": "Refuser {name}",
+  "shared.decline.title": "Refuser {name} ?",
+  "shared.decline.body":
+    "Il n’est pas ajouté, et myCarlos l’oublie. L’application qui l’a partagé l’a toujours.",
+  "shared.addTo.label": "Ajouter {name}",
+  "shared.addTo.person": "Dans les documents de",
+  "shared.addTo.folder": "Dossier",
+  "shared.addTo.noFolder": "Aucun dossier (Mes documents)",
+  "shared.addTo.submit": "Ajouter",
+  "shared.added": "{name} a été chiffré et ajouté aux documents de {person}.",
+  "shared.addedToFolder":
+    "{name} a été chiffré et ajouté aux documents de {person}, dossier {folder}.",
+  "shared.alreadyThere":
+    "{name} était déjà dans les documents de {person} ; il n’a donc pas été ajouté de nouveau.",
+  "shared.declined": "{name} refusé. Rien n’a été ajouté.",
+
   // Text size (Settings > Preferences)
   "textSize.title": "Taille du texte",
   "textSize.announce": "Taille du texte {percent}",
