@@ -950,38 +950,64 @@ mod confine {
     pub(super) fn start(
         command: std::process::Command,
     ) -> Result<(Helper, io::PipeWriter, io::PipeReader), Unanswered> {
+        use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
+        try_start(command).map_err(|(step, error)| match step {
+            Step::AppContainer => Unanswered::NoSandbox,
+            Step::Create if error.code() == ERROR_ACCESS_DENIED.to_hresult() => {
+                Unanswered::NoSandbox
+            }
+            _ => Unanswered::Failed,
+        })
+    }
+
+    /// The steps of starting the helper on Windows, so that a failure says which one failed.
+    #[cfg(windows)]
+    #[derive(Debug)]
+    pub(super) enum Step {
+        AppContainer,
+        Job,
+        Pipes,
+        Inherit,
+        Attributes,
+        Create,
+        Assign,
+        Resume,
+    }
+
+    /// `start`, with the step that failed and Windows's own error.
+    #[cfg(windows)]
+    pub(super) fn try_start(
+        command: std::process::Command,
+    ) -> Result<(Helper, io::PipeWriter, io::PipeReader), (Step, windows::core::Error)> {
         use std::os::windows::io::AsRawHandle;
-        use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HANDLE};
+        use windows::Win32::Foundation::HANDLE;
         use windows::Win32::System::JobObjects::AssignProcessToJobObject;
         use windows::Win32::System::Threading::ResumeThread;
-        fn failed<E>(_: E) -> Unanswered {
-            Unanswered::Failed
-        }
-        let container = app_container().map_err(|_| Unanswered::NoSandbox)?;
-        let job = job().map_err(failed)?;
-        let (helper_reads, input) = io::pipe().map_err(failed)?;
-        let (output, helper_writes) = io::pipe().map_err(failed)?;
+        let container = app_container().map_err(|error| (Step::AppContainer, error))?;
+        let job = job().map_err(|error| (Step::Job, error))?;
+        let pipe = || io::pipe().map_err(|error| (Step::Pipes, error.into()));
+        let (helper_reads, input) = pipe()?;
+        let (output, helper_writes) = pipe()?;
         let (process, thread) =
-            create_suspended(&command, &container, &helper_reads, &helper_writes).map_err(
-                |error| {
-                    if error.code() == ERROR_ACCESS_DENIED.to_hresult() {
-                        Unanswered::NoSandbox
-                    } else {
-                        Unanswered::Failed
-                    }
-                },
-            )?;
+            create_suspended(&command, &container, &helper_reads, &helper_writes)?;
         // This process's copies of the helper's ends, so that its output ends with it.
         drop((helper_reads, helper_writes));
         let mut helper = Helper { process, job };
         // SAFETY: both handles are live: the job's, and the new process's main thread's.
         let running = unsafe {
-            AssignProcessToJobObject(helper.job.0, helper.handle()).is_ok()
-                && ResumeThread(HANDLE(thread.as_raw_handle())) != u32::MAX
+            AssignProcessToJobObject(helper.job.0, helper.handle())
+                .map_err(|error| (Step::Assign, error))
+                .and_then(|()| {
+                    if ResumeThread(HANDLE(thread.as_raw_handle())) == u32::MAX {
+                        Err((Step::Resume, windows::core::Error::from_win32()))
+                    } else {
+                        Ok(())
+                    }
+                })
         };
-        if !running {
+        if let Err(failure) = running {
             helper.stop();
-            return Err(Unanswered::Failed);
+            return Err(failure);
         }
         Ok((helper, input, output))
     }
@@ -993,10 +1019,13 @@ mod confine {
         container: &AppContainer,
         stdin: &io::PipeReader,
         stdout: &io::PipeWriter,
-    ) -> windows::core::Result<(
-        std::os::windows::io::OwnedHandle,
-        std::os::windows::io::OwnedHandle,
-    )> {
+    ) -> Result<
+        (
+            std::os::windows::io::OwnedHandle,
+            std::os::windows::io::OwnedHandle,
+        ),
+        (Step, windows::core::Error),
+    > {
         use std::os::windows::ffi::OsStrExt;
         use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
         use windows::core::{PCWSTR, PWSTR};
@@ -1049,14 +1078,16 @@ mod confine {
         // returned are the new process's and its thread's, owned by the caller.
         unsafe {
             for handle in handles {
-                SetHandleInformation(handle, HANDLE_FLAG_INHERIT.0, HANDLE_FLAG_INHERIT)?;
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT.0, HANDLE_FLAG_INHERIT)
+                    .map_err(|error| (Step::Inherit, error))?;
             }
             let mut size = 0usize;
             // Asks for the size, failing as documented.
             let _ = InitializeProcThreadAttributeList(None, 2, None, &mut size);
             let mut buffer = vec![0usize; size.div_ceil(std::mem::size_of::<usize>())];
             let list = LPPROC_THREAD_ATTRIBUTE_LIST(buffer.as_mut_ptr().cast());
-            InitializeProcThreadAttributeList(Some(list), 2, None, &mut size)?;
+            InitializeProcThreadAttributeList(Some(list), 2, None, &mut size)
+                .map_err(|error| (Step::Attributes, error))?;
             let created = UpdateProcThreadAttribute(
                 list,
                 0,
@@ -1066,6 +1097,7 @@ mod confine {
                 None,
                 None,
             )
+            .map_err(|error| (Step::Attributes, error))
             .and_then(|()| {
                 // It inherits these two handles and no other.
                 UpdateProcThreadAttribute(
@@ -1077,6 +1109,7 @@ mod confine {
                     None,
                     None,
                 )
+                .map_err(|error| (Step::Attributes, error))
             })
             .and_then(|()| {
                 let mut startup = STARTUPINFOEXW::default();
@@ -1103,6 +1136,7 @@ mod confine {
                     &startup.StartupInfo,
                     &mut information,
                 )
+                .map_err(|error| (Step::Create, error))
                 .map(|()| {
                     (
                         OwnedHandle::from_raw_handle(information.hProcess.0),
@@ -1870,6 +1904,17 @@ mod tests {
         let parent = std::process::id().to_string();
         let (code, output) = run_as_helper("app_container_child", parent.as_bytes());
         assert_eq!(code, Some(0), "{output}");
+    }
+
+    /// The helper starts in its AppContainer; if a step fails, this says which, with Windows's
+    /// own error.
+    #[cfg(windows)]
+    #[test]
+    fn the_helper_starts_in_its_app_container() {
+        let (mut helper, input, output) = confine::try_start(helper_running("app_container_child"))
+            .unwrap_or_else(|(step, error)| panic!("{step:?}: {error:?}"));
+        drop((input, output));
+        helper.stop();
     }
 
     #[cfg(windows)]
