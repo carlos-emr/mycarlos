@@ -1,4 +1,5 @@
 import { TextSizeSetting, useNativeZoom } from "./TextSizeSetting";
+import { AppearanceSetting } from "./AppearanceSetting";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
  * is kept in the vault. */
@@ -13,6 +14,7 @@ export function PreferencesSettings() {
         </div>
       </div>
       <div className="setting-list">
+        <AppearanceSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
         ) : (

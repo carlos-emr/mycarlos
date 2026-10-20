@@ -276,6 +276,8 @@ pub enum VaultError {
     DamagedDocument(Uuid),
     #[error("the restore was verified, but could not yet take the vault's place")]
     RestoreUnfinished,
+    #[error("the file is not a JPEG photo within the size limits")]
+    NotPhoto,
 }
 
 impl From<io::Error> for VaultError {
@@ -763,6 +765,26 @@ impl VaultStore {
         } else {
             VaultStatus::Absent
         })
+    }
+
+    /// First setup's checklist (#69): which rules a passphrase being typed
+    /// for a new vault meets, judged as `create` will judge it. Only while
+    /// there is no vault, open or not: it judges a typed passphrase against
+    /// nothing stored, and refuses once there is something.
+    pub fn new_passphrase_rules(
+        &self,
+        passphrase: &str,
+        initial_profile: &str,
+    ) -> Result<PassphraseRules, VaultError> {
+        if self.session().is_some() || self.root.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        // A name is at most 120 characters (`validate_name`): bound the raw
+        // input before any work on it.
+        if initial_profile.len() > 120 * 4 {
+            return Err(VaultError::Invalid);
+        }
+        judge_new_passphrase(passphrase, &[initial_profile], false)
     }
 
     pub fn create(
@@ -2893,7 +2915,37 @@ impl ObjectContext {
 /// not a coincidence.
 const MIN_NAME_WORD_CHARS: usize = 4;
 
+/// Which of the rules for a new passphrase it meets, as first setup's
+/// checklist shows them (#69). Three answers only: never a score, a hint, or
+/// anything of the passphrase itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PassphraseRules {
+    pub long_enough: bool,
+    pub not_a_name: bool,
+    pub hard_to_guess: bool,
+}
+
 fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), VaultError> {
+    let rules = judge_new_passphrase(passphrase, context, true)?;
+    if !rules.long_enough {
+        Err(VaultError::Invalid)
+    } else if rules.not_a_name && rules.hard_to_guess {
+        Ok(())
+    } else {
+        Err(VaultError::WeakPassphrase)
+    }
+}
+
+/// The one judgement of a new passphrase, for both the vault and first
+/// setup's checklist. Refused outright: one over the byte limit or with
+/// control characters. Otherwise, which rules it meets; with `stop_early`, the
+/// slow estimate is skipped once a rule has failed, and counts as failed.
+fn judge_new_passphrase(
+    passphrase: &str,
+    context: &[&str],
+    stop_early: bool,
+) -> Result<PassphraseRules, VaultError> {
     // Bound the raw input before any work on it.
     if passphrase.len() > MAX_PASSPHRASE_BYTES {
         return Err(VaultError::Invalid);
@@ -2901,12 +2953,10 @@ fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), Vau
     // Every rule applies to the form the KDF will see. The same visible text
     // must pass or fail alike whichever composition form a keyboard produced.
     let passphrase = normalize_passphrase(passphrase);
-    if passphrase.chars().count() < MIN_PASSPHRASE_CHARS
-        || passphrase.len() > MAX_PASSPHRASE_BYTES
-        || passphrase.chars().any(char::is_control)
-    {
+    if passphrase.len() > MAX_PASSPHRASE_BYTES || passphrase.chars().any(char::is_control) {
         return Err(VaultError::Invalid);
     }
+    let long_enough = passphrase.chars().count() >= MIN_PASSPHRASE_CHARS;
     // Names are normalized before they are split: a combining mark is not
     // alphanumeric, so splitting first would break "Renée" apart.
     let context: Vec<Zeroizing<String>> = context
@@ -2918,22 +2968,23 @@ fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), Vau
     // rearranged or joined with a symbol scores as strong. Any word of a
     // profile name is refused outright instead.
     let lowered = lowercase(passphrase.as_str());
-    let contains_name_word = context
+    let not_a_name = !context
         .iter()
         .flat_map(|value| value.split(|c: char| !c.is_alphanumeric()))
         .filter(|word| word.chars().count() >= MIN_NAME_WORD_CHARS)
         .any(|word| lowered.contains(lowercase(word).as_str()));
-    if contains_name_word {
-        return Err(VaultError::WeakPassphrase);
-    }
-
-    let mut user_inputs = vec!["mycarlos", "carlos", "myvitalhistory"];
-    user_inputs.extend(context.iter().map(|value| value.as_str()));
-    if zxcvbn(&passphrase, &user_inputs).score() < Score::Three {
-        Err(VaultError::WeakPassphrase)
+    let hard_to_guess = if stop_early && !(long_enough && not_a_name) {
+        false
     } else {
-        Ok(())
-    }
+        let mut user_inputs = vec!["mycarlos", "carlos", "myvitalhistory"];
+        user_inputs.extend(context.iter().map(|value| value.as_str()));
+        zxcvbn(&passphrase, &user_inputs).score() >= Score::Three
+    };
+    Ok(PassphraseRules {
+        long_enough,
+        not_a_name,
+        hard_to_guess,
+    })
 }
 
 pub(crate) fn validate_import_count(count: usize) -> Result<(), VaultError> {
@@ -13274,6 +13325,84 @@ mod tests {
         assert!(matches!(
             validate_new_passphrase("Jamie-Jamie-Jamie", &["Jamie"]),
             Err(VaultError::WeakPassphrase)
+        ));
+    }
+
+    #[test]
+    fn the_setup_checklist_answers_each_rule_as_the_vault_judges_it() {
+        // (#69) The checklist and the vault are one judgement: a passphrase
+        // meets all three rules exactly when the vault accepts it.
+        let name = ["Jamie Rivers"];
+        for (passphrase, long_enough, not_a_name, hard_to_guess) in [
+            ("river azimuth cobalt sparrow 934", true, true, true),
+            // Each rule is answered on its own: short, yet hard to guess.
+            ("short phrase!!", false, true, true),
+            ("passwordpassword", true, true, false),
+            ("lantern jamie orbit willow 572", true, false, true),
+            ("RIVERS of azimuth cobalt 934", true, false, true),
+            ("jamie", false, false, false),
+        ] {
+            let rules = judge_new_passphrase(passphrase, &name, false).unwrap();
+            assert_eq!(
+                rules,
+                PassphraseRules {
+                    long_enough,
+                    not_a_name,
+                    hard_to_guess,
+                },
+                "{passphrase}"
+            );
+            assert_eq!(
+                validate_new_passphrase(passphrase, &name).is_ok(),
+                long_enough && not_a_name && hard_to_guess,
+                "{passphrase}"
+            );
+        }
+        // Refused outright, as the vault refuses them: no answers at all.
+        let too_long = "a".repeat(MAX_PASSPHRASE_BYTES + 1);
+        for passphrase in ["fifteen chars\nmore", too_long.as_str()] {
+            assert!(matches!(
+                judge_new_passphrase(passphrase, &name, false),
+                Err(VaultError::Invalid)
+            ));
+        }
+        // Three answers, named, and nothing else crosses to the renderer.
+        let answers = serde_json::to_value(
+            judge_new_passphrase("river azimuth cobalt sparrow 934", &name, false).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            answers,
+            serde_json::json!({ "longEnough": true, "notAName": true, "hardToGuess": true })
+        );
+    }
+
+    #[test]
+    fn the_setup_checklist_answers_only_while_there_is_no_vault() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let store = VaultStore::new(root.clone());
+        let rules = store
+            .new_passphrase_rules("river azimuth cobalt sparrow 934", "Jamie")
+            .unwrap();
+        assert!(rules.long_enough && rules.not_a_name && rules.hard_to_guess);
+        // Nothing was written by asking.
+        assert!(!root.exists());
+        assert!(matches!(
+            store.new_passphrase_rules("x", &"n".repeat(121 * 4)),
+            Err(VaultError::Invalid)
+        ));
+
+        // Open, and then locked: it refuses either way.
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(matches!(
+            store.new_passphrase_rules("river azimuth cobalt sparrow 934", "Jamie"),
+            Err(VaultError::AlreadyExists)
+        ));
+        store.lock();
+        assert!(matches!(
+            store.new_passphrase_rules("river azimuth cobalt sparrow 934", "Jamie"),
+            Err(VaultError::AlreadyExists)
         ));
     }
 

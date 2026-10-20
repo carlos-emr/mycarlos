@@ -1,10 +1,14 @@
+#[cfg(any(target_os = "linux", windows))]
+mod camera_permission;
 mod history;
 mod idle;
+mod photo;
 mod throttle;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use idle::{IdleDeadline, Opening};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
@@ -25,10 +29,10 @@ use tauri_plugin_fs::{FsExt, OpenOptions};
 use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
 use vault::{
-    ImportSource, RestoreCredential, RestorePreview, RestoreReplaces, VaultError, VaultSnapshot,
-    VaultStatus, VaultStore,
+    ImportSource, PassphraseRules, RestoreCredential, RestorePreview, RestoreReplaces, VaultError,
+    VaultSnapshot, VaultStatus, VaultStore,
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,6 +147,20 @@ impl PublicError {
         Self { message, ..self }
     }
 
+    /// The photo did not reach the vault as the camera window sent it. The
+    /// code says which part was wrong, for a report: "photo_body" (the
+    /// request's bytes or framing) or "photo_target" (whose records, folders,
+    /// name).
+    fn photo_not_received(code: &'static str) -> Self {
+        Self {
+            code,
+            message: "The photo did not reach the vault, so it was not saved. Choose Use photo to try again.",
+            record_id: None,
+            note: None,
+            retry_after_ms: None,
+        }
+    }
+
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
@@ -179,7 +197,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::WrongPassphrase => Self {
                 code: "wrong_passphrase",
-                message: "That passphrase did not unlock the vault.",
+                message: "That passphrase didn't open myCarlos. Check Caps Lock and try again.",
             },
             VaultError::Corrupt => Self {
                 code: "corrupt",
@@ -191,7 +209,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Invalid => Self {
                 code: "invalid",
-                message: "Check the requested information and try again.",
+                message: "Something you typed wasn't accepted. Check it and try again.",
             },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
@@ -207,7 +225,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Storage => Self {
                 code: "storage",
-                message: "The storage operation could not be completed. Review the current vault state before retrying.",
+                message: "myCarlos couldn't read or write its files on this computer. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",
@@ -253,6 +271,10 @@ impl From<VaultError> for PublicText {
                 code: "damaged_document",
                 message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
             },
+            VaultError::NotPhoto => Self {
+                code: "not_a_photo",
+                message: "This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.",
+            },
             VaultError::RestoreUnfinished => Self {
                 code: "restore_unfinished",
                 message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
@@ -275,6 +297,20 @@ impl From<VaultError> for PublicError {
             note: None,
             retry_after_ms: None,
         }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PassphraseRulesRequest {
+    passphrase: String,
+    initial_profile_name: String,
+}
+
+// Wiped however the command ends.
+impl Drop for PassphraseRulesRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
     }
 }
 
@@ -459,6 +495,239 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase")]
 struct ExportRequest {
     record_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PhotoRequest {
+    record_id: Uuid,
+}
+
+/// Whose records a photo goes in, which folders, and its name: the start of a
+/// photo request's body (see `split_photo_request`), as JSON
+/// `{"profileId", "folderIds", "name"}`. Custom headers do not reach the app
+/// on Windows (WebView2), so nothing rides in them.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PhotoTarget {
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+    name: String,
+}
+
+/// The most a photo request's target may take, before the JPEG.
+const MAX_PHOTO_TARGET_BYTES: usize = 4096;
+
+fn photo_target(json: &[u8]) -> Result<PhotoTarget, VaultError> {
+    let target: PhotoTarget = serde_json::from_slice(json).map_err(|_| VaultError::Invalid)?;
+    vault::validate_folder_assignment_count(target.folder_ids.len())?;
+    let name = &target.name;
+    // A photo's name ends in ".jpg", which says what an exported copy is.
+    let stem = name
+        .len()
+        .checked_sub(4)
+        .filter(|end| {
+            name.get(*end..)
+                .is_some_and(|tail| tail.eq_ignore_ascii_case(".jpg"))
+        })
+        .map(|end| &name[..end]);
+    if stem.is_none_or(|stem| stem.trim().is_empty()) || name.trim() != name {
+        return Err(VaultError::Invalid);
+    }
+    Ok(target)
+}
+
+/// A photo request is one body, which Tauri carries the same way on every
+/// platform (`photo_bytes`): the target's length (4 bytes, big-endian), the
+/// target, then the JPEG. Each part is bounded; the JPEG is copied into
+/// memory that is overwritten, and so is the whole request.
+fn split_photo_request(request: &[u8]) -> Result<(PhotoTarget, Zeroizing<Vec<u8>>), PublicError> {
+    let framing = || PublicError::photo_not_received("photo_body");
+    let length: [u8; 4] = request
+        .get(..4)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(framing)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if length > MAX_PHOTO_TARGET_BYTES {
+        return Err(framing());
+    }
+    let target = request.get(4..4 + length).ok_or_else(framing)?;
+    let target =
+        photo_target(target).map_err(|_| PublicError::photo_not_received("photo_target"))?;
+    let jpeg = &request[4 + length..];
+    if jpeg.len() > photo::MAX_PHOTO_BYTES {
+        return Err(VaultError::NotPhoto.into());
+    }
+    Ok((target, Zeroizing::new(jpeg.to_vec())))
+}
+
+/// A photo request's bytes, however the IPC brought them, copied into memory
+/// that is overwritten. The camera window sends them as the request's raw
+/// body. When Tauri uses its postMessage channel instead, as it always does on
+/// Android and does on Windows once its custom protocol has failed in a
+/// session, the same bytes arrive as a JSON array of numbers.
+fn photo_request(
+    body: &tauri::ipc::InvokeBody,
+) -> Result<(PhotoTarget, Zeroizing<Vec<u8>>), PublicError> {
+    let request = photo_bytes_within(body, 4 + MAX_PHOTO_TARGET_BYTES + photo::MAX_PHOTO_BYTES)?;
+    split_photo_request(&request)
+}
+
+fn photo_bytes_within(
+    body: &tauri::ipc::InvokeBody,
+    limit: usize,
+) -> Result<Zeroizing<Vec<u8>>, PublicError> {
+    match body {
+        tauri::ipc::InvokeBody::Raw(bytes) => {
+            if bytes.len() > limit {
+                return Err(VaultError::NotPhoto.into());
+            }
+            Ok(Zeroizing::new(bytes.clone()))
+        }
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(values)) => {
+            // Counted before anything is copied.
+            if values.len() > limit {
+                return Err(VaultError::NotPhoto.into());
+            }
+            let mut bytes = Zeroizing::new(Vec::with_capacity(values.len()));
+            for value in values {
+                let byte = value
+                    .as_u64()
+                    .and_then(|number| u8::try_from(number).ok())
+                    .ok_or_else(|| PublicError::photo_not_received("photo_body"))?;
+                bytes.push(byte);
+            }
+            Ok(bytes)
+        }
+        tauri::ipc::InvokeBody::Json(_) => Err(PublicError::photo_not_received("photo_body")),
+    }
+}
+
+/// Cleans the photo (photo.rs) and encrypts it as one import: the same
+/// encryption, verification, duplicate check and folder rules as a file the
+/// patient picked, and the same source label and media type, so that the
+/// vault's format is unchanged. The photo's bytes are overwritten once the
+/// import has read them.
+fn save_photo(
+    store: &VaultStore,
+    target: PhotoTarget,
+    photo: Zeroizing<Vec<u8>>,
+) -> Result<vault::ImportOutcome, VaultError> {
+    let cleaned = photo::clean_jpeg(&photo).map_err(|_| VaultError::NotPhoto)?;
+    drop(photo);
+    store.import(
+        target.profile_id,
+        target.folder_ids,
+        vec![ImportSource {
+            display_name: target.name,
+            reader: Box::new(std::io::Cursor::new(cleaned)),
+        }],
+        now_ms(),
+    )
+}
+
+/// A record's file, decrypted for the photo view: at most a photo's size, and
+/// no more than its first chunk when it does not start as a JPEG, so that
+/// checking another kind of document is cheap. Overwritten when dropped,
+/// including the smaller buffers it outgrows.
+#[derive(Default)]
+struct PhotoBuffer {
+    bytes: Zeroizing<Vec<u8>>,
+    refused: bool,
+}
+
+impl std::io::Write for PhotoBuffer {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let needed = self.bytes.len() + data.len();
+        if needed > photo::MAX_PHOTO_BYTES {
+            self.refused = true;
+            return Err(std::io::Error::other("larger than a photo"));
+        }
+        if needed > self.bytes.capacity() {
+            let capacity = needed
+                .max(2 * self.bytes.capacity())
+                .min(photo::MAX_PHOTO_BYTES);
+            let mut larger = Zeroizing::new(Vec::with_capacity(capacity));
+            larger.extend_from_slice(&self.bytes);
+            self.bytes = larger;
+        }
+        self.bytes.extend_from_slice(data);
+        // FF D8 FF, as far as the bytes so far go.
+        let seen = self.bytes.len().min(photo::JPEG_START.len());
+        if self.bytes[..seen] != photo::JPEG_START[..seen] {
+            self.refused = true;
+            return Err(std::io::Error::other("not a JPEG"));
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The first bytes of a record's file, and no more: once it has them, it stops
+/// the export, so only the first chunk is decrypted.
+#[derive(Default)]
+struct FileStart {
+    bytes: [u8; photo::JPEG_START.len()],
+    seen: usize,
+}
+
+impl FileStart {
+    fn complete(&self) -> bool {
+        self.seen == self.bytes.len()
+    }
+}
+
+impl std::io::Write for FileStart {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let take = data.len().min(self.bytes.len() - self.seen);
+        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
+        self.seen += take;
+        if self.complete() {
+            Err(std::io::Error::other("the first bytes are read"))
+        } else {
+            Ok(data.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
+/// called. A document's details ask this before offering View photo, so the
+/// photo itself stays here until the patient asks to see it; `view_photo` then
+/// checks the whole file.
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    let mut start = FileStart::default();
+    let exported = store.export(record_id, &mut start);
+    if start.complete() {
+        return Ok(start.bytes == photo::JPEG_START);
+    }
+    // Shorter than three bytes, or not read at all.
+    exported.map(|()| false)
+}
+
+/// The photo a record holds, as a `data:image/jpeg` URL for the photo view
+/// (the CSP allows `data:` images). The file's own bytes decide: it must start
+/// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
+/// checks as a photo being saved, which also drop any metadata from what is
+/// shown. The record is unchanged.
+fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
+    let mut buffer = PhotoBuffer::default();
+    let exported = store.export(record_id, &mut buffer);
+    if buffer.refused {
+        return Err(VaultError::NotPhoto);
+    }
+    exported?;
+    let cleaned = photo::clean_jpeg(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        BASE64.encode(&*cleaned)
+    ))
 }
 
 /// Finishes an import or export whose picker already closed. The paths the
@@ -752,6 +1021,20 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
 #[tauri::command]
 async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultStatus> {
     run_blocking(store.inner(), VaultStore::status).await
+}
+
+/// First setup's passphrase checklist (#69): three answers, only while no
+/// vault exists. The request, passphrase and all, is wiped as the judgement
+/// returns; nothing is kept, logged, or echoed in an error.
+#[tauri::command]
+async fn vault_passphrase_rules(
+    store: State<'_, Arc<VaultStore>>,
+    request: PassphraseRulesRequest,
+) -> CommandResult<PassphraseRules> {
+    run_blocking(store.inner(), move |store| {
+        store.new_passphrase_rules(&request.passphrase, &request.initial_profile_name)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1844,6 +2127,41 @@ async fn vault_hide_unavailable_records(
     })
 }
 
+/// Saves a photo taken with the camera dialog. The request's body is its
+/// target and the JPEG (see `photo_request`).
+#[tauri::command]
+async fn vault_save_photo(
+    store: State<'_, Arc<VaultStore>>,
+    request: tauri::ipc::Request<'_>,
+) -> CommandResult<vault::ImportOutcome> {
+    // The IPC layer's own copy is freed when the call ends, but not
+    // overwritten (THREAT_MODEL.md); these are.
+    let (target, photo) = photo_request(request.body())?;
+    run_blocking(store.inner(), move |store| save_photo(store, target, photo)).await
+}
+
+#[tauri::command]
+async fn vault_is_photo(
+    store: State<'_, Arc<VaultStore>>,
+    request: PhotoRequest,
+) -> CommandResult<bool> {
+    run_blocking(store.inner(), move |store| {
+        is_photo(store, request.record_id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_view_photo(
+    store: State<'_, Arc<VaultStore>>,
+    request: PhotoRequest,
+) -> CommandResult<String> {
+    run_blocking(store.inner(), move |store| {
+        view_photo(store, request.record_id)
+    })
+    .await
+}
+
 /// Hides a document (#71). There is no command that deletes one.
 #[tauri::command]
 async fn vault_hide_record(
@@ -2043,6 +2361,10 @@ pub fn run() {
                     _webview.navigate(url)?;
                 }
             }
+            // The camera dialog's request is answered here, not by a webview
+            // prompt (camera_permission.rs).
+            #[cfg(any(target_os = "linux", windows))]
+            camera_permission::install(&_webview, app.config().clone())?;
             // `vault-home` holds the vault and only what the vault manages beside
             // it (lock file, pending reset, create stage, export journal). Back
             // up or restore the whole directory. Machine-local data, because the
@@ -2079,6 +2401,7 @@ pub fn run() {
             runtime_info,
             kdf_benchmark,
             vault_status,
+            vault_passphrase_rules,
             vault_create,
             vault_unlock,
             vault_lock,
@@ -2107,6 +2430,9 @@ pub fn run() {
             vault_import_picked,
             vault_export_pick,
             vault_export_picked,
+            vault_save_photo,
+            vault_is_photo,
+            vault_view_photo,
             vault_hide_record,
             vault_unhide_record,
             vault_hide_unavailable_records,
@@ -2695,7 +3021,25 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["default.json", "zoom.json"]);
+        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+    }
+
+    #[test]
+    fn the_desktop_window_follows_the_chosen_appearance() {
+        // System, Light or Dark (src/native/nativeAppearance.ts) sets the
+        // window's own theme, on a computer and for nothing else: the page
+        // follows the choice on every platform without it.
+        let appearance: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/appearance.json")).unwrap();
+        assert_eq!(appearance["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            appearance["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            appearance["permissions"],
+            serde_json::json!(["core:window:allow-set-theme"])
+        );
     }
 
     /// A vault with a recovery key being set up, and that key's groups as
@@ -3252,6 +3596,7 @@ mod tests {
             payload in prop::collection::vec(any::<u8>(), 0..8192),
         ) {
             let _ = serde_json::from_slice::<CreateVaultRequest>(&payload);
+            let _ = serde_json::from_slice::<PassphraseRulesRequest>(&payload);
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
@@ -3266,6 +3611,7 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
+            let _ = serde_json::from_slice::<PhotoRequest>(&payload);
             let _ = serde_json::from_slice::<RecordIdRequest>(&payload);
             let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
@@ -3295,5 +3641,400 @@ mod navigation_startup_tests {
         let mut startup = NavigationStartup::default();
         assert_eq!(startup.arm(), None);
         assert!(startup.permit(&Url::parse("http://tauri.localhost/").unwrap(), true));
+    }
+}
+
+#[cfg(test)]
+mod photo_command_tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
+    /// What Chromium's canvas encodes (photo.rs tests, testdata/README.md).
+    const CANVAS: &[u8] = include_bytes!("../testdata/canvas-photo.jpg");
+
+    /// The canvas JPEG with an Exif block holding a FAKE GPS position after its
+    /// JFIF header, as a phone camera's file would have.
+    fn tagged() -> Vec<u8> {
+        let payload = b"Exif\0\0MM\0\x2a\0\0\0\x08FAKE GPSLatitude 43/1 39/1 12/1 N";
+        let length = u16::try_from(payload.len() + 2).unwrap().to_be_bytes();
+        [
+            &CANVAS[..20],
+            &[0xff, 0xe1, length[0], length[1]][..],
+            payload,
+            &CANVAS[20..],
+        ]
+        .concat()
+    }
+
+    fn target(profile: &str, folders: &str, name: &str) -> Vec<u8> {
+        format!(r#"{{"profileId":{profile},"folderIds":{folders},"name":{name}}}"#).into_bytes()
+    }
+
+    /// A photo request as the camera window frames it.
+    fn framed(target: &[u8], jpeg: &[u8]) -> Vec<u8> {
+        let length = u32::try_from(target.len()).unwrap().to_be_bytes();
+        [&length[..], target, jpeg].concat()
+    }
+
+    fn unlocked_store(temp: &tempfile::TempDir) -> (VaultStore, Uuid) {
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        (store, profile)
+    }
+
+    fn exported(store: &VaultStore, record: Uuid) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        store.export(record, &mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn the_target_says_where_a_photo_goes_and_its_name() {
+        let profile = Uuid::new_v4();
+        let folder = Uuid::new_v4();
+        let id = format!("\"{profile}\"");
+        let target_of = |folders: &str, name: &str| photo_target(&target(&id, folders, name));
+        assert_eq!(
+            target_of(
+                &format!("[\"{folder}\"]"),
+                "\"Photo, 17 Oct 2026, 3.05 PM.jpg\""
+            )
+            .unwrap(),
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: vec![folder],
+                name: "Photo, 17 Oct 2026, 3.05 PM.jpg".to_owned(),
+            }
+        );
+        // No folder: My records. Any name in UTF-8.
+        let my_records = target_of("[]", "\"Zdjęcie.JPG\"").unwrap();
+        assert!(my_records.folder_ids.is_empty());
+        assert_eq!(my_records.name, "Zdjęcie.JPG");
+
+        let many = format!(
+            "[{}]",
+            vec![format!("\"{folder}\""); vault::MAX_FOLDER_ASSIGNMENTS + 1].join(",")
+        );
+        for (case, json) in [
+            ("no profile", target("\"\"", "[]", "\"Photo.jpg\"")),
+            (
+                "a profile that is not an id",
+                target("\"FAKE\"", "[]", "\"Photo.jpg\""),
+            ),
+            (
+                "a folder that is not an id",
+                target(&id, "[\"FAKE\"]", "\"Photo.jpg\""),
+            ),
+            (
+                "more folders than a document can be in",
+                target(&id, &many, "\"Photo.jpg\""),
+            ),
+            ("no .jpg", target(&id, "[]", "\"Photo.png\"")),
+            ("only .jpg", target(&id, "[]", "\".jpg\"")),
+            ("only spaces before .jpg", target(&id, "[]", "\"  .jpg\"")),
+            ("a space at the start", target(&id, "[]", "\" Photo.jpg\"")),
+            ("text after .jpg", target(&id, "[]", "\"Photo.jpg \"")),
+            (
+                "a field it does not know",
+                format!(r#"{{"profileId":{id},"folderIds":[],"name":"Photo.jpg","x":1}}"#)
+                    .into_bytes(),
+            ),
+            (
+                "a field missing",
+                format!(r#"{{"profileId":{id},"name":"Photo.jpg"}}"#).into_bytes(),
+            ),
+            (
+                "not UTF-8",
+                [&target(&id, "[]", "\"Photo")[..], b"\xff.jpg\"}"].concat(),
+            ),
+            ("not JSON", b"FAKE".to_vec()),
+        ] {
+            assert!(
+                matches!(photo_target(&json), Err(VaultError::Invalid)),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_photo_request_is_its_target_then_the_jpeg() {
+        let profile = Uuid::new_v4();
+        let json = target(&format!("\"{profile}\""), "[]", "\"Photo.jpg\"");
+        let (got, jpeg) = split_photo_request(&framed(&json, CANVAS)).ok().unwrap();
+        assert_eq!(got.profile_id, profile);
+        assert_eq!(*jpeg, CANVAS);
+        let code = |request: &[u8]| split_photo_request(request).err().unwrap().code;
+        // Too short for its length, a length over the bound, a length past
+        // the end: the framing is wrong.
+        assert_eq!(code(&[0, 0, 1]), "photo_body");
+        let over = u32::try_from(MAX_PHOTO_TARGET_BYTES + 1)
+            .unwrap()
+            .to_be_bytes();
+        assert_eq!(code(&[&over[..], &json].concat()), "photo_body");
+        assert_eq!(code(&[0, 0, 1, 0, b'{']), "photo_body");
+        // The target itself is wrong.
+        assert_eq!(code(&framed(b"FAKE", CANVAS)), "photo_target");
+        // The JPEG over its own limit.
+        let large = vec![0_u8; photo::MAX_PHOTO_BYTES + 1];
+        assert_eq!(code(&framed(&json, &large)), "not_a_photo");
+    }
+
+    #[test]
+    fn a_saved_photo_is_cleaned_and_stored_as_an_import_in_the_open_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let folder = store.create_folder(profile, None, "FAKE Cards", 2).unwrap();
+        let photo = Zeroizing::new(tagged());
+        let outcome = save_photo(
+            &store,
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: vec![folder],
+                name: "Photo, 17 Oct 2026, 3.05 PM.jpg".to_owned(),
+            },
+            photo,
+        )
+        .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let snapshot = store.snapshot().unwrap();
+        let record = &snapshot.records[0];
+        assert_eq!(record.id, outcome.imported[0]);
+        assert_eq!(record.display_name, "Photo, 17 Oct 2026, 3.05 PM.jpg");
+        assert_eq!(record.folder_ids, [folder]);
+        // The vault's format is unchanged: a photo is an import like any other.
+        assert_eq!(record.source_label, "Manual import — unverified");
+        assert_eq!(record.media_type, "application/octet-stream");
+        let stored = exported(&store, record.id);
+        assert_eq!(stored, *photo::clean_jpeg(CANVAS).unwrap());
+        assert_eq!(record.plaintext_size, stored.len() as u64);
+        assert!(!stored.windows(4).any(|window| window == b"Exif"));
+        assert!(!stored.windows(4).any(|window| window == b"FAKE"));
+
+        // The same photo again is a duplicate, as an import would be.
+        let again = save_photo(
+            &store,
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: Vec::new(),
+                name: "Photo, 17 Oct 2026, 3.06 PM.jpg".to_owned(),
+            },
+            Zeroizing::new(CANVAS.to_vec()),
+        )
+        .unwrap();
+        assert!(again.imported.is_empty());
+        assert_eq!(
+            again.skipped_duplicates,
+            ["Photo, 17 Oct 2026, 3.06 PM.jpg"]
+        );
+    }
+
+    #[test]
+    fn a_photo_that_is_not_a_jpeg_or_a_locked_vault_saves_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let target = || PhotoTarget {
+            profile_id: profile,
+            folder_ids: Vec::new(),
+            name: "Photo.jpg".to_owned(),
+        };
+        for bytes in [
+            b"%PDF-1.7 FAKE".to_vec(),
+            CANVAS[..CANVAS.len() - 2].to_vec(),
+            Vec::new(),
+        ] {
+            assert!(matches!(
+                save_photo(&store, target(), Zeroizing::new(bytes)),
+                Err(VaultError::NotPhoto)
+            ));
+        }
+        assert!(store.snapshot().unwrap().records.is_empty());
+        store.lock();
+        assert!(matches!(
+            save_photo(&store, target(), Zeroizing::new(CANVAS.to_vec())),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn the_photo_view_goes_by_the_bytes_and_drops_their_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let sources = vec![
+            // A JPEG renamed with no extension is still a photo.
+            ImportSource {
+                display_name: "FAKE insurance card".to_owned(),
+                reader: Box::new(Cursor::new(tagged())),
+            },
+            ImportSource {
+                display_name: "FAKE results.jpg".to_owned(),
+                reader: Box::new(Cursor::new(b"%PDF-1.7 FAKE results".to_vec())),
+            },
+            ImportSource {
+                display_name: "FAKE cut off.jpg".to_owned(),
+                reader: Box::new(Cursor::new(CANVAS[..CANVAS.len() - 2].to_vec())),
+            },
+        ];
+        let ids = store
+            .import(profile, Vec::new(), sources, 2)
+            .unwrap()
+            .imported;
+
+        let url = view_photo(&store, ids[0]).unwrap();
+        let shown = BASE64
+            .decode(url.strip_prefix("data:image/jpeg;base64,").unwrap())
+            .unwrap();
+        assert_eq!(shown, *photo::clean_jpeg(CANVAS).unwrap());
+        // What is stored is not changed by viewing it.
+        assert_eq!(exported(&store, ids[0]), tagged());
+
+        for id in &ids[1..] {
+            assert!(matches!(view_photo(&store, *id), Err(VaultError::NotPhoto)));
+        }
+        assert!(matches!(
+            view_photo(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(
+            view_photo(&store, ids[0]),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn the_details_check_reads_only_a_files_first_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let files: [(&str, Vec<u8>); 5] = [
+            ("FAKE insurance card", tagged()),
+            ("FAKE results.jpg", b"%PDF-1.7 FAKE results".to_vec()),
+            ("FAKE two bytes", vec![0xff, 0xd8]),
+            ("FAKE empty", Vec::new()),
+            ("FAKE cut off", CANVAS[..CANVAS.len() - 2].to_vec()),
+        ];
+        let sources = files
+            .iter()
+            .map(|(name, bytes)| ImportSource {
+                display_name: (*name).to_owned(),
+                reader: Box::new(Cursor::new(bytes.clone())),
+            })
+            .collect();
+        let ids = store
+            .import(profile, Vec::new(), sources, 2)
+            .unwrap()
+            .imported;
+        let checked: Vec<bool> = ids
+            .iter()
+            .map(|id| is_photo(&store, *id).unwrap())
+            .collect();
+        // A JPEG with no extension is a photo; a PDF named ".jpg" is not.
+        assert_eq!(checked, [true, false, false, false, true]);
+        // The check goes by the first bytes only: the view checks the rest.
+        assert!(matches!(
+            view_photo(&store, ids[4]),
+            Err(VaultError::NotPhoto)
+        ));
+        assert!(matches!(
+            is_photo(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
+
+        // It stops the export once it has three bytes.
+        let mut start = FileStart::default();
+        assert_eq!(start.write(&[0xff]).unwrap(), 1);
+        assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
+        assert!(start.complete());
+        assert_eq!(start.bytes, photo::JPEG_START);
+    }
+
+    #[test]
+    fn the_photo_buffer_stops_at_the_first_bytes_that_are_not_a_jpeg_or_past_the_cap() {
+        let mut pdf = PhotoBuffer::default();
+        assert!(pdf.write(b"%PDF-1.7").is_err());
+        assert!(pdf.refused);
+        // One byte at a time, as far as the bytes go.
+        let mut jpeg = PhotoBuffer::default();
+        for byte in &CANVAS[..3] {
+            assert_eq!(jpeg.write(&[*byte]).unwrap(), 1);
+        }
+        let mut wrong_third = PhotoBuffer::default();
+        assert!(wrong_third.write(&[0xff, 0xd8]).is_ok());
+        assert!(wrong_third.write(&[0x00]).is_err());
+        assert!(wrong_third.refused);
+
+        let mut large = PhotoBuffer::default();
+        let chunk = vec![0_u8; 1024 * 1024];
+        large.write_all(&CANVAS[..3]).unwrap();
+        while large.bytes.len() + chunk.len() <= photo::MAX_PHOTO_BYTES {
+            large.write_all(&chunk).unwrap();
+        }
+        assert!(!large.refused);
+        let room = photo::MAX_PHOTO_BYTES - large.bytes.len();
+        large.write_all(&chunk[..room]).unwrap();
+        assert_eq!(large.bytes.len(), photo::MAX_PHOTO_BYTES);
+        assert!(large.write(&[0]).is_err());
+        assert!(large.refused);
+    }
+
+    #[test]
+    fn a_photo_arrives_as_raw_bytes_or_as_postmessage_numbers() {
+        use tauri::ipc::InvokeBody;
+        let jpeg = vec![0xff_u8, 0xd8, 0xff, 0x00, 0x10];
+        // The custom protocol: the raw body.
+        assert_eq!(
+            *photo_bytes_within(&InvokeBody::Raw(jpeg.clone()), 8)
+                .ok()
+                .unwrap(),
+            jpeg
+        );
+        // postMessage (Android always, Windows after a fallback): numbers.
+        let numbers = InvokeBody::Json(serde_json::json!([255, 216, 255, 0, 16]));
+        assert_eq!(*photo_bytes_within(&numbers, 8).ok().unwrap(), jpeg);
+        // Over the limit either way: refused before anything is copied.
+        for body in [
+            InvokeBody::Raw(vec![0; 9]),
+            InvokeBody::Json(serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0, 0])),
+        ] {
+            assert_eq!(
+                photo_bytes_within(&body, 8).unwrap_err().code,
+                "not_a_photo"
+            );
+        }
+        // Anything else is not a photo's bytes.
+        for body in [
+            serde_json::json!([256]),
+            serde_json::json!([-1]),
+            serde_json::json!([1.5]),
+            serde_json::json!(["ff"]),
+            serde_json::json!({ "0": 255 }),
+            serde_json::json!(null),
+        ] {
+            assert_eq!(
+                photo_bytes_within(&InvokeBody::Json(body), 8)
+                    .unwrap_err()
+                    .code,
+                "photo_body"
+            );
+        }
+    }
+
+    #[test]
+    fn the_photo_commands_are_wired_as_the_renderer_calls_them() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        let save = body("async fn vault_save_photo(");
+        // The photo's bytes and its target come from the request as sent.
+        assert!(save.contains("photo_request(request.body())"));
+        assert!(!save.contains("headers()"));
+        assert!(save.contains("run_blocking("));
+        assert!(body("async fn vault_view_photo(").contains("run_blocking("));
+        assert!(body("async fn vault_is_photo(").contains("run_blocking("));
     }
 }

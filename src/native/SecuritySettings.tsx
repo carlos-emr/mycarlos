@@ -8,7 +8,7 @@ import {
   vaultErrorMessage,
   type SpeedTestReport,
 } from "../vault";
-import { AUTO_LOCK_OPTIONS } from "./autoLock";
+import { AutoLockSetting } from "./AutoLockSetting";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import {
   MIN_PASSPHRASE_CHARS,
@@ -211,24 +211,14 @@ export function SecuritySettings({
             </h2>
             <p>
               The vault locks after the selected period without keyboard,
-              pointer, or touch activity. This non-medical setting is clamped to
-              1–15 minutes.
+              pointer, or touch activity. Choose from 1 to 15 minutes.
             </p>
           </div>
           <div>
-            <label>
-              Automatic lock delay
-              <select
-                value={autoLockMinutes}
-                onChange={(event) => onAutoLockMinutes(event.target.value)}
-              >
-                {AUTO_LOCK_OPTIONS.map((minutes) => (
-                  <option value={minutes} key={minutes}>
-                    {minutes} minute{minutes === 1 ? "" : "s"}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AutoLockSetting
+              minutes={autoLockMinutes}
+              onMinutes={onAutoLockMinutes}
+            />
             <button
               className="button"
               type="button"
@@ -488,8 +478,8 @@ export function SecuritySettings({
           <div>
             <h2>Readable copies and screenshots</h2>
             <p>
-              Exports and screenshots leave vault protection. Deleting a record
-              from myCarlos cannot erase those copies or the clinic's source
+              Exports and screenshots leave vault protection. Hiding a document
+              in myCarlos does not erase those copies or the clinic's source
               medical record.
             </p>
           </div>

@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import type { VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibrarySidebarProps {
   profileName: string;
+  /** The patient buttons, when there is more than one profile. */
+  profileChoice?: ReactNode;
   section: "records" | "hidden" | "security" | "preferences";
   currentFolderId: string | null;
   folders: VaultFolder[];
@@ -22,6 +24,7 @@ interface LibrarySidebarProps {
 
 export function LibrarySidebar({
   profileName,
+  profileChoice,
   section,
   currentFolderId,
   folders,
@@ -69,6 +72,7 @@ export function LibrarySidebar({
           <small>{profileName}</small>
         </span>
       </div>
+      {profileChoice}
       <nav className="side-nav" aria-label="Record library">
         <button
           className={dropClass(
