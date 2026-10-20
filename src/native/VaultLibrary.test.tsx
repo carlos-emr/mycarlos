@@ -247,6 +247,22 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
   });
 
+  it("shows Shared with me's whole name in the sidebar, with its new count on one line (#61)", () => {
+    renderLibrary(snapshot, 2);
+    const shared = screen.getByRole("button", {
+      name: "Shared with me, 2 new",
+    });
+    const name = shared.querySelector(".native-nav-name")!;
+    expect(name.textContent).toBe("Shared with me");
+    expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    const text = document.createRange();
+    text.selectNodeContents(within(shared).getByText("2 new"));
+    const lines = new Set(
+      [...text.getClientRects()].map((box) => Math.round(box.top)),
+    );
+    expect(lines.size).toBe(1);
+  });
+
   it("shows the sections as a row of tabs on a narrow window", async () => {
     await page.viewport(390, 844);
     try {

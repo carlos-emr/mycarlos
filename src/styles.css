@@ -802,6 +802,10 @@ h1, h2, p { margin: 0; }
 .native-lock-button { cursor: pointer; font: inherit; }
 .native-lock-button:disabled { cursor: default; }
 .native-nav-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* #61: "2 new" goes under Shared with me, so the name is never cut short (the icon
+   is 16px and the gap 10px). */
+.side-nav button.native-shared-new { flex-wrap: wrap; row-gap: 0; }
+.native-shared-new .nav-count { flex-basis: 100%; margin-left: 26px; }
 .native-sidebar-empty { padding: 5px 10px; color: var(--ink-faint); }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
 .native-breadcrumb { margin: 0; padding: 3px 7px; border: 0; background: transparent; color: var(--teal-dark); font: inherit; font-weight: 700; }

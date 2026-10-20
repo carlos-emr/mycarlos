@@ -68,7 +68,14 @@ export function LibrarySidebar({
   }, [folders]);
   const shared = (
     <button
-      className={section === "shared" ? "selected" : ""}
+      className={
+        [
+          section === "shared" ? "selected" : "",
+          sharedNew > 0 ? "native-shared-new" : "",
+        ]
+          .join(" ")
+          .trim() || undefined
+      }
       type="button"
       // The count is a flex item, so built from text it would be read
       // "Shared with me , 2 new"; say it plainly instead.
