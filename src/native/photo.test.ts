@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_CAMERA_JPEG_BYTES,
   MAX_PHOTO_SIDE_PX,
@@ -110,6 +110,28 @@ describe("a camera photo's weight", () => {
     expect(width / height).toBeCloseTo(4 / 3, 2);
     // The photo taken is not changed.
     expect([canvas.width, canvas.height]).toEqual([2048, 1536]);
+  }, 60_000);
+
+  it("prepares nothing rather than a blank photo when a smaller copy cannot be drawn", async () => {
+    const canvas = canvasOf(2048, 1536, true);
+    const draw = HTMLCanvasElement.prototype.getContext;
+    // Out of canvas memory for any new canvas, as a phone can be.
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation(function (this: HTMLCanvasElement, ...args) {
+        return this === canvas
+          ? (draw as (...a: unknown[]) => RenderingContext | null).apply(
+              this,
+              args,
+            )
+          : null;
+      } as typeof draw);
+    try {
+      const lowest = await jpeg(canvas, 0.6);
+      expect(await encodePhoto(canvas, Math.floor(lowest.size / 2))).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   }, 60_000);
 
   it("gives up rather than shrink a photo below 1024 pixels", async () => {

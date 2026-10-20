@@ -68,9 +68,15 @@ export async function encodePhoto(
       const smaller = document.createElement("canvas");
       smaller.width = Math.max(1, Math.round(source.width * scale));
       smaller.height = Math.max(1, Math.round(source.height * scale));
-      smaller
-        .getContext("2d")
-        ?.drawImage(source, 0, 0, smaller.width, smaller.height);
+      const context = smaller.getContext("2d");
+      // Out of canvas memory, as a phone can be: a blank copy would encode
+      // as a black photo that fits, so the photo is not prepared at all.
+      if (!context) {
+        smaller.width = 0;
+        smaller.height = 0;
+        return null;
+      }
+      context.drawImage(source, 0, 0, smaller.width, smaller.height);
       if (source !== canvas) clear(source);
       source = smaller;
     }
