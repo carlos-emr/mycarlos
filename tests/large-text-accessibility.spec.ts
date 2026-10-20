@@ -366,7 +366,7 @@ async function walkTheVault(large: LargeText) {
   ).toBeVisible();
   await expectNoViolations(page, "Shared with me", large.cutOff);
   await page
-    .getByRole("button", { name: "More options for FAKE Referral.pdf" })
+    .getByRole("button", { name: "Details for FAKE Referral.pdf" })
     .click();
   const shared = page.getByRole("dialog", { name: "FAKE Referral.pdf" });
   await expect(shared.getByRole("combobox", { name: "Move to" })).toBeVisible();
@@ -413,9 +413,10 @@ test("has no automatically detectable WCAG violations on the vault screens with 
   await withReaderText200(page, walkTheVault);
 });
 
-// #84: at the reader's 200% default text, first setup and the library's
-// controls are cut off. Expected to fail until #84 is fixed; axe and sideways
-// scrolling are still checked at that size by the tests above.
+// #84: at the reader's 200% default text, the library's controls are cut off
+// (first setup fits since #84 step 1; the vault's library fits on a computer
+// since #67's larger controls). Expected to fail until #84 is fixed; axe and
+// sideways scrolling are still checked at that size by the tests above.
 test("cuts nothing off with the reader's default text at 200% (#84)", async ({
   page,
 }) => {
@@ -428,10 +429,10 @@ test("cuts nothing off with the reader's default text at 200% (#84)", async ({
 
 test("cuts nothing off on the vault screens with the reader's default text at 200% (#84)", async ({
   page,
-}) => {
+}, testInfo) => {
   test.fail(
-    true,
-    "#84: first setup and the library are cut off at 200% default text",
+    testInfo.project.name === "phone",
+    "#84: the library is cut off on a phone at 200% default text",
   );
   await withReaderText200(page, walkTheVault, true);
 });

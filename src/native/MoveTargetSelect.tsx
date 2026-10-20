@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import type { VaultFolder } from "../vault";
 
 /** A person a document in Shared with me can go to, with their folders. */
@@ -23,6 +24,7 @@ export function parseMoveTarget(value: string): {
  * their folders. With one person, their folders as on the sidebar; with
  * several, a group for each. */
 export function MoveTargetSelect({
+  ref,
   label,
   targets,
   value,
@@ -30,6 +32,7 @@ export function MoveTargetSelect({
   disabled,
   onChange,
 }: {
+  ref?: Ref<HTMLSelectElement>;
   /** The select's accessible name. */
   label: string;
   targets: MoveTarget[];
@@ -57,6 +60,7 @@ export function MoveTargetSelect({
   ];
   return (
     <select
+      ref={ref}
       aria-label={label}
       value={value}
       disabled={disabled}

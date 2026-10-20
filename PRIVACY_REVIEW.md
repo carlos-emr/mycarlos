@@ -33,14 +33,14 @@ adds it to myCarlos) is not built.
 
 Everything the patient puts into myCarlos is kept in one encrypted "vault" on the device.
 
-| What | Examples | Kept encrypted? |
-|---|---|---|
-| Documents | The PDF files the patient adds, and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person) | Yes, each with its own key |
-| Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in | Yes |
-| Profiles | A display name for each person the patient keeps records for | Yes |
-| Folders | Folder names and how they nest | Yes |
-| Passphrase | Never stored. The vault's key is stored locked with a key worked out from the passphrase each time it is typed | The vault's key is locked with it |
-| Recovery key | Never stored in the vault. The vault's key is stored locked with the recovery key, with a random id and the date it was set up | The vault's key is locked with it |
+| What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person) | Yes, each with its own key        |
+| Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
+| Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
+| Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
+| Passphrase       | Never stored. The vault's key is stored locked with a key worked out from the passphrase each time it is typed                                                                                             | The vault's key is locked with it |
+| Recovery key     | Never stored in the vault. The vault's key is stored locked with the recovery key, with a random id and the date it was set up                                                                             | The vault's key is locked with it |
 
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
@@ -52,8 +52,17 @@ person. While the vault is locked, the shared file is only remembered (where it 
 it), and the lock screen shows how many are waiting, never their names; if myCarlos closes first,
 it is forgotten. The app that shared it keeps its own copy.
 
+A **photo taken in myCarlos** has no original: it goes from the camera to the app's memory and is
+encrypted into the vault, and is never saved anywhere else. It carries no place, camera or other
+details: the app makes the JPEG itself, and the vault removes any such details again before
+encrypting it. Its name gives the date and time it was taken, and it is labelled like any added
+document ("Manual import — unverified"). The camera is turned on only after the patient chooses to
+use it, never records sound, and turns off as soon as the photo is taken or the camera window
+closes.
+
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:
+
 - that a vault exists, and its random id;
 - the settings for turning the passphrase into a key: a random value (a "salt", which stops one
   round of guessing from working on many vaults at once) and how much work each guess costs;
@@ -73,6 +82,7 @@ or a backup file:
 The app also keeps a few **settings in its own browser storage** on the device, none of them
 secret and none naming a person or document (unless the patient typed one into a backup's file
 name):
+
 - how many minutes before it locks itself (1 to 15);
 - whether a recovery-key setup was cut short by a lock or by closing the app: when the key was set
   up and, when a key was being replaced, whether the patient said its kit may have been lost or
@@ -97,6 +107,7 @@ memory written to disk) has not been checked (see section 9).
 ## 3. Where it is kept
 
 The vault lives in the app's own data folder on the device, on that device only:
+
 - **Windows:** the user's own application data folder that stays on this computer, so on a work
   network it does not follow the user to other computers.
 - **macOS and iPhone/iPad:** the app's own data folder. Normal device backups (for example to a
@@ -181,6 +192,7 @@ someone or open it in another app. That copy is outside myCarlos's protection. T
 this before saving. Deleting the document in myCarlos, or erasing the whole vault, does not delete
 readable copies already saved. What a save cut off part way (for example by the app being stopped)
 leaves depends on the system:
+
 - On a computer, part of the readable copy is left in a `.mycarlos-export-…` folder beside the
   chosen place (hidden on macOS and Linux, visible on Windows) until the app next starts and
   removes it. If that place's drive is not connected then, it is removed only once the drive is
@@ -196,6 +208,7 @@ leaves depends on the system:
 ## 7. What leaves the device
 
 **The app itself sends nothing.** It:
+
 - makes no network connections: its own code makes none, and its security settings let its
   screens talk only to the app itself;
 - has no analytics, telemetry or crash reporting;
@@ -207,6 +220,7 @@ The framework the app is built on includes a network library, used only to reloa
 a developer works on the phone versions; an installed app loads its screens from inside itself.
 
 **Outside the app's own code:**
+
 - **Files the patient picks.** To add a document, save a readable copy or a backup, or restore
   one, the patient picks a place in the system's own file window. If that place is a cloud drive
   (for example iCloud Drive, Google Drive or OneDrive), the system or that drive's app moves the
@@ -245,6 +259,7 @@ where the patient puts it.
 
 These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FORMAT.md`,
 `MVP_STATUS.md`, `SECURITY_OPERATIONS.md`, `PRODUCT_DECISIONS.md`, `TESTING.md`, `WINDOWS.md`):
+
 - **An old passphrase can still work.** Changing the passphrase, or replacing the recovery key,
   does not shut out someone who knows the old one and has a copy of the vault from before the
   change (a device backup, a copied folder, a backup file). The vault's own key never changes: the
@@ -274,6 +289,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Originals.** The file a document was added from stays where it was (section 2).
 - **PDF safety.** There is no viewer, safe or otherwise: documents are read in other apps. A
   planned viewer with no access to the vault or the network is not built.
+- **Photos in memory.** While a photo is taken or shown, the app's display engine holds copies of
+  it that the app cannot overwrite; it overwrites its own copy and lets go of the rest when the
+  camera or photo window closes, and the engine frees them later. A photo is shown by the app's
+  own display engine, not by a separate viewer.
+- **Phones.** Taking photos is built for computers only; phones and tablets come later.
 - **Guessing on the device.** A wait after repeated wrong passphrases or recovery keys is being
   added in a change still under review (none for the first five, then a little longer each time,
   up to a minute). It slows guessing only through the app on the device, not against a copied

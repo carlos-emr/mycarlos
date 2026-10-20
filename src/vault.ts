@@ -258,6 +258,20 @@ export interface VaultBridge {
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
+  /** Saves a photo taken with the camera (a JPEG) under `name`, in the
+   * folders given or in My records. The vault cleans and checks it first. */
+  savePhoto(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+    jpeg: Uint8Array,
+  ): Promise<ImportOutcome>;
+  /** Whether a document's file starts as a JPEG does. Only its first bytes
+   * are read; the photo itself stays native. */
+  isPhoto(recordId: string): Promise<boolean>;
+  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
+   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  viewPhoto(recordId: string): Promise<string>;
   deleteRecord(recordId: string): Promise<void>;
   /** The shared files waiting, and what could not be received since the
    * last call (that part is reported once). Works while locked. */
@@ -486,6 +500,27 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
+    // The photo goes as the raw body, not as JSON; the rest in headers, the
+    // name percent-encoded, as a header holds ASCII only.
+    savePhoto: (profileId, folderIds, name, jpeg) => {
+      // One body, as Tauri carries bytes on every platform: the target's
+      // length (4 bytes, big-endian), the target as JSON, then the JPEG.
+      // Custom headers do not reach the vault on Windows.
+      const target = new TextEncoder().encode(
+        JSON.stringify({ profileId, folderIds, name }),
+      );
+      const request = new Uint8Array(4 + target.length + jpeg.length);
+      new DataView(request.buffer).setUint32(0, target.length);
+      request.set(target, 4);
+      request.set(jpeg, 4 + target.length);
+      return invoke<ImportOutcome>("vault_save_photo", request).finally(() =>
+        request.fill(0),
+      );
+    },
+    isPhoto: (recordId) =>
+      invoke<boolean>("vault_is_photo", { request: { recordId } }),
+    viewPhoto: (recordId) =>
+      invoke<string>("vault_view_photo", { request: { recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
     listReceived: () => invoke<ReceivedState>("received_list"),

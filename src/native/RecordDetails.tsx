@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -28,6 +28,8 @@ interface RecordDetailsProps {
   onMoveTo?: (profileId: string, folderId: string | null) => void;
   onDelete: () => void;
   onExport: () => void;
+  /** Shows the document as a photo; given only when its file is one. */
+  onViewPhoto?: () => void;
 }
 export function RecordDetails({
   record,
@@ -43,10 +45,39 @@ export function RecordDetails({
   onMoveTo,
   onDelete,
   onExport,
+  onViewPhoto,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
+  // Choosing in the list only picks a destination; Move moves (#67). In
+  // Chromium every arrow key on a closed list changes its value, which moved
+  // the document at once.
+  const currentFolderId = record.folderIds[0] ?? "";
+  // In Shared with me (#61) the list names a person's records or one of their
+  // folders, and "" is staying in Shared with me.
+  const current = moveTargets ? "" : currentFolderId;
+  // A choice made for this document where it is now; a move or another
+  // document starts again from where the document is.
+  const placement = `${record.id}:${record.profileId}:${currentFolderId}`;
+  const [choice, setChoice] = useState({ placement, value: current });
+  const destination = choice.placement === placement ? choice.value : current;
+  const move = () => {
+    refocusMoveTo.current = true;
+    if (!moveTargets) return void onMove(destination || null);
+    const { profileId, folderId } = parseMoveTarget(destination);
+    onMoveTo?.(profileId, folderId);
+  };
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
+  // Pressing Move disables it while the move runs, and it stays disabled
+  // after (the document is where the list says), so focus would fall out of
+  // the dialog. It goes back to "Move to" once the move has finished.
+  const moveToRef = useRef<HTMLSelectElement | null>(null);
+  const refocusMoveTo = useRef(false);
+  useEffect(() => {
+    if (busy || !refocusMoveTo.current) return;
+    refocusMoveTo.current = false;
+    moveToRef.current?.focus();
+  }, [busy, placement]);
   const kind = recordKind(record.displayName);
   const folderNameById = new Map(
     folders.map((folder) => [folder.id, folder.name]),
@@ -69,12 +100,12 @@ export function RecordDetails({
           </div>
           <button
             ref={closeRef}
-            className="dialog-close"
+            className="dialog-close native-dialog-close"
             type="button"
             aria-label="Close document details"
             onClick={onClose}
           >
-            ×
+            Close
           </button>
         </header>
         <div
@@ -143,6 +174,17 @@ export function RecordDetails({
           </div>
         </dl>
         <div className="native-record-rename">
+          {onViewPhoto && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onViewPhoto}
+            >
+              <Icon name="image" />
+              <span>View photo</span>
+            </button>
+          )}
           <button
             className="button"
             type="button"
@@ -156,36 +198,46 @@ export function RecordDetails({
           {notice}
         </p>
         <footer className="dialog-actions native-dialog-actions">
-          <label>
-            Move to
-            {moveTargets ? (
-              <MoveTargetSelect
-                label="Move to"
-                targets={moveTargets}
-                value=""
-                current="Shared with me"
-                disabled={busy || readOnly}
-                onChange={(value) => {
-                  if (!value) return;
-                  const { profileId, folderId } = parseMoveTarget(value);
-                  onMoveTo?.(profileId, folderId);
-                }}
-              />
-            ) : (
-              <select
-                disabled={busy || readOnly}
-                value={record.folderIds[0] ?? ""}
-                onChange={(event) => void onMove(event.target.value || null)}
-              >
-                <option value="">My records</option>
-                {folders.map((folder) => (
-                  <option value={folder.id} key={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
+          <div className="native-dialog-move">
+            <label>
+              Move to
+              {moveTargets ? (
+                <MoveTargetSelect
+                  ref={moveToRef}
+                  label="Move to"
+                  targets={moveTargets}
+                  value={destination}
+                  current="Shared with me"
+                  disabled={busy || readOnly}
+                  onChange={(value) => setChoice({ placement, value })}
+                />
+              ) : (
+                <select
+                  ref={moveToRef}
+                  disabled={busy || readOnly}
+                  value={destination}
+                  onChange={(event) =>
+                    setChoice({ placement, value: event.target.value })
+                  }
+                >
+                  <option value="">My records</option>
+                  {folders.map((folder) => (
+                    <option value={folder.id} key={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly || destination === current}
+              onClick={move}
+            >
+              Move
+            </button>
+          </div>
           <button
             className="button danger"
             type="button"

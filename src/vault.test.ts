@@ -66,6 +66,51 @@ describe("native idle deadline bridge", () => {
     ]);
   });
 
+  it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
+    const bridge = createVaultBridge();
+    const sent: Uint8Array[] = [];
+    invoke.mockImplementation(async (_command: string, body: Uint8Array) => {
+      sent.push(body.slice());
+      return { imported: ["photo-1"], skippedDuplicates: [] };
+    });
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    await bridge.savePhoto(
+      "profile-1",
+      ["folder-1"],
+      "Photo, 17 paź 2026, 3.05 PM.jpg",
+      jpeg,
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
+    // No custom headers: WebView2 does not pass them on.
+    expect(invoke.mock.calls[0]).toHaveLength(2);
+    expect(invoke.mock.calls[0][0]).toBe("vault_save_photo");
+    const [request] = sent;
+    const length = new DataView(request.buffer).getUint32(0);
+    expect(
+      JSON.parse(new TextDecoder().decode(request.slice(4, 4 + length))),
+    ).toEqual({
+      profileId: "profile-1",
+      folderIds: ["folder-1"],
+      name: "Photo, 17 paź 2026, 3.05 PM.jpg",
+    });
+    expect([...request.slice(4 + length)]).toEqual([...jpeg]);
+    // Its own copy of the photo is overwritten once the call is over.
+    expect([...invoke.mock.calls[0][1]].every((byte) => byte === 0)).toBe(true);
+    invoke.mockReset();
+    invoke.mockResolvedValue(true);
+    await expect(bridge.isPhoto("record-1")).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_photo", {
+      request: { recordId: "record-1" },
+    });
+    invoke.mockResolvedValue("data:image/jpeg;base64,/9j/");
+    await expect(bridge.viewPhoto("record-1")).resolves.toBe(
+      "data:image/jpeg;base64,/9j/",
+    );
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_photo", {
+      request: { recordId: "record-1" },
+    });
+  });
+
   it("reads error codes only from objects that carry them", () => {
     for (const check of [
       isLockedError,

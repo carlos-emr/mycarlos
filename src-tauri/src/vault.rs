@@ -258,6 +258,8 @@ pub enum VaultError {
     DamagedDocument(Uuid),
     #[error("the restore was verified, but could not yet take the vault's place")]
     RestoreUnfinished,
+    #[error("the file is not a JPEG photo within the size limits")]
+    NotPhoto,
 }
 
 impl From<io::Error> for VaultError {
