@@ -941,7 +941,9 @@ mod confine {
     }
 
     /// Starts `command` as the helper: in its AppContainer, with only the two pipes, its
-    /// folder the program's, and only the environment `command` sets (`exchange` sets none).
+    /// folder the program's, and only the environment `command` sets plus the placeholder
+    /// LOCALAPPDATA Windows needs (`exchange` sets none, so the helper gets only that, and the
+    /// AppContainer folders Windows makes from it).
     /// It is put in its job before it runs. Without the AppContainer it is not started:
     /// `NoSandbox`, as when the AppContainer may not run the program (an install the
     /// installer did not prepare). (std's `Command` cannot yet start a process in an
@@ -1066,8 +1068,9 @@ mod confine {
         {
             variables.push(("LOCALAPPDATA".into(), NO_FOLDER.into()));
         }
-        // Sorted by name, ignoring case, as Windows expects. Each "name=value" ends with a NUL,
-        // and the block with another.
+        // Sorted by name, ignoring case, as Windows expects. Only ASCII names are expected here
+        // (LOCALAPPDATA, and SystemRoot in tests), for which this matches Windows's ordinal
+        // comparison. Each "name=value" ends with a NUL, and the block with another.
         variables.sort_by_key(|(name, _)| name.to_string_lossy().to_uppercase());
         let mut environment = Vec::new();
         for (name, value) in &variables {
@@ -1635,9 +1638,10 @@ mod tests {
     fn run_as_helper(name: &str, input: &[u8]) -> (Option<i32>, String) {
         #[allow(unused_mut)]
         let mut command = helper_running(name);
-        // Windows cannot make a socket at all without SystemRoot (myCarlos's helper gets no
-        // environment). Given it, as the control child has it, a refused connection is the
-        // AppContainer's doing.
+        // Windows cannot make a socket at all without SystemRoot (myCarlos's helper gets only
+        // the placeholder LOCALAPPDATA and the AppContainer folders Windows makes from it).
+        // Given it, as the control child has it, a refused connection is the AppContainer's
+        // doing.
         #[cfg(windows)]
         if let Some(root) = std::env::var_os("SystemRoot") {
             command.env("SystemRoot", root);
