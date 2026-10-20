@@ -92,25 +92,27 @@ export async function runDialogScenarios({ backupPath }) {
     ["button", "KEEP"],
   ];
   // A photo saved through the real IPC, as the camera window sends it (#73):
-  // the JPEG as the body, whose records and its name in headers. A FAKE
-  // canvas JPEG, the Rust tests' testdata/canvas-photo.jpg.
+  // one body, the target's length (4 bytes, big-endian), the target as JSON,
+  // then the JPEG. A FAKE canvas JPEG, the Rust tests' canvas-photo.jpg.
   const savePhoto = async () => {
     const jpeg = Uint8Array.from(atob(CANVAS_PHOTO), (c) => c.charCodeAt(0));
     const profileId = (await call("vault_snapshot")).profiles[0].id;
+    const target = new TextEncoder().encode(
+      JSON.stringify({
+        profileId,
+        folderIds: [],
+        name: "Photo, 1 Jan 2026, 9.00 AM.jpg",
+      }),
+    );
+    const request = new Uint8Array(4 + target.length + jpeg.length);
+    new DataView(request.buffer).setUint32(0, target.length);
+    request.set(target, 4);
+    request.set(jpeg, 4 + target.length);
     let saved;
     try {
       saved = await window.__TAURI_INTERNALS__.invoke(
         "vault_save_photo",
-        jpeg,
-        {
-          headers: {
-            "Mycarlos-Profile-Id": profileId,
-            "Mycarlos-Folder-Ids": "",
-            "Mycarlos-Photo-Name": encodeURIComponent(
-              "Photo, 1 Jan 2026, 9.00 AM.jpg",
-            ),
-          },
-        },
+        request,
       );
     } catch (error) {
       // The code alone says which part did not arrive; nothing else is shown.

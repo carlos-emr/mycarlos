@@ -147,8 +147,9 @@ impl PublicError {
     }
 
     /// The photo did not reach the vault as the camera window sent it. The
-    /// code says which part was missing, for a report: "photo_headers" (whose
-    /// records, folders, name) or "photo_body" (the photo's bytes).
+    /// code says which part was wrong, for a report: "photo_body" (the
+    /// request's bytes or framing) or "photo_target" (whose records, folders,
+    /// name).
     fn photo_not_received(code: &'static str) -> Self {
         Self {
             code,
@@ -501,37 +502,25 @@ struct PhotoRequest {
     record_id: Uuid,
 }
 
-/// Whose records a photo goes in, which folders, and its name. A photo is
-/// sent as the request's raw body, not as JSON, so these come in its headers:
-/// `Mycarlos-Profile-Id`, `Mycarlos-Folder-Ids` (comma-separated, or empty for
-/// My records) and `Mycarlos-Photo-Name` (percent-encoded UTF-8).
-#[derive(Debug, PartialEq)]
+/// Whose records a photo goes in, which folders, and its name: the start of a
+/// photo request's body (see `split_photo_request`), as JSON
+/// `{"profileId", "folderIds", "name"}`. Custom headers do not reach the app
+/// on Windows (WebView2), so nothing rides in them.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoTarget {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
     name: String,
 }
 
-fn photo_target(headers: &tauri::http::HeaderMap) -> Result<PhotoTarget, VaultError> {
-    let text = |name: &str| {
-        headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
-            .ok_or(VaultError::Invalid)
-    };
-    let uuid = |value: &str| Uuid::parse_str(value).map_err(|_| VaultError::Invalid);
-    let profile_id = uuid(text("mycarlos-profile-id")?)?;
-    let folders = text("mycarlos-folder-ids")?;
-    let folder_ids = if folders.is_empty() {
-        Vec::new()
-    } else {
-        folders.split(',').map(uuid).collect::<Result<_, _>>()?
-    };
-    vault::validate_folder_assignment_count(folder_ids.len())?;
-    let name = percent_encoding::percent_decode_str(text("mycarlos-photo-name")?)
-        .decode_utf8()
-        .map_err(|_| VaultError::Invalid)?
-        .into_owned();
+/// The most a photo request's target may take, before the JPEG.
+const MAX_PHOTO_TARGET_BYTES: usize = 4096;
+
+fn photo_target(json: &[u8]) -> Result<PhotoTarget, VaultError> {
+    let target: PhotoTarget = serde_json::from_slice(json).map_err(|_| VaultError::Invalid)?;
+    vault::validate_folder_assignment_count(target.folder_ids.len())?;
+    let name = &target.name;
     // A photo's name ends in ".jpg", which says what an exported copy is.
     let stem = name
         .len()
@@ -544,20 +533,43 @@ fn photo_target(headers: &tauri::http::HeaderMap) -> Result<PhotoTarget, VaultEr
     if stem.is_none_or(|stem| stem.trim().is_empty()) || name.trim() != name {
         return Err(VaultError::Invalid);
     }
-    Ok(PhotoTarget {
-        profile_id,
-        folder_ids,
-        name,
-    })
+    Ok(target)
 }
 
-/// The photo's bytes, however the IPC brought them, copied into memory that is
-/// overwritten. The camera window sends them as the request's raw body. When
-/// Tauri uses its postMessage channel instead, as it always does on Android
-/// and does on Windows once its custom protocol has failed in a session, the
-/// same bytes arrive as a JSON array of numbers, with the headers kept.
-fn photo_bytes(body: &tauri::ipc::InvokeBody) -> Result<Zeroizing<Vec<u8>>, PublicError> {
-    photo_bytes_within(body, photo::MAX_PHOTO_BYTES)
+/// A photo request is one body, which Tauri carries the same way on every
+/// platform (`photo_bytes`): the target's length (4 bytes, big-endian), the
+/// target, then the JPEG. Each part is bounded; the JPEG is copied into
+/// memory that is overwritten, and so is the whole request.
+fn split_photo_request(request: &[u8]) -> Result<(PhotoTarget, Zeroizing<Vec<u8>>), PublicError> {
+    let framing = || PublicError::photo_not_received("photo_body");
+    let length: [u8; 4] = request
+        .get(..4)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(framing)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if length > MAX_PHOTO_TARGET_BYTES {
+        return Err(framing());
+    }
+    let target = request.get(4..4 + length).ok_or_else(framing)?;
+    let target =
+        photo_target(target).map_err(|_| PublicError::photo_not_received("photo_target"))?;
+    let jpeg = &request[4 + length..];
+    if jpeg.len() > photo::MAX_PHOTO_BYTES {
+        return Err(VaultError::NotPhoto.into());
+    }
+    Ok((target, Zeroizing::new(jpeg.to_vec())))
+}
+
+/// A photo request's bytes, however the IPC brought them, copied into memory
+/// that is overwritten. The camera window sends them as the request's raw
+/// body. When Tauri uses its postMessage channel instead, as it always does on
+/// Android and does on Windows once its custom protocol has failed in a
+/// session, the same bytes arrive as a JSON array of numbers.
+fn photo_request(
+    body: &tauri::ipc::InvokeBody,
+) -> Result<(PhotoTarget, Zeroizing<Vec<u8>>), PublicError> {
+    let request = photo_bytes_within(body, 4 + MAX_PHOTO_TARGET_BYTES + photo::MAX_PHOTO_BYTES)?;
+    split_photo_request(&request)
 }
 
 fn photo_bytes_within(
@@ -2105,18 +2117,16 @@ async fn vault_remove_unavailable_records(
     })
 }
 
-/// Saves a photo taken with the camera dialog. The request body is the JPEG
-/// (see `photo_bytes`); `PhotoTarget` reads the rest from its headers.
+/// Saves a photo taken with the camera dialog. The request's body is its
+/// target and the JPEG (see `photo_request`).
 #[tauri::command]
 async fn vault_save_photo(
     store: State<'_, Arc<VaultStore>>,
     request: tauri::ipc::Request<'_>,
 ) -> CommandResult<vault::ImportOutcome> {
-    let target = photo_target(request.headers())
-        .map_err(|_| PublicError::photo_not_received("photo_headers"))?;
     // The IPC layer's own copy is freed when the call ends, but not
-    // overwritten (THREAT_MODEL.md); this one is.
-    let photo = photo_bytes(request.body())?;
+    // overwritten (THREAT_MODEL.md); these are.
+    let (target, photo) = photo_request(request.body())?;
     run_blocking(store.inner(), move |store| save_photo(store, target, photo)).await
 }
 
@@ -3614,7 +3624,6 @@ mod navigation_startup_tests {
 mod photo_command_tests {
     use super::*;
     use std::io::{Cursor, Write};
-    use tauri::http::{HeaderMap, HeaderValue};
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
     /// What Chromium's canvas encodes (photo.rs tests, testdata/README.md).
@@ -3634,16 +3643,14 @@ mod photo_command_tests {
         .concat()
     }
 
-    fn headers(profile: &str, folders: &str, name: &str) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        for (key, value) in [
-            ("mycarlos-profile-id", profile),
-            ("mycarlos-folder-ids", folders),
-            ("mycarlos-photo-name", name),
-        ] {
-            headers.insert(key, HeaderValue::from_str(value).unwrap());
-        }
-        headers
+    fn target(profile: &str, folders: &str, name: &str) -> Vec<u8> {
+        format!(r#"{{"profileId":{profile},"folderIds":{folders},"name":{name}}}"#).into_bytes()
+    }
+
+    /// A photo request as the camera window frames it.
+    fn framed(target: &[u8], jpeg: &[u8]) -> Vec<u8> {
+        let length = u32::try_from(target.len()).unwrap().to_be_bytes();
+        [&length[..], target, jpeg].concat()
     }
 
     fn unlocked_store(temp: &tempfile::TempDir) -> (VaultStore, Uuid) {
@@ -3660,66 +3667,94 @@ mod photo_command_tests {
     }
 
     #[test]
-    fn the_headers_say_where_a_photo_goes_and_its_name() {
+    fn the_target_says_where_a_photo_goes_and_its_name() {
         let profile = Uuid::new_v4();
         let folder = Uuid::new_v4();
-        let target = photo_target(&headers(
-            &profile.to_string(),
-            &folder.to_string(),
-            "Photo%2C%2017%20Oct%202026%2C%203.05%20PM.jpg",
-        ))
-        .unwrap();
+        let id = format!("\"{profile}\"");
+        let target_of = |folders: &str, name: &str| photo_target(&target(&id, folders, name));
         assert_eq!(
-            target,
+            target_of(
+                &format!("[\"{folder}\"]"),
+                "\"Photo, 17 Oct 2026, 3.05 PM.jpg\""
+            )
+            .unwrap(),
             PhotoTarget {
                 profile_id: profile,
                 folder_ids: vec![folder],
                 name: "Photo, 17 Oct 2026, 3.05 PM.jpg".to_owned(),
             }
         );
-        // No folder: My records. Non-ASCII names arrive percent-encoded.
-        let target = photo_target(&headers(&profile.to_string(), "", "Zdj%C4%99cie.JPG")).unwrap();
-        assert!(target.folder_ids.is_empty());
-        assert_eq!(target.name, "Zdjęcie.JPG");
+        // No folder: My records. Any name in UTF-8.
+        let my_records = target_of("[]", "\"Zdjęcie.JPG\"").unwrap();
+        assert!(my_records.folder_ids.is_empty());
+        assert_eq!(my_records.name, "Zdjęcie.JPG");
 
-        let id = profile.to_string();
-        for (case, headers) in [
-            ("no profile", headers("", "", "Photo.jpg")),
+        let many = format!(
+            "[{}]",
+            vec![format!("\"{folder}\""); vault::MAX_FOLDER_ASSIGNMENTS + 1].join(",")
+        );
+        for (case, json) in [
+            ("no profile", target("\"\"", "[]", "\"Photo.jpg\"")),
             (
                 "a profile that is not an id",
-                headers("FAKE", "", "Photo.jpg"),
+                target("\"FAKE\"", "[]", "\"Photo.jpg\""),
             ),
             (
                 "a folder that is not an id",
-                headers(&id, "FAKE", "Photo.jpg"),
-            ),
-            (
-                "an empty folder in the list",
-                headers(&id, &format!("{folder},"), "Photo.jpg"),
+                target(&id, "[\"FAKE\"]", "\"Photo.jpg\""),
             ),
             (
                 "more folders than a document can be in",
-                headers(
-                    &id,
-                    &vec![folder.to_string(); vault::MAX_FOLDER_ASSIGNMENTS + 1].join(","),
-                    "Photo.jpg",
-                ),
+                target(&id, &many, "\"Photo.jpg\""),
             ),
-            ("no .jpg", headers(&id, "", "Photo.png")),
-            ("only .jpg", headers(&id, "", ".jpg")),
-            ("only spaces before .jpg", headers(&id, "", "%20%20.jpg")),
-            ("a space at the start", headers(&id, "", "%20Photo.jpg")),
-            ("text after .jpg", headers(&id, "", "Photo.jpg%20")),
-            ("not UTF-8", headers(&id, "", "%FF.jpg")),
+            ("no .jpg", target(&id, "[]", "\"Photo.png\"")),
+            ("only .jpg", target(&id, "[]", "\".jpg\"")),
+            ("only spaces before .jpg", target(&id, "[]", "\"  .jpg\"")),
+            ("a space at the start", target(&id, "[]", "\" Photo.jpg\"")),
+            ("text after .jpg", target(&id, "[]", "\"Photo.jpg \"")),
+            (
+                "a field it does not know",
+                format!(r#"{{"profileId":{id},"folderIds":[],"name":"Photo.jpg","x":1}}"#)
+                    .into_bytes(),
+            ),
+            (
+                "a field missing",
+                format!(r#"{{"profileId":{id},"name":"Photo.jpg"}}"#).into_bytes(),
+            ),
+            (
+                "not UTF-8",
+                [&target(&id, "[]", "\"Photo")[..], b"\xff.jpg\"}"].concat(),
+            ),
+            ("not JSON", b"FAKE".to_vec()),
         ] {
             assert!(
-                matches!(photo_target(&headers), Err(VaultError::Invalid)),
+                matches!(photo_target(&json), Err(VaultError::Invalid)),
                 "{case}"
             );
         }
-        let mut missing = HeaderMap::new();
-        missing.insert("mycarlos-profile-id", HeaderValue::from_str(&id).unwrap());
-        assert!(matches!(photo_target(&missing), Err(VaultError::Invalid)));
+    }
+
+    #[test]
+    fn a_photo_request_is_its_target_then_the_jpeg() {
+        let profile = Uuid::new_v4();
+        let json = target(&format!("\"{profile}\""), "[]", "\"Photo.jpg\"");
+        let (got, jpeg) = split_photo_request(&framed(&json, CANVAS)).ok().unwrap();
+        assert_eq!(got.profile_id, profile);
+        assert_eq!(*jpeg, CANVAS);
+        let code = |request: &[u8]| split_photo_request(request).err().unwrap().code;
+        // Too short for its length, a length over the bound, a length past
+        // the end: the framing is wrong.
+        assert_eq!(code(&[0, 0, 1]), "photo_body");
+        let over = u32::try_from(MAX_PHOTO_TARGET_BYTES + 1)
+            .unwrap()
+            .to_be_bytes();
+        assert_eq!(code(&[&over[..], &json].concat()), "photo_body");
+        assert_eq!(code(&[0, 0, 1, 0, b'{']), "photo_body");
+        // The target itself is wrong.
+        assert_eq!(code(&framed(b"FAKE", CANVAS)), "photo_target");
+        // The JPEG over its own limit.
+        let large = vec![0_u8; photo::MAX_PHOTO_BYTES + 1];
+        assert_eq!(code(&framed(&json, &large)), "not_a_photo");
     }
 
     #[test]
@@ -3972,8 +4007,8 @@ mod photo_command_tests {
         };
         let save = body("async fn vault_save_photo(");
         // The photo's bytes and its target come from the request as sent.
-        assert!(save.contains("photo_bytes(request.body())"));
-        assert!(save.contains("photo_target(request.headers())"));
+        assert!(save.contains("photo_request(request.body())"));
+        assert!(!save.contains("headers()"));
         assert!(save.contains("run_blocking("));
         assert!(body("async fn vault_view_photo(").contains("run_blocking("));
         assert!(body("async fn vault_is_photo(").contains("run_blocking("));
