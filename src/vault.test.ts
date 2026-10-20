@@ -44,9 +44,13 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
   });
 
-  it("sends a photo as the raw body, with its folder and name in headers", async () => {
+  it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
     const bridge = createVaultBridge();
-    invoke.mockResolvedValue({ imported: ["photo-1"], skippedDuplicates: [] });
+    const sent: Uint8Array[] = [];
+    invoke.mockImplementation(async (_command: string, body: Uint8Array) => {
+      sent.push(body.slice());
+      return { imported: ["photo-1"], skippedDuplicates: [] };
+    });
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
     await bridge.savePhoto(
       "profile-1",
@@ -54,32 +58,23 @@ describe("native idle deadline bridge", () => {
       "Photo, 17 paź 2026, 3.05 PM.jpg",
       jpeg,
     );
-    await bridge.savePhoto("profile-1", [], "Photo.jpg", jpeg);
-    expect(invoke.mock.calls).toEqual([
-      [
-        "vault_save_photo",
-        jpeg,
-        {
-          headers: {
-            "Mycarlos-Profile-Id": "profile-1",
-            "Mycarlos-Folder-Ids": "folder-1",
-            "Mycarlos-Photo-Name":
-              "Photo%2C%2017%20pa%C5%BA%202026%2C%203.05%20PM.jpg",
-          },
-        },
-      ],
-      [
-        "vault_save_photo",
-        jpeg,
-        {
-          headers: {
-            "Mycarlos-Profile-Id": "profile-1",
-            "Mycarlos-Folder-Ids": "",
-            "Mycarlos-Photo-Name": "Photo.jpg",
-          },
-        },
-      ],
-    ]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    // No custom headers: WebView2 does not pass them on.
+    expect(invoke.mock.calls[0]).toHaveLength(2);
+    expect(invoke.mock.calls[0][0]).toBe("vault_save_photo");
+    const [request] = sent;
+    const length = new DataView(request.buffer).getUint32(0);
+    expect(
+      JSON.parse(new TextDecoder().decode(request.slice(4, 4 + length))),
+    ).toEqual({
+      profileId: "profile-1",
+      folderIds: ["folder-1"],
+      name: "Photo, 17 paź 2026, 3.05 PM.jpg",
+    });
+    expect([...request.slice(4 + length)]).toEqual([...jpeg]);
+    // Its own copy of the photo is overwritten once the call is over.
+    expect([...invoke.mock.calls[0][1]].every((byte) => byte === 0)).toBe(true);
+    invoke.mockReset();
     invoke.mockResolvedValue(true);
     await expect(bridge.isPhoto("record-1")).resolves.toBe(true);
     expect(invoke).toHaveBeenLastCalledWith("vault_is_photo", {

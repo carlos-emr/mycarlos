@@ -451,14 +451,21 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     // The photo goes as the raw body, not as JSON; the rest in headers, the
     // name percent-encoded, as a header holds ASCII only.
-    savePhoto: (profileId, folderIds, name, jpeg) =>
-      invoke<ImportOutcome>("vault_save_photo", jpeg, {
-        headers: {
-          "Mycarlos-Profile-Id": profileId,
-          "Mycarlos-Folder-Ids": folderIds.join(","),
-          "Mycarlos-Photo-Name": encodeURIComponent(name),
-        },
-      }),
+    savePhoto: (profileId, folderIds, name, jpeg) => {
+      // One body, as Tauri carries bytes on every platform: the target's
+      // length (4 bytes, big-endian), the target as JSON, then the JPEG.
+      // Custom headers do not reach the vault on Windows.
+      const target = new TextEncoder().encode(
+        JSON.stringify({ profileId, folderIds, name }),
+      );
+      const request = new Uint8Array(4 + target.length + jpeg.length);
+      new DataView(request.buffer).setUint32(0, target.length);
+      request.set(target, 4);
+      request.set(jpeg, 4 + target.length);
+      return invoke<ImportOutcome>("vault_save_photo", request).finally(() =>
+        request.fill(0),
+      );
+    },
     isPhoto: (recordId) =>
       invoke<boolean>("vault_is_photo", { request: { recordId } }),
     viewPhoto: (recordId) =>

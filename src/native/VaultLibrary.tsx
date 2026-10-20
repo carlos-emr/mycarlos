@@ -1,4 +1,5 @@
 import { LibrarySidebar } from "./LibrarySidebar";
+import { ProfileChoice } from "./ProfileChoice";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
@@ -41,8 +42,17 @@ import {
 } from "./oldBackups";
 
 type NativeSection = "records" | "security" | "preferences";
+const SECTION_CHOICES: ReadonlyArray<[NativeSection, string]> = [
+  ["records", "My records"],
+  ["security", "Security"],
+  ["preferences", "Preferences"],
+];
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
+const SORT_CHOICES: ReadonlyArray<[NativeSort, string]> = [
+  ["newest", "Newest first"],
+  ["name", "Name A–Z"],
+];
 
 /** The ids of a folder and of every folder beneath it. */
 function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
@@ -82,6 +92,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   sizesIn1024s = false,
+  covered = false,
   cameraPlatform = null,
   cameraAsking,
 }: {
@@ -115,6 +126,9 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** A dialog of the app's own is over the library (the warning before the
+   * automatic lock, #68): the library and any dialog in it are inert. */
+  covered?: boolean;
   /** The platform the camera dialog runs on (a computer, or since D97 a
    * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
@@ -726,7 +740,7 @@ export function VaultLibrary({
   const locationTitle = currentFolder?.name ?? "My records";
 
   return (
-    <div className="evaluation-page native-vault-page">
+    <div className="evaluation-page native-vault-page" inert={covered}>
       <div className="evaluation-banner" role="note">
         <strong>Synthetic-data development build</strong>
         <span>
@@ -763,8 +777,11 @@ export function VaultLibrary({
             </button>
           </header>
 
-          <label
-            className="mobile-section-picker"
+          {/* On narrow windows, where the sidebar is hidden: a row of
+              tabs instead of a dropdown (#67). */}
+          <nav
+            className="mobile-section-picker native-section-tabs"
+            aria-label="Section"
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
@@ -773,19 +790,17 @@ export function VaultLibrary({
                 recoverySetup,
             )}
           >
-            <span>Section</span>
-            <select
-              aria-label="Section"
-              value={section}
-              onChange={(event) =>
-                setSection(event.target.value as NativeSection)
-              }
-            >
-              <option value="records">My records</option>
-              <option value="security">Security</option>
-              <option value="preferences">Preferences</option>
-            </select>
-          </label>
+            {SECTION_CHOICES.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-current={section === value ? "page" : undefined}
+                onClick={() => setSection(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
 
           <div
             className="app-body"
@@ -799,6 +814,13 @@ export function VaultLibrary({
           >
             <LibrarySidebar
               profileName={profile?.displayName ?? "Private vault"}
+              profileChoice={
+                <ProfileChoice
+                  profiles={snapshot.profiles}
+                  profileId={profileId}
+                  onChoose={setProfileId}
+                />
+              }
               section={section}
               currentFolderId={currentFolderId}
               folders={folders}
@@ -844,19 +866,12 @@ export function VaultLibrary({
                       <strong>{currentFolder.name}</strong>
                     </>
                   )}
-                  <label className="native-profile-select">
-                    <span>Patient</span>
-                    <select
-                      value={profileId}
-                      onChange={(event) => setProfileId(event.target.value)}
-                    >
-                      {snapshot.profiles.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <ProfileChoice
+                    className="native-profile-choice-narrow"
+                    profiles={snapshot.profiles}
+                    profileId={profileId}
+                    onChoose={setProfileId}
+                  />
                 </div>
                 <div className="main-head">
                   <div>
@@ -893,7 +908,13 @@ export function VaultLibrary({
                         className="button"
                         type="button"
                         disabled={busy || readOnly || !profileId}
-                        onClick={() => setCameraOpen(true)}
+                        onClick={() => {
+                          // The camera window shows the library's notice for
+                          // a save's result: the one before it, such as
+                          // "Vault unlocked.", is not about the photo.
+                          setNotice("");
+                          setCameraOpen(true);
+                        }}
                       >
                         <Icon name="camera" />
                         <span>Take a photo</span>
@@ -1079,23 +1100,30 @@ export function VaultLibrary({
                     {currentFolder ? "Inside folder" : "Top level"}
                   </span>
                   <span className="native-drag-hint">
-                    Hold and drag a document or folder to move it
+                    Hold and drag a document or folder to move it, or open it
+                    and choose Move to.
                   </span>
                   <div className="view-controls">
-                    <label className="native-sort">
-                      <Icon name="sort" />
-                      <span className="sr-only">Sort records</span>
-                      <select
-                        value={sort}
-                        onChange={(event) =>
-                          setSort(event.target.value as NativeSort)
-                        }
-                      >
-                        <option value="newest">Newest first</option>
-                        <option value="name">Name A–Z</option>
-                      </select>
-                    </label>
-                    <span className="segment" aria-label="Choose record view">
+                    {/* Both choices in view, with words (#67). */}
+                    <fieldset className="native-sort-choice">
+                      <legend>Sort by</legend>
+                      {SORT_CHOICES.map(([value, label]) => (
+                        <label key={value}>
+                          <input
+                            type="radio"
+                            name="native-sort"
+                            value={value}
+                            checked={sort === value}
+                            onChange={() => setSort(value)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </fieldset>
+                    <span
+                      className="segment native-view-segment"
+                      aria-label="Choose record view"
+                    >
                       <button
                         className={view === "list" ? "selected" : ""}
                         type="button"
@@ -1103,7 +1131,7 @@ export function VaultLibrary({
                         aria-pressed={view === "list"}
                         onClick={() => setView("list")}
                       >
-                        <Icon name="list" />
+                        <Icon name="list" /> List
                       </button>
                       <button
                         className={view === "grid" ? "selected" : ""}
@@ -1112,7 +1140,7 @@ export function VaultLibrary({
                         aria-pressed={view === "grid"}
                         onClick={() => setView("grid")}
                       >
-                        <Icon name="grid" />
+                        <Icon name="grid" /> Grid
                       </button>
                     </span>
                   </div>

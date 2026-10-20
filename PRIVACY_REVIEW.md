@@ -84,7 +84,9 @@ name):
 - after a recovery key is replaced because its kit may have been lost or seen, the steps for
   older backups: the file name the patient saved the new backup under, when, and its size;
 - on a computer, the text size chosen for the app (`mycarlos.zoom.v1`). A large size kept on a
-  shared computer could suggest that someone who uses it has poor sight.
+  shared computer could suggest that someone who uses it has poor sight;
+- the appearance choice, System, Light or Dark (`mycarlos.appearance.v1`). This preference
+  names no vault, patient or document and is not copied into an encrypted backup.
 
 Beside the vault, the app also keeps a small file counting wrong passphrase or recovery-key tries
 in a row, and when the last one was, to make the next try wait after several. It holds no secret.

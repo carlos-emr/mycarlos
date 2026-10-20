@@ -78,7 +78,7 @@ test("renames native-library folders and documents with accessible dialogs", asy
   const folderDialog = page.getByRole("dialog", { name: "Rename folder" });
   await expect(folderDialog.getByLabel("Folder name")).toBeFocused();
   const dialogAccessibility = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
   expect(dialogAccessibility.violations).toEqual([]);
   await folderDialog.getByLabel("Folder name").fill("FAKE Results");
@@ -95,9 +95,10 @@ test("renames native-library folders and documents with accessible dialogs", asy
     .getByRole("button", { name: "Rename folder FAKE Results" })
     .click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  // The tile opens the document; its Select tick is the other button (#67).
   await page
     .getByRole("article", { name: "FAKE Old.pdf document" })
-    .getByRole("button")
+    .getByRole("button", { name: /^FAKE Old\.pdf/ })
     .click();
   await page.getByRole("button", { name: "Rename document" }).click();
   const documentDialog = page.getByRole("dialog", { name: "Rename document" });
@@ -112,7 +113,7 @@ test("renames native-library folders and documents with accessible dialogs", asy
     page.getByRole("article", { name: "FAKE Bloodwork.pdf document" }),
   ).toBeVisible();
   const libraryAccessibility = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
   expect(libraryAccessibility.violations).toEqual([]);
   expect(

@@ -75,6 +75,7 @@ function renderLibrary(
   initial: VaultSnapshot,
   bridgeOverrides: Partial<VaultBridge> = {},
   cameraPlatform: string | null = "windows",
+  initialNotice = "",
 ) {
   let current = initial;
   const bridge = {
@@ -97,7 +98,7 @@ function renderLibrary(
   } as unknown as VaultBridge;
   function Harness() {
     const [snapshot, setSnapshot] = useState(initial);
-    const [notice, setNotice] = useState("");
+    const [notice, setNotice] = useState(initialNotice);
     return (
       <VaultLibrary
         bridge={bridge}
@@ -129,6 +130,39 @@ function renderLibrary(
 }
 
 describe("taking a photo from the library", () => {
+  it("opens with no message left over from the library", async () => {
+    renderLibrary(base, {}, "windows", "Vault unlocked.");
+    expect(screen.getByText("Vault unlocked.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
+    const camera = screen.getByRole("dialog", { name: "Take a photo" });
+    await waitFor(() =>
+      expect(within(camera).getByRole("status")).not.toHaveTextContent(
+        "Vault unlocked.",
+      ),
+    );
+    expect(screen.queryByText("Vault unlocked.")).toBeNull();
+  });
+
+  it("shows a save that failed in the camera window, which stays open", async () => {
+    renderLibrary(base, {
+      savePhoto: vi.fn(async () => {
+        throw { code: "storage", message: "FAKE" };
+      }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
+    const camera = screen.getByRole("dialog", { name: "Take a photo" });
+    const shutter = within(camera).getByRole("button", { name: "Take photo" });
+    await waitFor(() => expect(shutter).toBeEnabled());
+    fireEvent.click(shutter);
+    fireEvent.click(within(camera).getByRole("button", { name: "Use photo" }));
+    await waitFor(() =>
+      expect(within(camera).getByRole("status")).toHaveTextContent(
+        vaultErrorMessage({ code: "storage", message: "FAKE" }),
+      ),
+    );
+    expect(camera).toBeVisible();
+  });
+
   it("is offered on a computer", () => {
     renderLibrary(base);
     expect(screen.getByRole("button", { name: "Take a photo" })).toBeEnabled();
@@ -231,7 +265,7 @@ describe("viewing a photo", () => {
 
   const openDetails = (name: string) => {
     fireEvent.click(
-      screen.getByRole("button", { name: `More options for ${name}` }),
+      screen.getByRole("button", { name: `Details for ${name}` }),
     );
     return screen.getByRole("dialog", { name });
   };
