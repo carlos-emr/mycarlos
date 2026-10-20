@@ -59,7 +59,6 @@
   font-weight: 650;
 }
 .vault-card input {
-  min-width: 0;
   min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -68,6 +67,9 @@
   color: var(--ink);
   font: inherit;
 }
+/* Text boxes may shrink with the card (#84); tick boxes and radio buttons keep
+   their size beside their words. */
+.vault-card input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; }
 .vault-card input:focus {
   border-color: var(--focus);
   outline: 2px solid color-mix(in srgb, var(--focus), transparent 70%);
