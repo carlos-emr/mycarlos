@@ -239,9 +239,17 @@ describe("CameraDialog", () => {
     const { rerender, props, onClose } = open();
     await startCamera();
     fireEvent.click(shutter());
+    button("Use photo").focus();
     rerender(<CameraDialog {...props} saving />);
-    expect(button("Saving…")).toBeDisabled();
-    expect(button("Retake")).toBeDisabled();
+    // Not disabled, so the focus stays in the dialog; they do nothing.
+    expect(button("Saving…")).toHaveAttribute("aria-disabled", "true");
+    expect(button("Saving…")).toHaveFocus();
+    expect(button("Retake")).toHaveAttribute("aria-disabled", "true");
+    const asked = getUserMedia.mock.calls.length;
+    fireEvent.click(button("Retake"));
+    fireEvent.click(button("Saving…"));
+    expect(getUserMedia).toHaveBeenCalledTimes(asked);
+    expect(props.onUse).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     rerender(
@@ -250,7 +258,39 @@ describe("CameraDialog", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "FAKE The photo was not saved.",
     );
-    expect(button("Use photo")).toBeEnabled();
+    expect(button("Use photo")).toHaveAttribute("aria-disabled", "false");
+  });
+
+  it("on a phone, says the phone asks once, and holds the lock while it asks (D97)", async () => {
+    const asked: Promise<unknown>[] = [];
+    const holds = vi.fn();
+    const whileAsking = <T,>(question: Promise<T>) => {
+      holds();
+      asked.push(question);
+      return question;
+    };
+    open({ platform: "android", whileAsking });
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+      /Your phone asks once whether myCarlos may use the camera\. The camera is on only while you take the photo\. It turns off when you take it, cancel, or myCarlos locks\./,
+    );
+    expect(holds).not.toHaveBeenCalled();
+    await startCamera();
+    // The very request for the camera went through it, and nothing else.
+    expect(holds).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(await asked[0]).toBe(streams[0]);
+  });
+
+  it("tells a phone where to allow the camera after it was refused (D97)", async () => {
+    getUserMedia.mockRejectedValueOnce(
+      new DOMException("FAKE", "NotAllowedError"),
+    );
+    open({ platform: "ios" });
+    fireEvent.click(button("Use the camera"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "myCarlos can't use the camera. Open your phone's Settings, then myCarlos, and turn on Camera. Then choose Try again.",
+    );
+    await waitFor(() => expect(button("Try again")).toHaveFocus());
   });
 
   it("fits a phone-width window at twice the text size, with 44-pixel controls", async () => {

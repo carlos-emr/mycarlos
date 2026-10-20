@@ -31,6 +31,36 @@ ${EXCLUDES}
 </data-extraction-rules>
 `;
 
+// The camera (D97): the camera dialog asks the page for video, and wry asks
+// Android for this permission when it does; undeclared, Android refuses it
+// without asking. Not required, so a phone or tablet without a camera can
+// still install myCarlos. Nothing asks for the microphone, so it is not
+// declared.
+const CAMERA_PERMISSION =
+  '<uses-permission android:name="android.permission.CAMERA" />';
+const CAMERA_FEATURE =
+  '<uses-feature android:name="android.hardware.camera" android:required="false" />';
+
+/** The manifest with the camera declared exactly once. */
+export function declareCamera(manifest) {
+  if (!/<manifest\b[^>]*>/.test(manifest)) {
+    throw new Error("Android manifest element not found");
+  }
+  return manifest
+    .replace(
+      /\s*<uses-permission\s+android:name="android\.permission\.CAMERA"\s*\/>/g,
+      "",
+    )
+    .replace(
+      /\s*<uses-feature\s+android:name="android\.hardware\.camera"[^>]*\/>/g,
+      "",
+    )
+    .replace(
+      /<manifest\b[^>]*>/,
+      (open) => `${open}\n    ${CAMERA_PERMISSION}\n    ${CAMERA_FEATURE}`,
+    );
+}
+
 export async function configureAndroidSecurity(manifestPath) {
   let manifest = await readFile(manifestPath, "utf8");
   if (!/<application\b/.test(manifest)) {
@@ -45,6 +75,7 @@ export async function configureAndroidSecurity(manifestPath) {
       /<application\b/,
       `<application android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/${RULES_NAME}"`,
     );
+  manifest = declareCamera(manifest);
 
   const resources = join(dirname(manifestPath), "res", "xml");
   await mkdir(resources, { recursive: true });

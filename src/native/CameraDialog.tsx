@@ -6,12 +6,17 @@ import {
   cameraExplained,
   cameraFailure,
   cameraFailureMessage,
+  isPhone,
   photoSize,
   rememberCameraExplained,
   type CameraFailure,
 } from "./photo";
 
 type Stage = "explain" | "starting" | "live" | "preview" | "failed";
+
+// On a computer the question needs no holding. Stable, so `start` (and the
+// camera an opening starts) is not made again on every render.
+const asked = <T,>(question: Promise<T>) => question;
 
 // The camera is used for this dialog only. It is asked for after the patient
 // chooses Use the camera (or opens the dialog once they have before), for
@@ -22,6 +27,7 @@ type Stage = "explain" | "starting" | "live" | "preview" | "failed";
 // (photo.rs) before encrypting it.
 export function CameraDialog({
   platform,
+  whileAsking = asked,
   notice,
   saving,
   onUse,
@@ -29,6 +35,11 @@ export function CameraDialog({
 }: {
   /** The operating system, for where to look when the camera is refused. */
   platform: string;
+  /** On a phone, the system asks whether myCarlos may use the camera, and
+   * Android hides the app while it does. The vault must not lock under that
+   * question, as under a file picker; the caller holds the lock until it is
+   * answered, then looks again (D97). */
+  whileAsking?: <T>(question: Promise<T>) => Promise<T>;
   /** Result of the last vault operation: a failed save is reported here. */
   notice: string;
   /** Whether the photo is being saved. */
@@ -82,14 +93,16 @@ export function CameraDialog({
     try {
       if (!navigator.mediaDevices?.getUserMedia)
         throw new DOMException("No camera interface", "NotFoundError");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
+      const stream = await whileAsking(
+        navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        }),
+      );
       if (attempt !== attemptRef.current) {
         for (const track of stream.getTracks()) track.stop();
         return;
@@ -111,7 +124,7 @@ export function CameraDialog({
       setStage("failed");
       setStatus("");
     }
-  }, [clearPhoto, stopCamera]);
+  }, [clearPhoto, stopCamera, whileAsking]);
 
   useEffect(() => {
     if (!autoStart) return;
@@ -225,10 +238,18 @@ export function CameraDialog({
                 myCarlos uses the camera to save photos of your health
                 documents. Photos stay locked in myCarlos.
               </p>
-              <p>
-                The camera is on only while you take the photo. It turns off
-                when you take it, close this window, or myCarlos locks.
-              </p>
+              {isPhone(platform) ? (
+                <p>
+                  Your phone asks once whether myCarlos may use the camera. The
+                  camera is on only while you take the photo. It turns off when
+                  you take it, cancel, or myCarlos locks.
+                </p>
+              ) : (
+                <p>
+                  The camera is on only while you take the photo. It turns off
+                  when you take it, close this window, or myCarlos locks.
+                </p>
+              )}
             </div>
           )}
           {stage === "starting" && <p>Starting the camera…</p>}
@@ -299,11 +320,15 @@ export function CameraDialog({
           )}
           {stage === "preview" && (
             <>
+              {/* Not disabled while saving: the focus would fall out of the
+                  dialog. They do nothing until the save is over. */}
               <button
                 className="button"
                 type="button"
-                disabled={working}
-                onClick={() => void start()}
+                aria-disabled={working}
+                onClick={() => {
+                  if (!working) void start();
+                }}
               >
                 Retake
               </button>
@@ -311,7 +336,7 @@ export function CameraDialog({
                 ref={confirmRef}
                 className="button primary"
                 type="button"
-                disabled={working}
+                aria-disabled={working}
                 onClick={() => void use()}
               >
                 {working ? "Saving…" : "Use photo"}

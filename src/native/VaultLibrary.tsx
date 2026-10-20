@@ -83,6 +83,7 @@ export function VaultLibrary({
   keyboardHints = true,
   sizesIn1024s = false,
   cameraPlatform = null,
+  cameraAsking,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -114,9 +115,12 @@ export function VaultLibrary({
   keyboardHints?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
-  /** The desktop platform the camera dialog runs on, or null where photos
-   * cannot be taken yet (phones and tablets). */
+  /** The platform the camera dialog runs on (a computer, or since D97 a
+   * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** On a phone: holds the lock on a hidden app while the system asks
+   * whether myCarlos may use the camera (see CameraDialog). */
+  cameraAsking?: <T>(question: Promise<T>) => Promise<T>;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -1286,6 +1290,7 @@ export function VaultLibrary({
           {cameraOpen && cameraPlatform && (
             <CameraDialog
               platform={cameraPlatform}
+              whileAsking={cameraAsking}
               notice={notice}
               saving={busy}
               onUse={savePhoto}

@@ -2885,6 +2885,77 @@ describe("durable vault UI", () => {
     }
   });
 
+  it.each([
+    ["android", false],
+    ["ios", false],
+    ["windows", true],
+  ])(
+    "on %s, a page hidden while the camera is asked for locks at once: %s (D97)",
+    async (platform, locksAtOnce) => {
+      // Android hides the app under its camera permission question, as under
+      // a picker; a computer's question does not hide it, so there a hidden
+      // page is a real backgrounding.
+      const user = userEvent.setup();
+      let answer!: (stream: MediaStream) => void;
+      const getUserMedia = vi
+        .spyOn(navigator.mediaDevices, "getUserMedia")
+        .mockImplementation(
+          () =>
+            new Promise<MediaStream>((resolve) => {
+              answer = resolve;
+            }),
+        );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        platform: vi.fn().mockResolvedValue(platform),
+      });
+      let visibilityState: DocumentVisibilityState = "visible";
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockImplementation(() => visibilityState);
+      try {
+        window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+        render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: "Take a photo" }),
+        );
+        await user.click(
+          screen.getByRole("button", { name: "Use the camera" }),
+        );
+        await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+        await act(async () => {
+          visibilityState = "hidden";
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        if (locksAtOnce) {
+          await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+          return;
+        }
+        expect(bridge.lock).not.toHaveBeenCalled();
+        expect(
+          screen.getByRole("dialog", { name: "Take a photo" }),
+        ).toBeVisible();
+
+        // Answered while the app is still hidden: the patient left, so it
+        // locks after all, and the camera that came is stopped.
+        const canvas = document.createElement("canvas");
+        const stream = canvas.captureStream(1);
+        await act(async () => answer(stream));
+        await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+        await waitFor(() =>
+          expect(
+            stream.getTracks().every((track) => track.readyState === "ended"),
+          ).toBe(true),
+        );
+      } finally {
+        visibility.mockRestore();
+        getUserMedia.mockRestore();
+        window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+      }
+    },
+  );
+
   it("imports the chosen files when the page is visible again after the picker", async () => {
     const user = userEvent.setup();
     let finishPick!: (pickId: string | null) => void;
