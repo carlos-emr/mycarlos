@@ -76,7 +76,14 @@ export async function encodePhoto(
         smaller.height = 0;
         return null;
       }
-      context.drawImage(source, 0, 0, smaller.width, smaller.height);
+      try {
+        context.drawImage(source, 0, 0, smaller.width, smaller.height);
+      } catch {
+        // Out of memory while drawing, for one: nothing is prepared, and the
+        // dialog says so.
+        clear(smaller);
+        return null;
+      }
       if (source !== canvas) clear(source);
       source = smaller;
     }

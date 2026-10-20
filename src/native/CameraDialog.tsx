@@ -133,6 +133,15 @@ export function CameraDialog({
     },
     [clearPhoto, stopCamera],
   );
+  // A photo still being prepared when the dialog closes (a lock included) is
+  // not saved: after a quick unlock it would land in the new session.
+  const openRef = useRef(true);
+  useEffect(() => {
+    openRef.current = true;
+    return () => {
+      openRef.current = false;
+    };
+  }, []);
 
   // A hidden window does not keep the camera on. (The vault also locks then,
   // which closes this dialog; this stops the camera even if that lock fails.)
@@ -188,12 +197,14 @@ export function CameraDialog({
       // Kept under MAX_CAMERA_JPEG_BYTES (photo.ts).
       const blob = await encodePhoto(canvas);
       if (!blob) {
-        setStatus("The photo could not be prepared. Choose Retake.");
+        if (openRef.current)
+          setStatus("The photo could not be prepared. Choose Retake.");
         return;
       }
       const jpeg = new Uint8Array(await blob.arrayBuffer());
       try {
-        await onUse(jpeg);
+        // Checked last, after every wait: closed meanwhile, nothing is saved.
+        if (openRef.current) await onUse(jpeg);
       } finally {
         jpeg.fill(0);
       }

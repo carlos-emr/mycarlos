@@ -73,6 +73,17 @@ describe("a camera photo's weight", () => {
     new Promise<Blob>((resolve) =>
       canvas.toBlob((blob) => resolve(blob!), "image/jpeg", quality),
     );
+  const pixelsOf = (canvas: HTMLCanvasElement) =>
+    canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height)
+      .data;
+  /** A copy of `canvas` drawn at `width` by `height`. */
+  const scaled = (canvas: HTMLCanvasElement, width: number, height: number) => {
+    const copy = document.createElement("canvas");
+    copy.width = width;
+    copy.height = height;
+    copy.getContext("2d")!.drawImage(canvas, 0, 0, width, height);
+    return copy;
+  };
   const sizeOf = async (blob: Blob) => {
     const bitmap = await createImageBitmap(blob);
     const size = [bitmap.width, bitmap.height];
@@ -93,6 +104,7 @@ describe("a camera photo's weight", () => {
 
   it("lowers the quality first, then the size, until a photo fits", async () => {
     const canvas = canvasOf(2048, 1536, true);
+    const before = pixelsOf(canvas);
     const best = await jpeg(canvas, PHOTO_QUALITY);
     const lowest = await jpeg(canvas, 0.6);
     expect(lowest.size).toBeLessThan(best.size);
@@ -108,8 +120,11 @@ describe("a camera photo's weight", () => {
     const [width, height] = await sizeOf(smaller);
     expect(width).toBeLessThan(2048);
     expect(width / height).toBeCloseTo(4 / 3, 2);
-    // The photo taken is not changed.
+    // The photo taken is not changed, pixel for pixel.
     expect([canvas.width, canvas.height]).toEqual([2048, 1536]);
+    const after = pixelsOf(canvas);
+    expect(after.length).toBe(before.length);
+    expect(after.every((value, index) => value === before[index])).toBe(true);
   }, 60_000);
 
   it("prepares nothing rather than a blank photo when a smaller copy cannot be drawn", async () => {
@@ -135,7 +150,31 @@ describe("a camera photo's weight", () => {
   }, 60_000);
 
   it("gives up rather than shrink a photo below 1024 pixels", async () => {
-    expect(await encodePhoto(canvasOf(1200, 900, true), 100)).toBeNull();
+    const canvas = canvasOf(1200, 900, true);
+    // A limit that a photo 768 pixels wide meets, and one 1024 wide does not.
+    const limit = (await jpeg(scaled(canvas, 768, 576), 0.6)).size;
+    expect((await jpeg(scaled(canvas, 1024, 768), 0.6)).size).toBeGreaterThan(
+      limit,
+    );
+    expect(await encodePhoto(canvas, limit)).toBeNull();
+  }, 60_000);
+
+  it("prepares nothing when drawing a smaller copy fails", async () => {
+    const canvas = canvasOf(2048, 1536, true);
+    const lowest = await jpeg(canvas, 0.6);
+    // Out of memory while drawing, for one.
+    const spy = vi
+      .spyOn(CanvasRenderingContext2D.prototype, "drawImage")
+      .mockImplementation(() => {
+        throw new DOMException("FAKE out of memory");
+      });
+    try {
+      await expect(
+        encodePhoto(canvas, Math.floor(lowest.size / 2)),
+      ).resolves.toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   }, 60_000);
 });
 
