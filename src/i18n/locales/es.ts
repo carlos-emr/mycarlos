@@ -148,66 +148,6 @@ export const es: Record<MessageKey, Message> = {
     other: "{count} carpetas",
   },
 
-  // Shared with me (#61)
-  "shared.title": "Compartido conmigo",
-  "shared.tab.waiting": {
-    one: "Compartido conmigo, {count} en espera",
-    many: "Compartido conmigo, {count} en espera",
-    other: "Compartido conmigo, {count} en espera",
-  },
-  "shared.section.waiting": {
-    one: "Compartido conmigo ({count} en espera)",
-    many: "Compartido conmigo ({count} en espera)",
-    other: "Compartido conmigo ({count} en espera)",
-  },
-  "shared.arrived.one":
-    "Hay un archivo compartido en espera en Compartido conmigo.",
-  "shared.arrived.many": {
-    one: "Hay {count} archivo compartido en espera en Compartido conmigo.",
-    many: "Hay {count} de archivos compartidos en espera en Compartido conmigo.",
-    other: "Hay {count} archivos compartidos en espera en Compartido conmigo.",
-  },
-  "shared.waiting.none": "No hay nada en espera.",
-  "shared.waiting.count": {
-    one: "Hay {count} archivo en espera.",
-    many: "Hay {count} de archivos en espera.",
-    other: "Hay {count} archivos en espera.",
-  },
-  "shared.intro.computer": "Los archivos que abra con myCarlos esperan aquí.",
-  "shared.intro.phone":
-    "Los archivos que comparta con myCarlos desde otra aplicación esperan aquí.",
-  "shared.intro.notAdded": "No están en sus documentos hasta que los agregue.",
-  "shared.empty.computer":
-    "Para agregar un PDF de esta manera, ábralo con myCarlos desde los archivos de su equipo.",
-  "shared.empty.phone":
-    "Para agregar un PDF de esta manera, elija Compartir en la aplicación que lo tiene y luego myCarlos.",
-  "shared.list.label": "Archivos en espera",
-  "shared.origin.computer": "Abierto con myCarlos",
-  "shared.origin.phone": "Compartido desde otra aplicación",
-  "shared.row.detail": "{origin} · se marcará como “{label}”",
-  "shared.row.notPdf": "No es un documento PDF: myCarlos no puede agregarlo.",
-  "shared.paused.title": "Los cambios están en pausa.",
-  "shared.paused.body":
-    "Por ahora no se pueden agregar ni rechazar archivos. Mis documentos indica el motivo y qué hacer.",
-  "shared.add": "Agregar…",
-  "shared.add.name": "Agregar {name}…",
-  "shared.decline": "Rechazar",
-  "shared.decline.name": "Rechazar {name}",
-  "shared.decline.title": "¿Rechazar {name}?",
-  "shared.decline.body":
-    "No se agrega, y myCarlos lo olvida. La aplicación que lo compartió todavía lo tiene.",
-  "shared.addTo.label": "Agregar {name}",
-  "shared.addTo.person": "En los documentos de",
-  "shared.addTo.folder": "Carpeta",
-  "shared.addTo.noFolder": "Ninguna carpeta (Mis documentos)",
-  "shared.addTo.submit": "Agregar",
-  "shared.added": "{name} se cifró y se agregó a los documentos de {person}.",
-  "shared.addedToFolder":
-    "{name} se cifró y se agregó a los documentos de {person}, carpeta {folder}.",
-  "shared.alreadyThere":
-    "{name} ya estaba en los documentos de {person}, así que no se agregó de nuevo.",
-  "shared.declined": "{name} rechazado. No se agregó nada.",
-
   // Text size (Settings > Preferences)
   "textSize.title": "Tamaño del texto",
   "textSize.announce": "Tamaño del texto {percent}",
