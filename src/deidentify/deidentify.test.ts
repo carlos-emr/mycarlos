@@ -185,9 +185,20 @@ const documents = [
       "Maria",
       "Testcase",
       "Quinn",
+      "Jules",
+      "Placeholder",
+      "Indigo",
+      "Testperson",
+      "Drew",
+      "Sampleson",
+      "Sasha",
+      "Fakename",
     ],
     kept: [
       "DIAGNOSTIC IMAGING REPORT",
+      "Nurse Practitioner: ",
+      "Pharmacist: ",
+      "Social Worker: ",
       "MRN: ",
       "Tel: ",
       "Exam: Ultrasound abdomen",
@@ -364,6 +375,8 @@ describe("the name remover (#72)", () => {
       "RE: CT CHEST WITH CONTRAST\nChest clear.",
       "Re: Chest pain",
       "Patient - Not Applicable",
+      "Patient: Stable overnight.",
+      "RE: FOLLOW UP",
     ])
       expect(out(text, [])).toBe(text);
   });
@@ -385,6 +398,18 @@ describe("the name remover (#72)", () => {
     expect(out("Nurse Practitioner Jane Notreal saw her.")).toBe(
       "Nurse Practitioner [NAME 1] saw her.",
     );
+    // A title and a colon, as a label: the whole title, then the name.
+    for (const [text, sent] of [
+      ["Nurse Practitioner: Quinn Testcase", "Nurse Practitioner: [NAME 1]"],
+      ["Nurse: Quinn Testcase", "Nurse: [NAME 1]"],
+      ["NP: Quinn Testcase", "NP: [NAME 1]"],
+      ["Midwife: Quinn Testcase, RM", "Midwife: [NAME 1], RM"],
+      [
+        "Infirmière praticienne : Quinn Testcase",
+        "Infirmière praticienne : [NAME 1]",
+      ],
+    ])
+      expect(out(text), text).toBe(sent);
     // No one is named here.
     for (const text of [
       "Referred by Emergency.",

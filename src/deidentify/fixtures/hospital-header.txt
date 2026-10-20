@@ -14,4 +14,10 @@ Next of kin: O'Sample, Sean (husband)
 Emergency contact: MACEXAMPLE, ROWAN  Tel: 613-555-0131
 Copy to: de la Testa, Maria
 
+Care team
+Nurse Practitioner: Jules Placeholder
+Pharmacist: Indigo Testperson
+Social Worker: Drew Sampleson
+NP: Sasha Fakename
+
 Electronically signed by Testcase, Quinn, MD

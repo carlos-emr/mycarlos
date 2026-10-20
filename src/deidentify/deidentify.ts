@@ -415,14 +415,16 @@ const LABEL_PART = `${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
 // Surname first, as lab, imaging and hospital headers have it (#80 review):
 // "Okafor, Margaret A.", "OKAFOR, MARGARET", "de la Cruz, Maria".
 const SURNAME_FIRST = `(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART},[ \\t]+${LABEL_PART}(?:[ \\t]+${LABEL_PART})?(?:[ \\t]+${UPPER}\\.?(?![\\p{L}]))?`;
-// After a label: surname first, or the name as written, in any case
-// ("Avery EXAMPLE", "MARGARET OKAFOR").
-const LABELLED_NAME = `(?:${SURNAME_FIRST}|${LABEL_PART}(?:[ \\t]+(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART}){0,3})`;
+// A name as written after a label, in any case ("Avery EXAMPLE", "MARGARET
+// OKAFOR").
+const AS_WRITTEN = `${LABEL_PART}(?:[ \\t]+(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART}){0,3}`;
+// After a label: surname first, or the name as written.
+const LABELLED_NAME = `(?:${SURNAME_FIRST}|${AS_WRITTEN})`;
 // Initials before a name: "Dr. J. Smith", "cc: Dr. A. Patel" (#80 review).
 const INITIALS = `(?:${UPPER}\\.[ \\t]*)*`;
 // A clinician after a title or a label: initials and a name, or surname
 // first ("Okafor, Margaret").
-const CLINICIAN_NAME = `(?:${SURNAME_FIRST}|${INITIALS}${CAPITALIZED_NAME})`;
+const CLINICIAN_NAME = `(?:${SURNAME_FIRST}|${INITIALS}${AS_WRITTEN})`;
 // Credentials after a name: "Jane Doe, MD", "OKAFOR, MARGARET, NP".
 const CREDENTIAL =
   "(?:MD|M\\.D\\.|NP|RN|RPN|FRCPC|FRCSC|CCFP|PhD|Ph\\.D\\.|PharmD|RPh|MSW|RSW)";
@@ -466,6 +468,35 @@ const NAME_LABEL = `${anyCase([
   "Conjointe",
   "Personne à contacter",
 ])}(?:[ \\t]*:|[ \\t]+[-–—])`;
+// Other clinicians' titles, in any case and longest first, so "Nurse
+// Practitioner:" is one title, not "Nurse" before a name (#80 review).
+const CLINICIAN_TITLE = anyCase([
+  "Nurse practitioner",
+  "Registered nurse",
+  "Nurse",
+  "Dietitian",
+  "Dietician",
+  "Pharmacist",
+  "Physiotherapist",
+  "Physical therapist",
+  "Occupational therapist",
+  "Social worker",
+  "Midwife",
+  "Infirmière praticienne spécialisée",
+  "Infirmière praticienne",
+  "Infirmier praticien",
+  "Infirmière",
+  "Infirmier",
+  "Pharmacienne",
+  "Pharmacien",
+  "Physiothérapeute",
+  "Ergothérapeute",
+  "Nutritionniste",
+  "Diététiste",
+  "Travailleuse sociale",
+  "Travailleur social",
+  "Sage-femme",
+]);
 
 const PROVINCES =
   "(?:ON|BC|QC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU|Ontario|British Columbia|Colombie-Britannique|Qu[eé]bec|Alberta|Manitoba|Saskatchewan|Nova Scotia|Nouvelle-[ÉE]cosse|New Brunswick|Nouveau-Brunswick|Newfoundland and Labrador|Terre-Neuve-et-Labrador|Prince Edward Island|[ÎI]le-du-Prince-[ÉE]douard|Yukon|Northwest Territories|Territoires du Nord-Ouest|Nunavut)";
@@ -612,6 +643,16 @@ const NOT_NAMES = new Set([
   "report",
   "notes",
   "note",
+  // What follows "Patient:" or "RE:" when it is no name.
+  "stable",
+  "unchanged",
+  "improving",
+  "improved",
+  "worsening",
+  "follow",
+  "pending",
+  "doing",
+  "no",
   // A subject line, often in capitals after "RE:": "RE: CT CHEST".
   "ct",
   "mri",
@@ -891,11 +932,12 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
-  // Other clinicians by their title: "Nurse Practitioner Jane Doe".
+  // Other clinicians by their title, with or without a colon: "Nurse
+  // Practitioner Jane Doe", "Nurse: Jane Doe", "NP: Jane Doe".
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Nurse [Pp]ractitioner|Nurse|Dietitian|Dietician|Pharmacist|Physiotherapist|Physical [Tt]herapist|Occupational [Tt]herapist|Social [Ww]orker|Midwife|Infirmière|Infirmier|Pharmacienne|Pharmacien|Physiothérapeute|Ergothérapeute|Nutritionniste|Diététiste|Travailleuse sociale|Travailleur social|Sage-femme)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
       "gu",
     ),
     group: 1,
