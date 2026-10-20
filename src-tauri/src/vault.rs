@@ -2845,6 +2845,9 @@ impl VaultStore {
         read_latest_header(&self.root)
     }
 
+    /// A change to the manifest that records nothing: tests only, to set up
+    /// a state. Every change the app makes is recorded (`mutate_recorded`).
+    #[cfg(test)]
     fn mutate_manifest<T>(
         &self,
         mutation: impl FnOnce(&mut Manifest) -> Result<T, VaultError>,
@@ -14266,7 +14269,9 @@ mod tests {
         store.update_folder(echo, None, " Echoes ").unwrap();
         // Changing nothing records nothing.
         store.update_folder(echo, None, "Echoes").unwrap();
-        store.change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT).unwrap();
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
         let all = history_events(&store);
         let entries = &all[all.len() - 6..];
         assert_eq!(
@@ -14300,7 +14305,12 @@ mod tests {
         };
         assert_eq!(
             made(&entries[1]),
-            (Some(sam), Some(heart), Some("Heart".to_owned()), Some(vec![]))
+            (
+                Some(sam),
+                Some(heart),
+                Some("Heart".to_owned()),
+                Some(vec![])
+            )
         );
         assert_eq!(
             made(&entries[2]),
@@ -14338,7 +14348,9 @@ mod tests {
         // A forgotten passphrase replaced with the recovery key: the unlock
         // and the change, in one commit, the unlock first.
         store.lock();
-        assert!(store.recover(&key, "lantern-orbit-willow-cascade-572").unwrap());
+        assert!(store
+            .recover(&key, "lantern-orbit-willow-cascade-572")
+            .unwrap());
         let entries = history_events(&store);
         let last = &entries[entries.len() - 2..];
         assert_eq!(events_of(last), [Unlocked, PassphraseChanged]);
