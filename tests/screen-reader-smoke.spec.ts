@@ -96,6 +96,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await details
     .getByRole("combobox", { name: "Move to" })
     .selectOption({ label: "FAKE Letters" });
+  await details.getByRole("button", { name: "Move", exact: true }).click();
   await expectAnnounced(page, "Document moved.");
   await details.getByRole("button", { name: "Close document details" }).click();
 

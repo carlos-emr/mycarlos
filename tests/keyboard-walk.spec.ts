@@ -166,16 +166,25 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expect(letterDetails).toBeHidden();
   await expect(letter).toBeFocused();
 
-  // Move it from its details: "Move to" with the arrow keys.
+  // Move it from its details: choose in "Move to" with the arrow keys, then
+  // Tab to Move. Focus goes back to "Move to" once the move is done.
   await letter.focus();
   await page.keyboard.press("Enter");
   const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
-  await details.getByRole("combobox", { name: "Move to" }).focus();
+  const moveTo = details.getByRole("combobox", { name: "Move to" });
+  await moveTo.focus();
   await page.keyboard.press("ArrowDown");
+  await expect(moveTo).toHaveValue("folder");
+  await page.keyboard.press("Tab");
+  await expect(
+    details.getByRole("button", { name: "Move", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
   await expectAnnounced(page, "Document moved.");
   await expect(
     details.getByRole("definition").filter({ hasText: /^FAKE Results$/ }),
   ).toBeVisible();
+  await expect(moveTo).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
 
@@ -243,7 +252,10 @@ test("the library works from the keyboard alone: open, move and search", async (
 // a focused control that is disabled loses the focus to the page itself;
 // nothing puts it back. A new screen or location (after unlocking, opening a
 // folder, or closing details whose document has moved away) also leaves it
-// on the page. Each place is checked, so the failure lists them all.
+// on the page. Each place is checked, so the failure lists them all. #75
+// fixed one: after Move in a document's details, focus goes back to "Move to".
+// The other six (unlocking, an import, closing those details, a selection-bar
+// move, Move folder, opening a folder) still fail.
 test("focus is never left on the page itself after an action (#90)", async ({
   page,
 }) => {
@@ -281,10 +293,12 @@ test("focus is never left on the page itself after an action (#90)", async ({
   const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
   await details.getByRole("combobox", { name: "Move to" }).focus();
   await page.keyboard.press("ArrowDown");
+  await details.getByRole("button", { name: "Move", exact: true }).focus();
+  await page.keyboard.press("Enter");
   await expect(
     details.getByRole("definition").filter({ hasText: /^FAKE Results$/ }),
   ).toBeVisible();
-  await after('a move with "Move to" in the details');
+  await after("a move with Move in the details");
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
   await after("closing details whose document moved away");
@@ -317,35 +331,47 @@ test("focus is never left on the page itself after an action (#90)", async ({
   expect(lostAfter, "focus is left on the page itself after").toEqual([]);
 });
 
-// #91: "Move to" in a document's details moves the document as
-// soon as its value changes, and the arrow keys change it one folder at a
-// time; the box is then disabled while the move runs and loses focus. So the
-// first arrow press moves the document into the next folder, and a folder
-// further down cannot be reached from the keyboard.
+// #91 (fixed by #75): "Move to" used to move the document as soon as its
+// value changed, so with the keyboard the first arrow press moved it into the
+// next folder. Now the list only chooses, and Move moves, once.
 test("Move to in a document's details moves it only where the patient chooses (#91)", async ({
   page,
 }) => {
-  test.fail(true, "#91: the first arrow press moves the document");
   await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
   await page.goto("/");
   await page
     .getByRole("button", { name: "FAKE Letter.pdf", exact: true })
     .focus();
   await page.keyboard.press("Enter");
   const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
-  await details.getByRole("combobox", { name: "Move to" }).focus();
+  const moveTo = details.getByRole("combobox", { name: "Move to" });
+  const moves = () =>
+    page.evaluate(
+      () =>
+        (Reflect.get(window, "__ipcCalls") as string[]).filter(
+          (command) => command === "vault_assign_folders",
+        ).length,
+    );
+  await moveTo.focus();
   // Down to the second folder, FAKE Letters, past FAKE Results.
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
-  await expect(details.getByRole("combobox", { name: "Move to" })).toHaveValue(
-    "letters",
-  );
-  const moves = await page.evaluate(() =>
-    (Reflect.get(window, "__ipcCalls") as string[]).filter(
-      (command) => command === "vault_assign_folders",
-    ),
-  );
-  expect(moves.length, "moves before the patient confirms").toBe(0);
+  await expect(moveTo).toHaveValue("letters");
+  expect(await moves(), "moves before the patient presses Move").toBe(0);
+
+  await page.keyboard.press("Tab");
+  await expect(
+    details.getByRole("button", { name: "Move", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "Document moved.");
+  expect(await moves(), "moves after Move is pressed once").toBe(1);
+  await expect(
+    details.getByRole("definition").filter({ hasText: /^FAKE Letters$/ }),
+  ).toBeVisible();
+  // Move is disabled once the document is there; focus goes back to the list.
+  await expect(moveTo).toBeFocused();
 });
 
 test("Settings work from the keyboard alone", async ({ page }) => {
