@@ -422,7 +422,7 @@ documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
 so that neither is ever committed without the other: the vault created; the history started (in a
 vault an earlier build made, at its first recorded event); each unlock, with the secret that opened
 it (`passphrase` or `recoveryKey`) and how the session before it ended; a document imported
-(`how: "picked"`), renamed (old and new name), moved (the folders before and after, by id and by
+(`how: "picked"`, or `"camera"` for a photo taken in myCarlos), renamed (old and new name), moved (the folders before and after, by id and by
 their names then), hidden (`how: "patient"` or `"damaged"`) or shown again; a readable copy saved,
 and where; a recovery key set; a backup saved, and where; and a backup restored. An entry about a
 document names it as it was called at that moment. Read-only sessions record nothing. Changing

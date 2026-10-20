@@ -615,7 +615,8 @@ fn save_photo(
 ) -> Result<vault::ImportOutcome, VaultError> {
     let cleaned = photo::clean_jpeg(&photo).map_err(|_| VaultError::NotPhoto)?;
     drop(photo);
-    store.import(
+    // The history says it came from the camera (#71).
+    store.import_from(
         target.profile_id,
         target.folder_ids,
         vec![ImportSource {
@@ -623,6 +624,7 @@ fn save_photo(
             reader: Box::new(std::io::Cursor::new(cleaned)),
         }],
         now_ms(),
+        "camera",
     )
 }
 
@@ -4036,5 +4038,9 @@ mod photo_command_tests {
         assert!(save.contains("run_blocking("));
         assert!(body("async fn vault_view_photo(").contains("run_blocking("));
         assert!(body("async fn vault_is_photo(").contains("run_blocking("));
+        // The history says a saved photo came from the camera (#71).
+        let saved = body("fn save_photo(");
+        assert!(saved.contains("store.import_from("));
+        assert!(saved.contains("\"camera\""));
     }
 }

@@ -1380,6 +1380,20 @@ impl VaultStore {
         sources: Vec<ImportSource>,
         now_ms: u64,
     ) -> Result<ImportOutcome, VaultError> {
+        self.import_from(profile_id, folder_ids, sources, now_ms, "picked")
+    }
+
+    /// `import`, saying in the history where the documents came from (#71):
+    /// "picked" from the device's files, or "camera" for a photo taken in
+    /// myCarlos.
+    pub fn import_from(
+        &self,
+        profile_id: Uuid,
+        folder_ids: Vec<Uuid>,
+        sources: Vec<ImportSource>,
+        now_ms: u64,
+        how: &str,
+    ) -> Result<ImportOutcome, VaultError> {
         if sources.is_empty() {
             return Ok(ImportOutcome::default());
         }
@@ -1501,7 +1515,7 @@ impl VaultStore {
                 .iter()
                 .map(|(_, record)| {
                     let mut entry = record_entry(HistoryEvent::Imported, now_ms, record);
-                    entry.how = Some("picked".to_owned());
+                    entry.how = Some(how.to_owned());
                     entry
                 })
                 .collect();
@@ -12913,6 +12927,40 @@ mod tests {
     }
 
     /// The events in the session's history, from its segments.
+    #[test]
+    fn a_photo_from_the_camera_is_recorded_as_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Patient", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let source = |name: &str| ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(std::io::Cursor::new(
+                format!("%PDF-1.7 {name}").into_bytes(),
+            )),
+        };
+        store
+            .import_from(profile, vec![], vec![source("FAKE photo.jpg")], 2, "camera")
+            .unwrap();
+        store
+            .import(profile, vec![], vec![source("FAKE scan.pdf")], 3)
+            .unwrap();
+        let hows: Vec<_> = history_events(&store)
+            .into_iter()
+            .filter(|entry| entry.event == HistoryEvent::Imported)
+            .map(|entry| (entry.name, entry.how))
+            .collect();
+        assert_eq!(
+            hows,
+            vec![
+                (Some("FAKE photo.jpg".to_owned()), Some("camera".to_owned())),
+                (Some("FAKE scan.pdf".to_owned()), Some("picked".to_owned())),
+            ]
+        );
+    }
+
     fn history_events(store: &VaultStore) -> Vec<HistoryEntry> {
         let guard = store.session();
         let unlocked = guard.as_ref().unwrap();
