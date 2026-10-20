@@ -127,8 +127,10 @@ please [report](#report-what-you-find) anything that differs.
    ```
 
    If Homebrew ends with **Next steps** (commands that add `brew` to your PATH), run those before
-   the second line. When the Rust installer asks, choose the default. Then quit Terminal and open
-   it again.
+   the second line. When the Rust installer asks, choose the default. Then quit Terminal, open it
+   again, and run `xcode-select -p`. If the answer doesn't end in `Xcode.app/Contents/Developer`,
+   run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (it asks for your Mac's
+   password).
 3. In Xcode, choose **Xcode → Settings → Accounts**, press **+** and sign in with your Apple ID.
    Select the team marked **(Personal Team)**, press **Manage Certificates…**, then
    **+ → Apple Development**, and close the window.
@@ -138,6 +140,7 @@ please [report](#report-what-you-find) anything that differs.
    git clone https://github.com/carlos-emr/mycarlos.git
    cd mycarlos
    npm ci
+   rustup target add aarch64-apple-ios
    ```
 
 **Each time you install (in Terminal, in the `mycarlos` folder):**
@@ -161,10 +164,12 @@ please [report](#report-what-you-find) anything that differs.
    npm run tauri ios run
    ```
 
-   If more than one device is connected, add the phone's name, for example
-   `npm run tauri ios run "My iPhone"`.
-8. The first time you open **myCarlos Evaluation**, the phone says the developer is untrusted. Go
-   to **Settings → General → VPN & Device Management**, tap your Apple ID and tap **Trust**.
+   Keep the phone unlocked. If it asks which device to use, pick the phone, not a Simulator (or
+   add its name: `npm run tauri ios run "My iPhone"`). If the Mac asks for your password to sign
+   the app, enter it and choose **Always Allow**. The first time, the install works but the app
+   won't open yet: do step 8, then run this step again.
+8. On the phone, go to **Settings → General → VPN & Device Management**, tap **Apple Development:
+   (your Apple ID)** under **Developer App**, and tap **Trust**.
 
 For sample files, AirDrop the PDFs in the `dev-data` folder to the phone and save them to Files.
 
