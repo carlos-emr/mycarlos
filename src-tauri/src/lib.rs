@@ -4737,6 +4737,8 @@ mod locked_pdf_command_tests {
             (Outcome::Refused(Refusal::Unsupported), "pdf_unlock_failed"),
             (Outcome::Failed, "pdf_unlock_failed"),
             (Outcome::Unavailable, "pdf_unlock_unavailable"),
+            // Where the helper's sandbox cannot be set up (#63).
+            (Outcome::NoSandbox, "pdf_unlock_no_sandbox"),
         ] {
             let error = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, |_, _| outcome).unwrap_err();
             assert_eq!(PublicError::from(error).code, expected);
