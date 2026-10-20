@@ -191,10 +191,13 @@ export function SecuritySettings({
               yours to keep or delete.
             </p>
             <p>
-              myCarlos also keeps a history: when the vault was opened, and when
-              each document was added, renamed, moved, hidden, restored or saved
-              outside myCarlos, and where. It is encrypted with everything else.
-              myCarlos does not show it, and never changes or removes it.
+              myCarlos also keeps a history: when the vault was opened; when its
+              passphrase or recovery key was set or changed, and when a backup
+              was saved or restored; when each patient profile was added and
+              each folder made, renamed or moved; and when each document was
+              added, renamed, moved, hidden, restored or saved outside myCarlos,
+              and where. It is encrypted with everything else. myCarlos does not
+              show it, and never changes or removes it.
             </p>
           </div>
         </section>

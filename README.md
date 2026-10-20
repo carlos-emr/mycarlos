@@ -117,9 +117,10 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   disallowed crate-wide by clippy; the one removal helper names what it may remove (stages,
   uncommitted ciphertext, export staging, superseded files, and, until vaults are set aside, a
   reset vault).
-- An encrypted history records each unlock and what happens to each document (added, renamed,
-  moved, hidden, restored, saved outside the vault), hash-chained so that a changed or missing
-  entry shows. It is never shown in the app (#71).
+- An encrypted history records each unlock, each passphrase change, each profile added, each
+  folder made, renamed or moved, and what happens to each document (added, renamed, moved, hidden,
+  restored, saved outside the vault), hash-chained so that a changed or missing entry shows. It is
+  never shown in the app and stays on the device, with no export (#71).
 - Abrupt-termination tests exercise recovery after chunk writes, staging, object rename, redundant
   manifest commits, and each hiding boundary. Corruption tests cover bit flips, truncation,
   ciphertext swapping, exact chunk boundaries, structured semantic manifest mutations,

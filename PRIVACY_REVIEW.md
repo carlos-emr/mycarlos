@@ -53,12 +53,14 @@ documents are in every backup, like the rest.
 when it was opened (and with which secret), and each document added, renamed (both names),
 moved (the folders' names then), hidden, restored, or saved outside the vault as a readable copy,
 with where it was saved (a file path, or a document provider's address on Android), and when
-backups were saved, and where. It keeps the names as they were at each moment, so a document
+backups were saved, and where. It also records when the passphrase was changed (never the
+passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
+(its names then). It keeps the names as they were at each moment, so a document
 renamed or hidden can still be read off the history. The history is never shown in the app, and
 the app never changes or removes an entry. It is in every backup. The app tells the patient this
 in Security, under "What myCarlos keeps". Erasing the whole vault still deletes it until the vault
-is set aside instead (#71's third part). The step that would let the patient save the history for
-an auditor is not built yet.
+is set aside instead (#71's third part). There is no way to save the history
+outside the vault: Ben chose (19 October) to keep it on the device only, tamper-evident.
 
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the

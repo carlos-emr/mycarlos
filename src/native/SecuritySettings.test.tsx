@@ -261,7 +261,7 @@ describe("SecuritySettings privacy notice", () => {
       .closest("section")!;
     expect(notice).toHaveTextContent(/never deletes a document/);
     expect(notice).toHaveTextContent(
-      /also keeps a history: when the vault was opened, and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
+      /also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
     );
     expect(notice).toHaveTextContent(
       /does not show it, and never changes or removes it/,
