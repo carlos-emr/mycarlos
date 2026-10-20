@@ -127,6 +127,10 @@
 .vault-auth {
   min-height: 100vh;
   display: grid;
+  /* One column no wider than the window: with very large text (#84) the
+     card's fields would otherwise widen it past the window's edge, which
+     hides what overflows it, and cut off the Create button. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 24px;
   background: linear-gradient(145deg, var(--auth-start), var(--auth-middle) 58%, var(--auth-end));
@@ -159,6 +163,9 @@
   color: var(--ink);
   font: inherit;
 }
+/* Text boxes may shrink with the card (#84); tick boxes and radio buttons keep
+   their size beside their words. */
+.vault-card input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; }
 .vault-card input:focus {
   border-color: var(--focus);
   outline: 2px solid var(--focus);
