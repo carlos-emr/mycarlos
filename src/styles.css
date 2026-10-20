@@ -721,7 +721,7 @@ h1, h2, p { margin: 0; }
 .native-check::before { content: ""; position: absolute; inset: 10px; border: 2px solid var(--ink-faint); border-radius: 6px; background: var(--paper); }
 .native-check.checked { border: 0; background: transparent; }
 .native-check.checked::before { border-color: var(--teal); background: var(--teal); }
-.native-check.checked::after { position: relative; color: #fff; font-size: 0.875rem; }
+.native-check.checked::after { position: relative; color: var(--on-accent); font-size: 0.875rem; }
 .native-file-grid .file-tile { position: relative; }
 .native-check.tile-check { position: absolute; top: 8px; left: 8px; z-index: 1; margin: 0; }
 
