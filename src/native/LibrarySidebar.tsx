@@ -5,7 +5,10 @@ import type { VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibrarySidebarProps {
   profileName: string;
-  section: "records" | "security" | "preferences";
+  section: "records" | "shared" | "security" | "preferences";
+  /** Files shared with myCarlos waiting to be added or declined (#61). */
+  sharedCount: number;
+  onOpenShared: () => void;
   currentFolderId: string | null;
   folders: VaultFolder[];
   records: VaultRecord[];
@@ -27,6 +30,8 @@ export function LibrarySidebar({
   drag,
   folderCount,
   onOpenFolder,
+  sharedCount,
+  onOpenShared,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
@@ -79,6 +84,21 @@ export function LibrarySidebar({
           <span className="nav-count">
             {records.filter((record) => !record.folderIds.length).length}
           </span>
+        </button>
+        <button
+          className={section === "shared" ? "selected" : ""}
+          type="button"
+          // The count is a flex item, so built from text it would be read
+          // "Shared with me , 2 waiting"; say it plainly instead.
+          aria-label={
+            sharedCount > 0
+              ? `Shared with me, ${sharedCount} waiting`
+              : undefined
+          }
+          onClick={onOpenShared}
+        >
+          <Icon name="letter" /> Shared with me
+          {sharedCount > 0 && <span className="nav-count">{sharedCount}</span>}
         </button>
         <span className="nav-label">Folders</span>
         {sidebarFolders.map(({ folder, depth }) => (

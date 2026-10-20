@@ -18,7 +18,7 @@ import {
   type OpeningRecoverySetup,
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { ReceivedFiles } from "./ReceivedFiles";
+import { SharedWithMe } from "./SharedWithMe";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -40,7 +40,7 @@ import {
   type OldBackupsGuide,
 } from "./oldBackups";
 
-type NativeSection = "records" | "security" | "preferences";
+type NativeSection = "records" | "shared" | "security" | "preferences";
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
 
@@ -81,6 +81,7 @@ export function VaultLibrary({
   onUnfinishedRecoveryKey,
   canPrint = false,
   keyboardHints = true,
+  computer = true,
   sizesIn1024s = false,
   received = [],
   onReceivedChanged,
@@ -113,6 +114,9 @@ export function VaultLibrary({
   /** Whether to show keyboard-only instructions (Tab, Escape): false on
    * phones and tablets. */
   keyboardHints?: boolean;
+  /** On a computer, not a phone: shared files come by being opened with
+   * myCarlos there, not from another app's Share. */
+  computer?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
   /** Files shared from another app, waiting to be added or declined. */
@@ -354,18 +358,42 @@ export function VaultLibrary({
 
   // A shared file an add refused as not a PDF, marked in the list.
   const [notPdfId, setNotPdfId] = useState<string | null>(null);
-  const addReceived = (ids: string[]) =>
+  // Said politely when shared files arrive, and once after unlocking if
+  // some are waiting, so the patient knows where they went (#61).
+  const [sharedAnnouncement, setSharedAnnouncement] = useState("");
+  const sharedSeen = useRef(0);
+  useEffect(() => {
+    const waiting = received.length;
+    if (waiting > sharedSeen.current)
+      setSharedAnnouncement(
+        waiting === 1
+          ? "A shared file is waiting in Shared with me."
+          : `${waiting} shared files are waiting in Shared with me.`,
+      );
+    sharedSeen.current = waiting;
+  }, [received.length]);
+  const addReceived = (
+    id: string,
+    toProfileId: string,
+    folderId: string | null,
+  ) =>
     run(async () => {
-      const folderIds = currentFolderId ? [currentFolderId] : [];
+      const name = received.find((file) => file.id === id)?.name ?? "The file";
       try {
-        const outcome = await bridge.importReceived(ids, profileId, folderIds);
+        const outcome = await bridge.importReceived(
+          [id],
+          toProfileId,
+          folderId ? [folderId] : [],
+        );
         setNotPdfId(null);
         await refresh();
-        const skipped = outcome.skippedDuplicates.length
-          ? ` ${outcome.skippedDuplicates.length} duplicate(s) skipped.`
-          : "";
+        const folder = snapshot.folders.find(
+          (candidate) => candidate.id === folderId,
+        );
         setNotice(
-          `${outcome.imported.length} shared file(s) encrypted and added.${skipped}`,
+          outcome.skippedDuplicates.length
+            ? `${name} was already in ${profileName(toProfileId)}'s records, so it was not added again.`
+            : `${name} was encrypted and added to ${profileName(toProfileId)}'s records${folder ? `, folder ${folder.name}` : ""}.`,
         );
       } catch (error) {
         setNotPdfId(notPdfReceivedId(error));
@@ -381,7 +409,11 @@ export function VaultLibrary({
       } finally {
         onReceivedChanged?.();
       }
-      setNotice(`${ids.length} shared file(s) declined. Nothing was added.`);
+      const name =
+        ids.length === 1
+          ? (received.find((file) => file.id === ids[0])?.name ?? "The file")
+          : `${ids.length} files`;
+      setNotice(`${name} declined. Nothing was added.`);
     });
 
   const importFiles = () =>
@@ -684,6 +716,10 @@ export function VaultLibrary({
 
   return (
     <div className="evaluation-page native-vault-page">
+      {/* Polite, but not a second status line: the library has one. */}
+      <p className="sr-only" aria-live="polite">
+        {sharedAnnouncement}
+      </p>
       <div className="evaluation-banner" role="note">
         <strong>Synthetic-data development build</strong>
         <span>
@@ -737,6 +773,11 @@ export function VaultLibrary({
               }
             >
               <option value="records">My records</option>
+              <option value="shared">
+                {received.length
+                  ? `Shared with me (${received.length} waiting)`
+                  : "Shared with me"}
+              </option>
               <option value="security">Security</option>
               <option value="preferences">Preferences</option>
             </select>
@@ -764,6 +805,8 @@ export function VaultLibrary({
                 setSection("records");
                 setCurrentFolderId(folderId);
               }}
+              sharedCount={received.length}
+              onOpenShared={() => setSection("shared")}
               onOpenSecurity={() => setSection("security")}
               onOpenPreferences={() => setSection("preferences")}
             />
@@ -1093,16 +1136,6 @@ export function VaultLibrary({
                     </div>
                   </div>
                 )}
-                {!readOnly && (
-                  <ReceivedFiles
-                    files={received}
-                    destination={`${profileName(profileId)}'s records${currentFolder ? `, folder ${currentFolder.name}` : ""}`}
-                    notPdfId={notPdfId}
-                    disabled={busy}
-                    onAdd={(ids) => void addReceived(ids)}
-                    onDecline={(ids) => void declineReceived(ids)}
-                  />
-                )}
                 <p className="status-line" role="status" aria-live="polite">
                   {notice}
                 </p>
@@ -1135,6 +1168,22 @@ export function VaultLibrary({
               </main>
             )}
 
+            {section === "shared" && (
+              <SharedWithMe
+                files={received}
+                profiles={snapshot.profiles}
+                folders={snapshot.folders}
+                defaultProfileId={profileId}
+                computer={computer}
+                notPdfId={notPdfId}
+                notice={notice}
+                disabled={busy || readOnly}
+                onAdd={(id, toProfileId, folderId) =>
+                  void addReceived(id, toProfileId, folderId)
+                }
+                onDecline={(id) => void declineReceived([id])}
+              />
+            )}
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "security" && (

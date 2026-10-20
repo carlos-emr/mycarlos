@@ -543,7 +543,7 @@ describe("durable vault UI", () => {
     );
   });
 
-  it("shows only a count of shared files while locked, then adds them where the library is open", async () => {
+  it("shows only a count of shared files while locked, then lists them under Shared with me to add one", async () => {
     const user = userEvent.setup();
     const waiting = {
       files: [
@@ -596,31 +596,36 @@ describe("durable vault UI", () => {
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.click(screen.getByRole("button", { name: "Unlock" }));
-    const panel = await screen.findByRole("region", {
-      name: "Shared with myCarlos",
-    });
-    expect(within(panel).getByText("FAKE_Bloodwork.pdf")).toBeVisible();
+    // Said once, politely, so the patient knows where they went; the
+    // section shows how many are waiting.
     expect(
-      within(panel).getAllByText("Manual import — unverified"),
+      await screen.findByText("2 shared files are waiting in Shared with me."),
+    ).toHaveAttribute("aria-live", "polite");
+    const tab = screen.getByRole("button", { name: /^Shared with me/ });
+    expect(tab).toHaveAccessibleName("Shared with me, 2 waiting");
+    await user.click(tab);
+    const page = await screen.findByRole("main", { name: "Shared with me" });
+    expect(within(page).getByText("FAKE_Bloodwork.pdf")).toBeVisible();
+    expect(
+      within(page).getAllByText(/will be marked "Manual import — unverified"/),
     ).toHaveLength(2);
-    expect(within(panel).getByText(/Adds to Jamie's records\./)).toBeVisible();
 
     await user.click(
-      within(panel).getByRole("checkbox", { name: "FAKE_Xray.pdf" }),
+      within(page).getByRole("button", { name: "Add FAKE_Bloodwork.pdf…" }),
     );
-    await user.click(within(panel).getByRole("button", { name: "Add 1 file" }));
+    await user.click(within(page).getByRole("button", { name: "Add" }));
     expect(bridge.importReceived).toHaveBeenCalledWith(
       ["shared-1"],
       "profile-1",
       [],
     );
     expect(
-      await screen.findByText("1 shared file(s) encrypted and added."),
+      await screen.findByText(
+        "FAKE_Bloodwork.pdf was encrypted and added to Jamie's records.",
+      ),
     ).toBeVisible();
     await waitFor(() =>
-      expect(
-        screen.queryByRole("region", { name: "Shared with myCarlos" }),
-      ).toBeNull(),
+      expect(within(page).queryByText("FAKE_Bloodwork.pdf")).toBeNull(),
     );
   });
 

@@ -876,6 +876,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
       canPrint={DESKTOP_PLATFORMS.has(platform)}
       keyboardHints={DESKTOP_PLATFORMS.has(platform)}
+      computer={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
       received={received}
       onReceivedChanged={refreshReceived}
