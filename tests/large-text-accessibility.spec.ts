@@ -259,6 +259,18 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
+        // A file shared from another app, waiting under Shared with me (#61).
+        if (command === "received_list")
+          return {
+            files: [
+              {
+                id: "shared",
+                name: "FAKE Referral.pdf",
+                sourceLabel: "Manual import — unverified",
+              },
+            ],
+            notice: { dropped: 0, refusedShares: 0 },
+          };
         // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
         // Kept as well as thrown: a screen showing an error notice could still pass axe.
@@ -320,6 +332,18 @@ async function walkTheVault(large: LargeText) {
   await expectNoViolations(page, "document details", large.cutOff);
   await page.getByRole("button", { name: "Close document details" }).click();
   await expect(details).toBeHidden();
+
+  await openSection(page, "shared", "Shared with me");
+  await expect(
+    page.getByRole("heading", { name: "Shared with me" }),
+  ).toBeVisible();
+  await expectNoViolations(page, "Shared with me", large.cutOff);
+  await page.getByRole("button", { name: "Add FAKE Referral.pdf…" }).click();
+  await expect(
+    page.getByRole("form", { name: "Add FAKE Referral.pdf" }),
+  ).toBeVisible();
+  await expectNoViolations(page, "Shared with me, adding a file", large.cutOff);
+  await page.getByRole("button", { name: "Cancel" }).click();
 
   await openSection(page, "security", "Security");
   await expect(page.getByRole("heading", { name: "Security" })).toBeVisible();
