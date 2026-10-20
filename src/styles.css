@@ -51,6 +51,7 @@
   --toggle-thumb: #fff;
   --thumb-shadow: rgb(0 0 0 / 15%);
   --backdrop: rgb(8 28 25 / 48%);
+  --camera-view: #000;
   --dialog-shadow: rgb(8 28 25 / 28%);
   --metadata-line: #edf0ef;
   --disabled-ink: #4a5f5c;
@@ -112,6 +113,7 @@
   --toggle-thumb: #082e26;
   --thumb-shadow: rgb(0 0 0 / 30%);
   --backdrop: rgb(0 0 0 / 62%);
+  --camera-view: #000;
   --dialog-shadow: rgb(0 0 0 / 48%);
   --metadata-line: #3b5148;
   --disabled-ink: #b8cbc5;
@@ -811,7 +813,8 @@ h1, h2, p { margin: 0; }
 .camera-body { display: grid; gap: 12px; padding: 16px 20px; }
 .camera-about p { font-size: 0.9375rem; line-height: 1.5; }
 .camera-about p + p { margin-top: 8px; color: var(--ink-soft); }
-.camera-view { display: block; width: 100%; max-height: 60vh; border-radius: var(--radius-sm); background: #000; object-fit: contain; }
+/* Behind the camera's picture and a photo taken (#73): black in every theme. */
+.camera-view { display: block; width: 100%; max-height: 60vh; border-radius: var(--radius-sm); background: var(--camera-view); object-fit: contain; }
 .camera-view[hidden] { display: none; }
 .camera-failure { color: var(--red); font-weight: 700; line-height: 1.5; }
 .camera-actions { flex-wrap: wrap; }
