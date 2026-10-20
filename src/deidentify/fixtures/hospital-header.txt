@@ -1,0 +1,23 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+SAMPLETOWN GENERAL HOSPITAL
+DIAGNOSTIC IMAGING REPORT
+
+PATIENT: NOTREAL, MARGARET A.        MRN: H00099881
+Patient Name: Notreal, Margaret A.
+DOB: 1972-05-09
+
+Exam: Ultrasound abdomen
+Findings: Normal liver echotexture. No gallstones.
+Impression: Normal study.
+
+Next of kin: O'Sample, Sean (husband)
+Emergency contact: MACEXAMPLE, ROWAN  Tel: 613-555-0131
+Copy to: de la Testa, Maria
+
+Care team
+Nurse Practitioner: Jules Placeholder
+Pharmacist: Indigo Testperson
+Social Worker: Drew Sampleson
+NP: Sasha Fakename
+
+Electronically signed by Testcase, Quinn, MD

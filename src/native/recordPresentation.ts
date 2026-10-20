@@ -43,6 +43,9 @@ const KIND_RULES: {
 ];
 
 export function recordKind(name: string): { icon: IconName; label: string } {
+  // A photo saved from the camera, or any JPEG by its name. (Whether a file
+  // can be shown as a photo is decided by its bytes, in the vault.)
+  if (/\.jpe?g$/i.test(name.trim())) return { icon: "camera", label: "Photo" };
   // Not the locale's lower case: under a Turkish locale "IMAGING" becomes
   // "ımagıng", which matches none of the ASCII stems below.
   const words = name

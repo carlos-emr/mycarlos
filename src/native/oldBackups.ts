@@ -15,7 +15,7 @@ export const OLD_BACKUPS_EXPOSED =
 
 /** The same, for a vault that cannot save a backup just now. */
 export const OLD_BACKUPS_KEEP =
-  'Your old kit could still open backups saved before now, but keep them for now: this vault cannot save a new backup until you have done what the "Read-only recovery mode" notice in the library says. Then save a new backup in Security, and delete the older ones.';
+  'Your old kit could still open backups saved before now, but keep them for now: this vault cannot save a new backup until you have done what the "Changes are paused" notice in the library says. Then save a new backup in Security, and delete the older ones.';
 
 /** Where the steps for older backups are: a new backup to save first, then
  * every other one to delete, keeping the one named here (the file written,
