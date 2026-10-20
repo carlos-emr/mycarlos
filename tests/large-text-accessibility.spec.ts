@@ -356,9 +356,10 @@ test("has no automatically detectable WCAG violations on the vault screens with 
   await withReaderText200(page, walkTheVault);
 });
 
-// #84: at the reader's 200% default text, first setup and the library's
-// controls are cut off. Expected to fail until #84 is fixed; axe and sideways
-// scrolling are still checked at that size by the tests above.
+// #84: at the reader's 200% default text, the library's controls are cut off
+// (first setup fits since #84 step 1). Expected to fail until #84 is fixed;
+// axe and sideways scrolling are still checked at that size by the tests
+// above.
 test("cuts nothing off with the reader's default text at 200% (#84)", async ({
   page,
 }) => {
@@ -372,9 +373,6 @@ test("cuts nothing off with the reader's default text at 200% (#84)", async ({
 test("cuts nothing off on the vault screens with the reader's default text at 200% (#84)", async ({
   page,
 }) => {
-  test.fail(
-    true,
-    "#84: first setup and the library are cut off at 200% default text",
-  );
+  test.fail(true, "#84: the library is cut off at 200% default text");
   await withReaderText200(page, walkTheVault, true);
 });
