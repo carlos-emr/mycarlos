@@ -276,6 +276,8 @@ pub enum VaultError {
     DamagedDocument(Uuid),
     #[error("the restore was verified, but could not yet take the vault's place")]
     RestoreUnfinished,
+    #[error("the file is not a JPEG photo within the size limits")]
+    NotPhoto,
 }
 
 impl From<io::Error> for VaultError {
@@ -784,6 +786,26 @@ impl VaultStore {
         })
     }
 
+    /// First setup's checklist (#69): which rules a passphrase being typed
+    /// for a new vault meets, judged as `create` will judge it. Only while
+    /// there is no vault, open or not: it judges a typed passphrase against
+    /// nothing stored, and refuses once there is something.
+    pub fn new_passphrase_rules(
+        &self,
+        passphrase: &str,
+        initial_profile: &str,
+    ) -> Result<PassphraseRules, VaultError> {
+        if self.session().is_some() || self.root.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        // A name is at most 120 characters (`validate_name`): bound the raw
+        // input before any work on it.
+        if initial_profile.len() > 120 * 4 {
+            return Err(VaultError::Invalid);
+        }
+        judge_new_passphrase(passphrase, &[initial_profile], false)
+    }
+
     pub fn create(
         &self,
         passphrase: &str,
@@ -921,6 +943,16 @@ impl VaultStore {
     /// The note of how the session before ended is used up only once it is
     /// in the history; otherwise it waits for the next unlock that is.
     fn record_unlock(&self, guard: &mut Option<UnlockedVault>, how: &str) {
+        self.record_unlock_with(guard, how, Vec::new());
+    }
+
+    /// As `record_unlock`, with entries for what the unlock itself changed.
+    fn record_unlock_with(
+        &self,
+        guard: &mut Option<UnlockedVault>,
+        how: &str,
+        changed: Vec<HistoryEntry>,
+    ) {
         let mut last = self
             .last_session
             .lock()
@@ -931,7 +963,9 @@ impl VaultStore {
         let mut entry = HistoryEntry::new(HistoryEvent::Unlocked, crate::now_ms());
         entry.how = Some(how.to_owned());
         entry.previous_session = Some(last.clone().unwrap_or_else(|| "notRecorded".to_owned()));
-        if record_in_session(&self.root, unlocked, vec![entry]) {
+        let mut entries = vec![entry];
+        entries.extend(changed);
+        if record_in_session(&self.root, unlocked, entries) {
             unlocked.start_recorded = true;
             *last = None;
         }
@@ -1158,11 +1192,16 @@ impl VaultStore {
 
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
         validate_name(display_name)?;
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let id = Uuid::new_v4();
+            let display_name = display_name.trim().to_owned();
+            let mut entry = HistoryEntry::new(HistoryEvent::ProfileCreated, now_ms);
+            entry.profile_id = Some(id);
+            entry.name = Some(display_name.clone());
+            entries.push(entry);
             manifest.profiles.push(PatientProfile {
                 id,
-                display_name: display_name.trim().to_owned(),
+                display_name,
                 created_at_ms: now_ms,
             });
             Ok(id)
@@ -1177,7 +1216,7 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<Uuid, VaultError> {
         validate_name(name)?;
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             require_profile(manifest, profile_id)?;
             if let Some(parent) = parent_id {
                 let folder = manifest
@@ -1191,6 +1230,12 @@ impl VaultStore {
                 ensure_depth(manifest, Some(parent), 1)?;
             }
             let id = Uuid::new_v4();
+            let mut entry = HistoryEntry::new(HistoryEvent::FolderCreated, now_ms);
+            entry.profile_id = Some(profile_id);
+            entry.folder_id = Some(id);
+            entry.name = Some(name.trim().to_owned());
+            entry.to = Some(folders_at_the_time(manifest, parent_id.as_slice()));
+            entries.push(entry);
             manifest.folders.push(VaultFolder {
                 id,
                 profile_id,
@@ -1209,7 +1254,7 @@ impl VaultStore {
         name: &str,
     ) -> Result<(), VaultError> {
         validate_name(name)?;
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let current = manifest
                 .folders
                 .iter()
@@ -1232,13 +1277,35 @@ impl VaultStore {
                 }
                 ensure_depth(manifest, Some(parent), subtree_depth(manifest, folder_id)?)?;
             }
+            // One entry for a new name and one for a new place, each only when
+            // it changed; both name the folder as it is afterwards.
+            let name = name.trim();
+            let at_ms = crate::now_ms();
+            let folder_entry = |event| {
+                let mut entry = HistoryEntry::new(event, at_ms);
+                entry.profile_id = Some(current.profile_id);
+                entry.folder_id = Some(folder_id);
+                entry.name = Some(name.to_owned());
+                entry
+            };
+            if current.name != name {
+                let mut entry = folder_entry(HistoryEvent::FolderRenamed);
+                entry.old_name = Some(current.name.clone());
+                entries.push(entry);
+            }
+            if current.parent_id != parent_id {
+                entries.push(folder_entry(HistoryEvent::FolderMoved).with_move(
+                    folders_at_the_time(manifest, current.parent_id.as_slice()),
+                    folders_at_the_time(manifest, parent_id.as_slice()),
+                ));
+            }
             let folder = manifest
                 .folders
                 .iter_mut()
                 .find(|folder| folder.id == folder_id)
                 .ok_or(VaultError::NotFound)?;
             folder.parent_id = parent_id;
-            folder.name = name.trim().to_owned();
+            folder.name = name.to_owned();
             Ok(())
         })
     }
@@ -1340,6 +1407,20 @@ impl VaultStore {
         folder_ids: Vec<Uuid>,
         sources: Vec<ImportSource>,
         now_ms: u64,
+    ) -> Result<ImportOutcome, VaultError> {
+        self.import_from(profile_id, folder_ids, sources, now_ms, "picked")
+    }
+
+    /// `import`, saying in the history where the documents came from (#71):
+    /// "picked" from the device's files, or "camera" for a photo taken in
+    /// myCarlos.
+    pub fn import_from(
+        &self,
+        profile_id: Uuid,
+        folder_ids: Vec<Uuid>,
+        sources: Vec<ImportSource>,
+        now_ms: u64,
+        how: &str,
     ) -> Result<ImportOutcome, VaultError> {
         if sources.is_empty() {
             return Ok(ImportOutcome::default());
@@ -1462,7 +1543,7 @@ impl VaultStore {
                 .iter()
                 .map(|(_, record)| {
                     let mut entry = record_entry(HistoryEvent::Imported, now_ms, record);
-                    entry.how = Some("picked".to_owned());
+                    entry.how = Some(how.to_owned());
                     entry
                 })
                 .collect();
@@ -1854,6 +1935,9 @@ impl VaultStore {
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
+        let mut entry = HistoryEntry::new(HistoryEvent::PassphraseChanged, crate::now_ms());
+        entry.how = Some("passphrase".to_owned());
+        record_in_session(&self.root, unlocked, vec![entry]);
         Ok(())
     }
 
@@ -2211,7 +2295,11 @@ impl VaultStore {
             wrapping_key,
             false,
         )?;
-        self.record_unlock(&mut guard, "recoveryKey");
+        // Opened with the recovery key, which replaced the passphrase: both
+        // in one commit, the unlock first, as it begins the session.
+        let mut changed = HistoryEntry::new(HistoryEvent::PassphraseChanged, crate::now_ms());
+        changed.how = Some("recoveryKey".to_owned());
+        self.record_unlock_with(&mut guard, "recoveryKey", vec![changed]);
         Ok(true)
     }
 
@@ -2810,6 +2898,9 @@ impl VaultStore {
         read_latest_header(&self.root)
     }
 
+    /// A change to the manifest that records nothing: tests only, to set up
+    /// a state. Every change the app makes is recorded (`mutate_recorded`).
+    #[cfg(test)]
     fn mutate_manifest<T>(
         &self,
         mutation: impl FnOnce(&mut Manifest) -> Result<T, VaultError>,
@@ -2880,7 +2971,37 @@ impl ObjectContext {
 /// not a coincidence.
 const MIN_NAME_WORD_CHARS: usize = 4;
 
+/// Which of the rules for a new passphrase it meets, as first setup's
+/// checklist shows them (#69). Three answers only: never a score, a hint, or
+/// anything of the passphrase itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PassphraseRules {
+    pub long_enough: bool,
+    pub not_a_name: bool,
+    pub hard_to_guess: bool,
+}
+
 fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), VaultError> {
+    let rules = judge_new_passphrase(passphrase, context, true)?;
+    if !rules.long_enough {
+        Err(VaultError::Invalid)
+    } else if rules.not_a_name && rules.hard_to_guess {
+        Ok(())
+    } else {
+        Err(VaultError::WeakPassphrase)
+    }
+}
+
+/// The one judgement of a new passphrase, for both the vault and first
+/// setup's checklist. Refused outright: one over the byte limit or with
+/// control characters. Otherwise, which rules it meets; with `stop_early`, the
+/// slow estimate is skipped once a rule has failed, and counts as failed.
+fn judge_new_passphrase(
+    passphrase: &str,
+    context: &[&str],
+    stop_early: bool,
+) -> Result<PassphraseRules, VaultError> {
     // Bound the raw input before any work on it.
     if passphrase.len() > MAX_PASSPHRASE_BYTES {
         return Err(VaultError::Invalid);
@@ -2888,12 +3009,10 @@ fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), Vau
     // Every rule applies to the form the KDF will see. The same visible text
     // must pass or fail alike whichever composition form a keyboard produced.
     let passphrase = normalize_passphrase(passphrase);
-    if passphrase.chars().count() < MIN_PASSPHRASE_CHARS
-        || passphrase.len() > MAX_PASSPHRASE_BYTES
-        || passphrase.chars().any(char::is_control)
-    {
+    if passphrase.len() > MAX_PASSPHRASE_BYTES || passphrase.chars().any(char::is_control) {
         return Err(VaultError::Invalid);
     }
+    let long_enough = passphrase.chars().count() >= MIN_PASSPHRASE_CHARS;
     // Names are normalized before they are split: a combining mark is not
     // alphanumeric, so splitting first would break "Renée" apart.
     let context: Vec<Zeroizing<String>> = context
@@ -2905,22 +3024,23 @@ fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), Vau
     // rearranged or joined with a symbol scores as strong. Any word of a
     // profile name is refused outright instead.
     let lowered = lowercase(passphrase.as_str());
-    let contains_name_word = context
+    let not_a_name = !context
         .iter()
         .flat_map(|value| value.split(|c: char| !c.is_alphanumeric()))
         .filter(|word| word.chars().count() >= MIN_NAME_WORD_CHARS)
         .any(|word| lowered.contains(lowercase(word).as_str()));
-    if contains_name_word {
-        return Err(VaultError::WeakPassphrase);
-    }
-
-    let mut user_inputs = vec!["mycarlos", "carlos", "myvitalhistory"];
-    user_inputs.extend(context.iter().map(|value| value.as_str()));
-    if zxcvbn(&passphrase, &user_inputs).score() < Score::Three {
-        Err(VaultError::WeakPassphrase)
+    let hard_to_guess = if stop_early && !(long_enough && not_a_name) {
+        false
     } else {
-        Ok(())
-    }
+        let mut user_inputs = vec!["mycarlos", "carlos", "myvitalhistory"];
+        user_inputs.extend(context.iter().map(|value| value.as_str()));
+        zxcvbn(&passphrase, &user_inputs).score() >= Score::Three
+    };
+    Ok(PassphraseRules {
+        long_enough,
+        not_a_name,
+        hard_to_guess,
+    })
 }
 
 pub(crate) fn validate_import_count(count: usize) -> Result<(), VaultError> {
@@ -12997,6 +13117,40 @@ mod tests {
     }
 
     /// The events in the session's history, from its segments.
+    #[test]
+    fn a_photo_from_the_camera_is_recorded_as_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Patient", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let source = |name: &str| ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(std::io::Cursor::new(
+                format!("%PDF-1.7 {name}").into_bytes(),
+            )),
+        };
+        store
+            .import_from(profile, vec![], vec![source("FAKE photo.jpg")], 2, "camera")
+            .unwrap();
+        store
+            .import(profile, vec![], vec![source("FAKE scan.pdf")], 3)
+            .unwrap();
+        let hows: Vec<_> = history_events(&store)
+            .into_iter()
+            .filter(|entry| entry.event == HistoryEvent::Imported)
+            .map(|entry| (entry.name, entry.how))
+            .collect();
+        assert_eq!(
+            hows,
+            vec![
+                (Some("FAKE photo.jpg".to_owned()), Some("camera".to_owned())),
+                (Some("FAKE scan.pdf".to_owned()), Some("picked".to_owned())),
+            ]
+        );
+    }
+
     fn history_events(store: &VaultStore) -> Vec<HistoryEntry> {
         let guard = store.session();
         let unlocked = guard.as_ref().unwrap();
@@ -13412,6 +13566,84 @@ mod tests {
         assert!(matches!(
             validate_new_passphrase("Jamie-Jamie-Jamie", &["Jamie"]),
             Err(VaultError::WeakPassphrase)
+        ));
+    }
+
+    #[test]
+    fn the_setup_checklist_answers_each_rule_as_the_vault_judges_it() {
+        // (#69) The checklist and the vault are one judgement: a passphrase
+        // meets all three rules exactly when the vault accepts it.
+        let name = ["Jamie Rivers"];
+        for (passphrase, long_enough, not_a_name, hard_to_guess) in [
+            ("river azimuth cobalt sparrow 934", true, true, true),
+            // Each rule is answered on its own: short, yet hard to guess.
+            ("short phrase!!", false, true, true),
+            ("passwordpassword", true, true, false),
+            ("lantern jamie orbit willow 572", true, false, true),
+            ("RIVERS of azimuth cobalt 934", true, false, true),
+            ("jamie", false, false, false),
+        ] {
+            let rules = judge_new_passphrase(passphrase, &name, false).unwrap();
+            assert_eq!(
+                rules,
+                PassphraseRules {
+                    long_enough,
+                    not_a_name,
+                    hard_to_guess,
+                },
+                "{passphrase}"
+            );
+            assert_eq!(
+                validate_new_passphrase(passphrase, &name).is_ok(),
+                long_enough && not_a_name && hard_to_guess,
+                "{passphrase}"
+            );
+        }
+        // Refused outright, as the vault refuses them: no answers at all.
+        let too_long = "a".repeat(MAX_PASSPHRASE_BYTES + 1);
+        for passphrase in ["fifteen chars\nmore", too_long.as_str()] {
+            assert!(matches!(
+                judge_new_passphrase(passphrase, &name, false),
+                Err(VaultError::Invalid)
+            ));
+        }
+        // Three answers, named, and nothing else crosses to the renderer.
+        let answers = serde_json::to_value(
+            judge_new_passphrase("river azimuth cobalt sparrow 934", &name, false).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            answers,
+            serde_json::json!({ "longEnough": true, "notAName": true, "hardToGuess": true })
+        );
+    }
+
+    #[test]
+    fn the_setup_checklist_answers_only_while_there_is_no_vault() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let store = VaultStore::new(root.clone());
+        let rules = store
+            .new_passphrase_rules("river azimuth cobalt sparrow 934", "Jamie")
+            .unwrap();
+        assert!(rules.long_enough && rules.not_a_name && rules.hard_to_guess);
+        // Nothing was written by asking.
+        assert!(!root.exists());
+        assert!(matches!(
+            store.new_passphrase_rules("x", &"n".repeat(121 * 4)),
+            Err(VaultError::Invalid)
+        ));
+
+        // Open, and then locked: it refuses either way.
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(matches!(
+            store.new_passphrase_rules("river azimuth cobalt sparrow 934", "Jamie"),
+            Err(VaultError::AlreadyExists)
+        ));
+        store.lock();
+        assert!(matches!(
+            store.new_passphrase_rules("river azimuth cobalt sparrow 934", "Jamie"),
+            Err(VaultError::AlreadyExists)
         ));
     }
 
@@ -14262,6 +14494,111 @@ mod tests {
     }
 
     #[test]
+    fn profile_folder_and_passphrase_changes_go_in_the_history() {
+        use HistoryEvent::*;
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        let sam = store.create_profile("  Sam ", 3).unwrap();
+        let heart = store.create_folder(sam, None, "Heart", 4).unwrap();
+        let echo = store.create_folder(sam, Some(heart), "Echo", 5).unwrap();
+        // A new name and a new place: one entry each.
+        store.update_folder(echo, None, " Echoes ").unwrap();
+        // Changing nothing records nothing.
+        store.update_folder(echo, None, "Echoes").unwrap();
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        let all = history_events(&store);
+        let entries = &all[all.len() - 6..];
+        assert_eq!(
+            events_of(entries),
+            [
+                ProfileCreated,
+                FolderCreated,
+                FolderCreated,
+                FolderRenamed,
+                FolderMoved,
+                PassphraseChanged
+            ]
+        );
+        let folder_at = |id, name: &str| history::FolderAtTheTime {
+            id,
+            name: name.to_owned(),
+        };
+        let profile = &entries[0];
+        assert_eq!(
+            (profile.profile_id, profile.name.as_deref(), profile.at_ms),
+            (Some(sam), Some("Sam"), 3)
+        );
+        assert_eq!((profile.folder_id, profile.record_id), (None, None));
+        let made = |entry: &HistoryEntry| {
+            (
+                entry.profile_id,
+                entry.folder_id,
+                entry.name.clone(),
+                entry.to.clone(),
+            )
+        };
+        assert_eq!(
+            made(&entries[1]),
+            (
+                Some(sam),
+                Some(heart),
+                Some("Heart".to_owned()),
+                Some(vec![])
+            )
+        );
+        assert_eq!(
+            made(&entries[2]),
+            (
+                Some(sam),
+                Some(echo),
+                Some("Echo".to_owned()),
+                Some(vec![folder_at(heart, "Heart")])
+            )
+        );
+        assert_eq!(entries[1].from, None);
+        let renamed = &entries[3];
+        assert_eq!(
+            (
+                renamed.folder_id,
+                renamed.old_name.as_deref(),
+                renamed.name.as_deref()
+            ),
+            (Some(echo), Some("Echo"), Some("Echoes"))
+        );
+        let moved = &entries[4];
+        assert_eq!(
+            (moved.folder_id, moved.name.as_deref()),
+            (Some(echo), Some("Echoes"))
+        );
+        assert_eq!(moved.from, Some(vec![folder_at(heart, "Heart")]));
+        assert_eq!(moved.to, Some(vec![]));
+        assert_eq!(entries[5].how.as_deref(), Some("passphrase"));
+        // Nothing about either passphrase goes in.
+        for entry in entries {
+            let text = String::from_utf8(entry.canonical()).unwrap();
+            assert!(!text.contains(PASSWORD) && !text.contains(PASSPHRASE_REPLACEMENT));
+        }
+
+        // A forgotten passphrase replaced with the recovery key: the unlock
+        // and the change, in one commit, the unlock first.
+        store.lock();
+        assert!(store
+            .recover(&key, "lantern-orbit-willow-cascade-572")
+            .unwrap());
+        let entries = history_events(&store);
+        let last = &entries[entries.len() - 2..];
+        assert_eq!(events_of(last), [Unlocked, PassphraseChanged]);
+        assert_eq!(last[0].how.as_deref(), Some("recoveryKey"));
+        assert_eq!(last[1].how.as_deref(), Some("recoveryKey"));
+        let text = String::from_utf8(last[1].canonical()).unwrap();
+        assert!(!text.contains("lantern-orbit-willow-cascade-572") && !text.contains(&key));
+    }
+
+    #[test]
     fn every_event_goes_in_the_history_with_what_it_was_about() {
         use HistoryEvent::*;
         let temp = tempfile::tempdir().unwrap();
@@ -14293,6 +14630,7 @@ mod tests {
             events_of(&entries),
             [
                 Created,
+                FolderCreated,
                 Imported,
                 Renamed,
                 Moved,
@@ -14306,6 +14644,9 @@ mod tests {
         assert!(entries
             .iter()
             .all(|entry| entry.app == env!("CARGO_PKG_VERSION")));
+        // The folder's own entry is checked in the next test; the rest are
+        // about the document.
+        let entries = &entries[1..];
         let about = |index: usize| (entries[index].record_id, entries[index].name.as_deref());
         assert_eq!(about(1), (Some(record), Some("scan.pdf")));
         assert_eq!(entries[1].how.as_deref(), Some("picked"));

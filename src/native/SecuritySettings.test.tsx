@@ -260,7 +260,7 @@ describe("SecuritySettings privacy notice", () => {
       .closest("section")!;
     expect(notice).toHaveTextContent(/never deletes a document/);
     expect(notice).toHaveTextContent(
-      /also keeps a history: when the vault was opened, and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
+      /also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
     );
     expect(notice).toHaveTextContent(
       /does not show it, and never changes or removes it/,
@@ -294,6 +294,18 @@ describe("SecuritySettings passphrase change", () => {
     expect(screen.queryByText("Show reset controls")).toBeNull();
     expect(screen.queryByLabelText(/RESET MYCARLOS VAULT/)).toBeNull();
     expect(document.body).not.toHaveTextContent(/start again/i);
+  });
+
+  it("says hiding a document leaves copies outside the vault, not that it deletes (#71)", () => {
+    renderSettings();
+    const section = screen
+      .getByRole("heading", { name: "Readable copies and screenshots" })
+      .closest("section")!;
+    expect(section).toHaveTextContent(
+      /Hiding a document in myCarlos does not erase those copies/,
+    );
+    // Nothing in myCarlos deletes a document since #71.
+    expect(section).not.toHaveTextContent(/delet/i);
   });
 
   it("refuses a replacement under the minimum length before sending it", () => {
@@ -355,5 +367,45 @@ describe("SecuritySettings backup", () => {
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
     expect(props.onSaveBackup).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Automatic lock delay (#67)", () => {
+  it("steps by one minute with minus and plus, within 1 to 15", () => {
+    const props = renderSettings({ autoLockMinutes: 5 });
+    const group = screen.getByRole("group", { name: "Automatic lock delay" });
+    expect(screen.queryByRole("combobox", { name: /lock delay/i })).toBeNull();
+    expect(within(group).getByText("5 minutes")).toBeVisible();
+    // On focus, each step says what the delay is now.
+    for (const name of ["Shorter delay", "Longer delay"])
+      expect(
+        within(group).getByRole("button", { name }),
+      ).toHaveAccessibleDescription("5 minutes");
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Longer delay" }),
+    );
+    expect(props.onAutoLockMinutes).toHaveBeenLastCalledWith(6);
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Shorter delay" }),
+    );
+    expect(props.onAutoLockMinutes).toHaveBeenLastCalledWith(4);
+  });
+
+  it("goes no further at either end, and keeps the button usable for focus", () => {
+    for (const [minutes, name] of [
+      [1, "Shorter delay"],
+      [15, "Longer delay"],
+    ] as const) {
+      const props = renderSettings({ autoLockMinutes: minutes });
+      const group = screen.getAllByRole("group", {
+        name: "Automatic lock delay",
+      })[0];
+      const end = within(group).getByRole("button", { name });
+      expect(end).toHaveAttribute("aria-disabled", "true");
+      expect(end).toBeEnabled();
+      fireEvent.click(end);
+      expect(props.onAutoLockMinutes).not.toHaveBeenCalled();
+      cleanup();
+    }
   });
 });

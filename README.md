@@ -120,9 +120,10 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   app never deletes one. On Android and iPhone a vault set aside can only be removed by clearing
   the app's data or uninstalling it, which removes every vault (an accepted limit), so starting
   again is offered only on the unlock screen ("Forgot your passphrase?"), not in Security.
-- An encrypted history records each unlock and what happens to each document (added, renamed,
-  moved, hidden, restored, saved outside the vault), hash-chained so that a changed or missing
-  entry shows. It is never shown in the app (#71).
+- An encrypted history records each unlock, each passphrase change, each profile added, each
+  folder made, renamed or moved, each vault set aside, and what happens to each document (added,
+  renamed, moved, hidden, restored, saved outside the vault), hash-chained so that a changed or
+  missing entry shows. It is never shown in the app and stays on the device, with no export (#71).
 - Abrupt-termination tests exercise recovery after chunk writes, staging, object rename, redundant
   manifest commits, and each hiding boundary. Corruption tests cover bit flips, truncation,
   ciphertext swapping, exact chunk boundaries, structured semantic manifest mutations,
@@ -131,8 +132,10 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - A generated 101 MiB input checks bounded 1 MiB read requests without allocating the whole source;
   recursive canary and Unix mode tests inspect application-controlled storage while locked.
 - A collapsible evaluation panel and reset control that removes session-only metadata.
-- Frontend unit tests, browser viewport tests, automated WCAG A/AA scans, hostile-metadata/network
-  regressions, Rust tests, and unsigned debug builds in CI.
+- Frontend unit tests, browser viewport tests, automated WCAG 2.0–2.2 A/AA scans (also at 200%
+  text size, with checks for sideways scrolling and cut-off controls; at the reader's 200% default
+  text some controls are known to be cut off, #84), hostile-metadata/network regressions, Rust
+  tests, and unsigned debug builds in CI.
 - CI generates reproducible CycloneDX inventories for both locked dependency graphs and rejects
   known high/critical production npm findings. These are inventories, not signed release
   provenance.

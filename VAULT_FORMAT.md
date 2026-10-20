@@ -44,7 +44,7 @@ Rust zeroizes passphrase request strings and long-lived secret-key buffers where
 that practical. The vault's own copies of a passphrase (its normalized form, and the lower-case
 form the name check reads) are sized once and wiped. Copies it does not control are not, among them those the
 strength estimator makes while it scores a new passphrase, the normalizer's working buffers, and
-the request as the IPC layer parsed it.
+the request as the IPC layer parsed it. At first setup, the checklist asks for the same judgement (`vault_passphrase_rules`) each time typing pauses, so the estimator's copies, and the IPC layer's copy of each request, are made then too, once per pause, not only at Create.
 
 New and replacement passphrases must contain at least 15 Unicode characters, contain no control
 characters, and encode to no more than 1,024 bytes. There are no composition rules. A passphrase is
@@ -439,7 +439,7 @@ documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
 so that neither is ever committed without the other: the vault created; the history started (in a
 vault an earlier build made, at its first recorded event); each unlock, with the secret that opened
 it (`passphrase` or `recoveryKey`) and how the session before it ended; a document imported
-(`how: "picked"`), renamed (old and new name), moved (the folders before and after, by id and by
+(`how: "picked"`, or `"camera"` for a photo taken in myCarlos), renamed (old and new name), moved (the folders before and after, by id and by
 their names then), hidden (`how: "patient"` or `"damaged"`) or shown again; a readable copy saved,
 and where; a recovery key set; a backup saved, and where; a backup restored (`how: "replaced"`
 when it set a vault aside); and the vault set aside, with the folder it went to, when it was open
@@ -464,12 +464,18 @@ order, with no whitespace, absent fields left out, integers as integers, and str
 JSON requires and no more (non-ASCII characters are written as themselves; there is no Unicode
 normalization, so the bytes are hashed as written):
 
-`seq, atMs, app, event, recordId, name, oldName, from, fromTotal, to, toTotal, how, place,
-placeSha256, previousSession, prev`
+`seq, atMs, app, event, recordId, profileId, folderId, name, oldName, from, fromTotal, to, toTotal,
+how, place, placeSha256, previousSession, prev`
 
 `event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
-`hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`, `setAside`.
-A folder is `{"id", "name"}`. A move names at most 32 folders on each side and then gives `fromTotal` or
+`hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
+`passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
+`{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
+`folderId`) and its `name` afterwards; `folderCreated` gives in `to` the folder it was made in,
+`folderRenamed` the `oldName`, and `folderMoved` the folder it left in `from` and the one it is in
+now in `to` (none for "My records"). `passphraseChanged` says in `how` what replaced it: the
+passphrase in Security (`passphrase`), or the recovery key at the unlock screen (`recoveryKey`,
+right after that unlock's entry, in the same commit). No passphrase or key is ever recorded. A move names at most 32 folders on each side and then gives `fromTotal` or
 `toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
 the whole, so that no entry can outgrow a segment.
 
@@ -515,9 +521,10 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 "differs from the backup" leaves the history and the format out of the comparison, since every
 unlock, and every backup saved, adds to the history.
 
-**Never shown, and the auditor's step.** No command returns the history to the app's screens. The
-step that saves it for an auditor (each entry and its hash, one per line, then the chain check) is
-not built yet: how it is reached is waiting on Ben's decision (#71, D84).
+**Never shown, and kept on the device.** No command returns the history to the app's screens, and
+nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
+recorded automatically and tamper-evident on the device only, with no auditor export. A backup
+carries it only as part of the encrypted vault.
 
 ## Backup and restore behavior
 
@@ -645,6 +652,7 @@ state, described in the recovery-key sections above.
 | --- | --- | --- |
 | Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
+| Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
 
 ## Known limits before release
 

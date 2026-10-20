@@ -1,0 +1,20 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+Hôpital Fictif de Testville - Department of Diagnostic Imaging
+
+Name: Avery Example
+RAMQ: EXAA 6104 1799
+Chart #: 0045123
+Requisition number: R-778812
+
+Exam: CT chest with contrast        Date: 12 October 2026
+Comparison: CT chest, 3 Mar 2025.
+
+Findings: A 6 mm nodule in the right upper lobe, unchanged since March 3, 2025.
+No new consolidation. Heart size normal.
+
+Impression: Stable 6 mm nodule. Follow-up CT in 12 months, around Oct. 12, 2027.
+
+Discussed by phone with Robin.
+
+Reported by: Dr. Robin Fakename, radiologist
+cc: Dr. Blake Sample, Riverside Cardiology Clinic

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import App from "./App";
 import {
+  boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
   isLockedError,
@@ -13,6 +14,8 @@ import {
   type VaultStatus,
 } from "./vault";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
+import { LockWarning } from "./native/LockWarning";
+import { ComfortSetup } from "./native/ComfortSetup";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
@@ -48,7 +51,15 @@ const ACTIVITY_EVENTS = [
   "wheel",
   "keydown",
   "touchstart",
+  // Not "scroll": the page scrolls itself too (a focus move, content loading),
+  // which would keep the vault open with nobody there. Scrolling by the
+  // person comes as a wheel, touch, pointer or key event, and counts (#68).
 ] as const;
+// The automatic lock is said this long before it comes, so that it can be put
+// off (#68, WCAG 2.2.1).
+const LOCK_WARNING_MS = 30_000;
+/** Why the vault locked by itself, said on the unlock screen (#68). */
+type LockReason = "idle" | "hidden";
 // Dispatched on the document when a picker this app opened settles.
 const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 // Time in a picker counts as activity for at most this long, the longest
@@ -112,6 +123,19 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<string | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
+  // Read by `lock`, which keeps its identity, for the reason it gives.
+  const autoLockMinutesRef = useRef(autoLockMinutes);
+  autoLockMinutesRef.current = autoLockMinutes;
+  // Why an automatic lock was owed, said once it has happened; null for a
+  // lock the patient asked for.
+  const lockReasonRef = useRef<LockReason | null>(null);
+  // Seconds left when the warning before the automatic lock opened (#68).
+  const [lockWarning, setLockWarning] = useState<number | null>(null);
+  // Keeps myCarlos open from the warning: set by the automatic lock's effect.
+  const keepOpenRef = useRef<() => void>(() => undefined);
+  // A new setup starts by making myCarlos comfortable (#69): once per run of
+  // the app, before the passphrase. A vault that exists never shows it.
+  const [comfortChosen, setComfortChosen] = useState(false);
   const lockingRef = useRef(false);
   // Incremented whenever the vault locks. Work started in an earlier session
   // must not put its decrypted results or document names back on screen.
@@ -212,7 +236,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
-      setNotice("Vault locked.");
+      // Why, without anything of the records (#68).
+      const reason = lockReasonRef.current;
+      lockReasonRef.current = null;
+      const minutes = autoLockMinutesRef.current;
+      setNotice(
+        reason === "idle"
+          ? `Locked after ${minutes} minute${minutes === 1 ? "" : "s"} without use.`
+          : reason === "hidden"
+            ? "Locked because myCarlos was minimized or sent to the background."
+            : "Vault locked.",
+      );
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
       // including the concealed screen, which would otherwise claim "Locked".
@@ -246,18 +280,34 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     [lock],
   );
 
+  // A lock the patient asked for gives no reason but that.
+  const lockAsked = useCallback(() => {
+    lockReasonRef.current = null;
+    return lock();
+  }, [lock]);
+  const requestLockAsked = useCallback(() => {
+    lockReasonRef.current = null;
+    requestLock(true);
+  }, [requestLock]);
+
   // Automatic locks: during a transfer, hide content and lock once the
-  // operation it belongs to has finished.
-  const lockWhenIdle = useCallback(() => {
-    if (!transferHold.active) {
-      requestLock(true);
-      return;
-    }
-    if (!concealedRef.current) setLockFailed(false);
-    setConcealed(true);
-    concealedRef.current = true;
-    holdLock(true);
-  }, [holdLock, requestLock, transferHold]);
+  // operation it belongs to has finished. The first reason owed is the one
+  // given.
+  const lockWhenIdle = useCallback(
+    (reason: LockReason) => {
+      lockReasonRef.current ??= reason;
+      setLockWarning(null);
+      if (!transferHold.active) {
+        requestLock(true);
+        return;
+      }
+      if (!concealedRef.current) setLockFailed(false);
+      setConcealed(true);
+      concealedRef.current = true;
+      holdLock(true);
+    },
+    [holdLock, requestLock, transferHold],
+  );
 
   const platformRef = useRef("");
   // Also kept as state, for what is rendered from it.
@@ -394,10 +444,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
-      if (remaining <= 0) lockWhenIdle();
+      if (remaining <= 0) lockWhenIdle("idle");
+      // Said before it comes, unless content is already hidden (#68).
+      else if (remaining <= LOCK_WARNING_MS && !concealedRef.current)
+        setLockWarning(
+          (shown) => shown ?? Math.max(1, Math.ceil(remaining / 1000)),
+        );
+      const untilWarning = remaining - LOCK_WARNING_MS;
       timer = window.setTimeout(
         check,
-        remaining > 0 ? Math.min(remaining, LOCK_RECHECK_MS) : LOCK_RECHECK_MS,
+        remaining > 0
+          ? Math.min(
+              untilWarning > 0 ? untilWarning : remaining,
+              LOCK_RECHECK_MS,
+            )
+          : LOCK_RECHECK_MS,
       );
     };
     let touchedAt = -Infinity;
@@ -405,6 +466,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // Once the delay has elapsed the lock is owed; activity cannot cancel it.
       if (Date.now() >= deadline) return;
       deadline = Date.now() + delayMs;
+      // Use puts the lock off, and with it its warning.
+      setLockWarning(null);
       // The native deadline cannot see input, so it is told, sparingly.
       if (Date.now() - touchedAt >= TOUCH_THROTTLE_MS) {
         touchedAt = Date.now();
@@ -419,6 +482,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       if (!concealedRef.current && inPickerGrace())
         deadline = Date.now() + delayMs;
     };
+    // Keep open in the warning: as use, and told to the native deadline at
+    // once, whenever it was last told.
+    keepOpenRef.current = () => {
+      if (Date.now() >= deadline) return;
+      deadline = Date.now() + delayMs;
+      setLockWarning(null);
+      touchedAt = Date.now();
+      bridge.touch().catch(() => undefined);
+    };
     const onVisibility = () => {
       if (sessionRef.current !== session) return;
       if (document.visibilityState !== "hidden") return;
@@ -431,7 +503,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // The lock is owed from here on, exactly as if the delay had elapsed:
       // activity cannot postpone it, and the recheck retries it if it fails.
       deadline = 0;
-      lockWhenIdle();
+      lockWhenIdle("hidden");
     };
     check();
     for (const event of ACTIVITY_EVENTS) {
@@ -442,6 +514,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     onVisibility();
     return () => {
       window.clearTimeout(timer);
+      keepOpenRef.current = () => undefined;
+      setLockWarning(null);
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, postpone);
       }
@@ -505,7 +579,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setNotice(message);
   };
 
-  const run = async (operation: () => Promise<void>) => {
+  /** Runs a vault operation; `boxes` names what the patient typed for it,
+   * so that a refusal of it says which box to check. */
+  const run = async (operation: () => Promise<void>, boxes?: string[]) => {
     setBusy(true);
     setNotice("");
     transferHold.operationStarted();
@@ -538,8 +614,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // something to act on: a transfer's, such as a partial copy, after the
         // next unlock; any other now, as the person who asked for it is here.
         if (!lockedOut) {
-          if (transferHold.active) holdForUnlock(vaultErrorMessage(error));
-          else setNotice(vaultErrorMessage(error));
+          if (transferHold.active)
+            holdForUnlock(vaultErrorMessage(error, boxes));
+          else setNotice(vaultErrorMessage(error, boxes));
         } else if (cutOff) holdForUnlock(cutOff);
         return;
       }
@@ -560,17 +637,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (cutOff) holdForUnlock(cutOff);
         else if (isCancelledError(error))
           report("The transfer did not finish.");
+        lockReasonRef.current ??= "idle";
         requestLock(true);
         return;
       }
-      report(vaultErrorMessage(error));
+      report(vaultErrorMessage(error, boxes));
       // A transfer failure that is neither "locked" nor "cancelled" can still
       // mean the native deadline locked the vault (a provider export's partial
       // copy): confirm, and lock so that the lock keeps it.
       if (transferHold.active && status === "unlocked") {
         const now = await bridge.status().catch(() => null);
-        if (now === "locked" && sessionRef.current === startedIn)
+        if (now === "locked" && sessionRef.current === startedIn) {
+          lockReasonRef.current ??= "idle";
           requestLock(true);
+        }
       }
     } finally {
       setBusy(false);
@@ -620,50 +700,80 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
   }
 
+  if (status === "absent" && !comfortChosen) {
+    return (
+      <ComfortSetup
+        autoLockMinutes={autoLockMinutes}
+        onAutoLockMinutes={(minutes) => {
+          // Said by the control itself, not as a notice on the next screen.
+          const normalized = normalizeAutoLockMinutes(minutes);
+          setAutoLockMinutes(normalized);
+          persistAutoLockMinutes(normalized);
+        }}
+        onDone={() => setComfortChosen(true)}
+      />
+    );
+  }
+
+  // A refusal of what was typed at setup names only a box holding text the
+  // vault refuses (#69).
+  const setupBoxes = (profile: string, passphrase: string) =>
+    boxesWithControlCharacters([
+      [profile, "the name"],
+      [passphrase, "the passphrase"],
+    ]);
+
   if (status === "absent") {
     return (
       <CreateVault
         busy={busy}
         notice={notice}
+        checkRules={bridge.passphraseRules}
         restoreBridge={trackedBridge}
         onRestored={restored}
         onCreate={(profile, passphrase) =>
-          run(async () => {
-            setSnapshot(await bridge.create(passphrase, profile));
-            // Nothing from a vault that is gone.
-            pendingOutcomeRef.current = null;
-            rememberUnfinishedRecoveryKey(null);
-            rememberOldBackupsGuide(null);
-            // The passphrase was just typed, so it authorizes the recovery key
-            // at once. If that fails, the library offers to set one up.
-            const begun = await bridge.beginRecoveryKey(passphrase).then(
-              (key) => ({ key, locked: false }),
-              (error: unknown) => ({ key: null, locked: isLockedError(error) }),
-            );
-            if (begun.locked) {
-              // The vault locked meanwhile (its automatic lock): it is shown
-              // locked, not open on what the lock ended.
-              setSnapshot(null);
-              setStatus("locked");
-              setNotice(
-                "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+          run(
+            async () => {
+              setSnapshot(await bridge.create(passphrase, profile));
+              // Nothing from a vault that is gone.
+              pendingOutcomeRef.current = null;
+              rememberUnfinishedRecoveryKey(null);
+              rememberOldBackupsGuide(null);
+              // The passphrase was just typed, so it authorizes the recovery key
+              // at once. If that fails, the library offers to set one up.
+              const begun = await bridge.beginRecoveryKey(passphrase).then(
+                (key) => ({ key, locked: false }),
+                (error: unknown) => ({
+                  key: null,
+                  locked: isLockedError(error),
+                }),
               );
-              return;
-            }
-            const recoveryKey = begun.key;
-            setOpeningRecoverySetup(
-              recoveryKey ? { vault: "created", key: recoveryKey } : null,
-            );
-            setConcealed(false);
-            setStatus("unlocked");
-            // With a key to set up, its dialog says what happened instead.
-            if (!recoveryKey)
-              setLibraryNotice({
-                message:
-                  "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
-                outcome: null,
-              });
-          })
+              if (begun.locked) {
+                // The vault locked meanwhile (its automatic lock): it is shown
+                // locked, not open on what the lock ended.
+                setSnapshot(null);
+                setStatus("locked");
+                setNotice(
+                  "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+                );
+                return;
+              }
+              const recoveryKey = begun.key;
+              setOpeningRecoverySetup(
+                recoveryKey ? { vault: "created", key: recoveryKey } : null,
+              );
+              setConcealed(false);
+              setStatus("unlocked");
+              // With a key to set up, its dialog says what happened instead.
+              if (!recoveryKey)
+                setLibraryNotice({
+                  message:
+                    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+                  outcome: null,
+                });
+            },
+            setupBoxes(profile, passphrase),
+          )
         }
       />
     );
@@ -709,7 +819,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : "Vault unlocked.",
               outcome,
             });
-          })
+          }, ["the passphrase"])
         }
         onRecover={(recoveryKey, newPassphrase) =>
           run(async () => {
@@ -727,7 +837,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
               outcome,
             });
-          })
+          }, ["the recovery key", "the new passphrase"])
         }
         onReset={(confirmation) =>
           run(async () => {
@@ -735,12 +845,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
               rememberOldBackupsGuide(null);
+              // Starting again starts with the comfort settings, as the
+              // library's erase does by reloading the app.
+              setComfortChosen(false);
               setStatus("absent");
               setNotice("");
             } else {
               setNotice("Nothing changed: the vault was not set aside.");
             }
-          })
+          }, ["the words you typed"])
         }
       />
     );
@@ -788,24 +901,34 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }
 
   return (
-    <VaultLibrary
-      bridge={trackedBridge}
-      snapshot={snapshot}
-      busy={busy}
-      notice={notice}
-      setNotice={setSessionNotice}
-      run={run}
-      refresh={refresh}
-      onLock={lock}
-      onRequestLock={() => requestLock(true)}
-      autoLockMinutes={autoLockMinutes}
-      onAutoLockMinutes={updateAutoLockMinutes}
-      openingRecoverySetup={openingRecoverySetup}
-      onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
-      onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
-      canPrint={DESKTOP_PLATFORMS.has(platform)}
-      keyboardHints={DESKTOP_PLATFORMS.has(platform)}
-      sizesIn1024s={platform === "windows"}
-    />
+    <>
+      <VaultLibrary
+        bridge={trackedBridge}
+        snapshot={snapshot}
+        busy={busy}
+        notice={notice}
+        setNotice={setSessionNotice}
+        run={run}
+        refresh={refresh}
+        onLock={lockAsked}
+        onRequestLock={requestLockAsked}
+        autoLockMinutes={autoLockMinutes}
+        onAutoLockMinutes={updateAutoLockMinutes}
+        openingRecoverySetup={openingRecoverySetup}
+        onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
+        onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
+        canPrint={DESKTOP_PLATFORMS.has(platform)}
+        keyboardHints={DESKTOP_PLATFORMS.has(platform)}
+        sizesIn1024s={platform === "windows"}
+        cameraPlatform={DESKTOP_PLATFORMS.has(platform) ? platform : null}
+        covered={lockWarning !== null}
+      />
+      {lockWarning !== null && (
+        <LockWarning
+          seconds={lockWarning}
+          onKeepOpen={() => keepOpenRef.current()}
+        />
+      )}
+    </>
   );
 }

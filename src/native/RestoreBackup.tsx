@@ -1,4 +1,6 @@
 import { SecretInput } from "./SecretInput";
+import { translate, getLocale, useI18n } from "../i18n";
+import type { MessageKey } from "../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -16,19 +18,19 @@ const UNATTENDED_CLEAR_MS = 5 * 60 * 1000;
 
 /** What restoring would do to this device, in plain words. */
 function consequence(preview: RestorePreview): string {
+  const t = (key: MessageKey) => translate(getLocale(), key);
   switch (preview.replaces) {
     case "nothing":
-      return "Restoring puts this vault on this device.";
+      return t("restore.consequence.nothing");
     case "sameVault":
-      if (!preview.differsFromThisDevice)
-        return "The vault on this device holds the same documents. Restoring sets it aside and puts this backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
+      if (!preview.differsFromThisDevice) return t("restore.consequence.same");
       // Which of the two is the later one is not said: the vault may have
       // been restored and changed elsewhere since.
-      return "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring sets the vault aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
+      return t("restore.consequence.differs");
     case "otherVault":
-      return "This device has a different vault. Restoring sets it aside and puts the backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
+      return t("restore.consequence.otherVault");
     case "unreadable":
-      return "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets it aside and puts the backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.";
+      return t("restore.consequence.unreadable");
   }
 }
 
@@ -42,6 +44,7 @@ export function RestoreBackup({
   bridge: Pick<VaultBridge, "pickRestoreSource" | "inspectRestore" | "restore">;
   onRestored: () => void;
 }) {
+  const { t } = useI18n();
   const [pickId, setPickId] = useState<string | null>(null);
   const [method, setMethod] = useState<Method>("passphrase");
   const [secret, setSecret] = useState("");
@@ -97,8 +100,15 @@ export function RestoreBackup({
     setError("");
   };
 
+  const secretLabel =
+    method === "passphrase"
+      ? t("restore.passphrase.label")
+      : t("recover.key.label");
   const credential = (): RestoreCredential =>
     method === "passphrase" ? { passphrase: secret } : { recoveryKey: secret };
+  // What a refusal of the typed credential asks to check.
+  const typedBox =
+    method === "passphrase" ? "the passphrase" : "the recovery key";
   // Replacing a vault that differs from the backup, another vault, or one
   // that cannot be read loses something for good.
   const needsAgreement =
@@ -116,7 +126,7 @@ export function RestoreBackup({
     try {
       const picked = await bridge.pickRestoreSource();
       setPickId(picked);
-      if (picked) setStatus("Backup chosen.");
+      if (picked) setStatus(t("restore.chosen"));
     } catch (failure) {
       setError(vaultErrorMessage(failure));
     } finally {
@@ -129,18 +139,21 @@ export function RestoreBackup({
     if (!pickId || !secret || busy) return;
     setBusy(true);
     setError("");
-    setStatus("Checking the backup…");
+    setStatus(t("restore.checking"));
     setAgreed(false);
     try {
       const found = await bridge.inspectRestore(pickId, credential());
       setPreview(found);
       setStatus(
-        `The backup holds ${found.documentCount} document${found.documentCount === 1 ? "" : "s"}. ${consequence(found)}`,
+        t("restore.checked", {
+          count: found.documentCount,
+          consequence: consequence(found),
+        }),
       );
     } catch (failure) {
       setPreview(null);
       setStatus("");
-      setError(vaultErrorMessage(failure));
+      setError(vaultErrorMessage(failure, [typedBox]));
     } finally {
       setBusy(false);
     }
@@ -152,7 +165,7 @@ export function RestoreBackup({
     working.current = true;
     setBusy(true);
     setError("");
-    setStatus("Restoring the backup. This can take a while for a large vault…");
+    setStatus(t("restore.restoring"));
     try {
       const restored = await bridge.restore(
         pickId,
@@ -161,7 +174,7 @@ export function RestoreBackup({
       );
       if (!restored) {
         // Cancelled in the native confirmation: the backup is still chosen.
-        setStatus("Restore cancelled. Nothing changed.");
+        setStatus(t("restore.cancelled"));
         return;
       }
       // Back to the start: the pick is used up, and the unlock screen this
@@ -175,7 +188,7 @@ export function RestoreBackup({
       onRestored();
     } catch (failure) {
       setStatus("");
-      setError(vaultErrorMessage(failure));
+      setError(vaultErrorMessage(failure, [typedBox]));
       // Start again from the file: the pick may be used up.
       setSecret("");
       setShown(false);
@@ -191,10 +204,7 @@ export function RestoreBackup({
 
   return (
     <form className="restore-backup" onSubmit={(event) => void check(event)}>
-      <p>
-        An encrypted backup opens with the passphrase it was made with, or with
-        the recovery key the vault had when the backup was saved, if it had one.
-      </p>
+      <p>{t("restore.intro")}</p>
       <button
         ref={chooseRef}
         className="button"
@@ -202,12 +212,12 @@ export function RestoreBackup({
         disabled={busy}
         onClick={() => void choose()}
       >
-        {pickId ? "Choose a different backup…" : "Choose backup file…"}
+        {pickId ? t("restore.chooseOther") : t("restore.choose")}
       </button>
       {pickId && (
         <>
           <fieldset>
-            <legend>Open it with</legend>
+            <legend>{t("restore.openWith")}</legend>
             <label className="restore-choice">
               <input
                 type="radio"
@@ -220,7 +230,7 @@ export function RestoreBackup({
                   forgetPreview();
                 }}
               />
-              Its passphrase
+              {t("restore.method.passphrase")}
             </label>
             <label className="restore-choice">
               <input
@@ -234,15 +244,13 @@ export function RestoreBackup({
                   forgetPreview();
                 }}
               />
-              Its recovery key
+              {t("restore.method.recoveryKey")}
             </label>
           </fieldset>
           <label>
-            {method === "passphrase" ? "Backup passphrase" : "Recovery key"}
+            {secretLabel}
             <SecretInput
-              aria-label={
-                method === "passphrase" ? "Backup passphrase" : "Recovery key"
-              }
+              aria-label={secretLabel}
               required
               type={shown ? "text" : "password"}
               secretKind={method === "passphrase" ? "password" : "recovery key"}
@@ -262,10 +270,12 @@ export function RestoreBackup({
             aria-pressed={shown}
             onClick={() => setShown((current) => !current)}
           >
-            {method === "passphrase" ? "Show passphrase" : "Show recovery key"}
+            {method === "passphrase"
+              ? t("restore.passphrase.show")
+              : t("recover.key.show")}
           </button>
           {utf8Length(secret) > MAX_PASSPHRASE_BYTES && (
-            <p role="alert">This is too long. Check what you typed.</p>
+            <p role="alert">{t("restore.tooLong")}</p>
           )}
           <button
             className="button"
@@ -273,7 +283,7 @@ export function RestoreBackup({
               busy || !secret || utf8Length(secret) > MAX_PASSPHRASE_BYTES
             }
           >
-            Check backup
+            {t("restore.check")}
           </button>
         </>
       )}
@@ -292,8 +302,8 @@ export function RestoreBackup({
               />
               {preview.replaces === "otherVault" ||
               preview.replaces === "unreadable"
-                ? "Set the vault on this device aside and restore the backup"
-                : "Set the vault on this device aside, with what changed since, and restore this backup"}
+                ? t("restore.agree.erase")
+                : t("restore.agree.replace")}
             </label>
           )}
           <button
@@ -302,7 +312,7 @@ export function RestoreBackup({
             disabled={busy || (needsAgreement && !agreed)}
             onClick={() => void restore()}
           >
-            Restore backup
+            {t("restore.submit")}
           </button>
         </>
       )}

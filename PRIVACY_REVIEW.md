@@ -35,7 +35,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 
 | What | Examples | Kept encrypted? |
 |---|---|---|
-| Documents | The PDF files the patient adds, including those the patient has **hidden** | Yes, each with its own key |
+| Documents | The PDF files the patient adds, and photos taken with the camera in myCarlos (on a computer), including those the patient has **hidden** | Yes, each with its own key |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in | Yes |
 | Profiles | A display name for each person the patient keeps records for | Yes |
 | Folders | Folder names and how they nest | Yes |
@@ -53,11 +53,13 @@ documents are in every backup, like the rest.
 when it was opened (and with which secret), and each document added, renamed (both names),
 moved (the folders' names then), hidden, restored, or saved outside the vault as a readable copy,
 with where it was saved (a file path, or a document provider's address on Android), and when
-backups were saved, and where. It keeps the names as they were at each moment, so a document
+backups were saved, and where. It also records when the passphrase was changed (never the
+passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
+(its names then). It keeps the names as they were at each moment, so a document
 renamed or hidden can still be read off the history. The history is never shown in the app, and
 the app never changes or removes an entry. It is in every backup. The app tells the patient this
-in Security, under "What myCarlos keeps". The step that would let the patient save the history for
-an auditor is not built yet.
+in Security, under "What myCarlos keeps". There is no way to save the history outside the vault:
+Ben chose (19 October) to keep it on the device only, tamper-evident.
 
 **Nothing erases a vault either** (#71's third part). Starting again ("Set vault aside", under
 "Forgot your passphrase?" on the unlock screen; Security no longer offers it) and restoring a backup over a vault both
@@ -77,6 +79,14 @@ open it and how to remove it on that platform.
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
 patient that it is there.
+
+A **photo taken in myCarlos** has no original: it goes from the camera to the app's memory and is
+encrypted into the vault, and is never saved anywhere else. It carries no place, camera or other
+details: the app makes the JPEG itself, and the vault removes any such details again before
+encrypting it. Its name gives the date and time it was taken, and it is labelled like any added
+document ("Manual import — unverified"). The camera is turned on only after the patient chooses to
+use it, never records sound, and turns off as soon as the photo is taken or the camera window
+closes.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:
@@ -106,7 +116,9 @@ name):
 - after a recovery key is replaced because its kit may have been lost or seen, the steps for
   older backups: the file name the patient saved the new backup under, when, and its size;
 - on a computer, the text size chosen for the app (`mycarlos.zoom.v1`). A large size kept on a
-  shared computer could suggest that someone who uses it has poor sight.
+  shared computer could suggest that someone who uses it has poor sight;
+- the appearance choice, System, Light or Dark (`mycarlos.appearance.v1`). This preference
+  names no vault, patient or document and is not copied into an encrypted backup.
 
 Beside the vault, the app also keeps a small file counting wrong passphrase or recovery-key tries
 in a row, and when the last one was, to make the next try wait after several. It holds no secret.
@@ -303,6 +315,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Originals.** The file a document was added from stays where it was (section 2).
 - **PDF safety.** There is no viewer, safe or otherwise: documents are read in other apps. A
   planned viewer with no access to the vault or the network is not built.
+- **Photos in memory.** While a photo is taken or shown, the app's display engine holds copies of
+  it that the app cannot overwrite; it overwrites its own copy and lets go of the rest when the
+  camera or photo window closes, and the engine frees them later. A photo is shown by the app's
+  own display engine, not by a separate viewer.
+- **Phones.** Taking photos is built for computers only; phones and tablets come later.
 - **Guessing on the device.** A wait after repeated wrong passphrases or recovery keys is being
   added in a change still under review (none for the first five, then a little longer each time,
   up to a minute). It slows guessing only through the app on the device, not against a copied
