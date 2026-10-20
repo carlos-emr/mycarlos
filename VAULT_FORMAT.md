@@ -263,7 +263,11 @@ passphrase is checked against. A document moves from it to a person by keeping i
 key and record id (the encryption binds the vault and the record, not the person) and recomputing
 only its fingerprint, which is keyed with the person: the object is decrypted once, through the same
 authenticated read as an export, into an HMAC. A document the person already has, by that
-fingerprint, stays where it is. Documents move only out of this profile, never between people. Mutations write the same logical state
+fingerprint, stays where it is. Documents move only out of this profile, never between people. No
+person may be named "Shared with me", in any case, so the folder is never mistaken for one. A build
+from before this change, which knows nothing of the reserved id, would list the profile as a person
+named "Shared with me"; no such build has been released, and opening a vault with an older build is
+not supported in any case (MIGRATIONS, rule 2). Mutations write the same logical state
 into two consecutive generations using a cross-platform atomic replacement primitive. Once the first
 generation is durable, the logical mutation is committed; failure of the redundant write is
 reported in the snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects

@@ -770,6 +770,78 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("moves nothing when a drag in Shared with me is let go over the list, and moves to the folder it is dropped on (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(["Jamie"], ["FAKE_Scan.pdf"]);
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Labs",
+      createdAtMs: 1,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+    );
+    const file = await screen.findByRole("article", {
+      name: "FAKE_Scan.pdf document",
+    });
+    // Let go where it started: abandoned, as anywhere else.
+    const abandoned = dragTransfer();
+    fireDragEvent("dragstart", file, { dataTransfer: abandoned });
+    fireDragEvent("dragover", screen.getByRole("main"), {
+      dataTransfer: abandoned,
+    });
+    fireDragEvent("drop", screen.getByRole("main"), {
+      dataTransfer: abandoned,
+    });
+    fireDragEvent("dragend", file, { dataTransfer: abandoned });
+    await act(async () => undefined);
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    expect(file).toBeVisible();
+
+    // Dropped on the person's folder in the sidebar: it goes there.
+    const moved = dragTransfer();
+    fireDragEvent("dragstart", file, { dataTransfer: moved });
+    const labs = within(
+      screen.getByRole("navigation", { name: "Record library" }),
+    ).getByRole("button", { name: /FAKE Labs/ });
+    fireDragEvent("dragover", labs, { dataTransfer: moved });
+    fireDragEvent("drop", labs, { dataTransfer: moved });
+    await waitFor(() =>
+      expect(bridge.moveToPerson).toHaveBeenCalledWith(
+        ["record-shared-1"],
+        "profile-1",
+        ["folder-1"],
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "FAKE_Scan.pdf moved to My records, folder FAKE Labs.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("lets no person be called Shared with me (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(["Jamie"], [], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.type(
+      screen.getByLabelText("New profile name"),
+      " shared WITH me ",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Shared with me is where shared files go. Choose another name.",
+    );
+    expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+    expect(bridge.createProfile).not.toHaveBeenCalled();
+  });
+
   it("adds a file shared while the vault is open, and names one that is not a PDF (#61)", async () => {
     const user = userEvent.setup();
     const { bridge, arrive } = sharedVault(["Jamie"], ["FAKE_Letter.pdf"]);

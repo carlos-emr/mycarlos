@@ -867,10 +867,21 @@ export function VaultLibrary({
                   "library-main",
                   `pane:${currentFolderId ?? "root"}`,
                 )}
-                onDragOver={(event) =>
-                  dragOver(event, `pane:${currentFolderId ?? "root"}`)
+                // Shared with me is no drop target: letting go of a drag
+                // where it started abandons it, and must not move a file to
+                // a person. Files leave it by Move, or by a drop on the
+                // person's folders in the sidebar.
+                onDragOver={
+                  inShared
+                    ? undefined
+                    : (event) =>
+                        dragOver(event, `pane:${currentFolderId ?? "root"}`)
                 }
-                onDrop={(event) => dropInto(event, currentFolderId)}
+                onDrop={
+                  inShared
+                    ? undefined
+                    : (event) => dropInto(event, currentFolderId)
+                }
               >
                 <div className="native-profile-row">
                   {/* With several people, Shared with me is in no one's

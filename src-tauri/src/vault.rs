@@ -682,7 +682,7 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<(), VaultError> {
         let _work = self.start_kdf_work()?;
-        validate_name(initial_profile)?;
+        validate_person_name(initial_profile)?;
         validate_new_passphrase(passphrase, &[initial_profile])?;
         let mut guard = self.session();
         if guard.is_some() {
@@ -979,7 +979,7 @@ impl VaultStore {
     }
 
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
-        validate_name(display_name)?;
+        validate_person_name(display_name)?;
         self.mutate_manifest(|manifest| {
             let id = Uuid::new_v4();
             manifest.profiles.push(PatientProfile {
@@ -5216,6 +5216,16 @@ pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
+/// A person's name: a valid name, and not the shared folder's, which would read
+/// as the folder (#61).
+fn validate_person_name(name: &str) -> Result<(), VaultError> {
+    validate_name(name)?;
+    if name.trim().to_lowercase() == SHARED_PROFILE_NAME.to_lowercase() {
+        return Err(VaultError::Invalid);
+    }
+    Ok(())
+}
+
 /// The people a vault keeps records for: every profile but the shared one.
 fn people(manifest: &Manifest) -> impl Iterator<Item = &PatientProfile> {
     let shared = shared_profile_id(manifest.vault_id);
@@ -7275,6 +7285,11 @@ mod tests {
             Err(VaultError::Invalid)
         ));
 
+        // No person may be called it.
+        assert!(matches!(
+            store.create_profile(" shared WITH me ", 6),
+            Err(VaultError::Invalid)
+        ));
         // Its name is not a word a passphrase may not hold.
         store
             .change_passphrase(PASSWORD, "Shared-lantern-orbit-cascade-572")

@@ -8,7 +8,12 @@ import {
 } from "react";
 import { Icon } from "../Icon";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import {
+  NAME_INPUT_MAX_LENGTH,
+  SHARED_NAME_TAKEN,
+  nameIsShared,
+  nameTooLong,
+} from "./recordPresentation";
 import { RestoreBackup } from "./RestoreBackup";
 import { waitingText } from "./receivedNotice";
 import {
@@ -177,11 +182,13 @@ export function CreateVault({
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const tooShort = tooShortPassphrase(passphrase);
   const profileTooLong = nameTooLong(profile);
+  const profileShared = nameIsShared(profile);
   // A rule the vault has said is not met: Create would only be refused.
   const unmet = rules !== null && !(rules.notAName && rules.hardToGuess);
   const invalid =
     !profile.trim() ||
     profileTooLong ||
+    profileShared ||
     tooLong ||
     tooShort ||
     unmet ||
@@ -228,6 +235,7 @@ export function CreateVault({
           {profileTooLong && (
             <p role="alert">This name is too long. Shorten it.</p>
           )}
+          {profileShared && <p role="alert">{SHARED_NAME_TAKEN}</p>}
           <label>
             Passphrase
             <SecretInput
