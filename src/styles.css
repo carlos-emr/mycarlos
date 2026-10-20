@@ -920,6 +920,9 @@ h1, h2, p { margin: 0; }
 .native-rename-fields p { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
 .native-rename-fields [role="alert"] { color: var(--ink); font-weight: 700; }
 .native-record-rename { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 16px; }
+/* #54: a PDF locked with a password says so above its Unlock. */
+.native-locked-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 4px 20px 12px; color: var(--ink-soft); }
+.native-locked-note .icon { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--ink-faint); }
 
 /* Taking a photo, and viewing one. */
 .camera-dialog, .photo-viewer { width: min(760px, 100%); }
