@@ -49,11 +49,15 @@ has been suppressed or marked acceptable.
   the same visible passphrase derives the same key whichever composition form a
   keyboard produces. It adds one package to the Rust lockfile (485 → 486); its
   only dependency, `tinyvec`, was already locked.
+- `webkit2gtk` (=2.0.2) is now a direct Linux-only dependency, pinned to the version Tauri and Wry
+  already use, as `webview2-com` is on Windows: the camera dialog needs WebKitGTK's media-stream
+  setting turned on and its permission requests answered (`src-tauri/src/camera_permission.rs`).
+  It adds no package to the Rust lockfile.
 
 ## Added for password-protected PDFs (#54)
 
 `lopdf` 0.45.0 (MIT) opens a PDF that a sender locked with a password, so that
-only the unlocked copy is stored. It is pinned exactly (`=0.45.0`) because it
+an unlocked copy can be stored beside the locked original. It is pinned exactly (`=0.45.0`) because it
 parses untrusted input: each update is a reviewed change. Default features are
 off, so neither `rayon` threads nor `chrono` come with it.
 
