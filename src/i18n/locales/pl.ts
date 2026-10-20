@@ -28,12 +28,25 @@ export const pl: Record<MessageKey, Message> = {
   "passphrase.longerThanAny":
     "Ten tekst jest dłuższy niż jakiekolwiek hasło główne do sejfu. Proszę sprawdzić, co zostało wpisane.",
 
-  "create.title": "Utwórz zaszyfrowany sejf",
+  "passphrase.show": "Pokaż hasło główne",
+  "passphrase.show.inConfirm": "w polu Powtórz hasło główne",
+
+  "checklist.heading": "Hasło główne musi być:",
+  "checklist.length": "Długie na co najmniej {min} znaków",
+  "checklist.hardToGuess": "Trudne do odgadnięcia",
+  "checklist.notAName": "Inne niż imię i nazwisko",
+  "checklist.done": ", spełnione",
+  "checklist.notYet": ", jeszcze nie",
+  "checklist.spaces":
+    "Spacje są dozwolone, więc kilka niezwiązanych ze sobą słów to dobre hasło główne. myCarlos sprawdza te zasady na tym komputerze.",
+  "checklist.allMet": "Hasło główne spełnia wszystkie zasady.",
+
+  "create.title": "Skonfiguruj myCarlos na tym komputerze",
   "create.intro":
     "Pliki i szczegóły dokumentów są szyfrowane na tym urządzeniu. Hasło główne otwiera sejf. Następnie można skonfigurować klucz odzyskiwania na wypadek zapomnienia hasła głównego.",
   "create.stays":
     "Sejf pozostaje na tym urządzeniu. Jeśli został utworzony na innym urządzeniu, nadal tam jest i nie pojawi się tutaj.",
-  "create.profile.label": "Pierwszy profil pacjenta",
+  "create.profile.label": "Czyje dokumenty będą tu przechowywane?",
   "create.profile.tooLong": "Ta nazwa jest zbyt długa. Proszę ją skrócić.",
   "create.submit": "Utwórz sejf",
 
@@ -49,9 +62,11 @@ export const pl: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "Nie pamiętasz hasła głównego?",
   "unlock.noKey.heading": "Nie masz klucza odzyskiwania?",
   "unlock.noKey.body":
-    "Bez niego jedynym sposobem powrotu jest usunięcie tego sejfu, co trwale kasuje wszystko, co w nim jest, i rozpoczęcie od nowa.",
+    "Bez niego jedynym sposobem powrotu jest usunięcie myCarlos i rozpoczęcie od nowa.",
   "restore.summary": "Przywróć z kopii zapasowej",
 
+  "reset.plainly":
+    "Usunięcie kasuje z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów i nie można tego cofnąć. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.",
   "reset.type": "Wpisz {phrase}",
   "reset.submit": "Usuń sejf",
 

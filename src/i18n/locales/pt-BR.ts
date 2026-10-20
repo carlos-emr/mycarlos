@@ -27,12 +27,25 @@ export const ptBR: Record<MessageKey, Message> = {
   "passphrase.longerThanAny":
     "Este texto é mais longo do que qualquer frase secreta do cofre. Confira o que foi digitado.",
 
-  "create.title": "Crie seu cofre criptografado",
+  "passphrase.show": "Mostrar a frase secreta",
+  "passphrase.show.inConfirm": "em Confirmar a frase secreta",
+
+  "checklist.heading": "Sua frase secreta precisa ser:",
+  "checklist.length": "De pelo menos {min} caracteres",
+  "checklist.hardToGuess": "Difícil de adivinhar",
+  "checklist.notAName": "Diferente do seu nome",
+  "checklist.done": ", atendido",
+  "checklist.notYet": ", ainda não",
+  "checklist.spaces":
+    "Espaços são permitidos, então algumas palavras sem relação entre si formam uma boa frase secreta. O myCarlos verifica essas regras neste computador.",
+  "checklist.allMet": "Sua frase secreta atende a todas as regras.",
+
+  "create.title": "Configure o myCarlos neste computador",
   "create.intro":
     "Seus arquivos e os detalhes dos seus registros são criptografados neste dispositivo. Sua frase secreta abre o cofre. Depois, você poderá configurar uma chave de recuperação, caso a esqueça.",
   "create.stays":
     "Seu cofre fica neste dispositivo. Se você criou um em outro dispositivo, ele continua lá e não aparecerá aqui.",
-  "create.profile.label": "Primeiro perfil de paciente",
+  "create.profile.label": "De quem são os registros que você vai guardar aqui?",
   "create.profile.tooLong": "Este nome é longo demais. Encurte-o.",
   "create.submit": "Criar cofre",
 
@@ -47,9 +60,11 @@ export const ptBR: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "Esqueceu sua frase secreta?",
   "unlock.noKey.heading": "Não tem uma chave de recuperação?",
   "unlock.noKey.body":
-    "Sem ela, a única forma de voltar a entrar é apagar este cofre, o que exclui permanentemente tudo o que há nele, e começar de novo.",
+    "Sem ela, a única forma de voltar a entrar é apagar o myCarlos e começar de novo.",
   "restore.summary": "Restaurar a partir de uma cópia de segurança",
 
+  "reset.plainly":
+    "Apagar exclui do myCarlos neste computador todos os seus documentos, pastas e perfis de paciente, e isso não pode ser desfeito. Para confirmar, digite exatamente as palavras abaixo.",
   "reset.type": "Digite {phrase}",
   "reset.submit": "Apagar cofre",
 

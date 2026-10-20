@@ -44,7 +44,7 @@ Rust zeroizes passphrase request strings and long-lived secret-key buffers where
 that practical. The vault's own copies of a passphrase (its normalized form, and the lower-case
 form the name check reads) are sized once and wiped. Copies it does not control are not, among them those the
 strength estimator makes while it scores a new passphrase, the normalizer's working buffers, and
-the request as the IPC layer parsed it.
+the request as the IPC layer parsed it. At first setup, the checklist asks for the same judgement (`vault_passphrase_rules`) each time typing pauses, so the estimator's copies, and the IPC layer's copy of each request, are made then too, once per pause, not only at Create.
 
 New and replacement passphrases must contain at least 15 Unicode characters, contain no control
 characters, and encode to no more than 1,024 bytes. There are no composition rules. A passphrase is
@@ -496,6 +496,7 @@ state, described in the recovery-key sections above.
 | --- | --- | --- |
 | Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
+| Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
 
 ## Known limits before release
 

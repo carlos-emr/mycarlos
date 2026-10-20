@@ -1,5 +1,10 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import {
+  getDefaultNormalizer,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import {
   CATALOGUES,
   LOCALES,
@@ -16,7 +21,8 @@ import {
   type Message,
 } from "./index";
 import { en } from "./locales/en";
-import { VaultAuthFrame, UnlockVault } from "../native/VaultAuth";
+import { CreateVault, VaultAuthFrame, UnlockVault } from "../native/VaultAuth";
+import { MIN_PASSPHRASE_CHARS } from "../native/PassphraseChecklist";
 
 const placeholders = (text: string) =>
   [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -234,6 +240,64 @@ describe("a rendered screen in each language", () => {
       // The window's accessible name is translated too.
       expect(
         screen.getByLabelText(translate(locale, "frame.window.label")),
+      ).toBeInTheDocument();
+      // Under "Forgot your passphrase?": what erasing does.
+      expect(
+        screen.getByText(translate(locale, "unlock.noKey.body")),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(translate(locale, "reset.plainly")),
+      ).toBeInTheDocument();
+    });
+    it(`shows the setup screen and its passphrase checklist in ${locale}`, () => {
+      setLocaleOverride(locale);
+      const { container } = render(
+        <CreateVault
+          busy={false}
+          notice=""
+          onCreate={async () => {}}
+          restoreBridge={{} as never}
+          onRestored={() => {}}
+        />,
+      );
+      const say = translate.bind(null, locale);
+      expect(
+        screen.getByRole("heading", { level: 1, name: say("create.title") }),
+      ).toBeInTheDocument();
+      const form = within(container.querySelector("form")!);
+      expect(
+        form.getByRole("textbox", { name: say("create.profile.label") }),
+      ).toBeInTheDocument();
+      // Each rule, and whether it is met yet (screen-reader text), in the
+      // same language.
+      const checklist = within(container.querySelector("#passphrase-rules")!);
+      // French keeps its no-break space before the colon.
+      const asWritten = {
+        normalizer: getDefaultNormalizer({ collapseWhitespace: false }),
+      };
+      expect(
+        checklist.getByText(say("checklist.heading"), asWritten),
+      ).toBeInTheDocument();
+      expect(
+        checklist.getAllByRole("listitem").map((rule) => rule.textContent),
+      ).toEqual(
+        [
+          say("checklist.length", { min: MIN_PASSPHRASE_CHARS }),
+          say("checklist.hardToGuess"),
+          say("checklist.notAName"),
+        ].map((rule) => `○${rule}${say("checklist.notYet")}`),
+      );
+      expect(
+        checklist.getByText(say("checklist.spaces"), asWritten),
+      ).toBeInTheDocument();
+      // Each Show button, the second named for its own box.
+      expect(
+        form.getByRole("button", { name: say("passphrase.show") }),
+      ).toBeInTheDocument();
+      expect(
+        form.getByRole("button", {
+          name: `${say("passphrase.show")} ${say("passphrase.show.inConfirm")}`,
+        }),
       ).toBeInTheDocument();
     });
   }

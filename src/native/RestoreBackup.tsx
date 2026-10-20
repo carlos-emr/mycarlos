@@ -106,6 +106,9 @@ export function RestoreBackup({
       : t("recover.key.label");
   const credential = (): RestoreCredential =>
     method === "passphrase" ? { passphrase: secret } : { recoveryKey: secret };
+  // What a refusal of the typed credential asks to check.
+  const typedBox =
+    method === "passphrase" ? "the passphrase" : "the recovery key";
   // Replacing a vault that differs from the backup, another vault, or one
   // that cannot be read loses something for good.
   const needsAgreement =
@@ -150,7 +153,7 @@ export function RestoreBackup({
     } catch (failure) {
       setPreview(null);
       setStatus("");
-      setError(vaultErrorMessage(failure));
+      setError(vaultErrorMessage(failure, [typedBox]));
     } finally {
       setBusy(false);
     }
@@ -185,7 +188,7 @@ export function RestoreBackup({
       onRestored();
     } catch (failure) {
       setStatus("");
-      setError(vaultErrorMessage(failure));
+      setError(vaultErrorMessage(failure, [typedBox]));
       // Start again from the file: the pick may be used up.
       setSecret("");
       setShown(false);

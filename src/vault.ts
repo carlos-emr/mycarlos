@@ -117,9 +117,21 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** Which rules a new passphrase meets, as the vault judges it (#69). */
+export interface PassphraseRules {
+  longEnough: boolean;
+  notAName: boolean;
+  hardToGuess: boolean;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
+  /** First setup's checklist: refused once a vault exists. */
+  passphraseRules(
+    passphrase: string,
+    initialProfileName: string,
+  ): Promise<PassphraseRules>;
   create(
     passphrase: string,
     initialProfileName: string,
@@ -207,6 +219,20 @@ export interface VaultBridge {
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
+  /** Saves a photo taken with the camera (a JPEG) under `name`, in the
+   * folders given or in My records. The vault cleans and checks it first. */
+  savePhoto(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+    jpeg: Uint8Array,
+  ): Promise<ImportOutcome>;
+  /** Whether a document's file starts as a JPEG does. Only its first bytes
+   * are read; the photo itself stays native. */
+  isPhoto(recordId: string): Promise<boolean>;
+  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
+   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  viewPhoto(recordId: string): Promise<string>;
   deleteRecord(recordId: string): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
@@ -226,7 +252,31 @@ interface PublicError {
   retryAfterMs?: number;
 }
 
-export function vaultErrorMessage(error: unknown): string {
+/** "a", "a and b", "a, b and c". */
+const listed = (items: string[]) =>
+  items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+
+/** Of the boxes named with what was typed in them, those holding a control
+ * character: at setup, the one refusal of typed text that the screen does not
+ * catch first. None: a refusal is not about what was typed, as far as the
+ * screen can tell, and is not blamed on a box. */
+export function boxesWithControlCharacters(
+  typed: [value: string, box: string][],
+): string[] | undefined {
+  const boxes = typed
+    .filter(([value]) => /\p{Cc}/u.test(value))
+    .map(([, box]) => box);
+  return boxes.length ? boxes : undefined;
+}
+
+/** The message for a failed vault operation. `boxes` names, in plain words,
+ * what the patient typed for it ("the folder name"): a refusal of what was
+ * typed then says which box to check (#69). */
+export function vaultErrorMessage(error: unknown, boxes?: string[]): string {
+  if (boxes?.length && hasErrorCode(error, "invalid"))
+    return `Check ${listed(boxes)}, then try again.`;
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {
@@ -317,6 +367,10 @@ export function createVaultBridge(): VaultBridge {
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
+    passphraseRules: (passphrase, initialProfileName) =>
+      invoke<PassphraseRules>("vault_passphrase_rules", {
+        request: { passphrase, initialProfileName },
+      }),
     create: (passphrase, initialProfileName) =>
       invoke<VaultSnapshot>("vault_create", {
         request: { passphrase, initialProfileName },
@@ -395,6 +449,20 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
+    // The photo goes as the raw body, not as JSON; the rest in headers, the
+    // name percent-encoded, as a header holds ASCII only.
+    savePhoto: (profileId, folderIds, name, jpeg) =>
+      invoke<ImportOutcome>("vault_save_photo", jpeg, {
+        headers: {
+          "Mycarlos-Profile-Id": profileId,
+          "Mycarlos-Folder-Ids": folderIds.join(","),
+          "Mycarlos-Photo-Name": encodeURIComponent(name),
+        },
+      }),
+    isPhoto: (recordId) =>
+      invoke<boolean>("vault_is_photo", { request: { recordId } }),
+    viewPhoto: (recordId) =>
+      invoke<string>("vault_view_photo", { request: { recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
     removeUnavailableRecords: (confirmed) =>
