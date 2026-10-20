@@ -35,7 +35,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 
 | What | Examples | Kept encrypted? |
 |---|---|---|
-| Documents | The PDF files the patient adds | Yes, each with its own key |
+| Documents | The PDF files the patient adds, and photos taken with the camera in myCarlos (on a computer) | Yes, each with its own key |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in | Yes |
 | Profiles | A display name for each person the patient keeps records for | Yes |
 | Folders | Folder names and how they nest | Yes |
@@ -45,6 +45,14 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
 patient that it is there.
+
+A **photo taken in myCarlos** has no original: it goes from the camera to the app's memory and is
+encrypted into the vault, and is never saved anywhere else. It carries no place, camera or other
+details: the app makes the JPEG itself, and the vault removes any such details again before
+encrypting it. Its name gives the date and time it was taken, and it is labelled like any added
+document ("Manual import — unverified"). The camera is turned on only after the patient chooses to
+use it, never records sound, and turns off as soon as the photo is taken or the camera window
+closes.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:
@@ -268,6 +276,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Originals.** The file a document was added from stays where it was (section 2).
 - **PDF safety.** There is no viewer, safe or otherwise: documents are read in other apps. A
   planned viewer with no access to the vault or the network is not built.
+- **Photos in memory.** While a photo is taken or shown, the app's display engine holds copies of
+  it that the app cannot overwrite; it overwrites its own copy and lets go of the rest when the
+  camera or photo window closes, and the engine frees them later. A photo is shown by the app's
+  own display engine, not by a separate viewer.
+- **Phones.** Taking photos is built for computers only; phones and tablets come later.
 - **Guessing on the device.** A wait after repeated wrong passphrases or recovery keys is being
   added in a change still under review (none for the first five, then a little longer each time,
   up to a minute). It slows guessing only through the app on the device, not against a copied
