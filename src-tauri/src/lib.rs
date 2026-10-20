@@ -146,6 +146,19 @@ impl PublicError {
         Self { message, ..self }
     }
 
+    /// The photo did not reach the vault as the camera window sent it. The
+    /// code says which part was missing, for a report: "photo_headers" (whose
+    /// records, folders, name) or "photo_body" (the photo's bytes).
+    fn photo_not_received(code: &'static str) -> Self {
+        Self {
+            code,
+            message: "The photo did not reach the vault, so it was not saved. Choose Use photo to try again.",
+            record_id: None,
+            note: None,
+            retry_after_ms: None,
+        }
+    }
+
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
@@ -536,6 +549,45 @@ fn photo_target(headers: &tauri::http::HeaderMap) -> Result<PhotoTarget, VaultEr
         folder_ids,
         name,
     })
+}
+
+/// The photo's bytes, however the IPC brought them, copied into memory that is
+/// overwritten. The camera window sends them as the request's raw body. When
+/// Tauri uses its postMessage channel instead, as it always does on Android
+/// and does on Windows once its custom protocol has failed in a session, the
+/// same bytes arrive as a JSON array of numbers, with the headers kept.
+fn photo_bytes(body: &tauri::ipc::InvokeBody) -> Result<Zeroizing<Vec<u8>>, PublicError> {
+    photo_bytes_within(body, photo::MAX_PHOTO_BYTES)
+}
+
+fn photo_bytes_within(
+    body: &tauri::ipc::InvokeBody,
+    limit: usize,
+) -> Result<Zeroizing<Vec<u8>>, PublicError> {
+    match body {
+        tauri::ipc::InvokeBody::Raw(bytes) => {
+            if bytes.len() > limit {
+                return Err(VaultError::NotPhoto.into());
+            }
+            Ok(Zeroizing::new(bytes.clone()))
+        }
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(values)) => {
+            // Counted before anything is copied.
+            if values.len() > limit {
+                return Err(VaultError::NotPhoto.into());
+            }
+            let mut bytes = Zeroizing::new(Vec::with_capacity(values.len()));
+            for value in values {
+                let byte = value
+                    .as_u64()
+                    .and_then(|number| u8::try_from(number).ok())
+                    .ok_or_else(|| PublicError::photo_not_received("photo_body"))?;
+                bytes.push(byte);
+            }
+            Ok(bytes)
+        }
+        tauri::ipc::InvokeBody::Json(_) => Err(PublicError::photo_not_received("photo_body")),
+    }
 }
 
 /// Cleans the photo (photo.rs) and encrypts it as one import: the same
@@ -2053,23 +2105,18 @@ async fn vault_remove_unavailable_records(
     })
 }
 
-/// Saves a photo taken with the camera dialog. The request body is the JPEG,
-/// as raw bytes; `PhotoTarget` reads the rest from its headers.
+/// Saves a photo taken with the camera dialog. The request body is the JPEG
+/// (see `photo_bytes`); `PhotoTarget` reads the rest from its headers.
 #[tauri::command]
 async fn vault_save_photo(
     store: State<'_, Arc<VaultStore>>,
     request: tauri::ipc::Request<'_>,
 ) -> CommandResult<vault::ImportOutcome> {
-    let target = photo_target(request.headers()).map_err(PublicError::from)?;
-    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
-        return Err(VaultError::Invalid.into());
-    };
-    if body.len() > photo::MAX_PHOTO_BYTES {
-        return Err(VaultError::NotPhoto.into());
-    }
+    let target = photo_target(request.headers())
+        .map_err(|_| PublicError::photo_not_received("photo_headers"))?;
     // The IPC layer's own copy is freed when the call ends, but not
     // overwritten (THREAT_MODEL.md); this one is.
-    let photo = Zeroizing::new(body.clone());
+    let photo = photo_bytes(request.body())?;
     run_blocking(store.inner(), move |store| save_photo(store, target, photo)).await
 }
 
@@ -3875,6 +3922,48 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn a_photo_arrives_as_raw_bytes_or_as_postmessage_numbers() {
+        use tauri::ipc::InvokeBody;
+        let jpeg = vec![0xff_u8, 0xd8, 0xff, 0x00, 0x10];
+        // The custom protocol: the raw body.
+        assert_eq!(
+            *photo_bytes_within(&InvokeBody::Raw(jpeg.clone()), 8)
+                .ok()
+                .unwrap(),
+            jpeg
+        );
+        // postMessage (Android always, Windows after a fallback): numbers.
+        let numbers = InvokeBody::Json(serde_json::json!([255, 216, 255, 0, 16]));
+        assert_eq!(*photo_bytes_within(&numbers, 8).ok().unwrap(), jpeg);
+        // Over the limit either way: refused before anything is copied.
+        for body in [
+            InvokeBody::Raw(vec![0; 9]),
+            InvokeBody::Json(serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0, 0])),
+        ] {
+            assert_eq!(
+                photo_bytes_within(&body, 8).unwrap_err().code,
+                "not_a_photo"
+            );
+        }
+        // Anything else is not a photo's bytes.
+        for body in [
+            serde_json::json!([256]),
+            serde_json::json!([-1]),
+            serde_json::json!([1.5]),
+            serde_json::json!(["ff"]),
+            serde_json::json!({ "0": 255 }),
+            serde_json::json!(null),
+        ] {
+            assert_eq!(
+                photo_bytes_within(&InvokeBody::Json(body), 8)
+                    .unwrap_err()
+                    .code,
+                "photo_body"
+            );
+        }
+    }
+
+    #[test]
     fn the_photo_commands_are_wired_as_the_renderer_calls_them() {
         let source = include_str!("lib.rs");
         let body = |command: &str| {
@@ -3882,9 +3971,9 @@ mod photo_command_tests {
             body[..body.find("\n}\n").unwrap()].to_owned()
         };
         let save = body("async fn vault_save_photo(");
-        // The photo is the raw body, copied into memory that is overwritten.
-        assert!(save.contains("tauri::ipc::InvokeBody::Raw(body) = request.body()"));
-        assert!(save.contains("Zeroizing::new(body.clone())"));
+        // The photo's bytes and its target come from the request as sent.
+        assert!(save.contains("photo_bytes(request.body())"));
+        assert!(save.contains("photo_target(request.headers())"));
         assert!(save.contains("run_blocking("));
         assert!(body("async fn vault_view_photo(").contains("run_blocking("));
         assert!(body("async fn vault_is_photo(").contains("run_blocking("));
