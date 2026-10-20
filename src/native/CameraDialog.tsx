@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import {
-  PHOTO_QUALITY,
+  encodePhoto,
   cameraExplained,
   cameraFailure,
   cameraFailureMessage,
@@ -185,9 +185,8 @@ export function CameraDialog({
     if (!canvas || saving || preparing) return;
     setPreparing(true);
     try {
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", PHOTO_QUALITY),
-      );
+      // Kept under MAX_CAMERA_JPEG_BYTES (photo.ts).
+      const blob = await encodePhoto(canvas);
       if (!blob) {
         setStatus("The photo could not be prepared. Choose Retake.");
         return;
