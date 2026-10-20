@@ -63,6 +63,15 @@ test("first setup fits its window at 200% default text", async ({
   page,
 }, info) => {
   await openAt200(page, "absent");
+  // A new setup starts with the comfort settings (#76), then the setup.
+  await expect(
+    page.getByRole("heading", { name: "Make myCarlos comfortable for you" }),
+  ).toBeVisible();
+  expect(await cutOffAtTheSides(page), "comfort: cut off").toEqual([]);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+  ).toBeVisible();
   expect(await cutOffAtTheSides(page), "cut off at the window's side").toEqual(
     [],
   );
