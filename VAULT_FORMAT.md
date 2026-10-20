@@ -444,12 +444,18 @@ order, with no whitespace, absent fields left out, integers as integers, and str
 JSON requires and no more (non-ASCII characters are written as themselves; there is no Unicode
 normalization, so the bytes are hashed as written):
 
-`seq, atMs, app, event, recordId, name, oldName, from, fromTotal, to, toTotal, how, place,
-placeSha256, previousSession, prev`
+`seq, atMs, app, event, recordId, profileId, folderId, name, oldName, from, fromTotal, to, toTotal,
+how, place, placeSha256, previousSession, prev`
 
 `event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
-`hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`. A folder is
-`{"id", "name"}`. A move names at most 32 folders on each side and then gives `fromTotal` or
+`hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
+`passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`. A folder is
+`{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
+`folderId`) and its `name` afterwards; `folderCreated` gives in `to` the folder it was made in,
+`folderRenamed` the `oldName`, and `folderMoved` the folder it left in `from` and the one it is in
+now in `to` (none for "My records"). `passphraseChanged` says in `how` what replaced it: the
+passphrase in Security (`passphrase`), or the recovery key at the unlock screen (`recoveryKey`,
+right after that unlock's entry, in the same commit). No passphrase or key is ever recorded. A move names at most 32 folders on each side and then gives `fromTotal` or
 `toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
 the whole, so that no entry can outgrow a segment.
 
@@ -495,9 +501,10 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 "differs from the backup" leaves the history and the format out of the comparison, since every
 unlock, and every backup saved, adds to the history.
 
-**Never shown, and the auditor's step.** No command returns the history to the app's screens. The
-step that saves it for an auditor (each entry and its hash, one per line, then the chain check) is
-not built yet: how it is reached is waiting on Ben's decision (#71, D84).
+**Never shown, and kept on the device.** No command returns the history to the app's screens, and
+nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
+recorded automatically and tamper-evident on the device only, with no auditor export. A backup
+carries it only as part of the encrypted vault.
 
 ## Backup and restore behavior
 

@@ -55,6 +55,17 @@ pub enum HistoryEvent {
     BackupSaved,
     /// This vault was put in place from a backup.
     BackupRestored,
+    /// The passphrase was replaced: in Security (`how` "passphrase"), or
+    /// with the recovery key when it was forgotten ("recoveryKey").
+    PassphraseChanged,
+    /// A patient profile was added.
+    ProfileCreated,
+    /// A folder was made; `to` says in which folder ("My records" is none).
+    FolderCreated,
+    FolderRenamed,
+    /// A folder moved; `from` and `to` are the folder it was in and the one
+    /// it is in now.
+    FolderMoved,
 }
 
 /// A folder as it was named at the time of the event.
@@ -76,7 +87,13 @@ pub struct HistoryEntry {
     pub event: HistoryEvent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_id: Option<Uuid>,
-    /// The document's name at that moment.
+    /// For a profile's event, or a folder's (whose profile it is in).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<Uuid>,
+    /// For a folder's event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<Uuid>,
+    /// The document's, folder's or profile's name at that moment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -93,9 +110,9 @@ pub struct HistoryEntry {
     /// As `from_total`, for after.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_total: Option<u64>,
-    /// How: for an import, where it came from ("picked"); for an unlock, the
-    /// secret ("passphrase" or "recoveryKey"); for a hidden document, why
-    /// ("patient" or "damaged").
+    /// How: for an import, where it came from ("picked"); for an unlock or a
+    /// passphrase change, the secret ("passphrase" or "recoveryKey"); for a
+    /// hidden document, why ("patient" or "damaged").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub how: Option<String>,
     /// Where a readable copy was saved, cut to `MAX_PLACE_CHARS`.
@@ -121,6 +138,8 @@ impl HistoryEntry {
             app: env!("CARGO_PKG_VERSION").to_owned(),
             event,
             record_id: None,
+            profile_id: None,
+            folder_id: None,
             name: None,
             old_name: None,
             from: None,
@@ -205,8 +224,9 @@ pub fn chain(entries: &mut [HistoryEntry], mut next_seq: u64, mut head: String) 
 }
 
 /// Where a chain first goes wrong.
-// The auditor's save step (waiting on Ben, D84) checks the chain with this
-// and `verify`; until then only the tests do.
+// The history stays on the device with no save step (Ben, 19 October), so
+// only the tests check the chain with this and `verify`; VAULT_FORMAT.md
+// states the same rules for checking a copy without the app.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChainBreak {
