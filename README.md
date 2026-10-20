@@ -125,7 +125,9 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   recursive canary and Unix mode tests inspect application-controlled storage while locked.
 - A collapsible evaluation panel and reset control that removes session-only metadata.
 - Frontend unit tests, browser viewport tests, automated WCAG 2.0–2.2 A/AA scans (also at 200%
-  text size), hostile-metadata/network regressions, Rust tests, and unsigned debug builds in CI.
+  text size, with checks for sideways scrolling and cut-off controls; at the reader's 200% default
+  text some controls are known to be cut off, #84), hostile-metadata/network regressions, Rust
+  tests, and unsigned debug builds in CI.
 - CI generates reproducible CycloneDX inventories for both locked dependency graphs and rejects
   known high/critical production npm findings. These are inventories, not signed release
   provenance.

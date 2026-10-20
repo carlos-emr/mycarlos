@@ -10,23 +10,101 @@ import AxeBuilder from "@axe-core/playwright";
 // WCAG 2.0, 2.1 and 2.2 A and AA, as in smoke.spec.ts.
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
-async function expectNoViolations(page: Page, where: string) {
+async function expectNoViolations(page: Page, where: string, cutOff = true) {
   const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(results.violations, where).toEqual([]);
+  // What axe can't see at 200%: the page scrolling sideways (1.4.10), and
+  // words or controls cut off (1.4.4), as targetSize.test.tsx measures them.
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+    `${where}: scrolls sideways`,
+  ).toBe(true);
+  if (cutOff)
+    expect(await cutOffControls(page), `${where}: cut off`).toEqual([]);
+}
+
+/** Visible controls whose words spill out of them or are cut short inside
+ * them, or that a box hiding its overflow cuts off. Words kept for screen
+ * readers only (clipped) are cut on purpose. */
+function cutOffControls(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = [];
+    const describe = (control: HTMLElement) =>
+      `${control.tagName.toLowerCase()} "${(control.getAttribute("aria-label") ?? control.textContent ?? "").trim().slice(0, 40)}"`;
+    const visuallyHidden = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      return style.clip !== "auto" || style.clipPath !== "none";
+    };
+    const controls = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        "button, a[href], input, select, textarea, summary",
+      ),
+    ).filter((control) => control.checkVisibility());
+    for (const control of controls) {
+      if (visuallyHidden(control)) continue;
+      if (
+        !control.matches("input, select, textarea") &&
+        (control.scrollWidth > control.clientWidth + 1 ||
+          control.scrollHeight > control.clientHeight + 1)
+      ) {
+        found.push(`${describe(control)} overflows its own box`);
+        continue;
+      }
+      const cut = Array.from(control.querySelectorAll<HTMLElement>("*")).find(
+        (inner) =>
+          inner.checkVisibility() &&
+          !visuallyHidden(inner) &&
+          inner.scrollWidth > inner.clientWidth + 1,
+      );
+      if (cut) {
+        found.push(
+          `${describe(control)} cuts off "${cut.textContent!.trim()}"`,
+        );
+        continue;
+      }
+      const box = control.getBoundingClientRect();
+      for (
+        let inner: HTMLElement = control, outer = control.parentElement;
+        outer && getComputedStyle(inner).position !== "fixed";
+        inner = outer, outer = outer.parentElement
+      ) {
+        const style = getComputedStyle(outer);
+        const hides = (overflow: string) =>
+          overflow === "hidden" || overflow === "clip";
+        const edge = outer.getBoundingClientRect();
+        if (
+          (hides(style.overflowX) &&
+            (box.left < edge.left - 1 || box.right > edge.right + 1)) ||
+          (hides(style.overflowY) &&
+            (box.top < edge.top - 1 || box.bottom > edge.bottom + 1))
+        ) {
+          found.push(`${describe(control)} cut off by .${outer.className}`);
+          break;
+        }
+      }
+    }
+    return found;
+  });
 }
 
 // Large text can change the layout: the narrow layout swaps the side buttons for a Section menu.
 async function openSection(page: Page, value: string, label: string) {
   const menu = page.getByRole("combobox", { name: "Section" });
+  const button = page.getByRole("button", { name: new RegExp(`^${label}`) });
+  // Wait for one of them first: isVisible() doesn't wait.
+  await expect(menu.or(button).first()).toBeVisible();
   if (await menu.isVisible()) await menu.selectOption(value);
-  else
-    await page.getByRole("button", { name: new RegExp(`^${label}`) }).click();
+  else await button.first().click();
 }
 
 /** How a walk gets a page at 200% text size, and how it tells that the size took effect. */
 interface LargeText {
   newPage: () => Promise<Page>;
   check: (page: Page) => Promise<void>;
+  /** Whether words or controls cut off fail the walk (see #84). */
+  cutOff: boolean;
 }
 
 /**
@@ -60,6 +138,7 @@ async function withAppTextSize200(
   });
   try {
     await walk({
+      cutOff: true,
       newPage: () => context.newPage(),
       check: async (page) =>
         expect(await page.evaluate(() => window.devicePixelRatio)).toBe(
@@ -75,9 +154,11 @@ async function withAppTextSize200(
 async function withReaderText200(
   page: Page,
   walk: (large: LargeText) => Promise<void>,
+  cutOff = false,
 ) {
   const context = page.context();
   await walk({
+    cutOff,
     newPage: async () => {
       const fresh = await context.newPage();
       const cdp = await context.newCDPSession(fresh);
@@ -98,18 +179,18 @@ async function walkThePreview(large: LargeText) {
   const page = await large.newPage();
   await page.goto("/");
   await large.check(page);
-  await expectNoViolations(page, "library");
+  await expectNoViolations(page, "library", large.cutOff);
   await openSection(page, "security", "Security & backup");
-  await expectNoViolations(page, "Security & backup");
+  await expectNoViolations(page, "Security & backup", large.cutOff);
   await openSection(page, "health", "Health data");
-  await expectNoViolations(page, "Health data");
+  await expectNoViolations(page, "Health data", large.cutOff);
   await openSection(page, "records", "My records");
   await page
     .getByRole("button", {
       name: "More options for Prescription — ramipril 5mg",
     })
     .click();
-  await expectNoViolations(page, "a record's More options menu");
+  await expectNoViolations(page, "a record's More options menu", large.cutOff);
 }
 
 /**
@@ -200,7 +281,7 @@ async function walkTheVault(large: LargeText) {
   await expect(
     create.getByRole("heading", { name: "Create your encrypted vault" }),
   ).toBeVisible();
-  await expectNoViolations(create, "create the vault");
+  await expectNoViolations(create, "create the vault", large.cutOff);
   await expectOnlyMockedCommands(create);
   await create.close();
 
@@ -211,7 +292,7 @@ async function walkTheVault(large: LargeText) {
   await expect(
     page.getByRole("heading", { name: "Unlock your vault" }),
   ).toBeVisible();
-  await expectNoViolations(page, "unlock");
+  await expectNoViolations(page, "unlock", large.cutOff);
   await page
     .getByLabel("Passphrase", { exact: true })
     .fill("FAKE passphrase for the mock");
@@ -220,25 +301,25 @@ async function walkTheVault(large: LargeText) {
     name: "FAKE Letter.pdf document",
   });
   await expect(letter).toBeVisible();
-  await expectNoViolations(page, "library");
+  await expectNoViolations(page, "library", large.cutOff);
 
   await letter
     .getByRole("button", { name: "FAKE Letter.pdf", exact: true })
     .click();
   const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
   await expect(details).toBeVisible();
-  await expectNoViolations(page, "document details");
+  await expectNoViolations(page, "document details", large.cutOff);
   await page.getByRole("button", { name: "Close document details" }).click();
   await expect(details).toBeHidden();
 
   await openSection(page, "security", "Security");
   await expect(page.getByRole("heading", { name: "Security" })).toBeVisible();
-  await expectNoViolations(page, "Security");
+  await expectNoViolations(page, "Security", large.cutOff);
   await openSection(page, "preferences", "Preferences");
   await expect(
     page.getByRole("heading", { name: "Preferences" }),
   ).toBeVisible();
-  await expectNoViolations(page, "Preferences");
+  await expectNoViolations(page, "Preferences", large.cutOff);
   await expectOnlyMockedCommands(page);
 }
 
@@ -264,4 +345,27 @@ test("has no automatically detectable WCAG violations on the vault screens with 
   page,
 }) => {
   await withReaderText200(page, walkTheVault);
+});
+
+// #84: at the reader's 200% default text, first setup and the library's
+// controls are cut off. Expected to fail until #84 is fixed; axe and sideways
+// scrolling are still checked at that size by the tests above.
+test("cuts nothing off with the reader's default text at 200% (#84)", async ({
+  page,
+}) => {
+  test.fail(
+    true,
+    "#84: the library's controls are cut off at 200% default text",
+  );
+  await withReaderText200(page, walkThePreview, true);
+});
+
+test("cuts nothing off on the vault screens with the reader's default text at 200% (#84)", async ({
+  page,
+}) => {
+  test.fail(
+    true,
+    "#84: first setup and the library are cut off at 200% default text",
+  );
+  await withReaderText200(page, walkTheVault, true);
 });
