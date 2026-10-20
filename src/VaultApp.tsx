@@ -590,7 +590,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await operation();
     } catch (error) {
       // The unlock screen is also shown when the startup status check fails,
-      // and after a failed erase. If there is no vault after all, offer to
+      // and after a failed set-aside. If there is no vault after all, offer to
       // create one: nothing on the unlock screen can succeed, and only a
       // restart would otherwise leave it.
       if (isMissingVaultError(error)) {
@@ -768,7 +768,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               if (!recoveryKey)
                 setLibraryNotice({
                   message:
-                    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+                    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not lock you out of your documents for good.",
                   outcome: null,
                 });
             },
@@ -791,11 +791,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             const current = await bridge.unlock(passphrase);
             const outcome = takeHeldOutcome(current);
-            // A vault without a recovery key is one forgotten passphrase
-            // from being erased, so the library opens on the offer of one,
-            // at most once a day. No key is made until the patient asks: one
-            // shown unasked could be seen by whoever is looking on. Not on a
-            // vault that cannot store one, and not over something held for
+            // A vault without a recovery key is one forgotten passphrase from
+            // being set aside for good, so the library opens on the offer of
+            // one, at most once a day. No key is made until the patient asks:
+            // one shown unasked could be seen by whoever is looking on. Not on
+            // a vault that cannot store one, and not over something held for
             // this unlock (a transfer's result, how a key setup ended), which
             // comes first.
             const offer =
@@ -845,8 +845,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
               rememberOldBackupsGuide(null);
-              // Starting again starts with the comfort settings, as the
-              // library's erase does by reloading the app.
+              // Starting again starts with the comfort settings, as a fresh
+              // start of the app does.
               setComfortChosen(false);
               setStatus("absent");
               setNotice("");

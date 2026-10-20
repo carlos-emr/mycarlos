@@ -112,11 +112,11 @@ export const fr: Record<MessageKey, Message> = {
   "restore.consequence.same":
     "Le coffre-fort de cet appareil contient les mêmes documents. La restauration le met de côté et met cette sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.consequence.differs":
-    "Le coffre-fort de cet appareil pourrait ne pas être identique à cette sauvegarde : il a peut-être changé depuis, ou une partie n’a pas pu être lue. La restauration met le coffre-fort de côté et met la sauvegarde à sa place : ce qui n’est pas dans la sauvegarde n’est plus dans le coffre-fort que vous utilisez, et la phrase secrète et la clé de récupération deviennent celles qui étaient en vigueur lors de la sauvegarde. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
+    "Le coffre-fort de cet appareil pourrait ne pas être identique à cette sauvegarde : il a peut-être changé depuis, ou une partie n’a pas pu être lue. La restauration met le coffre-fort de côté et met la sauvegarde à sa place : ce qui n’est pas dans la sauvegarde n’est plus dans le coffre-fort que vous utilisez, et la phrase secrète et la clé de récupération deviennent celles qui étaient en vigueur lors de la sauvegarde. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.consequence.otherVault":
     "Cet appareil contient un autre coffre-fort. La restauration le met de côté et met la sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.consequence.unreadable":
-    "Le coffre-fort de cet appareil n’a pas pu être lu; myCarlos ne peut donc pas savoir s’il s’agit de celui dont cette sauvegarde provient. La restauration le met de côté et met la sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
+    "Le coffre-fort de cet appareil n’a pas pu être lu ; myCarlos ne peut donc pas savoir s’il s’agit de celui dont cette sauvegarde provient. La restauration le met de côté et met la sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.agree.erase":
     "Mettre de côté le coffre-fort de cet appareil et restaurer la sauvegarde",
   "restore.agree.replace":

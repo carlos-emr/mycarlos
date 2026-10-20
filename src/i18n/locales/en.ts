@@ -68,7 +68,7 @@ export const en = {
     "Without one, the only way back in is to set this vault aside and start again. The vault set aside stays on this device, encrypted, but nobody can open it without its passphrase.",
   "restore.summary": "Restore from a backup",
 
-  // Erase the vault
+  // Set the vault aside
   "reset.plainly":
     "Setting the vault aside takes all your documents, folders and patient profiles out of myCarlos on this computer. They stay on this computer, encrypted, but nobody can open them without the passphrase. To be sure, type the words below exactly.",
   "reset.type": "Type {phrase}",

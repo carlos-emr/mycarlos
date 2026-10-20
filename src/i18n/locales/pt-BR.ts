@@ -109,13 +109,13 @@ export const ptBR: Record<MessageKey, Message> = {
   "restore.consequence.nothing":
     "Restaurar coloca este cofre neste dispositivo.",
   "restore.consequence.same":
-    "O cofre deste dispositivo contém os mesmos documentos. Restaurar o deixa de lado e coloca esta cópia de segurança no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
+    "O cofre deste dispositivo contém os mesmos documentos. Ao restaurar, ele é deixado de lado e esta cópia de segurança é colocada no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.consequence.differs":
-    "O cofre deste dispositivo pode não ser igual a esta cópia de segurança: ele pode ter mudado desde então, ou uma parte dele não pôde ser lida. Restaurar deixa o cofre de lado e coloca a cópia de segurança no lugar dele: o que não estiver na cópia não estará mais no cofre que você usa, e a frase secreta e a chave de recuperação passam a ser as da cópia de segurança. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
+    "O cofre deste dispositivo pode não ser igual a esta cópia de segurança: ele pode ter mudado desde então, ou uma parte dele não pôde ser lida. Ao restaurar, o cofre é deixado de lado e a cópia de segurança é colocada no lugar dele: o que não estiver na cópia não estará mais no cofre que você usa, e a frase secreta e a chave de recuperação passam a ser as da cópia de segurança. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.consequence.otherVault":
-    "Este dispositivo tem um cofre diferente. Restaurar o deixa de lado e coloca a cópia de segurança no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
+    "Este dispositivo tem um cofre diferente. Ao restaurar, ele é deixado de lado e a cópia de segurança é colocada no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.consequence.unreadable":
-    "O cofre deste dispositivo não pôde ser lido, então o myCarlos não consegue saber se é aquele de onde esta cópia de segurança veio. Restaurar o deixa de lado e coloca a cópia de segurança no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
+    "O cofre deste dispositivo não pôde ser lido, então o myCarlos não consegue saber se é aquele de onde esta cópia de segurança veio. Ao restaurar, ele é deixado de lado e a cópia de segurança é colocada no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.agree.erase":
     "Deixar o cofre deste dispositivo de lado e restaurar a cópia de segurança",
   "restore.agree.replace":
