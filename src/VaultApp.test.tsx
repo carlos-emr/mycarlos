@@ -5105,7 +5105,7 @@ describe("durable vault UI", () => {
     const results = await axe.run(dialog, {
       runOnly: {
         type: "tag",
-        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
       },
     });
     expect(results.violations).toEqual([]);
@@ -5274,7 +5274,7 @@ describe("durable vault UI", () => {
     const axeOptions = {
       runOnly: {
         type: "tag" as const,
-        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+        values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
       },
     };
     const locked = render(<VaultApp bridge={nativeBridge()} />);
