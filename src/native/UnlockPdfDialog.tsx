@@ -1,32 +1,32 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 
-/** Asks once for the password of a shared document that is locked with one.
- * The password goes to myCarlos's separate PDF helper and is not kept: the
- * field is emptied as soon as it is sent, and only the unlocked copy is
- * stored. */
-export function UnlockReceivedDialog({
+/** Asks for the password of a stored PDF that is locked with one (#54). The
+ * password goes to myCarlos's separate PDF helper and is not kept: the field
+ * is emptied as soon as it is sent. An unlocked copy is added beside the
+ * document, and the locked original is kept. */
+export function UnlockPdfDialog({
   name,
   wrongTries,
   busy,
   onUnlock,
-  onNotNow,
+  onCancel,
 }: {
   name: string;
   /** How many passwords did not open it; each one is said again. */
   wrongTries: number;
   busy: boolean;
   onUnlock: (password: string) => void;
-  /** Leaves the file waiting, still locked. */
-  onNotNow: () => void;
+  /** Closes the dialog; the document stays as it is. */
+  onCancel: () => void;
 }) {
   const [password, setPassword] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const notNow = () => {
-    if (!busy) onNotNow();
+  const cancel = () => {
+    if (!busy) onCancel();
   };
-  useModalFocus(true, dialogRef, notNow, inputRef);
+  useModalFocus(true, dialogRef, cancel, inputRef);
   // After a wrong password, the empty field is ready for the next try, once
   // the check that disabled it is over.
   useEffect(() => {
@@ -40,7 +40,7 @@ export function UnlockReceivedDialog({
     onUnlock(typed);
   };
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={notNow}>
+    <div className="dialog-backdrop" role="presentation" onMouseDown={cancel}>
       <section
         ref={dialogRef}
         className="record-dialog native-rename-dialog"
@@ -57,8 +57,9 @@ export function UnlockReceivedDialog({
           <div className="native-rename-fields">
             <p id="unlock-help">
               This document is locked with a password. Enter the document
-              password from your patient portal. myCarlos keeps only the
-              unlocked copy, never the password.
+              password from your patient portal. myCarlos adds a copy that opens
+              without it and keeps the locked original. It never keeps the
+              password.
             </p>
             <label htmlFor="unlock-password">Document password</label>
             <input
@@ -85,12 +86,12 @@ export function UnlockReceivedDialog({
               className="button"
               type="button"
               disabled={busy}
-              onClick={notNow}
+              onClick={cancel}
             >
-              Not now
+              Cancel
             </button>
             <button className="button primary" disabled={busy || !password}>
-              {busy ? "Unlocking…" : "Unlock and add"}
+              {busy ? "Unlocking…" : "Unlock"}
             </button>
           </footer>
         </form>

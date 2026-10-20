@@ -122,3 +122,65 @@ describe("text sizes", () => {
     },
   );
 });
+
+describe("colours", () => {
+  it("are set only through the theme variables, so each theme sets them all", () => {
+    const literal =
+      /#[0-9a-f]{3,8}\b|\b(?:rgb|hsl)a?\(|(?<![-\w])(?:white|black)(?![-\w])/i;
+    const outside = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(
+      ([, selector, body]) =>
+        body
+          .split(";")
+          .map((declaration) => declaration.trim())
+          .filter(
+            (declaration) =>
+              !declaration.startsWith("--") && literal.test(declaration),
+          )
+          .map((declaration) => `${selector.trim()} { ${declaration} }`),
+    );
+    expect(outside).toEqual([]);
+  });
+});
+
+describe("control boundaries", () => {
+  // WCAG 1.4.11: a control's outline or track needs 3:1 against what is
+  // around it, in each theme.
+  const rgb = (value: string) => {
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.color = value;
+    const channels = getComputedStyle(probe)
+      .color.match(/[\d.]+/g)!
+      .slice(0, 3)
+      .map(Number);
+    probe.remove();
+    return channels;
+  };
+  const luminance = (channels: number[]) =>
+    channels
+      .map((value) => value / 255)
+      .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+      .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const ratio = (front: string, back: string) => {
+    const [a, b] = [luminance(rgb(front)), luminance(rgb(back))];
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+
+  it.each(["light", "dark"])("stand out from the page in %s", (theme) => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      const weak = ["--control-line", "--toggle-off", "--focus"].flatMap(
+        (control) =>
+          ["--paper", "--canvas", "--canvas-2"]
+            .map((page) => ({
+              control,
+              page,
+              ratio: ratio(`var(${control})`, `var(${page})`),
+            }))
+            .filter(({ ratio }) => ratio < 3),
+      );
+      expect(weak).toEqual([]);
+    } finally {
+      delete document.documentElement.dataset.theme;
+    }
+  });
+});

@@ -1,11 +1,20 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import type { VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibrarySidebarProps {
   profileName: string;
-  section: "records" | "security" | "preferences";
+  /** The patient buttons, when there is more than one profile. */
+  profileChoice?: ReactNode;
+  section: "records" | "shared" | "security" | "preferences";
+  /** Files added to Shared with me since the vault was unlocked, until it
+   * is opened (#61). */
+  sharedNew: number;
+  /** With one person, Shared with me is a fixed folder inside their records;
+   * with several, it is outside everyone's. */
+  sharedInside: boolean;
+  onOpenShared: () => void;
   currentFolderId: string | null;
   folders: VaultFolder[];
   records: VaultRecord[];
@@ -19,6 +28,7 @@ interface LibrarySidebarProps {
 
 export function LibrarySidebar({
   profileName,
+  profileChoice,
   section,
   currentFolderId,
   folders,
@@ -27,6 +37,9 @@ export function LibrarySidebar({
   drag,
   folderCount,
   onOpenFolder,
+  sharedNew,
+  sharedInside,
+  onOpenShared,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
@@ -53,6 +66,29 @@ export function LibrarySidebar({
     visit(null, 0);
     return tree;
   }, [folders]);
+  const shared = (
+    <button
+      className={
+        [
+          section === "shared" ? "selected" : "",
+          sharedNew > 0 ? "native-shared-new" : "",
+        ]
+          .join(" ")
+          .trim() || undefined
+      }
+      type="button"
+      // The count is a flex item, so built from text it would be read
+      // "Shared with me , 2 new"; say it plainly instead.
+      aria-label={
+        sharedNew > 0 ? `Shared with me, ${sharedNew} new` : undefined
+      }
+      onClick={onOpenShared}
+    >
+      <Icon name="letter" />{" "}
+      <span className="native-nav-name">Shared with me</span>
+      {sharedNew > 0 && <span className="nav-count">{sharedNew} new</span>}
+    </button>
+  );
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -64,6 +100,7 @@ export function LibrarySidebar({
           <small>{profileName}</small>
         </span>
       </div>
+      {profileChoice}
       <nav className="side-nav" aria-label="Record library">
         <button
           className={dropClass(
@@ -80,7 +117,9 @@ export function LibrarySidebar({
             {records.filter((record) => !record.folderIds.length).length}
           </span>
         </button>
+        {!sharedInside && shared}
         <span className="nav-label">Folders</span>
+        {sharedInside && shared}
         {sidebarFolders.map(({ folder, depth }) => (
           <button
             className={dropClass(
@@ -107,7 +146,7 @@ export function LibrarySidebar({
             <span className="nav-count">{folderCount(folder.id)}</span>
           </button>
         ))}
-        {!folders.length && (
+        {!folders.length && !sharedInside && (
           <small className="native-sidebar-empty">No folders yet</small>
         )}
         <span className="nav-label">Settings</span>

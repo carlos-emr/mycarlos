@@ -8,8 +8,13 @@ import {
   vaultErrorMessage,
   type SpeedTestReport,
 } from "../vault";
-import { AUTO_LOCK_OPTIONS } from "./autoLock";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import { AutoLockSetting } from "./AutoLockSetting";
+import {
+  NAME_INPUT_MAX_LENGTH,
+  SHARED_NAME_TAKEN,
+  nameIsShared,
+  nameTooLong,
+} from "./recordPresentation";
 import {
   MIN_PASSPHRASE_CHARS,
   ResetConfirmation,
@@ -190,24 +195,14 @@ export function SecuritySettings({
             </h2>
             <p>
               The vault locks after the selected period without keyboard,
-              pointer, or touch activity. This non-medical setting is clamped to
-              1–15 minutes.
+              pointer, or touch activity. Choose from 1 to 15 minutes.
             </p>
           </div>
           <div>
-            <label>
-              Automatic lock delay
-              <select
-                value={autoLockMinutes}
-                onChange={(event) => onAutoLockMinutes(event.target.value)}
-              >
-                {AUTO_LOCK_OPTIONS.map((minutes) => (
-                  <option value={minutes} key={minutes}>
-                    {minutes} minute{minutes === 1 ? "" : "s"}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AutoLockSetting
+              minutes={autoLockMinutes}
+              onMinutes={onAutoLockMinutes}
+            />
             <button
               className="button"
               type="button"
@@ -491,13 +486,17 @@ export function SecuritySettings({
             {nameTooLong(profileName) && (
               <p role="alert">This name is too long. Shorten it.</p>
             )}
+            {nameIsShared(profileName) && (
+              <p role="alert">{SHARED_NAME_TAKEN}</p>
+            )}
             <button
               className="button"
               disabled={
                 busy ||
                 readOnly ||
                 !profileName.trim() ||
-                nameTooLong(profileName)
+                nameTooLong(profileName) ||
+                nameIsShared(profileName)
               }
             >
               Add profile

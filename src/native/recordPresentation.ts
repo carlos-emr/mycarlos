@@ -43,6 +43,9 @@ const KIND_RULES: {
 ];
 
 export function recordKind(name: string): { icon: IconName; label: string } {
+  // A photo saved from the camera, or any JPEG by its name. (Whether a file
+  // can be shown as a photo is decided by its bytes, in the vault.)
+  if (/\.jpe?g$/i.test(name.trim())) return { icon: "camera", label: "Photo" };
   // Not the locale's lower case: under a Turkish locale "IMAGING" becomes
   // "ımagıng", which matches none of the ASCII stems below.
   const words = name
@@ -65,6 +68,14 @@ export const MAX_NAME_CHARS = 120;
 export const NAME_INPUT_MAX_LENGTH = 2 * MAX_NAME_CHARS;
 export const nameTooLong = (name: string) =>
   [...name.trim()].length > MAX_NAME_CHARS;
+
+/** "Shared with me" is the folder shared files go into (#61), so no person
+ * may be called that. */
+/** The name Shared with me goes by in the library (#61). */
+export const SHARED_FOLDER_NAME = "Shared with me";
+export const SHARED_NAME_TAKEN = `${SHARED_FOLDER_NAME} is where shared files go. Choose another name.`;
+export const nameIsShared = (name: string) =>
+  name.trim().toLowerCase() === "shared with me";
 
 // Search compares text in one form whatever the device's locale: with a
 // Turkish default locale, toLocaleLowerCase() turns "I" into a dotless "ı",

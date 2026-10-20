@@ -297,6 +297,7 @@ impl ReceivedFiles {
     }
 
     /// Forgets the files named. Unknown ids are ignored: a file already imported is gone too.
+    #[cfg(test)]
     pub(crate) fn discard(&self, ids: &[Uuid]) {
         self.waiting().files.retain(|(id, _)| !ids.contains(id));
     }

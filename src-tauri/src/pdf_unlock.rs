@@ -95,23 +95,51 @@ pub(crate) enum Outcome {
     Failed,
 }
 
-/// Whether a document might be password-protected: its trailer then names an `/Encrypt`
-/// dictionary. This reads PDF names and nothing else (`/` and the name's characters, with
-/// `#hh` escapes decoded, so `/Encr#79pt` counts too). It parses no object, so it is safe
-/// beside the vault keys. A match is only a hint; the helper decides.
-pub(crate) fn may_be_locked(mut reader: impl Read) -> io::Result<bool> {
-    let mut scanner = NameScanner::default();
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        let read = match reader.read(&mut buffer) {
-            Ok(0) => return Ok(scanner.end_name()),
-            Ok(read) => read,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error),
-        };
-        if buffer[..read].iter().any(|&byte| scanner.push(byte)) {
-            return Ok(true);
+/// Whether a document might be password-protected, as the vault writes it out (#54): its
+/// trailer then names an `/Encrypt` dictionary. This reads PDF names and nothing else (`/` and
+/// the name's characters, with `#hh` escapes decoded, so `/Encr#79pt` counts too). It parses no
+/// object, so it is safe beside the vault keys. A match is only a hint; the helper decides. It
+/// stops the export, with an error, at the first `/Encrypt`, so the rest is not decrypted.
+#[derive(Default)]
+pub(crate) struct LockScan {
+    scanner: NameScanner,
+    found: bool,
+}
+
+impl LockScan {
+    /// Whether `/Encrypt` has been found so far.
+    pub(crate) fn found(&self) -> bool {
+        self.found
+    }
+
+    /// Whether the whole document named `/Encrypt`, once all of it was written.
+    pub(crate) fn finish(mut self) -> bool {
+        self.found || self.scanner.end_name()
+    }
+}
+
+impl io::Write for LockScan {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        if data.iter().any(|&byte| self.scanner.push(byte)) {
+            self.found = true;
+            return Err(io::Error::other("the document names /Encrypt"));
         }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The scan of `LockScan` over a reader, for the tests.
+#[cfg(test)]
+fn may_be_locked(mut reader: impl Read) -> io::Result<bool> {
+    let mut scan = LockScan::default();
+    match io::copy(&mut reader, &mut scan) {
+        Err(_) if scan.found() => Ok(true),
+        Err(error) => Err(error),
+        Ok(_) => Ok(scan.finish()),
     }
 }
 
@@ -185,19 +213,6 @@ impl NameScanner {
             self.length += 1;
         }
     }
-}
-
-/// Reads a whole document, refusing one larger than the helper takes.
-pub(crate) fn read_limited(reader: impl Read) -> io::Result<Result<Vec<u8>, Refusal>> {
-    let mut bytes = Vec::new();
-    reader
-        .take(MAX_LOCKED_PDF_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)?;
-    Ok(if bytes.len() > MAX_LOCKED_PDF_BYTES {
-        Err(Refusal::TooLarge)
-    } else {
-        Ok(bytes)
-    })
 }
 
 /// Opens a locked document with its password and returns it saved without one. This is what
@@ -883,17 +898,6 @@ mod tests {
     fn refuses_a_document_over_the_limit_before_parsing_it() {
         let oversized = vec![b' '; MAX_LOCKED_PDF_BYTES + 1];
         assert_eq!(unlock(&oversized, PASSWORD).unwrap_err(), Refusal::TooLarge);
-        assert_eq!(
-            read_limited(&oversized[..]).unwrap().unwrap_err(),
-            Refusal::TooLarge
-        );
-        assert_eq!(
-            read_limited(&oversized[..MAX_LOCKED_PDF_BYTES])
-                .unwrap()
-                .unwrap()
-                .len(),
-            MAX_LOCKED_PDF_BYTES
-        );
     }
 
     #[test]
