@@ -32,12 +32,16 @@ fn extraction_rules_exclude_everything(rules: &str) -> bool {
 }
 
 /// The camera dialog (D97) needs Android's camera permission declared, or
-/// Android refuses it without asking. The camera is not required, so devices
-/// without one can install the app, and nothing asks for the microphone.
+/// Android refuses it without asking. The camera is not required, nor the
+/// autofocus the permission implies, so devices without them can install the
+/// app, and nothing asks for the microphone.
 fn declares_camera_only(manifest: &str) -> bool {
     manifest.contains("<uses-permission android:name=\"android.permission.CAMERA\" />")
         && manifest.contains(
             "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
+        )
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />",
         )
         && !manifest.contains("android.permission.RECORD_AUDIO")
 }

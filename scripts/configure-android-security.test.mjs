@@ -96,6 +96,15 @@ test("the camera is declared once, not required, and the microphone not at all (
       ).length,
       1,
     );
+    // The permission implies autofocus; not required either, once.
+    assert.equal(
+      (
+        manifest.match(
+          /<uses-feature android:name="android\.hardware\.camera\.autofocus" android:required="false" \/>/g,
+        ) ?? []
+      ).length,
+      1,
+    );
     assert.doesNotMatch(manifest, /RECORD_AUDIO|MODIFY_AUDIO_SETTINGS/);
     // What was there stays.
     assert.match(manifest, /android\.permission\.INTERNET/);
@@ -107,12 +116,17 @@ test("the camera is declared once, not required, and the microphone not at all (
 
 test("a camera feature marked required is replaced by one that is not", () => {
   const manifest = declareCamera(
-    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-feature android:name="android.hardware.camera" android:required="true" /><application /></manifest>',
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-feature android:name="android.hardware.camera" android:required="true" /><uses-feature android:name="android.hardware.camera.autofocus" /><application /></manifest>',
   );
   assert.doesNotMatch(manifest, /android:required="true"/);
   assert.match(
     manifest,
     /<uses-feature android:name="android\.hardware\.camera" android:required="false" \/>/,
+  );
+  assert.equal(manifest.match(/camera\.autofocus/g)?.length, 1);
+  assert.match(
+    manifest,
+    /<uses-feature android:name="android\.hardware\.camera\.autofocus" android:required="false" \/>/,
   );
   assert.throws(() => declareCamera("<application />"), /manifest element/);
 });

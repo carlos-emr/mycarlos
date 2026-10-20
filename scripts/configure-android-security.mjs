@@ -34,12 +34,16 @@ ${EXCLUDES}
 // The camera (D97): the camera dialog asks the page for video, and wry asks
 // Android for this permission when it does; undeclared, Android refuses it
 // without asking. Not required, so a phone or tablet without a camera can
-// still install myCarlos. Nothing asks for the microphone, so it is not
+// still install myCarlos. The camera permission also implies autofocus, so
+// that is declared not required too, or Google Play would leave out devices
+// whose camera has none. Nothing asks for the microphone, so it is not
 // declared.
 const CAMERA_PERMISSION =
   '<uses-permission android:name="android.permission.CAMERA" />';
 const CAMERA_FEATURE =
   '<uses-feature android:name="android.hardware.camera" android:required="false" />';
+const AUTOFOCUS_FEATURE =
+  '<uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />';
 
 /** The manifest with the camera declared exactly once. */
 export function declareCamera(manifest) {
@@ -52,12 +56,13 @@ export function declareCamera(manifest) {
       "",
     )
     .replace(
-      /\s*<uses-feature\s+android:name="android\.hardware\.camera"[^>]*\/>/g,
+      /\s*<uses-feature\s+android:name="android\.hardware\.camera(\.autofocus)?"[^>]*\/>/g,
       "",
     )
     .replace(
       /<manifest\b[^>]*>/,
-      (open) => `${open}\n    ${CAMERA_PERMISSION}\n    ${CAMERA_FEATURE}`,
+      (open) =>
+        `${open}\n    ${CAMERA_PERMISSION}\n    ${CAMERA_FEATURE}\n    ${AUTOFOCUS_FEATURE}`,
     );
 }
 
