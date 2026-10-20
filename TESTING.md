@@ -176,10 +176,26 @@ Good to know:
   Repeat steps 5 to 7 to renew it; the vault is kept. A paid developer account makes it a year.
 - **Updating:** `git pull && npm ci`, then steps 5 to 7.
 - **Removing:** delete the app on the phone; its vault goes with it.
-- **"Identifier not available":** set your own `"identifier"` in `src-tauri/tauri.conf.json` (for
-  example `ca.carlos.mycarlos.yourname`), rerun `npm run tauri ios init`, and don't commit it. It
-  installs as a separate app.
 - **Desktop only for now:** locked PDFs, the built-in PDF reader and the camera.
+
+**If something goes wrong:**
+
+| You see | Do this |
+| --- | --- |
+| `xcodebuild` "requires Xcode, but active developer directory … is a command line tools instance" | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
+| "iOS … is not installed" | Xcode → Settings → Components: install the iOS platform |
+| "can't find crate for `core`" or "target may not be installed" | In `~/mycarlos`: `rustup target add aarch64-apple-ios` |
+| `pod: command not found` | `brew install cocoapods`, then open a new Terminal |
+| "No signing certificate" or "requires a development team" | Repeat step 3, then step 5 in the same Terminal window |
+| "Failed to register bundle identifier" or "identifier not available" | Set your own `"identifier"` in `src-tauri/tauri.conf.json` (e.g. `ca.carlos.mycarlos.yourname`), rerun `npm run tauri ios init`, don't commit it. It installs as a separate app |
+| "Developer Mode disabled" or "the device is locked" | Step 6 (Developer Mode); unlock the phone and run step 7 again |
+| "Unable to launch … invalid code signature or its profile has not been explicitly trusted" | Step 8, then step 7 again |
+| "maximum number of apps for free development profiles" | Delete another app you installed from Xcode, then step 7 again |
+| The app stopped opening after a week | The free 7-day profile ran out: steps 5 to 7 |
+| The phone isn't listed | Use a data cable (not charge-only), unlock the phone, tap **Trust**; check **Window → Devices and Simulators** |
+| The build stops with "No space left on device" | Free storage; `rm -rf ~/mycarlos/src-tauri/target` clears old builds |
+
+Anything else: [report it](#report-what-you-find) with the last lines of output.
 
 ## What to try
 
