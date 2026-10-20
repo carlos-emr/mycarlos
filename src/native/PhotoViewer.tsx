@@ -54,6 +54,14 @@ export function PhotoViewer({
     frame.scrollTop = centre.y * frame.scrollHeight - frame.clientHeight / 2;
   }, [level]);
 
+  // A drag ends on release, on cancel, and whenever the browser says no
+  // button is held any more or the pointer was let go (a release outside
+  // the window), so it can never stick to a pointer that is just moving.
+  const endDrag = () => {
+    drag.current = null;
+    setDragging(false);
+  };
+
   const zoomTo = (next: number) => {
     if (frameRef.current) keepCentre.current = viewCentre(frameRef.current);
     setLevel(next);
@@ -107,19 +115,20 @@ export function PhotoViewer({
           onPointerMove={(event) => {
             const start = drag.current;
             if (!start || start.pointer !== event.pointerId) return;
+            if ((event.buttons & 1) === 0) {
+              endDrag();
+              return;
+            }
             const frame = event.currentTarget;
             frame.scrollLeft = start.left - (event.clientX - start.x);
             frame.scrollTop = start.top - (event.clientY - start.y);
           }}
           onPointerUp={(event) => {
             if (drag.current?.pointer !== event.pointerId) return;
-            drag.current = null;
-            setDragging(false);
+            endDrag();
           }}
-          onPointerCancel={() => {
-            drag.current = null;
-            setDragging(false);
-          }}
+          onPointerCancel={endDrag}
+          onLostPointerCapture={endDrag}
         >
           <img src={url} alt={`Photo: ${name}`} draggable={false} />
         </div>
