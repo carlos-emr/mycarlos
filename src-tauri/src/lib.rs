@@ -2877,7 +2877,25 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["default.json", "zoom.json"]);
+        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+    }
+
+    #[test]
+    fn the_desktop_window_follows_the_chosen_appearance() {
+        // System, Light or Dark (src/native/nativeAppearance.ts) sets the
+        // window's own theme, on a computer and for nothing else: the page
+        // follows the choice on every platform without it.
+        let appearance: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/appearance.json")).unwrap();
+        assert_eq!(appearance["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            appearance["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            appearance["permissions"],
+            serde_json::json!(["core:window:allow-set-theme"])
+        );
     }
 
     #[test]
