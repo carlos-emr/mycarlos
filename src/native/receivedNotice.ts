@@ -17,12 +17,3 @@ export function receiveNoticeText({
     );
   return parts.join(" ");
 }
-
-/** What the lock screen says about shared files waiting: a count, never a
- * name, since whoever is looking on has not unlocked. */
-export function waitingText(count: number): string {
-  if (count === 0) return "";
-  const files =
-    count === 1 ? "One shared file is" : `${count} shared files are`;
-  return `${files} waiting. Unlock and ${count === 1 ? "it goes" : "they go"} into Shared with me. If myCarlos closes first, ${count === 1 ? "it is" : "they are"} not kept: share ${count === 1 ? "it" : "them"} again.`;
-}

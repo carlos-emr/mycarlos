@@ -3,9 +3,13 @@ import { createRoot } from "react-dom/client";
 import VaultApp from "./VaultApp";
 import { startNativeZoom } from "./native/nativeZoom";
 import { NativeZoomProvider } from "./native/TextSizeSetting";
+import { initLocale } from "./i18n";
 import { startAppearance } from "./appearance";
 import { AppearanceProvider } from "./AppearanceProvider";
 import "./styles.css";
+
+// The page says which language it is in, for screen readers.
+initLocale();
 
 // The size kept from last time is applied before anything is shown, so that
 // the interface does not open at one size and jump to another. If that

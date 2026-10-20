@@ -71,8 +71,9 @@ export const nameTooLong = (name: string) =>
 
 /** "Shared with me" is the folder shared files go into (#61), so no person
  * may be called that. */
-export const SHARED_NAME_TAKEN =
-  "Shared with me is where shared files go. Choose another name.";
+/** The name Shared with me goes by in the library (#61). */
+export const SHARED_FOLDER_NAME = "Shared with me";
+export const SHARED_NAME_TAKEN = `${SHARED_FOLDER_NAME} is where shared files go. Choose another name.`;
 export const nameIsShared = (name: string) =>
   name.trim().toLowerCase() === "shared with me";
 
