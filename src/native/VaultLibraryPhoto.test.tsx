@@ -231,7 +231,7 @@ describe("viewing a photo", () => {
 
   const openDetails = (name: string) => {
     fireEvent.click(
-      screen.getByRole("button", { name: `More options for ${name}` }),
+      screen.getByRole("button", { name: `Details for ${name}` }),
     );
     return screen.getByRole("dialog", { name });
   };

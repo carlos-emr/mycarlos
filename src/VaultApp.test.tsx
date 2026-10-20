@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
+import { userEvent as realKeys } from "vitest/browser";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   forgetRecoveryOffer,
@@ -797,6 +798,49 @@ describe("durable vault UI", () => {
     },
   );
 
+  it("moves a document from its details only when Move is pressed", async () => {
+    const user = userEvent.setup();
+    const bridge = renameBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+    );
+    const details = screen.getByRole("dialog", { name: "FAKE Old.pdf" });
+    const destination = within(details).getByRole("combobox", {
+      name: "Move to",
+    });
+    const move = within(details).getByRole("button", { name: "Move" });
+    expect(destination).toHaveValue("parent");
+    expect(move).toBeDisabled();
+    // Real arrow keys: Chromium changes a closed list's value on each press,
+    // which used to move the document at once, once per press (#67).
+    destination.focus();
+    await realKeys.keyboard("{ArrowDown}{ArrowDown}");
+    expect(destination).toHaveValue("child");
+    expect(bridge.assignFolders).not.toHaveBeenCalled();
+    expect(move).toBeEnabled();
+    // Pressed from the keyboard: Move is disabled while it runs and after,
+    // so focus goes back to "Move to", inside the dialog, not to the page.
+    move.focus();
+    await realKeys.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("record", [
+        "child",
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("dialog", { name: "FAKE Old.pdf" })).getByRole(
+          "combobox",
+          { name: "Move to" },
+        ),
+      ).toHaveFocus(),
+    );
+  });
+
   it("renames a document from its details, keeps failed input for retry, and supports cancellation", async () => {
     const user = userEvent.setup();
     const bridge = renameBridge();
@@ -808,7 +852,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -853,7 +897,7 @@ describe("durable vault UI", () => {
     // The document's details are replaced while it is renamed. Their status
     // line comes back empty, and the result is written into it after.
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -922,7 +966,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: "More options for FAKE Results.pdf",
+            name: "Details for FAKE Results.pdf",
           }),
         );
       });
@@ -944,7 +988,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Open FAKE Parent" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     await user.click(screen.getByRole("button", { name: "Rename document" }));
     await user.clear(screen.getByLabelText("File name"));
@@ -2476,7 +2520,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Rename folder" }),
     ).toBeDisabled();
     await user.click(
-      screen.getByRole("button", { name: "More options for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
     );
     expect(
       screen.getByRole("button", { name: "Rename document" }),

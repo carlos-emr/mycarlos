@@ -80,21 +80,20 @@ async function section(
   info: TestInfo,
   value: "records" | "preferences" | "security",
 ) {
-  if (
-    info.project.name === "phone" ||
-    (await page.getByRole("combobox", { name: "Section" }).isVisible())
-  ) {
-    await page.getByRole("combobox", { name: "Section" }).selectOption(value);
-  } else {
-    const name = {
-      records: "My records",
-      preferences: "Preferences",
-      security: "Security",
-    }[value];
-    await page
-      .getByRole("button", { name: new RegExp(`^${name}(?:\\s|$)`) })
-      .click();
-  }
+  const name = {
+    records: "My records",
+    preferences: "Preferences",
+    security: "Security",
+  }[value];
+  // A narrow window has a row of section tabs (#67) where the sidebar was.
+  const tabs = page.getByRole("navigation", { name: "Section" });
+  const sidebar = page.getByRole("button", {
+    name: new RegExp(`^${name}(?:\\s|$)`),
+  });
+  await expect(tabs.or(sidebar).first()).toBeVisible();
+  if (info.project.name === "phone" || (await tabs.isVisible()))
+    await tabs.getByRole("button", { name, exact: true }).click();
+  else await sidebar.first().click();
 }
 
 async function screenshot(page: Page, info: TestInfo, name: string) {

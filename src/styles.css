@@ -698,6 +698,98 @@ h1, h2, p { margin: 0; }
   .trash-list .file-row .restore-button { grid-column: 3; grid-row: 2; }
 }
 
+/* #67: bigger by default in the app. Body text is 16px; counts, dates, captions and
+   other secondary text stay at 14px, the floor. Every button, tick box, field and link
+   is a target of at least 44px. Text size in Preferences still scales all of it. */
+.native-vault-page :is(
+  .button, .side-nav button, .unlock-pill, .breadcrumb, .main-head p, .name-copy strong,
+  .record-open, .status-line, .empty-state span, .setting-row p, .setting-row h2,
+  .native-inline-form label, .native-setting-form label, .native-dialog-actions label,
+  .native-danger-setting label, .native-location-chip, .search input, .native-sort-choice,
+  .bulkbar, .native-rename-button, .native-section-tabs button, .native-profile-choice .button,
+  .native-drag-hint
+) { font-size: 1rem; }
+.native-vault-page :is(
+  .button, .side-nav button, .unlock-pill, .native-rename-button, .bulkbar button,
+  .native-dialog-actions select, .native-move-actions select, .native-folder-move select,
+  .native-setting-form input, .native-inline-form input, .native-danger-setting input,
+  .vault-card input, .file-name, .native-rename-fields input
+) { min-height: 44px; }
+.native-vault-page .breadcrumb { display: inline-flex; align-items: center; min-height: 44px; }
+/* A summary stays a list item, so it keeps its disclosure triangle. */
+.native-vault-page details > summary { min-height: 44px; padding-block: 10px; }
+.native-vault-page .search input { min-height: 44px; }
+/* A document's name keeps its line in the row; padding makes its target 44px tall. */
+.native-vault-page .record-open { padding-block: 13px; margin-block: -13px; }
+
+/* #67: the select tick is a 44px target around a 24px box, in list and grid view. */
+.native-check { position: relative; width: 44px; height: 44px; margin: 0; border: 0; background: transparent; }
+/* The unticked box's edge is 5.5:1 on white (WCAG 1.4.11 asks 3:1). */
+.native-check::before { content: ""; position: absolute; inset: 10px; border: 2px solid var(--ink-faint); border-radius: 6px; background: var(--paper); }
+.native-check.checked { border: 0; background: transparent; }
+.native-check.checked::before { border-color: var(--teal); background: var(--teal); }
+.native-check.checked::after { position: relative; color: var(--on-accent); font-size: 0.875rem; }
+.native-file-grid .file-tile { position: relative; }
+.native-check.tile-check { position: absolute; top: 8px; left: 8px; z-index: 1; margin: 0; }
+
+/* #67: one button per patient, and the narrow-window sections as a row of tabs. */
+.native-profile-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
+.native-profile-choice-label { flex-basis: 100%; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+.native-profile-choice .button { min-height: 44px; }
+.native-profile-choice .button[aria-pressed="true"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
+.native-profile-choice-narrow { display: none; }
+/* #67: the tabs share the row equally, but none is narrower than its longest word; when
+   the words don't fit side by side (a narrow phone, a wide font), the last tab wraps. */
+.native-section-tabs { flex-wrap: wrap; }
+.native-section-tabs button { flex: 1; min-width: min-content; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; font-weight: 700; }
+.native-section-tabs button[aria-current="page"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
+/* #67: the chosen section, patient and view say so by more than a tint: a
+   3px teal bar along the bottom, 6.4:1 on white. */
+.native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-profile-choice .button[aria-pressed="true"], .segment button.selected) { box-shadow: inset 0 -3px 0 var(--teal); }
+/* High contrast drops box shadows, so there the bar is a real border, in the
+   system's Highlight colour (an outline would hide the focus ring). */
+@media (forced-colors: active) {
+  .native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-profile-choice .button[aria-pressed="true"], .segment button.selected) { border-bottom: 3px solid Highlight; }
+}
+@media (max-width: 56.25em) {
+  .native-profile-choice-narrow { display: flex; flex-basis: 100%; margin: 8px 0 0; }
+  .native-profile-choice-narrow .native-profile-choice-label { flex-basis: auto; }
+}
+
+/* #67, Ben's review: an even rhythm on a phone. The patient choice gets a line
+   of its own and room before the heading; the location line uses the full
+   width, with New folder and New on their own row; the section tabs fit their
+   words on one line where they can. Steps of 6, 8 and 12px, as elsewhere. */
+@media (max-width: 40em) {
+  .native-vault-page .native-profile-choice-narrow { row-gap: 8px; column-gap: 8px; margin: 12px 0 16px; }
+  .native-vault-page .native-profile-choice-narrow .native-profile-choice-label { flex-basis: 100%; }
+  .native-vault-page .main-head { flex-wrap: wrap; align-items: flex-start; row-gap: 12px; }
+  .native-vault-page .main-head p { max-width: none; }
+  .native-vault-page .head-actions { flex-basis: 100%; flex-wrap: wrap; margin-left: 0; }
+  .native-vault-page .native-section-tabs { gap: 6px; }
+  .native-vault-page .native-section-tabs button { padding-inline: 6px; }
+  /* An empty status line takes no room; a notice pushes the list down. */
+  .native-vault-page .status-line:empty { min-height: 0; margin-bottom: 0; }
+}
+
+/* #67, #84: when the text is large for the width (a phone at 200% text, or a
+   320px phone), a document's name gets the row's full width, with Rename or
+   Details under it, and the lock button wraps under the window's title instead
+   of running off its edge. In em, so that it follows the reader's text size. */
+@media (max-width: 22em) {
+  .native-vault-page .titlebar { flex-wrap: wrap; row-gap: 6px; }
+  .native-vault-page .titlebar .native-lock-button { margin-left: 0; }
+}
+
+/* #67: in the app, buttons keep their words on narrow windows and wrap instead. */
+@media (max-width: 24.375em) {
+  /* The tabs' edges line up with the page's (.library-main). */
+  .native-vault-page .native-section-tabs { padding-inline: 14px; }
+  .native-vault-page .head-actions { flex-wrap: wrap; }
+  .native-vault-page .head-actions .button { width: auto; padding-inline: 11px; }
+  .native-vault-page .head-actions .button span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+}
+
 /* The native vault uses the mock-aligned filing-cabinet shell with durable data. */
 .native-vault-page .page-wrap { max-width: 1440px; }
 .native-vault-page .app-window { min-height: calc(100vh - 76px); }
@@ -714,8 +806,7 @@ h1, h2, p { margin: 0; }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
 .native-breadcrumb { margin: 0; padding: 3px 7px; border: 0; background: transparent; color: var(--teal-dark); font: inherit; font-weight: 700; }
 .native-breadcrumb:hover { text-decoration: underline; }
-.native-profile-select { display: flex; align-items: center; gap: 7px; margin-left: auto; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
-.native-profile-select select, .native-sort select, .native-move-actions select, .native-dialog-actions select, .native-setting-form select {
+.native-sort select, .native-move-actions select, .native-dialog-actions select, .native-setting-form select {
   min-height: 35px;
   padding: 6px 28px 6px 9px;
   border: 1px solid var(--line);
@@ -755,8 +846,20 @@ h1, h2, p { margin: 0; }
 .native-draggable:active { cursor: grabbing; }
 .native-dragging { opacity: .45; }
 .native-drop-target { background: var(--teal-soft) !important; box-shadow: inset 0 0 0 2px var(--teal) !important; }
+/* #67: all choices in view, and words on every button. */
 .native-sort { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .native-sort .icon { width: 16px; height: 16px; }
+.native-sort-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: 0; padding: 0; border: 0; }
+.native-sort-choice legend { float: left; margin-right: 2px; padding: 0; color: var(--ink-soft); font-weight: 700; }
+.native-sort-choice label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--ink); font-weight: 600; cursor: pointer; }
+.native-sort-choice input { flex: none; width: 18px; height: 18px; margin: 0; }
+/* With words on List and Grid, the radios and the segment can need more than a
+   narrow window's width, so the segment moves to its own line, whole. */
+.native-vault-page .view-controls { flex-wrap: wrap; row-gap: 0; }
+.native-view-segment { flex: none; }
+.native-view-segment button { flex: none; grid-auto-flow: column; gap: 6px; width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; font: inherit; font-weight: 600; }
+.native-details-button { min-height: 44px; padding: 6px 12px; color: var(--teal-dark); font: inherit; font-weight: 700; }
+.native-dialog-close { width: auto; min-width: 44px; height: auto; min-height: 44px; padding: 0 14px; font-size: 0.875rem; font-weight: 700; line-height: 1; }
 .native-move-actions { align-items: center; }
 .native-move-actions select { max-width: 220px; min-height: 31px; border-color: var(--overlay-line); background: var(--paper); color: var(--ink); }
 .native-file-open { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
@@ -769,7 +872,7 @@ h1, h2, p { margin: 0; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 4.5rem; }
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem minmax(4.5rem, auto); }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -838,9 +941,23 @@ h1, h2, p { margin: 0; }
 .photo-viewer-frame.can-drag { cursor: grab; }
 .photo-viewer-frame.dragging { cursor: grabbing; user-select: none; }
 @media (max-width: 56.25em) {
-  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 30px minmax(0, 1fr) 4.5rem; }
+  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
+  /* #67: the source and date columns are hidden here, so the name is the only way to
+     tell items apart. At 16px a phone leaves it about 8rem, so a folder's or a
+     document's name wraps instead of being cut short. */
+  .native-filelist :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
 }
-.native-dialog-actions label { margin-right: auto; }
+/* After the rule above, which it narrows further (see #84 above). */
+@media (max-width: 22em) {
+  .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr); row-gap: 4px; }
+  .native-filelist .file-row > :last-child { grid-column: 2; justify-self: start; }
+  .native-filelist .file-head > :last-child:not(:nth-child(2)) { display: none; }
+}
+/* #67: Move to and its Move button have a row of their own. */
+.native-dialog-actions { flex-wrap: wrap; }
+.native-dialog-move { display: flex; flex-basis: 100%; grid-column: 1 / -1; align-items: end; gap: 8px; }
+.native-dialog-move label { flex: 1; min-width: 0; }
+.native-dialog-move select { width: 100%; }
 
 @media (max-width: 56.25em) {
   .native-vault-page .page-wrap { padding: 12px; }
@@ -850,8 +967,6 @@ h1, h2, p { margin: 0; }
 
 @media (max-width: 40em) {
   .native-profile-row { flex-wrap: wrap; }
-  .native-profile-select { width: 100%; margin-left: 0; }
-  .native-profile-select select { flex: 1; min-width: 0; }
   .native-drag-hint { width: 100%; }
   .native-inline-form { grid-template-columns: 1fr 1fr; }
   .native-inline-form label { grid-column: 1 / -1; }
