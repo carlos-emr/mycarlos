@@ -568,6 +568,13 @@ h1, h2, p { margin: 0; }
 
 .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--backdrop); }
 .record-dialog { width: min(520px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: 0 24px 70px var(--dialog-shadow); }
+/* #68: the warning before the automatic lock, over any other dialog. Large
+   text and a large Keep open; at 400% the dialog scrolls, as every one does. */
+.lock-warning-backdrop { z-index: 30; }
+.native-lock-warning { display: grid; gap: 14px; max-width: 460px; padding: 22px 24px; }
+.native-lock-warning h2 { margin: 0; font-size: 1.25rem; line-height: 1.4; }
+.native-lock-warning p { margin: 0; color: var(--ink-soft); }
+.native-lock-warning .button { justify-self: start; min-height: 52px; padding-inline: 24px; font-size: 1.125rem; }
 .dialog-head { display: flex; align-items: flex-start; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .dialog-head > div { min-width: 0; }
 .dialog-head h2 { overflow: hidden; font-size: 1.125rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
