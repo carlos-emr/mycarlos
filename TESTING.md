@@ -2,7 +2,7 @@
 
 This guide is for anyone who wants to install an evaluation build and try it, without building
 anything. Every change to `main` publishes installable builds for Windows, macOS, Android and the
-iOS Simulator.
+iOS Simulator. Only a real iPhone or iPad needs a build of your own, on a Mac.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
@@ -41,9 +41,10 @@ which records the source it was built from; include it in bug reports. (It is no
 check: the run page in step 2 is.) Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
-There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer
-account and signing. Linux has an unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`,
-kept for 7 days) for compatibility checks only.
+There is no download for a real iPhone or iPad yet. With a Mac you can build one and install it
+yourself: see [iPhone or iPad (build it on a Mac)](#iphone-or-ipad-build-it-on-a-mac). Linux has an
+unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`, kept for 7 days) for compatibility
+checks only.
 
 ## Install
 
@@ -104,6 +105,77 @@ install over it; each build may be signed with a different debug key. Uninstalli
    `Terminal`, press Return), type `xattr -dr com.apple.quarantine ` (with the trailing space),
    drag the app into the Terminal window to fill in its location, and press Return.
 4. Drag the sample PDFs onto the Simulator window; they are saved to the Files app.
+
+### iPhone or iPad (build it on a Mac)
+
+This is the one install in this guide that builds myCarlos from source. You need a Mac with about
+40 GB free, the iPhone or iPad and its cable, and an Apple ID (a free one is enough). The first time
+takes about an hour, mostly downloads. These steps have not been tried on a real device yet, so
+please [report](#report-what-you-find) anything that differs.
+
+**Once, on the Mac:**
+
+1. Install **Xcode** from the App Store and open it once. When it asks which platforms to add,
+   include **iOS**.
+2. Open Terminal (press Command-Space, type `Terminal`, press Return). Paste these lines one at a
+   time, pressing Return after each and waiting for it to finish:
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   brew install node cocoapods
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+   If Homebrew ends with **Next steps** (commands that add `brew` to your PATH), run those before
+   the second line. When the Rust installer asks, choose the default. Then quit Terminal and open
+   it again.
+3. In Xcode, choose **Xcode → Settings → Accounts**, press **+** and sign in with your Apple ID.
+   Select the team marked **(Personal Team)**, press **Manage Certificates…**, then
+   **+ → Apple Development**, and close the window.
+4. Download myCarlos and its packages:
+
+   ```bash
+   git clone https://github.com/carlos-emr/mycarlos.git
+   cd mycarlos
+   npm ci
+   ```
+
+**Each time you install (in Terminal, in the `mycarlos` folder):**
+
+5. Tell the build which Apple team signs it:
+
+   ```bash
+   export APPLE_DEVELOPMENT_TEAM=$(security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p')
+   echo "$APPLE_DEVELOPMENT_TEAM"
+   ```
+
+   It should print a 10-character code. If it prints nothing, repeat step 3. The first time, also
+   run `npm run tauri ios init` to create the iPhone project.
+6. Plug in the phone and tap **Trust** on it. The first time, also turn on **Settings → Privacy &
+   Security → Developer Mode**: the phone restarts and asks you to confirm. If that switch is
+   missing, open Xcode's **Window → Devices and Simulators** with the phone plugged in, then look
+   again.
+7. Build and install it:
+
+   ```bash
+   npm run tauri ios run
+   ```
+
+   If more than one device is connected, add the phone's name, for example
+   `npm run tauri ios run "My iPhone"`.
+8. The first time you open **myCarlos Evaluation**, the phone says the developer is untrusted. Go
+   to **Settings → General → VPN & Device Management**, tap your Apple ID and tap **Trust**.
+
+For sample files, AirDrop the PDFs in the `dev-data` folder to the phone and save them to Files.
+
+Good to know:
+
+- With a free Apple ID the app stops opening after 7 days. Repeat steps 5 to 7 to renew it; the
+  vault is kept. A paid Apple Developer account makes it last a year.
+- If the build says the identifier `ca.carlos.mycarlos` is not available, change `"identifier"` in
+  `src-tauri/tauri.conf.json` to one of your own (for example `ca.carlos.mycarlos.yourname`), run
+  `npm run tauri ios init` again, and don't commit that change.
+- Locked PDFs, the built-in PDF reader and the camera work only on computers for now.
 
 ## What to try
 
