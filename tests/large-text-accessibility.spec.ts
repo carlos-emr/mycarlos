@@ -252,6 +252,9 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         }
         if (command === "vault_snapshot") return structuredClone(snapshot);
         if (command === "runtime_info") return { platform: "windows" };
+        // The setup checklist asks which rules a passphrase meets (#76).
+        if (command === "vault_passphrase_rules")
+          return { longEnough: false, notAName: true, hardToGuess: false };
         if (command === "vault_recovery_key_label")
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
@@ -278,8 +281,14 @@ async function walkTheVault(large: LargeText) {
   await mockNativeVault(create, "absent");
   await create.goto("/");
   await large.check(create);
+  // A new setup starts with the comfort settings (#76), then the setup itself.
   await expect(
-    create.getByRole("heading", { name: "Create your encrypted vault" }),
+    create.getByRole("heading", { name: "Make myCarlos comfortable for you" }),
+  ).toBeVisible();
+  await expectNoViolations(create, "comfort settings", large.cutOff);
+  await create.getByRole("button", { name: "Continue" }).click();
+  await expect(
+    create.getByRole("heading", { name: "Set up myCarlos on this computer" }),
   ).toBeVisible();
   await expectNoViolations(create, "create the vault", large.cutOff);
   await expectOnlyMockedCommands(create);
