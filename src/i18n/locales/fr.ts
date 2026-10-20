@@ -170,7 +170,7 @@ export const fr: Record<MessageKey, Message> = {
   "shared.list.label": "Fichiers en attente",
   "shared.origin.computer": "Ouvert avec myCarlos",
   "shared.origin.phone": "Partagé depuis une autre application",
-  "shared.row.detail": "{origin} · sera marqué « {label} »",
+  "shared.row.detail": "{origin} · sera marqué « {label} »",
   "shared.row.notPdf":
     "Ce n’est pas un document PDF : myCarlos ne peut pas l’ajouter.",
   "shared.paused.title": "Les modifications sont suspendues.",
@@ -180,7 +180,7 @@ export const fr: Record<MessageKey, Message> = {
   "shared.add.name": "Ajouter {name}…",
   "shared.decline": "Refuser",
   "shared.decline.name": "Refuser {name}",
-  "shared.decline.title": "Refuser {name} ?",
+  "shared.decline.title": "Refuser {name} ?",
   "shared.decline.body":
     "Il n’est pas ajouté, et myCarlos l’oublie. L’application qui l’a partagé l’a toujours.",
   "shared.addTo.label": "Ajouter {name}",
