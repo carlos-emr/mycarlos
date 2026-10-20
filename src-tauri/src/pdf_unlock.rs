@@ -1926,6 +1926,107 @@ mod tests {
         helper.stop();
     }
 
+    /// Run in its own process by the test below: writes the names of the variables Windows
+    /// gave it, with the values of the folders it fills in for an AppContainer only (no other
+    /// value reaches the log).
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "invoked as a subprocess by the AppContainer environment test"]
+    fn environment_child() {
+        const FOLDERS: [&str; 5] = ["LOCALAPPDATA", "APPDATA", "USERPROFILE", "TEMP", "TMP"];
+        let mut out = io::stdout();
+        for (name, value) in std::env::vars_os() {
+            let name = name.to_string_lossy();
+            if FOLDERS
+                .iter()
+                .any(|folder| folder.eq_ignore_ascii_case(&name))
+            {
+                let _ = writeln!(out, "env {name}={}", value.display());
+            } else {
+                let _ = writeln!(out, "env {name}");
+            }
+        }
+    }
+
+    /// For diagnosis (#63): Windows fills in an AppContainer's own folders in its environment
+    /// when it starts it, and an empty environment block fails with ERROR_ENVVAR_NOT_FOUND.
+    /// This starts the helper in its AppContainer with several blocks, and writes which start
+    /// and the environment each child got, to the CI log. It fails only if none starts.
+    #[cfg(windows)]
+    #[test]
+    fn which_environment_an_app_container_start_needs() {
+        let real = |name: &str| (name.to_owned(), std::env::var_os(name).unwrap_or_default());
+        let placeholder = |name: &str| {
+            (
+                name.to_owned(),
+                std::ffi::OsString::from("C:\\mycarlos-none"),
+            )
+        };
+        let mut sets: Vec<(&str, Vec<(String, std::ffi::OsString)>)> = vec![
+            ("empty", vec![]),
+            ("SystemRoot", vec![real("SystemRoot")]),
+            ("LOCALAPPDATA", vec![real("LOCALAPPDATA")]),
+            ("USERPROFILE", vec![real("USERPROFILE")]),
+            ("TEMP+TMP", vec![real("TEMP"), real("TMP")]),
+            (
+                "LOCALAPPDATA+TEMP+TMP",
+                vec![real("LOCALAPPDATA"), real("TEMP"), real("TMP")],
+            ),
+            (
+                "placeholder LOCALAPPDATA+TEMP+TMP",
+                vec![
+                    placeholder("LOCALAPPDATA"),
+                    placeholder("TEMP"),
+                    placeholder("TMP"),
+                ],
+            ),
+            (
+                "placeholder USERPROFILE+LOCALAPPDATA+APPDATA+TEMP+TMP",
+                vec![
+                    placeholder("USERPROFILE"),
+                    placeholder("LOCALAPPDATA"),
+                    placeholder("APPDATA"),
+                    placeholder("TEMP"),
+                    placeholder("TMP"),
+                ],
+            ),
+        ];
+        sets.push((
+            "everything",
+            std::env::vars_os()
+                .map(|(name, value)| (name.to_string_lossy().into_owned(), value))
+                .collect(),
+        ));
+        let mut report = String::from("\nAppContainer start by environment block:\n");
+        let mut started = 0;
+        for (label, variables) in sets {
+            let mut command = helper_running("environment_child");
+            for (name, value) in variables {
+                command.env(name, value);
+            }
+            match confine::try_start(command) {
+                Ok((mut helper, input, mut output)) => {
+                    started += 1;
+                    drop(input);
+                    let mut printed = String::new();
+                    let _ = output.read_to_string(&mut printed);
+                    let code = helper.wait();
+                    let got: Vec<&str> = printed
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("env "))
+                        .collect();
+                    report += &format!("- {label}: started, exit {code:?}; child got {got:?}\n");
+                }
+                Err((step, error)) => {
+                    report += &format!("- {label}: {step:?} {:#x}\n", error.code().0);
+                }
+            }
+        }
+        // Past libtest's capture, so that the CI log shows it even when this passes.
+        let _ = io::stderr().write_all(report.as_bytes());
+        assert!(started > 0, "{report}");
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_helper_outside_its_app_container_reads_nothing() {
