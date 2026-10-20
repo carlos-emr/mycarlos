@@ -78,19 +78,23 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [notice, setNotice] = useState("");
   // Files shared from another app, waiting. Asked for at start, whenever the
   // window comes back to the front (which is how a share arrives), after an
-  // unlock, and after an add or a decline. Locked, only their count is shown.
+  // unlock, and after an add or a decline (which waits for the answer, so the
+  // list is current when its buttons come back). Locked, only their count is
+  // shown.
   const [received, setReceived] = useState<ReceivedFile[]>([]);
-  const refreshReceived = useCallback(() => {
-    bridge.listReceived().then(
-      ({ files, notice: missed }) => {
-        setReceived(files);
-        const text = receiveNoticeText(missed);
-        if (text) setNotice(text);
-      },
-      // Nothing waiting can be shown; the next ask tries again.
-      () => undefined,
-    );
-  }, [bridge]);
+  const refreshReceived = useCallback(
+    (): Promise<void> =>
+      bridge.listReceived().then(
+        ({ files, notice: missed }) => {
+          setReceived(files);
+          const text = receiveNoticeText(missed);
+          if (text) setNotice(text);
+        },
+        // Nothing waiting can be shown; the next ask tries again.
+        () => undefined,
+      ),
+    [bridge],
+  );
   useEffect(() => {
     refreshReceived();
     const onVisible = () => {

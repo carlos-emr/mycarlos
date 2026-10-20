@@ -122,7 +122,7 @@ export function VaultLibrary({
   /** Files shared from another app, waiting to be added or declined. */
   received?: ReceivedFile[];
   /** Asks again what is waiting, after an add or a decline. */
-  onReceivedChanged?: () => void;
+  onReceivedChanged?: () => Promise<void> | void;
 }) {
   const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
   const [section, setSection] = useState<NativeSection>("records");
@@ -399,7 +399,7 @@ export function VaultLibrary({
         setNotPdfId(notPdfReceivedId(error));
         throw error;
       } finally {
-        onReceivedChanged?.();
+        await onReceivedChanged?.();
       }
     });
   const declineReceived = (ids: string[]) =>
@@ -407,7 +407,7 @@ export function VaultLibrary({
       try {
         await bridge.discardReceived(ids);
       } finally {
-        onReceivedChanged?.();
+        await onReceivedChanged?.();
       }
       const name =
         ids.length === 1
@@ -1177,9 +1177,10 @@ export function VaultLibrary({
                 computer={computer}
                 notPdfId={notPdfId}
                 notice={notice}
+                paused={readOnly}
                 disabled={busy || readOnly}
                 onAdd={(id, toProfileId, folderId) =>
-                  void addReceived(id, toProfileId, folderId)
+                  addReceived(id, toProfileId, folderId)
                 }
                 onDecline={(id) => void declineReceived([id])}
               />

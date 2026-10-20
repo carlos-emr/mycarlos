@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PatientProfile, ReceivedFile, VaultFolder } from "../vault";
+import { Icon } from "../Icon";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
@@ -16,6 +17,7 @@ export function SharedWithMe({
   computer,
   notPdfId,
   notice,
+  paused,
   disabled,
   onAdd,
   onDecline,
@@ -31,8 +33,16 @@ export function SharedWithMe({
   /** A file an add refused as not a PDF: it can only be declined. */
   notPdfId: string | null;
   notice: string;
+  /** Changes are paused (the vault is read-only), so every button here is
+   * off; the records section says why. */
+  paused: boolean;
   disabled: boolean;
-  onAdd: (id: string, profileId: string, folderId: string | null) => void;
+  /** Settles once the add is over, and the list says whether the file left. */
+  onAdd: (
+    id: string,
+    profileId: string,
+    folderId: string | null,
+  ) => Promise<void> | void;
   onDecline: (id: string) => void;
 }) {
   // The one file whose "Add to" choice is open, if any.
@@ -49,6 +59,17 @@ export function SharedWithMe({
     if (count < previousCount.current) headingRef.current?.focus();
     previousCount.current = count;
   }, [count]);
+  // When the Add choice closes on a row that stays (Cancel, or an add that
+  // was refused), focus goes back to that row's first button: on Cancel at
+  // once, after an add once it is over and the buttons are on again. A row
+  // that left gives the heading focus instead.
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const rows = useRef(new Map<string, HTMLLIElement>());
+  useEffect(() => {
+    if (returnTo === null || disabled) return;
+    rows.current.get(returnTo)?.querySelector("button")?.focus();
+    setReturnTo(null);
+  }, [returnTo, disabled, files]);
   const origin = computer ? "Opened with myCarlos" : "Shared from another app";
   return (
     <main className="library-main native-shared" aria-labelledby="shared-title">
@@ -72,6 +93,15 @@ export function SharedWithMe({
           : "Files you share to myCarlos from another app wait here."}{" "}
         They are not in your records until you add them.
       </p>
+      {paused && (
+        <div className="purpose-note warning">
+          <Icon name="info" />
+          <span>
+            <strong>Changes are paused.</strong> Files can't be added or
+            declined for now. My records says why, and what to do.
+          </span>
+        </div>
+      )}
       <p className="status-line" role="status" aria-live="polite">
         {notice}
       </p>
@@ -84,7 +114,14 @@ export function SharedWithMe({
       ) : (
         <ul className="native-shared-list" aria-label="Files waiting">
           {files.map((file) => (
-            <li key={file.id} className="native-shared-row">
+            <li
+              key={file.id}
+              className="native-shared-row"
+              ref={(row) => {
+                if (row) rows.current.set(file.id, row);
+                else rows.current.delete(file.id);
+              }}
+            >
               <div className="native-shared-file">
                 <strong>{file.name}</strong>
                 <small>
@@ -127,10 +164,15 @@ export function SharedWithMe({
                   folders={folders}
                   defaultProfileId={defaultProfileId}
                   disabled={disabled}
-                  onCancel={() => setAdding(null)}
+                  onCancel={() => {
+                    setAdding(null);
+                    setReturnTo(file.id);
+                  }}
                   onAdd={(profileId, folderId) => {
                     setAdding(null);
-                    onAdd(file.id, profileId, folderId);
+                    void Promise.resolve(
+                      onAdd(file.id, profileId, folderId),
+                    ).finally(() => setReturnTo(file.id));
                   }}
                 />
               )}

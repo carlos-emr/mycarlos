@@ -627,6 +627,92 @@ describe("durable vault UI", () => {
     await waitFor(() =>
       expect(within(page).queryByText("FAKE_Bloodwork.pdf")).toBeNull(),
     );
+    // The file left with the button that had focus: the heading takes it.
+    expect(
+      within(page).getByRole("heading", { name: "Shared with me" }),
+    ).toHaveFocus();
+  });
+
+  it("puts focus back on a shared file's row when its add is cancelled or refused", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      listReceived: vi.fn().mockResolvedValue({
+        files: [
+          {
+            id: "shared-1",
+            name: "FAKE_Scan.pdf",
+            sourceLabel: "Manual import — unverified",
+          },
+        ],
+        notice: { dropped: 0, refusedShares: 0 },
+      }),
+      importReceived: vi.fn().mockRejectedValue({
+        code: "not_pdf",
+        message: "FAKE This file is not a PDF document.",
+        receivedId: "shared-1",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 waiting" }),
+    );
+    const page = await screen.findByRole("main", { name: "Shared with me" });
+    // Cancel: back to the file's Add….
+    await user.click(
+      within(page).getByRole("button", { name: "Add FAKE_Scan.pdf…" }),
+    );
+    await user.click(within(page).getByRole("button", { name: "Cancel" }));
+    expect(
+      within(page).getByRole("button", { name: "Add FAKE_Scan.pdf…" }),
+    ).toHaveFocus();
+    // Refused: the file stays, without Add…, and its Decline has focus.
+    await user.keyboard("{Enter}");
+    await user.click(within(page).getByRole("button", { name: "Add" }));
+    expect(await within(page).findByText(/Not a PDF document/)).toBeVisible();
+    await waitFor(() =>
+      expect(
+        within(page).getByRole("button", { name: "Decline FAKE_Scan.pdf" }),
+      ).toHaveFocus(),
+    );
+    expect(
+      within(page).queryByRole("button", { name: "Add FAKE_Scan.pdf…" }),
+    ).toBeNull();
+  });
+
+  it("says under Shared with me why nothing can be added while changes are paused", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, recovery: "writeFailed" }),
+      listReceived: vi.fn().mockResolvedValue({
+        files: [
+          {
+            id: "shared-1",
+            name: "FAKE_Scan.pdf",
+            sourceLabel: "Manual import — unverified",
+          },
+        ],
+        notice: { dropped: 0, refusedShares: 0 },
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 waiting" }),
+    );
+    const page = await screen.findByRole("main", { name: "Shared with me" });
+    expect(within(page).getByText("Changes are paused.")).toBeVisible();
+    expect(
+      within(page).getByText(/My records says why, and what to do\./),
+    ).toBeVisible();
+    expect(
+      within(page).getByRole("button", { name: "Add FAKE_Scan.pdf…" }),
+    ).toBeDisabled();
+    expect(
+      within(page).getByRole("button", { name: "Decline FAKE_Scan.pdf" }),
+    ).toBeDisabled();
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {

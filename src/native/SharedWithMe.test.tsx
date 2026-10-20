@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ReceivedFile } from "../vault";
@@ -41,6 +41,7 @@ function renderPage(
     computer: false,
     notPdfId: null,
     notice: "",
+    paused: false,
     disabled: false,
     onAdd: vi.fn(),
     onDecline: vi.fn(),
@@ -72,6 +73,7 @@ describe("Shared with me (#61)", () => {
         computer
         notPdfId={null}
         notice=""
+        paused={false}
         disabled={false}
         onAdd={vi.fn()}
         onDecline={vi.fn()}
@@ -130,6 +132,43 @@ describe("Shared with me (#61)", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("form")).toBeNull();
     expect(props.onAdd).not.toHaveBeenCalled();
+    // Focus goes back to where the choice was opened, not to the page.
+    expect(
+      screen.getByRole("button", { name: "Add FAKE_Xray.pdf…" }),
+    ).toHaveFocus();
+  });
+
+  it("after an add that was refused, focuses the row once the add is over", async () => {
+    const user = userEvent.setup();
+    let finish = () => {};
+    const onAdd = vi.fn(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    const props = renderPage({ onAdd });
+    await user.click(
+      screen.getByRole("button", { name: "Add FAKE_Xray.pdf…" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith("shared-2", "p1", null);
+    const again = (changes: Partial<typeof props>) =>
+      props.rerender(<SharedWithMe {...props} {...changes} />);
+    // Refused as not a PDF: the row stays, without Add…. Nothing is focused
+    // until the add is over.
+    again({ notPdfId: "shared-2" });
+    const decline = screen.getByRole("button", {
+      name: "Decline FAKE_Xray.pdf",
+    });
+    expect(decline).not.toHaveFocus();
+    finish();
+    await waitFor(() => expect(decline).toHaveFocus());
+  });
+
+  it("says why its buttons are off while changes are paused", () => {
+    renderPage({ paused: true, disabled: true });
+    expect(screen.getByText("Changes are paused.")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Add FAKE_Xray.pdf…" }),
+    ).toBeDisabled();
   });
 
   it("declines a file only once the patient confirms", async () => {
@@ -185,6 +224,7 @@ describe("Shared with me (#61)", () => {
         computer={false}
         notPdfId={null}
         notice=""
+        paused={false}
         disabled={false}
         onAdd={vi.fn()}
         onDecline={vi.fn()}
