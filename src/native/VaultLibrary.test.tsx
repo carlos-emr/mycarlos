@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
@@ -32,24 +39,26 @@ const snapshot: VaultSnapshot = {
   recovery: null,
 };
 
-function renderLibrary() {
+function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
   const bridge = {
     updateFolder: vi.fn().mockResolvedValue(undefined),
-    snapshot: vi.fn().mockResolvedValue(snapshot),
+    snapshot: vi.fn().mockResolvedValue(shown),
+    isLockedPdf: vi.fn().mockResolvedValue(false),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
     <VaultLibrary
       bridge={bridge}
-      snapshot={snapshot}
+      snapshot={shown}
       busy={false}
       notice=""
       setNotice={setNotice}
       run={async (operation) => operation()}
-      refresh={async () => snapshot}
+      refresh={async () => shown}
       onLock={vi.fn().mockResolvedValue(undefined)}
       autoLockMinutes={5}
       onAutoLockMinutes={vi.fn()}
+      sharedNew={sharedNew}
     />,
   );
   return { bridge, setNotice };
@@ -114,5 +123,170 @@ describe("VaultLibrary folders", () => {
       new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
     );
     expect(row).not.toHaveTextContent(/\bFolder\b/);
+  });
+});
+
+describe("VaultLibrary controls for older patients (#67)", () => {
+  const withRecord: VaultSnapshot = {
+    ...snapshot,
+    records: [
+      {
+        id: "record-1",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE Results.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: Date.UTC(2026, 0, 16, 12),
+        available: true,
+      },
+    ],
+  };
+
+  it("puts words on its buttons and shows both sort choices", () => {
+    renderLibrary(withRecord);
+    const details = screen.getByRole("button", {
+      name: "Details for FAKE Results.pdf",
+    });
+    expect(details).toHaveTextContent(/^Details$/);
+    expect(screen.getByRole("button", { name: "List view" })).toHaveTextContent(
+      "List",
+    );
+    expect(screen.getByRole("button", { name: "Grid view" })).toHaveTextContent(
+      "Grid",
+    );
+    // Sort is a row of radio buttons, not a dropdown with only an icon.
+    const sort = screen.getByRole("group", { name: "Sort by" });
+    expect(
+      within(sort)
+        .getAllByRole("radio")
+        .map((choice) => choice.closest("label")?.textContent),
+    ).toEqual(["Newest first", "Name A–Z"]);
+    expect(
+      within(sort).getByRole("radio", { name: "Newest first" }),
+    ).toBeChecked();
+    fireEvent.click(within(sort).getByRole("radio", { name: "Name A–Z" }));
+    expect(within(sort).getByRole("radio", { name: "Name A–Z" })).toBeChecked();
+    fireEvent.click(details);
+    expect(
+      screen.getByRole("button", { name: "Close document details" }),
+    ).toHaveTextContent(/^Close$/);
+  });
+});
+
+describe("VaultLibrary moving and selecting without dragging (#67)", () => {
+  const withRecord: VaultSnapshot = {
+    ...snapshot,
+    records: [
+      {
+        id: "record-1",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE Results.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: Date.UTC(2026, 0, 16, 12),
+        available: true,
+      },
+    ],
+  };
+
+  it("says how to move without dragging", () => {
+    renderLibrary(withRecord);
+    expect(
+      screen.getByText(
+        "Hold and drag a document or folder to move it, or open it and choose Move to.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("selects a document in grid view as in list view, with a 44px target", () => {
+    renderLibrary(withRecord);
+    const listTick = screen.getByRole("button", {
+      name: "Select FAKE Results.pdf",
+    });
+    const box = listTick.getBoundingClientRect();
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    const gridTick = screen.getByRole("button", {
+      name: "Select FAKE Results.pdf",
+    });
+    const tile = gridTick.getBoundingClientRect();
+    expect(Math.min(tile.width, tile.height)).toBeGreaterThanOrEqual(44);
+    fireEvent.click(gridTick);
+    expect(gridTick).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("1 selected")).toBeVisible();
+  });
+});
+
+describe("VaultLibrary choices without dropdowns (#67)", () => {
+  const twoPatients: VaultSnapshot = {
+    ...snapshot,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 },
+      { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+    ],
+  };
+
+  it("offers one button per patient in the sidebar, and none for a single patient", () => {
+    renderLibrary(twoPatients);
+    expect(screen.queryByRole("combobox", { name: /patient/i })).toBeNull();
+    const patients = screen.getByRole("group", { name: "Patient" });
+    const avery = within(patients).getByRole("button", { name: "FAKE Avery" });
+    const blake = within(patients).getByRole("button", { name: "FAKE Blake" });
+    expect(avery).toHaveAttribute("aria-pressed", "true");
+    expect(blake).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(blake);
+    expect(blake).toHaveAttribute("aria-pressed", "true");
+    // Blake's library has none of Avery's folders.
+    expect(screen.queryByText("FAKE Letters")).toBeNull();
+    cleanup();
+
+    renderLibrary(snapshot);
+    expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
+  });
+
+  it("shows Shared with me's whole name in the sidebar, with its new count on one line (#61)", () => {
+    renderLibrary(snapshot, 2);
+    const shared = screen.getByRole("button", {
+      name: "Shared with me, 2 new",
+    });
+    const name = shared.querySelector(".native-nav-name")!;
+    expect(name.textContent).toBe("Shared with me");
+    expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    const text = document.createRange();
+    text.selectNodeContents(within(shared).getByText("2 new"));
+    const lines = new Set(
+      [...text.getClientRects()].map((box) => Math.round(box.top)),
+    );
+    expect(lines.size).toBe(1);
+  });
+
+  it("shows the sections as a row of tabs on a narrow window", async () => {
+    await page.viewport(390, 844);
+    try {
+      renderLibrary(twoPatients, 2);
+      expect(screen.queryByRole("combobox", { name: "Section" })).toBeNull();
+      const sections = screen.getByRole("navigation", { name: "Section" });
+      const tabs = within(sections).getAllByRole("button");
+      // Shared with me says how many files are new there (#61).
+      expect(tabs.map((tab) => tab.textContent)).toEqual([
+        "My records",
+        "Shared with me (2 new)",
+        "Security",
+        "Preferences",
+      ]);
+      expect(tabs[0]).toHaveAttribute("aria-current", "page");
+      // The sidebar is hidden here, so the patient buttons sit under the path:
+      // exactly one Patient group is in reach.
+      expect(screen.getAllByRole("group", { name: "Patient" })).toHaveLength(1);
+      fireEvent.click(tabs[2]);
+      expect(tabs[2]).toHaveAttribute("aria-current", "page");
+      expect(tabs[0]).not.toHaveAttribute("aria-current");
+    } finally {
+      await page.viewport(1100, 760);
+    }
   });
 });

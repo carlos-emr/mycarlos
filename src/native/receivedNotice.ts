@@ -9,20 +9,11 @@ export function receiveNoticeText({
   const parts: string[] = [];
   if (refusedShares > 0)
     parts.push(
-      `${refusedShares === 1 ? "A share was" : `${refusedShares} shares were`} not received: no more than 100 shared files can wait at once. Add or decline the waiting files, then share again.`,
+      `${refusedShares === 1 ? "A share was" : `${refusedShares} shares were`} not received: no more than 100 shared files can wait at once. Unlock, so the waiting files go into Shared with me, then share again.`,
     );
   if (dropped > 0)
     parts.push(
       `${dropped === 1 ? "One shared item was" : `${dropped} shared items were`} not received: myCarlos accepts PDF files only.`,
     );
   return parts.join(" ");
-}
-
-/** What the lock screen says about shared files waiting: a count, never a
- * name, since whoever is looking on has not unlocked. */
-export function waitingText(count: number): string {
-  if (count === 0) return "";
-  const files =
-    count === 1 ? "One shared file is" : `${count} shared files are`;
-  return `${files} waiting. Unlock to add ${count === 1 ? "it" : "them"} to your records. If myCarlos closes first, ${count === 1 ? "it is" : "they are"} not kept: share ${count === 1 ? "it" : "them"} again.`;
 }

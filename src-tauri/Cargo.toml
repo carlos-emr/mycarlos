@@ -44,9 +44,11 @@ uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
 
-# The PDF helper's sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter
-# it cannot run without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
+# Match the WebKitGTK bindings already used by the pinned Tauri/Wry runtime. The PDF helper's
+# sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter it cannot run
+# without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
 [target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
 seccompiler = "=0.5.0"
 

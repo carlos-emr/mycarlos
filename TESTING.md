@@ -164,7 +164,20 @@ On every platform:
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. On a computer with a camera (Windows, macOS or Linux), choose **Take a photo** next to
+    **New**. The first time, the window explains why myCarlos uses the camera; choose **Use the
+    camera**. On a Mac, macOS then asks whether myCarlos may use the camera, with the same reason;
+    Windows and Linux ask nothing more. The camera's light comes on. Point it at a FAKE document,
+    choose **Take photo**: the light goes off and the photo shows. Try **Retake**, then **Use
+    photo**. The photo's details open, named like `Photo, 17 Oct 2026, 3.05 PM.jpg`, in the folder
+    that was open. Choose **View photo**, try **Zoom in** and **Zoom out**, then **Close**. Rename
+    the photo without `.jpg`: **View photo** still shows it. Save a copy and open it in another
+    app: its details there show no place, camera or date taken.
+    Then turn the camera off for apps in the computer's privacy settings and try again: the window
+    says where to turn it back on, and the rest of the app keeps working. Also check that the
+    light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
+    is on, or let the vault lock.
+13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
@@ -177,6 +190,15 @@ On every platform:
     does. If you stay away longer than that, the vault may instead lock as you return and leave the
     document out; after you unlock, the app says "The transfer did not finish." Either way nothing
     from the vault is shown meanwhile.
+13. **Shared with me.** With myCarlos closed, open a FAKE PDF with it (on Windows, right-click the
+    file, then **Open with** → myCarlos; on a Mac, the same from Finder). The lock screen says one
+    shared file is waiting, without its name. Unlock: the sidebar shows **Shared with me** with
+    "1 new", and the app says the file was added. With one person in the vault it sits among
+    their folders; with several, above them, outside everyone's records. Open it: the "new" goes,
+    and the file is listed with its size. Open the file's details and choose a place under **Move
+    to**: it moves there, and Shared with me is empty. Open a file that is not a PDF the same way
+    (a FAKE `.txt` renamed `.pdf` will do): after unlocking, the app names it and says it was not
+    added. Sharing from another app on a phone comes with the phone issues (#50 to #53).
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
@@ -248,7 +270,11 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    that the key does not work.
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
    over from the library, and the reader says "Vault locked." with the field. Check the same
-   after an automatic lock.
+   after an automatic lock, where the reader gives the reason instead: "Locked after 1 minute
+   without use." With the delay at 1 minute, after 30 seconds without touching anything the
+   reader reads "myCarlos will lock in 30 seconds to keep your records private." and the focus
+   is on **Keep open**; pressing it, or any key, keeps the vault open for another minute. Check
+   the warning again at 400% text size: **Keep open** can be reached and pressed.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
@@ -446,23 +472,28 @@ with Escape; no destructive operation may occur. These checks cover the tested W
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
 
-## Password-protected shared PDFs
+## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
 locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluation, not approval for PHI.
 
-1. On Windows, macOS or Linux, share or open `text-aes256.pdf` with myCarlos and press **Add**. The
-   patient is asked for "the document password from your patient portal".
-2. A wrong password asks again and says so. The correct one adds the document. Saved again with
-   **Save a copy**, it opens with no password.
-3. **Not now** leaves the file waiting, marked "Locked with a password", with an **Unlock** button. The
-   other ticked files are added.
-4. The password is never shown again, never kept and never written to a log. Check that the app's data
-   folder holds no unlocked copy outside the vault.
-5. While the password is being checked, lock the vault or close myCarlos. Nothing is added, and the
-   file stays waiting (or is gone, after closing).
-6. On a phone, a locked PDF is marked "Locked: cannot be opened on this device yet". It is not
-   added, and it can be declined.
+1. On Windows, macOS or Linux, share or open `text-aes256.pdf` with myCarlos, or add it with
+   **Import**. It is stored as it came, in Shared with me or where it was added.
+2. Open its details. They say "Locked with a password", with an **Unlock…** button. A PDF with no
+   password shows neither.
+3. **Unlock…** asks for "the document password from your patient portal". A wrong password asks
+   again and says so; the field is emptied after every try. **Cancel** changes nothing.
+4. The right password adds a copy beside it, with its name and in the same place. The details then
+   show the copy, which has no Unlock, and say where the original is: it is kept, renamed
+   "<name> (locked original).pdf". Saved with **Save a copy**, the copy opens with no password and
+   the original still asks for one.
+5. Unlock the original again: myCarlos says an unlocked copy is already there, and adds nothing.
+6. The password is never shown again, never kept and never written to a log. Check that the app's
+   data folder holds no unlocked copy outside the vault.
+7. While the password is being checked, lock the vault or close myCarlos. Nothing is added, and the
+   original keeps its name.
+8. On a phone, a locked PDF's details say "Locked with a password. myCarlos cannot open it on this
+   device yet", with no Unlock.
 
 The Rust tests unlock every fixture and compare page text and content with the originals. They also
 start the real executable as the helper exactly as myCarlos does on each desktop system: sandboxed,
@@ -504,5 +535,41 @@ Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-
 6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
 
 The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
-the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and an
-import of a locked document says it cannot be opened safely; nothing is added.
+the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
+**Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
+
+## Appearance and Windows high contrast
+
+Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
+including on a phone. The separate browser demonstration follows the device automatically;
+it has no Preferences screen. This is still a synthetic-data evaluation, not approval for PHI.
+
+1. With no appearance saved, check that **System** follows the device's light/dark choice.
+   Change the device choice while myCarlos is open, on both a locked screen and the library.
+   The app should update without restarting.
+2. Choose **Light**, then **Dark**. Close and reopen the app after each: the choice should be
+   remembered, including before unlocking. Explicit Light/Dark should stay put when the device
+   changes. Choose **System** again to resume following the device.
+3. On Windows and macOS, check that the native window follows each choice where the platform
+   supports it. A failed or slow native command must not block the app. A failed save of the
+   preference should say it cannot be remembered, while the current appearance still works.
+4. On Windows, turn on a contrast theme in **Settings → Accessibility → Contrast themes**.
+   Try both a light and dark contrast palette, including with Light or Dark selected in the app.
+   There is no extra high-contrast switch. Tab through Preferences and the library: focus outlines,
+   selected buttons/checkmarks, document icons, warnings and disabled controls must be visible.
+   Check with Narrator's scan mode too; static text should not enter the Tab sequence.
+5. Check light/dark text, warning chips, selected records, bulk controls, input boundaries and
+   keyboard focus against their actual backgrounds. Automated axe checks do not cover every state
+   or replace native screen-reader and contrast-theme testing.
+6. Try the phone layout and the smallest desktop window at 400% text size. Appearance must not
+   remove Text size controls, move auto-lock out of Security, or change reduced-motion behavior.
+7. In the browser demonstration, compare the synthetic paper preview across light/dark: the paper
+   and its content remain unchanged while the surrounding app changes. Native documents still use
+   **Save a copy**; no PDF viewer is added. A recovery kit printed from either appearance must have
+   black text on white paper. Do not include passwords or recovery keys in screenshots or traces.
+
+`tests/appearance.spec.ts` exercises the real native UI with a synthetic IPC bridge in Chromium,
+including phone layout, live system changes, contrast checks and forced-colours emulation. This
+is separate from actual Windows/macOS native appearance testing and the text-size checks on
+real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
+old screenshots and successful CI do not establish Ben's UI approval.

@@ -4,6 +4,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import {
+  boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
   isLockedError,
@@ -11,8 +12,6 @@ import {
   isWrongPdfPassword,
   localDateText,
   namedDamage,
-  notPdfReceivedId,
-  receivedRefusal,
   vaultErrorMessage,
   type VaultRecord,
 } from "./vault";
@@ -29,6 +28,18 @@ describe("native idle deadline bridge", () => {
       ["vault_touch"],
       ["vault_set_auto_lock", { request: { minutes: 3 } }],
     ]);
+    invoke.mockResolvedValue({
+      longEnough: true,
+      notAName: true,
+      hardToGuess: true,
+    });
+    await bridge.passphraseRules("river azimuth cobalt", "Jamie");
+    expect(invoke).toHaveBeenLastCalledWith("vault_passphrase_rules", {
+      request: {
+        passphrase: "river azimuth cobalt",
+        initialProfileName: "Jamie",
+      },
+    });
     invoke.mockResolvedValue({ platform: "ios", architecture: "arm64" });
     await expect(bridge.platform()).resolves.toBe("ios");
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
@@ -38,37 +49,20 @@ describe("native idle deadline bridge", () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue(undefined);
     await bridge.listReceived();
-    await bridge.importReceived(["shared-1"], "profile-1", ["folder-1"]);
-    await bridge.discardReceived(["shared-2"]);
-    await bridge.unlockReceived(
-      "shared-3",
-      "FAKE-portal-2026",
-      "profile-1",
-      [],
-    );
+    await bridge.acceptReceived();
+    await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
     await bridge.viewPage("record-1", 0, 800);
     await bridge.viewPage("record-1", 1, 800, "FAKE-portal-2026");
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
+      ["received_accept"],
       [
-        "received_import",
+        "vault_move_to_person",
         {
           request: {
-            ids: ["shared-1"],
+            recordIds: ["record-1"],
             profileId: "profile-1",
             folderIds: ["folder-1"],
-          },
-        },
-      ],
-      ["received_discard", { request: { ids: ["shared-2"] } }],
-      [
-        "received_unlock",
-        {
-          request: {
-            id: "shared-3",
-            password: "FAKE-portal-2026",
-            profileId: "profile-1",
-            folderIds: [],
           },
         },
       ],
@@ -97,44 +91,66 @@ describe("native idle deadline bridge", () => {
     ]);
   });
 
-  it("names the shared file an add left out, and why", () => {
-    for (const reason of [
-      "not_pdf",
-      "pdf_locked",
-      "pdf_unlock_failed",
-      "pdf_unlock_unavailable",
-      "pdf_unlock_no_sandbox",
-      "pdf_too_large",
-    ] as const)
-      expect(
-        receivedRefusal({ code: reason, message: "FAKE", receivedId: "s-1" }),
-      ).toEqual({ id: "s-1", reason });
-    expect(receivedRefusal({ code: "pdf_locked", message: "FAKE" })).toBeNull();
+  it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
+    const bridge = createVaultBridge();
+    const sent: Uint8Array[] = [];
+    invoke.mockImplementation(async (_command: string, body: Uint8Array) => {
+      sent.push(body.slice());
+      return { imported: ["photo-1"], skippedDuplicates: [] };
+    });
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    await bridge.savePhoto(
+      "profile-1",
+      ["folder-1"],
+      "Photo, 17 paź 2026, 3.05 PM.jpg",
+      jpeg,
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
+    // No custom headers: WebView2 does not pass them on.
+    expect(invoke.mock.calls[0]).toHaveLength(2);
+    expect(invoke.mock.calls[0][0]).toBe("vault_save_photo");
+    const [request] = sent;
+    const length = new DataView(request.buffer).getUint32(0);
     expect(
-      receivedRefusal({ code: "storage", message: "FAKE", receivedId: "s-1" }),
-    ).toBeNull();
-    // A wrong password is asked again, not marked on the file.
-    expect(
-      receivedRefusal({ code: "pdf_wrong_password", receivedId: "s-1" }),
-    ).toBeNull();
-    expect(isWrongPdfPassword({ code: "pdf_wrong_password" })).toBe(true);
-    expect(isWrongPdfPassword({ code: "pdf_locked" })).toBe(false);
-    expect(isWrongPdfPassword(null)).toBe(false);
+      JSON.parse(new TextDecoder().decode(request.slice(4, 4 + length))),
+    ).toEqual({
+      profileId: "profile-1",
+      folderIds: ["folder-1"],
+      name: "Photo, 17 paź 2026, 3.05 PM.jpg",
+    });
+    expect([...request.slice(4 + length)]).toEqual([...jpeg]);
+    // Its own copy of the photo is overwritten once the call is over.
+    expect([...invoke.mock.calls[0][1]].every((byte) => byte === 0)).toBe(true);
+    invoke.mockReset();
+    invoke.mockResolvedValue(true);
+    await expect(bridge.isPhoto("record-1")).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_photo", {
+      request: { recordId: "record-1" },
+    });
+    invoke.mockResolvedValue("data:image/jpeg;base64,/9j/");
+    await expect(bridge.viewPhoto("record-1")).resolves.toBe(
+      "data:image/jpeg;base64,/9j/",
+    );
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_photo", {
+      request: { recordId: "record-1" },
+    });
   });
 
-  it("names the shared file an import refused as not a PDF", () => {
-    expect(
-      notPdfReceivedId({
-        code: "not_pdf",
-        message: "FAKE",
-        receivedId: "shared-1",
-      }),
-    ).toBe("shared-1");
-    expect(notPdfReceivedId({ code: "not_pdf", message: "FAKE" })).toBeNull();
-    expect(
-      notPdfReceivedId({ code: "storage", receivedId: "shared-1" }),
-    ).toBeNull();
-    expect(notPdfReceivedId(null)).toBeNull();
+  it("sends the locked-PDF commands the native side registers (#54)", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(true);
+    await expect(bridge.isLockedPdf("record-1")).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_locked_pdf", {
+      request: { recordId: "record-1" },
+    });
+    invoke.mockResolvedValue({ recordId: "copy-1", originalName: "FAKE" });
+    await bridge.unlockPdf("record-1", "FAKE-portal-2026");
+    expect(invoke).toHaveBeenLastCalledWith("vault_unlock_pdf", {
+      request: { recordId: "record-1", password: "FAKE-portal-2026" },
+    });
+    expect(isWrongPdfPassword({ code: "pdf_wrong_password" })).toBe(true);
+    expect(isWrongPdfPassword({ code: "pdf_unlock_failed" })).toBe(false);
+    expect(isWrongPdfPassword(null)).toBe(false);
   });
 
   it("reads error codes only from objects that carry them", () => {
@@ -220,6 +236,44 @@ describe("error messages", () => {
       }),
     ).toBe("No backup was saved. An empty file (0 bytes) may be left.");
     expect(vaultErrorMessage({ code: "storage", message: "No." })).toBe("No.");
+  });
+
+  it("names the boxes to check when what was typed is refused (#69)", () => {
+    const refused = {
+      code: "invalid",
+      message: "Something you typed wasn't accepted. Check it and try again.",
+    };
+    expect(vaultErrorMessage(refused, ["the folder name"])).toBe(
+      "Check the folder name, then try again.",
+    );
+    expect(
+      vaultErrorMessage(refused, ["the recovery key", "the new passphrase"]),
+    ).toBe("Check the recovery key and the new passphrase, then try again.");
+    expect(vaultErrorMessage(refused, ["a", "b", "c"])).toBe(
+      "Check a, b and c, then try again.",
+    );
+    // Without boxes, and for any other failure, the message is as it was.
+    expect(vaultErrorMessage(refused)).toBe(refused.message);
+    expect(vaultErrorMessage(refused, [])).toBe(refused.message);
+    expect(
+      vaultErrorMessage({ code: "storage", message: "No." }, ["the name"]),
+    ).toBe("No.");
+  });
+
+  it("names at setup only a box whose text the vault refuses (#69)", () => {
+    expect(
+      boxesWithControlCharacters([
+        ["Jamie", "the name"],
+        ["river azimuth cobalt\tsparrow", "the passphrase"],
+      ]),
+    ).toEqual(["the passphrase"]);
+    // Nothing typed that the vault refuses: no box takes the blame.
+    expect(
+      boxesWithControlCharacters([
+        ["Jamie", "the name"],
+        ["river azimuth cobalt sparrow", "the passphrase"],
+      ]),
+    ).toBeUndefined();
   });
 
   it("says how long to wait after several wrong tries", () => {
