@@ -889,7 +889,13 @@ export function VaultLibrary({
                         className="button"
                         type="button"
                         disabled={busy || readOnly || !profileId}
-                        onClick={() => setCameraOpen(true)}
+                        onClick={() => {
+                          // The camera window shows the library's notice for
+                          // a save's result: the one before it, such as
+                          // "Vault unlocked.", is not about the photo.
+                          setNotice("");
+                          setCameraOpen(true);
+                        }}
                       >
                         <Icon name="camera" />
                         <span>Take a photo</span>
