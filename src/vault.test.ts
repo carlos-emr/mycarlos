@@ -11,7 +11,6 @@ import {
   isMissingVaultError,
   localDateText,
   namedDamage,
-  notPdfReceivedId,
   vaultErrorMessage,
   type VaultRecord,
 } from "./vault";
@@ -49,37 +48,22 @@ describe("native idle deadline bridge", () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue(undefined);
     await bridge.listReceived();
-    await bridge.importReceived(["shared-1"], "profile-1", ["folder-1"]);
-    await bridge.discardReceived(["shared-2"]);
+    await bridge.acceptReceived();
+    await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
+      ["received_accept"],
       [
-        "received_import",
+        "vault_move_to_person",
         {
           request: {
-            ids: ["shared-1"],
+            recordIds: ["record-1"],
             profileId: "profile-1",
             folderIds: ["folder-1"],
           },
         },
       ],
-      ["received_discard", { request: { ids: ["shared-2"] } }],
     ]);
-  });
-
-  it("names the shared file an import refused as not a PDF", () => {
-    expect(
-      notPdfReceivedId({
-        code: "not_pdf",
-        message: "FAKE",
-        receivedId: "shared-1",
-      }),
-    ).toBe("shared-1");
-    expect(notPdfReceivedId({ code: "not_pdf", message: "FAKE" })).toBeNull();
-    expect(
-      notPdfReceivedId({ code: "storage", receivedId: "shared-1" }),
-    ).toBeNull();
-    expect(notPdfReceivedId(null)).toBeNull();
   });
 
   it("reads error codes only from objects that carry them", () => {

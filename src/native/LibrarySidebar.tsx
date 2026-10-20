@@ -6,8 +6,12 @@ import type { VaultDragDrop } from "./useVaultDragDrop";
 interface LibrarySidebarProps {
   profileName: string;
   section: "records" | "shared" | "security" | "preferences";
-  /** Files shared with myCarlos waiting to be added or declined (#61). */
-  sharedCount: number;
+  /** Files added to Shared with me since the vault was unlocked, until it
+   * is opened (#61). */
+  sharedNew: number;
+  /** With one person, Shared with me is a fixed folder inside their records;
+   * with several, it is outside everyone's. */
+  sharedInside: boolean;
   onOpenShared: () => void;
   currentFolderId: string | null;
   folders: VaultFolder[];
@@ -30,7 +34,8 @@ export function LibrarySidebar({
   drag,
   folderCount,
   onOpenFolder,
-  sharedCount,
+  sharedNew,
+  sharedInside,
   onOpenShared,
   onOpenSecurity,
   onOpenPreferences,
@@ -58,6 +63,22 @@ export function LibrarySidebar({
     visit(null, 0);
     return tree;
   }, [folders]);
+  const shared = (
+    <button
+      className={section === "shared" ? "selected" : ""}
+      type="button"
+      // The count is a flex item, so built from text it would be read
+      // "Shared with me , 2 new"; say it plainly instead.
+      aria-label={
+        sharedNew > 0 ? `Shared with me, ${sharedNew} new` : undefined
+      }
+      onClick={onOpenShared}
+    >
+      <Icon name="letter" />{" "}
+      <span className="native-nav-name">Shared with me</span>
+      {sharedNew > 0 && <span className="nav-count">{sharedNew} new</span>}
+    </button>
+  );
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -85,22 +106,9 @@ export function LibrarySidebar({
             {records.filter((record) => !record.folderIds.length).length}
           </span>
         </button>
-        <button
-          className={section === "shared" ? "selected" : ""}
-          type="button"
-          // The count is a flex item, so built from text it would be read
-          // "Shared with me , 2 waiting"; say it plainly instead.
-          aria-label={
-            sharedCount > 0
-              ? `Shared with me, ${sharedCount} waiting`
-              : undefined
-          }
-          onClick={onOpenShared}
-        >
-          <Icon name="letter" /> Shared with me
-          {sharedCount > 0 && <span className="nav-count">{sharedCount}</span>}
-        </button>
+        {!sharedInside && shared}
         <span className="nav-label">Folders</span>
+        {sharedInside && shared}
         {sidebarFolders.map(({ folder, depth }) => (
           <button
             className={dropClass(
@@ -127,7 +135,7 @@ export function LibrarySidebar({
             <span className="nav-count">{folderCount(folder.id)}</span>
           </button>
         ))}
-        {!folders.length && (
+        {!folders.length && !sharedInside && (
           <small className="native-sidebar-empty">No folders yet</small>
         )}
         <span className="nav-label">Settings</span>

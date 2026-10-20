@@ -77,24 +77,29 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice] = useState("");
   // Files shared from another app, waiting. Asked for at start, whenever the
-  // window comes back to the front (which is how a share arrives), after an
-  // unlock, and after an add or a decline (which waits for the answer, so the
-  // list is current when its buttons come back). Locked, only their count is
-  // shown.
+  // window comes back to the front (which is how a share arrives), and at
+  // unlock. Locked, only their count is shown; open, they go straight into
+  // Shared with me (#61, `acceptShared` below).
   const [received, setReceived] = useState<ReceivedFile[]>([]);
+  const acceptSharedRef = useRef<() => Promise<void>>(async () => undefined);
   const refreshReceived = useCallback(
     (): Promise<void> =>
       bridge.listReceived().then(
-        ({ files, notice: missed }) => {
+        async ({ files, notice: missed }) => {
           setReceived(files);
           const text = receiveNoticeText(missed);
           if (text) setNotice(text);
+          if (files.length) await acceptSharedRef.current();
         },
         // Nothing waiting can be shown; the next ask tries again.
         () => undefined,
       ),
     [bridge],
   );
+  // Files added to Shared with me since this unlock, until the patient opens
+  // it: shown as "2 new" and said once, politely (#61).
+  const [sharedNew, setSharedNew] = useState(0);
+  const clearSharedNew = useCallback(() => setSharedNew(0), []);
   useEffect(() => {
     refreshReceived();
     const onVisible = () => {
@@ -644,6 +649,42 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     else if (transferHold.active) holdForUnlock(message);
   };
 
+  // Waiting files go into Shared with me as soon as the vault is open (#61).
+  // One that is not a PDF is not added and is named; anything else keeps them
+  // all waiting for the next ask.
+  const accepting = useRef(false);
+  acceptSharedRef.current = async () => {
+    if (status !== "unlocked" || accepting.current) return;
+    accepting.current = true;
+    try {
+      const outcome = await bridge.acceptReceived();
+      if (!inSession()) return;
+      setReceived([]);
+      if (outcome.imported.length) {
+        await refresh();
+        setSharedNew((count) => count + outcome.imported.length);
+      }
+      const said = [
+        ...outcome.notPdf.map(
+          (name) =>
+            `${name} is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.`,
+        ),
+        ...outcome.skippedDuplicates.map(
+          (name) => `${name} was already in Shared with me.`,
+        ),
+      ];
+      if (said.length) setSessionNotice(said.join(" "));
+    } catch {
+      // They keep waiting: the next ask tries again.
+    } finally {
+      accepting.current = false;
+    }
+  };
+  useEffect(() => {
+    if (status === "unlocked") void refreshReceived();
+    else setSharedNew(0);
+  }, [refreshReceived, status]);
+
   // A restored vault is locked: it opens with its own passphrase or key.
   const restored = () => {
     forgetReplacedVault();
@@ -882,8 +923,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       keyboardHints={DESKTOP_PLATFORMS.has(platform)}
       computer={DESKTOP_PLATFORMS.has(platform)}
       sizesIn1024s={platform === "windows"}
-      received={received}
-      onReceivedChanged={refreshReceived}
+      sharedNew={sharedNew}
+      onSharedSeen={clearSharedNew}
     />
   );
 }

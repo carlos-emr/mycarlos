@@ -3,6 +3,11 @@ import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
+import {
+  MoveTargetSelect,
+  parseMoveTarget,
+  type MoveTarget,
+} from "./MoveTargetSelect";
 
 interface RecordDetailsProps {
   record: VaultRecord;
@@ -18,6 +23,9 @@ interface RecordDetailsProps {
   onClose: () => void;
   onRename: () => void;
   onMove: (folderId: string | null) => Promise<void>;
+  /** For a document in Shared with me (#61): who it can go to, and the move. */
+  moveTargets?: MoveTarget[];
+  onMoveTo?: (profileId: string, folderId: string | null) => void;
   onDelete: () => void;
   onExport: () => void;
 }
@@ -31,6 +39,8 @@ export function RecordDetails({
   onClose,
   onRename,
   onMove,
+  moveTargets,
+  onMoveTo,
   onDelete,
   onExport,
 }: RecordDetailsProps) {
@@ -128,7 +138,7 @@ export function RecordDetails({
               {record.folderIds
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
-                .join(", ") || "My records"}
+                .join(", ") || (moveTargets ? "Shared with me" : "My records")}
             </dd>
           </div>
         </dl>
@@ -148,18 +158,33 @@ export function RecordDetails({
         <footer className="dialog-actions native-dialog-actions">
           <label>
             Move to
-            <select
-              disabled={busy || readOnly}
-              value={record.folderIds[0] ?? ""}
-              onChange={(event) => void onMove(event.target.value || null)}
-            >
-              <option value="">My records</option>
-              {folders.map((folder) => (
-                <option value={folder.id} key={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
+            {moveTargets ? (
+              <MoveTargetSelect
+                label="Move to"
+                targets={moveTargets}
+                value=""
+                current="Shared with me"
+                disabled={busy || readOnly}
+                onChange={(value) => {
+                  if (!value) return;
+                  const { profileId, folderId } = parseMoveTarget(value);
+                  onMoveTo?.(profileId, folderId);
+                }}
+              />
+            ) : (
+              <select
+                disabled={busy || readOnly}
+                value={record.folderIds[0] ?? ""}
+                onChange={(event) => void onMove(event.target.value || null)}
+              >
+                <option value="">My records</option>
+                {folders.map((folder) => (
+                  <option value={folder.id} key={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
           <button
             className="button danger"

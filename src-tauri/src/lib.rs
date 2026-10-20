@@ -56,9 +56,6 @@ struct PublicError {
     /// How long to wait before the next try, after wrong ones.
     #[serde(skip_serializing_if = "Option::is_none")]
     retry_after_ms: Option<u64>,
-    /// The received file a failure is about, for the renderer to name.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    received_id: Option<Uuid>,
 }
 
 /// What an error says, whatever it is about.
@@ -122,7 +119,6 @@ impl PublicError {
             record_id: None,
             note: None,
             retry_after_ms: Some(left_ms),
-            received_id: None,
         }
     }
 
@@ -133,7 +129,6 @@ impl PublicError {
             record_id: None,
             note: None,
             retry_after_ms: None,
-            received_id: None,
         }
     }
 
@@ -156,7 +151,6 @@ impl PublicError {
             record_id: None,
             note: None,
             retry_after_ms: None,
-            received_id: None,
         }
     }
 }
@@ -285,7 +279,6 @@ impl From<VaultError> for PublicError {
             record_id,
             note: None,
             retry_after_ms: None,
-            received_id: None,
         }
     }
 }
@@ -760,7 +753,6 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
             record_id: None,
             note: None,
             retry_after_ms: None,
-            received_id: None,
         })??;
     let RuntimeInfo {
         platform,
@@ -1835,16 +1827,20 @@ struct ReceivedState {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReceivedImportRequest {
-    ids: Vec<Uuid>,
+struct MoveToPersonRequest {
+    record_ids: Vec<Uuid>,
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
-#[derive(Deserialize)]
+/// What adding the waiting files to Shared with me did (#61).
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReceivedDiscardRequest {
-    ids: Vec<Uuid>,
+struct ReceivedAcceptOutcome {
+    imported: Vec<Uuid>,
+    skipped_duplicates: Vec<String>,
+    /// Files that are not PDF documents: not added, and forgotten.
+    not_pdf: Vec<String>,
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
@@ -1859,50 +1855,54 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
     }
 }
 
-/// Imports the received files the patient confirmed, into the profile and folders chosen. When
-/// anything fails, every one of them keeps waiting, so the patient can try again or discard
-/// one; a file that is not a PDF is named by `receivedId`.
+/// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
+/// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
+/// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
 #[tauri::command]
-async fn received_import(
+async fn received_accept(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     received: State<'_, Arc<ReceivedFiles>>,
-    request: ReceivedImportRequest,
-) -> CommandResult<vault::ImportOutcome> {
-    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
-    vault::validate_import_count(request.ids.len()).map_err(PublicError::from)?;
+) -> CommandResult<ReceivedAcceptOutcome> {
+    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    if ids.is_empty() {
+        return Ok(ReceivedAcceptOutcome {
+            imported: Vec::new(),
+            skipped_duplicates: Vec::new(),
+            not_pdf: Vec::new(),
+        });
+    }
     let taken = received
-        .take(&request.ids)
+        .take(&ids)
         .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     let files = taken.clone();
     let result = run_blocking(store.inner(), move |store| {
+        let shared = store.shared_profile()?;
         let mut sources = Vec::with_capacity(files.len());
+        let mut not_pdf = Vec::new();
         {
             let _opening = Opening::new(store.idle());
-            for (id, file) in files {
+            for (_, file) in files {
+                let name = file.name.clone();
                 match open_received_source(&app, file) {
                     Ok(source) => sources.push(source),
-                    Err(VaultError::NotPdf) => return Ok(Err(id)),
+                    Err(VaultError::NotPdf) => not_pdf.push(name),
                     Err(error) => return Err(error),
                 }
             }
         }
-        store
-            .import(request.profile_id, request.folder_ids, sources, now_ms())
-            .map(Ok)
+        let outcome = store.import(shared, Vec::new(), sources, now_ms())?;
+        Ok(ReceivedAcceptOutcome {
+            imported: outcome.imported,
+            skipped_duplicates: outcome.skipped_duplicates,
+            not_pdf,
+        })
     })
     .await;
     match result {
-        Ok(Ok(outcome)) => {
+        Ok(outcome) => {
             received.finish(&taken);
             Ok(outcome)
-        }
-        Ok(Err(not_pdf)) => {
-            received.restore(taken);
-            Err(PublicError {
-                received_id: Some(not_pdf),
-                ..PublicError::from(VaultError::NotPdf)
-            })
         }
         Err(error) => {
             received.restore(taken);
@@ -1911,10 +1911,18 @@ async fn received_import(
     }
 }
 
-/// Forgets received files the patient declined. Nothing of them was ever stored.
+/// Moves files from Shared with me to a person, into the folders chosen (#61). A file the
+/// person already has stays where it is and is named in the outcome.
 #[tauri::command]
-fn received_discard(received: State<'_, Arc<ReceivedFiles>>, request: ReceivedDiscardRequest) {
-    received.discard(&request.ids);
+async fn vault_move_to_person(
+    store: State<'_, Arc<VaultStore>>,
+    request: MoveToPersonRequest,
+) -> CommandResult<vault::MoveOutcome> {
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    run_blocking(store.inner(), move |store| {
+        store.move_to_profile(request.record_ids, request.profile_id, request.folder_ids)
+    })
+    .await
 }
 
 /// Files another app opened with myCarlos, on the Mac, iPhone and Android.
@@ -2280,8 +2288,8 @@ pub fn run() {
             vault_import_pick,
             vault_import_picked,
             received_list,
-            received_import,
-            received_discard,
+            received_accept,
+            vault_move_to_person,
             vault_export_pick,
             vault_export_picked,
             vault_delete_record,
@@ -2909,18 +2917,8 @@ mod tests {
         let mut kept = Vec::new();
         std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
         assert_eq!(kept, b"%PDF-1.7 FAKE");
-        // The renderer names the received file from its id, never from the message.
-        let error = PublicError {
-            received_id: Some(Uuid::nil()),
-            ..PublicError::from(VaultError::NotPdf)
-        };
-        let json = serde_json::to_value(&error).unwrap();
+        let json = serde_json::to_value(PublicError::from(VaultError::NotPdf)).unwrap();
         assert_eq!(json["code"], "not_pdf");
-        assert_eq!(json["receivedId"], Uuid::nil().to_string());
-        assert!(
-            serde_json::to_value(PublicError::from(VaultError::Locked)).unwrap()["receivedId"]
-                .is_null()
-        );
     }
 
     /// A vault with a recovery key being set up, and that key's groups as
@@ -3491,8 +3489,7 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersRequest>(&payload);
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
-            let _ = serde_json::from_slice::<ReceivedImportRequest>(&payload);
-            let _ = serde_json::from_slice::<ReceivedDiscardRequest>(&payload);
+            let _ = serde_json::from_slice::<MoveToPersonRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
             let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);

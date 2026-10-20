@@ -401,22 +401,6 @@ h1, h2, p { margin: 0; }
 .bulkbar button { padding: 5px 10px; border: 1px solid var(--overlay-line); border-radius: 7px; background: transparent; color: var(--on-bulk); }
 .bulkbar button:hover:not(:disabled) { background: var(--overlay-hover); }
 
-.native-received {
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--teal-soft);
-}
-.native-received h2 { margin: 0 0 4px; font-size: 1rem; }
-.native-received p { margin: 6px 0; }
-.native-received-list { margin: 8px 0; padding: 0; list-style: none; }
-.native-received-list li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 4px 0; }
-.native-received-list label { display: flex; gap: 8px; align-items: center; min-width: 0; }
-.native-received-name { overflow-wrap: anywhere; }
-.native-received-refused { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.native-received-declining { max-height: 12em; margin: 0 0 8px; padding-left: 20px; overflow-y: auto; overflow-wrap: anywhere; }
-
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
   display: grid;
@@ -870,27 +854,8 @@ h1, h2, p { margin: 0; }
 .recovery-key-dialog .dialog-head h2 { white-space: normal; overflow: visible; }
 .recovery-key-dialog * { scroll-margin-block: 16px; }
 
-/* "Shared with me" (#61): one row per waiting file, its actions beside it on a
-   computer and under it on a phone; "Add to" opens under the row. */
-.native-shared-intro { margin: 0 0 12px; color: var(--ink-soft); }
-.native-shared-empty { margin: 16px 0; padding: 16px; border: 1px dashed var(--line); border-radius: var(--radius-sm); color: var(--ink-soft); }
-.native-shared-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
-.native-shared-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding: 12px 16px; }
-.native-shared-row + .native-shared-row { border-top: 1px solid var(--line); }
-.native-shared-file { display: grid; gap: 4px; min-width: 0; }
-.native-shared-file strong { overflow-wrap: anywhere; }
-.native-shared-file small { color: var(--ink-soft); font-size: 0.875rem; }
-.native-shared-refused { color: var(--red) !important; font-weight: 700; }
-.native-shared-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.native-shared .button, .native-shared select { min-height: 44px; }
-.native-shared-add { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 12px; border-radius: var(--radius-sm); background: var(--canvas); }
-.native-shared-add label { display: grid; gap: 6px; min-width: 0; font-weight: 700; }
-.native-shared-add select { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
-.native-shared-add-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 40em) {
-  .native-shared-row { grid-template-columns: minmax(0, 1fr); }
-  .native-shared-add { grid-template-columns: minmax(0, 1fr); }
-}
+/* "Shared with me" (#61): what arrives there, and how it leaves. */
+.native-shared-intro { margin: 0 0 12px; }
 
 /* Preferences control and required control boundaries, separate from decorative dividers. */
 .appearance-choice { display: grid; gap: 2px; min-width: min(100%, 230px); max-width: 330px; margin: 0; padding: 0; border: 0; }

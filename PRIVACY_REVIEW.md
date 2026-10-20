@@ -35,7 +35,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 
 | What | Examples | Kept encrypted? |
 |---|---|---|
-| Documents | The PDF files the patient adds | Yes, each with its own key |
+| Documents | The PDF files the patient adds, and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person) | Yes, each with its own key |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in | Yes |
 | Profiles | A display name for each person the patient keeps records for | Yes |
 | Folders | Folder names and how they nest | Yes |
@@ -45,6 +45,12 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
 patient that it is there.
+
+A **file shared to myCarlos** (or opened with it) is encrypted into the vault as soon as the vault
+is open, into "Shared with me", which belongs to no one until the patient moves the file to a
+person. While the vault is locked, the shared file is only remembered (where it is, not what is in
+it), and the lock screen shows how many are waiting, never their names; if myCarlos closes first,
+it is forgotten. The app that shared it keeps its own copy.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:

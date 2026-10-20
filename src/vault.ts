@@ -42,6 +42,10 @@ export interface VaultSnapshot {
   recoveryKeySetAtMs?: number | null;
   /** Its short label, which its kit shows (not secret), if it has one. */
   recoveryKeyLabel?: string | null;
+  /** The reserved profile that files shared to myCarlos wait in (#61): shown
+   * as the "Shared with me" folder, never as a person. In `profiles` once the
+   * first file has arrived. */
+  sharedProfileId?: string;
 }
 
 /** One group of the recovery key as the patient typed it back, by position. */
@@ -97,6 +101,19 @@ export interface RecoverOutcome {
 export interface ImportOutcome {
   imported: string[];
   skippedDuplicates: string[];
+}
+
+/** What adding the waiting files to Shared with me did (#61). */
+export interface ReceivedAcceptOutcome extends ImportOutcome {
+  /** Names of files that are not PDF documents: not added, and forgotten. */
+  notPdf: string[];
+}
+
+/** What a move out of Shared with me did (#61). */
+export interface MoveOutcome {
+  moved: string[];
+  /** Names of files the person already had, which stay in Shared with me. */
+  alreadyThere: string[];
 }
 
 /** A file another app shared with myCarlos, waiting for the patient to add or
@@ -245,14 +262,15 @@ export interface VaultBridge {
   /** The shared files waiting, and what could not be received since the
    * last call (that part is reported once). Works while locked. */
   listReceived(): Promise<ReceivedState>;
-  /** Adds the waiting files named. If it fails, they all keep waiting. */
-  importReceived(
-    ids: string[],
+  /** Adds every waiting file to Shared with me; a file that is not a PDF is
+   * forgotten and named. If anything else fails, they all keep waiting. */
+  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Moves files from Shared with me to a person, into the folders named. */
+  moveToPerson(
+    recordIds: string[],
     profileId: string,
     folderIds: string[],
-  ): Promise<ImportOutcome>;
-  /** Forgets waiting files the patient declined. */
-  discardReceived(ids: string[]): Promise<void>;
+  ): Promise<MoveOutcome>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -265,8 +283,6 @@ interface PublicError {
   message?: string;
   /** The document a failure is about, if it is about one. */
   recordId?: string;
-  /** The shared file a failure is about, if it is about one. */
-  receivedId?: string;
   /** A sentence to add after the message, about how the failure came about. */
   note?: string;
   /** How long to wait before the next try, after several wrong ones. */
@@ -354,13 +370,6 @@ function hasErrorCode(error: unknown, code: string): boolean {
     error !== null &&
     (error as PublicError).code === code
   );
-}
-
-/** The waiting shared file an import refused as not a PDF, if that was why. */
-export function notPdfReceivedId(error: unknown): string | null {
-  if (!hasErrorCode(error, "not_pdf")) return null;
-  const { receivedId } = error as PublicError;
-  return typeof receivedId === "string" ? receivedId : null;
 }
 
 /** True when the native side reports that the vault is locked, for example by
@@ -480,12 +489,11 @@ export function createVaultBridge(): VaultBridge {
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
     listReceived: () => invoke<ReceivedState>("received_list"),
-    importReceived: (ids, profileId, folderIds) =>
-      invoke<ImportOutcome>("received_import", {
-        request: { ids, profileId, folderIds },
+    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    moveToPerson: (recordIds, profileId, folderIds) =>
+      invoke<MoveOutcome>("vault_move_to_person", {
+        request: { recordIds, profileId, folderIds },
       }),
-    discardReceived: (ids) =>
-      invoke<void>("received_discard", { request: { ids } }),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },
