@@ -445,3 +445,39 @@ If initial Enter or Space leaves a Linux dialog open, it records that behavior a
 with Escape; no destructive operation may occur. These checks cover the tested Windows
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
+
+## Appearance and Windows high contrast
+
+Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
+including on a phone. The separate browser demonstration follows the device automatically;
+it has no Preferences screen. This is still a synthetic-data evaluation, not approval for PHI.
+
+1. With no appearance saved, check that **System** follows the device's light/dark choice.
+   Change the device choice while myCarlos is open, on both a locked screen and the library.
+   The app should update without restarting.
+2. Choose **Light**, then **Dark**. Close and reopen the app after each: the choice should be
+   remembered, including before unlocking. Explicit Light/Dark should stay put when the device
+   changes. Choose **System** again to resume following the device.
+3. On Windows and macOS, check that the native window follows each choice where the platform
+   supports it. A failed or slow native command must not block the app. A failed save of the
+   preference should say it cannot be remembered, while the current appearance still works.
+4. On Windows, turn on a contrast theme in **Settings → Accessibility → Contrast themes**.
+   Try both a light and dark contrast palette, including with Light or Dark selected in the app.
+   There is no extra high-contrast switch. Tab through Preferences and the library: focus outlines,
+   selected buttons/checkmarks, document icons, warnings and disabled controls must be visible.
+   Check with Narrator's scan mode too; static text should not enter the Tab sequence.
+5. Check light/dark text, warning chips, selected records, bulk controls, input boundaries and
+   keyboard focus against their actual backgrounds. Automated axe checks do not cover every state
+   or replace native screen-reader and contrast-theme testing.
+6. Try the phone layout and the smallest desktop window at 400% text size. Appearance must not
+   remove Text size controls, move auto-lock out of Security, or change reduced-motion behavior.
+7. In the browser demonstration, compare the synthetic paper preview across light/dark: the paper
+   and its content remain unchanged while the surrounding app changes. Native documents still use
+   **Save a copy**; no PDF viewer is added. A recovery kit printed from either appearance must have
+   black text on white paper. Do not include passwords or recovery keys in screenshots or traces.
+
+`tests/appearance.spec.ts` exercises the real native UI with a synthetic IPC bridge in Chromium,
+including phone layout, live system changes, contrast checks and forced-colours emulation. This
+is separate from actual Windows/macOS native appearance testing and the text-size checks on
+real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
+old screenshots and successful CI do not establish Ben's UI approval.
