@@ -27,12 +27,25 @@ export const es: Record<MessageKey, Message> = {
   "passphrase.longerThanAny":
     "Este texto es más largo que cualquier frase de contraseña de la bóveda. Revise lo que escribió.",
 
-  "create.title": "Cree su bóveda cifrada",
+  "passphrase.show": "Mostrar la frase de contraseña",
+  "passphrase.show.inConfirm": "en Confirmar la frase de contraseña",
+
+  "checklist.heading": "Su frase de contraseña debe ser:",
+  "checklist.length": "De al menos {min} caracteres",
+  "checklist.hardToGuess": "Difícil de adivinar",
+  "checklist.notAName": "Distinta de su nombre",
+  "checklist.done": ", cumplido",
+  "checklist.notYet": ", todavía no",
+  "checklist.spaces":
+    "Se permiten espacios, así que unas cuantas palabras sin relación entre sí forman una buena frase de contraseña. myCarlos comprueba estas reglas en este equipo.",
+  "checklist.allMet": "Su frase de contraseña cumple todas las reglas.",
+
+  "create.title": "Configure myCarlos en este equipo",
   "create.intro":
     "Sus archivos y los detalles de sus registros se cifran en este dispositivo. Su frase de contraseña abre la bóveda. Después podrá configurar una clave de recuperación por si la olvida.",
   "create.stays":
     "Su bóveda permanece en este dispositivo. Si creó una en otro dispositivo, sigue allí y no aparecerá aquí.",
-  "create.profile.label": "Primer perfil de paciente",
+  "create.profile.label": "¿De quién son los registros que guardará aquí?",
   "create.profile.tooLong": "Este nombre es demasiado largo. Acórtelo.",
   "create.submit": "Crear bóveda",
 
@@ -47,9 +60,11 @@ export const es: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "¿Olvidó su frase de contraseña?",
   "unlock.noKey.heading": "¿No tiene una clave de recuperación?",
   "unlock.noKey.body":
-    "Sin ella, la única forma de volver a entrar es borrar esta bóveda, lo que elimina de forma permanente todo su contenido, y empezar de nuevo.",
+    "Sin ella, la única forma de volver a entrar es borrar myCarlos y empezar de nuevo.",
   "restore.summary": "Restaurar desde una copia de seguridad",
 
+  "reset.plainly":
+    "Al borrar se eliminan de myCarlos en este equipo todos sus documentos, carpetas y perfiles de pacientes, y no se puede deshacer. Para confirmarlo, escriba exactamente las palabras de abajo.",
   "reset.type": "Escriba {phrase}",
   "reset.submit": "Borrar bóveda",
 
@@ -115,6 +130,7 @@ export const es: Record<MessageKey, Message> = {
 
   // Library sidebar
   "sidebar.label": "Biblioteca de documentos",
+  "sidebar.patient": "Paciente",
   "sidebar.myRecords": "Mis documentos",
   "sidebar.folders": "Carpetas",
   "sidebar.noFolders": "Todavía no hay carpetas",
@@ -245,8 +261,10 @@ export const es: Record<MessageKey, Message> = {
     other: "{count} minutos",
   },
   "security.autoLock.body":
-    "La bóveda se bloquea tras el periodo elegido sin actividad del teclado, el puntero o la pantalla táctil. Esta configuración no médica está limitada a entre 1 y 15 minutos.",
+    "La bóveda se bloquea tras el periodo elegido sin actividad del teclado, el puntero o la pantalla táctil. Elija entre 1 y 15 minutos.",
   "security.autoLock.label": "Tiempo para el bloqueo automático",
+  "security.autoLock.shorter": "Tiempo más corto",
+  "security.autoLock.longer": "Tiempo más largo",
   "security.lockNow": "Bloquear ahora",
   "security.recoveryKey.title": "Clave de recuperación",
   "security.recoveryKey.setUpOn": "Configurada el {date}",

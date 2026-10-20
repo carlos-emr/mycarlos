@@ -1,0 +1,17 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+Fictional Valley Laboratories - Clinical Chemistry
+
+Patient: EXAMPLE, Avery          PHN: 9123 456 789
+Date of birth: 17-Apr-1961       Sex: F
+MRN: H00012345                   Accession #: LAB-26-0099812
+Ordering provider: Dr. Morgan Testcase
+Collected: 2026-10-08 07:40      Reported: 2026-10-09 15:12
+
+Test                 Result     Units      Reference
+Hemoglobin           132        g/L        120-160
+Potassium            5.4        mmol/L     3.5-5.0     H
+Creatinine           88         umol/L     45-90
+TSH                  2.1        mU/L       0.32-4.0
+
+Comment: Potassium mildly raised. Repeat in 2 weeks (on or after 2026-10-22).
+Questions: call the lab at 1-800-555-0100 or email results@lab.example.org.

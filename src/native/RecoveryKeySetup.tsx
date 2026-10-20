@@ -252,7 +252,7 @@ export function RecoveryKeySetup({
       setStep("key");
     } catch (failure) {
       if (isLockedError(failure)) onLocked();
-      else setError(vaultErrorMessage(failure));
+      else setError(vaultErrorMessage(failure, ["the passphrase"]));
     } finally {
       setBusy(false);
     }

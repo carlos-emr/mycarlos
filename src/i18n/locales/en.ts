@@ -30,13 +30,27 @@ export const en = {
   "passphrase.longerThanAny":
     "This is longer than any vault passphrase. Check what you typed.",
 
+  "passphrase.show": "Show passphrase",
+  "passphrase.show.inConfirm": "in Confirm passphrase",
+
+  // The rules a new passphrase must meet, each ticked once it is met
+  "checklist.heading": "Your passphrase needs to be:",
+  "checklist.length": "At least {min} characters",
+  "checklist.hardToGuess": "Not easy to guess",
+  "checklist.notAName": "Not your name",
+  "checklist.done": ", done",
+  "checklist.notYet": ", not yet",
+  "checklist.spaces":
+    "Spaces are allowed, so a few unrelated words make a good one. myCarlos checks these rules on this computer.",
+  "checklist.allMet": "Your passphrase meets all the rules.",
+
   // Create the vault
-  "create.title": "Create your encrypted vault",
+  "create.title": "Set up myCarlos on this computer",
   "create.intro":
     "Your files and record details are encrypted on this device. Your passphrase opens the vault. Next, you can set up a recovery key in case you forget it.",
   "create.stays":
     "Your vault stays on this device. If you created one on another device, it is still there, and will not appear here.",
-  "create.profile.label": "First patient profile",
+  "create.profile.label": "Whose records will you keep here?",
   "create.profile.tooLong": "This name is too long. Shorten it.",
   "create.submit": "Create vault",
 
@@ -51,10 +65,12 @@ export const en = {
   "unlock.forgot.summary": "Forgot your passphrase?",
   "unlock.noKey.heading": "No recovery key?",
   "unlock.noKey.body":
-    "Without one, the only way back in is to erase this vault, which permanently deletes everything in it, and start again.",
+    "Without one, the only way back in is to erase myCarlos and start again.",
   "restore.summary": "Restore from a backup",
 
   // Erase the vault
+  "reset.plainly":
+    "Erasing deletes all your documents, folders and patient profiles from myCarlos on this computer, and it cannot be undone. To be sure, type the words below exactly.",
   "reset.type": "Type {phrase}",
   "reset.submit": "Erase vault",
 
@@ -119,6 +135,7 @@ export const en = {
 
   // Library sidebar
   "sidebar.label": "Record library",
+  "sidebar.patient": "Patient",
   "sidebar.myRecords": "My records",
   "sidebar.folders": "Folders",
   "sidebar.noFolders": "No folders yet",
@@ -236,8 +253,10 @@ export const en = {
     other: "{count} minutes",
   },
   "security.autoLock.body":
-    "The vault locks after the selected period without keyboard, pointer, or touch activity. This non-medical setting is clamped to 1–15 minutes.",
+    "The vault locks after the selected period without keyboard, pointer, or touch activity. Choose from 1 to 15 minutes.",
   "security.autoLock.label": "Automatic lock delay",
+  "security.autoLock.shorter": "Shorter delay",
+  "security.autoLock.longer": "Longer delay",
   "security.lockNow": "Lock now",
   "security.recoveryKey.title": "Recovery key",
   "security.recoveryKey.setUpOn": "Set up {date}",

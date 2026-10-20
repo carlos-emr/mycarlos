@@ -10,6 +10,8 @@ import {
 } from "./index";
 import { SecuritySettings } from "../native/SecuritySettings";
 import { RecoveryKeySetup } from "../native/RecoveryKeySetup";
+import { AutoLockSetting } from "../native/AutoLockSetting";
+import { ProfileChoice } from "../native/ProfileChoice";
 import { readTypedZoom } from "../native/zoom";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
@@ -112,6 +114,25 @@ describe("Settings > Security in each language", () => {
       expect(sentence.textContent?.trimEnd()).toContain(
         after.replace("DATE", "").split(" ").slice(0, 4).join(" "),
       );
+      // The delay's minus and plus (#67), named in the same language.
+      expect(
+        screen.getByText(translate(locale, "security.autoLock.body")),
+      ).toBeInTheDocument();
+      const delay = screen.getByRole("group", {
+        name: translate(locale, "security.autoLock.label"),
+      });
+      for (const key of [
+        "security.autoLock.shorter",
+        "security.autoLock.longer",
+      ] as const)
+        expect(
+          within(delay).getByRole("button", { name: translate(locale, key) }),
+        ).toBeInTheDocument();
+      expect(
+        within(delay).getByText(
+          translate(locale, "security.autoLock.minutes", { count: 5 }),
+        ),
+      ).toBeInTheDocument();
       if (locale !== "en") {
         expect(screen.queryByText("Encrypted backup")).toBeNull();
         expect(screen.queryByText("Lock now")).toBeNull();
@@ -121,19 +142,49 @@ describe("Settings > Security in each language", () => {
 
   it("gives each automatic lock delay its Polish plural", () => {
     setLocaleOverride("pl");
-    renderSecurity();
-    const select = screen.getByLabelText(
-      translate("pl", "security.autoLock.label"),
-    );
-    const options = within(select)
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options[0]).toBe("1 minuta");
-    expect(options[1]).toBe("2 minuty");
-    expect(options[4]).toBe("5 minut");
-    expect(options[11]).toBe("12 minut");
-    expect(options[13]).toBe("14 minut");
+    const shown = (minutes: number) => {
+      const { container, unmount } = render(
+        <AutoLockSetting minutes={minutes} onMinutes={vi.fn()} />,
+      );
+      const text = container.querySelector(".auto-lock-value")?.textContent;
+      unmount();
+      return text;
+    };
+    expect([1, 2, 5, 12, 14].map(shown)).toEqual([
+      "1 minuta",
+      "2 minuty",
+      "5 minut",
+      "12 minut",
+      "14 minut",
+    ]);
   });
+});
+
+describe("the patient buttons in each language", () => {
+  for (const locale of LOCALES) {
+    it(`names the choice of patient in ${locale}`, () => {
+      setLocaleOverride(locale);
+      render(
+        <ProfileChoice
+          profiles={[
+            { id: "p1", displayName: "FAKE Avery", createdAtMs: 1 },
+            { id: "p2", displayName: "FAKE Blake", createdAtMs: 2 },
+          ]}
+          profileId="p1"
+          onChoose={vi.fn()}
+        />,
+      );
+      const group = screen.getByRole("group", {
+        name: translate(locale, "sidebar.patient"),
+      });
+      expect(
+        within(group)
+          .getAllByRole("button")
+          .map((button) => button.textContent),
+      ).toEqual(["FAKE Avery", "FAKE Blake"]);
+      expect(group).toHaveTextContent(translate(locale, "sidebar.patient"));
+    });
+  }
 });
 
 describe("recovery key setup in each language", () => {

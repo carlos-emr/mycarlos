@@ -20,6 +20,10 @@ describe("recordKind", () => {
     ["Medications list.pdf", "Prescription"],
     // Upper case must lower to the ASCII stems whatever the device locale is.
     ["IMAGING REPORT.PDF", "Imaging"],
+    // A photo from the camera, or another JPEG, before any word in its name.
+    ["Photo, 17 Oct 2026, 3.05 PM.jpg", "Photo"],
+    ["Lab results.JPEG", "Photo"],
+    ["scan.jpeg ", "Photo"],
   ])("recognises %s as %s", (name, label) => {
     expect(recordKind(name).label).toBe(label);
   });

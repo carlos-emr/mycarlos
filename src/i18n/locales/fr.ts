@@ -28,12 +28,25 @@ export const fr: Record<MessageKey, Message> = {
   "passphrase.longerThanAny":
     "Ce texte est plus long que n’importe quelle phrase secrète du coffre-fort. Vérifiez ce que vous avez saisi.",
 
-  "create.title": "Créer votre coffre-fort chiffré",
+  "passphrase.show": "Afficher la phrase secrète",
+  "passphrase.show.inConfirm": "dans Confirmer la phrase secrète",
+
+  "checklist.heading": "Votre phrase secrète doit être :",
+  "checklist.length": "Longue d’au moins {min} caractères",
+  "checklist.hardToGuess": "Difficile à deviner",
+  "checklist.notAName": "Différente de votre nom",
+  "checklist.done": ", c’est fait",
+  "checklist.notYet": ", pas encore",
+  "checklist.spaces":
+    "Les espaces sont autorisés, donc quelques mots sans lien entre eux font une bonne phrase secrète. myCarlos vérifie ces règles sur cet ordinateur.",
+  "checklist.allMet": "Votre phrase secrète respecte toutes les règles.",
+
+  "create.title": "Configurer myCarlos sur cet ordinateur",
   "create.intro":
     "Vos fichiers et les détails de vos dossiers sont chiffrés sur cet appareil. Votre phrase secrète ouvre le coffre-fort. Vous pourrez ensuite configurer une clé de récupération au cas où vous l’oublieriez.",
   "create.stays":
     "Votre coffre-fort reste sur cet appareil. Si vous en avez créé un sur un autre appareil, il s’y trouve toujours et n’apparaîtra pas ici.",
-  "create.profile.label": "Premier profil de patient",
+  "create.profile.label": "De qui allez-vous conserver les dossiers ici ?",
   "create.profile.tooLong": "Ce nom est trop long. Raccourcissez-le.",
   "create.submit": "Créer le coffre-fort",
 
@@ -45,12 +58,14 @@ export const fr: Record<MessageKey, Message> = {
       "Le coffre-fort se verrouille après {count} minutes d’inactivité et chaque fois que myCarlos est masqué, par exemple réduit ou envoyé en arrière-plan.",
   },
   "unlock.submit": "Déverrouiller",
-  "unlock.forgot.summary": "Vous avez oublié votre phrase secrète?",
-  "unlock.noKey.heading": "Pas de clé de récupération?",
+  "unlock.forgot.summary": "Vous avez oublié votre phrase secrète ?",
+  "unlock.noKey.heading": "Pas de clé de récupération ?",
   "unlock.noKey.body":
-    "Sans clé, la seule façon de revenir est d’effacer ce coffre-fort, ce qui supprime définitivement tout son contenu, puis de recommencer.",
+    "Sans clé, la seule façon de revenir est d’effacer myCarlos et de recommencer.",
   "restore.summary": "Restaurer à partir d’une sauvegarde",
 
+  "reset.plainly":
+    "L’effacement supprime de myCarlos sur cet ordinateur tous vos documents, dossiers et profils de patients, et il est irréversible. Pour confirmer, saisissez exactement les mots ci-dessous.",
   "reset.type": "Saisissez {phrase}",
   "reset.submit": "Effacer le coffre-fort",
 
@@ -116,6 +131,7 @@ export const fr: Record<MessageKey, Message> = {
 
   // Library sidebar
   "sidebar.label": "Bibliothèque de documents",
+  "sidebar.patient": "Patient",
   "sidebar.myRecords": "Mes documents",
   "sidebar.folders": "Dossiers",
   "sidebar.noFolders": "Aucun dossier pour l’instant",
@@ -249,8 +265,10 @@ export const fr: Record<MessageKey, Message> = {
     other: "{count} minutes",
   },
   "security.autoLock.body":
-    "Le coffre-fort se verrouille après la période choisie sans activité du clavier, du pointeur ou de l’écran tactile. Ce paramètre non médical est limité à une durée de 1 à 15 minutes.",
+    "Le coffre-fort se verrouille après la période choisie sans activité du clavier, du pointeur ou de l’écran tactile. Choisissez une durée de 1 à 15 minutes.",
   "security.autoLock.label": "Délai de verrouillage automatique",
+  "security.autoLock.shorter": "Délai plus court",
+  "security.autoLock.longer": "Délai plus long",
   "security.lockNow": "Verrouiller maintenant",
   "security.recoveryKey.title": "Clé de récupération",
   "security.recoveryKey.setUpOn": "Configurée le {date}",
