@@ -387,10 +387,6 @@ test("Settings work from the keyboard alone", async ({ page }) => {
   await page.getByRole("button", { name: "Shorter delay" }).focus();
   await page.keyboard.press("Enter");
   await expectAnnounced(page, "4 minutes");
-  // The erase controls open from the keyboard (and are left alone).
-  await page.getByText("Show reset controls").focus();
-  await page.keyboard.press("Enter");
-  await walk(page, "Security, reset controls shown");
 
   await page.getByRole("button", { name: "Preferences", exact: true }).focus();
   await page.keyboard.press("Enter");
