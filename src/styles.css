@@ -1016,6 +1016,23 @@ h1, h2, p { margin: 0; }
 /* "Shared with me" (#61): what arrives there, and how it leaves. */
 .native-shared-intro { margin: 0 0 12px; }
 
+/* Prototype: documents from a clinic, and the person a shared document is for. */
+.native-delivery-fields { display: grid; gap: 12px; padding: 16px 20px; }
+.native-delivery-fields p { margin: 0; }
+.native-delivery-meta { color: var(--ink-soft); font-size: 0.875rem; }
+.native-delivery-choice legend { margin-bottom: 2px; padding: 0; color: var(--ink); font-weight: 700; }
+.native-delivery-always { display: flex; align-items: center; gap: 10px; min-height: 44px; max-width: 34rem; font-size: 0.875rem; }
+.native-delivery-always input { flex: none; width: 20px; height: 20px; margin: 0; }
+.native-clinic-link-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.native-clinic-link-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); font-size: 0.875rem; }
+.native-clinic-link-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.native-clinic-link-actions label { display: flex; align-items: center; gap: 6px; }
+.native-clinic-link-actions select { min-height: 44px; padding: 0 8px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-person-suggestion { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px 10px; margin: 0 20px 12px; padding: 10px 12px; border: 1px solid var(--teal-line); border-radius: var(--radius-sm); background: var(--teal-soft); color: var(--ink); font-size: 0.875rem; line-height: 1.4; }
+.native-person-suggestion > svg { width: 18px; height: 18px; margin-top: 1px; color: var(--teal-dark); }
+.native-person-suggestion-actions { display: flex; flex-wrap: wrap; grid-column: 2; gap: 8px; }
+.file-row .native-person-suggestion { grid-column: 2 / -1; margin: 0; }
+
 /* Preferences control and required control boundaries, separate from decorative dividers. */
 .appearance-choice { display: grid; gap: 2px; min-width: min(100%, 230px); max-width: 330px; margin: 0; padding: 0; border: 0; }
 /* The whole row of each choice is a target of at least 44px (#67). */

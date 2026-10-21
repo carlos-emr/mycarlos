@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ClinicDelivery } from "./native/clinicLinks";
+import type { FoundName } from "./native/personMatch";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -285,6 +287,20 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<MoveOutcome>;
+  /** Prototype (file shared documents to the right person): documents a
+   * clinic delivered, opened on this device. The portal pickup does not exist
+   * yet; only the dev fake answers, and anything else, or a bridge without
+   * it, means none. */
+  clinicDeliveries?(): Promise<ClinicDelivery[]>;
+  /** Prototype: files a delivered document under a person, or in Shared with
+   * me (null). */
+  fileClinicDelivery?(
+    deliveryId: string,
+    profileId: string | null,
+  ): Promise<void>;
+  /** Prototype: the patient name found on a shared document, if any. The real
+   * reading runs in the PDF helper (#63/#85); only the dev fake answers. */
+  nameFoundIn?(recordId: string): Promise<FoundName | null>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -529,6 +545,13 @@ export function createVaultBridge(): VaultBridge {
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
+    clinicDeliveries: () => invoke<ClinicDelivery[]>("clinic_deliveries"),
+    fileClinicDelivery: (deliveryId, profileId) =>
+      invoke<void>("clinic_delivery_file", {
+        request: { deliveryId, profileId },
+      }),
+    nameFoundIn: (recordId) =>
+      invoke<FoundName | null>("shared_name_found", { request: { recordId } }),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },

@@ -1,5 +1,11 @@
 import { SecretInput } from "./SecretInput";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "../Icon";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -47,6 +53,8 @@ interface SecuritySettingsProps {
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
   onSpeedTest: () => Promise<SpeedTestReport>;
+  /** Prototype: where each clinic's documents are filed. */
+  clinicLinks?: ReactNode;
 }
 
 /** One line a tester can copy into the benchmark record. */
@@ -83,6 +91,7 @@ export function SecuritySettings({
   onSetUpRecoveryKey,
   onSaveBackup,
   onSpeedTest,
+  clinicLinks,
 }: SecuritySettingsProps) {
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
@@ -185,6 +194,7 @@ export function SecuritySettings({
             </p>
           </div>
         </section>
+        {clinicLinks}
         <section className="setting-row native-setting-form">
           <div>
             <h2>

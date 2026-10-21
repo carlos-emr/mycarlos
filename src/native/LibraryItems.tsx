@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Icon } from "../Icon";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
@@ -20,6 +21,9 @@ interface LibraryItemsProps {
   onOpenRecord: (recordId: string) => void;
   onRenameFolder: (folder: VaultFolder) => void;
   onToggleSelected: (recordId: string) => void;
+  /** Prototype: the person a shared document looks like it is for, shown
+   * under its row in the list. */
+  suggestionFor?: (record: VaultRecord) => ReactNode;
 }
 
 function EmptyState({ searching }: { searching: boolean }) {
@@ -53,6 +57,7 @@ export function LibraryItems({
   onOpenRecord,
   onRenameFolder,
   onToggleSelected,
+  suggestionFor,
 }: LibraryItemsProps) {
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
   return view === "list" ? (
@@ -166,6 +171,7 @@ export function LibraryItems({
             >
               Details
             </button>
+            {suggestionFor?.(record)}
           </article>
         );
       })}

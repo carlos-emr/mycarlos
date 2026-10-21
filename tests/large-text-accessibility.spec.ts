@@ -298,6 +298,10 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
             notPdf: [],
           };
         }
+        // Prototype (file shared documents to the right person): no clinic
+        // deliveries, and no name found on a shared document.
+        if (command === "clinic_deliveries") return [];
+        if (command === "shared_name_found") return null;
         // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
         // Kept as well as thrown: a screen showing an error notice could still pass axe.
