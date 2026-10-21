@@ -12,8 +12,11 @@ production end-of-support schedule remain an owner decision and release gate.
 
 ## Diagnostics and data egress
 
-- Analytics, crash upload, remote logging and telemetry are disabled.
-- The allow-list of fields permitted to leave the device is therefore the empty set.
+- Analytics, crash upload, remote logging and telemetry are disabled; their allow-list of fields
+  permitted to leave the device is the empty set.
+- The only planned network use is pickup from the portal the patient links (carlos-portal #41).
+  The fields it may send are listed under [Portal pickup](#portal-pickup-what-may-leave-the-device);
+  nothing else may leave the device.
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.
@@ -63,5 +66,52 @@ require credentials, infrastructure and named owners that this evaluation does n
 Before each promotion gate, seed unique fake names and byte strings, exercise create/import/lock/
 background/export/delete/failure/crash flows, and inspect app storage, platform backups/indexes,
 recent files, logs, crash artifacts, swap/app snapshots, clipboard, notifications and generated
-support artifacts. Any canary outside the explicitly selected plaintext export destination fails the
-gate. Physical-device evidence must record OS/app version, exact build hash, steps and artifact hash.
+support artifacts, and, once portal pickup exists, captured network traffic. Any canary outside the
+explicitly selected plaintext export destination fails the gate. Physical-device evidence must record
+OS/app version, exact build hash, steps and artifact hash.
+
+## Portal pickup: what may leave the device
+
+Planned with carlos-portal #41 and not built yet. The field names are the shared spec's
+(carlos-portal#42, `docs/architecture/mycarlos-delivery.md`); this list is the allow-list that the
+pickup code must meet ([THREAT_MODEL](THREAT_MODEL.md) NET-01 to NET-03 and DEL-01 to DEL-06).
+myCarlos may send only these, and only to the `/api/mycarlos/` routes of the HTTPS address of the
+portal the patient linked:
+
+- **When linking** (`POST /api/mycarlos/link`): the `link_id` and `code` from the portal's code or
+  QR code; a `device_name`, shown to the patient under Linked devices; the public halves of this
+  link's per-link device keys (`x25519_public_key`, `ed25519_public_key`), a pair made fresh for
+  this link so no two portals see the same key ID and clinics cannot link the same device; and a
+  link assertion signed by the new key (`aud`, `iss`, `kid`, `jti`, `iat`, `exp`,
+  `request_hash`).
+- **With every device request:** the `X-MyCarlos-Device-Assertion` header, signed by this link's
+  Ed25519 key: `aud`, `iss`, `kid` (this link's `device_key_id`), `recipient_id` (random per
+  patient account, never derived from the health card number), `jti`, `iat`, `exp`,
+  `request_hash`, and optionally `vault_head`.
+- **When picking up:** `GET /api/mycarlos/deliveries` (the list, also the check-in) and
+  `GET /api/mycarlos/deliveries/{delivery_id}` for each copy.
+- **Receipts** (`POST …/{delivery_id}/receipt`): `typ`, `aud`, `delivery_id`, `recipient_id`,
+  `device_key_id`, `ciphertext_sha256`, `document_sha256`, `picked_up_at`, `vault_head` and `jti`,
+  signed by this link's Ed25519 key. A receipt is sent only after the document is safely in the
+  vault, and a re-sent one is the kept receipt, byte for byte.
+- **When refusing a copy:** nothing. A refused copy is not filed and no receipt is sent; it expires
+  on the portal, and CARLOS shows "not picked up".
+
+It never sends document content, file names, titles, patient or person names, birth dates, vault
+or record IDs, passphrase-derived values, vault keys, private keys, logs, or details of the device
+or operating system; its user agent names only myCarlos and its version.
+
+Two of these fields need care before the pickup code lands:
+- **`device_name`:** the patient chooses it; myCarlos suggests a plain one (such as "myCarlos on
+  Windows") that does not include the computer's, phone's or account's own name.
+- **`vault_head`:** the vault history's head hash (decision L). It is the same for every link of a
+  vault at a given moment, so two clinics could tie their links to one device. Whether it is sent
+  as is, or derived per link, is open (THREAT_MODEL NET-03).
+
+The network still sees the device's IP address, the portal's host name, and the times and sizes of
+requests. The portal sends a `Date` header, so myCarlos can tell the patient when its clock is far
+off.
+
+If a portal or a clinic key may be compromised, follow the incident steps above. The clinic
+revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a revoked
+key, and patients can remove a device under Account → Linked devices in the portal.
