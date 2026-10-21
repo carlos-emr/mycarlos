@@ -2,6 +2,8 @@
 mod camera_permission;
 mod idle;
 mod photo;
+#[allow(dead_code)] // Wired to the import flow in a later step (#55).
+mod signed_pdf;
 mod throttle;
 mod vault;
 #[cfg(windows)]
