@@ -54,6 +54,12 @@ const SECTION_CHOICES: ReadonlyArray<[NativeSection, string]> = [
   ["security", "Security"],
   ["preferences", "Preferences"],
 ];
+/** With several people, Shared with me is the whole vault's: its tab comes
+ * first, before the chosen person's sections. */
+const SHARED_FIRST_CHOICES = [
+  ...SECTION_CHOICES.filter(([value]) => value === "shared"),
+  ...SECTION_CHOICES.filter(([value]) => value !== "shared"),
+];
 
 /** The people a vault keeps records for: every profile but Shared with me's
  * (#61). */
@@ -961,18 +967,20 @@ export function VaultLibrary({
                 asking,
             )}
           >
-            {SECTION_CHOICES.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-current={section === value ? "page" : undefined}
-                onClick={() => setSection(value)}
-              >
-                {value === "shared" && sharedNew
-                  ? `${label} (${sharedNew} new)`
-                  : label}
-              </button>
-            ))}
+            {(people.length > 1 ? SHARED_FIRST_CHOICES : SECTION_CHOICES).map(
+              ([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-current={section === value ? "page" : undefined}
+                  onClick={() => setSection(value)}
+                >
+                  {value === "shared" && sharedNew
+                    ? `${label} (${sharedNew} new)`
+                    : label}
+                </button>
+              ),
+            )}
           </nav>
 
           <div
@@ -987,12 +995,19 @@ export function VaultLibrary({
             )}
           >
             <LibrarySidebar
-              profileName={profile?.displayName ?? "Private vault"}
+              profileName={
+                (!sharedOutside && profile?.displayName) || "Private vault"
+              }
               profileChoice={
+                // While the vault's Shared with me is open, no person is
+                // chosen; choosing one opens their records.
                 <ProfileChoice
                   profiles={people}
-                  profileId={profileId}
-                  onChoose={setProfileId}
+                  profileId={sharedOutside ? "" : profileId}
+                  onChoose={(chosen) => {
+                    setProfileId(chosen);
+                    if (sharedOutside) setSection("records");
+                  }}
                 />
               }
               section={section}
@@ -1008,6 +1023,10 @@ export function VaultLibrary({
               }}
               sharedNew={sharedNew}
               sharedInside={people.length <= 1}
+              vaultTotals={{
+                documents: snapshot.records.length,
+                folders: snapshot.folders.length,
+              }}
               onOpenShared={() => {
                 setSection("shared");
                 setCurrentFolderId(null);

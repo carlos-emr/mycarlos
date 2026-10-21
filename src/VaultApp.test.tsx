@@ -739,10 +739,19 @@ describe("durable vault UI", () => {
     const folder = await screen.findByRole("button", {
       name: "Shared with me, 1 new",
     });
-    const label = screen.getByText("Folders", { selector: ".nav-label" });
+    // It is the vault's (Ben, 21 Oct): above the people in the sidebar, and
+    // in no person's section, so it is not taken for the chosen person's.
+    const sidebar = folder.closest("aside")!;
+    const patients = within(sidebar).getByRole("group", { name: "Patient" });
     expect(
-      label.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_PRECEDING,
+      patients.compareDocumentPosition(folder) &
+        Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Record library" }),
+      ).queryByRole("button", { name: /^Shared with me/ }),
+    ).toBeNull();
     // It is no one: not a patient to choose.
     for (const group of screen.getAllByRole("group", { name: "Patient" }))
       expect(
@@ -757,6 +766,12 @@ describe("durable vault UI", () => {
         /They are in no one's records until you move each one to the person it is for\./,
       ),
     ).toBeVisible();
+    // While it is open, no person is chosen.
+    for (const person of within(patients).getAllByRole("button"))
+      expect(person).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(sidebar).queryByText("Jamie", { selector: ".brand small" }),
+    ).toBeNull();
     // No person's path or picker above it.
     expect(
       within(screen.getByRole("main")).queryByRole("group", {
@@ -789,6 +804,95 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText("FAKE_Xray.pdf moved to Morgan's records."),
     ).toBeVisible();
+  });
+
+  it("with several people, lists no person's records while Shared with me is open, and counts the whole vault (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["Jamie", "Morgan"],
+      ["FAKE_Xray.pdf"],
+    );
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Labs",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "record-morgan",
+      profileId: "profile-2",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const shared = await screen.findByRole("button", {
+      name: "Shared with me, 1 new",
+    });
+    const sidebar = shared.closest("aside")!;
+    const library = within(sidebar).getByRole("navigation", {
+      name: "Record library",
+    });
+    const footer = () => sidebar.querySelector(".storage small");
+    // Jamie's records, folders and counts.
+    expect(
+      within(library).getByRole("button", { name: /^My records/ }),
+    ).toBeVisible();
+    expect(
+      within(library).getByRole("button", { name: /FAKE Labs/ }),
+    ).toBeVisible();
+    expect(footer()).toHaveTextContent("0 documents · 1 folder");
+
+    await user.click(shared);
+    await screen.findByRole("heading", { name: "Shared with me" });
+    // No person is chosen: none of their records or folders, and the footer
+    // counts the whole vault.
+    expect(
+      within(library).queryByRole("button", { name: /^My records/ }),
+    ).toBeNull();
+    expect(
+      within(library).queryByRole("button", { name: /FAKE Labs/ }),
+    ).toBeNull();
+    expect(within(library).queryByText("Folders")).toBeNull();
+    expect(footer()).toHaveTextContent("2 documents · 1 folder");
+
+    await user.click(
+      within(within(sidebar).getByRole("group", { name: "Patient" })).getByRole(
+        "button",
+        { name: "Morgan" },
+      ),
+    );
+    expect(
+      within(library).getByRole("button", { name: /^My records/ }),
+    ).toBeVisible();
+    expect(footer()).toHaveTextContent("1 document · 0 folders");
+  });
+
+  it("with several people, opens a person's records when one is chosen from Shared with me (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(["Jamie", "Morgan"], ["FAKE_Xray.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+    );
+    await screen.findByRole("heading", { name: "Shared with me" });
+    const patients = within(
+      screen.getByRole("button", { name: "Shared with me" }).closest("aside")!,
+    ).getByRole("group", { name: "Patient" });
+    await user.click(within(patients).getByRole("button", { name: "Morgan" }));
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
+    expect(
+      within(patients).getByRole("button", { name: "Morgan" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("moves nothing when a drag in Shared with me is let go over the list, and moves to the folder it is dropped on (#61)", async () => {

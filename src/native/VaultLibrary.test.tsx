@@ -271,19 +271,35 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       const sections = screen.getByRole("navigation", { name: "Section" });
       const tabs = within(sections).getAllByRole("button");
       // Shared with me says how many files are new there (#61).
+      // With several people, Shared with me is the vault's: its tab comes
+      // first, before the chosen person's sections (Ben, 21 Oct).
       expect(tabs.map((tab) => tab.textContent)).toEqual([
-        "My records",
         "Shared with me (2 new)",
+        "My records",
         "Security",
         "Preferences",
       ]);
-      expect(tabs[0]).toHaveAttribute("aria-current", "page");
+      expect(tabs[1]).toHaveAttribute("aria-current", "page");
       // The sidebar is hidden here, so the patient buttons sit under the path:
       // exactly one Patient group is in reach.
       expect(screen.getAllByRole("group", { name: "Patient" })).toHaveLength(1);
       fireEvent.click(tabs[2]);
       expect(tabs[2]).toHaveAttribute("aria-current", "page");
-      expect(tabs[0]).not.toHaveAttribute("aria-current");
+      expect(tabs[1]).not.toHaveAttribute("aria-current");
+      cleanup();
+
+      // With one person, it stays a folder of theirs, after My records.
+      renderLibrary(snapshot, 2);
+      expect(
+        within(screen.getByRole("navigation", { name: "Section" }))
+          .getAllByRole("button")
+          .map((tab) => tab.textContent),
+      ).toEqual([
+        "My records",
+        "Shared with me (2 new)",
+        "Security",
+        "Preferences",
+      ]);
     } finally {
       await page.viewport(1100, 760);
     }
