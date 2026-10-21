@@ -12,6 +12,7 @@ import {
   type VaultBridge,
   type VaultSnapshot,
   type VaultStatus,
+  type BoxKey,
 } from "./vault";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
@@ -579,7 +580,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
    * so that a refusal of it says which box to check. */
-  const run = async (operation: () => Promise<void>, boxes?: string[]) => {
+  const run = async (operation: () => Promise<void>, boxes?: BoxKey[]) => {
     setBusy(true);
     setNotice("");
     transferHold.operationStarted();
@@ -713,8 +714,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // vault refuses (#69).
   const setupBoxes = (profile: string, passphrase: string) =>
     boxesWithControlCharacters([
-      [profile, "the name"],
-      [passphrase, "the passphrase"],
+      [profile, "box.name"],
+      [passphrase, "box.passphrase"],
     ]);
 
   if (status === "absent") {
@@ -810,7 +811,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : t("notice.unlocked"),
               outcome,
             });
-          }, ["the passphrase"])
+          }, ["box.passphrase"])
         }
         onRecover={(recoveryKey, newPassphrase) =>
           run(async () => {
@@ -828,7 +829,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 : t("notice.recoveredReadOnly"),
               outcome,
             });
-          }, ["the recovery key", "the new passphrase"])
+          }, ["box.recoveryKey", "box.newPassphrase"])
         }
         onReset={(confirmation) =>
           run(async () => {
@@ -844,7 +845,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             } else {
               setNotice(t("notice.eraseCancelled"));
             }
-          }, ["the words you typed"])
+          }, ["box.typedWords"])
         }
       />
     );

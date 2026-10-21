@@ -400,4 +400,25 @@ export const ptBR: Record<MessageKey, Message> = {
   "notice.recoveredReadOnly":
     "Cofre aberto somente para leitura com sua chave de recuperação, e sua frase secreta não mudou. Veja o aviso na biblioteca para saber o que fazer.",
   "notice.eraseCancelled": "O apagamento do cofre foi cancelado. Nada mudou.",
+
+  // What to check after a refusal, and other errors the app words itself
+  "box.name": "o nome",
+  "box.passphrase": "a frase secreta",
+  "box.currentPassphrase": "a frase secreta atual",
+  "box.newPassphrase": "a nova frase secreta",
+  "box.recoveryKey": "a chave de recuperação",
+  "box.typedWords": "as palavras digitadas",
+  "box.profileName": "o nome do perfil",
+  "box.folderName": "o nome da pasta",
+  "error.checkBoxes": "Verifique {boxes} e tente de novo.",
+  "error.retryIn": {
+    one: "Tente de novo em {count} segundo.",
+    many: "Tente de novo em {count} de segundos.",
+    other: "Tente de novo em {count} segundos.",
+  },
+  "error.fallback": "Não foi possível concluir a operação no cofre.",
+  "error.damaged":
+    "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Se você tiver esse documento em outro lugar, exclua-o aqui e adicione-o de novo; se não, excluí-lo permite fazer cópia de todo o resto.",
+  "error.damaged.where": "adicionado em {date}",
+  "error.damaged.whereFor": "adicionado em {date}, nos documentos de {person}",
 };

@@ -390,6 +390,26 @@ export const en = {
   "notice.recoveredReadOnly":
     "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
   "notice.eraseCancelled": "Vault erase cancelled. Nothing changed.",
+
+  // What to check after a refusal, and other errors the app words itself
+  "box.name": "the name",
+  "box.passphrase": "the passphrase",
+  "box.currentPassphrase": "the current passphrase",
+  "box.newPassphrase": "the new passphrase",
+  "box.recoveryKey": "the recovery key",
+  "box.typedWords": "the words you typed",
+  "box.profileName": "the profile name",
+  "box.folderName": "the folder name",
+  "error.checkBoxes": "Check {boxes}, then try again.",
+  "error.retryIn": {
+    one: "Try again in {count} second.",
+    other: "Try again in {count} seconds.",
+  },
+  "error.fallback": "The vault operation could not be completed.",
+  "error.damaged":
+    'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.',
+  "error.damaged.where": "added {date}",
+  "error.damaged.whereFor": "added {date}, in {person}'s records",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

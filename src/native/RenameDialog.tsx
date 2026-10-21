@@ -122,7 +122,7 @@ export function RenameDialog({
       await onSave(fullName);
       onClose();
     } catch (failure) {
-      setError(vaultErrorMessage(failure, ["the name"]));
+      setError(vaultErrorMessage(failure, ["box.name"]));
     } finally {
       setSaving(false);
     }

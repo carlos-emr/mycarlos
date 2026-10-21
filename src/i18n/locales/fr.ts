@@ -405,4 +405,25 @@ export const fr: Record<MessageKey, Message> = {
   "notice.recoveredReadOnly":
     "Coffre-fort ouvert en lecture seule avec votre clé de récupération, et votre phrase secrète n’a pas changé. Consultez l’avis dans la bibliothèque pour savoir quoi faire.",
   "notice.eraseCancelled": "Effacement du coffre-fort annulé. Rien n’a changé.",
+
+  // What to check after a refusal, and other errors the app words itself
+  "box.name": "le nom",
+  "box.passphrase": "la phrase secrète",
+  "box.currentPassphrase": "la phrase secrète actuelle",
+  "box.newPassphrase": "la nouvelle phrase secrète",
+  "box.recoveryKey": "la clé de récupération",
+  "box.typedWords": "les mots saisis",
+  "box.profileName": "le nom du profil",
+  "box.folderName": "le nom du dossier",
+  "error.checkBoxes": "Vérifiez {boxes}, puis réessayez.",
+  "error.retryIn": {
+    one: "Réessayez dans {count} seconde.",
+    many: "Réessayez dans {count} de secondes.",
+    other: "Réessayez dans {count} secondes.",
+  },
+  "error.fallback": "L’opération sur le coffre-fort n’a pas pu aboutir.",
+  "error.damaged":
+    "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Si vous avez ce document ailleurs, supprimez-le ici et ajoutez-le de nouveau ; sinon, le supprimer vous permet de sauvegarder tout le reste.",
+  "error.damaged.where": "ajouté le {date}",
+  "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
 };

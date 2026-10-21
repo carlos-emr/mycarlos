@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
+import { setLocaleOverride } from "./i18n";
 import {
   boxesWithControlCharacters,
   createVaultBridge,
@@ -179,35 +180,41 @@ describe("error messages", () => {
       code: "invalid",
       message: "Something you typed wasn't accepted. Check it and try again.",
     };
-    expect(vaultErrorMessage(refused, ["the folder name"])).toBe(
+    expect(vaultErrorMessage(refused, ["box.folderName"])).toBe(
       "Check the folder name, then try again.",
     );
     expect(
-      vaultErrorMessage(refused, ["the recovery key", "the new passphrase"]),
+      vaultErrorMessage(refused, ["box.recoveryKey", "box.newPassphrase"]),
     ).toBe("Check the recovery key and the new passphrase, then try again.");
-    expect(vaultErrorMessage(refused, ["a", "b", "c"])).toBe(
-      "Check a, b and c, then try again.",
+    expect(
+      vaultErrorMessage(refused, [
+        "box.name",
+        "box.passphrase",
+        "box.recoveryKey",
+      ]),
+    ).toBe(
+      "Check the name, the passphrase and the recovery key, then try again.",
     );
     // Without boxes, and for any other failure, the message is as it was.
     expect(vaultErrorMessage(refused)).toBe(refused.message);
     expect(vaultErrorMessage(refused, [])).toBe(refused.message);
     expect(
-      vaultErrorMessage({ code: "storage", message: "No." }, ["the name"]),
+      vaultErrorMessage({ code: "storage", message: "No." }, ["box.name"]),
     ).toBe("No.");
   });
 
   it("names at setup only a box whose text the vault refuses (#69)", () => {
     expect(
       boxesWithControlCharacters([
-        ["Jamie", "the name"],
-        ["river azimuth cobalt\tsparrow", "the passphrase"],
+        ["Jamie", "box.name"],
+        ["river azimuth cobalt\tsparrow", "box.passphrase"],
       ]),
-    ).toEqual(["the passphrase"]);
+    ).toEqual(["box.passphrase"]);
     // Nothing typed that the vault refuses: no box takes the blame.
     expect(
       boxesWithControlCharacters([
-        ["Jamie", "the name"],
-        ["river azimuth cobalt sparrow", "the passphrase"],
+        ["Jamie", "box.name"],
+        ["river azimuth cobalt sparrow", "box.passphrase"],
       ]),
     ).toBeUndefined();
   });
@@ -229,5 +236,82 @@ describe("error messages", () => {
 
   it("gives today on the patient's own calendar", () => {
     expect(localDateText(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
+  });
+});
+
+describe("errors the app words itself, in the language in use (#46)", () => {
+  afterEach(() => setLocaleOverride(null));
+  const refused = { code: "invalid", message: "Native text." };
+
+  it("names the boxes to check, joined as the language joins a list", () => {
+    setLocaleOverride("fr");
+    expect(
+      vaultErrorMessage(refused, ["box.recoveryKey", "box.newPassphrase"]),
+    ).toBe(
+      "Vérifiez la clé de récupération et la nouvelle phrase secrète, puis réessayez.",
+    );
+    setLocaleOverride("pl");
+    expect(
+      vaultErrorMessage(refused, [
+        "box.name",
+        "box.passphrase",
+        "box.recoveryKey",
+      ]),
+    ).toBe(
+      "Proszę sprawdzić nazwę, hasło główne i klucz odzyskiwania, a potem spróbować ponownie.",
+    );
+    setLocaleOverride("es");
+    expect(vaultErrorMessage(refused, ["box.folderName"])).toBe(
+      "Revise el nombre de la carpeta y vuelva a intentarlo.",
+    );
+  });
+
+  it("says how long to wait with the language's plural forms", () => {
+    setLocaleOverride("pl");
+    const wait = (ms: number) =>
+      vaultErrorMessage({
+        code: "too_many_attempts",
+        message: "X",
+        retryAfterMs: ms,
+      });
+    expect(wait(1000)).toBe("X Proszę spróbować ponownie za 1 sekundę.");
+    expect(wait(2000)).toBe("X Proszę spróbować ponownie za 2 sekundy.");
+    expect(wait(5000)).toBe("X Proszę spróbować ponownie za 5 sekund.");
+    setLocaleOverride("pt-BR");
+    expect(wait(1000)).toBe("X Tente de novo em 1 segundo.");
+  });
+
+  it("words its own fallback, and a backup refused over a damaged document", () => {
+    setLocaleOverride("es");
+    expect(vaultErrorMessage(null)).toBe(
+      "No se pudo completar la operación en la bóveda.",
+    );
+    setLocaleOverride("pt-BR");
+    const vault = {
+      profiles: [
+        { id: "p1", displayName: "Jamie", createdAtMs: 1 },
+        { id: "p2", displayName: "Avery", createdAtMs: 1 },
+      ],
+      records: [
+        {
+          id: "record-2",
+          profileId: "p2",
+          folderIds: [],
+          displayName: "FAKE_Scan.pdf",
+          sourceLabel: "Manual import",
+          mediaType: "application/pdf",
+          plaintextSize: 10,
+          importedAtMs: Date.UTC(2026, 0, 15, 12),
+          available: true,
+        },
+      ],
+    };
+    const named = namedDamage(
+      { code: "damaged_document", message: "Native.", recordId: "record-2" },
+      vault,
+    ) as { message: string };
+    expect(named.message).toMatch(
+      /^Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan\.pdf” \(adicionado em .+, nos documentos de Avery\)/,
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getLocale, t, type MessageKey } from "./i18n";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -253,18 +254,26 @@ interface PublicError {
 }
 
 /** "a", "a and b", "a, b and c". */
-const listed = (items: string[]) =>
-  items.length < 2
-    ? (items[0] ?? "")
-    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+/** A box the patient typed in, named in the language in use ("the folder
+ * name"), for "Check …, then try again." */
+export type BoxKey = Extract<MessageKey, `box.${string}`>;
+
+/** "a, b and c" in the language in use. English has no comma before "and",
+ * as before. */
+const listed = (items: string[]) => {
+  const locale = getLocale();
+  return new Intl.ListFormat(locale === "en" ? "en-GB" : locale, {
+    type: "conjunction",
+  }).format(items);
+};
 
 /** Of the boxes named with what was typed in them, those holding a control
  * character: at setup, the one refusal of typed text that the screen does not
  * catch first. None: a refusal is not about what was typed, as far as the
  * screen can tell, and is not blamed on a box. */
 export function boxesWithControlCharacters(
-  typed: [value: string, box: string][],
-): string[] | undefined {
+  typed: [value: string, box: BoxKey][],
+): BoxKey[] | undefined {
   const boxes = typed
     .filter(([value]) => /\p{Cc}/u.test(value))
     .map(([, box]) => box);
@@ -274,9 +283,11 @@ export function boxesWithControlCharacters(
 /** The message for a failed vault operation. `boxes` names, in plain words,
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */
-export function vaultErrorMessage(error: unknown, boxes?: string[]): string {
+export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
   if (boxes?.length && hasErrorCode(error, "invalid"))
-    return `Check ${listed(boxes)}, then try again.`;
+    return t("error.checkBoxes", {
+      boxes: listed(boxes.map((box) => t(box))),
+    });
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {
@@ -284,14 +295,12 @@ export function vaultErrorMessage(error: unknown, boxes?: string[]): string {
       if (typeof note === "string") parts.push(note);
       if (typeof retryAfterMs === "number" && retryAfterMs > 0) {
         const seconds = Math.ceil(retryAfterMs / 1000);
-        parts.push(
-          `Try again in ${seconds} second${seconds === 1 ? "" : "s"}.`,
-        );
+        parts.push(t("error.retryIn", { count: seconds }));
       }
       return parts.join(" ");
     }
   }
-  return "The vault operation could not be completed.";
+  return t("error.fallback");
 }
 
 /** A backup refused over one document that no longer reads, named: the
@@ -310,12 +319,15 @@ export function namedDamage(
     vault.profiles.length > 1
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
-  const where = `added ${new Date(record.importedAtMs).toLocaleDateString()}${profile ? `, in ${profile.displayName}'s records` : ""}`;
+  const date = new Date(record.importedAtMs).toLocaleDateString();
+  const where = profile
+    ? t("error.damaged.whereFor", { date, person: profile.displayName })
+    : t("error.damaged.where", { date });
   // What may be left where it was being saved still holds.
   const { note } = error as PublicError;
   return {
     code: "damaged_document",
-    message: `No backup was saved: the document "${record.displayName}" (${where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+    message: t("error.damaged", { name: record.displayName, where }),
     ...(typeof note === "string" && { note }),
   };
 }

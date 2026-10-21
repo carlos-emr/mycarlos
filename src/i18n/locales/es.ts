@@ -401,4 +401,25 @@ export const es: Record<MessageKey, Message> = {
   "notice.recoveredReadOnly":
     "Bóveda abierta en solo lectura con su clave de recuperación; su frase de contraseña no cambió. Consulte el aviso en la biblioteca para saber qué hacer.",
   "notice.eraseCancelled": "Borrado de la bóveda cancelado. No cambió nada.",
+
+  // What to check after a refusal, and other errors the app words itself
+  "box.name": "el nombre",
+  "box.passphrase": "la frase de contraseña",
+  "box.currentPassphrase": "la frase de contraseña actual",
+  "box.newPassphrase": "la nueva frase de contraseña",
+  "box.recoveryKey": "la clave de recuperación",
+  "box.typedWords": "las palabras escritas",
+  "box.profileName": "el nombre del perfil",
+  "box.folderName": "el nombre de la carpeta",
+  "error.checkBoxes": "Revise {boxes} y vuelva a intentarlo.",
+  "error.retryIn": {
+    one: "Vuelva a intentarlo en {count} segundo.",
+    many: "Vuelva a intentarlo en {count} de segundos.",
+    other: "Vuelva a intentarlo en {count} segundos.",
+  },
+  "error.fallback": "No se pudo completar la operación en la bóveda.",
+  "error.damaged":
+    "No se guardó ninguna copia de seguridad: el documento «{name}» ({where}) está dañado y ya no se puede leer, y una copia que lo contenga no se podría restaurar. No se cambió nada. Si tiene ese documento en otro lugar, elimínelo aquí y vuelva a añadirlo; si no, eliminarlo le permite hacer una copia de todo lo demás.",
+  "error.damaged.where": "añadido el {date}",
+  "error.damaged.whereFor": "añadido el {date}, en los documentos de {person}",
 };

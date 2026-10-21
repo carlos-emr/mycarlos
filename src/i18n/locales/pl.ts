@@ -414,4 +414,26 @@ export const pl: Record<MessageKey, Message> = {
   "notice.recoveredReadOnly":
     "Sejf otwarto kluczem odzyskiwania w trybie tylko do odczytu; hasło główne się nie zmieniło. Co zrobić, opisuje komunikat w bibliotece.",
   "notice.eraseCancelled": "Anulowano usuwanie sejfu. Nic się nie zmieniło.",
+
+  // What to check after a refusal, and other errors the app words itself
+  "box.name": "nazwę",
+  "box.passphrase": "hasło główne",
+  "box.currentPassphrase": "obecne hasło główne",
+  "box.newPassphrase": "nowe hasło główne",
+  "box.recoveryKey": "klucz odzyskiwania",
+  "box.typedWords": "wpisane słowa",
+  "box.profileName": "nazwę profilu",
+  "box.folderName": "nazwę folderu",
+  "error.checkBoxes": "Proszę sprawdzić {boxes}, a potem spróbować ponownie.",
+  "error.retryIn": {
+    one: "Proszę spróbować ponownie za {count} sekundę.",
+    few: "Proszę spróbować ponownie za {count} sekundy.",
+    many: "Proszę spróbować ponownie za {count} sekund.",
+    other: "Proszę spróbować ponownie za {count} sekundy.",
+  },
+  "error.fallback": "Nie udało się wykonać operacji na sejfie.",
+  "error.damaged":
+    "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Jeśli ten dokument jest dostępny gdzie indziej, proszę go tutaj usunąć i dodać ponownie; jeśli nie, usunięcie go pozwoli zrobić kopię wszystkiego innego.",
+  "error.damaged.where": "dodany {date}",
+  "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
 };
