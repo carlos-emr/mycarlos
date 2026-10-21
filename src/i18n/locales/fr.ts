@@ -361,7 +361,7 @@ export const fr: Record<MessageKey, Message> = {
     "Choisissez ce qui vous convient avant la configuration. Chaque choix s’applique tout de suite.",
   "comfort.sample":
     "Voici à quoi ressemble le texte dans myCarlos. Appuyez sur − ou + jusqu’à ce qu’il soit facile à lire.",
-  "comfort.textSizeFollowsDevice":
+  "textSize.followsDevice":
     "Ici, la taille du texte suit votre appareil : son propre réglage de taille du texte, ou le zoom du navigateur.",
   "comfort.autoLock.body":
     "myCarlos se verrouille de lui-même après ce délai sans utilisation, pour que personne d’autre ne voie vos documents. Choisissez entre 1 et 15 minutes.",
@@ -426,4 +426,40 @@ export const fr: Record<MessageKey, Message> = {
     "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Si vous avez ce document ailleurs, supprimez-le ici et ajoutez-le de nouveau ; sinon, le supprimer vous permet de sauvegarder tout le reste.",
   "error.damaged.where": "ajouté le {date}",
   "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
+
+  // The warning before the automatic lock (#68)
+  "lockWarning.title": {
+    one: "myCarlos se verrouillera dans {count} seconde pour protéger vos documents.",
+    many: "myCarlos se verrouillera dans {count} de secondes pour protéger vos documents.",
+    other:
+      "myCarlos se verrouillera dans {count} secondes pour protéger vos documents.",
+  },
+  "lockWarning.help":
+    "Pour le garder ouvert, appuyez sur {keepOpen} ou sur n’importe quelle touche.",
+  "lockWarning.left": {
+    one: "Il reste {count} seconde.",
+    many: "Il reste {count} de secondes.",
+    other: "Il reste {count} secondes.",
+  },
+  "lockWarning.keepOpen": "Garder ouvert",
+
+  // Settings > Preferences, and Appearance (#47)
+  "preferences.subtitle": "L’apparence de myCarlos sur cet ordinateur",
+  "appearance.title": "Apparence",
+  "appearance.help":
+    "{system} suit l’apparence claire ou sombre de votre appareil. Le contraste élevé suit automatiquement votre appareil.",
+  "appearance.system": "Système",
+  "appearance.light": "Clair",
+  "appearance.dark": "Sombre",
+
+  // A document shown as a photo
+  "photo.eyebrow": "Photo",
+  "photo.alt": "Photo : {name}",
+  "photo.area":
+    "Photo. Agrandissez pour voir les détails ; faites glisser ou défilez pour vous déplacer.",
+  "photo.fitted": "Ajustée à la fenêtre.",
+  "photo.zoomed": "Agrandie à {percent} %.",
+  "photo.zoomOut": "Réduire",
+  "photo.zoomIn": "Agrandir",
+  "photo.close": "Fermer",
 };

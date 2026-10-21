@@ -41,7 +41,7 @@ export function ComfortSetup({
             <section className="setting-row">
               <div>
                 <h2>{t("textSize.title")}</h2>
-                <p>{t("comfort.textSizeFollowsDevice")}</p>
+                <p>{t("textSize.followsDevice")}</p>
               </div>
             </section>
           )}

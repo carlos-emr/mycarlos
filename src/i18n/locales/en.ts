@@ -348,7 +348,7 @@ export const en = {
     "Choose what suits you before you set up. Each choice works at once.",
   "comfort.sample":
     "This is how text looks in myCarlos. Press − or + until it is easy to read.",
-  "comfort.textSizeFollowsDevice":
+  "textSize.followsDevice":
     "Here, text size follows your device: its own text size setting, or the browser's zoom.",
   "comfort.autoLock.body":
     "myCarlos locks itself when it has not been used for this long, so that nobody else can see your records. Choose from 1 to 15 minutes.",
@@ -410,6 +410,38 @@ export const en = {
     'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.',
   "error.damaged.where": "added {date}",
   "error.damaged.whereFor": "added {date}, in {person}'s records",
+
+  // The warning before the automatic lock (#68)
+  "lockWarning.title": {
+    one: "myCarlos will lock in {count} second to keep your records private.",
+    other:
+      "myCarlos will lock in {count} seconds to keep your records private.",
+  },
+  "lockWarning.help": "To keep it open, press {keepOpen}, or any key.",
+  "lockWarning.left": {
+    one: "{count} second left.",
+    other: "{count} seconds left.",
+  },
+  "lockWarning.keepOpen": "Keep open",
+
+  // Settings > Preferences, and Appearance (#47)
+  "preferences.subtitle": "How myCarlos looks on this computer",
+  "appearance.title": "Appearance",
+  "appearance.help":
+    "{system} follows your device's light or dark appearance. High contrast follows your device automatically.",
+  "appearance.system": "System",
+  "appearance.light": "Light",
+  "appearance.dark": "Dark",
+
+  // A document shown as a photo
+  "photo.eyebrow": "Photo",
+  "photo.alt": "Photo: {name}",
+  "photo.area": "Photo. Zoom in to see details; drag or scroll to move around.",
+  "photo.fitted": "Fitted to the window.",
+  "photo.zoomed": "Zoomed to {percent}%.",
+  "photo.zoomOut": "Zoom out",
+  "photo.zoomIn": "Zoom in",
+  "photo.close": "Close",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

@@ -19,6 +19,11 @@ import { AutoLockSetting } from "../native/AutoLockSetting";
 import { ProfileChoice } from "../native/ProfileChoice";
 import { readTypedZoom } from "../native/zoom";
 import { ComfortSetup } from "../native/ComfortSetup";
+import { LockWarning } from "../native/LockWarning";
+import { PreferencesSettings } from "../native/PreferencesSettings";
+import { PhotoViewer } from "../native/PhotoViewer";
+import { AppearanceProvider } from "../AppearanceProvider";
+import { startAppearance } from "../appearance";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 
@@ -295,7 +300,7 @@ describe("the first setup's comfort screen in each language", () => {
         screen.getByRole("heading", { name: tr("textSize.title") }),
       ).toBeVisible();
       expect(
-        screen.getByText(tr("comfort.textSizeFollowsDevice"), exactly),
+        screen.getByText(tr("textSize.followsDevice"), exactly),
       ).toBeVisible();
       expect(
         screen.getByRole("heading", { name: tr("security.autoLock.title") }),
@@ -326,4 +331,106 @@ describe("the first setup's comfort screen in each language", () => {
         expect(screen.queryByText(/comfortable for you/)).toBeNull();
     });
   }
+});
+
+describe("the lock warning, Preferences and the photo viewer in each language", () => {
+  const exactly = {
+    normalizer: getDefaultNormalizer({ collapseWhitespace: false }),
+  };
+  for (const locale of LOCALES) {
+    it(`shows them in ${locale}`, () => {
+      setLocaleOverride(locale);
+      const tr = (
+        key: Parameters<typeof translate>[1],
+        params?: Parameters<typeof translate>[2],
+      ) => translate(locale, key, params);
+
+      const warning = render(<LockWarning seconds={30} onKeepOpen={vi.fn()} />);
+      expect(
+        screen.getByRole("alertdialog", {
+          name: tr("lockWarning.title", { count: 30 }),
+        }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(
+          tr("lockWarning.help", { keepOpen: tr("lockWarning.keepOpen") }),
+          exactly,
+        ),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: tr("lockWarning.keepOpen") }),
+      ).toHaveFocus();
+      warning.unmount();
+
+      const preferences = render(
+        <AppearanceProvider appearance={startAppearance()}>
+          <PreferencesSettings />
+        </AppearanceProvider>,
+      );
+      expect(
+        screen.getByRole("heading", {
+          level: 1,
+          name: tr("sidebar.preferences"),
+        }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(tr("preferences.subtitle"), exactly),
+      ).toBeVisible();
+      const group = screen.getByRole("group", { name: tr("appearance.title") });
+      expect(
+        within(group)
+          .getAllByRole("radio")
+          .map((choice) => choice.closest("label")!.textContent),
+      ).toEqual([
+        tr("appearance.system"),
+        tr("appearance.light"),
+        tr("appearance.dark"),
+      ]);
+      expect(
+        screen.getByText(
+          tr("appearance.help", { system: tr("appearance.system") }),
+          exactly,
+        ),
+      ).toBeVisible();
+      expect(
+        screen.getByText(tr("textSize.followsDevice"), exactly),
+      ).toBeVisible();
+      preferences.unmount();
+
+      render(
+        <PhotoViewer
+          name="FAKE photo.jpg"
+          url="data:image/gif;base64,R0lGODlhAQABAAAAACw="
+          onClose={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole("img", {
+          name: tr("photo.alt", { name: "FAKE photo.jpg" }),
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(tr("photo.fitted"), exactly)).toBeInTheDocument();
+      for (const key of [
+        "photo.zoomOut",
+        "photo.zoomIn",
+        "photo.close",
+      ] as const)
+        expect(screen.getByRole("button", { name: tr(key) })).toBeVisible();
+      expect(
+        screen.getByLabelText(tr("photo.area"), exactly),
+      ).toBeInTheDocument();
+    });
+  }
+
+  it("counts the last seconds and zooms with each language's forms", () => {
+    expect(translate("pl", "lockWarning.left", { count: 10 })).toBe(
+      "Zostało 10 sekund.",
+    );
+    expect(translate("pl", "lockWarning.title", { count: 2 })).toBe(
+      "myCarlos zablokuje się za 2 sekundy, aby chronić prywatność dokumentów.",
+    );
+    expect(translate("fr", "photo.zoomed", { percent: 200 })).toBe(
+      "Agrandie à 200\u00a0%.",
+    );
+  });
 });

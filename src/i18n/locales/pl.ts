@@ -368,7 +368,7 @@ export const pl: Record<MessageKey, Message> = {
     "Przed konfiguracją proszę wybrać to, co najbardziej odpowiada. Każdy wybór działa od razu.",
   "comfort.sample":
     "Tak wygląda tekst w myCarlos. Proszę naciskać − lub +, aż będzie łatwy do przeczytania.",
-  "comfort.textSizeFollowsDevice":
+  "textSize.followsDevice":
     "Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.",
   "comfort.autoLock.body":
     "myCarlos blokuje się sam, gdy nie jest używany przez ten czas, aby nikt inny nie zobaczył dokumentów. Proszę wybrać od 1 do 15 minut.",
@@ -436,4 +436,42 @@ export const pl: Record<MessageKey, Message> = {
     "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Jeśli ten dokument jest dostępny gdzie indziej, proszę go tutaj usunąć i dodać ponownie; jeśli nie, usunięcie go pozwoli zrobić kopię wszystkiego innego.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
+
+  // The warning before the automatic lock (#68)
+  "lockWarning.title": {
+    one: "myCarlos zablokuje się za {count} sekundę, aby chronić prywatność dokumentów.",
+    few: "myCarlos zablokuje się za {count} sekundy, aby chronić prywatność dokumentów.",
+    many: "myCarlos zablokuje się za {count} sekund, aby chronić prywatność dokumentów.",
+    other:
+      "myCarlos zablokuje się za {count} sekundy, aby chronić prywatność dokumentów.",
+  },
+  "lockWarning.help":
+    "Aby pozostawić go otwartym, proszę nacisnąć „{keepOpen}” lub dowolny klawisz.",
+  "lockWarning.left": {
+    one: "Została {count} sekunda.",
+    few: "Zostały {count} sekundy.",
+    many: "Zostało {count} sekund.",
+    other: "Zostało {count} sekundy.",
+  },
+  "lockWarning.keepOpen": "Pozostaw otwarty",
+
+  // Settings > Preferences, and Appearance (#47)
+  "preferences.subtitle": "Wygląd myCarlos na tym komputerze",
+  "appearance.title": "Wygląd",
+  "appearance.help":
+    "Opcja „{system}” dopasowuje się do jasnego lub ciemnego wyglądu urządzenia. Wysoki kontrast włącza się automatycznie zgodnie z urządzeniem.",
+  "appearance.system": "Systemowy",
+  "appearance.light": "Jasny",
+  "appearance.dark": "Ciemny",
+
+  // A document shown as a photo
+  "photo.eyebrow": "Zdjęcie",
+  "photo.alt": "Zdjęcie: {name}",
+  "photo.area":
+    "Zdjęcie. Proszę powiększyć, aby zobaczyć szczegóły; przeciągnąć lub przewinąć, aby się przesunąć.",
+  "photo.fitted": "Dopasowano do okna.",
+  "photo.zoomed": "Powiększono do {percent}%.",
+  "photo.zoomOut": "Pomniejsz",
+  "photo.zoomIn": "Powiększ",
+  "photo.close": "Zamknij",
 };

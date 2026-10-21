@@ -356,7 +356,7 @@ export const ptBR: Record<MessageKey, Message> = {
     "Escolha o que for melhor para você antes de configurar. Cada escolha vale na hora.",
   "comfort.sample":
     "É assim que o texto aparece no myCarlos. Pressione − ou + até ficar fácil de ler.",
-  "comfort.textSizeFollowsDevice":
+  "textSize.followsDevice":
     "Aqui, o tamanho do texto segue o seu dispositivo: o ajuste de tamanho do texto dele ou o zoom do navegador.",
   "comfort.autoLock.body":
     "O myCarlos se bloqueia sozinho quando fica sem uso por esse tempo, para que ninguém mais veja seus documentos. Escolha de 1 a 15 minutos.",
@@ -421,4 +421,40 @@ export const ptBR: Record<MessageKey, Message> = {
     "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Se você tiver esse documento em outro lugar, exclua-o aqui e adicione-o de novo; se não, excluí-lo permite fazer cópia de todo o resto.",
   "error.damaged.where": "adicionado em {date}",
   "error.damaged.whereFor": "adicionado em {date}, nos documentos de {person}",
+
+  // The warning before the automatic lock (#68)
+  "lockWarning.title": {
+    one: "O myCarlos será bloqueado em {count} segundo para manter seus documentos privados.",
+    many: "O myCarlos será bloqueado em {count} de segundos para manter seus documentos privados.",
+    other:
+      "O myCarlos será bloqueado em {count} segundos para manter seus documentos privados.",
+  },
+  "lockWarning.help":
+    "Para mantê-lo aberto, pressione {keepOpen} ou qualquer tecla.",
+  "lockWarning.left": {
+    one: "Falta {count} segundo.",
+    many: "Faltam {count} de segundos.",
+    other: "Faltam {count} segundos.",
+  },
+  "lockWarning.keepOpen": "Manter aberto",
+
+  // Settings > Preferences, and Appearance (#47)
+  "preferences.subtitle": "Como o myCarlos aparece neste computador",
+  "appearance.title": "Aparência",
+  "appearance.help":
+    "{system} segue a aparência clara ou escura do seu dispositivo. O alto contraste segue o seu dispositivo automaticamente.",
+  "appearance.system": "Sistema",
+  "appearance.light": "Claro",
+  "appearance.dark": "Escuro",
+
+  // A document shown as a photo
+  "photo.eyebrow": "Foto",
+  "photo.alt": "Foto: {name}",
+  "photo.area":
+    "Foto. Amplie para ver os detalhes; arraste ou role para se mover.",
+  "photo.fitted": "Ajustada à janela.",
+  "photo.zoomed": "Ampliada para {percent}%.",
+  "photo.zoomOut": "Diminuir zoom",
+  "photo.zoomIn": "Aumentar zoom",
+  "photo.close": "Fechar",
 };
