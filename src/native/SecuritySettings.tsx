@@ -1,5 +1,11 @@
 import { SecretInput } from "./SecretInput";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "../Icon";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -23,6 +29,12 @@ import {
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
+import type { PersonDetails } from "../vault";
+import {
+  detailsProblem,
+  PersonDetailsFields,
+  trimmedDetails,
+} from "./PersonDetails";
 
 interface SecuritySettingsProps {
   busy: boolean;
@@ -32,7 +44,7 @@ interface SecuritySettingsProps {
   onAutoLockMinutes: (value: unknown) => void;
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
-  onCreateProfile: (name: string) => Promise<boolean>;
+  onCreateProfile: (name: string, details?: PersonDetails) => Promise<boolean>;
   onReset: (confirmation: string) => Promise<void>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
@@ -47,6 +59,12 @@ interface SecuritySettingsProps {
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
   onSpeedTest: () => Promise<SpeedTestReport>;
+  /** Prototype: where each clinic's documents are filed. */
+  clinicLinks?: ReactNode;
+  /** Prototype (Ben, 21 Oct): ask for a new person's optional full name and
+   * birth date, and list each person's, to change later. */
+  askPersonDetails?: boolean;
+  peopleDetails?: ReactNode;
 }
 
 /** One line a tester can copy into the benchmark record. */
@@ -83,6 +101,9 @@ export function SecuritySettings({
   onSetUpRecoveryKey,
   onSaveBackup,
   onSpeedTest,
+  clinicLinks,
+  askPersonDetails = false,
+  peopleDetails,
 }: SecuritySettingsProps) {
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
@@ -125,6 +146,7 @@ export function SecuritySettings({
     }
   };
   const [profileName, setProfileName] = useState("");
+  const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
@@ -152,8 +174,14 @@ export function SecuritySettings({
   const submitProfile = (event: FormEvent) => {
     event.preventDefault();
     // Cleared only once the profile exists, so a refused name can be corrected.
-    void onCreateProfile(profileName).then((created) => {
-      if (created) setProfileName("");
+    if (askPersonDetails && detailsProblem(profileDetails)) return;
+    void onCreateProfile(
+      profileName,
+      askPersonDetails ? trimmedDetails(profileDetails) : undefined,
+    ).then((created) => {
+      if (!created) return;
+      setProfileName("");
+      setProfileDetails({});
     });
   };
   return (
@@ -185,6 +213,7 @@ export function SecuritySettings({
             </p>
           </div>
         </section>
+        {clinicLinks}
         <section className="setting-row native-setting-form">
           <div>
             <h2>
@@ -472,6 +501,7 @@ export function SecuritySettings({
           <div>
             <h2>Patient profiles</h2>
             <p>Keep each person’s filing cabinet separate inside this vault.</p>
+            {peopleDetails}
           </div>
           <form onSubmit={submitProfile}>
             <label>
@@ -489,6 +519,13 @@ export function SecuritySettings({
             {nameIsShared(profileName) && (
               <p role="alert">{SHARED_NAME_TAKEN}</p>
             )}
+            {askPersonDetails && (
+              <PersonDetailsFields
+                idPrefix="new-person"
+                details={profileDetails}
+                onChange={setProfileDetails}
+              />
+            )}
             <button
               className="button"
               disabled={
@@ -496,7 +533,8 @@ export function SecuritySettings({
                 readOnly ||
                 !profileName.trim() ||
                 nameTooLong(profileName) ||
-                nameIsShared(profileName)
+                nameIsShared(profileName) ||
+                (askPersonDetails && Boolean(detailsProblem(profileDetails)))
               }
             >
               Add profile

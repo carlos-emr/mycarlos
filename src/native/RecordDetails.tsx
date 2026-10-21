@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -30,6 +30,8 @@ interface RecordDetailsProps {
   onExport: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
+  /** Prototype: the person a shared document looks like it is for. */
+  suggestion?: ReactNode;
 }
 export function RecordDetails({
   record,
@@ -46,6 +48,7 @@ export function RecordDetails({
   onDelete,
   onExport,
   onViewPhoto,
+  suggestion,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
   // Choosing in the list only picks a destination; Move moves (#67). In
@@ -146,6 +149,7 @@ export function RecordDetails({
             </p>
           )}
         </div>
+        {suggestion}
         <dl className="record-metadata">
           <div>
             <dt>Kind</dt>

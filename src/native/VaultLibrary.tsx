@@ -8,6 +8,7 @@ import {
   type VaultBridge,
   type VaultFolder,
   type VaultRecord,
+  type PersonDetails,
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
@@ -24,6 +25,12 @@ import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
 import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
+import { ClinicDeliveryDialog } from "./ClinicDeliveryDialog";
+import { ClinicLinksSetting } from "./ClinicLinksSetting";
+import { PersonSuggestion } from "./PersonSuggestion";
+import { PersonDetailsList } from "./PersonDetails";
+import { useClinicDeliveries } from "./useClinicDeliveries";
+import { usePersonSuggestions } from "./usePersonSuggestions";
 import {
   NAME_INPUT_MAX_LENGTH,
   nameTooLong,
@@ -317,6 +324,43 @@ export function VaultLibrary({
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+
+  // Prototype: documents from a clinic go to the person the patient chose
+  // for it, and a shared document whose name matches one person is offered
+  // to them.
+  const deliveries = useClinicDeliveries({
+    bridge,
+    people,
+    run,
+    refresh,
+    setNotice,
+  });
+  const sharedRecords = useMemo(
+    () =>
+      snapshot.records.filter((record) => record.profileId === sharedProfileId),
+    [snapshot.records, sharedProfileId],
+  );
+  const suggestions = usePersonSuggestions(bridge, sharedRecords, people);
+  const suggestionFor = (record: VaultRecord) => {
+    const match =
+      record.profileId === sharedProfileId && !readOnly
+        ? suggestions.suggestionFor(record.id)
+        : null;
+    const person = match?.person;
+    return (
+      match &&
+      person && (
+        <PersonSuggestion
+          person={person}
+          matchedBy={match.by}
+          documentName={record.displayName}
+          busy={busy}
+          onMove={() => moveToPerson([record.id], person.id, null)}
+          onDismiss={() => suggestions.dismiss(record.id)}
+        />
+      )
+    );
+  };
 
   useEffect(() => {
     if (profile && profile.id !== profileId) setProfileId(profile.id);
@@ -763,15 +807,32 @@ export function VaultLibrary({
       await refresh();
       setNotice("Passphrase changed.");
     }, ["the current passphrase", "the new passphrase"]);
-  const createProfile = async (name: string) => {
+  const createProfile = async (name: string, details?: PersonDetails) => {
     let created = false;
     await run(async () => {
-      await bridge.createProfile(name);
+      const profileId = await bridge.createProfile(name);
+      // Prototype: the optional full name and birth date (Ben, 21 Oct).
+      if (details && (details.fullName || details.birthDate))
+        await bridge.updateProfileDetails?.(profileId, details);
       created = true;
       await refresh();
       setNotice(`${name} was added.`);
     }, ["the profile name"]);
     return created;
+  };
+  // Prototype: a person's optional full name and birth date, changed later.
+  const savePersonDetails = async (
+    profileId: string,
+    details: PersonDetails,
+  ) => {
+    let saved = false;
+    await run(async () => {
+      await bridge.updateProfileDetails?.(profileId, details);
+      saved = true;
+      await refresh();
+      setNotice(`${profileName(profileId)}'s details were saved.`);
+    }, ["the full name", "the birth date"]);
+    return saved;
   };
   const resetVault = (confirmation: string) =>
     run(async () => {
@@ -883,6 +944,16 @@ export function VaultLibrary({
     return counts;
   }, [records]);
   const folderCount = (id: string) => folderCounts.get(id) ?? 0;
+  // Asked when no other dialog is open.
+  const asking =
+    activeRecord ||
+    renameTarget ||
+    cameraOpen ||
+    confirmation ||
+    confirmRemoveDamaged ||
+    recoverySetup
+      ? null
+      : deliveries.asking;
   const locationTitle = inShared
     ? "Shared with me"
     : (currentFolder?.name ??
@@ -912,7 +983,8 @@ export function VaultLibrary({
                 renameTarget ||
                 cameraOpen ||
                 confirmRemoveDamaged ||
-                recoverySetup,
+                recoverySetup ||
+                asking,
             )}
           >
             <span className="window-dots" aria-hidden="true">
@@ -940,7 +1012,8 @@ export function VaultLibrary({
                 renameTarget ||
                 cameraOpen ||
                 confirmRemoveDamaged ||
-                recoverySetup,
+                recoverySetup ||
+                asking,
             )}
           >
             {PHONE_TABS.map(([value, label]) => (
@@ -968,7 +1041,8 @@ export function VaultLibrary({
                 renameTarget ||
                 cameraOpen ||
                 confirmRemoveDamaged ||
-                recoverySetup,
+                recoverySetup ||
+                asking,
             )}
           >
             <LibrarySidebar
@@ -1454,6 +1528,7 @@ export function VaultLibrary({
                   }}
                   onRenameFolder={renameFolder}
                   onToggleSelected={toggleSelected}
+                  suggestionFor={inShared ? suggestionFor : undefined}
                 />
               </main>
             )}
@@ -1462,6 +1537,15 @@ export function VaultLibrary({
 
             {section === "security" && (
               <SecuritySettings
+                clinicLinks={
+                  <ClinicLinksSetting
+                    links={deliveries.links}
+                    people={people}
+                    busy={busy || readOnly}
+                    onChange={deliveries.change}
+                    onForget={deliveries.forget}
+                  />
+                }
                 busy={busy}
                 readOnly={readOnly}
                 notice={notice}
@@ -1470,6 +1554,16 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                askPersonDetails={Boolean(bridge.updateProfileDetails)}
+                peopleDetails={
+                  bridge.updateProfileDetails && (
+                    <PersonDetailsList
+                      people={people}
+                      busy={busy || readOnly}
+                      onSave={savePersonDetails}
+                    />
+                  )
+                }
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
@@ -1606,6 +1700,7 @@ export function VaultLibrary({
               onExport={() =>
                 setConfirmation({ action: "export", recordId: activeRecord.id })
               }
+              suggestion={suggestionFor(activeRecord)}
               onViewPhoto={
                 photoRecordId === activeRecord.id
                   ? () => void viewPhoto(activeRecord.id)
@@ -1685,6 +1780,18 @@ export function VaultLibrary({
                 will not remove it.
               </p>
             </ConfirmDialog>
+          )}
+          {asking && (
+            <ClinicDeliveryDialog
+              key={asking.id}
+              delivery={asking}
+              people={people}
+              busy={busy}
+              onFile={(profileId, always) =>
+                deliveries.file(asking, profileId, always)
+              }
+              onLater={() => deliveries.later(asking)}
+            />
           )}
         </section>
       </div>
