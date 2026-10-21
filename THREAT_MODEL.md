@@ -1,8 +1,8 @@
 # myCarlos threat model
 
 - **Status:** Durable-vault implementation complete; independent review and release gates open
-- **Version:** 0.2
-- **Date:** 2026-09-08
+- **Version:** 0.3
+- **Date:** 2026-10-21
 - **Initial platforms:** Windows, macOS, Android, and iOS
 - **Deferred platform:** Linux, pending review of the documented `glib` backport and device/release validation
 - **Data restriction:** Synthetic files only; this model does not authorize PHI use
@@ -26,7 +26,8 @@ The model covers:
 - the React webview, Tauri IPC commands, Rust core, and operating-system services;
 - local metadata, thumbnails, temporary files, logs, and crash artifacts;
 - the portable encrypted backup, and future multi-device enrollment and synchronization;
-- future CARLOS document handoff and provenance verification; and
+- future CARLOS document handoff and provenance verification, including pickup from the portal
+  the patient links, myCarlos's first network use (carlos-portal #41); and
 - build, signing, updating, and third-party dependencies.
 
 It does not approve a PDF renderer, synchronization service, analytics provider, or CARLOS
@@ -61,6 +62,7 @@ flowchart LR
     Keys[Keychain or Keystore]
     Vault[Encrypted local vault]
     Backup[Portable backup file; future untrusted sync service]
+    Portal[Linked portal mailbox; planned, carlos-portal #41]
 
     Source -->|untrusted document and metadata| Picker
     Picker -->|native handle or URI| Core
@@ -69,6 +71,8 @@ flowchart LR
     Core -->|wrapped key operations| Keys
     Core -->|authenticated ciphertext| Vault
     Vault -->|ciphertext and privacy-minimized metadata| Backup
+    Core -->|device-signed requests, to the linked portal only| Portal
+    Portal -->|packages sealed to this device, signed by the clinic| Core
 ```
 
 The important trust boundaries are:
@@ -83,6 +87,7 @@ The important trust boundaries are:
 | Device to backup/sync | Treat the service and transport endpoint as unable to keep plaintext confidential. |
 | CARLOS to myCarlos | Verify origin, integrity, freshness, and intended recipient before showing verified provenance. |
 | Camera to webview | Video only, asked for after the patient chooses to use the camera, and stopped when the photo is taken or the dialog closes. The frame stays in memory; Rust checks and cleans the JPEG before it is encrypted. |
+| myCarlos to linked portal | The portal is a mailbox, not a trusted source: it holds packages it cannot open. Connect only to the portal the patient linked, sign every request with that link's device key, and verify every package before anything is saved (NET-01 to NET-03, DEL-01 to DEL-06). |
 
 ## Assets
 
@@ -95,6 +100,8 @@ The important trust boundaries are:
 | Device-bound wrapping keys and biometric authorization | Unauthorized unlock on a stolen or shared device. |
 | Encrypted vault and manifest | Deletion, corruption, rollback, traffic analysis, or offline guessing. |
 | CARLOS provenance manifest and signature keys | Forged or misattributed clinical documents. |
+| Per-link device keys and pinned clinic keys | Reading deliveries meant for this device, posing as the device to the portal, or trusting a forged clinic. |
+| Linked portal address and recipient ID | Tying the device to a clinic; the network learns that this device uses that clinic's portal. |
 | Backup and synchronization state | Cross-device disclosure, rollback, duplicate resurrection, or data loss. |
 | Logs, crash reports, clipboard, notifications, and OS snapshots | Secondary disclosure outside the vault. |
 | Signing and update credentials | Distribution of a malicious application update to every patient. |
@@ -103,7 +110,8 @@ The important trust boundaries are:
 
 Credible threat actors include a finder or thief of a device, another user of a shared computer,
 malware with ordinary user privileges, a malicious document sender, a compromised website or deep
-link, a compromised backup provider, a supply-chain attacker, and an attacker controlling a future
+link, a compromised backup provider, a compromised or malicious portal operator, a network attacker
+between the device and the portal, a supply-chain attacker, and an attacker controlling a future
 synchronization account.
 
 The following limits must be communicated honestly:
@@ -170,6 +178,15 @@ reduce current risk.
 | SYN-01 | Critical | Backup provider, network observer, or account attacker reads records or recovery material. | Client-side encryption before upload; TLS as defense in depth; no server-held plaintext recovery secret; privacy-minimized object names and manifests. | Inspect captured traffic and server-side fixtures; attempt restore using server data alone. | Future sync gate |
 | SYN-02 | High | Sync resurrects deleted records or rolls the vault back to vulnerable/stale state. | Authenticated version history, tombstones, conflict rules, replay protection, and visible device state. | Offline concurrent delete/edit, stale device, replay, and restore tests. | Future sync gate |
 | SYN-03 | Critical | Attacker enrolls a new device and receives the vault key. | Explicit existing-device or recovery-key authorization; patient-visible device list; revocation; no email-only enrollment for vault decryption. | Account takeover and unauthorized enrollment exercises. | Future sync gate |
+| NET-01 | High | myCarlos sends data to a host other than the portal the patient linked: a tracker, a redirect target, or an address taken from a document or a link. | One network client, in Rust, that reaches only the `/api/mycarlos/` routes of the HTTPS origin saved for each link (from the portal's QR code, or typed with the link code) and refuses redirects to any other origin; the webview's CSP keeps no remote origin and the PDF helper has no network (IMP-02); no other endpoint (analytics, update, fonts, maps) is added without a threat-model update. | Captured traffic during linking, pickup, refusals and errors on every platform; redirect and wrong-origin tests; CSP and helper network-denial tests. | Design selected (carlos-portal #41 M2; the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); implementation open |
+| NET-02 | High | A network attacker, a user-installed certificate authority, or a mistyped or look-alike address puts a fake portal between the device and the clinic. | HTTPS only, TLS 1.2 or later from the platform trust store, cleartext refused on every platform; the link code is made after the patient's MFA sign-in, is good for 10 minutes and one use, and its QR code carries the portal address; the clinic's key list returned at linking is pinned for that link, and content safety never rests on TLS: copies are sealed to the link's device key and signed by a pinned clinic key (DEL-01, DEL-06); a fake portal can link a device but cannot make CARLOS send to it, as CARLOS confirms each device outside the portal. | Interception-proxy and wrong-certificate tests; cleartext refusal per platform (Android network security configuration, iOS App Transport Security); a fake portal answering a link attempt. | Design selected (carlos-portal #41 M2, the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); TLS pinning choice open (D-09) |
+| NET-03 | Medium | The portal operator or a network observer learns more than it needs: who the patient is, which documents were sent, when the app is open, or that two clinics serve the same device. | Requests and receipts carry only the fields in `SECURITY_OPERATIONS.md` ("Portal pickup"): opaque IDs (`recipient_id`, 128-bit random per patient account and never derived from the health card number; `device_key_id`, from keys made fresh for each link, so two portals never see the same one), times, hashes and signatures; no names, titles, birth dates or file names; the outer record the portal stores has none either; pickup only at unlock or on the patient's "Check for new documents", never in the background. The vault history's anchor (decision L) is sent per link, as `vault_head_link` (an HMAC of the head, keyed from that link's key), never as the raw head, which is the same on every link of a vault. | Captured-traffic and portal-fixture inspection with seeded canaries; two links of one vault compared for shared values, and the spec's `vault_head_link` vectors. | Design selected (carlos-portal #41, the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); implementation open |
+| DEL-01 | Critical | A forged, altered, expired, replayed or misdirected delivery is saved, or shown as Verified. | The clinic signing key (ECDSA P-256, carlos-emr/carlos#4691) signs the manifest (ES256) and, through `document.sha256`, the PDF, which also keeps its own PAdES signature; the copy is sealed to the link's X25519 key with HPKE (RFC 9180 base mode: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305), with `frame(delivery_id, recipient_id, device_key_id)` as associated data; before anything is saved myCarlos runs the spec's checks in order and stops at the first refusal (`unsupported_version`, `hash_mismatch`, `wrong_recipient`, `wrong_device`, `decrypt_failed`, `bad_package`, `bad_manifest`, `wrong_clinic`, `unknown_clinic_key`, `revoked_clinic_key`, `bad_signature`, `id_mismatch`, `document_hash_mismatch`, `expired` (only 24 hours past `expires_at`, for wrong clocks), `replayed`); a refused copy is not filed, no receipt is sent, and the patient sees a plain message (INT-01, IMP-06, IMP-07). | The shared vectors (`tests/fixtures/delivery-contract.json`, byte-identical in each repo; SHA-256 `e342041d5620238e6e0b8ae0aa0b767b51965fb839aee671600b8a0d63e90016` at c35649b) in Rust: RFC 9180 A.2.1 first, then every `packages.accept` and `packages.refuse` outcome. | Design selected (the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); vectors and implementation open |
+| DEL-02 | High | The portal deletes its copy before the document is safely in the vault, so a crash or a full disk loses it. | After the outcome `file`: write the document durably, record the delivery in the vault history with its delivery ID and ciphertext hash, sign the receipt and keep it in the vault with the filed delivery (outside the history chain, as it carries the chain's head), and only then send it; a copy whose delivery ID was filed before is `already_filed` (the same ciphertext) and its kept receipt is sent again byte for byte, never re-signed, until the portal answers 200 or `delivery_not_found`. | Crash and write-failure injection between each step; the same copy picked up again after a restart; a lost receipt response. | Design selected (carlos-portal #41 M4, the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); implementation open |
+| DEL-03 | High | A lost, sold or restored device keeps receiving deliveries, or a copied vault picks up deliveries meant for another device. | Per-link device keys: a fresh pair (X25519 to open copies, Ed25519 to sign requests and receipts) for each portal link, kept in the encrypted vault with that link and never sent to the renderer (KEY-03), so no two portals see the same `device_key_id`, and with the per-link `vault_head_link` (NET-03) clinics cannot link the same device by anything myCarlos sends (each portal still sees the IP address it is reached from, and when); the link request is signed by the new key and binds both public keys, the device name and the code; CARLOS keeps a new device pending until it is confirmed outside the portal (staff approval, a texted code, or an already linked device) and sends nothing to it until then; removing a link deletes its waiting copies at once, and every later request signed with its key is refused (`device_removed`); a removed link never comes back, and linking again makes fresh keys; a restored backup, which carries the per-link device keys, keeps the portal link: myCarlos then says "This vault was restored. If your old device still has it, remove one of them." and records the restore in the vault history (decided by Ben, 21 Oct). | Unlinking during a pickup; copied and restored vault fixtures, and the restore notice and history record; IPC and log inspection for key material. | Design selected (carlos-portal #41 M2 and M3, the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); restore behaviour decided; implementation open |
+| DEL-04 | High | A hostile copy from a compromised portal or clinic exhausts memory, disk or CPU, or exploits the package reader. | A sealed copy is at most 20 MiB, checked against the outer record before download and again while streaming; strict, bounded parsing of the outer record, plaintext frames and manifest (exact claims, no duplicate members, canonical encodings); the PDF itself goes through the sandboxed PDF helper like any other PDF (IMP-02); the package reader is fuzzed. | Fuzzing of the package reader; oversized, truncated and malformed copies, and the duplicate-member vectors. | Design selected (carlos-portal #41 M4, the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); implementation open |
+| DEL-05 | Medium | A delivery is filed under the wrong person, so the patient trusts or shares the wrong record. | The first delivery on a link asks once, showing the patient name and birth date from the signed manifest; later ones follow that choice, which the patient can change or forget; nothing is filed by a match alone; a shared PDF is only offered to the one person whose optional birth date, then full name, matches (both optional per person, decided by Ben, 21 Oct; a vault format change); with no match it goes to Shared with me (INT-02). | Wrong-person, changed-link and forgotten-link tests. | UI prototype only (mycarlos#97); implementation open |
+| DEL-06 | High | A new clinic key is accepted silently, so whoever controls the portal or the link can sign as the clinic. | The clinic's key list is pinned for each link when the patient links; a key pinned only on another link is refused (`wrong_clinic`) and an unpinned one too (`unknown_clinic_key`); a replacement signed by the current key is accepted and the patient is told; a revoked key stops verifying (`revoked_clinic_key`; mycarlos#55). | Rotation, unannounced key change and revocation tests with the shared vectors. | Design selected (carlos-portal #41 M2, the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`)); implementation open |
 | SUP-01 | Critical | Compromised dependency, CI action, or build runner ships malicious code. | Lockfiles; pinned CI actions; minimal dependencies; SBOM; vulnerability and provenance checks; protected release workflow; reproducible-build investigation. | Dependency diff review, artifact provenance verification, and periodic clean-room rebuild. | Lockfiles, commit-pinned Actions, dependency review, production npm audit and reproducible npm/Cargo CycloneDX inventories implemented; protected artifact provenance and clean-room rebuild remain |
 | SUP-02 | Critical | Signing or updater key compromise distributes a malicious release. | Offline or hardware-backed signing controls; separation of duties; signed update metadata; rotation and revocation runbook; rollback protection. | Staged malicious/expired/rollback update tests and key-loss exercise. | Design required |
 | SUP-03 | High | Analytics, support bundles, or crash reporting exfiltrate PHI or keys. | No analytics by default; field allow-list rather than redaction-only policy; local patient review of support bundles; approved data flow before enabling telemetry. | Seed canary PHI and verify it never leaves through diagnostics. | Future operations gate |
@@ -186,9 +203,10 @@ These decisions block the secure-vault implementation or its promotion:
 | D-03 Recovery | Patient-understandable custody boundary, loss behavior, and new-device restoration. | Patient-held recovery kit and portable backup selected; recovery key, kit and portable backup implemented; new-device restoration drills open |
 | D-04 Viewer | Renderer choice, isolation boundary, supported PDF features, update path, cache behavior, and malicious-document testing. | Sandboxed capability-free helper selected; implementation open |
 | D-05 Local database | Encrypted index/storage choice, transaction and crash behavior, schema migration, and corruption recovery. | Encrypted manifest and migration protocol implemented; physical crash and future target-format migration review open |
-| D-06 CARLOS package | Signed manifest schema, recipient binding, trust store, revocation, expiry, replay, and unverified-import presentation. | Signed recipient-bound package and explicit encrypted sharing selected; implementation open |
+| D-06 CARLOS package | Signed manifest schema, recipient binding, trust store, revocation, expiry, replay, and unverified-import presentation. | Signed recipient-bound package and explicit encrypted sharing selected; the shared spec (carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`) fixes the format (HPKE seal to one link's device key, ES256 clinic manifest, per-link device keys, device-signed requests and receipts, receipt only after the durable write); vectors and implementation open |
 | D-07 Backup and sync | Threat model extension covering enrollment, metadata privacy, conflicts, tombstones, rollback, and server compromise. | Portable backup implemented (authenticated single-file ciphertext, verified before it replaces anything, crash-resumable activation); E2EE sync, append-only history, enrolled-device approval and immediate deletion selected, implementation open |
 | D-08 Diagnostics | Whether telemetry exists at all, allowed fields, consent, retention, support bundles, and incident access. | No telemetry; local redacted patient-exported diagnostics selected |
+| D-09 Network client | The hosts myCarlos may reach, TLS and pinning policy, proxies, when it connects, and what a restored vault does with its per-link device keys. | Linked-portal-only client and pickup at unlock or on request selected (carlos-portal #41); a restored vault keeps its link and says so (DEL-03, decided by Ben, 21 Oct); TLS pinning and proxy handling open |
 
 ## Secure Vault v0.1 security gate
 

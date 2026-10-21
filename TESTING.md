@@ -212,6 +212,14 @@ The automated tests catch missing labels and low contrast, but not whether the a
 someone listening to it. These checks need a person. Each screen reader below is free, and all
 but NVDA are built in.
 
+Two browser tests go part of the way first, in Chromium with a synthetic vault:
+`tests/keyboard-walk.spec.ts` uses only the keyboard through first setup, unlocking, the library,
+Settings and the lock warning (every control reached in order, focus shown, no traps, Escape
+closes dialogs), and
+`tests/screen-reader-smoke.spec.ts` checks that controls have names, headings go in order and the
+key events are read out. Problems they find are listed with `test.fail` and an issue number. They
+are not a screen reader: the steps below still apply.
+
 | Platform | Screen reader | Turn it on and off | Move / activate |
 | --- | --- | --- | --- |
 | Windows | Narrator (built in) | Ctrl + Windows + Enter | Tab / Enter or Space |
