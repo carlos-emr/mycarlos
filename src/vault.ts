@@ -449,8 +449,6 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
-    // The photo goes as the raw body, not as JSON; the rest in headers, the
-    // name percent-encoded, as a header holds ASCII only.
     savePhoto: (profileId, folderIds, name, jpeg) => {
       // One body, as Tauri carries bytes on every platform: the target's
       // length (4 bytes, big-endian), the target as JSON, then the JPEG.
