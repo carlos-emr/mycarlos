@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getLocale, t, type MessageKey } from "./i18n";
+import { formatDate, getLocale, t, type MessageKey } from "./i18n";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -253,7 +253,6 @@ interface PublicError {
   retryAfterMs?: number;
 }
 
-/** "a", "a and b", "a, b and c". */
 /** A box the patient typed in, named in the language in use ("the folder
  * name"), for "Check …, then try again." */
 export type BoxKey = Extract<MessageKey, `box.${string}`>;
@@ -319,7 +318,13 @@ export function namedDamage(
     vault.profiles.length > 1
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
-  const date = new Date(record.importedAtMs).toLocaleDateString();
+  // The date as the message's language writes it, as toLocaleDateString
+  // did for the device's.
+  const date = formatDate(record.importedAtMs, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
   const where = profile
     ? t("error.damaged.whereFor", { date, person: profile.displayName })
     : t("error.damaged.where", { date });

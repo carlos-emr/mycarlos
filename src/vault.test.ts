@@ -311,7 +311,7 @@ describe("errors the app words itself, in the language in use (#46)", () => {
       vault,
     ) as { message: string };
     expect(named.message).toMatch(
-      /^Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan\.pdf” \(adicionado em .+, nos documentos de Avery\)/,
+      /^Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan\.pdf” \(adicionado em 15\/01\/2026, nos documentos de Avery\)/,
     );
   });
 });
