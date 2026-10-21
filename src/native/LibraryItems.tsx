@@ -1,5 +1,5 @@
 import { Icon } from "../Icon";
-import { formatDate, useI18n, type Locale } from "../i18n";
+import { useI18n } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
@@ -22,11 +22,6 @@ interface LibraryItemsProps {
   onRenameFolder: (folder: VaultFolder) => void;
   onToggleSelected: (recordId: string) => void;
 }
-
-/** A date added, as the language in use writes it, as toLocaleDateString
- * did for the device's. */
-const addedOn = (ms: number, locale: Locale) =>
-  formatDate(ms, { year: "numeric", month: "numeric", day: "numeric" }, locale);
 
 function EmptyState({ searching }: { searching: boolean }) {
   const { t } = useI18n();
@@ -60,7 +55,7 @@ export function LibraryItems({
   onToggleSelected,
 }: LibraryItemsProps) {
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
   const shown = t("library.items", { count: folders.length + records.length });
   return view === "list" ? (
     <div className="filelist native-filelist" aria-label={shown}>
@@ -109,7 +104,9 @@ export function LibraryItems({
           <span className="column" aria-hidden="true">
             —
           </span>
-          <span className="column">{addedOn(folder.createdAtMs, locale)}</span>
+          <span className="column">
+            {new Date(folder.createdAtMs).toLocaleDateString()}
+          </span>
           <button
             className="native-rename-button"
             type="button"
@@ -160,7 +157,7 @@ export function LibraryItems({
             </div>
             <span className="column">{record.sourceLabel}</span>
             <span className="column">
-              {addedOn(record.importedAtMs, locale)}
+              {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
             <button
               className="more-button native-details-button"
@@ -266,7 +263,7 @@ export function LibraryItems({
                 <span>
                   <strong>{record.displayName}</strong>
                   <small>
-                    {addedOn(record.importedAtMs, locale)}
+                    {new Date(record.importedAtMs).toLocaleDateString()}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
                 </span>

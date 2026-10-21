@@ -570,16 +570,14 @@ describe("the library list and grid in each language", () => {
     });
   }
 
-  it("writes the date added as the language in use writes it", () => {
-    setLocaleOverride("pt-BR");
-    const list = renderItems("list");
-    // The folder's and the document's dates, as toLocaleDateString wrote
-    // them for the device, now for the language chosen.
-    expect(screen.getAllByText("15/01/2026")).toHaveLength(2);
-    list.unmount();
-    act(() => setLocaleOverride("en"));
-    renderItems("grid");
-    expect(screen.getByText("1/15/2026")).toBeInTheDocument();
+  it("keeps the device's date format while the language follows the system", () => {
+    // As the rest of the app does (Settings > Security, the recovery kit):
+    // a Canadian device writes 2026-01-15 whatever language is shown.
+    setLocaleOverride("fr");
+    renderItems("list");
+    expect(
+      screen.getAllByText(new Date(added).toLocaleDateString()),
+    ).toHaveLength(2);
   });
 
   it("counts items with each language's forms", () => {
