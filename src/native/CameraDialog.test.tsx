@@ -163,6 +163,42 @@ describe("CameraDialog", () => {
     expect(ended(streams[0])).toBe(true);
   });
 
+  it("does not save a photo still being prepared when the vault locks", async () => {
+    const { onUse, unmount } = open();
+    await startCamera();
+    fireEvent.click(shutter());
+    // The JPEG is made, but handed back only after the lock.
+    const toBlob = HTMLCanvasElement.prototype.toBlob;
+    let handBack: (() => void) | undefined;
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "toBlob")
+      .mockImplementation(function (
+        this: HTMLCanvasElement,
+        callback: BlobCallback,
+        type?: string,
+        quality?: number,
+      ) {
+        toBlob.call(
+          this,
+          (blob) => {
+            handBack = () => callback(blob);
+          },
+          type,
+          quality,
+        );
+      });
+    try {
+      fireEvent.click(button("Use photo"));
+      await waitFor(() => expect(handBack).toBeDefined());
+      unmount();
+      handBack!();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(onUse).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("stops the camera when the window is hidden", async () => {
     open();
     await startCamera();

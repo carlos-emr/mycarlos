@@ -30,6 +30,75 @@ export const MAX_PHOTO_SIDE_PX = 4096;
 /** The JPEG quality a photo is encoded at. */
 export const PHOTO_QUALITY = 0.9;
 
+/** The most a camera photo's JPEG may weigh. The vault takes up to 25 MB, but
+ * where Tauri sends a call by postMessage (always on Android, and on Windows
+ * once its custom protocol has failed) its own parsed copy is a JSON array
+ * several times the photo's size, neither overwritten nor limited by the app
+ * (THREAT_MODEL CAM-01). A photo is kept well under that. */
+export const MAX_CAMERA_JPEG_BYTES = 4 * 1024 * 1024;
+/** The qualities tried, in order, before a photo is made smaller. */
+const PHOTO_QUALITIES = [PHOTO_QUALITY, 0.8, 0.7, 0.6];
+/** The long side a photo is never scaled below to fit. */
+const MIN_PHOTO_SIDE_PX = 1024;
+
+const jpegOf = (canvas: HTMLCanvasElement, quality: number) =>
+  new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", quality),
+  );
+
+/** The photo on `canvas` as a JPEG of at most `maxBytes`: at PHOTO_QUALITY
+ * when that fits, else at a lower quality, else scaled down a quarter at a
+ * time, not below MIN_PHOTO_SIDE_PX on its long side. Null when the browser
+ * cannot encode it, or it cannot be made to fit. `canvas` is not changed; a
+ * smaller copy made here is cleared once it is encoded. */
+export async function encodePhoto(
+  canvas: HTMLCanvasElement,
+  maxBytes = MAX_CAMERA_JPEG_BYTES,
+): Promise<Blob | null> {
+  let source = canvas;
+  try {
+    for (;;) {
+      for (const quality of PHOTO_QUALITIES) {
+        const jpeg = await jpegOf(source, quality);
+        if (!jpeg || jpeg.size <= maxBytes) return jpeg;
+      }
+      const longest = Math.max(source.width, source.height);
+      if (longest <= MIN_PHOTO_SIDE_PX) return null;
+      const scale = Math.max(0.75, MIN_PHOTO_SIDE_PX / longest);
+      const smaller = document.createElement("canvas");
+      smaller.width = Math.max(1, Math.round(source.width * scale));
+      smaller.height = Math.max(1, Math.round(source.height * scale));
+      const context = smaller.getContext("2d");
+      // Out of canvas memory, as a phone can be: a blank copy would encode
+      // as a black photo that fits, so the photo is not prepared at all.
+      if (!context) {
+        smaller.width = 0;
+        smaller.height = 0;
+        return null;
+      }
+      try {
+        context.drawImage(source, 0, 0, smaller.width, smaller.height);
+      } catch {
+        // Out of memory while drawing, for one: nothing is prepared, and the
+        // dialog says so.
+        clear(smaller);
+        return null;
+      }
+      if (source !== canvas) clear(source);
+      source = smaller;
+    }
+  } finally {
+    if (source !== canvas) clear(source);
+  }
+}
+
+/** Overwrites a canvas's pixels and frees them. */
+function clear(canvas: HTMLCanvasElement) {
+  canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 /** The size to draw a camera frame at: its own, or scaled down so that its
  * long side is at most MAX_PHOTO_SIDE_PX. */
 export function photoSize(
