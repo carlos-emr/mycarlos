@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { testNativeDialogs } from "./dialogs";
+import { stopAppTree } from "./processTree";
 import { spawn, execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -321,10 +322,15 @@ test("installed app keeps navigation and popups inside its native boundary", asy
       // Stop it before disconnecting CDP so the native PID still owns that tree.
       try {
         if (app?.pid && app.exitCode === null && app.signalCode === null) {
-          await promisify(execFile)(
-            "taskkill",
-            ["/PID", String(app.pid), "/T", "/F"],
-            { timeout: 10_000 },
+          await stopAppTree(
+            app.pid,
+            (file, args) =>
+              promisify(execFile)(file, args, { timeout: 10_000 }),
+            () =>
+              bounded(appExited!, "App shutdown").then(
+                () => true,
+                () => false,
+              ),
           );
           await bounded(appExited!, "App shutdown");
         }
