@@ -365,4 +365,40 @@ export const es: Record<MessageKey, Message> = {
     "Puede cambiarlos cuando quiera en {settings}: {textSize} en {preferences} y {autoLock} en {security}.",
   "comfort.continue": "Continuar",
   "comfort.usual": "Usar los ajustes habituales",
+
+  // Notices after vault actions (the app's status line)
+  "notice.iosKeepOpen":
+    "Mantenga myCarlos abierto: cambiar de aplicación pausa esta transferencia.",
+  "notice.dropRefused":
+    "Para importar archivos PDF, desbloquee su bóveda y use {button}. Arrastrar y soltar mueve los documentos que ya están en myCarlos.",
+  "notice.lockedIdle": {
+    one: "Bloqueada tras {count} minuto sin uso.",
+    many: "Bloqueada tras {count} de minutos sin uso.",
+    other: "Bloqueada tras {count} minutos sin uso.",
+  },
+  "notice.lockedHidden":
+    "Bloqueada porque myCarlos se minimizó o pasó a segundo plano.",
+  "notice.locked": "Bóveda bloqueada.",
+  "notice.autoLockSet": {
+    one: "Bloqueo automático ajustado a {count} minuto.",
+    many: "Bloqueo automático ajustado a {count} de minutos.",
+    other: "Bloqueo automático ajustado a {count} minutos.",
+  },
+  "notice.backupCutOff":
+    "La copia de seguridad se detuvo porque la bóveda se bloqueó. No se guardó ninguna copia. Conserve sus copias anteriores. {note}",
+  "notice.transferUnfinished": "La transferencia no terminó.",
+  "notice.restored":
+    "Copia de seguridad restaurada. Desbloquee la bóveda con la frase de contraseña con la que se creó o use su clave de recuperación.",
+  "notice.createdThenLocked":
+    "Su bóveda se creó y luego se bloqueó antes de poder crear su clave de recuperación. Desbloquéela para configurar una.",
+  "notice.created":
+    "Bóveda cifrada creada. Configure una clave de recuperación para que olvidar la frase de contraseña no obligue a borrarla.",
+  "notice.unlockedRecovery":
+    "Bóveda desbloqueada en modo de recuperación de solo lectura. Consulte el aviso en la biblioteca para saber qué hacer.",
+  "notice.unlocked": "Bóveda desbloqueada.",
+  "notice.recovered":
+    "Bóveda abierta con su clave de recuperación. A partir de ahora, use su nueva frase de contraseña.",
+  "notice.recoveredReadOnly":
+    "Bóveda abierta en solo lectura con su clave de recuperación; su frase de contraseña no cambió. Consulte el aviso en la biblioteca para saber qué hacer.",
+  "notice.eraseCancelled": "Borrado de la bóveda cancelado. No cambió nada.",
 };

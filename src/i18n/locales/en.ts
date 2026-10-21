@@ -356,6 +356,40 @@ export const en = {
     "You can change these any time in {settings}: {textSize} under {preferences}, and {autoLock} under {security}.",
   "comfort.continue": "Continue",
   "comfort.usual": "Use the usual settings",
+
+  // Notices after vault actions (the app's status line)
+  "notice.iosKeepOpen":
+    "Keep myCarlos open: switching apps pauses this transfer.",
+  "notice.dropRefused":
+    "To import PDFs, unlock your vault and use {button}. Drag and drop moves documents already in myCarlos.",
+  "notice.lockedIdle": {
+    one: "Locked after {count} minute without use.",
+    other: "Locked after {count} minutes without use.",
+  },
+  "notice.lockedHidden":
+    "Locked because myCarlos was minimized or sent to the background.",
+  "notice.locked": "Vault locked.",
+  "notice.autoLockSet": {
+    one: "Automatic locking set to {count} minute.",
+    other: "Automatic locking set to {count} minutes.",
+  },
+  "notice.backupCutOff":
+    "The backup stopped because the vault locked. No backup was saved. Keep your older backups. {note}",
+  "notice.transferUnfinished": "The transfer did not finish.",
+  "notice.restored":
+    "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
+  "notice.createdThenLocked":
+    "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+  "notice.created":
+    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+  "notice.unlockedRecovery":
+    "Vault unlocked in read-only recovery mode. See the notice in the library for what to do.",
+  "notice.unlocked": "Vault unlocked.",
+  "notice.recovered":
+    "Vault opened with your recovery key. Use your new passphrase from now on.",
+  "notice.recoveredReadOnly":
+    "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
+  "notice.eraseCancelled": "Vault erase cancelled. Nothing changed.",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

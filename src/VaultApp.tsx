@@ -16,6 +16,7 @@ import {
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
 import { ComfortSetup } from "./native/ComfortSetup";
+import { t } from "./i18n";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
@@ -71,8 +72,9 @@ const PICKER_GRACE_MS = 15 * 60 * 1000;
 // 5 seconds after this screen's own deadline (the native 2-second check only
 // adds to that).
 const TOUCH_THROTTLE_MS = 10_000;
-const IOS_TRANSFER_NOTE =
-  "Keep myCarlos open: switching apps pauses this transfer.";
+// The library's import button, named in a notice as the library shows it:
+// in English until the library is translated.
+const IMPORT_BUTTON = "Choose files to import";
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   if (!bridge.native) return <App />;
@@ -152,9 +154,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       event.stopPropagation();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
       if (event.type === "drop") {
-        setNotice(
-          "To import PDFs, unlock your vault and use Choose files to import. Drag and drop moves documents already in myCarlos.",
-        );
+        setNotice(t("notice.dropRefused", { button: IMPORT_BUTTON }));
       }
     };
     window.addEventListener("dragover", preventNavigation);
@@ -242,10 +242,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       const minutes = autoLockMinutesRef.current;
       setNotice(
         reason === "idle"
-          ? `Locked after ${minutes} minute${minutes === 1 ? "" : "s"} without use.`
+          ? t("notice.lockedIdle", { count: minutes })
           : reason === "hidden"
-            ? "Locked because myCarlos was minimized or sent to the background."
-            : "Vault locked.",
+            ? t("notice.lockedHidden")
+            : t("notice.locked"),
       );
     } catch (error) {
       // The vault is still unlocked natively. Every caller must learn that,
@@ -379,7 +379,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       transferHold.transferStarted();
       transferOutcomeRef.current = null;
       // iOS suspends an app in the background, and its transfer with it.
-      if (platformRef.current === "ios") setNotice(IOS_TRANSFER_NOTE);
+      if (platformRef.current === "ios") setNotice(t("notice.iosKeepOpen"));
       return start();
     };
     return {
@@ -568,9 +568,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     const normalized = normalizeAutoLockMinutes(value);
     setAutoLockMinutes(normalized);
     persistAutoLockMinutes(normalized);
-    setNotice(
-      `Automatic locking set to ${normalized} minute${normalized === 1 ? "" : "s"}.`,
-    );
+    setNotice(t("notice.autoLockSet", { count: normalized }));
   };
 
   // Shows a notice, and keeps it as the outcome of a transfer under way.
@@ -606,9 +604,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // next unlock, however the lock came. Only a backup's failure carries
       // such a note.
       const note = lockedOut ? vaultErrorNote(error) : null;
-      const cutOff = note
-        ? `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`
-        : null;
+      const cutOff = note ? t("notice.backupCutOff", { note }) : null;
       if (sessionRef.current !== startedIn) {
         // The vault locked while this ran. Report a failure that left
         // something to act on: a transfer's, such as a partial copy, after the
@@ -636,7 +632,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // failed lock does not lose (it shows it, or waits for a later one).
         if (cutOff) holdForUnlock(cutOff);
         else if (isCancelledError(error))
-          report("The transfer did not finish.");
+          report(t("notice.transferUnfinished"));
         lockReasonRef.current ??= "idle";
         requestLock(true);
         return;
@@ -687,9 +683,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const restored = () => {
     forgetReplacedVault();
     setStatus("locked");
-    setNotice(
-      "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
-    );
+    setNotice(t("notice.restored"));
   };
 
   if (status === "loading") {
@@ -753,9 +747,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 // locked, not open on what the lock ended.
                 setSnapshot(null);
                 setStatus("locked");
-                setNotice(
-                  "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
-                );
+                setNotice(t("notice.createdThenLocked"));
                 return;
               }
               const recoveryKey = begun.key;
@@ -767,8 +759,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               // With a key to set up, its dialog says what happened instead.
               if (!recoveryKey)
                 setLibraryNotice({
-                  message:
-                    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+                  message: t("notice.created"),
                   outcome: null,
                 });
             },
@@ -815,8 +806,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             if (offer) return;
             setLibraryNotice({
               message: current.recovery
-                ? "Vault unlocked in read-only recovery mode. See the notice in the library for what to do."
-                : "Vault unlocked.",
+                ? t("notice.unlockedRecovery")
+                : t("notice.unlocked"),
               outcome,
             });
           }, ["the passphrase"])
@@ -833,8 +824,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             const outcome = takeHeldOutcome(current);
             setLibraryNotice({
               message: passphraseReplaced
-                ? "Vault opened with your recovery key. Use your new passphrase from now on."
-                : "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
+                ? t("notice.recovered")
+                : t("notice.recoveredReadOnly"),
               outcome,
             });
           }, ["the recovery key", "the new passphrase"])
@@ -851,7 +842,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               setStatus("absent");
               setNotice("");
             } else {
-              setNotice("Vault erase cancelled. Nothing changed.");
+              setNotice(t("notice.eraseCancelled"));
             }
           }, ["the words you typed"])
         }

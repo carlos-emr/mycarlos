@@ -376,4 +376,42 @@ export const pl: Record<MessageKey, Message> = {
     "Można je zmienić w każdej chwili w sekcji „{settings}”: „{textSize}” w części „{preferences}”, a „{autoLock}” w części „{security}”.",
   "comfort.continue": "Dalej",
   "comfort.usual": "Użyj zwykłych ustawień",
+
+  // Notices after vault actions (the app's status line)
+  "notice.iosKeepOpen":
+    "Proszę nie zamykać myCarlos: przełączenie aplikacji wstrzymuje to przesyłanie.",
+  "notice.dropRefused":
+    "Aby zaimportować pliki PDF, proszę odblokować sejf i użyć przycisku „{button}”. Przeciąganie i upuszczanie przenosi dokumenty, które już są w myCarlos.",
+  "notice.lockedIdle": {
+    one: "Zablokowano po {count} minucie bez używania.",
+    few: "Zablokowano po {count} minutach bez używania.",
+    many: "Zablokowano po {count} minutach bez używania.",
+    other: "Zablokowano po {count} minuty bez używania.",
+  },
+  "notice.lockedHidden":
+    "Zablokowano, ponieważ myCarlos został zminimalizowany lub przeniesiony do tła.",
+  "notice.locked": "Sejf zablokowany.",
+  "notice.autoLockSet": {
+    one: "Automatyczna blokada ustawiona na {count} minutę.",
+    few: "Automatyczna blokada ustawiona na {count} minuty.",
+    many: "Automatyczna blokada ustawiona na {count} minut.",
+    other: "Automatyczna blokada ustawiona na {count} minuty.",
+  },
+  "notice.backupCutOff":
+    "Tworzenie kopii zapasowej zostało przerwane, ponieważ sejf się zablokował. Nie zapisano kopii. Proszę zachować starsze kopie zapasowe. {note}",
+  "notice.transferUnfinished": "Przesyłanie nie zostało ukończone.",
+  "notice.restored":
+    "Przywrócono kopię zapasową. Proszę odblokować sejf hasłem głównym, z którym został utworzony, lub użyć jego klucza odzyskiwania.",
+  "notice.createdThenLocked":
+    "Sejf został utworzony, a potem zablokowany, zanim można było utworzyć klucz odzyskiwania. Proszę odblokować sejf, aby skonfigurować klucz.",
+  "notice.created":
+    "Utworzono zaszyfrowany sejf. Proszę skonfigurować klucz odzyskiwania, aby zapomniane hasło główne nie oznaczało konieczności usunięcia sejfu.",
+  "notice.unlockedRecovery":
+    "Sejf odblokowano w trybie odzyskiwania tylko do odczytu. Co zrobić, opisuje komunikat w bibliotece.",
+  "notice.unlocked": "Sejf odblokowany.",
+  "notice.recovered":
+    "Sejf otwarto kluczem odzyskiwania. Od teraz proszę używać nowego hasła głównego.",
+  "notice.recoveredReadOnly":
+    "Sejf otwarto kluczem odzyskiwania w trybie tylko do odczytu; hasło główne się nie zmieniło. Co zrobić, opisuje komunikat w bibliotece.",
+  "notice.eraseCancelled": "Anulowano usuwanie sejfu. Nic się nie zmieniło.",
 };

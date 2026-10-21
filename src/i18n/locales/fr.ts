@@ -369,4 +369,40 @@ export const fr: Record<MessageKey, Message> = {
     "Vous pouvez les modifier à tout moment dans {settings} : {textSize} sous {preferences}, et {autoLock} sous {security}.",
   "comfort.continue": "Continuer",
   "comfort.usual": "Utiliser les réglages habituels",
+
+  // Notices after vault actions (the app's status line)
+  "notice.iosKeepOpen":
+    "Gardez myCarlos ouvert : changer d’application met ce transfert en pause.",
+  "notice.dropRefused":
+    "Pour importer des PDF, déverrouillez votre coffre-fort et utilisez {button}. Le glisser-déposer déplace les documents déjà dans myCarlos.",
+  "notice.lockedIdle": {
+    one: "Verrouillé après {count} minute sans utilisation.",
+    many: "Verrouillé après {count} de minutes sans utilisation.",
+    other: "Verrouillé après {count} minutes sans utilisation.",
+  },
+  "notice.lockedHidden":
+    "Verrouillé parce que myCarlos a été réduit ou envoyé en arrière-plan.",
+  "notice.locked": "Coffre-fort verrouillé.",
+  "notice.autoLockSet": {
+    one: "Verrouillage automatique réglé à {count} minute.",
+    many: "Verrouillage automatique réglé à {count} de minutes.",
+    other: "Verrouillage automatique réglé à {count} minutes.",
+  },
+  "notice.backupCutOff":
+    "La sauvegarde s’est arrêtée parce que le coffre-fort s’est verrouillé. Aucune sauvegarde n’a été enregistrée. Conservez vos sauvegardes plus anciennes. {note}",
+  "notice.transferUnfinished": "Le transfert n’a pas abouti.",
+  "notice.restored":
+    "Sauvegarde restaurée. Déverrouillez le coffre-fort avec la phrase secrète utilisée lors de sa création, ou utilisez sa clé de récupération.",
+  "notice.createdThenLocked":
+    "Votre coffre-fort a été créé, puis verrouillé avant que sa clé de récupération puisse être créée. Déverrouillez-le pour en configurer une.",
+  "notice.created":
+    "Coffre-fort chiffré créé. Configurez une clé de récupération : ainsi, une phrase secrète oubliée n’obligera pas à l’effacer.",
+  "notice.unlockedRecovery":
+    "Coffre-fort déverrouillé en mode de récupération, en lecture seule. Consultez l’avis dans la bibliothèque pour savoir quoi faire.",
+  "notice.unlocked": "Coffre-fort déverrouillé.",
+  "notice.recovered":
+    "Coffre-fort ouvert avec votre clé de récupération. Utilisez désormais votre nouvelle phrase secrète.",
+  "notice.recoveredReadOnly":
+    "Coffre-fort ouvert en lecture seule avec votre clé de récupération, et votre phrase secrète n’a pas changé. Consultez l’avis dans la bibliothèque pour savoir quoi faire.",
+  "notice.eraseCancelled": "Effacement du coffre-fort annulé. Rien n’a changé.",
 };

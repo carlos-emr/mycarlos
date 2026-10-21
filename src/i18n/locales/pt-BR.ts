@@ -364,4 +364,40 @@ export const ptBR: Record<MessageKey, Message> = {
     "Você pode mudar isso a qualquer momento em {settings}: {textSize} em {preferences} e {autoLock} em {security}.",
   "comfort.continue": "Continuar",
   "comfort.usual": "Usar as configurações habituais",
+
+  // Notices after vault actions (the app's status line)
+  "notice.iosKeepOpen":
+    "Mantenha o myCarlos aberto: trocar de app pausa esta transferência.",
+  "notice.dropRefused":
+    "Para importar PDFs, desbloqueie seu cofre e use {button}. Arrastar e soltar move documentos que já estão no myCarlos.",
+  "notice.lockedIdle": {
+    one: "Bloqueado após {count} minuto sem uso.",
+    many: "Bloqueado após {count} de minutos sem uso.",
+    other: "Bloqueado após {count} minutos sem uso.",
+  },
+  "notice.lockedHidden":
+    "Bloqueado porque o myCarlos foi minimizado ou enviado para segundo plano.",
+  "notice.locked": "Cofre bloqueado.",
+  "notice.autoLockSet": {
+    one: "Bloqueio automático definido para {count} minuto.",
+    many: "Bloqueio automático definido para {count} de minutos.",
+    other: "Bloqueio automático definido para {count} minutos.",
+  },
+  "notice.backupCutOff":
+    "A cópia de segurança parou porque o cofre foi bloqueado. Nenhuma cópia foi salva. Guarde suas cópias mais antigas. {note}",
+  "notice.transferUnfinished": "A transferência não foi concluída.",
+  "notice.restored":
+    "Cópia de segurança restaurada. Desbloqueie o cofre com a frase secreta usada ao criá-lo ou use a chave de recuperação dele.",
+  "notice.createdThenLocked":
+    "Seu cofre foi criado e depois bloqueado antes que a chave de recuperação pudesse ser gerada. Desbloqueie-o para configurar uma.",
+  "notice.created":
+    "Cofre criptografado criado. Configure uma chave de recuperação para que esquecer a frase secreta não signifique apagá-lo.",
+  "notice.unlockedRecovery":
+    "Cofre desbloqueado no modo de recuperação somente leitura. Veja o aviso na biblioteca para saber o que fazer.",
+  "notice.unlocked": "Cofre desbloqueado.",
+  "notice.recovered":
+    "Cofre aberto com sua chave de recuperação. A partir de agora, use sua nova frase secreta.",
+  "notice.recoveredReadOnly":
+    "Cofre aberto somente para leitura com sua chave de recuperação, e sua frase secreta não mudou. Veja o aviso na biblioteca para saber o que fazer.",
+  "notice.eraseCancelled": "O apagamento do cofre foi cancelado. Nada mudou.",
 };
