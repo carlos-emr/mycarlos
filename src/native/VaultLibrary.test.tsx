@@ -320,6 +320,49 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(lines.size).toBe(1);
   });
 
+  it("moves only the open person's folders by drag, with the right notice (Ben, 21 Oct)", async () => {
+    const withBlakeFolder: VaultSnapshot = {
+      ...twoPatients,
+      folders: [
+        ...twoPatients.folders,
+        {
+          id: "blake-forms",
+          profileId: "profile-2",
+          parentId: null,
+          name: "FAKE School forms",
+          createdAtMs: Date.UTC(2026, 0, 15, 12),
+        },
+      ],
+    };
+    const { bridge, setNotice } = renderLibrary(withBlakeFolder);
+    const library = screen.getByRole("navigation", { name: "Record library" });
+    // Avery is open: Blake's folder shows, but does not move by drag.
+    const blakes = within(library).getByRole("button", {
+      name: /^FAKE School forms/,
+    });
+    expect(blakes).not.toHaveAttribute("draggable");
+    expect(
+      within(library).getByRole("button", { name: /^FAKE June Letters/ }),
+    ).toHaveAttribute("draggable", "true");
+    // Within Avery's own, a folder still moves.
+    dragFolder(
+      within(library).getByRole("button", { name: /^FAKE June Letters/ }),
+      within(library).getByRole("button", { name: /^FAKE Letters/ }),
+    );
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        "letters",
+        "FAKE June Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(setNotice).toHaveBeenCalledWith(
+        "FAKE June Letters moved to FAKE Letters.",
+      ),
+    );
+  });
+
   it("shows the sections as a row of tabs on a narrow window, and the top-level folders under the path", async () => {
     await page.viewport(390, 844);
     try {

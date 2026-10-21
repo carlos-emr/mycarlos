@@ -132,6 +132,10 @@ export function LibrarySidebar({
       <nav className="side-nav" aria-label="Record library">
         {people.map((person) => {
           const open = section === "records" && person.id === profileId;
+          // Only the open person's folders move by drag: a folder does not
+          // go to another person (Ben's possible follow-up, not now). Every
+          // person's folders still take documents dropped from Shared with me.
+          const movable = open && !disabled;
           const rootZone = `sidebar:person:${person.id}`;
           return (
             <Fragment key={person.id}>
@@ -178,10 +182,11 @@ export function LibrarySidebar({
                         ? `${folder.name} (${person.displayName}) ${counts.byFolder.get(folder.id) ?? 0}`
                         : undefined
                     }
-                    draggable={!disabled}
-                    onDragStart={(event) =>
-                      startDrag(event, { kind: "folder", id: folder.id })
-                    }
+                    draggable={movable || undefined}
+                    onDragStart={(event) => {
+                      if (!movable) return event.preventDefault();
+                      startDrag(event, { kind: "folder", id: folder.id });
+                    }}
                     onDragEnd={dragEnd}
                     onDragOver={(event) => dragOver(event, zone)}
                     onDrop={(event) => dropInto(event, folder.id, person.id)}
