@@ -73,25 +73,28 @@ OS/app version, exact build hash, steps and artifact hash.
 ## Portal pickup: what may leave the device
 
 Planned with carlos-portal #41 and not built yet. The field names are the shared spec's
-(carlos-portal#42, `docs/architecture/mycarlos-delivery.md`); this list is the allow-list that the
+(carlos-portal#42 at c35649b, `docs/architecture/mycarlos-delivery.md`, with the shared vectors
+`tests/fixtures/delivery-contract.json`); this list is the allow-list that the
 pickup code must meet ([THREAT_MODEL](THREAT_MODEL.md) NET-01 to NET-03 and DEL-01 to DEL-06).
 myCarlos may send only these, and only to the `/api/mycarlos/` routes of the HTTPS address of the
 portal the patient linked:
 
 - **When linking** (`POST /api/mycarlos/link`): the `link_id` and `code` from the portal's code or
-  QR code; a `device_name`, shown to the patient under Linked devices; the public halves of this
+  QR code (a typed code that is not one is refused on the device as `not_a_link_code`, and nothing
+  is sent); a `device_name`, shown to the patient under Linked devices; the public halves of this
   link's per-link device keys (`x25519_public_key`, `ed25519_public_key`), a pair made fresh for
-  this link so no two portals see the same key ID and clinics cannot link the same device; and a
-  link assertion signed by the new key (`aud`, `iss`, `kid`, `jti`, `iat`, `exp`,
-  `request_hash`).
+  this link, so no two portals see the same key ID, and with the per-link `vault_head_link` below,
+  clinics cannot link the same device; and a link assertion signed by the new key (`aud`, `iss`,
+  `kid`, `jti`, `iat`, `exp`, `request_hash`).
 - **With every device request:** the `X-MyCarlos-Device-Assertion` header, signed by this link's
   Ed25519 key: `aud`, `iss`, `kid` (this link's `device_key_id`), `recipient_id` (random per
   patient account, never derived from the health card number), `jti`, `iat`, `exp`,
-  `request_hash`, and optionally `vault_head`.
+  `request_hash`, and optionally `vault_head_link`.
 - **When picking up:** `GET /api/mycarlos/deliveries` (the list, also the check-in) and
   `GET /api/mycarlos/deliveries/{delivery_id}` for each copy.
 - **Receipts** (`POST …/{delivery_id}/receipt`): `typ`, `aud`, `delivery_id`, `recipient_id`,
-  `device_key_id`, `ciphertext_sha256`, `document_sha256`, `picked_up_at`, `vault_head` and `jti`,
+  `device_key_id`, `ciphertext_sha256`, `document_sha256`, `picked_up_at`, `vault_head_link` and
+  `jti`,
   signed by this link's Ed25519 key. A receipt is sent only after the document is safely in the
   vault, and a re-sent one is the kept receipt, byte for byte.
 - **When refusing a copy:** nothing. A refused copy is not filed and no receipt is sent; it expires
@@ -99,14 +102,18 @@ portal the patient linked:
 
 It never sends document content, file names, titles, patient or person names, birth dates, vault
 or record IDs, passphrase-derived values, vault keys, private keys, logs, or details of the device
-or operating system; its user agent names only myCarlos and its version.
+or operating system beyond the OS family in the suggested `device_name`; its user agent names only
+myCarlos and its version.
 
-Two of these fields need care before the pickup code lands:
-- **`device_name`:** the patient chooses it; myCarlos suggests a plain one (such as "myCarlos on
-  Windows") that does not include the computer's, phone's or account's own name.
-- **`vault_head`:** the vault history's head hash (decision L). It is the same for every link of a
-  vault at a given moment, so two clinics could tie their links to one device. Whether it is sent
-  as is, or derived per link, is open (THREAT_MODEL NET-03).
+Two of these fields are made with care:
+- **`device_name`** (a client MUST in the spec): myCarlos suggests "myCarlos on" and the OS family
+  only (Windows, macOS, Linux, Android or iOS), so the patient can recognise the device under
+  Linked devices, and the patient can edit it. It never includes the computer's host name, the
+  phone's own name, the user account's name or the OS version.
+- **`vault_head_link`:** the vault history's anchor (decision L), never the raw head, which is the
+  same on every link of a vault. It is `HMAC-SHA256(K_link, head)`, with `K_link` derived by
+  HKDF-SHA256 from that link's Ed25519 seed, so two portals never see the same value; myCarlos can
+  recompute it for any past head.
 
 The network still sees the device's IP address, the portal's host name, and the times and sizes of
 requests. The portal sends a `Date` header, so myCarlos can tell the patient when its clock is far
