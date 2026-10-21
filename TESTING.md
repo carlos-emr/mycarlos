@@ -164,7 +164,20 @@ On every platform:
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. On a computer with a camera (Windows, macOS or Linux), choose **Take a photo** next to
+    **New**. The first time, the window explains why myCarlos uses the camera; choose **Use the
+    camera**. On a Mac, macOS then asks whether myCarlos may use the camera, with the same reason;
+    Windows and Linux ask nothing more. The camera's light comes on. Point it at a FAKE document,
+    choose **Take photo**: the light goes off and the photo shows. Try **Retake**, then **Use
+    photo**. The photo's details open, named like `Photo, 17 Oct 2026, 3.05 PM.jpg`, in the folder
+    that was open. Choose **View photo**, try **Zoom in** and **Zoom out**, then **Close**. Rename
+    the photo without `.jpg`: **View photo** still shows it. Save a copy and open it in another
+    app: its details there show no place, camera or date taken.
+    Then turn the camera off for apps in the computer's privacy settings and try again: the window
+    says where to turn it back on, and the rest of the app keeps working. Also check that the
+    light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
+    is on, or let the vault lock.
+13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
@@ -198,6 +211,14 @@ Developers can find a fuller checklist, including large files and interrupted tr
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to
 someone listening to it. These checks need a person. Each screen reader below is free, and all
 but NVDA are built in.
+
+Two browser tests go part of the way first, in Chromium with a synthetic vault:
+`tests/keyboard-walk.spec.ts` uses only the keyboard through first setup, unlocking, the library,
+Settings and the lock warning (every control reached in order, focus shown, no traps, Escape
+closes dialogs), and
+`tests/screen-reader-smoke.spec.ts` checks that controls have names, headings go in order and the
+key events are read out. Problems they find are listed with `test.fail` and an issue number. They
+are not a screen reader: the steps below still apply.
 
 | Platform | Screen reader | Turn it on and off | Move / activate |
 | --- | --- | --- | --- |
@@ -248,7 +269,11 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    that the key does not work.
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
    over from the library, and the reader says "Vault locked." with the field. Check the same
-   after an automatic lock.
+   after an automatic lock, where the reader gives the reason instead: "Locked after 1 minute
+   without use." With the delay at 1 minute, after 30 seconds without touching anything the
+   reader reads "myCarlos will lock in 30 seconds to keep your records private." and the focus
+   is on **Keep open**; pressing it, or any key, keeps the vault open for another minute. Check
+   the warning again at 400% text size: **Keep open** can be reached and pressed.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
@@ -445,3 +470,39 @@ If initial Enter or Space leaves a Linux dialog open, it records that behavior a
 with Escape; no destructive operation may occur. These checks cover the tested Windows
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
+
+## Appearance and Windows high contrast
+
+Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
+including on a phone. The separate browser demonstration follows the device automatically;
+it has no Preferences screen. This is still a synthetic-data evaluation, not approval for PHI.
+
+1. With no appearance saved, check that **System** follows the device's light/dark choice.
+   Change the device choice while myCarlos is open, on both a locked screen and the library.
+   The app should update without restarting.
+2. Choose **Light**, then **Dark**. Close and reopen the app after each: the choice should be
+   remembered, including before unlocking. Explicit Light/Dark should stay put when the device
+   changes. Choose **System** again to resume following the device.
+3. On Windows and macOS, check that the native window follows each choice where the platform
+   supports it. A failed or slow native command must not block the app. A failed save of the
+   preference should say it cannot be remembered, while the current appearance still works.
+4. On Windows, turn on a contrast theme in **Settings → Accessibility → Contrast themes**.
+   Try both a light and dark contrast palette, including with Light or Dark selected in the app.
+   There is no extra high-contrast switch. Tab through Preferences and the library: focus outlines,
+   selected buttons/checkmarks, document icons, warnings and disabled controls must be visible.
+   Check with Narrator's scan mode too; static text should not enter the Tab sequence.
+5. Check light/dark text, warning chips, selected records, bulk controls, input boundaries and
+   keyboard focus against their actual backgrounds. Automated axe checks do not cover every state
+   or replace native screen-reader and contrast-theme testing.
+6. Try the phone layout and the smallest desktop window at 400% text size. Appearance must not
+   remove Text size controls, move auto-lock out of Security, or change reduced-motion behavior.
+7. In the browser demonstration, compare the synthetic paper preview across light/dark: the paper
+   and its content remain unchanged while the surrounding app changes. Native documents still use
+   **Save a copy**; no PDF viewer is added. A recovery kit printed from either appearance must have
+   black text on white paper. Do not include passwords or recovery keys in screenshots or traces.
+
+`tests/appearance.spec.ts` exercises the real native UI with a synthetic IPC bridge in Chromium,
+including phone layout, live system changes, contrast checks and forced-colours emulation. This
+is separate from actual Windows/macOS native appearance testing and the text-size checks on
+real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
+old screenshots and successful CI do not establish Ben's UI approval.

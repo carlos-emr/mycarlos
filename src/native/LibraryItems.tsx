@@ -149,15 +149,13 @@ export function LibraryItems({
             onDragStart={(event) => startDrag(event, item)}
             onDragEnd={dragEnd}
           >
-            <button
-              className={`check ${selectedIds.includes(record.id) ? "checked" : ""}`}
-              type="button"
-              aria-label={`Select ${record.displayName}`}
-              aria-describedby={
+            <SelectRecord
+              record={record}
+              selected={selectedIds.includes(record.id)}
+              onToggle={onToggleSelected}
+              describedBy={
                 recordLocation ? `record-path-${record.id}` : undefined
               }
-              aria-pressed={selectedIds.includes(record.id)}
-              onClick={() => onToggleSelected(record.id)}
             />
             <div className="file-name">
               <span className={`document-icon ${kind.icon}`}>
@@ -193,12 +191,12 @@ export function LibraryItems({
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
             <button
-              className="more-button"
+              className="more-button native-details-button"
               type="button"
-              aria-label={`More options for ${record.displayName}`}
+              aria-label={`Details for ${record.displayName}`}
               onClick={() => onOpenRecord(record.id)}
             >
-              <Icon name="more" />
+              Details
             </button>
           </article>
         );
@@ -209,7 +207,7 @@ export function LibraryItems({
     </div>
   ) : (
     <div
-      className="file-grid"
+      className="file-grid native-file-grid"
       aria-label={`${folders.length + records.length} visible library items`}
     >
       {folders.map((folder) => (
@@ -271,6 +269,13 @@ export function LibraryItems({
             onDragStart={(event) => startDrag(event, item)}
             onDragEnd={dragEnd}
           >
+            {/* Grid view selects the same way as list view (#67). */}
+            <SelectRecord
+              record={record}
+              selected={selectedIds.includes(record.id)}
+              onToggle={onToggleSelected}
+              className="tile-check"
+            />
             <button
               className="tile-open"
               type="button"
@@ -307,5 +312,32 @@ export function LibraryItems({
         <EmptyState searching={searching} />
       )}
     </div>
+  );
+}
+
+/** The select tick: a 44px target around a 24px box (#67). */
+function SelectRecord({
+  record,
+  selected,
+  onToggle,
+  className = "",
+  describedBy,
+}: {
+  record: VaultRecord;
+  selected: boolean;
+  onToggle: (recordId: string) => void;
+  className?: string;
+  /** A search result's "In …" path, read after the name (#57). */
+  describedBy?: string;
+}) {
+  return (
+    <button
+      className={`check native-check ${selected ? "checked" : ""} ${className}`.trim()}
+      type="button"
+      aria-label={`Select ${record.displayName}`}
+      aria-describedby={describedBy}
+      aria-pressed={selected}
+      onClick={() => onToggle(record.id)}
+    />
   );
 }
