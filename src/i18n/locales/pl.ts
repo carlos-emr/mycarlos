@@ -463,6 +463,12 @@ export const pl: Record<MessageKey, Message> = {
   "appearance.system": "Systemowy",
   "appearance.light": "Jasny",
   "appearance.dark": "Ciemny",
+  "appearance.error.unreadable":
+    "Nie udało się odczytać zapisanego wyglądu. W tej sesji używana jest opcja „{system}”.",
+  "appearance.error.notRemembered":
+    "Wygląd zmieniono na tę sesję, ale nie udało się go zapamiętać na tym urządzeniu.",
+  "appearance.error.window":
+    "Wygląd okna nie mógł dostosować się do tego wyboru. Można dalej korzystać z myCarlos.",
 
   // A document shown as a photo
   "photo.eyebrow": "Zdjęcie",
@@ -474,4 +480,33 @@ export const pl: Record<MessageKey, Message> = {
   "photo.zoomOut": "Pomniejsz",
   "photo.zoomIn": "Powiększ",
   "photo.close": "Zamknij",
+
+  // The library's folders and documents, as a list or a grid
+  "library.items": {
+    one: "{count} widoczny element biblioteki",
+    few: "{count} widoczne elementy biblioteki",
+    many: "{count} widocznych elementów biblioteki",
+    other: "{count} widocznego elementu biblioteki",
+  },
+  "library.column.name": "Nazwa",
+  "library.column.source": "Źródło",
+  "library.column.added": "Data dodania",
+  "library.folder.label": "Folder {name}",
+  "library.folder.open": "Otwórz {name}",
+  "library.folder.items": {
+    one: "{count} element",
+    few: "{count} elementy",
+    many: "{count} elementów",
+    other: "{count} elementu",
+  },
+  "library.folder.rename": "Zmień nazwę folderu {name}",
+  "library.rename": "Zmień nazwę",
+  "library.document.label": "Dokument {name}",
+  "library.document.details": "Szczegóły dokumentu {name}",
+  "library.details": "Szczegóły",
+  "library.select": "Zaznacz {name}",
+  "library.empty.title": "To miejsce jest puste",
+  "library.empty.help": "Proszę dodać tutaj folder lub zaimportować dokument.",
+  "library.noMatch.title": "Brak pasujących dokumentów",
+  "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
 };

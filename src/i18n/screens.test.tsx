@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import {
+  act,
   getDefaultNormalizer,
   render,
   screen,
@@ -24,6 +25,9 @@ import { PreferencesSettings } from "../native/PreferencesSettings";
 import { PhotoViewer } from "../native/PhotoViewer";
 import { AppearanceProvider } from "../AppearanceProvider";
 import { startAppearance } from "../appearance";
+import { LibraryItems } from "../native/LibraryItems";
+import type { VaultDragDrop } from "../native/useVaultDragDrop";
+import type { VaultFolder, VaultRecord } from "../vault";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 
@@ -431,6 +435,235 @@ describe("the lock warning, Preferences and the photo viewer in each language", 
     );
     expect(translate("fr", "photo.zoomed", { percent: 200 })).toBe(
       "Agrandie à 200\u00a0%.",
+    );
+  });
+});
+
+describe("the library list and grid in each language", () => {
+  const added = Date.UTC(2026, 0, 15, 12);
+  const folder: VaultFolder = {
+    id: "folder-1",
+    profileId: "person-1",
+    parentId: null,
+    name: "FAKE Labs",
+    createdAtMs: added,
+  };
+  const record: VaultRecord = {
+    id: "record-1",
+    profileId: "person-1",
+    folderIds: [],
+    displayName: "FAKE_Scan.pdf",
+    sourceLabel: "FAKE source",
+    mediaType: "application/pdf",
+    plaintextSize: 2048,
+    importedAtMs: added,
+    available: true,
+  };
+  const drag = {
+    startDrag: vi.fn(),
+    dragOver: vi.fn(),
+    dropInto: vi.fn(),
+    dragEnd: vi.fn(),
+    dragClass: (base: string) => base,
+    dropClass: (base: string) => base,
+  } as unknown as VaultDragDrop;
+  const renderItems = (
+    view: "list" | "grid",
+    items: { folders: VaultFolder[]; records: VaultRecord[] } = {
+      folders: [folder],
+      records: [record],
+    },
+    searching = false,
+  ) =>
+    render(
+      <LibraryItems
+        view={view}
+        folders={items.folders}
+        records={items.records}
+        selectedIds={[]}
+        disabled={false}
+        searching={searching}
+        unavailableLabel="FAKE unavailable"
+        drag={drag}
+        recordDragItem={(id) => ({ kind: "records", ids: [id] })}
+        folderCount={() => 3}
+        onOpenFolder={vi.fn()}
+        onOpenRecord={vi.fn()}
+        onRenameFolder={vi.fn()}
+        onToggleSelected={vi.fn()}
+      />,
+    );
+
+  for (const locale of LOCALES) {
+    it(`shows the list, the grid and the empty states in ${locale}`, () => {
+      setLocaleOverride(locale);
+      const tr = (
+        key: Parameters<typeof translate>[1],
+        params?: Parameters<typeof translate>[2],
+      ) => translate(locale, key, params);
+      const name = folder.name;
+      const file = record.displayName;
+
+      const list = renderItems("list");
+      expect(
+        screen.getByLabelText(tr("library.items", { count: 2 })),
+      ).toBeInTheDocument();
+      for (const key of [
+        "library.column.name",
+        "library.column.source",
+        "library.column.added",
+      ] as const)
+        expect(screen.getByText(tr(key))).toBeInTheDocument();
+      expect(
+        screen.getByRole("article", {
+          name: tr("library.folder.label", { name }),
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.folder.open", { name }),
+        }),
+      ).toHaveAccessibleDescription(tr("library.folder.items", { count: 3 }));
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.folder.rename", { name }),
+        }),
+      ).toHaveTextContent(tr("library.rename"));
+      expect(
+        screen.getByRole("article", {
+          name: tr("library.document.label", { name: file }),
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.document.details", { name: file }),
+        }),
+      ).toHaveTextContent(tr("library.details"));
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.select", { name: file }),
+        }),
+      ).toBeInTheDocument();
+      list.unmount();
+
+      const grid = renderItems("grid");
+      expect(
+        screen.getByLabelText(tr("library.items", { count: 2 })),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(tr("library.folder.items", { count: 3 })),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.folder.rename", { name }),
+        }),
+      ).toHaveTextContent(tr("library.rename"));
+      grid.unmount();
+
+      const empty = renderItems("list", { folders: [], records: [] });
+      expect(screen.getByText(tr("library.empty.title"))).toBeVisible();
+      expect(screen.getByText(tr("library.empty.help"))).toBeVisible();
+      empty.unmount();
+      renderItems("grid", { folders: [], records: [] }, true);
+      expect(screen.getByText(tr("library.noMatch.title"))).toBeVisible();
+      expect(screen.getByText(tr("library.noMatch.help"))).toBeVisible();
+    });
+  }
+
+  it("writes the date added as the language in use writes it", () => {
+    setLocaleOverride("pt-BR");
+    const list = renderItems("list");
+    // The folder's and the document's dates, as toLocaleDateString wrote
+    // them for the device, now for the language chosen.
+    expect(screen.getAllByText("15/01/2026")).toHaveLength(2);
+    list.unmount();
+    act(() => setLocaleOverride("en"));
+    renderItems("grid");
+    expect(screen.getByText("1/15/2026")).toBeInTheDocument();
+  });
+
+  it("counts items with each language's forms", () => {
+    expect(translate("en", "library.folder.items", { count: 1 })).toBe(
+      "1 item",
+    );
+    expect(translate("en", "library.items", { count: 1 })).toBe(
+      "1 visible library item",
+    );
+    expect(translate("pl", "library.folder.items", { count: 3 })).toBe(
+      "3 elementy",
+    );
+    expect(translate("pl", "library.folder.items", { count: 5 })).toBe(
+      "5 elementów",
+    );
+    expect(translate("pl", "library.items", { count: 22 })).toBe(
+      "22 widoczne elementy biblioteki",
+    );
+    // French counts 0 as singular.
+    expect(translate("fr", "library.items", { count: 0 })).toBe(
+      "0 élément visible dans la bibliothèque",
+    );
+    expect(translate("es", "library.folder.items", { count: 1_000_000 })).toBe(
+      "1.000.000 de elementos",
+    );
+  });
+});
+
+describe("appearance problems in the language in use", () => {
+  it("words a choice it could not remember, and rewords it when the language changes", async () => {
+    setLocaleOverride("fr");
+    const user = userEvent.setup();
+    const appearance = startAppearance();
+    render(
+      <AppearanceProvider appearance={appearance}>
+        <PreferencesSettings />
+      </AppearanceProvider>,
+    );
+    const blocked = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("blocked");
+      });
+    await user.click(screen.getByRole("radio", { name: "Sombre" }));
+    blocked.mockRestore();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "L’apparence a changé pour cette session, mais n’a pas pu être mémorisée sur cet appareil.",
+    );
+    act(() => setLocaleOverride("es"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "La apariencia cambió para esta sesión, pero no se pudo recordar en este dispositivo.",
+    );
+  });
+
+  it("names the System choice in its own language when the saved one cannot be read", () => {
+    setLocaleOverride("pl");
+    const unreadable = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("blocked");
+      });
+    const appearance = startAppearance();
+    unreadable.mockRestore();
+    render(
+      <AppearanceProvider appearance={appearance}>
+        <PreferencesSettings />
+      </AppearanceProvider>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Nie udało się odczytać zapisanego wyglądu. W tej sesji używana jest opcja „Systemowy”.",
+    );
+  });
+
+  it("words a window that could not follow the choice", () => {
+    setLocaleOverride("pt-BR");
+    const appearance = startAppearance();
+    render(
+      <AppearanceProvider appearance={appearance}>
+        <PreferencesSettings />
+      </AppearanceProvider>,
+    );
+    act(() => appearance.setNativeError("appearance.error.window"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A aparência da janela não pôde seguir esta escolha. Você pode continuar usando o myCarlos.",
     );
   });
 });

@@ -80,7 +80,7 @@ describe("native appearance", () => {
     cleanups.push(startNativeAppearance(appearance));
     appearance.set("dark");
     await vi.advanceTimersByTimeAsync(3000);
-    expect(appearance.snapshot().nativeError).toContain("could not follow");
+    expect(appearance.snapshot().nativeError).toBe("appearance.error.window");
     expect(document.documentElement.dataset.theme).toBe("dark");
     finish({ platform: "windows" });
     await tick();
@@ -93,7 +93,7 @@ describe("native appearance", () => {
     const appearance = startAppearance();
     cleanups.push(startNativeAppearance(appearance));
     await tick();
-    expect(appearance.snapshot().nativeError).toContain("could not follow");
+    expect(appearance.snapshot().nativeError).toBe("appearance.error.window");
     appearance.set("dark");
     await tick();
     expect(appearance.snapshot().nativeError).toBe("");
@@ -127,7 +127,7 @@ describe("native appearance", () => {
     cleanups.push(startNativeAppearance(appearance));
     await tick();
     await vi.advanceTimersByTimeAsync(3000);
-    expect(appearance.snapshot().nativeError).toContain("could not follow");
+    expect(appearance.snapshot().nativeError).toBe("appearance.error.window");
     appearance.set("light");
     await tick();
     expect(setTheme).toHaveBeenLastCalledWith("light");

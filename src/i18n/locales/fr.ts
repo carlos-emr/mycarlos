@@ -451,6 +451,12 @@ export const fr: Record<MessageKey, Message> = {
   "appearance.system": "Système",
   "appearance.light": "Clair",
   "appearance.dark": "Sombre",
+  "appearance.error.unreadable":
+    "L’apparence enregistrée n’a pas pu être lue. L’option {system} est utilisée pendant cette session.",
+  "appearance.error.notRemembered":
+    "L’apparence a changé pour cette session, mais n’a pas pu être mémorisée sur cet appareil.",
+  "appearance.error.window":
+    "L’apparence de la fenêtre n’a pas pu suivre ce choix. Vous pouvez continuer à utiliser myCarlos.",
 
   // A document shown as a photo
   "photo.eyebrow": "Photo",
@@ -462,4 +468,31 @@ export const fr: Record<MessageKey, Message> = {
   "photo.zoomOut": "Réduire",
   "photo.zoomIn": "Agrandir",
   "photo.close": "Fermer",
+
+  // The library's folders and documents, as a list or a grid
+  "library.items": {
+    one: "{count} élément visible dans la bibliothèque",
+    many: "{count} d’éléments visibles dans la bibliothèque",
+    other: "{count} éléments visibles dans la bibliothèque",
+  },
+  "library.column.name": "Nom",
+  "library.column.source": "Source",
+  "library.column.added": "Date d’ajout",
+  "library.folder.label": "Dossier {name}",
+  "library.folder.open": "Ouvrir {name}",
+  "library.folder.items": {
+    one: "{count} élément",
+    many: "{count} d’éléments",
+    other: "{count} éléments",
+  },
+  "library.folder.rename": "Renommer le dossier {name}",
+  "library.rename": "Renommer",
+  "library.document.label": "Document {name}",
+  "library.document.details": "Détails de {name}",
+  "library.details": "Détails",
+  "library.select": "Sélectionner {name}",
+  "library.empty.title": "Cet emplacement est vide",
+  "library.empty.help": "Ajoutez un dossier ou importez un document ici.",
+  "library.noMatch.title": "Aucun document correspondant",
+  "library.noMatch.help": "Essayez une autre recherche.",
 };

@@ -1,6 +1,10 @@
 import { useId, useSyncExternalStore } from "react";
 import { useAppearance } from "../AppearanceProvider";
-import type { Appearance, AppearanceMode } from "../appearance";
+import type {
+  Appearance,
+  AppearanceError,
+  AppearanceMode,
+} from "../appearance";
 import { useI18n, type MessageKey } from "../i18n";
 
 // All three choices stay in view: a short list of radio buttons is easier to
@@ -20,16 +24,16 @@ function AppearanceChoice({ appearance }: { appearance: Appearance }) {
   const state = useSyncExternalStore(appearance.subscribe, appearance.snapshot);
   const id = useId();
   const { t } = useI18n();
+  const system = t("appearance.system");
   const error = [state.storageError, state.nativeError]
-    .filter(Boolean)
+    .filter((key): key is Exclude<AppearanceError, ""> => key !== "")
+    .map((key) => t(key, { system }))
     .join(" ");
   return (
     <section className="setting-row native-setting-form">
       <div>
         <h2>{t("appearance.title")}</h2>
-        <p id={`${id}-description`}>
-          {t("appearance.help", { system: t("appearance.system") })}
-        </p>
+        <p id={`${id}-description`}>{t("appearance.help", { system })}</p>
       </div>
       <fieldset
         className="appearance-choice"

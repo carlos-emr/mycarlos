@@ -447,6 +447,12 @@ export const es: Record<MessageKey, Message> = {
   "appearance.system": "Sistema",
   "appearance.light": "Claro",
   "appearance.dark": "Oscuro",
+  "appearance.error.unreadable":
+    "No se pudo leer la apariencia guardada. Se usa {system} durante esta sesión.",
+  "appearance.error.notRemembered":
+    "La apariencia cambió para esta sesión, pero no se pudo recordar en este dispositivo.",
+  "appearance.error.window":
+    "La apariencia de la ventana no pudo seguir esta elección. Puede seguir usando myCarlos.",
 
   // A document shown as a photo
   "photo.eyebrow": "Foto",
@@ -458,4 +464,31 @@ export const es: Record<MessageKey, Message> = {
   "photo.zoomOut": "Alejar",
   "photo.zoomIn": "Acercar",
   "photo.close": "Cerrar",
+
+  // The library's folders and documents, as a list or a grid
+  "library.items": {
+    one: "{count} elemento visible de la biblioteca",
+    many: "{count} de elementos visibles de la biblioteca",
+    other: "{count} elementos visibles de la biblioteca",
+  },
+  "library.column.name": "Nombre",
+  "library.column.source": "Origen",
+  "library.column.added": "Añadido el",
+  "library.folder.label": "Carpeta {name}",
+  "library.folder.open": "Abrir {name}",
+  "library.folder.items": {
+    one: "{count} elemento",
+    many: "{count} de elementos",
+    other: "{count} elementos",
+  },
+  "library.folder.rename": "Cambiar el nombre de la carpeta {name}",
+  "library.rename": "Cambiar nombre",
+  "library.document.label": "Documento {name}",
+  "library.document.details": "Detalles de {name}",
+  "library.details": "Detalles",
+  "library.select": "Seleccionar {name}",
+  "library.empty.title": "Esta ubicación está vacía",
+  "library.empty.help": "Añada una carpeta o importe un documento aquí.",
+  "library.noMatch.title": "Ningún documento coincide",
+  "library.noMatch.help": "Pruebe otra búsqueda.",
 };

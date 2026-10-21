@@ -1,4 +1,5 @@
 import { Icon } from "../Icon";
+import { formatDate, useI18n, type Locale } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
@@ -22,17 +23,21 @@ interface LibraryItemsProps {
   onToggleSelected: (recordId: string) => void;
 }
 
+/** A date added, as the language in use writes it, as toLocaleDateString
+ * did for the device's. */
+const addedOn = (ms: number, locale: Locale) =>
+  formatDate(ms, { year: "numeric", month: "numeric", day: "numeric" }, locale);
+
 function EmptyState({ searching }: { searching: boolean }) {
+  const { t } = useI18n();
   return (
     <div className="empty-state">
       <Icon name="folder" />
       <strong>
-        {searching ? "No matching records" : "This location is empty"}
+        {t(searching ? "library.noMatch.title" : "library.empty.title")}
       </strong>
       <span>
-        {searching
-          ? "Try another search."
-          : "Add a folder or import a document here."}
+        {t(searching ? "library.noMatch.help" : "library.empty.help")}
       </span>
     </div>
   );
@@ -55,22 +60,21 @@ export function LibraryItems({
   onToggleSelected,
 }: LibraryItemsProps) {
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
+  const { locale, t } = useI18n();
+  const shown = t("library.items", { count: folders.length + records.length });
   return view === "list" ? (
-    <div
-      className="filelist native-filelist"
-      aria-label={`${folders.length + records.length} visible library items`}
-    >
+    <div className="filelist native-filelist" aria-label={shown}>
       {/* Visual column labels only: each row's controls carry their own names. */}
       <div className="file-head" aria-hidden="true">
         <span />
-        <span className="sorted">Name</span>
-        <span className="column">Source</span>
-        <span className="column">Date added</span>
+        <span className="sorted">{t("library.column.name")}</span>
+        <span className="column">{t("library.column.source")}</span>
+        <span className="column">{t("library.column.added")}</span>
         <span />
       </div>
       {folders.map((folder) => (
         <article
-          aria-label={`${folder.name} folder`}
+          aria-label={t("library.folder.label", { name: folder.name })}
           className={dropClass(
             dragClass("file-row", { kind: "folder", id: folder.id }),
             `list:${folder.id}`,
@@ -88,7 +92,7 @@ export function LibraryItems({
           <button
             className="file-name native-file-open"
             type="button"
-            aria-label={`Open ${folder.name}`}
+            aria-label={t("library.folder.open", { name: folder.name })}
             aria-describedby={`folder-items-${folder.id}`}
             onClick={() => onOpenFolder(folder.id)}
           >
@@ -98,24 +102,22 @@ export function LibraryItems({
             <span className="name-copy">
               <strong>{folder.name}</strong>
               <small id={`folder-items-${folder.id}`}>
-                {folderCount(folder.id)} items
+                {t("library.folder.items", { count: folderCount(folder.id) })}
               </small>
             </span>
           </button>
           <span className="column" aria-hidden="true">
             —
           </span>
-          <span className="column">
-            {new Date(folder.createdAtMs).toLocaleDateString()}
-          </span>
+          <span className="column">{addedOn(folder.createdAtMs, locale)}</span>
           <button
             className="native-rename-button"
             type="button"
-            aria-label={`Rename folder ${folder.name}`}
+            aria-label={t("library.folder.rename", { name: folder.name })}
             disabled={disabled}
             onClick={() => onRenameFolder(folder)}
           >
-            Rename
+            {t("library.rename")}
           </button>
         </article>
       ))}
@@ -124,7 +126,9 @@ export function LibraryItems({
         const item = recordDragItem(record.id);
         return (
           <article
-            aria-label={`${record.displayName} document`}
+            aria-label={t("library.document.label", {
+              name: record.displayName,
+            })}
             className={dragClass("file-row", item)}
             key={record.id}
             draggable={!disabled}
@@ -156,15 +160,17 @@ export function LibraryItems({
             </div>
             <span className="column">{record.sourceLabel}</span>
             <span className="column">
-              {new Date(record.importedAtMs).toLocaleDateString()}
+              {addedOn(record.importedAtMs, locale)}
             </span>
             <button
               className="more-button native-details-button"
               type="button"
-              aria-label={`Details for ${record.displayName}`}
+              aria-label={t("library.document.details", {
+                name: record.displayName,
+              })}
               onClick={() => onOpenRecord(record.id)}
             >
-              Details
+              {t("library.details")}
             </button>
           </article>
         );
@@ -174,13 +180,10 @@ export function LibraryItems({
       )}
     </div>
   ) : (
-    <div
-      className="file-grid native-file-grid"
-      aria-label={`${folders.length + records.length} visible library items`}
-    >
+    <div className="file-grid native-file-grid" aria-label={shown}>
       {folders.map((folder) => (
         <article
-          aria-label={`${folder.name} folder`}
+          aria-label={t("library.folder.label", { name: folder.name })}
           className={dropClass(
             dragClass("file-tile", { kind: "folder", id: folder.id }),
             `grid:${folder.id}`,
@@ -205,18 +208,22 @@ export function LibraryItems({
             <span className="tile-caption">
               <span>
                 <strong>{folder.name}</strong>
-                <small>{folderCount(folder.id)} items</small>
+                <small>
+                  {t("library.folder.items", {
+                    count: folderCount(folder.id),
+                  })}
+                </small>
               </span>
             </span>
           </button>
           <button
             className="native-rename-button"
             type="button"
-            aria-label={`Rename folder ${folder.name}`}
+            aria-label={t("library.folder.rename", { name: folder.name })}
             disabled={disabled}
             onClick={() => onRenameFolder(folder)}
           >
-            Rename
+            {t("library.rename")}
           </button>
         </article>
       ))}
@@ -225,7 +232,9 @@ export function LibraryItems({
         const item = recordDragItem(record.id);
         return (
           <article
-            aria-label={`${record.displayName} document`}
+            aria-label={t("library.document.label", {
+              name: record.displayName,
+            })}
             className={dragClass("file-tile", item)}
             key={record.id}
             draggable={!disabled}
@@ -257,7 +266,7 @@ export function LibraryItems({
                 <span>
                   <strong>{record.displayName}</strong>
                   <small>
-                    {new Date(record.importedAtMs).toLocaleDateString()}
+                    {addedOn(record.importedAtMs, locale)}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
                 </span>
@@ -285,11 +294,12 @@ function SelectRecord({
   onToggle: (recordId: string) => void;
   className?: string;
 }) {
+  const { t } = useI18n();
   return (
     <button
       className={`check native-check ${selected ? "checked" : ""} ${className}`.trim()}
       type="button"
-      aria-label={`Select ${record.displayName}`}
+      aria-label={t("library.select", { name: record.displayName })}
       aria-pressed={selected}
       onClick={() => onToggle(record.id)}
     />

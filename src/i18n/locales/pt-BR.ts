@@ -446,6 +446,12 @@ export const ptBR: Record<MessageKey, Message> = {
   "appearance.system": "Sistema",
   "appearance.light": "Claro",
   "appearance.dark": "Escuro",
+  "appearance.error.unreadable":
+    "Não foi possível ler a aparência salva. Usando {system} nesta sessão.",
+  "appearance.error.notRemembered":
+    "A aparência mudou nesta sessão, mas não pôde ser lembrada neste dispositivo.",
+  "appearance.error.window":
+    "A aparência da janela não pôde seguir esta escolha. Você pode continuar usando o myCarlos.",
 
   // A document shown as a photo
   "photo.eyebrow": "Foto",
@@ -457,4 +463,31 @@ export const ptBR: Record<MessageKey, Message> = {
   "photo.zoomOut": "Diminuir zoom",
   "photo.zoomIn": "Aumentar zoom",
   "photo.close": "Fechar",
+
+  // The library's folders and documents, as a list or a grid
+  "library.items": {
+    one: "{count} item visível na biblioteca",
+    many: "{count} de itens visíveis na biblioteca",
+    other: "{count} itens visíveis na biblioteca",
+  },
+  "library.column.name": "Nome",
+  "library.column.source": "Origem",
+  "library.column.added": "Adicionado em",
+  "library.folder.label": "Pasta {name}",
+  "library.folder.open": "Abrir {name}",
+  "library.folder.items": {
+    one: "{count} item",
+    many: "{count} de itens",
+    other: "{count} itens",
+  },
+  "library.folder.rename": "Renomear a pasta {name}",
+  "library.rename": "Renomear",
+  "library.document.label": "Documento {name}",
+  "library.document.details": "Detalhes de {name}",
+  "library.details": "Detalhes",
+  "library.select": "Selecionar {name}",
+  "library.empty.title": "Este local está vazio",
+  "library.empty.help": "Adicione uma pasta ou importe um documento aqui.",
+  "library.noMatch.title": "Nenhum documento corresponde",
+  "library.noMatch.help": "Tente outra pesquisa.",
 };

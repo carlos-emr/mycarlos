@@ -432,6 +432,12 @@ export const en = {
   "appearance.system": "System",
   "appearance.light": "Light",
   "appearance.dark": "Dark",
+  "appearance.error.unreadable":
+    "The saved appearance could not be read. Using {system} for this session.",
+  "appearance.error.notRemembered":
+    "Appearance changed for this session, but could not be remembered on this device.",
+  "appearance.error.window":
+    "Window appearance could not follow this choice. You can keep using myCarlos.",
 
   // A document shown as a photo
   "photo.eyebrow": "Photo",
@@ -442,6 +448,31 @@ export const en = {
   "photo.zoomOut": "Zoom out",
   "photo.zoomIn": "Zoom in",
   "photo.close": "Close",
+
+  // The library's folders and documents, as a list or a grid
+  "library.items": {
+    one: "{count} visible library item",
+    other: "{count} visible library items",
+  },
+  "library.column.name": "Name",
+  "library.column.source": "Source",
+  "library.column.added": "Date added",
+  "library.folder.label": "{name} folder",
+  "library.folder.open": "Open {name}",
+  "library.folder.items": {
+    one: "{count} item",
+    other: "{count} items",
+  },
+  "library.folder.rename": "Rename folder {name}",
+  "library.rename": "Rename",
+  "library.document.label": "{name} document",
+  "library.document.details": "Details for {name}",
+  "library.details": "Details",
+  "library.select": "Select {name}",
+  "library.empty.title": "This location is empty",
+  "library.empty.help": "Add a folder or import a document here.",
+  "library.noMatch.title": "No matching records",
+  "library.noMatch.help": "Try another search.",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
