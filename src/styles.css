@@ -1034,6 +1034,11 @@ h1, h2, p { margin: 0; }
 .native-person-suggestion > svg { width: 18px; height: 18px; margin-top: 1px; color: var(--teal-dark); }
 .native-person-suggestion-actions { display: flex; flex-wrap: wrap; grid-column: 2; gap: 8px; }
 .file-row .native-person-suggestion { grid-column: 2 / -1; margin: 0; }
+.native-person-details-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); font-size: 0.875rem; }
+.native-person-details-list form { display: grid; flex: 1; gap: 9px; min-width: 0; }
+.native-person-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-person-details-help { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
 
 /* Preferences control and required control boundaries, separate from decorative dividers. */
 .appearance-choice { display: grid; gap: 2px; min-width: min(100%, 230px); max-width: 330px; margin: 0; padding: 0; border: 0; }

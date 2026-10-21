@@ -8,6 +8,17 @@ export interface PatientProfile {
   id: string;
   displayName: string;
   createdAtMs: number;
+  /** Prototype (Ben, 21 Oct): the person's full name as a clinic writes it,
+   * and their birth date (`YYYY-MM-DD`), both optional. Only the dev fake has
+   * them; in the vault they need manifest format 4 (carlos-portal #41 M2). */
+  fullName?: string;
+  birthDate?: string;
+}
+
+/** Prototype: a person's optional details. */
+export interface PersonDetails {
+  fullName?: string;
+  birthDate?: string;
 }
 
 export interface VaultFolder {
@@ -289,8 +300,8 @@ export interface VaultBridge {
   ): Promise<MoveOutcome>;
   /** Prototype (file shared documents to the right person): documents a
    * clinic delivered, opened on this device. The portal pickup does not exist
-   * yet; only the dev fake answers, and anything else, or a bridge without
-   * it, means none. */
+   * yet: only a page that turns the prototype on has it, and a bridge
+   * without it, or a failing one, means none. */
   clinicDeliveries?(): Promise<ClinicDelivery[]>;
   /** Prototype: files a delivered document under a person, or in Shared with
    * me (null). */
@@ -299,8 +310,14 @@ export interface VaultBridge {
     profileId: string | null,
   ): Promise<void>;
   /** Prototype: the patient name found on a shared document, if any. The real
-   * reading runs in the PDF helper (#63/#85); only the dev fake answers. */
+   * reading runs in the PDF helper (#63/#85); only a page that turns the
+   * prototype on has it. */
   nameFoundIn?(recordId: string): Promise<FoundName | null>;
+  /** Prototype: sets a person's optional full name and birth date. */
+  updateProfileDetails?(
+    profileId: string,
+    details: PersonDetails,
+  ): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -429,6 +446,38 @@ function isNativeRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+/** Prototype calls (file shared documents to the right person) that no
+ * native command answers yet. Only a page that asks for them gets them, as
+ * the screenshot kit's fake does; the app itself never calls them. */
+function prototypeCalls(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    Reflect.get(window, "__MYCARLOS_PROTOTYPE__") === true
+  );
+}
+
+function prototypeBridge(): Pick<
+  VaultBridge,
+  | "clinicDeliveries"
+  | "fileClinicDelivery"
+  | "nameFoundIn"
+  | "updateProfileDetails"
+> {
+  return {
+    clinicDeliveries: () => invoke<ClinicDelivery[]>("clinic_deliveries"),
+    fileClinicDelivery: (deliveryId, profileId) =>
+      invoke<void>("clinic_delivery_file", {
+        request: { deliveryId, profileId },
+      }),
+    nameFoundIn: (recordId) =>
+      invoke<FoundName | null>("shared_name_found", { request: { recordId } }),
+    updateProfileDetails: (profileId, details) =>
+      invoke<void>("profile_details_update", {
+        request: { profileId, ...details },
+      }),
+  };
+}
+
 export function createVaultBridge(): VaultBridge {
   const native = isNativeRuntime();
   return {
@@ -545,13 +594,7 @@ export function createVaultBridge(): VaultBridge {
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
-    clinicDeliveries: () => invoke<ClinicDelivery[]>("clinic_deliveries"),
-    fileClinicDelivery: (deliveryId, profileId) =>
-      invoke<void>("clinic_delivery_file", {
-        request: { deliveryId, profileId },
-      }),
-    nameFoundIn: (recordId) =>
-      invoke<FoundName | null>("shared_name_found", { request: { recordId } }),
+    ...(prototypeCalls() ? prototypeBridge() : {}),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },

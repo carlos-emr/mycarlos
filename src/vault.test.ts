@@ -253,3 +253,30 @@ describe("error messages", () => {
     expect(localDateText(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
   });
 });
+
+describe("prototype calls (file shared documents to the right person)", () => {
+  beforeEach(() => invoke.mockReset());
+
+  it("are left out of the app's bridge, so it never asks for commands no native side has", () => {
+    const bridge = createVaultBridge();
+    expect(bridge.clinicDeliveries).toBeUndefined();
+    expect(bridge.fileClinicDelivery).toBeUndefined();
+    expect(bridge.nameFoundIn).toBeUndefined();
+    expect(bridge.updateProfileDetails).toBeUndefined();
+  });
+
+  it("are there only on a page that turns the prototype on", async () => {
+    Reflect.set(window, "__MYCARLOS_PROTOTYPE__", true);
+    try {
+      const bridge = createVaultBridge();
+      invoke.mockResolvedValue(undefined);
+      await bridge.updateProfileDetails?.("p1", { birthDate: "2012-06-02" });
+      expect(invoke).toHaveBeenLastCalledWith("profile_details_update", {
+        request: { profileId: "p1", birthDate: "2012-06-02" },
+      });
+      expect(bridge.clinicDeliveries).toBeTypeOf("function");
+    } finally {
+      Reflect.deleteProperty(window, "__MYCARLOS_PROTOTYPE__");
+    }
+  });
+});

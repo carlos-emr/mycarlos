@@ -1,16 +1,26 @@
 import { Icon } from "../Icon";
 import type { PatientProfile } from "../vault";
+import type { MatchedBy } from "./personMatch";
+
+const WHY: Record<MatchedBy, string> = {
+  birthDate: "the birth date on the document matches",
+  birthDateAndName: "the birth date and name on the document match",
+  name: "the name on the document matches",
+};
 
 /** Prototype: a shared document whose patient name matches exactly one
  * person is offered to them. It is never moved without the patient's Move. */
 export function PersonSuggestion({
   person,
+  matchedBy,
   documentName,
   busy,
   onMove,
   onDismiss,
 }: {
   person: PatientProfile;
+  /** What told the person apart (birth date first, Ben, 21 Oct). */
+  matchedBy: MatchedBy;
   documentName: string;
   busy: boolean;
   onMove: () => void;
@@ -24,8 +34,8 @@ export function PersonSuggestion({
     >
       <Icon name="info" />
       <span>
-        Looks like this is for <strong>{person.displayName}</strong> (the name
-        on the document matches). Move it to {person.displayName}'s records?
+        Looks like this is for <strong>{person.displayName}</strong> (
+        {WHY[matchedBy]}). Move it to {person.displayName}'s records?
       </span>
       <span className="native-person-suggestion-actions">
         <button

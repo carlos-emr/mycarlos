@@ -9,6 +9,7 @@ import {
   type VaultBridge,
   type VaultFolder,
   type VaultRecord,
+  type PersonDetails,
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
@@ -28,6 +29,7 @@ import { LibraryItems } from "./LibraryItems";
 import { ClinicDeliveryDialog } from "./ClinicDeliveryDialog";
 import { ClinicLinksSetting } from "./ClinicLinksSetting";
 import { PersonSuggestion } from "./PersonSuggestion";
+import { PersonDetailsList } from "./PersonDetails";
 import { useClinicDeliveries } from "./useClinicDeliveries";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import {
@@ -340,14 +342,17 @@ export function VaultLibrary({
   );
   const suggestions = usePersonSuggestions(bridge, sharedRecords, people);
   const suggestionFor = (record: VaultRecord) => {
-    const person =
+    const match =
       record.profileId === sharedProfileId && !readOnly
         ? suggestions.suggestionFor(record.id)
         : null;
+    const person = match?.person;
     return (
+      match &&
       person && (
         <PersonSuggestion
           person={person}
+          matchedBy={match.by}
           documentName={record.displayName}
           busy={busy}
           onMove={() => moveToPerson([record.id], person.id, null)}
@@ -776,15 +781,32 @@ export function VaultLibrary({
       await refresh();
       setNotice("Passphrase changed.");
     }, ["the current passphrase", "the new passphrase"]);
-  const createProfile = async (name: string) => {
+  const createProfile = async (name: string, details?: PersonDetails) => {
     let created = false;
     await run(async () => {
-      await bridge.createProfile(name);
+      const profileId = await bridge.createProfile(name);
+      // Prototype: the optional full name and birth date (Ben, 21 Oct).
+      if (details && (details.fullName || details.birthDate))
+        await bridge.updateProfileDetails?.(profileId, details);
       created = true;
       await refresh();
       setNotice(`${name} was added.`);
     }, ["the profile name"]);
     return created;
+  };
+  // Prototype: a person's optional full name and birth date, changed later.
+  const savePersonDetails = async (
+    profileId: string,
+    details: PersonDetails,
+  ) => {
+    let saved = false;
+    await run(async () => {
+      await bridge.updateProfileDetails?.(profileId, details);
+      saved = true;
+      await refresh();
+      setNotice(`${profileName(profileId)}'s details were saved.`);
+    }, ["the full name", "the birth date"]);
+    return saved;
   };
   const resetVault = (confirmation: string) =>
     run(async () => {
@@ -1495,6 +1517,16 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                askPersonDetails={Boolean(bridge.updateProfileDetails)}
+                peopleDetails={
+                  bridge.updateProfileDetails && (
+                    <PersonDetailsList
+                      people={people}
+                      busy={busy || readOnly}
+                      onSave={savePersonDetails}
+                    />
+                  )
+                }
                 onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}

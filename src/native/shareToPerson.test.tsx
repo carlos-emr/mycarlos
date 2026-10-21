@@ -173,6 +173,7 @@ describe("the person a shared document looks like it is for (prototype)", () => 
     render(
       <PersonSuggestion
         person={people[1]}
+        matchedBy="name"
         documentName="FAKE Referral letter.pdf"
         busy={false}
         onMove={onMove}
@@ -227,9 +228,9 @@ describe("the library with the prototype (FAKE bridge)", () => {
     sharedProfileId: "shared",
   };
 
-  function renderLibrary(extra: Partial<VaultBridge>) {
+  function renderLibrary(extra: Partial<VaultBridge>, shown = vault) {
     const bridge = {
-      snapshot: vi.fn().mockResolvedValue(vault),
+      snapshot: vi.fn().mockResolvedValue(shown),
       moveToPerson: vi
         .fn()
         .mockResolvedValue({ moved: ["s1"], alreadyThere: [] }),
@@ -239,12 +240,12 @@ describe("the library with the prototype (FAKE bridge)", () => {
     render(
       <VaultLibrary
         bridge={bridge}
-        snapshot={vault}
+        snapshot={shown}
         busy={false}
         notice=""
         setNotice={setNotice}
         run={async (operation) => operation()}
-        refresh={async () => vault}
+        refresh={async () => shown}
         onLock={vi.fn().mockResolvedValue(undefined)}
         autoLockMinutes={5}
         onAutoLockMinutes={vi.fn()}
@@ -390,5 +391,165 @@ describe("the library with the prototype (FAKE bridge)", () => {
       screen.queryByRole("group", { name: /^Suggested person/ }),
     ).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  describe("people's optional full name and birth date (Ben, 21 Oct)", () => {
+    const withDetails: VaultSnapshot = {
+      ...vault,
+      profiles: [
+        {
+          id: "p1",
+          displayName: "FAKE Mom",
+          createdAtMs: 1,
+          fullName: "FAKE Mary Smith",
+          birthDate: "1958-03-12",
+        },
+        { id: "p2", displayName: "FAKE Jamie Example", createdAtMs: 2 },
+        { id: "shared", displayName: "Shared with me", createdAtMs: 3 },
+      ],
+    };
+    const openSecurity = () =>
+      fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
+
+    it("asks for them when a person is added, and keeps only what was given", async () => {
+      const createProfile = vi.fn().mockResolvedValue("p9");
+      const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+      renderLibrary({ createProfile, updateProfileDetails }, withDetails);
+      openSecurity();
+      await userEvent.fill(
+        screen.getByRole("textbox", { name: "New profile name" }),
+        "FAKE Riley",
+      );
+      const form = screen
+        .getByRole("button", { name: "Add profile" })
+        .closest("form")!;
+      await userEvent.fill(
+        within(form).getByRole("textbox", {
+          name: "Full name, as on clinic documents (optional)",
+        }),
+        "  FAKE Riley Example ",
+      );
+      await userEvent.fill(
+        within(form).getByLabelText("Birth date (optional)"),
+        "2012-06-02",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add profile" }),
+      );
+      expect(createProfile).toHaveBeenCalledWith("FAKE Riley");
+      expect(updateProfileDetails).toHaveBeenCalledWith("p9", {
+        fullName: "FAKE Riley Example",
+        birthDate: "2012-06-02",
+      });
+    });
+
+    it("adds a person without them when both are left blank", async () => {
+      const createProfile = vi.fn().mockResolvedValue("p9");
+      const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+      renderLibrary({ createProfile, updateProfileDetails }, withDetails);
+      openSecurity();
+      await userEvent.fill(
+        screen.getByRole("textbox", { name: "New profile name" }),
+        "FAKE Riley",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add profile" }),
+      );
+      expect(createProfile).toHaveBeenCalledWith("FAKE Riley");
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+    });
+
+    it("refuses a birth date in the future", async () => {
+      renderLibrary(
+        { createProfile: vi.fn(), updateProfileDetails: vi.fn() },
+        withDetails,
+      );
+      openSecurity();
+      await userEvent.fill(
+        screen.getByRole("textbox", { name: "New profile name" }),
+        "FAKE Riley",
+      );
+      const form = screen
+        .getByRole("button", { name: "Add profile" })
+        .closest("form")!;
+      await userEvent.fill(
+        within(form).getByLabelText("Birth date (optional)"),
+        `${new Date().getFullYear() + 1}-01-01`,
+      );
+      expect(within(form).getByRole("alert")).toHaveTextContent(
+        "A birth date cannot be in the future.",
+      );
+      expect(
+        screen.getByRole("button", { name: "Add profile" }),
+      ).toBeDisabled();
+    });
+
+    it("shows each person's and changes them later", async () => {
+      const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+      const { setNotice } = renderLibrary(
+        { updateProfileDetails },
+        withDetails,
+      );
+      openSecurity();
+      const list = screen.getByRole("list", { name: "People's details" });
+      expect(
+        within(list)
+          .getAllByRole("listitem")
+          .map((item) => item.textContent),
+      ).toEqual([
+        "FAKE Mom · FAKE Mary Smith · born 12 Mar 1958Edit details",
+        "FAKE Jamie Example · No full name · No birth dateEdit details",
+      ]);
+      await userEvent.click(
+        within(list).getByRole("button", {
+          name: "Edit details for FAKE Jamie Example",
+        }),
+      );
+      const form = within(list).getByRole("form", {
+        name: "Details for FAKE Jamie Example",
+      });
+      await userEvent.fill(
+        within(form).getByLabelText("Birth date (optional)"),
+        "2012-06-02",
+      );
+      await userEvent.click(
+        within(form).getByRole("button", { name: "Save details" }),
+      );
+      expect(updateProfileDetails).toHaveBeenCalledWith("p2", {
+        birthDate: "2012-06-02",
+      });
+      expect(setNotice).toHaveBeenCalledWith(
+        "FAKE Jamie Example's details were saved.",
+      );
+    });
+
+    it("asks for none of it where the app cannot keep it", () => {
+      renderLibrary({ createProfile: vi.fn() }, withDetails);
+      openSecurity();
+      expect(screen.queryByLabelText("Birth date (optional)")).toBeNull();
+      expect(
+        screen.queryByRole("list", { name: "People's details" }),
+      ).toBeNull();
+    });
+
+    it("suggests a shared document by the birth date on it, and says so", async () => {
+      renderLibrary(
+        {
+          nameFoundIn: async (id: string) =>
+            id === "s1" ? { name: "SMITH, M.", birthDate: "1958-03-12" } : null,
+        },
+        withDetails,
+      );
+      fireEvent.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      expect(
+        await screen.findByRole("group", {
+          name: "Suggested person for FAKE Referral letter.pdf",
+        }),
+      ).toHaveTextContent(
+        "Looks like this is for FAKE Mom (the birth date on the document matches). Move it to FAKE Mom's records?",
+      );
+    });
   });
 });
