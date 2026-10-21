@@ -12,7 +12,7 @@ interface LibrarySidebarProps {
    * is opened (#61). */
   sharedNew: number;
   /** With one person, Shared with me is a fixed folder inside their records;
-   * with several, it is outside everyone's. */
+   * with several, it is the whole vault's, above the people (Ben, 21 Oct). */
   sharedInside: boolean;
   onOpenShared: () => void;
   currentFolderId: string | null;
@@ -100,6 +100,11 @@ export function LibrarySidebar({
           <small>{profileName}</small>
         </span>
       </div>
+      {/* With several people it is above them, so it is not taken for the
+          chosen person's. */}
+      {!sharedInside && (
+        <div className="side-nav native-shared-nav">{shared}</div>
+      )}
       {profileChoice}
       <nav className="side-nav" aria-label="Record library">
         <button
@@ -117,7 +122,6 @@ export function LibrarySidebar({
             {records.filter((record) => !record.folderIds.length).length}
           </span>
         </button>
-        {!sharedInside && shared}
         <span className="nav-label">Folders</span>
         {sharedInside && shared}
         {sidebarFolders.map(({ folder, depth }) => (
