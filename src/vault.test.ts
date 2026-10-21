@@ -310,8 +310,10 @@ describe("errors the app words itself, in the language in use (#46)", () => {
       { code: "damaged_document", message: "Native.", recordId: "record-2" },
       vault,
     ) as { message: string };
-    expect(named.message).toMatch(
-      /^Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan\.pdf” \(adicionado em 15\/01\/2026, nos documentos de Avery\)/,
+    // The date as the computer writes it, in a Portuguese sentence.
+    const date = new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString();
+    expect(named.message).toContain(
+      `Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan.pdf” (adicionado em ${date}, nos documentos de Avery)`,
     );
   });
 });

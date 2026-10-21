@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { formatDate, getLocale, t, type MessageKey } from "./i18n";
+import { getLocale, t, type MessageKey } from "./i18n";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -318,13 +318,9 @@ export function namedDamage(
     vault.profiles.length > 1
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
-  // The date as the message's language writes it, as toLocaleDateString
-  // did for the device's.
-  const date = formatDate(record.importedAtMs, {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  });
+  // As the computer writes dates, whatever language myCarlos uses (Ben,
+  // 21 Oct): a Canadian computer writes 2026-01-15, never 1/15/2026.
+  const date = new Date(record.importedAtMs).toLocaleDateString();
   const where = profile
     ? t("error.damaged.whereFor", { date, person: profile.displayName })
     : t("error.damaged.where", { date });
