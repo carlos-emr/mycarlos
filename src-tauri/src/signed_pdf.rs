@@ -17,8 +17,12 @@
 //! This module does no PDF parsing. Where the signatures sit, and the
 //! embedded manifest's bytes, come from the sandboxed PDF helper's structure
 //! report. Everything that decides the verdict is checked here against the
-//! file's own bytes: the byte range, the /Contents framing, the digest and
-//! the signature.
+//! file's own bytes: the byte range, the /Contents framing, the digest, the
+//! signature, and the manifest itself, which counts only if it appears
+//! verbatim, exactly once, inside the signed bytes. A wrong or compromised
+//! helper can then only cost a document its "Verified", never give one. An
+//! encrypted copy (the email path) stores its manifest encrypted, so it
+//! cannot be bound this way yet and is refused as `encrypted_manifest`.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -61,6 +65,9 @@ pub struct SignatureLayout {
     /// Whether a complete revision (an incremental update) follows the
     /// signed one, rather than loose bytes.
     pub update_after_signature: bool,
+    /// Whether the PDF is encrypted (has an /Encrypt dictionary), so its
+    /// embedded manifest is stored encrypted.
+    pub encrypted: bool,
 }
 
 /// A portal link's pins, as linking stored them (carlos-portal #42).
@@ -88,6 +95,12 @@ pub enum Refusal {
     NotP256,
     UnknownSigner,
     BadManifest,
+    /// The reported manifest is not one the clinic signed into this file:
+    /// it does not appear verbatim, exactly once, in the signed bytes.
+    ManifestNotSigned,
+    /// The manifest is stored encrypted, so it cannot be tied to the signed
+    /// bytes yet; shown as "not verified (encrypted copy)".
+    EncryptedManifest,
     KidMismatch,
     ClinicMismatch,
 }
@@ -173,6 +186,16 @@ pub fn check(
             manifest: None,
         });
     };
+    // Only a manifest the clinic signed into this file counts, whatever the
+    // helper reported.
+    let [head, tail] = [&pdf[..signed.gap.0], &pdf[signed.gap.1..]];
+    if occurrences(head, bytes) + occurrences(tail, bytes) != 1 {
+        return Err(if layout.encrypted {
+            Refusal::EncryptedManifest
+        } else {
+            Refusal::ManifestNotSigned
+        });
+    }
     let manifest = parse_manifest(bytes)?;
     if manifest.kid != signed.kid {
         return Err(Refusal::KidMismatch);
@@ -204,6 +227,21 @@ pub fn check(
 
 struct SignedBy {
     kid: String,
+    /// Where the unsigned /Contents gap starts and ends; the signed bytes
+    /// are everything else, to the end of the file.
+    gap: (usize, usize),
+}
+
+/// How often `needle` appears in `haystack`, counting no further than 2.
+fn occurrences(haystack: &[u8], needle: &[u8]) -> usize {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return 0;
+    }
+    haystack
+        .windows(needle.len())
+        .filter(|window| *window == needle)
+        .take(2)
+        .count()
 }
 
 /// Step 1: the signature, on the file's own bytes.
@@ -236,7 +274,8 @@ fn check_signature(pdf: &[u8], layout: &SignatureLayout) -> Result<SignedBy, Ref
     let mut hash = Sha256::new();
     hash.update(&pdf[..b]);
     hash.update(&pdf[c..end]);
-    verify_cms(&contents, &hash.finalize())
+    let kid = verify_cms(&contents, &hash.finalize())?;
+    Ok(SignedBy { kid, gap: (b, c) })
 }
 
 fn decode_hex(hex: &[u8]) -> Option<Vec<u8>> {
@@ -252,8 +291,8 @@ fn decode_hex(hex: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// One CMS SignedData, detached, with a single P-256 signer whose signed
-/// attributes carry `digest`.
-fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
+/// attributes carry `digest`; returns the signer's kid.
+fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<String, Refusal> {
     use Refusal::BadSignature as Bad;
     let mut reader = SliceReader::new(contents).map_err(|_| Refusal::BadContents)?;
     let info = ContentInfo::decode(&mut reader).map_err(|_| Refusal::BadContents)?;
@@ -347,9 +386,7 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
     let signed_attributes = attributes.to_der().map_err(|_| Bad)?;
     key.verify(&signed_attributes, &signature)
         .map_err(|_| Bad)?;
-    Ok(SignedBy {
-        kid: URL_SAFE_NO_PAD.encode(Sha256::digest(&spki_der)),
-    })
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(&spki_der)))
 }
 
 /// SigningCertificateV2 { certs SEQUENCE OF ESSCertIDv2, ... }: the first
@@ -509,7 +546,7 @@ mod tests {
     }
 
     /// What the PDF helper reports, from the fixture's ranges: a later
-    /// revision ends with its own %%EOF.
+    /// revision ends with its own %%EOF, and an encrypted PDF has /Encrypt.
     fn helper_layout(pdf: &[u8], byte_ranges: Vec<[usize; 4]>) -> SignatureLayout {
         let update_after_signature = byte_ranges.first().is_some_and(|[_, _, c, d]| {
             pdf.get(c + d..)
@@ -518,6 +555,7 @@ mod tests {
         SignatureLayout {
             byte_ranges,
             update_after_signature,
+            encrypted: pdf.windows(8).any(|window| window == b"/Encrypt"),
         }
     }
 
@@ -548,7 +586,15 @@ mod tests {
                 document.manifest.as_deref(),
                 std::slice::from_ref(&link),
             );
-            assert_eq!(code(&result), document.expect, "{name}");
+            // The email copy's manifest is stored encrypted, so it cannot be
+            // tied to the signed bytes yet: "not verified (encrypted copy)"
+            // until a binding is agreed with CARLOS.
+            let expect = if name == "signed-email-encrypted.pdf" {
+                "encrypted_manifest"
+            } else {
+                document.expect.as_str()
+            };
+            assert_eq!(code(&result), expect, "{name}");
         }
     }
 
@@ -637,7 +683,7 @@ mod tests {
         let [a, b, c, d] = sent.layout.byte_ranges[0];
         let shifted = |range: [usize; 4]| SignatureLayout {
             byte_ranges: vec![range],
-            update_after_signature: false,
+            ..SignatureLayout::default()
         };
         // A gap that does not frame the /Contents.
         for range in [[a, b + 1, c, d], [a, b, c - 1, d + 1], [1, b - 1, c, d]] {
@@ -656,28 +702,74 @@ mod tests {
             check(&sent.pdf, &SignatureLayout::default(), None, links),
             Err(Refusal::Unsigned)
         );
-        // Another document's manifest: one with no recipient is not matched,
-        // and one naming another key is refused.
-        let no_recipient = document(&documents, "signed-no-recipient.pdf");
+        // Another document's manifest, or one the clinic never signed: not
+        // in this file's signed bytes, so not verified.
+        for other in ["signed-no-recipient.pdf", "refuse-kid-mismatch.pdf"] {
+            let other = document(&documents, other).manifest.as_deref();
+            assert_eq!(
+                check(&sent.pdf, &sent.layout, other, links),
+                Err(Refusal::ManifestNotSigned)
+            );
+        }
+        // The same, said to be encrypted.
+        let encrypted = SignatureLayout {
+            encrypted: true,
+            ..sent.layout.clone()
+        };
+        let other = document(&documents, "signed-no-recipient.pdf");
         assert_eq!(
-            code(&check(
-                &sent.pdf,
-                &sent.layout,
-                no_recipient.manifest.as_deref(),
-                links
-            )),
-            "signed_not_matched"
+            check(&sent.pdf, &encrypted, other.manifest.as_deref(), links),
+            Err(Refusal::EncryptedManifest)
         );
-        let other_key = document(&documents, "refuse-kid-mismatch.pdf");
+    }
+
+    #[test]
+    fn a_manifest_for_another_patient_cannot_ride_on_a_clinic_signature() {
+        // The clinic signed this PDF with no recipient. A helper that reports
+        // the manifest of a copy made for this patient must not turn it into
+        // Verified.
+        let (link, documents) = fixture();
+        let unmatched = document(&documents, "signed-no-recipient.pdf");
+        let forged = document(&documents, "signed-send-to-mycarlos.pdf")
+            .manifest
+            .as_deref();
         assert_eq!(
             check(
-                &sent.pdf,
-                &sent.layout,
-                other_key.manifest.as_deref(),
-                links
+                &unmatched.pdf,
+                &unmatched.layout,
+                forged,
+                std::slice::from_ref(&link)
             ),
-            Err(Refusal::KidMismatch)
+            Err(Refusal::ManifestNotSigned)
         );
+    }
+
+    #[test]
+    fn a_manifest_added_in_an_unsigned_update_is_not_verified() {
+        let (link, documents) = fixture();
+        let unmatched = document(&documents, "signed-no-recipient.pdf");
+        let forged = document(&documents, "signed-send-to-mycarlos.pdf")
+            .manifest
+            .clone()
+            .unwrap();
+        let mut pdf = unmatched.pdf.clone();
+        pdf.extend_from_slice(b"\n99 0 obj\n<< /Type /EmbeddedFile >>\nstream\n");
+        pdf.extend_from_slice(&forged);
+        pdf.extend_from_slice(b"\nendstream\nendobj\ntrailer\n<<>>\nstartxref\n0\n%%EOF\n");
+        let layout = helper_layout(&pdf, unmatched.layout.byte_ranges.clone());
+        assert_eq!(
+            check(&pdf, &layout, Some(&forged), std::slice::from_ref(&link)),
+            Err(Refusal::ExtraUpdate)
+        );
+    }
+
+    #[test]
+    fn a_manifest_counts_once_and_only_in_the_signed_bytes() {
+        assert_eq!(occurrences(b"abcabcabc", b"abc"), 2, "counts no further");
+        assert_eq!(occurrences(b"xxabcxx", b"abc"), 1);
+        assert_eq!(occurrences(b"xxabxx", b"abc"), 0);
+        assert_eq!(occurrences(b"ab", b"abc"), 0);
+        assert_eq!(occurrences(b"abc", b""), 0);
     }
 
     #[test]
