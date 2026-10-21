@@ -971,6 +971,10 @@ export function VaultLibrary({
               }}
               sharedNew={sharedNew}
               sharedInside={people.length <= 1}
+              vaultTotals={{
+                documents: snapshot.records.length,
+                folders: snapshot.folders.length,
+              }}
               onOpenShared={() => {
                 setSection("shared");
                 setCurrentFolderId(null);

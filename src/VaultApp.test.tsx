@@ -806,6 +806,74 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("with several people, lists no person's records while Shared with me is open, and counts the whole vault (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["Jamie", "Morgan"],
+      ["FAKE_Xray.pdf"],
+    );
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Labs",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "record-morgan",
+      profileId: "profile-2",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const shared = await screen.findByRole("button", {
+      name: "Shared with me, 1 new",
+    });
+    const sidebar = shared.closest("aside")!;
+    const library = within(sidebar).getByRole("navigation", {
+      name: "Record library",
+    });
+    const footer = () => sidebar.querySelector(".storage small");
+    // Jamie's records, folders and counts.
+    expect(
+      within(library).getByRole("button", { name: /^My records/ }),
+    ).toBeVisible();
+    expect(
+      within(library).getByRole("button", { name: /FAKE Labs/ }),
+    ).toBeVisible();
+    expect(footer()).toHaveTextContent("0 documents · 1 folder");
+
+    await user.click(shared);
+    await screen.findByRole("heading", { name: "Shared with me" });
+    // No person is chosen: none of their records or folders, and the footer
+    // counts the whole vault.
+    expect(
+      within(library).queryByRole("button", { name: /^My records/ }),
+    ).toBeNull();
+    expect(
+      within(library).queryByRole("button", { name: /FAKE Labs/ }),
+    ).toBeNull();
+    expect(within(library).queryByText("Folders")).toBeNull();
+    expect(footer()).toHaveTextContent("2 documents · 1 folder");
+
+    await user.click(
+      within(within(sidebar).getByRole("group", { name: "Patient" })).getByRole(
+        "button",
+        { name: "Morgan" },
+      ),
+    );
+    expect(
+      within(library).getByRole("button", { name: /^My records/ }),
+    ).toBeVisible();
+    expect(footer()).toHaveTextContent("1 document · 0 folders");
+  });
+
   it("with several people, opens a person's records when one is chosen from Shared with me (#61)", async () => {
     const user = userEvent.setup();
     const { bridge } = sharedVault(["Jamie", "Morgan"], ["FAKE_Xray.pdf"]);
