@@ -706,7 +706,7 @@ h1, h2, p { margin: 0; }
   .record-open, .status-line, .empty-state span, .setting-row p, .setting-row h2,
   .native-inline-form label, .native-setting-form label, .native-dialog-actions label,
   .native-danger-setting label, .native-location-chip, .search input, .native-sort-choice,
-  .bulkbar, .native-rename-button, .native-section-tabs button, .native-profile-choice .button,
+  .bulkbar, .native-rename-button, .native-section-tabs button, .native-top-level-narrow .button,
   .native-drag-hint
 ) { font-size: 1rem; }
 .native-vault-page :is(
@@ -733,11 +733,10 @@ h1, h2, p { margin: 0; }
 .native-check.tile-check { position: absolute; top: 8px; left: 8px; z-index: 1; margin: 0; }
 
 /* #67: one button per patient, and the narrow-window sections as a row of tabs. */
-.native-profile-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
-.native-profile-choice-label { flex-basis: 100%; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
-.native-profile-choice .button { min-height: 44px; }
-.native-profile-choice .button[aria-pressed="true"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
-.native-profile-choice-narrow { display: none; }
+/* On a phone, the people and Shared with me as the top-level folders the sidebar shows (Ben, 21 Oct). */
+.native-top-level-narrow { display: none; }
+.native-top-level-narrow .button { min-height: 44px; }
+.native-top-level-narrow .button[aria-current="page"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
 /* #67: the tabs share the row equally, but none is narrower than its longest word; when
    the words don't fit side by side (a narrow phone, a wide font), the last tab wraps. */
 .native-section-tabs { flex-wrap: wrap; }
@@ -745,24 +744,22 @@ h1, h2, p { margin: 0; }
 .native-section-tabs button[aria-current="page"] { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
 /* #67: the chosen section, patient and view say so by more than a tint: a
    3px teal bar along the bottom, 6.4:1 on white. */
-.native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-profile-choice .button[aria-pressed="true"], .segment button.selected) { box-shadow: inset 0 -3px 0 var(--teal); }
+.native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-top-level-narrow .button[aria-current="page"], .segment button.selected) { box-shadow: inset 0 -3px 0 var(--teal); }
 /* High contrast drops box shadows, so there the bar is a real border, in the
    system's Highlight colour (an outline would hide the focus ring). */
 @media (forced-colors: active) {
-  .native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-profile-choice .button[aria-pressed="true"], .segment button.selected) { border-bottom: 3px solid Highlight; }
+  .native-vault-page :is(.native-section-tabs button[aria-current="page"], .native-top-level-narrow .button[aria-current="page"], .segment button.selected) { border-bottom: 3px solid Highlight; }
 }
 @media (max-width: 56.25em) {
-  .native-profile-choice-narrow { display: flex; flex-basis: 100%; margin: 8px 0 0; }
-  .native-profile-choice-narrow .native-profile-choice-label { flex-basis: auto; }
+  .native-top-level-narrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-basis: 100%; margin: 8px 0 0; }
 }
 
-/* #67, Ben's review: an even rhythm on a phone. The patient choice gets a line
-   of its own and room before the heading; the location line uses the full
+/* #67, Ben's review: an even rhythm on a phone. The top-level folders get a line
+   of their own and room before the heading; the location line uses the full
    width, with New folder and New on their own row; the section tabs fit their
    words on one line where they can. Steps of 6, 8 and 12px, as elsewhere. */
 @media (max-width: 40em) {
-  .native-vault-page .native-profile-choice-narrow { row-gap: 8px; column-gap: 8px; margin: 12px 0 16px; }
-  .native-vault-page .native-profile-choice-narrow .native-profile-choice-label { flex-basis: 100%; }
+  .native-vault-page .native-top-level-narrow { row-gap: 8px; column-gap: 8px; margin: 12px 0 16px; }
   .native-vault-page .main-head { flex-wrap: wrap; align-items: flex-start; row-gap: 12px; }
   .native-vault-page .main-head p { max-width: none; }
   .native-vault-page .head-actions { flex-basis: 100%; flex-wrap: wrap; margin-left: 0; }
@@ -801,12 +798,11 @@ h1, h2, p { margin: 0; }
 .native-auth-state .icon { width: 15px; height: 15px; color: var(--teal); }
 .native-lock-button { cursor: pointer; font: inherit; }
 .native-lock-button:disabled { cursor: default; }
-.native-nav-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The tree's names wrap rather than end in "…": people's names and nested folders are long (Ben, 21 Oct). */
+.native-nav-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 /* #61: "2 new" goes under Shared with me, so the name is never cut short (the icon
    is 16px and the gap 10px). */
 .side-nav button.native-shared-new { flex-wrap: wrap; row-gap: 0; }
-/* With several people, Shared with me is above them (the vault's, not the chosen person's). */
-.native-shared-nav { margin: 0 0 14px; }
 .native-shared-new .nav-count { flex-basis: 100%; margin-left: 26px; }
 .native-sidebar-empty { padding: 5px 10px; color: var(--ink-faint); }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
