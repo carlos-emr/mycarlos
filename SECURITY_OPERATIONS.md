@@ -84,7 +84,8 @@ portal the patient linked:
   is sent); a `device_name`, shown to the patient under Linked devices; the public halves of this
   link's per-link device keys (`x25519_public_key`, `ed25519_public_key`), a pair made fresh for
   this link, so no two portals see the same key ID, and with the per-link `vault_head_link` below,
-  clinics cannot link the same device; and a link assertion signed by the new key (`aud`, `iss`,
+  clinics cannot link the same device by anything myCarlos sends (each portal still sees the IP
+  address it is reached from; see below); and a link assertion signed by the new key (`aud`, `iss`,
   `kid`, `jti`, `iat`, `exp`, `request_hash`).
 - **With every device request:** the `X-MyCarlos-Device-Assertion` header, signed by this link's
   Ed25519 key: `aud`, `iss`, `kid` (this link's `device_key_id`), `recipient_id` (random per
