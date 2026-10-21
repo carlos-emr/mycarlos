@@ -341,6 +341,21 @@ export const en = {
     "If you forget your myCarlos passphrase, this key opens your vault on this device and lets you choose a new passphrase. It works once you have finished the check in myCarlos.",
   "kit.keep":
     "Keep it somewhere private and away from the device. Anyone with this key and a copy of your vault can open it. If you set up a new recovery key, this one no longer opens the vault on this device.",
+
+  // First setup: comfort settings, before the passphrase
+  "comfort.title": "Make myCarlos comfortable for you",
+  "comfort.intro":
+    "Choose what suits you before you set up. Each choice works at once.",
+  "comfort.sample":
+    "This is how text looks in myCarlos. Press − or + until it is easy to read.",
+  "comfort.textSizeFollowsDevice":
+    "Here, text size follows your device: its own text size setting, or the browser's zoom.",
+  "comfort.autoLock.body":
+    "myCarlos locks itself when it has not been used for this long, so that nobody else can see your records. Choose from 1 to 15 minutes.",
+  "comfort.later":
+    "You can change these any time in {settings}: {textSize} under {preferences}, and {autoLock} under {security}.",
+  "comfort.continue": "Continue",
+  "comfort.usual": "Use the usual settings",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

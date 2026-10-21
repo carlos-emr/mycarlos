@@ -361,4 +361,19 @@ export const pl: Record<MessageKey, Message> = {
     "W razie zapomnienia hasła głównego myCarlos ten klucz otwiera sejf na tym urządzeniu i pozwala wybrać nowe hasło główne. Działa po zakończeniu sprawdzania w myCarlos.",
   "kit.keep":
     "Proszę przechowywać go w prywatnym miejscu, z dala od urządzenia. Każdy, kto ma ten klucz i kopię sejfu, może go otworzyć. Po skonfigurowaniu nowego klucza odzyskiwania ten klucz nie otwiera już sejfu na tym urządzeniu.",
+
+  // First setup: comfort settings, before the passphrase
+  "comfort.title": "Dostosuj myCarlos do siebie",
+  "comfort.intro":
+    "Przed konfiguracją proszę wybrać to, co najbardziej odpowiada. Każdy wybór działa od razu.",
+  "comfort.sample":
+    "Tak wygląda tekst w myCarlos. Proszę naciskać − lub +, aż będzie łatwy do przeczytania.",
+  "comfort.textSizeFollowsDevice":
+    "Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.",
+  "comfort.autoLock.body":
+    "myCarlos blokuje się sam, gdy nie jest używany przez ten czas, aby nikt inny nie zobaczył dokumentów. Proszę wybrać od 1 do 15 minut.",
+  "comfort.later":
+    "Można je zmienić w każdej chwili w sekcji „{settings}”: „{textSize}” w części „{preferences}”, a „{autoLock}” w części „{security}”.",
+  "comfort.continue": "Dalej",
+  "comfort.usual": "Użyj zwykłych ustawień",
 };

@@ -349,4 +349,19 @@ export const ptBR: Record<MessageKey, Message> = {
     "Se você esquecer sua frase secreta do myCarlos, esta chave abre seu cofre neste dispositivo e permite escolher uma nova frase secreta. Ela funciona depois que você terminar a verificação no myCarlos.",
   "kit.keep":
     "Guarde-a em um lugar reservado e longe do dispositivo. Qualquer pessoa com esta chave e uma cópia do seu cofre pode abri-lo. Se você configurar uma nova chave de recuperação, esta não abre mais o cofre neste dispositivo.",
+
+  // First setup: comfort settings, before the passphrase
+  "comfort.title": "Deixe o myCarlos confortável para você",
+  "comfort.intro":
+    "Escolha o que for melhor para você antes de configurar. Cada escolha vale na hora.",
+  "comfort.sample":
+    "É assim que o texto aparece no myCarlos. Pressione − ou + até ficar fácil de ler.",
+  "comfort.textSizeFollowsDevice":
+    "Aqui, o tamanho do texto segue o seu dispositivo: o ajuste de tamanho do texto dele ou o zoom do navegador.",
+  "comfort.autoLock.body":
+    "O myCarlos se bloqueia sozinho quando fica sem uso por esse tempo, para que ninguém mais veja seus documentos. Escolha de 1 a 15 minutos.",
+  "comfort.later":
+    "Você pode mudar isso a qualquer momento em {settings}: {textSize} em {preferences} e {autoLock} em {security}.",
+  "comfort.continue": "Continuar",
+  "comfort.usual": "Usar as configurações habituais",
 };

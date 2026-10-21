@@ -350,4 +350,19 @@ export const es: Record<MessageKey, Message> = {
     "Si olvida su frase de contraseña de myCarlos, esta clave abre su bóveda en este dispositivo y le permite elegir una nueva frase de contraseña. Funciona una vez que haya terminado la comprobación en myCarlos.",
   "kit.keep":
     "Guárdela en un lugar privado y lejos del dispositivo. Cualquier persona con esta clave y una copia de su bóveda puede abrirla. Si configura una nueva clave de recuperación, esta ya no abrirá la bóveda en este dispositivo.",
+
+  // First setup: comfort settings, before the passphrase
+  "comfort.title": "Ajuste myCarlos a su medida",
+  "comfort.intro":
+    "Elija lo que le resulte cómodo antes de configurar. Cada opción se aplica al instante.",
+  "comfort.sample":
+    "Así se ve el texto en myCarlos. Pulse − o + hasta que se lea con facilidad.",
+  "comfort.textSizeFollowsDevice":
+    "Aquí, el tamaño del texto depende de su dispositivo: de su propio ajuste de tamaño del texto o del zoom del navegador.",
+  "comfort.autoLock.body":
+    "myCarlos se bloquea solo cuando no se usa durante este tiempo, para que nadie más vea sus documentos. Elija entre 1 y 15 minutos.",
+  "comfort.later":
+    "Puede cambiarlos cuando quiera en {settings}: {textSize} en {preferences} y {autoLock} en {security}.",
+  "comfort.continue": "Continuar",
+  "comfort.usual": "Usar los ajustes habituales",
 };

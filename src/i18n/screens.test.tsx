@@ -1,5 +1,10 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import {
+  getDefaultNormalizer,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   LOCALES,
@@ -13,6 +18,7 @@ import { RecoveryKeySetup } from "../native/RecoveryKeySetup";
 import { AutoLockSetting } from "../native/AutoLockSetting";
 import { ProfileChoice } from "../native/ProfileChoice";
 import { readTypedZoom } from "../native/zoom";
+import { ComfortSetup } from "../native/ComfortSetup";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 
@@ -257,4 +263,67 @@ describe("text size messages", () => {
     const between = readTypedZoom("117");
     expect("note" in between && between.note).toMatch(/^117% está entre/);
   });
+});
+
+describe("the first setup's comfort screen in each language", () => {
+  for (const locale of LOCALES) {
+    it(`shows the comfort screen in ${locale}`, () => {
+      setLocaleOverride(locale);
+      const tr = (key: Parameters<typeof translate>[1]) =>
+        translate(locale, key);
+      // French puts a no-break space before a colon: keep it as it is.
+      const exactly = {
+        normalizer: getDefaultNormalizer({ collapseWhitespace: false }),
+      };
+      render(
+        <ComfortSetup
+          autoLockMinutes={5}
+          onAutoLockMinutes={vi.fn()}
+          onDone={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole("heading", { level: 1, name: tr("comfort.title") }),
+      ).toBeVisible();
+      expect(screen.getByText(tr("comfort.intro"), exactly)).toBeVisible();
+      expect(screen.getByText(tr("auth.kicker"), exactly)).toBeVisible();
+      expect(
+        screen.getByText(tr("frame.state.settingUp"), exactly),
+      ).toBeVisible();
+      // Outside the app, text size follows the device.
+      expect(
+        screen.getByRole("heading", { name: tr("textSize.title") }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(tr("comfort.textSizeFollowsDevice"), exactly),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: tr("security.autoLock.title") }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(tr("comfort.autoLock.body"), exactly),
+      ).toBeVisible();
+      // Where to change them later names the settings as the app does.
+      expect(
+        screen.getByText(
+          translate(locale, "comfort.later", {
+            settings: tr("sidebar.settings"),
+            textSize: tr("textSize.title"),
+            preferences: tr("sidebar.preferences"),
+            autoLock: tr("security.autoLock.title"),
+            security: tr("security.title"),
+          }),
+          exactly,
+        ),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: tr("comfort.continue") }),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: tr("comfort.usual") }),
+      ).toBeVisible();
+      if (locale !== "en")
+        expect(screen.queryByText(/comfortable for you/)).toBeNull();
+    });
+  }
 });

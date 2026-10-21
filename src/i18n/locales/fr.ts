@@ -354,4 +354,19 @@ export const fr: Record<MessageKey, Message> = {
     "Si vous oubliez votre phrase secrète myCarlos, cette clé ouvre votre coffre-fort sur cet appareil et vous permet de choisir une nouvelle phrase secrète. Elle fonctionne une fois la vérification terminée dans myCarlos.",
   "kit.keep":
     "Conservez-la dans un endroit privé, loin de l’appareil. Toute personne qui a cette clé et une copie de votre coffre-fort peut l’ouvrir. Si vous configurez une nouvelle clé de récupération, celle-ci n’ouvre plus le coffre-fort sur cet appareil.",
+
+  // First setup: comfort settings, before the passphrase
+  "comfort.title": "Adaptez myCarlos à vos besoins",
+  "comfort.intro":
+    "Choisissez ce qui vous convient avant la configuration. Chaque choix s’applique tout de suite.",
+  "comfort.sample":
+    "Voici à quoi ressemble le texte dans myCarlos. Appuyez sur − ou + jusqu’à ce qu’il soit facile à lire.",
+  "comfort.textSizeFollowsDevice":
+    "Ici, la taille du texte suit votre appareil : son propre réglage de taille du texte, ou le zoom du navigateur.",
+  "comfort.autoLock.body":
+    "myCarlos se verrouille de lui-même après ce délai sans utilisation, pour que personne d’autre ne voie vos documents. Choisissez entre 1 et 15 minutes.",
+  "comfort.later":
+    "Vous pouvez les modifier à tout moment dans {settings} : {textSize} sous {preferences}, et {autoLock} sous {security}.",
+  "comfort.continue": "Continuer",
+  "comfort.usual": "Utiliser les réglages habituels",
 };
