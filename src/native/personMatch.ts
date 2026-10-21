@@ -35,14 +35,24 @@ export type MatchedBy = "birthDate" | "birthDateAndName" | "name";
 const documentName = (person: PatientProfile) =>
   person.fullName?.trim() || person.displayName;
 
+/** Whether two names share at least one word. */
+const shareAWord = (left: string, right: string) => {
+  const words = new Set(nameWords(left).split(" ").filter(Boolean));
+  return nameWords(right)
+    .split(" ")
+    .some((word) => word && words.has(word));
+};
+
 const only = (people: PatientProfile[], by: MatchedBy) =>
   people.length === 1 ? { person: people[0], by } : null;
 
 /** The one person in the vault the found name and birth date match, or null
  * when none or several do: a suggestion is only ever made for exactly one
  * (Ben, 21 Oct). The birth date comes first, and the name tells twins apart.
- * A person whose birth date is known and differs is never a match. Without a
- * birth date on either side, the name alone must match one person. */
+ * A person whose birth date is known and differs is never a match, nor is
+ * one born that day whose recorded full name shares no word with the
+ * document's. Without a birth date on either side, the name alone must match
+ * one person. */
 export function personFor(
   people: PatientProfile[],
   found: FoundName,
@@ -59,7 +69,12 @@ export function personFor(
     const born = possible.filter(
       (person) => person.birthDate === found.birthDate,
     );
-    if (born.length === 1) return only(born, "birthDate");
+    // Ben (21 Oct): a person whose recorded full name shares no word with
+    // the document's is someone else born that day; nothing is offered.
+    if (born.length === 1)
+      return born[0].fullName && !shareAWord(born[0].fullName, found.name)
+        ? null
+        : only(born, "birthDate");
     if (born.length > 1) return only(named(born), "birthDateAndName");
   }
   return only(named(possible), "name");

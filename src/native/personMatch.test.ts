@@ -62,6 +62,16 @@ describe("matching a name found on a document to a person (prototype)", () => {
     expect(
       personFor(people, { name: "FAKE Someone Else", birthDate: "2012-06-02" }),
     ).toBeNull();
+    // Born that day, but the recorded full name shares no word with the
+    // document's: someone else's, so nothing is offered (Ben, 21 Oct).
+    expect(
+      personFor(people, { name: "DOE, John", birthDate: "1958-03-12" }),
+    ).toBeNull();
+    // With no full name recorded, the birth date alone still decides.
+    const sam = person("p5", "Sam", { birthDate: "2001-01-01" });
+    expect(
+      personFor([sam], { name: "DOE, John", birthDate: "2001-01-01" }),
+    ).toEqual({ person: sam, by: "birthDate" });
     // A known birth date that differs rules a person out, even by name.
     expect(
       personFor(people, { name: "FAKE Mary Smith", birthDate: "1958-03-13" }),
