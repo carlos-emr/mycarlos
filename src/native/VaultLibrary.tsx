@@ -259,6 +259,7 @@ export function VaultLibrary({
   const hiddenLocationProfileId = section === "hidden"
     ? hiddenProfileId ?? profileId : locationProfileId;
   const openHidden = () => {
+    if (section === "hidden") return;
     setHiddenProfileId(locationProfileId ?? profileId);
     setSection("hidden");
   };
