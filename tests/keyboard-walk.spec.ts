@@ -235,7 +235,9 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expectAnnounced(page, "FAKE Results moved.");
 
   // Search, and Escape to clear it.
-  const search = page.getByRole("searchbox", { name: "Search this location" });
+  const search = page.getByRole("searchbox", {
+    name: "Search everything in My records",
+  });
   await search.focus();
   await page.keyboard.type("Letters");
   await expect(page.getByRole("article")).toHaveCount(1);
@@ -427,7 +429,9 @@ test("locking, by hand or automatically, leaves focus where unlocking starts", a
 
   await page.keyboard.type("FAKE passphrase for the fake");
   await page.keyboard.press("Enter");
-  const search = page.getByRole("searchbox", { name: "Search this location" });
+  const search = page.getByRole("searchbox", {
+    name: "Search everything in My records",
+  });
   await expect(search).toBeVisible();
   await search.focus();
 

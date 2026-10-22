@@ -31,6 +31,7 @@ import {
   searchKey,
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
+import { folderPath, folderSubtree, recordPath } from "./folderTree";
 import { ANNOUNCE_DELAY_MS } from "./announce";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 import {
@@ -63,26 +64,6 @@ const SORT_CHOICES: ReadonlyArray<[NativeSort, string]> = [
   ["newest", "Newest first"],
   ["name", "Name A–Z"],
 ];
-
-/** The ids of a folder and of every folder beneath it. */
-function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
-  const subtree = new Set([rootId]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const folder of folders) {
-      if (
-        folder.parentId &&
-        subtree.has(folder.parentId) &&
-        !subtree.has(folder.id)
-      ) {
-        subtree.add(folder.id);
-        grew = true;
-      }
-    }
-  }
-  return subtree;
-}
 
 export function VaultLibrary({
   bridge,
@@ -274,40 +255,70 @@ export function VaultLibrary({
   );
   const currentFolder =
     folders.find((folder) => folder.id === currentFolderId) ?? null;
+  const folderById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders],
+  );
   const folderNameById = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder.name])),
     [folders],
   );
   const normalizedQuery = searchKey(query.trim());
+  // A search covers the open folder and every folder beneath it; from the top
+  // level (null), the whole profile. Without one, only what is directly in
+  // the open folder is shown.
+  const searchScope = useMemo(
+    () =>
+      !inShared && normalizedQuery && currentFolderId
+        ? folderSubtree(folders, currentFolderId)
+        : null,
+    [currentFolderId, folders, inShared, normalizedQuery],
+  );
   const visibleFolders = useMemo(
     () =>
       (inShared ? [] : folders)
-        .filter((folder) => folder.parentId === currentFolderId)
-        .filter(
-          (folder) =>
-            !normalizedQuery ||
-            searchKey(folder.name).includes(normalizedQuery),
+        .filter((folder) =>
+          normalizedQuery
+            ? folder.id !== currentFolderId &&
+              (!searchScope || searchScope.has(folder.id)) &&
+              searchKey(folder.name).includes(normalizedQuery)
+            : folder.parentId === currentFolderId,
         )
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    [currentFolderId, folders, inShared, normalizedQuery],
+        .sort(
+          (left, right) =>
+            left.name.localeCompare(right.name) ||
+            folderPath(folderById, left.parentId).localeCompare(
+              folderPath(folderById, right.parentId),
+            ),
+        ),
+    [
+      currentFolderId,
+      folderById,
+      folders,
+      inShared,
+      normalizedQuery,
+      searchScope,
+    ],
   );
+  // One entry per document, however many folders it is filed in.
   const visibleRecords = useMemo(() => {
     const matching = records.filter((record) => {
-      const inFolder = currentFolderId
+      if (normalizedQuery)
+        return (
+          (!searchScope ||
+            record.folderIds.some((id) => searchScope.has(id))) &&
+          searchKey(record.displayName).includes(normalizedQuery)
+        );
+      return currentFolderId
         ? record.folderIds.includes(currentFolderId)
         : record.folderIds.length === 0;
-      return (
-        inFolder &&
-        (!normalizedQuery ||
-          searchKey(record.displayName).includes(normalizedQuery))
-      );
     });
     return matching.sort((left, right) =>
       sort === "name"
         ? left.displayName.localeCompare(right.displayName)
         : right.importedAtMs - left.importedAtMs,
     );
-  }, [currentFolderId, normalizedQuery, records, sort]);
+  }, [currentFolderId, normalizedQuery, records, searchScope, sort]);
   const selectedRecords = records.filter((record) =>
     selectedIds.includes(record.id),
   );
@@ -884,10 +895,19 @@ export function VaultLibrary({
     return counts;
   }, [records]);
   const folderCount = (id: string) => folderCounts.get(id) ?? 0;
-  const locationTitle = inShared
+  const rootLocationTitle = inShared
     ? "Shared with me"
-    : (currentFolder?.name ??
-      (profile ? personFolderName(profile, people) : "My records"));
+    : profile
+      ? personFolderName(profile, people)
+      : "My records";
+  const locationTitle = inShared
+    ? rootLocationTitle
+    : (currentFolder?.name ?? rootLocationTitle);
+  const searchLabel = inShared
+    ? "Search Shared with me"
+    : currentFolder
+      ? "Search this folder and its subfolders"
+      : `Search everything in ${rootLocationTitle}`;
 
   return (
     <div className="evaluation-page native-vault-page" inert={covered}>
@@ -1005,18 +1025,16 @@ export function VaultLibrary({
                   "library-main",
                   `pane:${currentFolderId ?? "root"}`,
                 )}
-                // Shared with me is no drop target: letting go of a drag
-                // where it started abandons it, and must not move a file to
-                // a person. Files leave it by Move, or by a drop on the
-                // person's folders in the sidebar.
+                // Shared with me and recursive search results take no pane
+                // drops: dropping where a drag began must not move the file.
                 onDragOver={
-                  inShared
+                  inShared || normalizedQuery
                     ? undefined
                     : (event) =>
                         dragOver(event, `pane:${currentFolderId ?? "root"}`)
                 }
                 onDrop={
-                  inShared
+                  inShared || normalizedQuery
                     ? undefined
                     : (event) => dropInto(event, currentFolderId)
                 }
@@ -1095,8 +1113,8 @@ export function VaultLibrary({
                     </h1>
                     <p>
                       {inShared
-                        ? `${visibleRecords.length} documents`
-                        : `${visibleFolders.length} folders · ${visibleRecords.length} documents in this location`}
+                        ? `${visibleRecords.length} documents${normalizedQuery ? " found" : ""}`
+                        : `${visibleFolders.length} folders · ${visibleRecords.length} documents ${normalizedQuery ? "found" : "in this location"}`}
                     </p>
                   </div>
                   {/* Shared with me is one fixed folder: files arrive in it
@@ -1321,12 +1339,12 @@ export function VaultLibrary({
 
                 <label className="search">
                   <Icon name="search" />
-                  <span className="sr-only">Search this location</span>
+                  <span className="sr-only">{searchLabel}</span>
                   <input
                     type="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search this location"
+                    placeholder={searchLabel}
                   />
                 </label>
                 <div className="viewbar">
@@ -1438,6 +1456,22 @@ export function VaultLibrary({
                   selectedIds={selectedIds}
                   disabled={busy || readOnly}
                   searching={Boolean(query)}
+                  folderLocation={
+                    normalizedQuery
+                      ? (folder) =>
+                          folderPath(
+                            folderById,
+                            folder.parentId,
+                            rootLocationTitle,
+                          )
+                      : undefined
+                  }
+                  recordLocation={
+                    normalizedQuery
+                      ? (record) =>
+                          recordPath(folderById, record, rootLocationTitle)
+                      : undefined
+                  }
                   unavailableLabel={
                     snapshot.recovery === "unreadableSlot"
                       ? "File unavailable"

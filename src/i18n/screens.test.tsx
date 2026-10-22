@@ -555,6 +555,12 @@ describe("the library list and grid in each language", () => {
         selectedIds={[]}
         disabled={false}
         searching={searching}
+        folderLocation={
+          searching ? () => "FAKE Avery / FAKE Parent" : undefined
+        }
+        recordLocation={
+          searching ? () => "FAKE Avery / FAKE Parent / FAKE Labs" : undefined
+        }
         unavailableLabel="FAKE unavailable"
         drag={drag}
         recordDragItem={(id) => ({ kind: "records", ids: [id] })}
@@ -618,7 +624,32 @@ describe("the library list and grid in each language", () => {
       ).toBeInTheDocument();
       list.unmount();
 
-      const grid = renderItems("grid");
+      const results = renderItems("list", undefined, true);
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.folder.open", { name }),
+        }),
+      ).toHaveAccessibleDescription(
+        `${tr("library.folder.items", { count: 3 })} In FAKE Avery / FAKE Parent`,
+      );
+      for (const buttonName of [file, tr("library.select", { name: file })])
+        expect(
+          screen.getByRole("button", { name: buttonName }),
+        ).toHaveAccessibleDescription(
+          "In FAKE Avery / FAKE Parent / FAKE Labs",
+        );
+      expect(
+        screen.getAllByText(new Date(added).toLocaleDateString()),
+      ).toHaveLength(2);
+      results.unmount();
+
+      const grid = renderItems("grid", undefined, true);
+      expect(screen.getByText("In FAKE Avery / FAKE Parent")).toBeVisible();
+      expect(
+        screen.getByRole("button", {
+          name: tr("library.select", { name: file }),
+        }),
+      ).toBeInTheDocument();
       expect(
         screen.getByLabelText(tr("library.items", { count: 2 })),
       ).toBeInTheDocument();
