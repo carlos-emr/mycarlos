@@ -506,23 +506,27 @@ describe("UnlockVault", () => {
 });
 
 describe("ResetConfirmation", () => {
-  it("says what erasing does in plain words before the typed check (#69)", () => {
+  it("says what setting the vault aside does in plain words before the typed check (#69)", () => {
     const onReset = vi.fn().mockResolvedValue(undefined);
     render(
       <ResetConfirmation
         busy={false}
-        actionLabel="Erase vault"
+        actionLabel="Set vault aside"
         onReset={onReset}
       />,
     );
-    const plainly = screen.getByText(/Erasing deletes all your documents/);
+    const plainly = screen.getByText(
+      /Setting the vault aside takes all your documents/,
+    );
     const typed = screen.getByLabelText("Type RESET MYCARLOS VAULT");
-    expect(plainly).toHaveTextContent("it cannot be undone");
+    expect(plainly).toHaveTextContent(
+      "nobody can open them without the passphrase",
+    );
     // The sentence comes first, so it is read before the box.
     expect(
       plainly.compareDocumentPosition(typed) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    const erase = screen.getByRole("button", { name: "Erase vault" });
+    const erase = screen.getByRole("button", { name: "Set vault aside" });
     expect(erase).toBeDisabled();
     fireEvent.change(typed, { target: { value: "RESET MYCARLOS VAULT" } });
     fireEvent.click(erase);

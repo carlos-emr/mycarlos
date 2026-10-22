@@ -92,6 +92,7 @@ function renderLibrary(
       return { imported: ["photo-1"], skippedDuplicates: [] };
     }),
     isPhoto: vi.fn(async () => true),
+    isLockedPdf: vi.fn(async () => false),
     viewPhoto: vi.fn(async () => PHOTO_URL),
     snapshot: vi.fn(async () => current),
     ...bridgeOverrides,
@@ -333,6 +334,7 @@ describe("viewing a photo", () => {
   it("is not offered when the file is not a photo, and a PDF is not asked about", async () => {
     const bridge = renderLibrary(withRecords, {
       isPhoto: vi.fn(async () => false),
+      isLockedPdf: vi.fn(async () => false),
     });
     openDetails("FAKE insurance card");
     await waitFor(() => expect(bridge.isPhoto).toHaveBeenCalledWith("card"));

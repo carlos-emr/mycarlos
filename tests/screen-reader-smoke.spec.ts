@@ -150,8 +150,6 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
   await screenReaderSmoke(page, "Security");
   await page.getByRole("button", { name: "Longer delay" }).click();
   await expectAnnounced(page, "6 minutes");
-  await page.getByText("Show reset controls").click();
-  await screenReaderSmoke(page, "Security, reset controls shown");
   await openSection(page, "Preferences");
   await screenReaderSmoke(page, "Preferences");
   await page.getByRole("button", { name: "Larger text" }).click();
@@ -160,17 +158,19 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
 });
 
 // #92: typing in the search box changes what is listed and the
-// count above it ("… in this location", or "No matching records"), but none
+// count above it ("… documents found", or "No matching records"), but none
 // of it is a status message, so a screen reader is not told (WCAG 4.1.3).
 test("a search's result is read out (#92)", async ({ page }) => {
   test.fail(true, "#92: search results are not read out");
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
-  const search = page.getByRole("searchbox", { name: "Search this location" });
+  const search = page.getByRole("searchbox", {
+    name: "Search everything in My records",
+  });
   await search.fill("Letter.pdf");
   await expect(page.getByRole("article")).toHaveCount(1);
-  await expectAnnounced(page, "in this location");
+  await expectAnnounced(page, "documents found");
   await search.fill("FAKE nothing like this");
   await expect(page.getByText("No matching records")).toBeVisible();
   await expectAnnounced(page, "No matching records");

@@ -17,6 +17,10 @@ interface LibraryItemsProps {
   drag: VaultDragDrop;
   recordDragItem: (recordId: string) => DragItem;
   folderCount: (folderId: string) => number;
+  /** While searching, where each result is (a path from the top), so that
+   * two with the same name can be told apart. */
+  folderLocation?: (folder: VaultFolder) => string;
+  recordLocation?: (record: VaultRecord) => string;
   onOpenFolder: (folderId: string) => void;
   onOpenRecord: (recordId: string) => void;
   onRenameFolder: (folder: VaultFolder) => void;
@@ -49,6 +53,8 @@ export function LibraryItems({
   drag,
   recordDragItem,
   folderCount,
+  folderLocation,
+  recordLocation,
   onOpenFolder,
   onOpenRecord,
   onRenameFolder,
@@ -88,7 +94,11 @@ export function LibraryItems({
             className="file-name native-file-open"
             type="button"
             aria-label={t("library.folder.open", { name: folder.name })}
-            aria-describedby={`folder-items-${folder.id}`}
+            aria-describedby={
+              folderLocation
+                ? `folder-items-${folder.id} folder-path-${folder.id}`
+                : `folder-items-${folder.id}`
+            }
             onClick={() => onOpenFolder(folder.id)}
           >
             <span className="document-icon folder">
@@ -99,6 +109,14 @@ export function LibraryItems({
               <small id={`folder-items-${folder.id}`}>
                 {t("library.folder.items", { count: folderCount(folder.id) })}
               </small>
+              {folderLocation && (
+                <small
+                  className="native-result-path"
+                  id={`folder-path-${folder.id}`}
+                >
+                  In {folderLocation(folder)}
+                </small>
+              )}
             </span>
           </button>
           <span className="column" aria-hidden="true">
@@ -136,6 +154,9 @@ export function LibraryItems({
               record={record}
               selected={selectedIds.includes(record.id)}
               onToggle={onToggleSelected}
+              describedBy={
+                recordLocation ? `record-path-${record.id}` : undefined
+              }
             />
             <div className="file-name">
               <span className={`document-icon ${kind.icon}`}>
@@ -145,6 +166,9 @@ export function LibraryItems({
                 <button
                   className="record-open"
                   type="button"
+                  aria-describedby={
+                    recordLocation ? `record-path-${record.id}` : undefined
+                  }
                   onClick={() => onOpenRecord(record.id)}
                 >
                   {record.displayName}
@@ -153,6 +177,14 @@ export function LibraryItems({
                   {formatBytes(record.plaintextSize)} · {kind.label}
                   {!record.available && ` · ${unavailableLabel}`}
                 </small>
+                {recordLocation && (
+                  <small
+                    className="native-result-path"
+                    id={`record-path-${record.id}`}
+                  >
+                    In {recordLocation(record)}
+                  </small>
+                )}
               </span>
             </div>
             <span className="column">{record.sourceLabel}</span>
@@ -210,6 +242,11 @@ export function LibraryItems({
                     count: folderCount(folder.id),
                   })}
                 </small>
+                {folderLocation && (
+                  <small className="native-result-path">
+                    In {folderLocation(folder)}
+                  </small>
+                )}
               </span>
             </span>
           </button>
@@ -266,6 +303,11 @@ export function LibraryItems({
                     {new Date(record.importedAtMs).toLocaleDateString()}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
+                  {recordLocation && (
+                    <small className="native-result-path">
+                      In {recordLocation(record)}
+                    </small>
+                  )}
                 </span>
               </span>
             </button>
@@ -285,11 +327,14 @@ function SelectRecord({
   selected,
   onToggle,
   className = "",
+  describedBy,
 }: {
   record: VaultRecord;
   selected: boolean;
   onToggle: (recordId: string) => void;
   className?: string;
+  /** A search result's "In …" path, read after the name (#57). */
+  describedBy?: string;
 }) {
   const { t } = useI18n();
   return (
@@ -297,6 +342,7 @@ function SelectRecord({
       className={`check native-check ${selected ? "checked" : ""} ${className}`.trim()}
       type="button"
       aria-label={t("library.select", { name: record.displayName })}
+      aria-describedby={describedBy}
       aria-pressed={selected}
       onClick={() => onToggle(record.id)}
     />

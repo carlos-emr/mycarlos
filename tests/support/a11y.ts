@@ -115,6 +115,9 @@ export async function fakeVault(
             // The app still polls the intake while locked and after unlocking.
             case "received_list":
               return { files: [], notice: { dropped: 0, refusedShares: 0 } };
+            // These fixture PDFs open without a document password.
+            case "vault_is_locked_pdf":
+              return false;
             case "vault_snapshot":
               return structuredClone(snapshot);
             case "vault_passphrase_rules":
