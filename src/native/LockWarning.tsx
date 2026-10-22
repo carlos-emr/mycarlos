@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useModalFocus } from "../useModalFocus";
+import { useI18n } from "../i18n";
 
 /** When the countdown says, once, how little time is left. */
 const LAST_CALL_SECONDS = 10;
-
-const lockIn = (seconds: number) =>
-  `myCarlos will lock in ${seconds} second${seconds === 1 ? "" : "s"} to keep your records private.`;
 
 /**
  * Said before the automatic lock (#68, WCAG 2.2.1): Keep open has the focus
@@ -24,6 +22,8 @@ export function LockWarning({
   seconds: number;
   onKeepOpen: () => void;
 }) {
+  const { t } = useI18n();
+  const lockIn = (count: number) => t("lockWarning.title", { count });
   const dialogRef = useRef<HTMLElement | null>(null);
   const keepOpenRef = useRef<HTMLButtonElement | null>(null);
   // Escape is a key like any other: it keeps myCarlos open.
@@ -53,11 +53,11 @@ export function LockWarning({
           <span className="sr-only">{lockIn(opening)}</span>
         </h2>
         <p id="lock-warning-help">
-          To keep it open, press Keep open, or any key.
+          {t("lockWarning.help", { keepOpen: t("lockWarning.keepOpen") })}
         </p>
         <p className="sr-only" role="status">
           {left <= LAST_CALL_SECONDS && left > 0 && opening > LAST_CALL_SECONDS
-            ? `${LAST_CALL_SECONDS} seconds left.`
+            ? t("lockWarning.left", { count: LAST_CALL_SECONDS })
             : ""}
         </p>
         <button
@@ -66,7 +66,7 @@ export function LockWarning({
           type="button"
           onClick={onKeepOpen}
         >
-          Keep open
+          {t("lockWarning.keepOpen")}
         </button>
       </section>
     </div>

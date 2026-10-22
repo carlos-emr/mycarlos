@@ -53,9 +53,26 @@ describe("vault drag and drop guards", () => {
       "records",
     );
     act(() => result.current.dropInto(dragEvent(), "destination"));
+    // No person named: the open person's (only the sidebar's tree names one).
     expect(onMove).toHaveBeenCalledExactlyOnceWith(
       { kind: "records", ids: ["record"] },
       "destination",
+      undefined,
+    );
+    // Dropped on another person's folder in the tree: whose it is goes along.
+    act(() =>
+      result.current.startDrag(dragEvent(), {
+        kind: "records",
+        ids: ["record"],
+      }),
+    );
+    act(() =>
+      result.current.dropInto(dragEvent(), "their-folder", "profile-2"),
+    );
+    expect(onMove).toHaveBeenLastCalledWith(
+      { kind: "records", ids: ["record"] },
+      "their-folder",
+      "profile-2",
     );
   });
 

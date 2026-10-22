@@ -108,7 +108,7 @@ export function RestoreBackup({
     method === "passphrase" ? { passphrase: secret } : { recoveryKey: secret };
   // What a refusal of the typed credential asks to check.
   const typedBox =
-    method === "passphrase" ? "the passphrase" : "the recovery key";
+    method === "passphrase" ? "box.passphrase" : "box.recoveryKey";
   // Replacing a vault that differs from the backup, another vault, or one
   // that cannot be read loses something for good.
   const needsAgreement =

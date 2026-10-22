@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Appearance, AppearanceMode } from "../appearance";
+import type {
+  Appearance,
+  AppearanceError,
+  AppearanceMode,
+} from "../appearance";
 
 const DESKTOPS = new Set(["windows", "macos", "linux"]);
 const WAIT_MS = 3000;
-const FAILED =
-  "Window appearance could not follow this choice. You can keep using myCarlos.";
+const FAILED: AppearanceError = "appearance.error.window";
 
 /** Native chrome is optional: a slow or failed command never holds up the app. */
 export function startNativeAppearance(appearance: Appearance): () => void {

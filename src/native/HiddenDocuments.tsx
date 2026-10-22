@@ -10,6 +10,7 @@ import { formatBytes, recordKind } from "./recordPresentation";
 export function HiddenDocuments({
   records,
   folderNameById,
+  rootName = "My records",
   busy,
   readOnly,
   notice,
@@ -17,6 +18,7 @@ export function HiddenDocuments({
 }: {
   records: VaultRecord[];
   folderNameById: Map<string, string>;
+  rootName?: string;
   busy: boolean;
   readOnly: boolean;
   notice: string;
@@ -67,7 +69,7 @@ export function HiddenDocuments({
             record.folderIds
               .map((id) => folderNameById.get(id))
               .filter(Boolean)
-              .join(", ") || "My records";
+              .join(", ") || rootName;
           return (
             <article
               className="file-row"

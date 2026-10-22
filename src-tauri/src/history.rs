@@ -87,7 +87,8 @@ pub struct HistoryEntry {
     pub event: HistoryEvent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_id: Option<Uuid>,
-    /// For a profile's event, or a folder's (whose profile it is in).
+    /// For a profile's event, a folder's owner, shared intake's source profile,
+    /// or a shared document move's destination person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<Uuid>,
     /// For a folder's event.

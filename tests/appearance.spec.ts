@@ -91,8 +91,11 @@ async function section(
     name: new RegExp(`^${name}(?:\\s|$)`),
   });
   await expect(tabs.or(sidebar).first()).toBeVisible();
+  // On a phone the records tab is "Records": it holds the people and
+  // Shared with me, as the sidebar's top-level folders do (Ben, 21 Oct).
+  const tab = value === "records" ? "Records" : name;
   if (info.project.name === "phone" || (await tabs.isVisible()))
-    await tabs.getByRole("button", { name, exact: true }).click();
+    await tabs.getByRole("button", { name: tab, exact: true }).click();
   else await sidebar.first().click();
 }
 

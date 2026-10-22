@@ -251,7 +251,25 @@ validation remain release gates.
 
 The encrypted manifest contains profiles, nested folders, folder assignments, sanitized document
 names that the patient may rename, sizes, timestamps, unverified-source labels, per-record
-fingerprints, opaque object names, and wrapped content keys. Mutations write the same logical state
+fingerprints, opaque object names, and wrapped content keys.
+
+**Shared with me (#61).** Files shared to myCarlos from another app, or opened with it, are kept in
+one reserved profile until the patient moves each to a person. It is an ordinary format v1 profile
+named "Shared with me", added with the first such file, whose id is not random but derived from the
+vault id: the first 16 bytes of SHA-256 over `mycarlos:shared-with-me:v1:` and the vault id's 16
+bytes, with the UUID version set to 8 (RFC 9562's custom version) and the RFC 4122 variant. Every
+other profile has a random version 4 id, which differs from it in the version bits, so no person can
+ever have it; the manifest grammar is unchanged and needs no migration. The app shows this profile
+as a folder, never as a person: it holds no folders, and its name is not one of the profile names a
+passphrase is checked against. A document moves from it to a person by keeping its object, object
+key and record id (the encryption binds the vault and the record, not the person) and recomputing
+only its fingerprint, which is keyed with the person: the object is decrypted once, through the same
+authenticated read as an export, into an HMAC. A document the person already has, by that
+fingerprint, stays where it is. Documents move only out of this profile, never between people. No
+person may be named "Shared with me", in any case, so the folder is never mistaken for one. A build
+from before this change, which knows nothing of the reserved id, would list the profile as a person
+named "Shared with me"; no such build has been released, and opening a vault with an older build is
+not supported in any case (MIGRATIONS, rule 2). Mutations write the same logical state
 into two consecutive generations using a cross-platform atomic replacement primitive. Once the first
 generation is durable, the logical mutation is committed; failure of the redundant write is
 reported in the snapshot as recovery mode rather than as a failed mutation. Unlock authenticates both slots, selects
@@ -422,7 +440,7 @@ documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
 so that neither is ever committed without the other: the vault created; the history started (in a
 vault an earlier build made, at its first recorded event); each unlock, with the secret that opened
 it (`passphrase` or `recoveryKey`) and how the session before it ended; a document imported
-(`how: "picked"`, or `"camera"` for a photo taken in myCarlos), renamed (old and new name), moved (the folders before and after, by id and by
+(`how: "picked"`, `"camera"` for a photo taken in myCarlos, or `"shared"` for a PDF received from another app), renamed (old and new name), moved (the folders before and after, by id and by
 their names then), hidden (`how: "patient"` or `"damaged"`) or shown again; a readable copy saved,
 and where; a recovery key set; a backup saved, and where; and a backup restored. An entry about a
 document names it as it was called at that moment. Read-only sessions record nothing. Changing
@@ -451,7 +469,10 @@ how, place, placeSha256, previousSession, prev`
 `hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
 `passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`. A folder is
 `{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
-`folderId`) and its `name` afterwards; `folderCreated` gives in `to` the folder it was made in,
+`folderId`) and its `name` afterwards. Shared intake also gives the reserved source
+`profileId`; its move to a person records `moved` with `how: "shared"` and the destination
+`profileId`, even when both locations have no folders. The move and its history entry commit
+together. For folder events, `folderCreated` gives in `to` the folder it was made in,
 `folderRenamed` the `oldName`, and `folderMoved` the folder it left in `from` and the one it is in
 now in `to` (none for "My records"). `passphraseChanged` says in `how` what replaced it: the
 passphrase in Security (`passphrase`), or the recovery key at the unlock screen (`recoveryKey`,

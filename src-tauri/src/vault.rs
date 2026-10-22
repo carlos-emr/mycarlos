@@ -60,6 +60,8 @@ const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const OBJECT_MAGIC: &[u8; 5] = b"MCVO1";
 const CHUNK_SIZE: usize = 1024 * 1024;
 pub(crate) const MAX_IMPORT_FILES: usize = 100;
+/// Where every document so far comes from: the patient added it, and nothing has checked it.
+pub(crate) const MANUAL_IMPORT_LABEL: &str = "Manual import — unverified";
 pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
@@ -248,6 +250,8 @@ pub enum VaultError {
     WeakPassphrase,
     #[error("too many files were selected for one import")]
     ImportBatchLimit,
+    #[error("a file to import is not a PDF")]
+    NotPdf,
     #[error("there is not enough space to complete the operation")]
     NoSpace,
     #[error("the storage operation could not be completed")]
@@ -492,6 +496,10 @@ pub struct VaultSnapshot {
     pub recovery_key_set_at_ms: Option<u64>,
     /// Its short label, which its kit shows (not secret), if it has one.
     pub recovery_key_label: Option<String>,
+    /// The reserved profile that files shared to myCarlos wait in (#61), shown
+    /// as the "Shared with me" folder, never as a person. Listed in `profiles`
+    /// once the first file has arrived.
+    pub shared_profile_id: Uuid,
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
@@ -613,6 +621,15 @@ impl<W: Write> Write for CancellableWriter<W> {
 pub struct ImportOutcome {
     pub imported: Vec<Uuid>,
     pub skipped_duplicates: Vec<String>,
+}
+
+/// What a move out of "Shared with me" did (#61).
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveOutcome {
+    pub moved: Vec<Uuid>,
+    /// Files the person already had, which stay in Shared with me.
+    pub already_there: Vec<String>,
 }
 
 /// A recovery key shown to the patient and not yet confirmed, with the key
@@ -794,7 +811,7 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<(), VaultError> {
         let _work = self.start_kdf_work()?;
-        validate_name(initial_profile)?;
+        validate_person_name(initial_profile)?;
         validate_new_passphrase(passphrase, &[initial_profile])?;
         let mut guard = self.session();
         if guard.is_some() {
@@ -1159,11 +1176,12 @@ impl VaultStore {
             recovery: unlocked.recovery,
             recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
             recovery_key_label: unlocked.recovery_key_id.map(recovery_key_label),
+            shared_profile_id: shared_profile_id(unlocked.manifest.vault_id),
         }
     }
 
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
-        validate_name(display_name)?;
+        validate_person_name(display_name)?;
         self.mutate_recorded(|manifest, entries| {
             let id = Uuid::new_v4();
             let display_name = display_name.trim().to_owned();
@@ -1190,6 +1208,10 @@ impl VaultStore {
         validate_name(name)?;
         self.mutate_recorded(|manifest, entries| {
             require_profile(manifest, profile_id)?;
+            // Shared with me is one fixed folder: it holds no folders.
+            if profile_id == shared_profile_id(manifest.vault_id) {
+                return Err(VaultError::Invalid);
+            }
             if let Some(parent) = parent_id {
                 let folder = manifest
                     .folders
@@ -1384,8 +1406,8 @@ impl VaultStore {
     }
 
     /// `import`, saying in the history where the documents came from (#71):
-    /// "picked" from the device's files, or "camera" for a photo taken in
-    /// myCarlos.
+    /// "picked" from the device's files, "camera" for a photo taken in
+    /// myCarlos, or "shared" from another app.
     pub fn import_from(
         &self,
         profile_id: Uuid,
@@ -1403,8 +1425,22 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        require_profile(&unlocked.manifest, profile_id)?;
-        validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        // The shared profile is made with the first file shared to myCarlos,
+        // and holds no folders (#61).
+        let shared = shared_profile_id(unlocked.manifest.vault_id);
+        let adds_shared = profile_id == shared
+            && !unlocked
+                .manifest
+                .profiles
+                .iter()
+                .any(|profile| profile.id == shared);
+        if profile_id == shared && !folder_ids.is_empty() {
+            return Err(VaultError::Invalid);
+        }
+        if !adds_shared {
+            require_profile(&unlocked.manifest, profile_id)?;
+            validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        }
         let folder_ids = unique(folder_ids);
 
         let job_id = Uuid::new_v4();
@@ -1469,7 +1505,7 @@ impl VaultStore {
                         profile_id,
                         folder_ids: folder_ids.clone(),
                         display_name: sanitize_basename(&source.display_name),
-                        source_label: "Manual import — unverified".to_owned(),
+                        source_label: MANUAL_IMPORT_LABEL.to_owned(),
                         media_type: "application/octet-stream".to_owned(),
                         plaintext_size: encrypted.plaintext_size,
                         imported_at_ms: now_ms,
@@ -1509,6 +1545,13 @@ impl VaultStore {
             }
             terminate_at_test_boundary("import.after-object-rename");
             let mut next = unlocked.manifest.clone();
+            if adds_shared {
+                next.profiles.push(PatientProfile {
+                    id: shared,
+                    display_name: SHARED_PROFILE_NAME.to_owned(),
+                    created_at_ms: now_ms,
+                });
+            }
             next.records
                 .extend(staged.iter().map(|(_, record)| record.clone()));
             let entries = staged
@@ -1516,6 +1559,7 @@ impl VaultStore {
                 .map(|(_, record)| {
                     let mut entry = record_entry(HistoryEvent::Imported, now_ms, record);
                     entry.how = Some(how.to_owned());
+                    if record.profile_id == shared { entry.profile_id = Some(shared); }
                     entry
                 })
                 .collect();
@@ -1544,6 +1588,137 @@ impl VaultStore {
         }
         let _ = remove_owned_dir_all(&stage, Removable::ImportStaging);
         result
+    }
+
+    /// The "Shared with me" profile's id for the open vault (#61).
+    pub fn shared_profile(&self) -> Result<Uuid, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        Ok(shared_profile_id(unlocked.manifest.vault_id))
+    }
+
+    /// Moves files from Shared with me to a person, into the folders chosen
+    /// (#61). A file's duplicate fingerprint is keyed with its person, so each
+    /// is read once to key it again; nothing is encrypted again, since a
+    /// file's encryption is bound to the vault and the file, not the person.
+    /// A file the person already has stays in Shared with me and is named in
+    /// the outcome.
+    pub fn move_to_profile(
+        &self,
+        record_ids: Vec<Uuid>,
+        profile_id: Uuid,
+        folder_ids: Vec<Uuid>,
+    ) -> Result<MoveOutcome, VaultError> {
+        validate_import_count(record_ids.len())?;
+        let record_ids = unique(record_ids);
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let vault_id = unlocked.manifest.vault_id;
+        let shared = shared_profile_id(vault_id);
+        if profile_id == shared {
+            return Err(VaultError::Invalid);
+        }
+        require_profile(&unlocked.manifest, profile_id)?;
+        validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        let folder_ids = unique(folder_ids);
+        let keys = derive_keys(vault_id, &unlocked.master_key)?;
+        let existing: HashSet<&str> = unlocked
+            .manifest
+            .records
+            .iter()
+            .filter(|record| record.profile_id == profile_id)
+            .map(|record| record.fingerprint.as_str())
+            .collect();
+        let mut batch = HashSet::new();
+        let mut moved = HashMap::new();
+        let mut already_there = Vec::new();
+        for record_id in &record_ids {
+            let record = unlocked
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == *record_id)
+                .ok_or(VaultError::NotFound)?;
+            // Only out of Shared with me: moving between people is not a
+            // feature.
+            if record.profile_id != shared {
+                return Err(VaultError::Invalid);
+            }
+            if unlocked.unavailable.contains(&record.id) {
+                return Err(VaultError::Corrupt);
+            }
+            let object_key = unwrap_secret(
+                &keys.object_wrap,
+                &record.wrapped_object_key,
+                record.id.as_bytes(),
+            )?;
+            let mut mac = <HmacSha256 as Mac>::new_from_slice(&keys.fingerprint)
+                .map_err(|_| VaultError::Storage)?;
+            mac.update(profile_id.as_bytes());
+            verify_object(
+                &self.root.join("objects").join(&record.object_name),
+                CancellableWriter::new(MacWriter(&mut mac), Arc::clone(&self.cancel_io))
+                    .with_progress(&self.idle),
+                vault_id,
+                record.id,
+                &object_key,
+                record.plaintext_size,
+            )?;
+            let fingerprint: [u8; 32] = mac.finalize().into_bytes().into();
+            let fingerprint = BASE64.encode(fingerprint);
+            if existing.contains(fingerprint.as_str()) || !batch.insert(fingerprint.clone()) {
+                already_there.push(record.display_name.clone());
+            } else {
+                moved.insert(record.id, fingerprint);
+            }
+        }
+        if self.cancel_io.load(Ordering::Acquire) {
+            return Err(VaultError::Cancelled);
+        }
+        if moved.is_empty() {
+            return Ok(MoveOutcome {
+                moved: Vec::new(),
+                already_there,
+            });
+        }
+        let at_ms = crate::now_ms();
+        let to = folders_at_the_time(&unlocked.manifest, &folder_ids);
+        let entries = unlocked.manifest.records.iter()
+            .filter(|record| moved.contains_key(&record.id))
+            .map(|record| {
+                let mut entry = record_entry(HistoryEvent::Moved, at_ms, record).with_move(
+                    folders_at_the_time(&unlocked.manifest, &record.folder_ids), to.clone(),
+                );
+                entry.profile_id = Some(profile_id);
+                entry.how = Some("shared".to_owned());
+                entry
+            }).collect();
+        let mut next = unlocked.manifest.clone();
+        for record in &mut next.records {
+            if let Some(fingerprint) = moved.get(&record.id) {
+                record.profile_id = profile_id;
+                record.folder_ids = folder_ids.clone();
+                record.fingerprint = fingerprint.clone();
+            }
+        }
+        let redundant = commit_with_history(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            entries,
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        Ok(MoveOutcome {
+            moved: record_ids
+                .into_iter()
+                .filter(|id| moved.contains_key(id))
+                .collect(),
+            already_there,
+        })
     }
 
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
@@ -1864,10 +2039,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        let profile_names = unlocked
-            .manifest
-            .profiles
-            .iter()
+        let profile_names = people(&unlocked.manifest)
             .map(|profile| profile.display_name.as_str())
             .collect::<Vec<_>>();
         validate_new_passphrase(replacement, &profile_names)?;
@@ -2206,10 +2378,7 @@ impl VaultStore {
             );
             return Ok(false);
         }
-        let profile_names = selected
-            .manifest
-            .profiles
-            .iter()
+        let profile_names = people(&selected.manifest)
             .map(|profile| profile.display_name.as_str())
             .collect::<Vec<_>>();
         validate_new_passphrase(new_passphrase, &profile_names)?;
@@ -3042,7 +3211,7 @@ fn file_extension(name: &str) -> &str {
     }
 }
 
-fn sanitize_basename(value: &str) -> String {
+pub(crate) fn sanitize_basename(value: &str) -> String {
     let raw = value.rsplit(['/', '\\']).next().unwrap_or("Imported file");
     let mut cleaned = String::new();
     for character in raw.chars().filter(|character| {
@@ -3288,7 +3457,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !record_ids.insert(record.id)
             || !profile_ids.contains(&record.profile_id)
             || !valid_record_name(&record.display_name)
-            || record.source_label != "Manual import — unverified"
+            || record.source_label != MANUAL_IMPORT_LABEL
             || record.media_type != "application/octet-stream"
             || !valid_object_name(&record.object_name)
             || !object_names.insert(record.object_name.as_str())
@@ -5995,6 +6164,63 @@ fn quarantine_orphan_objects(root: &Path, manifest: &Manifest) {
     }
 }
 
+/// Hashed with the vault id into the "Shared with me" profile's id.
+const SHARED_PROFILE_LABEL: &[u8] = b"mycarlos:shared-with-me:v1:";
+/// The name the "Shared with me" profile is stored with. The app shows it as
+/// a folder, never as a person.
+pub const SHARED_PROFILE_NAME: &str = "Shared with me";
+
+/// Files shared to myCarlos from another app wait in one reserved profile
+/// until the patient moves each to a person (#61). Its id is derived from the
+/// vault id, so the manifest needs no field of its own for it (VAULT_FORMAT):
+/// a UUID of version 8, RFC 9562's custom version, with the RFC 4122 variant.
+/// Every other profile has a random version 4 id, which can never equal it.
+pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
+    use sha2::Digest as _;
+    let digest = Sha256::new()
+        .chain_update(SHARED_PROFILE_LABEL)
+        .chain_update(vault_id.as_bytes())
+        .finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
+}
+
+/// A person's name: a valid name, and not the shared folder's, which would read
+/// as the folder (#61).
+fn validate_person_name(name: &str) -> Result<(), VaultError> {
+    validate_name(name)?;
+    if name.trim().to_lowercase() == SHARED_PROFILE_NAME.to_lowercase() {
+        return Err(VaultError::Invalid);
+    }
+    Ok(())
+}
+
+/// The people a vault keeps records for: every profile but the shared one.
+fn people(manifest: &Manifest) -> impl Iterator<Item = &PatientProfile> {
+    let shared = shared_profile_id(manifest.vault_id);
+    manifest
+        .profiles
+        .iter()
+        .filter(move |profile| profile.id != shared)
+}
+
+/// Feeds what is written to it into a fingerprint MAC.
+struct MacWriter<'a>(&'a mut HmacSha256);
+
+impl Write for MacWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn require_profile(manifest: &Manifest, profile_id: Uuid) -> Result<(), VaultError> {
     if manifest
         .profiles
@@ -8007,6 +8233,201 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn the_shared_profile_id_is_fixed_per_vault_and_never_a_random_one() {
+        let vault = Uuid::new_v4();
+        let shared = shared_profile_id(vault);
+        assert_eq!(shared, shared_profile_id(vault));
+        assert_ne!(shared, shared_profile_id(Uuid::new_v4()));
+        assert_eq!(shared.get_version_num(), 8);
+        assert_eq!(shared.get_variant(), uuid::Variant::RFC4122);
+        // Every other profile has a random version 4 id, which differs from
+        // it in the version bits alone.
+        for _ in 0..10_000 {
+            let id = Uuid::new_v4();
+            assert_eq!(id.get_version_num(), 4);
+            assert_ne!(id, shared);
+        }
+    }
+
+    #[test]
+    fn shared_files_go_to_one_shared_profile_made_with_the_first() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let shared = store.shared_profile().unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.shared_profile_id, shared);
+        assert!(!snapshot.profiles.iter().any(|profile| profile.id == shared));
+
+        let first = store
+            .import(shared, vec![], vec![source("a.pdf", b"one")], 2)
+            .unwrap();
+        assert_eq!(first.imported.len(), 1);
+        store
+            .import(shared, vec![], vec![source("b.pdf", b"two")], 3)
+            .unwrap();
+        let profiles = store.snapshot().unwrap().profiles;
+        assert_eq!(profiles.len(), 2);
+        let made = profiles
+            .iter()
+            .find(|profile| profile.id == shared)
+            .unwrap();
+        assert_eq!(made.display_name, SHARED_PROFILE_NAME);
+        assert_eq!(made.created_at_ms, 2);
+
+        // One fixed folder: nothing nests in it.
+        assert!(matches!(
+            store.create_folder(shared, None, "Labs", 4),
+            Err(VaultError::Invalid)
+        ));
+        let jamie = profiles
+            .iter()
+            .find(|profile| profile.id != shared)
+            .unwrap()
+            .id;
+        let folder = store.create_folder(jamie, None, "Labs", 5).unwrap();
+        assert!(matches!(
+            store.import(shared, vec![folder], vec![source("c.pdf", b"three")], 6),
+            Err(VaultError::Invalid)
+        ));
+
+        // No person may be called it.
+        assert!(matches!(
+            store.create_profile(" shared WITH me ", 6),
+            Err(VaultError::Invalid)
+        ));
+        // Its name is not a word a passphrase may not hold.
+        store
+            .change_passphrase(PASSWORD, "Shared-lantern-orbit-cascade-572")
+            .unwrap();
+        // A vault with it still opens.
+        store.lock();
+        store.unlock("Shared-lantern-orbit-cascade-572").unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.profiles.len(), 2);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .filter(|record| record.profile_id == shared)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn a_shared_file_moves_to_a_person_keyed_as_if_imported_there() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let morgan = store.create_profile("Morgan", 2).unwrap();
+        let labs = store.create_folder(jamie, None, "Labs", 3).unwrap();
+        let shared = store.shared_profile().unwrap();
+        let added = store
+            .import(
+                shared,
+                vec![],
+                vec![source("a.pdf", b"one"), source("b.pdf", b"two")],
+                4,
+            )
+            .unwrap()
+            .imported;
+
+        // Shared intake retains the same hide/restore guarantees as a person's files.
+        let object = {
+            let guard = store.session();
+            let record = guard.as_ref().unwrap().manifest.records.iter()
+                .find(|record| record.id == added[0]).unwrap();
+            temp.path().join("vault/objects").join(&record.object_name)
+        };
+        let ciphertext = fs::read(&object).unwrap();
+        store.hide_record(added[0], 5).unwrap();
+        let hidden = store.snapshot().unwrap().records.into_iter()
+            .find(|record| record.id == added[0]).unwrap();
+        assert_eq!(hidden.profile_id, shared);
+        assert!(hidden.hidden.is_some());
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        store.unhide_record(added[0]).unwrap();
+
+        let outcome = store
+            .move_to_profile(added.clone(), jamie, vec![labs])
+            .unwrap();
+        assert_eq!(outcome.moved, added);
+        assert!(outcome.already_there.is_empty());
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        let snapshot = store.snapshot().unwrap();
+        for id in &added {
+            let record = snapshot.records.iter().find(|r| r.id == *id).unwrap();
+            assert_eq!(record.profile_id, jamie);
+            assert_eq!(record.folder_ids, vec![labs]);
+        }
+        // Keyed as if imported to Jamie: the same file again is a duplicate.
+        assert_eq!(
+            store
+                .import(jamie, vec![], vec![source("again.pdf", b"one")], 5)
+                .unwrap()
+                .skipped_duplicates,
+            vec!["again.pdf"]
+        );
+        // Its content is unchanged.
+        let mut exported = Vec::new();
+        store.export(added[0], &mut exported).unwrap();
+        assert_eq!(exported, b"one");
+
+        // A file Jamie already has stays in Shared with me; Morgan can have it.
+        let again = store
+            .import(shared, vec![], vec![source("c.pdf", b"one")], 6)
+            .unwrap()
+            .imported;
+        let outcome = store.move_to_profile(again.clone(), jamie, vec![]).unwrap();
+        assert!(outcome.moved.is_empty());
+        assert_eq!(outcome.already_there, vec!["c.pdf"]);
+        let record = |id: Uuid| {
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .into_iter()
+                .find(|r| r.id == id)
+                .unwrap()
+        };
+        assert_eq!(record(again[0]).profile_id, shared);
+        assert_eq!(
+            store
+                .move_to_profile(again.clone(), morgan, vec![])
+                .unwrap()
+                .moved,
+            again
+        );
+
+        // Only out of Shared with me, never into it, and into the person's
+        // own folders only.
+        assert!(matches!(
+            store.move_to_profile(vec![added[0]], morgan, vec![]),
+            Err(VaultError::Invalid)
+        ));
+        let last = store
+            .import(shared, vec![], vec![source("d.pdf", b"four")], 7)
+            .unwrap()
+            .imported;
+        assert!(matches!(
+            store.move_to_profile(last.clone(), shared, vec![]),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store
+            .move_to_profile(last.clone(), morgan, vec![labs])
+            .is_err());
+        assert_eq!(record(last[0]).profile_id, shared);
+
+        // What was moved is still valid when the vault opens again.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(record(added[1]).profile_id, jamie);
+        assert_eq!(record(again[0]).profile_id, morgan);
     }
 
     #[test]
@@ -14406,6 +14827,55 @@ mod tests {
         assert_eq!(last[1].how.as_deref(), Some("recoveryKey"));
         let text = String::from_utf8(last[1].canonical()).unwrap();
         assert!(!text.contains("lantern-orbit-willow-cascade-572") && !text.contains(&key));
+    }
+
+    #[test]
+    fn shared_intake_and_person_move_commit_their_history_without_rewriting_the_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let shared = store.shared_profile().unwrap();
+        let id = store.import_from(shared, vec![], vec![source("shared.pdf", b"unchanged")], 2, "shared")
+            .unwrap().imported[0];
+        let imported = history_events(&store).pop().unwrap();
+        assert_eq!(imported.event, HistoryEvent::Imported);
+        assert_eq!(imported.how.as_deref(), Some("shared"));
+        assert_eq!(imported.profile_id, Some(shared));
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let record = before.records.iter().find(|r| r.id == id).unwrap();
+        let object = root.join("objects").join(&record.object_name);
+        let ciphertext = fs::read(&object).unwrap();
+        for boundary in ["history.after-chunk-write", "history.objects-sync", "manifest.before-first-write"] {
+            {
+                let _fail = FailAt::new(boundary);
+                assert!(matches!(store.move_to_profile(vec![id], jamie, vec![]), Err(VaultError::NoSpace)));
+            }
+            assert!(store.session().as_ref().unwrap().manifest == before, "{boundary}");
+            assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        }
+        store.move_to_profile(vec![id], jamie, vec![]).unwrap();
+        let entries = history_events(&store); // Verifies the pinned chain as well.
+        let moved = entries.last().unwrap();
+        assert_eq!(moved.event, HistoryEvent::Moved);
+        assert_eq!(moved.record_id, Some(id));
+        assert_eq!(moved.profile_id, Some(jamie));
+        assert_eq!(moved.how.as_deref(), Some("shared"));
+        // A person changed even when neither location has a folder.
+        assert_eq!(moved.from, Some(vec![]));
+        assert_eq!(moved.to, Some(vec![]));
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        let duplicate = store.import_from(shared, vec![], vec![source("duplicate.pdf", b"unchanged")], 3, "shared")
+            .unwrap().imported[0];
+        let before_duplicate = store.session().as_ref().unwrap().manifest.clone();
+        assert!(store.move_to_profile(vec![duplicate], jamie, vec![]).unwrap().moved.is_empty());
+        assert!(store.session().as_ref().unwrap().manifest == before_duplicate);
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().records.iter().find(|r| r.id == id).unwrap().profile_id, jamie);
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        history_events(&store);
     }
 
     #[test]
