@@ -127,13 +127,13 @@ private final class PdfReader: UIViewController, WKNavigationDelegate, WKUIDeleg
         let now = ProcessInfo.processInfo.systemUptime
         guard !completed, now - lastActivity >= 1 else { return }
         lastActivity = now
-        activity.send(["event": "activity"])
+        try? activity.send(["event": "activity"])
     }
 
     func finish(success: Bool) {
         guard !completed else { return }
         completed = true
-        activity.send(["event": "closed"])
+        try? activity.send(["event": "closed"])
         if var data = bytes { data.resetBytes(in: 0..<data.count) }
         bytes = nil
         webview?.stopLoading()
