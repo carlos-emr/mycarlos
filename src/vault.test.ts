@@ -40,15 +40,14 @@ describe("native idle deadline bridge", () => {
       const [command, args] = invoke.mock.calls[0];
       expect(command).toBe("vault_read_native_pdf");
       expect(Object.keys(args.request).sort()).toEqual([
-        "activity",
         "closeLabel",
         "recordId",
       ]);
-      args.request.activity.onmessage(null);
+      args.activity.onmessage(null);
       expect(listener).toHaveBeenCalledOnce();
       resolve();
       await opened;
-      args.request.activity.onmessage(null);
+      args.activity.onmessage(null);
       expect(listener).toHaveBeenCalledOnce();
     } finally {
       window.removeEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);

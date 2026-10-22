@@ -2564,7 +2564,6 @@ pub extern "C" fn mycarlos_pdf_background() {
 struct NativePdfRequest {
     record_id: Uuid,
     close_label: String,
-    activity: tauri::ipc::Channel<()>,
 }
 
 /// iOS uses a separate, bridge-free native WebKit view, never the app webview.
@@ -2573,6 +2572,7 @@ async fn vault_read_native_pdf(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     request: NativePdfRequest,
+    activity: tauri::ipc::Channel<()>,
 ) -> CommandResult<()> {
     #[cfg(target_os = "ios")]
     {
@@ -2602,7 +2602,7 @@ async fn vault_read_native_pdf(
         drop(document);
         let activity_store = Arc::clone(store.inner());
         let activity_app = app.clone();
-        let renderer_activity = request.activity;
+        let renderer_activity = activity;
         #[derive(Deserialize)]
         struct ReaderInput {
             event: String,
@@ -2643,13 +2643,7 @@ async fn vault_read_native_pdf(
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (
-            app,
-            store,
-            request.record_id,
-            request.close_label,
-            request.activity,
-        );
+        let _ = (app, store, request.record_id, request.close_label, activity);
         Err(VaultError::PdfViewUnavailable.into())
     }
 }

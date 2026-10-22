@@ -620,7 +620,8 @@ export function createVaultBridge(): VaultBridge {
       activity.onmessage = () =>
         window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
       return invoke<void>("vault_read_native_pdf", {
-        request: { recordId, closeLabel, activity },
+        request: { recordId, closeLabel },
+        activity,
       }).finally(() => {
         activity.onmessage = () => undefined;
       });
