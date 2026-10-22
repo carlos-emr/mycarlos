@@ -13,7 +13,7 @@ interface LibrarySidebarProps {
   people: PatientProfile[];
   /** The open person, while their records are shown. */
   profileId: string;
-  section: "records" | "shared" | "security" | "preferences";
+  section: "records" | "shared" | "hidden" | "security" | "preferences";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
   sharedNew: number;
@@ -30,6 +30,11 @@ interface LibrarySidebarProps {
   drag: VaultDragDrop;
   onOpenPerson: (profileId: string) => void;
   onOpenFolder: (profileId: string, folderId: string) => void;
+  /** Hidden documents at the current location (#71). */
+  hiddenCount: number;
+  /** Hidden can be opened from Shared with me; keep its whole-vault footer. */
+  hiddenFromShared?: boolean;
+  onOpenHidden: () => void;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
 }
@@ -80,6 +85,9 @@ export function LibrarySidebar({
   sharedNew,
   onOpenShared,
   vaultTotals,
+  hiddenCount,
+  hiddenFromShared = false,
+  onOpenHidden,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
@@ -111,7 +119,7 @@ export function LibrarySidebar({
   // Shared with me is the whole vault's: while it is open the footer counts
   // the whole vault; otherwise it counts the open person's.
   const totals =
-    section === "shared"
+    section === "shared" || hiddenFromShared
       ? vaultTotals
       : {
           documents: records.filter((record) => record.profileId === profileId)
@@ -243,6 +251,16 @@ export function LibrarySidebar({
           onClick={onOpenPreferences}
         >
           <Icon name="text-size" /> {t("sidebar.preferences")}
+        </button>
+        {/* At the bottom of the sidebar, set apart, like the mocks' Trash
+            (#71): out of view, not a folder or a setting. */}
+        <button
+          className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
+          type="button"
+          onClick={onOpenHidden}
+        >
+          <Icon name="hidden" /> Hidden{" "}
+          <span className="nav-count">{hiddenCount}</span>
         </button>
       </nav>
       <div className="storage">

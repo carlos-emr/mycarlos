@@ -26,6 +26,16 @@ ecdsa = { version = "=0.16.9", features = ["der", "verifying"] }
 hkdf = "0.12"
 hmac = "0.12"
 libc = "0.2"
+# Opens a password-protected PDF, only ever in the separate helper process (src/pdf_unlock.rs).
+# Pinned: it parses untrusted input, so an update is a reviewed change.
+lopdf = { version = "=0.45.0", default-features = false }
+# Draws a page of a PDF, only ever in the separate helper process (src/pdf_view.rs). Pinned for
+# the same reason. hayro-syntax and the decoders below it use unsafe code (DEPENDENCY_REVIEW);
+# "simd" is off, which leaves out pic-scale's SIMD paths only.
+hayro = { version = "=0.8.0", default-features = false, features = ["embed-fonts", "embed-cmaps"] }
+# Writes the page picture as PNG; the parent decodes bounded RGBA8 output and encodes its pixels
+# again before display (already in the tree through hayro).
+image = { version = "0.25", default-features = false, features = ["png"] }
 p256 = { version = "=0.13.2", features = ["ecdsa", "pkcs8"] }
 percent-encoding = "2"
 rand = "0.8"
@@ -42,14 +52,25 @@ x509-cert = "=0.2.5"
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
 
-# Match the WebKitGTK bindings already used by the pinned Tauri/Wry runtime.
+# Match the WebKitGTK bindings already used by the pinned Tauri/Wry runtime. The PDF helper's
+# sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter it cannot run
+# without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
+landlock = "=0.4.7"
+seccompiler = "=0.5.0"
 
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
-windows = { version = "=0.61.3", features = ["Win32_System_Com"] }
+windows = { version = "=0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Isolation",
+    "Win32_System_Com",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }

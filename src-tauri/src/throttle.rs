@@ -298,6 +298,8 @@ impl AttemptThrottle {
 }
 
 #[cfg(test)]
+// Tests remove files on purpose, to simulate damage and loss (#71).
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use std::fs;

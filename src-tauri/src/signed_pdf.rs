@@ -5,8 +5,9 @@
 //! in the signed revision.
 //!
 //! The checks run in A3's order, and the first failure decides:
-//! 1. the signature: exactly one, its byte range covering the whole file with
-//!    nothing after it, its /Contents one CMS SignedData and zero padding, the
+//! 1. the reported signature: exactly one in the supplied layout, its byte
+//!    range covering the whole file with nothing after it, its /Contents
+//!    one CMS SignedData and zero padding, the
 //!    signed attributes' digest and the ECDSA signature correct, and the
 //!    signer's key pinned for a link;
 //! 2. the manifest's shape (RFC 8785 JSON, exactly the agreed members);
@@ -14,15 +15,16 @@
 //! 4. its recipient against the link: the same recipient is Verified, and
 //!    none or another is "signed, not matched to you", never Verified.
 //!
-//! This module does no PDF parsing. Where the signatures sit, and the
-//! embedded manifest's bytes, come from the sandboxed PDF helper's structure
-//! report. Everything that decides the verdict is checked here against the
-//! file's own bytes: the byte range, the /Contents framing, the digest, the
-//! signature, and the manifest itself, which counts only if it appears
-//! verbatim, exactly once, inside the signed bytes. A wrong or compromised
-//! helper can then only cost a document its "Verified", never give one. An
-//! encrypted copy (the email path) stores its manifest encrypted, so it
-//! cannot be bound this way yet and is refused as `encrypted_manifest`.
+//! This module does no PDF parsing. Its caller supplies a structure report
+//! describing signatures and the embedded manifest's bytes. It checks the
+//! reported byte range, /Contents framing, digest and signature against the
+//! file's bytes, and requires the manifest bytes to occur exactly once in
+//! the signed bytes. These raw-byte checks do not independently establish
+//! the complete PDF signature structure or attachment identity. Helper
+//! structure validation and import integration remain later work; the
+//! checker is not wired to the import flow. An encrypted copy (the email
+//! path) stores its manifest encrypted, so it cannot be bound this way yet
+//! and is refused as `encrypted_manifest`.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -676,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn a_report_from_a_wrong_or_lying_helper_cannot_make_it_verified() {
+    fn reported_ranges_and_manifest_bytes_are_checked_against_the_file() {
         let (link, documents) = fixture();
         let links = std::slice::from_ref(&link);
         let sent = document(&documents, "signed-send-to-mycarlos.pdf");

@@ -103,7 +103,8 @@ function AuthNotice({
 // The native side compares the typed text with this exact phrase again.
 const RESET_CONFIRMATION = "RESET MYCARLOS VAULT";
 
-/** The typed confirmation shared by every place that can erase the vault. */
+/** The typed confirmation shared by every place that can set the vault
+ * aside (#71: nothing erases it). */
 export function ResetConfirmation({
   busy,
   actionLabel,

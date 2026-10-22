@@ -64,7 +64,9 @@ The staging PR now builds a security-focused local-vault vertical slice using sy
    when the destination is a filesystem path;
 5. organize records across profiles and nested folders without exposing metadata while locked; and
 6. permanently delete an individual record by durably removing it from one manifest, unlinking its
-   ciphertext, and removing its wrapped object key from the redundant manifest.
+   ciphertext, and removing its wrapped object key from the redundant manifest. (Since #71, nothing
+   deletes a document: hiding takes it out of view and keeps it, and a whole vault is set aside,
+   not erased.)
 
 The implemented format and key/recovery decisions are recorded in
 [`VAULT_FORMAT.md`](VAULT_FORMAT.md). This is implementation-complete for the scoped slice, not
