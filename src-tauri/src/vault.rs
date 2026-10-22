@@ -1984,7 +1984,10 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .filter(|record| object_required(record) && object_presence(&self.root, record) == ObjectPresence::Unknown)
+            .filter(|record| {
+                object_required(record)
+                    && object_presence(&self.root, record) == ObjectPresence::Unknown
+            })
             .map(|record| record.id)
             .collect();
         if !unknown.is_empty() {
@@ -13778,16 +13781,32 @@ mod tests {
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
-        let ids = store.import(profile, vec![], vec![source("later-missing.pdf", b"original bytes"), source("already-damaged.pdf", b"other bytes")], 2)
-            .unwrap().imported;
+        let ids = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("later-missing.pdf", b"original bytes"),
+                    source("already-damaged.pdf", b"other bytes"),
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
         let originals = store.session().as_ref().unwrap().manifest.records.clone();
-        let objects: Vec<_> = originals.iter().map(|r| root.join("objects").join(&r.object_name)).collect();
+        let objects: Vec<_> = originals
+            .iter()
+            .map(|r| root.join("objects").join(&r.object_name))
+            .collect();
         let ciphertext = fs::read(&objects[0]).unwrap();
         // A previous recovery already stopped requiring the second file.
         fs::remove_file(&objects[1]).unwrap();
         store.lock();
         store.unlock(PASSWORD).unwrap();
-        assert_eq!(store.hide_unavailable_records(&[ids[1]], 3).unwrap(), vec![ids[1]]);
+        assert_eq!(
+            store.hide_unavailable_records(&[ids[1]], 3).unwrap(),
+            vec![ids[1]]
+        );
         store.hide_record(ids[0], 4).unwrap();
         fs::remove_file(&objects[0]).unwrap();
         store.lock();
@@ -13797,10 +13816,16 @@ mod tests {
         let first = snapshot.records.iter().find(|r| r.id == ids[0]).unwrap();
         assert!(!first.available);
         assert_eq!(first.hidden.unwrap().reason, HiddenReason::Patient);
-        assert_eq!(store.session().as_ref().unwrap().unavailable, HashSet::from([ids[0]]));
+        assert_eq!(
+            store.session().as_ref().unwrap().unavailable,
+            HashSet::from([ids[0]])
+        );
         // Exactly the patient-hidden blocker is confirmed; the already damaged
         // hidden file must not be rediscovered as a new required blocker.
-        assert_eq!(store.hide_unavailable_records(&[ids[0]], 5).unwrap(), vec![ids[0]]);
+        assert_eq!(
+            store.hide_unavailable_records(&[ids[0]], 5).unwrap(),
+            vec![ids[0]]
+        );
         assert_eq!(store.snapshot().unwrap().recovery, None);
         let after = store.session().as_ref().unwrap().manifest.records.clone();
         assert_eq!(after.len(), originals.len());
