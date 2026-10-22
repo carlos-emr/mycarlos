@@ -27,6 +27,7 @@ import type {
   ViewedPage,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import { setLocaleOverride, translate } from "./i18n";
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -680,11 +681,15 @@ describe("durable vault UI", () => {
     const folder = screen.getByRole("button", {
       name: "Shared with me, 2 new",
     });
-    // With one person it is a fixed folder in their records.
-    const label = screen.getByText("Folders", { selector: ".nav-label" });
+    // With one person it sits beside My records, at the top level and in no
+    // one's records (Ben, 21 Oct).
+    const mine = within(
+      screen.getByRole("navigation", { name: "Record library" }),
+    ).getByRole("button", { name: /^My records/ });
     expect(
-      label.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING,
+      mine.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    expect(folder.style.paddingLeft).toBe("");
 
     await user.click(folder);
     expect(
@@ -746,17 +751,22 @@ describe("durable vault UI", () => {
     const folder = await screen.findByRole("button", {
       name: "Shared with me, 1 new",
     });
-    const label = screen.getByText("Folders", { selector: ".nav-label" });
-    expect(
-      label.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_PRECEDING,
-    ).toBeTruthy();
-    // It is no one: not a patient to choose.
-    for (const group of screen.getAllByRole("group", { name: "Patient" }))
+    // Each person is a top-level folder, and Shared with me is one beside
+    // them, after both and inside neither (Ben, 21 Oct).
+    const sidebar = folder.closest("aside")!;
+    const library = within(sidebar).getByRole("navigation", {
+      name: "Record library",
+    });
+    const people = ["Jamie", "Morgan"].map((name) =>
+      within(library).getByRole("button", { name: new RegExp(`^${name}`) }),
+    );
+    for (const person of people)
       expect(
-        within(group)
-          .getAllByRole("button")
-          .map((button) => button.textContent),
-      ).toEqual(["Jamie", "Morgan"]);
+        person.compareDocumentPosition(folder) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    expect(folder.style.paddingLeft).toBe("");
+    expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
 
     await user.click(folder);
     expect(
@@ -764,6 +774,12 @@ describe("durable vault UI", () => {
         /They are in no one's records until you move each one to the person it is for\./,
       ),
     ).toBeVisible();
+    // While it is open, no person is chosen.
+    for (const person of people)
+      expect(person).not.toHaveAttribute("aria-current");
+    expect(
+      within(sidebar).queryByText("Jamie", { selector: ".brand small" }),
+    ).toBeNull();
     // No person's path or picker above it.
     expect(
       within(screen.getByRole("main")).queryByRole("group", {
@@ -796,6 +812,145 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText("FAKE_Xray.pdf moved to Morgan's records."),
     ).toBeVisible();
+  });
+
+  it("with several people, lists every person's folders, and counts the whole vault while Shared with me is open (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["Jamie", "Morgan"],
+      ["FAKE_Xray.pdf"],
+    );
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Labs",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "record-morgan",
+      profileId: "profile-2",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const shared = await screen.findByRole("button", {
+      name: "Shared with me, 1 new",
+    });
+    const sidebar = shared.closest("aside")!;
+    const library = within(sidebar).getByRole("navigation", {
+      name: "Record library",
+    });
+    const footer = () => sidebar.querySelector(".storage small");
+    const names = () =>
+      Array.from(library.querySelectorAll(".native-nav-name")).map(
+        (name) => name.textContent,
+      );
+    // Jamie's folder sits under Jamie; the footer counts Jamie's.
+    expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
+    expect(footer()).toHaveTextContent("0 documents · 1 folder");
+
+    await user.click(shared);
+    await screen.findByRole("heading", { name: "Shared with me" });
+    // The tree stays; the footer counts the whole vault, as it is no one's.
+    expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
+    expect(footer()).toHaveTextContent("2 documents · 1 folder");
+
+    await user.click(within(library).getByRole("button", { name: /^Morgan/ }));
+    expect(footer()).toHaveTextContent("1 document · 0 folders");
+  });
+
+  it("with several people, opens a person's records when one is chosen from Shared with me (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(["Jamie", "Morgan"], ["FAKE_Xray.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+    );
+    await screen.findByRole("heading", { name: "Shared with me" });
+    const library = screen.getByRole("navigation", { name: "Record library" });
+    await user.click(within(library).getByRole("button", { name: /^Morgan/ }));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Morgan" }),
+    ).toBeVisible();
+    expect(
+      within(library).getByRole("button", { name: /^Morgan/ }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("with several people, moves a shared file to the person whose folder it is dropped on, and keeps a person's documents theirs (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["Jamie", "Morgan"],
+      ["FAKE_Scan.pdf"],
+    );
+    vault.folders.push({
+      id: "folder-2",
+      profileId: "profile-2",
+      parentId: null,
+      name: "FAKE School forms",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "record-jamie",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Jamie.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const library = () =>
+      screen.getByRole("navigation", { name: "Record library" });
+    // Jamie is open: Jamie's document dropped on Morgan stays Jamie's.
+    const jamiesFile = await screen.findByRole("article", {
+      name: "FAKE_Jamie.pdf document",
+    });
+    const kept = dragTransfer();
+    fireDragEvent("dragstart", jamiesFile, { dataTransfer: kept });
+    const morgan = within(library()).getByRole("button", { name: /^Morgan/ });
+    fireDragEvent("dragover", morgan, { dataTransfer: kept });
+    fireDragEvent("drop", morgan, { dataTransfer: kept });
+    expect(
+      await screen.findByText(
+        "Documents and folders stay with their person. Only files in Shared with me can be moved to a person.",
+      ),
+    ).toBeVisible();
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+
+    // From Shared with me, dropped on Morgan's folder: it goes to Morgan.
+    await user.click(
+      within(library()).getByRole("button", { name: /^Shared with me/ }),
+    );
+    const file = await screen.findByRole("article", {
+      name: "FAKE_Scan.pdf document",
+    });
+    const moved = dragTransfer();
+    fireDragEvent("dragstart", file, { dataTransfer: moved });
+    const forms = within(library()).getByRole("button", {
+      name: /^FAKE School forms/,
+    });
+    fireDragEvent("dragover", forms, { dataTransfer: moved });
+    fireDragEvent("drop", forms, { dataTransfer: moved });
+    await waitFor(() =>
+      expect(bridge.moveToPerson).toHaveBeenCalledWith(
+        ["record-shared-1"],
+        "profile-2",
+        ["folder-2"],
+      ),
+    );
   });
 
   it("moves nothing when a drag in Shared with me is let go over the list, and moves to the folder it is dropped on (#61)", async () => {
@@ -6623,6 +6778,70 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "Unlock your vault" });
     vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
     await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
+  });
+});
+
+describe("the app's notices in the language in use (#46)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    // Not about the recovery key offer: it was made earlier today.
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+
+  it("says what happened in Polish, with its plural forms", async () => {
+    const user = userEvent.setup();
+    const pl = (key: Parameters<typeof translate>[1], count?: number) =>
+      translate("pl", key, count === undefined ? {} : { count });
+    setLocaleOverride("pl");
+    onTestFinished(() => {
+      setLocaleOverride(null);
+      window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    });
+    window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    render(<VaultApp bridge={nativeBridge()} />);
+    fireEvent.change(await screen.findByLabelText(pl("passphrase.label")), {
+      target: { value: "river-azimuth-cobalt-sparrow-934" },
+    });
+    await user.click(screen.getByRole("button", { name: pl("unlock.submit") }));
+    expect(await screen.findByText(pl("notice.unlocked"))).toBeVisible();
+    expect(pl("notice.unlocked")).toBe("Sejf odblokowany.");
+
+    // 5 → 6 minutes: Polish says "6 minut" (many).
+    await user.click(
+      screen.getAllByRole("button", { name: pl("security.title") })[0],
+    );
+    const delay = screen.getByRole("group", {
+      name: pl("security.autoLock.label"),
+    });
+    await user.click(
+      within(delay).getByRole("button", {
+        name: pl("security.autoLock.longer"),
+      }),
+    );
+    expect(
+      await screen.findByText("Automatyczna blokada ustawiona na 6 minut."),
+    ).toBeVisible();
+    expect(screen.queryByText(/Automatic locking set/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
+    expect(screen.queryByText("Vault locked.")).toBeNull();
+  });
+
+  it("names the import button as the library shows it when a file is dropped while locked", async () => {
+    setLocaleOverride("fr");
+    onTestFinished(() => setLocaleOverride(null));
+    render(<VaultApp bridge={nativeBridge()} />);
+    await screen.findByLabelText(translate("fr", "passphrase.label"));
+    const files = new DataTransfer();
+    files.items.add(new File(["%PDF-1.7"], "FAKE.pdf"));
+    fireDragEvent("drop", document.body, { dataTransfer: files });
+    expect(
+      await screen.findByText(
+        "Pour importer des PDF, déverrouillez votre coffre-fort et utilisez Choose files to import. Le glisser-déposer déplace les documents déjà dans myCarlos.",
+      ),
+    ).toBeVisible();
   });
 });
 

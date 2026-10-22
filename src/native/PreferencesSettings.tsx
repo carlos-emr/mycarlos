@@ -1,16 +1,18 @@
 import { TextSizeSetting, useNativeZoom } from "./TextSizeSetting";
 import { AppearanceSetting } from "./AppearanceSetting";
+import { useI18n } from "../i18n";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
  * is kept in the vault. */
 export function PreferencesSettings() {
   const native = useNativeZoom();
+  const { t } = useI18n();
   return (
     <main className="library-main purpose-screen">
       <div className="main-head">
         <div>
-          <h1>Preferences</h1>
-          <p>How myCarlos looks on this computer</p>
+          <h1>{t("sidebar.preferences")}</h1>
+          <p>{t("preferences.subtitle")}</p>
         </div>
       </div>
       <div className="setting-list">
@@ -20,11 +22,8 @@ export function PreferencesSettings() {
         ) : (
           <section className="setting-row">
             <div>
-              <h2>Text size</h2>
-              <p>
-                Here, text size follows your device: its own text size setting,
-                or the browser's zoom.
-              </p>
+              <h2>{t("textSize.title")}</h2>
+              <p>{t("textSize.followsDevice")}</p>
             </div>
           </section>
         )}
