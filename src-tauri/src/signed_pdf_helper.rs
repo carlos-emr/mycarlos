@@ -260,7 +260,8 @@ fn manifest(doc: &lopdf::Document) -> Result<Option<Vec<u8>>, Refusal> {
         .get_object(*file)
         .and_then(Object::as_dict)
         .map_err(|_| Refusal::BadManifest)?;
-    if file.get(b"AFRelationship").and_then(Object::as_name).ok() != Some(b"Data")
+    if file.get(b"Type").and_then(Object::as_name).ok() != Some(b"Filespec")
+        || file.get(b"AFRelationship").and_then(Object::as_name).ok() != Some(b"Data")
         || !file
             .get(b"F")
             .and_then(Object::as_str)
@@ -275,9 +276,22 @@ fn manifest(doc: &lopdf::Document) -> Result<Option<Vec<u8>>, Refusal> {
     let ef = resolve(doc, file.get(b"EF").map_err(|_| Refusal::BadManifest)?)?
         .as_dict()
         .map_err(|_| Refusal::BadManifest)?;
+    let stream_id = ef
+        .get(b"F")
+        .and_then(Object::as_reference)
+        .map_err(|_| Refusal::BadManifest)?;
+    if ef
+        .get(b"UF")
+        .is_ok_and(|value| value.as_reference().ok() != Some(stream_id))
+    {
+        return Err(Refusal::BadManifest);
+    }
     let stream = resolve(doc, ef.get(b"F").map_err(|_| Refusal::BadManifest)?)?
         .as_stream()
         .map_err(|_| Refusal::BadManifest)?;
+    if stream.dict.get(b"Type").and_then(Object::as_name).ok() != Some(b"EmbeddedFile") {
+        return Err(Refusal::BadManifest);
+    }
     let bytes = stream
         .decompressed_content_with_limit(MAX_MANIFEST)
         .map_err(|_| Refusal::BadManifest)?;
@@ -459,7 +473,20 @@ pub(crate) fn verify(
         {
             return Err(Failure::TooLarge);
         }
-        let executable = std::env::current_exe().map_err(|_| Failure::HelperFailed)?;
+        let executable = {
+            // Unit-test binaries do not dispatch helper requests. The explicit
+            // real-import test supplies the separately built app executable;
+            // release builds have no environment override or trust override.
+            #[cfg(test)]
+            let test_executable = std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE");
+            #[cfg(not(test))]
+            let test_executable: Option<std::ffi::OsString> = None;
+            test_executable
+                .map(std::path::PathBuf::from)
+                .map(Ok)
+                .unwrap_or_else(std::env::current_exe)
+                .map_err(|_| Failure::HelperFailed)?
+        };
         let ask = |stage, password: &str| {
             if cancelled() {
                 return Err(Failure::Cancelled);
@@ -483,20 +510,50 @@ pub(crate) fn verify(
                 .map_err(|_| Failure::HelperFailed)?
                 .map_err(Failure::Refused)
         };
-        let candidate = ask(0, "")?;
-        crate::signed_pdf::authenticate(pdf, &candidate.layout, links).map_err(Failure::Refused)?;
-        let full = ask(1, password)?;
-        if full.layout != candidate.layout {
-            return Err(Failure::Refused(Refusal::BadStructure));
-        }
-        crate::signed_pdf::check(pdf, &full.layout, full.manifest.as_deref(), links)
-            .map_err(Failure::Refused)
+        verify_with(pdf, password, links, cancelled, ask)
     }
     #[cfg(not(desktop))]
     {
         let _ = (pdf, password, links, cancelled);
         Err(Failure::Unavailable)
     }
+}
+
+/// The production parent gate, shared with tests that count actual stage and
+/// password dispatch. A helper transport cannot bypass these checks.
+#[cfg(any(desktop, test))]
+fn verify_with(
+    pdf: &[u8],
+    password: &str,
+    links: &[PinnedLink],
+    cancelled: &dyn Fn() -> bool,
+    mut ask: impl FnMut(u8, &str) -> Result<Report, Failure>,
+) -> Result<Verdict, Failure> {
+    if pdf.len() > crate::pdf_unlock::MAX_LOCKED_PDF_BYTES
+        || password.len() > crate::pdf_unlock::MAX_PASSWORD_BYTES
+    {
+        return Err(Failure::TooLarge);
+    }
+    if cancelled() {
+        return Err(Failure::Cancelled);
+    }
+    let candidate = ask(0, "")?;
+    if cancelled() {
+        return Err(Failure::Cancelled);
+    }
+    crate::signed_pdf::authenticate(pdf, &candidate.layout, links).map_err(Failure::Refused)?;
+    if cancelled() {
+        return Err(Failure::Cancelled);
+    }
+    let full = ask(1, password)?;
+    if cancelled() {
+        return Err(Failure::Cancelled);
+    }
+    if full.layout != candidate.layout {
+        return Err(Failure::Refused(Refusal::BadStructure));
+    }
+    crate::signed_pdf::check(pdf, &full.layout, full.manifest.as_deref(), links)
+        .map_err(Failure::Refused)
 }
 
 #[cfg(test)]
@@ -521,19 +578,29 @@ mod tests {
                 .decode(document["pdf_b64"].as_str().unwrap())
                 .unwrap();
             let candidate = preflight(&pdf).unwrap();
-            let result = crate::signed_pdf::authenticate(&pdf, &candidate, &links).and_then(|()| {
-                let full = extract(&pdf, document["password"].as_str().unwrap_or(""))?;
-                assert_eq!(full.layout, candidate);
-                crate::signed_pdf::check(&pdf, &full.layout, full.manifest.as_deref(), &links)
-            });
+            let result = verify_with(
+                &pdf,
+                document["password"].as_str().unwrap_or(""),
+                &links,
+                &|| false,
+                |stage, password| match stage {
+                    0 => Ok(Report {
+                        layout: preflight(&pdf).map_err(Failure::Refused)?,
+                        manifest: None,
+                    }),
+                    1 => extract(&pdf, password).map_err(Failure::Refused),
+                    _ => panic!("unknown helper stage"),
+                },
+            );
             let code = match result {
                 Ok(Verdict::Verified { .. }) => "verified".to_owned(),
                 Ok(Verdict::SignedNotMatched { .. }) => "signed_not_matched".to_owned(),
-                Err(refusal) => serde_json::to_value(refusal)
+                Err(Failure::Refused(refusal)) => serde_json::to_value(refusal)
                     .unwrap()
                     .as_str()
                     .unwrap()
                     .to_owned(),
+                Err(other) => panic!("unexpected helper failure: {other:?}"),
             };
             assert_eq!(
                 code,
@@ -559,6 +626,134 @@ mod tests {
         ] {
             assert!(matches!(preflight(pdf), Err(Refusal::BadRange)));
         }
+    }
+
+    #[test]
+    fn actual_parent_gate_never_sends_a_password_without_a_current_pinned_signature() {
+        use std::cell::Cell;
+        let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
+        ))
+        .unwrap();
+        let document = &fixture["documents"][1]; // Encrypted email copy.
+        let pdf = STANDARD
+            .decode(document["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        let known = PinnedLink {
+            clinic_id: fixture["link"]["clinic_id"].as_str().unwrap().to_owned(),
+            recipient_id: fixture["link"]["recipient_id"].as_str().unwrap().to_owned(),
+            signer_kids: vec![fixture["link"]["signer_kid"].as_str().unwrap().to_owned()],
+        };
+        for scenario in ["known", "empty", "wrong", "cancelled"] {
+            let mut links = vec![known.clone()];
+            if scenario == "empty" {
+                links.clear();
+            }
+            if scenario == "wrong" {
+                links[0].signer_kids = vec!["FAKE wrong key".to_owned()];
+            }
+            let cancelled = Cell::new(false);
+            let mut stages = Vec::new();
+            let result = verify_with(
+                &pdf,
+                "fake",
+                &links,
+                &|| cancelled.get(),
+                |stage, password| {
+                    stages.push(stage);
+                    if stage == 0 {
+                        assert!(
+                            password.is_empty(),
+                            "preflight must never receive the password"
+                        );
+                        let report = Report {
+                            layout: preflight(&pdf).unwrap(),
+                            manifest: None,
+                        };
+                        if scenario == "cancelled" {
+                            cancelled.set(true);
+                        }
+                        Ok(report)
+                    } else {
+                        assert_eq!(
+                            scenario, "known",
+                            "untrusted/cancelled parents must not extract"
+                        );
+                        assert_eq!(password, "fake");
+                        extract(&pdf, password).map_err(Failure::Refused)
+                    }
+                },
+            );
+            match scenario {
+                "known" => {
+                    assert!(matches!(result, Ok(Verdict::Verified { .. })));
+                    assert_eq!(stages, [0, 1]);
+                }
+                "cancelled" => {
+                    assert!(matches!(result, Err(Failure::Cancelled)));
+                    assert_eq!(stages, [0]);
+                }
+                _ => {
+                    assert!(matches!(
+                        result,
+                        Err(Failure::Refused(Refusal::UnknownSigner))
+                    ));
+                    assert_eq!(stages, [0]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ambiguous_or_mistyped_manifest_attachments_are_refused() {
+        use lopdf::Object;
+        let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
+        ))
+        .unwrap();
+        let pdf = STANDARD
+            .decode(fixture["documents"][0]["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        let original = lopdf::Document::load_mem(&pdf).unwrap();
+        let file_id = original
+            .objects
+            .iter()
+            .find_map(|(id, value)| {
+                value
+                    .as_dict()
+                    .ok()
+                    .filter(|dict| {
+                        dict.get(b"Type").and_then(Object::as_name).ok() == Some(b"Filespec")
+                    })
+                    .map(|_| *id)
+            })
+            .unwrap();
+        assert!(manifest(&original).unwrap().is_some());
+        let mut wrong_type = original.clone();
+        wrong_type
+            .get_object_mut(file_id)
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .remove(b"Type");
+        assert!(matches!(manifest(&wrong_type), Err(Refusal::BadManifest)));
+        let mut ambiguous = original;
+        let ef_id = ambiguous
+            .get_object(file_id)
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"EF")
+            .unwrap()
+            .as_reference()
+            .unwrap();
+        ambiguous
+            .get_object_mut(ef_id)
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("UF", Object::Reference(file_id));
+        assert!(matches!(manifest(&ambiguous), Err(Refusal::BadManifest)));
     }
 
     #[test]

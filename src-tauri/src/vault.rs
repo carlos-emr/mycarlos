@@ -7010,7 +7010,12 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the real built helper; set MYCARLOS_TEST_SIGNED_HELPER_EXE and run explicitly"]
     fn signed_import_analysis_preserves_original_bytes_and_never_invents_a_clinic_link() {
+        assert!(
+            std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE").is_some(),
+            "run the documented real-helper import check, not the unit-test executable"
+        );
         let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
         ))
@@ -7033,6 +7038,10 @@ mod tests {
             .unwrap();
         assert_eq!(imported.imported.len(), 1);
         assert_eq!(imported.unverified_signatures.len(), 1);
+        assert!(matches!(
+            imported.unverified_signatures[0].reason,
+            crate::signed_pdf_helper::Failure::Refused(crate::signed_pdf::Refusal::UnknownSigner)
+        ));
         assert_eq!(
             imported.unverified_signatures[0].record_id,
             imported.imported[0]

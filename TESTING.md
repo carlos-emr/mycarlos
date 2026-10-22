@@ -629,3 +629,12 @@ unverified source label; helper refusal never creates a Verified result.
 This is not completion of #55: authenticated portal linking, key replacement/revocation,
 durable trust metadata and rechecking stored documents remain separate work. The app has
 no authenticated clinic pins, so real production imports cannot become Verified yet.
+
+For the explicit real-helper import check, first build/run the signature helper integration
+case (`cargo test --manifest-path src-tauri/Cargo.toml --test pdf_helper
+the_confined_signature_helper_reports`). Then set
+`MYCARLOS_TEST_SIGNED_HELPER_EXE` to that build's absolute app-executable path and run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib signed_import_analysis --
+--ignored --test-threads=1`. It requires the exact `unknown_signer` refusal from the real
+helper path, alongside byte preservation. The executable override exists only in unit-test
+builds, never production; a generic helper failure cannot satisfy this test.

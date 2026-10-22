@@ -319,7 +319,11 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
         return Err(Bad);
     };
     version.decode_as::<CmsVersion>().map_err(|_| Bad)?;
+    let original_algorithms = algorithms;
     let algorithms: SetOfVec<AlgorithmIdentifierOwned> = algorithms.decode_as().map_err(|_| Bad)?;
+    if algorithms.to_der().map_err(|_| Bad)? != original_algorithms.to_der().map_err(|_| Bad)? {
+        return Err(Bad);
+    }
     if algorithms.len() != 1
         || algorithms
             .iter()
@@ -331,10 +335,15 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
     if encapsulated.econtent.is_some() || encapsulated.econtent_type != ID_DATA {
         return Err(Bad);
     }
-    let certificates: CertificateSet = implicit_set(certificates, TagNumber::N0)?
-        .decode_as()
-        .map_err(|_| Bad)?;
+    let original_certificates = implicit_set(certificates, TagNumber::N0)?;
+    let certificates: CertificateSet = original_certificates.decode_as().map_err(|_| Bad)?;
+    if certificates.to_der().map_err(|_| Bad)? != original_certificates.to_der().map_err(|_| Bad)? {
+        return Err(Bad);
+    }
     let signers: SetOfVec<Any> = signer_infos.decode_as().map_err(|_| Bad)?;
+    if signers.to_der().map_err(|_| Bad)? != signer_infos.to_der().map_err(|_| Bad)? {
+        return Err(Bad);
+    }
     if signers.len() != 1 {
         return Err(Bad);
     }
@@ -392,7 +401,7 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
     let cert_hash = Sha256::digest(cert.to_der().map_err(|_| Bad)?);
 
     let attributes = implicit_set(attributes, TagNumber::N0)?;
-    let parsed_attributes: SetOfVec<Any> = attributes.decode_as().map_err(|_| Bad)?;
+    let parsed_attributes = canonical_attributes(&attributes)?;
     let mut seen = Vec::new();
     let (mut content_type, mut message_digest, mut signing_cert) = (false, false, false);
     let mut manifest_digest = None;
@@ -458,6 +467,18 @@ fn implicit_set(value: &Any, number: TagNumber) -> Result<Any, Refusal> {
         return Err(Refusal::BadSignature);
     }
     Any::new(Tag::Set, value.value()).map_err(|_| Refusal::BadSignature)
+}
+
+/// der 0.7 sorts SET OF on decode. Reject a noncanonical original rather than
+/// accidentally accepting a signature over an unsorted signed-attribute SET.
+fn canonical_attributes(value: &Any) -> Result<SetOfVec<Any>, Refusal> {
+    let parsed: SetOfVec<Any> = value.decode_as().map_err(|_| Refusal::BadSignature)?;
+    if parsed.to_der().map_err(|_| Refusal::BadSignature)?
+        != value.to_der().map_err(|_| Refusal::BadSignature)?
+    {
+        return Err(Refusal::BadSignature);
+    }
+    Ok(parsed)
 }
 
 /// DER base-128 subidentifiers may have arbitrarily large arcs, but must be
@@ -853,6 +874,21 @@ mod tests {
         ] {
             assert!(!canonical_oid(malformed));
         }
+    }
+
+    #[test]
+    fn unsorted_signed_attribute_sets_are_refused_without_rewriting_their_bytes() {
+        // Valid Attribute sequences containing different OIDs and one OCTET
+        // STRING value; only their outer SET ordering differs.
+        let first = [0x30, 0x08, 0x06, 0x01, 0x2a, 0x31, 0x03, 0x04, 0x01, 0x01];
+        let second = [0x30, 0x08, 0x06, 0x01, 0x2b, 0x31, 0x03, 0x04, 0x01, 0x02];
+        let sorted = Any::new(Tag::Set, [first.as_slice(), second.as_slice()].concat()).unwrap();
+        let unsorted = Any::new(Tag::Set, [second.as_slice(), first.as_slice()].concat()).unwrap();
+        assert!(canonical_attributes(&sorted).is_ok());
+        assert!(matches!(
+            canonical_attributes(&unsorted),
+            Err(Refusal::BadSignature)
+        ));
     }
 
     #[test]
