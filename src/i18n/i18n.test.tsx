@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach } from "vitest";
 import {
+  fireEvent,
   getDefaultNormalizer,
   render,
   screen,
@@ -23,6 +24,7 @@ import {
 import { en } from "./locales/en";
 import { CreateVault, VaultAuthFrame, UnlockVault } from "../native/VaultAuth";
 import { MIN_PASSPHRASE_CHARS } from "../native/PassphraseChecklist";
+import { SHARED_FOLDER_NAME } from "../native/recordPresentation";
 
 const placeholders = (text: string) =>
   [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -299,8 +301,64 @@ describe("a rendered screen in each language", () => {
           name: `${say("passphrase.show")} ${say("passphrase.show.inConfirm")}`,
         }),
       ).toBeInTheDocument();
+      // No person may take Shared with me's name (#61).
+      fireEvent.change(
+        form.getByRole("textbox", { name: say("create.profile.label") }),
+        { target: { value: "shared with ME" } },
+      );
+      expect(form.getByRole("alert").textContent).toBe(
+        say("create.profile.sharedTaken", { folder: SHARED_FOLDER_NAME }),
+      );
+    });
+    it(`counts the shared files waiting at unlock in ${locale} (#61)`, () => {
+      setLocaleOverride(locale);
+      const unlock = (waiting: number) => (
+        <UnlockVault
+          busy={false}
+          notice=""
+          autoLockMinutes={5}
+          waiting={waiting}
+          onUnlock={async () => {}}
+          onRecover={async () => {}}
+          onReset={async () => {}}
+          restoreBridge={{} as never}
+          onRestored={() => {}}
+        />
+      );
+      const { container, rerender } = render(unlock(1));
+      const said = () =>
+        container.querySelector(".native-received-waiting")?.textContent;
+      const folder = SHARED_FOLDER_NAME;
+      expect(said()).toBe(translate(locale, "unlock.waiting.one", { folder }));
+      for (const count of [2, 5, 22]) {
+        rerender(unlock(count));
+        expect(said()).toBe(
+          translate(locale, "unlock.waiting", { count, folder }),
+        );
+      }
+      rerender(unlock(0));
+      expect(said()).toBeUndefined();
     });
   }
+  it("keeps the English of the shared-file messages (#61)", () => {
+    const folder = SHARED_FOLDER_NAME;
+    expect(translate("en", "unlock.waiting.one", { folder })).toBe(
+      "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+    );
+    expect(translate("en", "unlock.waiting", { count: 2, folder })).toBe(
+      "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
+    );
+    expect(translate("en", "create.profile.sharedTaken", { folder })).toBe(
+      "Shared with me is where shared files go. Choose another name.",
+    );
+    // Polish counts files three ways.
+    expect(
+      [2, 5, 22].map(
+        (count) =>
+          translate("pl", "unlock.waiting", { count, folder }).split(" ")[2],
+      ),
+    ).toEqual(["pliki", "plików", "pliki"]);
+  });
   it("translates the frame state and keeps the erase phrase fixed", () => {
     setLocaleOverride("pl");
     render(<VaultAuthFrame state="Locked">x</VaultAuthFrame>);

@@ -34,6 +34,9 @@ describe("folderTree", () => {
 
   it("names a folder's path from the top", () => {
     expect(folderPath(byId, null)).toBe("My records");
+    expect(folderPath(byId, "lab", "FAKE Avery")).toBe(
+      "FAKE Avery / FAKE Lab results",
+    );
     expect(folderPath(byId, "lab-2026-june")).toBe(
       "My records / FAKE Lab results / FAKE 2026 / FAKE June",
     );
@@ -62,6 +65,12 @@ describe("folderTree", () => {
       available: true,
     });
     expect(recordPath(byId, record([]))).toBe("My records");
+    expect(recordPath(byId, record([]), "Shared with me")).toBe(
+      "Shared with me",
+    );
+    expect(recordPath(byId, record(["lab"]), "FAKE Blake")).toBe(
+      "FAKE Blake / FAKE Lab results",
+    );
     expect(recordPath(byId, record(["letters", "lab-2026"]))).toBe(
       "My records / FAKE Lab results / FAKE 2026; My records / FAKE Letters",
     );

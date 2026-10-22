@@ -25,10 +25,12 @@ export function folderSubtree(
 
 /** Where a folder is, from the top: "My records / Letters / 2025", or
  * "My records" for none. A parent that is not known ends the path, and so
- * does one met twice, so a damaged tree cannot loop. */
+ * does one met twice, so a damaged tree cannot loop. The root label can name
+ * the current person's records. */
 export function folderPath(
   folderById: ReadonlyMap<string, VaultFolder>,
   folderId: string | null,
+  rootLabel = "My records",
 ): string {
   const names: string[] = [];
   const seen = new Set<string>();
@@ -40,19 +42,20 @@ export function folderPath(
     seen.add(folder.id);
     names.unshift(folder.name);
   }
-  return ["My records", ...names].join(" / ");
+  return [rootLabel, ...names].join(" / ");
 }
 
 /** Where a document is filed: the path of each of its folders, or
  * "My records" when it is in none, so that two documents with the same name
- * can be told apart. */
+ * can be told apart. The root label also names Shared with me. */
 export function recordPath(
   folderById: ReadonlyMap<string, VaultFolder>,
   record: VaultRecord,
+  rootLabel = "My records",
 ): string {
   const paths = record.folderIds
     .filter((id) => folderById.has(id))
-    .map((id) => folderPath(folderById, id))
+    .map((id) => folderPath(folderById, id, rootLabel))
     .sort((left, right) => left.localeCompare(right));
-  return paths.length ? paths.join("; ") : "My records";
+  return paths.length ? paths.join("; ") : rootLabel;
 }
