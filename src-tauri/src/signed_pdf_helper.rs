@@ -430,7 +430,10 @@ impl ImportProbe {
             return Some(Failure::TooLarge);
         }
         if !self.bytes.starts_with(b"%PDF-")
-            || !self.bytes.windows(9).any(|part| part == b"/ByteRange")
+            || !self
+                .bytes
+                .windows(b"/ByteRange".len())
+                .any(|part| part == b"/ByteRange")
         {
             return None;
         }
