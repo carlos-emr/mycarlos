@@ -191,7 +191,7 @@ fn exact_name(bytes: &[u8]) -> bool {
                 .0
                 .iter()
                 .zip(MANIFEST_NAME)
-                .all(|(pair, byte)| pair == [0, *byte]))
+                .all(|(pair, byte)| *pair == [0, *byte]))
 }
 
 fn manifest(doc: &lopdf::Document) -> Result<Option<Vec<u8>>, Refusal> {
