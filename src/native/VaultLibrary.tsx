@@ -24,6 +24,7 @@ import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { IphoneDocumentReader } from "./IphoneDocumentReader";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -93,6 +94,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   computer = true,
+  iphonePdfReader = false,
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
@@ -131,6 +133,8 @@ export function VaultLibrary({
   /** On a computer, not a phone: shared files come by being opened with
    * myCarlos there, not from another app's Share. */
   computer?: boolean;
+  /** iOS alone can present the native, bridge-free WebKit PDF reader. */
+  iphonePdfReader?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
   /** A dialog of the app's own is over the library (the warning before the
@@ -1817,7 +1821,15 @@ export function VaultLibrary({
                 }
               />
             )}
-          {readerRecord && (
+          {readerRecord && iphonePdfReader && (
+            <IphoneDocumentReader
+              record={readerRecord}
+              read={(id, closeLabel) => bridge.readNativePdf(id, closeLabel)}
+              cancel={() => bridge.cancelView()}
+              onClose={() => setReaderRecordId(null)}
+            />
+          )}
+          {readerRecord && !iphonePdfReader && (
             <DocumentReader
               record={readerRecord}
               viewPage={(page, width, password) =>

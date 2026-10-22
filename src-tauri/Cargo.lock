@@ -2471,6 +2471,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "tauri-plugin-ios-pdf",
  "tempfile",
  "thiserror 2.0.20",
  "unicode-normalization",
@@ -4189,6 +4190,15 @@ dependencies = [
  "thiserror 2.0.20",
  "toml 1.1.4+spec-1.1.0",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-ios-pdf"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

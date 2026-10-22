@@ -101,7 +101,7 @@ as `lopdf` does.
   this, its only other user, `png` (for the app's own trusted icons), used
   `miniz_oxide`.
 
-This is why the reader parses PDFs only in the helper, never beside the vault
+This is why the desktop reader parses PDFs only in the helper, never beside the vault
 keys. The helper's real sandbox is #63. `image` 0.25 (already present through
 `hayro`) writes the page picture as PNG, with only the `png` feature. Before display,
 the parent also uses this existing codec to decode and re-encode only RGBA8 page
@@ -242,3 +242,19 @@ backport regressions. Windows installation and the GUI subsystem check passed.
 This run predates restoration of mobile live reload and is historical evidence.
 The restoration triggers fresh checks, including both mobile development builds.
 Device testing and release review remain separate gates.
+
+## Draft iPhone PDF preview
+
+`src-tauri/ios-pdf` is a first-party Tauri mobile plugin; it adds no third-party PDF engine
+or new registry packages. It uses Apple's `WKWebView.load(Data, mimeType:...)`, a separate
+configuration without Tauri scripts/message handlers, JavaScript disabled and a nonpersistent
+data store. The app writes no plaintext temporary file. Input is limited to 20 MiB before
+export and again in Swift; URLs, new windows, downloads and external context-menu actions
+are refused. Cancellation is checked in both Rust and the native presentation queue.
+
+This is a different boundary from the desktop helper: WebKit controls PDF implementation
+and process placement. No desktop-equivalent parser sandbox or process isolation is claimed.
+Mac/iOS compilation, lifecycle, rendering and accessibility checks remain draft gates.
+API references: [Tauri mobile plugins](https://v2.tauri.app/develop/plugins/develop-mobile/),
+[Apple WKWebView](https://developer.apple.com/documentation/webkit/wkwebview),
+[nonpersistent data store](https://developer.apple.com/documentation/webkit/wkwebsitedatastore/nonpersistent()).

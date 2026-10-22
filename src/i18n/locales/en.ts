@@ -5,6 +5,11 @@ import type { Message } from "../types";
  * must use the same {placeholders} as the English text. Text goes into the page
  * as plain text, never as HTML. */
 export const en = {
+  "reader.iphone.opening": "Opening document…",
+  "reader.iphone.tooLarge":
+    "This PDF is larger than 20 MB. Save a copy to read it in another app.",
+  "reader.iphone.failed":
+    "myCarlos could not show this document. Save a copy to read it in another app.",
   // Window frame
   "frame.banner.title": "Synthetic-data development build",
   "frame.banner.body": "Do not use real patient information",
