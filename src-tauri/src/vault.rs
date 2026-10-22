@@ -6890,6 +6890,21 @@ fn remove_abandoned_restore_stages(parent: &Path) {
     }
 }
 
+// A native command test can damage its document without damaging history segments.
+#[cfg(test)]
+pub(crate) fn record_object_path_for_test(store: &VaultStore, record_id: Uuid) -> PathBuf {
+    let guard = store.session();
+    let record = guard
+        .as_ref()
+        .unwrap()
+        .manifest
+        .records
+        .iter()
+        .find(|record| record.id == record_id)
+        .unwrap();
+    store.root.join("objects").join(&record.object_name)
+}
+
 // Shared by native command and vault tests; no production history-read command.
 #[cfg(test)]
 pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {

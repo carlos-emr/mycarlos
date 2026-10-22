@@ -13,11 +13,15 @@ const reserved = (word: string) =>
 const cp = (codePoint: number) => String.fromCodePoint(codePoint);
 
 // Renders the dialog for a stored name and returns what a test needs.
-function open(name: string, kind: "document" | "folder" = "document") {
+function open(
+  name: string,
+  kind: "document" | "folder" = "document",
+  photo = false,
+) {
   const onSave = vi.fn().mockResolvedValue(undefined);
   render(
     <RenameDialog
-      target={{ kind, id: "target-1", name }}
+      target={{ kind, id: "target-1", name, photo }}
       readOnly={false}
       onSave={onSave}
       onClose={vi.fn()}
@@ -36,6 +40,75 @@ function open(name: string, kind: "document" | "folder" = "document") {
 }
 
 describe("RenameDialog", () => {
+  it.each([
+    ["Holiday.jpg", "Holiday", ".jpg"],
+    ["Holiday.JPEG", "Holiday", ".JPEG"],
+    ["Legacy photo.png", "Legacy photo.png", ".jpg"],
+  ])(
+    "keeps a verified photo's JPEG suffix outside the name field: %s",
+    (stored, stem, extension) => {
+      const { input } = open(stored, "document", true);
+      expect(input).toHaveValue(stem);
+      expect(screen.getByText(extension, { exact: true })).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
+      expect(input).toHaveAccessibleDescription(
+        `${HELP} The ${extension} extension stays the same.`,
+      );
+    },
+  );
+
+  it.each([
+    ["Holiday.jpg", "Family", "Family.jpg"],
+    ["Holiday.jpg", "Family.JPG", "Family.jpg"],
+    ["Holiday.jpg", "Family.jpeg", "Family.jpg"],
+    ["Holiday.JPEG", "Family.jpeg", "Family.JPEG"],
+    ["Holiday.jpg", "Family.png", "Family.png.jpg"],
+    ["Holiday.jpg.jpg", "Family.jpg", "Family.jpg.jpg"],
+    ["Legacy photo.png", "Family", "Family.jpg"],
+  ])(
+    "saves the photo name %s typed as %s with its JPEG suffix",
+    (stored, typed, saved) => {
+      const { onSave, type, submit } = open(stored, "document", true);
+      type(typed);
+      submit();
+      expect(onSave).toHaveBeenCalledWith(saved);
+    },
+  );
+
+  it.each([
+    ".jpg",
+    ".JPEG",
+    "  ",
+    "../Holiday",
+    "Holiday/scan",
+    "Holiday\\scan",
+  ])("refuses an empty or unsafe photo basename: %s", (typed) => {
+    const { onSave, type, submit, save } = open(
+      "Holiday.jpg",
+      "document",
+      true,
+    );
+    type(typed);
+    expect(save).toBeDisabled();
+    submit();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("counts the fixed JPEG suffix toward the photo name's UTF-8 limit", () => {
+    const { onSave, type, submit, save } = open(
+      "Holiday.jpg",
+      "document",
+      true,
+    );
+    type("字".repeat(79));
+    expect(screen.getByRole("alert")).toHaveTextContent(TOO_LONG);
+    expect(save).toBeDisabled();
+    submit();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it.each([
     // stored name, field value, extension shown beside it
     ["Results.pdf", "Results", ".pdf"],

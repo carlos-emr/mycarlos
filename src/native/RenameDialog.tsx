@@ -8,6 +8,7 @@ import {
   nameTooLong,
 } from "./recordPresentation";
 import { reservedDeviceName } from "./reservedNames";
+import { photoExtension } from "./photo";
 
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
@@ -26,6 +27,8 @@ export type RenameTarget = {
   kind: "folder" | "document";
   id: string;
   name: string;
+  /** The native side identified this document's bytes as JPEG. */
+  photo?: boolean;
 };
 
 export function RenameDialog({
@@ -43,9 +46,16 @@ export function RenameDialog({
   // vault judges names trimmed, and an earlier build could store "X.pdf"
   // followed by a no-break space, so the extension is found the same way.
   const extension =
-    target.kind === "document" ? fileExtension(target.name.trim()) : "";
-  const originalStem = extension
-    ? target.name.trim().slice(0, -extension.length)
+    target.kind === "document"
+      ? target.photo
+        ? photoExtension(target.name.trim()) || ".jpg"
+        : fileExtension(target.name.trim())
+      : "";
+  const storedExtension = target.photo
+    ? photoExtension(target.name.trim())
+    : extension;
+  const originalStem = storedExtension
+    ? target.name.trim().slice(0, -storedExtension.length)
     : target.name;
   const { t } = useI18n();
   const [name, setName] = useState(originalStem);
@@ -60,18 +70,26 @@ export function RenameDialog({
   // typed copy of it is dropped rather than doubled, unless the name was left
   // as it was or already ended with it twice, as in "Report.pdf.pdf".
   const endsWithExtension = (value: string) =>
-    value.toLowerCase().endsWith(extension.toLowerCase());
+    target.photo
+      ? /\.jpe?g$/i.test(value)
+      : value.toLowerCase().endsWith(extension.toLowerCase());
   let stem = trimLikeVault(name);
+  const typedExtension = target.photo
+    ? (/\.jpe?g$/i.exec(stem)?.[0] ?? "")
+    : extension;
   if (
     extension &&
     name !== originalStem &&
     !endsWithExtension(originalStem) &&
     endsWithExtension(stem)
   )
-    stem = trimLikeVault(stem.slice(0, stem.length - extension.length));
+    stem = trimLikeVault(stem.slice(0, stem.length - typedExtension.length));
   // An untouched name is saved exactly as it was: trimming only the stem would
   // otherwise change a name such as "Results .pdf" that nobody edited.
-  const fullName = name === originalStem ? target.name : stem + extension;
+  const fullName =
+    name === originalStem && (!target.photo || storedExtension)
+      ? target.name
+      : stem + extension;
   const tooLong =
     target.kind === "document"
       ? utf8Length(fullName) > MAX_DOCUMENT_NAME_BYTES

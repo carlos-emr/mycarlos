@@ -24,6 +24,10 @@ export function photoName(now: Date): string {
   return `Photo, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}, ${hours % 12 || 12}.${minutes} ${hours < 12 ? "AM" : "PM"}.jpg`;
 }
 
+/** The JPEG suffix of a photo name, with its stored case, after a nonempty name. */
+export const photoExtension = (name: string) =>
+  /^[\s\S]+(\.jpe?g)$/i.exec(name)?.[1] ?? "";
+
 /** The longest side a photo is saved at; a larger camera frame is scaled
  * down. The vault refuses more than 8192 pixels a side (photo.rs). */
 export const MAX_PHOTO_SIDE_PX = 4096;
