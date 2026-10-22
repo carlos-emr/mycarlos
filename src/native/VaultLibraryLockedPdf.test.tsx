@@ -17,7 +17,7 @@ const record = (id: string, displayName: string) =>
     folderIds: [],
     displayName,
     sourceLabel: "Manual import — unverified",
-    mediaType: "application/pdf",
+    mediaType: "application/octet-stream",
     plaintextSize: 2048,
     importedAtMs: Date.UTC(2026, 9, 20, 19, 5),
     available: true,
@@ -51,6 +51,34 @@ function renderLibrary(
       return {
         recordId: "copy-1",
         originalName: "FAKE Letter (locked original).pdf",
+      };
+    }),
+    isPdf: vi.fn(async () => true),
+    viewPage: vi.fn(async () => ({
+      pageCount: 1,
+      width: 1,
+      height: 1,
+      image:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      text: "FAKE unlocked page",
+    })),
+    cancelView: vi.fn().mockResolvedValue(undefined),
+    hideRecord: vi.fn(async (id: string) => {
+      current = {
+        ...current,
+        records: current.records.map((r) =>
+          r.id === id
+            ? { ...r, hidden: { atMs: 5, reason: "patient" as const } }
+            : r,
+        ),
+      };
+    }),
+    unhideRecord: vi.fn(async (id: string) => {
+      current = {
+        ...current,
+        records: current.records.map((r) =>
+          r.id === id ? { ...r, hidden: null } : r,
+        ),
       };
     }),
     snapshot: vi.fn(async () => current),
@@ -151,6 +179,78 @@ describe("a PDF locked with a password (#54)", () => {
       expect(bridge.isLockedPdf).toHaveBeenLastCalledWith("copy-1"),
     );
     expect(within(copy).queryByRole("button", { name: "Unlock…" })).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Details for FAKE Letter (locked original).pdf",
+      }),
+    ).toBeVisible();
+  });
+
+  it("hides and restores an unlocked copy, then reads it while keeping the locked original", async () => {
+    const user = userEvent.setup();
+    const bridge = renderLibrary();
+    const details = await openDetails(user);
+    await user.click(
+      await within(details).findByRole("button", { name: "Unlock…" }),
+    );
+    const prompt = screen.getByRole("dialog", {
+      name: "Unlock FAKE Letter.pdf",
+    });
+    await user.type(
+      within(prompt).getByLabelText("Document password"),
+      "FAKE-portal-2026{Enter}",
+    );
+    const copy = await screen.findByRole("dialog", { name: "FAKE Letter.pdf" });
+    await user.click(within(copy).getByRole("button", { name: "Hide" }));
+    await waitFor(() =>
+      expect(bridge.hideRecord).toHaveBeenCalledExactlyOnceWith("copy-1"),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Details for FAKE Letter.pdf" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Details for FAKE Letter (locked original).pdf",
+      }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    const hidden = screen.getByRole("article", {
+      name: "FAKE Letter.pdf, hidden",
+    });
+    await user.click(
+      within(hidden).getByRole("button", { name: "Restore FAKE Letter.pdf" }),
+    );
+    await waitFor(() =>
+      expect(bridge.unhideRecord).toHaveBeenCalledExactlyOnceWith("copy-1"),
+    );
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Record library" }),
+      ).getByRole("button", { name: /^My records/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "FAKE Letter.pdf" }));
+    const restoredDetails = await screen.findByRole("dialog", {
+      name: "FAKE Letter.pdf",
+    });
+    await user.click(
+      within(restoredDetails).getByRole("button", { name: "Read" }),
+    );
+    const reader = await screen.findByRole("dialog", {
+      name: "FAKE Letter.pdf",
+    });
+    expect(
+      await within(reader).findByRole("img", {
+        name: "Page 1 of 1. The page's text follows.",
+      }),
+    ).toBeVisible();
+    expect(bridge.viewPage).toHaveBeenCalledWith(
+      "copy-1",
+      0,
+      expect.any(Number),
+      undefined,
+    );
+    await user.click(within(reader).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(bridge.cancelView).toHaveBeenCalled());
     expect(
       screen.getByRole("button", {
         name: "Details for FAKE Letter (locked original).pdf",

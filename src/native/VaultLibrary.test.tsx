@@ -267,6 +267,27 @@ describe("VaultLibrary search", () => {
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
   });
 
+  it("keeps hidden documents out of recursive search results and their paths", () => {
+    renderLibrary({
+      ...filed,
+      records: filed.records.map((r) =>
+        r.id === "lab-deep"
+          ? { ...r, hidden: { atMs: 2, reason: "patient" as const } }
+          : r,
+      ),
+    });
+    search("Search everything in My records", "blood");
+    expect(shownDocuments()).toHaveLength(4);
+    expect(
+      shownDocuments().some(([, path]) => path?.endsWith("FAKE June")),
+    ).toBe(false);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "blood test");
+    expect(shownDocuments()).toEqual([
+      ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
+    ]);
+  });
+
   it("from the top level covers the current person, and says where each result is", () => {
     renderLibrary(filed);
     search("Search everything in My records", "blood");
@@ -688,6 +709,7 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       // how many shared files are new (#61).
       expect(tabs.map((tab) => tab.textContent)).toEqual([
         "Records (2 new)",
+        "Hidden",
         "Security",
         "Preferences",
       ]);
@@ -709,8 +731,8 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       expect(
         within(library).getByRole("button", { name: /^Shared with me/ }),
       ).toHaveAttribute("aria-current", "page");
-      fireEvent.click(tabs[1]);
-      expect(tabs[1]).toHaveAttribute("aria-current", "page");
+      fireEvent.click(tabs[2]);
+      expect(tabs[2]).toHaveAttribute("aria-current", "page");
       expect(tabs[0]).not.toHaveAttribute("aria-current");
       cleanup();
 

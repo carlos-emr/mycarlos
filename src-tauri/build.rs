@@ -103,8 +103,9 @@ fn main() {
             "vault_save_photo",
             "vault_is_photo",
             "vault_view_photo",
-            "vault_delete_record",
-            "vault_remove_unavailable_records",
+            "vault_hide_record",
+            "vault_unhide_record",
+            "vault_hide_unavailable_records",
             "vault_reset",
         ]),
     ))

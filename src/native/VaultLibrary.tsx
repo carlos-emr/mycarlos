@@ -13,6 +13,7 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { HiddenDocuments } from "./HiddenDocuments";
 import { UnlockPdfDialog } from "./UnlockPdfDialog";
 import {
   RecoveryKeySetup,
@@ -46,11 +47,17 @@ import {
   type OldBackupsGuide,
 } from "./oldBackups";
 
-type NativeSection = "records" | "shared" | "security" | "preferences";
+type NativeSection =
+  | "records"
+  | "shared"
+  | "hidden"
+  | "security"
+  | "preferences";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
 const PHONE_TABS: ReadonlyArray<[NativeSection, string]> = [
   ["records", "Records"],
+  ["hidden", "Hidden"],
   ["security", "Security"],
   ["preferences", "Preferences"],
 ];
@@ -141,6 +148,8 @@ export function VaultLibrary({
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  // Keep Hidden scoped to the location it was opened from, including Shared.
+  const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
   // The steps for older backups after a key whose kit may have been lost or
   // seen was replaced: kept across locks, until the patient says done.
   const [oldBackupsGuide, setOldBackupsGuideState] =
@@ -187,10 +196,10 @@ export function VaultLibrary({
   } | null>(null);
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
-    action: "delete" | "export";
+    action: "export";
     recordId: string;
   } | null>(null);
-  const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
+  const [confirmHideDamaged, setConfirmHideDamaged] = useState(false);
   // Setting up a recovery key. A vault just created starts with its key, which
   // must be set up before the library can be used. A vault unlocked without
   // one is offered a key, which can be left for later: the setup opens on the
@@ -226,7 +235,9 @@ export function VaultLibrary({
   );
   const peopleRecords = useMemo(
     () =>
-      snapshot.records.filter((record) => record.profileId !== sharedProfileId),
+      snapshot.records.filter(
+        (record) => record.profileId !== sharedProfileId && !record.hidden,
+      ),
     [snapshot.records, sharedProfileId],
   );
   const inShared = section === "shared";
@@ -238,12 +249,27 @@ export function VaultLibrary({
   );
   // The documents where the patient is: a person's, or Shared with me's.
   const locationProfileId = inShared ? sharedProfileId : profileId;
+  const hiddenLocationProfileId =
+    section === "hidden" ? (hiddenProfileId ?? profileId) : locationProfileId;
+  const openHidden = () => {
+    if (section === "hidden") return;
+    setHiddenProfileId(locationProfileId ?? profileId);
+    setSection("hidden");
+  };
   const records = useMemo(
     () =>
       snapshot.records.filter(
-        (record) => record.profileId === locationProfileId,
+        (record) => record.profileId === locationProfileId && !record.hidden,
       ),
     [snapshot.records, locationProfileId],
+  );
+  const hiddenRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (record) =>
+          record.profileId === hiddenLocationProfileId && record.hidden,
+      ),
+    [snapshot.records, hiddenLocationProfileId],
   );
   // Where a document in Shared with me can go: each person's records and
   // folders.
@@ -488,7 +514,7 @@ export function VaultLibrary({
       cameraOpen ||
       shownPhoto ||
       confirmation ||
-      confirmRemoveDamaged ||
+      confirmHideDamaged ||
       recoverySetup ||
       busy
     )
@@ -511,7 +537,7 @@ export function VaultLibrary({
     activeRecordId,
     busy,
     confirmation,
-    confirmRemoveDamaged,
+    confirmHideDamaged,
     notice,
     dialogResult,
     recoverySetup,
@@ -780,19 +806,21 @@ export function VaultLibrary({
 
   // Every damaged document in the vault, not only those in view: removal
   // takes them all, so the confirmation names them all.
-  const damaged = snapshot.records.filter((record) => !record.available);
+  const damaged = snapshot.records.filter(
+    (record) => !record.available && record.hidden?.reason !== "damaged",
+  );
   const damagedIds = damaged.map((record) => record.id);
   const damagedCount = damagedIds.length;
   const profileName = (id: string) =>
     snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
     "";
-  const removeDamaged = () => {
-    setConfirmRemoveDamaged(false);
+  const hideDamaged = () => {
+    setConfirmHideDamaged(false);
     void run(async () => {
       let removed: string[];
       try {
         // The vault removes only what this screen showed as damaged.
-        removed = await bridge.removeUnavailableRecords(damagedIds);
+        removed = await bridge.hideUnavailableRecords(damagedIds);
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -806,8 +834,8 @@ export function VaultLibrary({
       const next = await refresh();
       const outcome =
         removed.length === 0
-          ? "Every file is back on this device. Nothing was removed."
-          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} removed.`;
+          ? "Every file is back on this device. Nothing was hidden."
+          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} hidden. ${removed.length === 1 ? "It is" : "They are"} listed under Hidden.`;
       // The removal can commit and still leave the vault read-only, when its
       // redundant write fails. The banner then says why; only claim the vault
       // is writable when it is.
@@ -819,14 +847,24 @@ export function VaultLibrary({
     });
   };
 
-  const deleteRecord = (record: VaultRecord) => {
-    setConfirmation(null);
+  // Nothing is ever deleted (#71): a document is hidden, and can be
+  // restored from Hidden. Taking it out of view needs no confirmation.
+  const hideRecord = (record: VaultRecord) => {
     void run(async () => {
-      await bridge.deleteRecord(record.id);
+      await bridge.hideRecord(record.id);
       setActiveRecordId(null);
       setSelectedIds((current) => current.filter((id) => id !== record.id));
       await refresh();
-      setNotice(`${record.displayName} was permanently deleted.`);
+      setNotice(
+        `${record.displayName} was hidden. It is listed under Hidden, where you can restore it.`,
+      );
+    });
+  };
+  const unhideRecord = (record: VaultRecord) => {
+    void run(async () => {
+      await bridge.unhideRecord(record.id);
+      await refresh();
+      setNotice(`${record.displayName} was restored to where it was.`);
     });
   };
 
@@ -846,21 +884,6 @@ export function VaultLibrary({
     }, ["box.profileName"]);
     return created;
   };
-  const resetVault = (confirmation: string) =>
-    run(async () => {
-      let erased: boolean;
-      try {
-        erased = await bridge.reset(confirmation);
-      } catch (error) {
-        // A reset closes the native session before it erases anything, so a
-        // failed one leaves the vault locked. Show that instead of a library
-        // whose every action would be refused.
-        await onLock();
-        throw error;
-      }
-      if (erased) window.location.reload();
-      else setNotice("Vault erase cancelled. Nothing changed.");
-    }, ["box.typedWords"]);
   /** Moves documents from Shared with me to a person, into one of their
    * folders or none (#61). One the person already has stays where it is. */
   const moveToPerson = (
@@ -993,7 +1016,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
-                confirmRemoveDamaged ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
@@ -1021,7 +1044,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
-                confirmRemoveDamaged ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
@@ -1034,7 +1057,9 @@ export function VaultLibrary({
                     ? "page"
                     : undefined
                 }
-                onClick={() => setSection(value)}
+                onClick={() =>
+                  value === "hidden" ? openHidden() : setSection(value)
+                }
               >
                 {value === "records" && sharedNew
                   ? `${label} (${sharedNew} new)`
@@ -1049,13 +1074,19 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
-                confirmRemoveDamaged ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
             <LibrarySidebar
               profileName={
-                (!inShared && profile?.displayName) || "Private vault"
+                (!inShared &&
+                  !(
+                    section === "hidden" &&
+                    hiddenLocationProfileId === sharedProfileId
+                  ) &&
+                  profile?.displayName) ||
+                "Private vault"
               }
               people={people}
               profileId={profileId}
@@ -1065,17 +1096,24 @@ export function VaultLibrary({
               records={peopleRecords}
               disabled={busy || readOnly}
               drag={drag}
+              hiddenCount={hiddenRecords.length}
+              hiddenFromShared={
+                section === "hidden" &&
+                hiddenLocationProfileId === sharedProfileId
+              }
               onOpenPerson={openPerson}
               onOpenFolder={(person, folderId) => openPerson(person, folderId)}
               sharedNew={sharedNew}
               vaultTotals={{
-                documents: snapshot.records.length,
+                documents: snapshot.records.filter((record) => !record.hidden)
+                  .length,
                 folders: snapshot.folders.length,
               }}
               onOpenShared={() => {
                 setSection("shared");
                 setCurrentFolderId(null);
               }}
+              onOpenHidden={openHidden}
               onOpenSecurity={() => setSection("security")}
               onOpenPreferences={() => setSection("preferences")}
             />
@@ -1340,15 +1378,15 @@ export function VaultLibrary({
                       are missing from this device. Documents marked damaged
                       cannot be opened or copied; save copies of the others now.
                       To make changes again, restore the myCarlos data folder
-                      from a backup, or remove the damaged documents.
+                      from a backup, or hide the damaged documents.
                     </span>
                     <button
-                      className="button danger"
+                      className="button"
                       type="button"
                       disabled={busy}
-                      onClick={() => setConfirmRemoveDamaged(true)}
+                      onClick={() => setConfirmHideDamaged(true)}
                     >
-                      Remove damaged documents
+                      Hide damaged documents
                     </button>
                   </div>
                 )}
@@ -1384,8 +1422,8 @@ export function VaultLibrary({
                     <Icon name="info" />
                     <span>
                       <strong>No recovery key yet.</strong> If you forget your
-                      passphrase without one, the only way back in is to erase
-                      the vault.
+                      passphrase without one, the only way back in is to set the
+                      vault aside and start again.
                     </span>
                     <button
                       className="button"
@@ -1554,6 +1592,22 @@ export function VaultLibrary({
               </main>
             )}
 
+            {section === "hidden" && (
+              <HiddenDocuments
+                records={hiddenRecords}
+                rootName={
+                  hiddenLocationProfileId === sharedProfileId
+                    ? "Shared with me"
+                    : "My records"
+                }
+                folderNameById={folderNameById}
+                busy={busy}
+                readOnly={readOnly}
+                notice={notice}
+                onRestore={unhideRecord}
+              />
+            )}
+
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "security" && (
@@ -1566,7 +1620,6 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
-                onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
@@ -1709,12 +1762,7 @@ export function VaultLibrary({
                   })
                 }
                 onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
-                onDelete={() =>
-                  setConfirmation({
-                    action: "delete",
-                    recordId: activeRecord.id,
-                  })
-                }
+                onHide={() => hideRecord(activeRecord)}
                 onExport={() =>
                   setConfirmation({
                     action: "export",
@@ -1758,38 +1806,19 @@ export function VaultLibrary({
               onClose={() => setReaderRecordId(null)}
             />
           )}
-          {activeRecord && pendingAction === "delete" && (
+          {confirmHideDamaged && (
             <ConfirmDialog
-              title="Permanently delete this document?"
-              confirmLabel="Permanently delete"
-              danger
-              onConfirm={() => deleteRecord(activeRecord)}
-              onCancel={() => setConfirmation(null)}
-            >
-              <p>
-                <strong>{activeRecord.displayName}</strong> will be permanently
-                deleted from this vault. This cannot be undone here.
-              </p>
-              <p>
-                Readable exports and the clinic's source medical record are not
-                deleted.
-              </p>
-            </ConfirmDialog>
-          )}
-          {confirmRemoveDamaged && (
-            <ConfirmDialog
-              title={`Permanently remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Permanently remove"
-              danger
-              onConfirm={removeDamaged}
-              onCancel={() => setConfirmRemoveDamaged(false)}
+              title={`Hide ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Hide"
+              onConfirm={hideDamaged}
+              onCancel={() => setConfirmHideDamaged(false)}
               details={
                 // It scrolls when it is long, so it takes focus, to be
                 // scrolled with the keyboard. It is not read out with the
                 // dialog: the title counts the documents.
                 <ul
                   className="native-confirm-list"
-                  aria-label="Documents to remove"
+                  aria-label="Documents to hide"
                   tabIndex={0}
                 >
                   {damaged.map((record) => (
@@ -1803,10 +1832,10 @@ export function VaultLibrary({
               }
             >
               <p>
-                Their encrypted files are missing from this device, so their
-                content is already gone from here. Removing them also deletes
-                their names and details from the vault, permanently. This cannot
-                be undone.
+                Their encrypted files are missing from this device. Hiding them
+                lets the vault take changes again. They stay listed under
+                Hidden, with their names and details, and if a file comes back
+                its document can be restored.
               </p>
               <p>
                 First check that the files are not just out of reach: if the
@@ -1826,7 +1855,7 @@ export function VaultLibrary({
             >
               <p>
                 Saving creates a readable file outside the encrypted vault.
-                myCarlos cannot erase that copy later, and deleting this record
+                myCarlos cannot erase that copy later, and hiding this record
                 will not remove it.
               </p>
             </ConfirmDialog>

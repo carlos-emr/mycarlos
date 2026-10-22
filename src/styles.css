@@ -522,6 +522,10 @@ h1, h2, p { margin: 0; }
 .purpose-note strong { font-weight: 800; }
 .purpose-note.warning { border-color: var(--warning-line); background: var(--amber-soft); color: var(--warning-ink); }
 .trash-list .file-head, .trash-list .file-row { grid-template-columns: 30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 4.5rem; }
+/* #71: the Hidden list keeps the trash list's layout, but its dates are when a document was
+   hidden, not a countdown to deletion: nothing is deleted. */
+.native-hidden-list .file-row .hidden-date { color: var(--ink-soft); }
+.side-nav .native-hidden-nav { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
 .trash-marker { display: grid; place-items: center; color: var(--ink-faint); }
 .trash-marker .icon { width: 15px; height: 15px; }
 .countdown { color: var(--amber) !important; font-weight: 700; }
@@ -650,7 +654,7 @@ h1, h2, p { margin: 0; }
   .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) 34px; }
   .file-head .column, .file-row .column { display: none; }
   .trash-list .file-head, .trash-list .file-row { grid-template-columns: 24px minmax(0, 1fr) 4.5rem 3.75rem; }
-  .trash-list .file-row .countdown { display: block; overflow: visible; white-space: normal; line-height: 1.3; }
+  .trash-list .file-row .countdown, .native-hidden-list .file-row .hidden-date { display: block; overflow: visible; white-space: normal; line-height: 1.3; }
   /* The location column is hidden here, so the name is the only way to tell items apart. */
   .trash-list .name-copy strong { white-space: normal; overflow-wrap: anywhere; }
 }
@@ -712,7 +716,7 @@ h1, h2, p { margin: 0; }
 @media (max-width: 23em) {
   .trash-list .file-head, .trash-list .file-row { grid-template-columns: 24px minmax(0, 1fr) auto; row-gap: 4px; }
   .trash-list .file-row .file-name { grid-column: 2 / -1; }
-  .trash-list .file-row .countdown { grid-column: 2; grid-row: 2; }
+  .trash-list .file-row .countdown, .native-hidden-list .file-row .hidden-date { grid-column: 2; grid-row: 2; }
   .trash-list .file-row .restore-button { grid-column: 3; grid-row: 2; }
 }
 

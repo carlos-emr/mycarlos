@@ -235,9 +235,6 @@ describe("targets and text sizes in the app (#67)", () => {
         press("Rename document");
         expectComfortable("rename document");
         press("Cancel");
-        press("Permanently delete");
-        expectComfortable("confirm delete");
-        press("Cancel");
         press("Save a copy to this computer");
         expectComfortable("confirm save a copy");
         press("Cancel");
@@ -254,14 +251,16 @@ describe("targets and text sizes in the app (#67)", () => {
   it("keeps the disclosure triangle on taller summaries", () => {
     const expectTriangles = () => {
       const summaries = document.querySelectorAll("summary");
-      expect(summaries).not.toHaveLength(0);
       for (const summary of summaries)
         expect(getComputedStyle(summary).display, summary.textContent!).toBe(
           "list-item",
         );
+      return summaries.length;
     };
     renderLibrary();
-    expectTriangles();
+    expect(expectTriangles()).toBeGreaterThan(0);
+    // Security has none since its reset controls went (#71's third part):
+    // any it gains keeps its triangle too.
     press(/^Security/);
     expectTriangles();
   });

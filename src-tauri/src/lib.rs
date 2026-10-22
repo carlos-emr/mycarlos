@@ -1,5 +1,6 @@
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod history;
 mod idle;
 mod pdf_unlock;
 mod pdf_view;
@@ -180,7 +181,7 @@ impl PublicError {
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
-            message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            message: "Nothing was hidden. The vault cannot be changed right now; the notice above the documents says why.",
             record_id: None,
             note: None,
             retry_after_ms: None,
@@ -306,7 +307,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Unreadable => Self {
                 code: "unreadable",
-                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not erase the vault. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not set the vault aside. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -394,7 +395,7 @@ impl Drop for CreateVaultRequest {
 }
 
 #[derive(Deserialize)]
-struct RemoveUnavailableRequest {
+struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
 }
 
@@ -680,7 +681,8 @@ fn save_photo(
 ) -> Result<vault::ImportOutcome, VaultError> {
     let cleaned = photo::clean_jpeg(&photo).map_err(|_| VaultError::NotPhoto)?;
     drop(photo);
-    store.import(
+    // The history says it came from the camera (#71).
+    store.import_from(
         target.profile_id,
         target.folder_ids,
         vec![ImportSource {
@@ -688,6 +690,7 @@ fn save_photo(
             reader: Box::new(std::io::Cursor::new(cleaned)),
         }],
         now_ms(),
+        "camera",
     )
 }
 
@@ -1099,7 +1102,7 @@ impl PendingPicks {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeleteRecordRequest {
+struct RecordIdRequest {
     record_id: Uuid,
 }
 
@@ -1857,6 +1860,7 @@ async fn vault_backup_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let output = app
             .fs()
             .open(destination, options)
@@ -1869,7 +1873,9 @@ async fn vault_backup_picked(
                 bytes: counted,
             }),
             now_ms(),
-        )
+        )?;
+        store.record_backup_saved(&place);
+        Ok(())
     })
     .await
     .map(|()| SavedBackup {
@@ -1972,23 +1978,23 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
     match preview.replaces {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device is not the vault this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::Unreadable => Some(format!(
-            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring sets it aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault => Some(format!(
-            "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
+            "Restoring sets the vault on this device aside and puts the backup in its place, which holds the same {documents}. {SET_ASIDE_KEPT}"
         )),
     }
 }
 
-/// Restores the chosen backup. Replacing a vault erases it, so, as for a
-/// reset, a trusted native dialog confirms that first, and says what would be
-/// lost; the renderer's own agreement is not enough. Returns false if the
+/// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
+/// for a reset, a trusted native dialog confirms that first, and says what
+/// would change; the renderer's own agreement is not enough. Returns false if the
 /// patient cancelled there.
 #[tauri::command]
 async fn vault_restore(
@@ -2347,7 +2353,7 @@ async fn received_accept(
                 }
             }
         }
-        let outcome = store.import(shared, Vec::new(), sources, now_ms())?;
+        let outcome = store.import_from(shared, Vec::new(), sources, now_ms(), "shared")?;
         Ok(ReceivedAcceptOutcome {
             imported: outcome.imported,
             skipped_duplicates: outcome.skipped_duplicates,
@@ -2584,24 +2590,30 @@ async fn vault_export_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let mut output = app
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
         drop(opening);
-        Ok(store.export(record_id, &mut output))
+        let exported = store.export(record_id, &mut output);
+        if exported.is_ok() {
+            store.record_copy_saved(record_id, &place);
+        }
+        Ok(exported)
     })
     .await?
     .map_err(|_| PublicError::partial_export())
 }
 
+/// Hides the documents shown as damaged (#71: they used to be removed).
 #[tauri::command]
-async fn vault_remove_unavailable_records(
+async fn vault_hide_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
-    request: RemoveUnavailableRequest,
+    request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     run_blocking(store.inner(), move |store| {
-        store.remove_unavailable_records(&request.confirmed)
+        store.hide_unavailable_records(&request.confirmed, now_ms())
     })
     .await
     .map_err(|error| match error.code {
@@ -2688,18 +2700,51 @@ async fn vault_unlock_pdf(
     .await
 }
 
+/// Hides a document (#71). There is no command that deletes one.
 #[tauri::command]
-async fn vault_delete_record(
+async fn vault_hide_record(
     store: State<'_, Arc<VaultStore>>,
-    request: DeleteRecordRequest,
+    request: RecordIdRequest,
 ) -> CommandResult<()> {
     run_blocking(store.inner(), move |store| {
-        store.delete_record(request.record_id)
+        store.hide_record(request.record_id, now_ms())
     })
     .await
 }
 
-const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+/// Puts a hidden document back (#71).
+#[tauri::command]
+async fn vault_unhide_record(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.unhide_record(request.record_id)
+    })
+    .await
+}
+
+/// What a vault set aside (#71) keeps, said wherever one is set aside.
+const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
+
+/// What starting again does (#71), who can still open the vault set aside,
+/// and how to remove it on this platform: on a computer, by deleting its
+/// folder, named here (the dialog is native, never the screen); on a phone,
+/// where the folder is private to the app, only by clearing the app's data
+/// or uninstalling it, which removes every vault.
+fn set_aside_vault_warning(folder: &std::path::Path) -> String {
+    let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
+        "On this phone, vaults set aside stay in myCarlos's private storage, and myCarlos cannot remove them: the only way is to clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone.".to_owned()
+    } else {
+        format!(
+            "To remove a vault set aside, and free its space, close myCarlos and delete its folder in {}.",
+            folder.display()
+        )
+    };
+    format!(
+        "This sets the whole vault aside and starts again with an empty one. {SET_ASIDE_KEPT} myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. {removal}"
+    )
+}
 
 #[tauri::command]
 async fn vault_reset(
@@ -2712,14 +2757,15 @@ async fn vault_reset(
     if request.confirmation != "RESET MYCARLOS VAULT" {
         return Err(PublicError::from(VaultError::Invalid));
     }
+    let warning = set_aside_vault_warning(&store.set_aside_folder().ok_or(VaultError::Storage)?);
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
         confirmed_natively(
             &dialog_app,
-            "Erase the entire myCarlos vault?",
-            ERASE_VAULT_WARNING,
+            "Set this myCarlos vault aside and start again?",
+            warning,
             "Keep this vault",
-            "Erase vault",
+            "Set it aside",
         )
     })
     .await
@@ -2961,8 +3007,9 @@ pub fn run() {
             vault_view_photo,
             vault_is_locked_pdf,
             vault_unlock_pdf,
-            vault_delete_record,
-            vault_remove_unavailable_records,
+            vault_hide_record,
+            vault_unhide_record,
+            vault_hide_unavailable_records,
             vault_reset
         ])
         .build(tauri::generate_context!())
@@ -3936,11 +3983,11 @@ mod tests {
     #[test]
     fn only_the_button_that_goes_ahead_counts_as_agreement() {
         let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
-        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        assert!(agreed_natively(&custom("Set it aside"), "Set it aside"));
         for answer in [
             custom("Keep this vault"),
             custom(NATIVE_CANCEL),
-            custom("erase vault"),
+            custom("set it aside"),
             custom(""),
             // What the dialog reports when it is closed, or could not be
             // shown, and what another layout's buttons would report.
@@ -3949,7 +3996,7 @@ mod tests {
             MessageDialogResult::Yes,
             MessageDialogResult::No,
         ] {
-            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+            assert!(!agreed_natively(&answer, "Set it aside"), "{answer:?}");
         }
     }
 
@@ -3968,12 +4015,35 @@ mod tests {
                 && other.contains("3 documents")
         );
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
-        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
+        assert!(
+            unreadable.contains("cannot tell")
+                && unreadable.contains("sets the vault on this device aside")
+        );
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("may not be the same as") && changed.contains("passphrase"));
         assert!(changed.contains("could not be read"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
         assert!(same.contains("the same 3 documents"));
+        // Nothing is erased (#71): every warning says the vault is kept.
+        for warning in [&other, &unreadable, &changed, &same] {
+            assert!(warning.contains(SET_ASIDE_KEPT), "{warning}");
+            assert!(
+                !warning.contains("erase") && !warning.contains("cannot be undone"),
+                "{warning}"
+            );
+        }
+        // Starting again names who can still open the vault set aside, and
+        // how to remove it here: its folder on a computer.
+        let folder =
+            std::path::Path::new("/home/FAKE/.local/share/ca.carlos.mycarlos/vault-home/set-aside");
+        let warning = set_aside_vault_warning(folder);
+        assert!(warning.contains(SET_ASIDE_KEPT));
+        assert!(!warning.contains("erase"));
+        assert!(warning.contains("someone else may know your passphrase, they can still open it"));
+        assert!(warning.ends_with(&format!(
+            "close myCarlos and delete its folder in {}.",
+            folder.display()
+        )));
     }
 
     #[test]
@@ -4180,8 +4250,8 @@ mod tests {
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<PhotoRequest>(&payload);
             let _ = serde_json::from_slice::<UnlockPdfRequest>(&payload);
-            let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
-            let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
+            let _ = serde_json::from_slice::<RecordIdRequest>(&payload);
+            let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
     }
@@ -4604,6 +4674,10 @@ mod photo_command_tests {
         assert!(save.contains("run_blocking("));
         assert!(body("async fn vault_view_photo(").contains("run_blocking("));
         assert!(body("async fn vault_is_photo(").contains("run_blocking("));
+        // The history says a saved photo came from the camera (#71).
+        let saved = body("fn save_photo(");
+        assert!(saved.contains("store.import_from("));
+        assert!(saved.contains("\"camera\""));
     }
 }
 
@@ -4819,6 +4893,67 @@ mod locked_pdf_command_tests {
             .unwrap();
         assert_eq!(copy.profile_id, shared);
         assert!(copy.folder_ids.is_empty());
+    }
+
+    #[test]
+    fn unlocking_then_hiding_and_setting_aside_keeps_both_pdfs_and_their_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = fixture("text-aes256.pdf");
+        let (store, profile, folder, locked) = stored(&temp, "FAKE Letter.pdf", original.clone());
+        let before = vault::history_events_for_test(&store).len();
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        let copy = unlocked.record_id;
+        assert_ne!(copy, locked);
+        assert_eq!(exported(&store, locked), original);
+        let copy_bytes = exported(&store, copy);
+        assert!(copy_bytes.starts_with(b"%PDF-"));
+        let events = vault::history_events_for_test(&store);
+        assert_eq!(events.len(), before + 2);
+        assert_eq!(events[before].event, history::HistoryEvent::Imported);
+        assert_eq!(events[before].record_id, Some(copy));
+        assert_eq!(events[before + 1].event, history::HistoryEvent::Renamed);
+        assert_eq!(events[before + 1].record_id, Some(locked));
+        store.hide_record(locked, 5).unwrap();
+        store.hide_record(copy, 6).unwrap();
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .all(|r| r.hidden.is_some()));
+        store.unhide_record(copy).unwrap();
+        let aside = store.set_aside_folder().unwrap();
+        store.reset().unwrap();
+        assert_eq!(store.status().unwrap(), vault::VaultStatus::Absent);
+        let folders: Vec<_> = std::fs::read_dir(aside)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_dir())
+            .collect();
+        assert_eq!(folders.len(), 1);
+        let recovered = VaultStore::new(folders[0].clone());
+        recovered.unlock(PASSPHRASE).unwrap();
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 2);
+        let kept = snapshot.records.iter().find(|r| r.id == locked).unwrap();
+        assert_eq!(kept.display_name, "FAKE Letter (locked original).pdf");
+        assert!(kept.hidden.is_some());
+        let readable = snapshot.records.iter().find(|r| r.id == copy).unwrap();
+        assert!(readable.hidden.is_none());
+        assert_eq!(
+            (readable.profile_id, readable.folder_ids.clone()),
+            (profile, vec![folder])
+        );
+        assert_eq!(exported(&recovered, locked), original);
+        assert_eq!(exported(&recovered, copy), copy_bytes);
+        let events = vault::history_events_for_test(&recovered); // Also verifies its pinned chain.
+        assert!(events
+            .iter()
+            .any(|entry| entry.event == history::HistoryEvent::SetAside));
+        for entry in events {
+            let json = String::from_utf8(entry.canonical()).unwrap();
+            assert!(!json.contains(DOCUMENT_PASSWORD) && !json.contains(PASSPHRASE));
+        }
     }
 
     #[test]

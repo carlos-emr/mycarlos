@@ -46,8 +46,9 @@
     "allow-vault-save-photo",
     "allow-vault-is-photo",
     "allow-vault-view-photo",
-    "allow-vault-delete-record",
-    "allow-vault-remove-unavailable-records",
+    "allow-vault-hide-record",
+    "allow-vault-unhide-record",
+    "allow-vault-hide-unavailable-records",
     "allow-vault-reset"
   ]
 }

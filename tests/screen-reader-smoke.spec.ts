@@ -150,8 +150,6 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
   await screenReaderSmoke(page, "Security");
   await page.getByRole("button", { name: "Longer delay" }).click();
   await expectAnnounced(page, "6 minutes");
-  await page.getByText("Show reset controls").click();
-  await screenReaderSmoke(page, "Security, reset controls shown");
   await openSection(page, "Preferences");
   await screenReaderSmoke(page, "Preferences");
   await page.getByRole("button", { name: "Larger text" }).click();

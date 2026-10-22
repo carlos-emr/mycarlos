@@ -26,7 +26,8 @@ interface RecordDetailsProps {
   /** For a document in Shared with me (#61): who it can go to, and the move. */
   moveTargets?: MoveTarget[];
   onMoveTo?: (profileId: string, folderId: string | null) => void;
-  onDelete: () => void;
+  /** Takes the document out of view (#71); it is never deleted. */
+  onHide: () => void;
   onExport: () => void;
   /** Opens the document in myCarlos's reader. */
   onRead?: () => void;
@@ -49,7 +50,7 @@ export function RecordDetails({
   onMove,
   moveTargets,
   onMoveTo,
-  onDelete,
+  onHide,
   onExport,
   onRead,
   onViewPhoto,
@@ -269,12 +270,12 @@ export function RecordDetails({
             </button>
           </div>
           <button
-            className="button danger"
+            className="button"
             type="button"
             disabled={busy || readOnly}
-            onClick={onDelete}
+            onClick={onHide}
           >
-            Permanently delete
+            Hide
           </button>
           {onRead && (
             <button

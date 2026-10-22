@@ -36,12 +36,26 @@ privacy, accessibility, or clinical review.
 - [x] Interrupted-reset recovery before startup/access/creation, covering abrupt exit after
       rename/key removal, retryable cleanup failures, and symlink rejection. Reset directories left
       by earlier evaluation builds are not recognized; those builds' data is not carried forward.
-- [x] Confirmed individual deletion from the live vault with both manifest slots rewritten without
-      the wrapped object key and ciphertext removed between the two durable commits.
+- [x] Hiding instead of deletion (#71): both manifest slots mark the document hidden and keep its
+      ciphertext and key; Restore clears the mark. Manifest format 2, upgraded from format 1 in a
+      commit of its own; orphan objects quarantined, never removed; direct file removal refused by
+      clippy outside one named-kind helper; a scripted session checks no object is removed or changed.
+- [x] An encrypted history (#71 part B): every event the ticket lists, plus passphrase changes and
+      profile and folder changes (Ben, 19 Oct; not lock reasons), hash-chained and pinned by
+      the manifest, in uniform segments padded to a power of two; manifest format 3, upgraded from
+      formats 1 and 2 in a commit of its own; locks recorded at the next unlock. Not shown in the
+      app; Ben chose tamper-evident on the device only (19 Oct); no export. Must not ship before
+      part C (set aside).
+- [x] Vaults set aside, never erased (#71 part C): starting again and restoring over a vault move
+      it, whole and encrypted, into `set-aside/`, recorded in its history when it is open; a
+      `reset-pending` folder an older build left is set aside too. No removal kind covers a vault.
+      Reopening a vault set aside from the app is a follow-up. Starting again is offered only on
+      the unlock screen, not in Security (decided 19 October): on Android and iPhone a vault set
+      aside goes only with every vault (clearing the app's data or uninstalling), an accepted limit.
 - [x] Abrupt-process-termination recovery matrix after object chunk writes, staging, object rename,
-      both manifest commits, and each deletion boundary.
+      both manifest commits, each hiding boundary, and each upgrade write.
 - [x] Deterministic `NoSpace` failure injection during object writing and before/after durable
-      manifest/deletion boundaries, verifying restart never exposes a half-committed record.
+      manifest/hiding boundaries, verifying restart never exposes a half-committed record.
 - [x] Corrupt/truncated/swapped object tests, corrupt-one-slot recovery, corrupt-both-slots
       fail-closed behavior, and preservation of ciphertext when metadata recovery is impossible.
 - [x] A generated 101 MiB input verifies that reader requests stay bounded to one 1 MiB chunk.
@@ -108,8 +122,8 @@ privacy, accessibility, or clinical review.
       file that never finishes opening, holds automatic locks (content hidden) for as long as it
       does; **Lock now** still locks at once while a file is opening.
 - [x] A vault with a lost encrypted file can leave recovery mode without a reset: the library
-      offers to remove the damaged documents after a confirmation that names the backup-restore
-      alternative, and any file that has come back is kept.
+      offers to hide the damaged documents (#71; they were removed before) after a confirmation that
+      names the backup-restore alternative, and any file that has come back keeps its document in view.
 - [x] Passphrases containing a word of the profile's own name are refused before scoring, since
       zxcvbn matches the name only as a whole and rearranged or joined name words scored as strong.
 - [x] Passphrases are normalized to Unicode NFC before key derivation, so the same visible
