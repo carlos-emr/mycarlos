@@ -407,7 +407,7 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
 
     let attributes = implicit_set(attributes, TagNumber::N0)?;
     let parsed_attributes = canonical_attributes(&attributes)?;
-    let mut seen = Vec::new();
+    let mut seen: Vec<Vec<u8>> = Vec::new();
     let (mut content_type, mut message_digest, mut signing_cert) = (false, false, false);
     let mut manifest_digest = None;
     for attribute in parsed_attributes.iter() {
@@ -418,10 +418,13 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
         if oid.tag() != Tag::ObjectIdentifier || !canonical_oid(oid.value()) {
             return Err(Bad);
         }
-        if seen.contains(&oid.value()) {
+        if seen
+            .iter()
+            .any(|previous| previous.as_slice() == oid.value())
+        {
             return Err(Bad);
         }
-        seen.push(oid.value());
+        seen.push(oid.value().to_vec());
         let values: SetOfVec<Any> = values.decode_as().map_err(|_| Bad)?;
         if values.len() != 1 {
             return Err(Bad);
