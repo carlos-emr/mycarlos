@@ -1092,6 +1092,8 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .native-person-details-list { list-style: none; padding: 0; min-width: 0; }
 .native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .native-profile-settings > form { width: 100%; min-width: 0; }
+.native-profile-settings label, .native-profile-settings input { min-width: 0; }
+.native-profile-settings input { width: 100%; }
 .native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }
 .native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
 .native-person-details-list form { width: 100%; }
