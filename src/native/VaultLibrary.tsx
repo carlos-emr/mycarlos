@@ -2,6 +2,7 @@ import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  isWrongPdfPassword,
   localDateText,
   namedDamage,
   type BoxKey,
@@ -12,6 +13,7 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { UnlockPdfDialog } from "./UnlockPdfDialog";
 import {
   RecoveryKeySetup,
   type OpeningRecoverySetup,
@@ -20,6 +22,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
+import { DocumentReader } from "./DocumentReader";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -164,6 +167,8 @@ export function VaultLibrary({
   // Where the selected documents in Shared with me go: "<person>|<folder>".
   const [sharedTarget, setSharedTarget] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  // The document open in the reader, if any.
+  const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -324,6 +329,8 @@ export function VaultLibrary({
   );
   const activeRecord =
     records.find((record) => record.id === activeRecordId) ?? null;
+  const readerRecord =
+    records.find((record) => record.id === readerRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
@@ -358,6 +365,60 @@ export function VaultLibrary({
       current = false;
     };
   }, [bridge, photoCandidate]);
+  // A PDF that may be locked with a password can be unlocked from its details
+  // (#54). The vault scans the file's PDF names only, when the details open.
+  const lockedCandidate =
+    activeRecord?.available && namedAsPdf(activeRecord.displayName)
+      ? activeRecord.id
+      : null;
+  const [lockedPdfId, setLockedPdfId] = useState<string | null>(null);
+  useEffect(() => {
+    setLockedPdfId(null);
+    if (!lockedCandidate) return;
+    let current = true;
+    bridge.isLockedPdf(lockedCandidate).then(
+      (locked) => {
+        if (current && locked) setLockedPdfId(lockedCandidate);
+      },
+      // No longer readable: the details say what they can.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, lockedCandidate]);
+  // The password dialog stays open after a wrong password, and says so.
+  const [unlocking, setUnlocking] = useState<{
+    recordId: string;
+    name: string;
+    wrongTries: number;
+  } | null>(null);
+  const unlockPdf = (password: string) => {
+    if (!unlocking) return;
+    const { recordId, name } = unlocking;
+    void run(async () => {
+      try {
+        const unlocked = await bridge.unlockPdf(recordId, password);
+        setUnlocking(null);
+        await refresh();
+        // The details show the copy, which opens without the password.
+        setActiveRecordId(unlocked.recordId);
+        setNotice(
+          `${name} unlocked. The locked original is kept as ${unlocked.originalName}.`,
+        );
+      } catch (failure) {
+        if (isWrongPdfPassword(failure)) {
+          setUnlocking(
+            (current) =>
+              current && { ...current, wrongTries: current.wrongTries + 1 },
+          );
+          return;
+        }
+        setUnlocking(null);
+        throw failure;
+      }
+    });
+  };
   const viewPhoto = (recordId: string) =>
     run(async () => {
       const url = await bridge.viewPhoto(recordId);
@@ -1614,38 +1675,87 @@ export function VaultLibrary({
               onClose={() => setShownPhoto(null)}
             />
           )}
-          {activeRecord && !renameTarget && !pendingAction && !shownPhoto && (
-            <RecordDetails
-              record={activeRecord}
-              folders={folders}
-              moveTargets={inShared ? moveTargets : undefined}
-              onMoveTo={(to, folderId) =>
-                moveToPerson([activeRecord.id], to, folderId)
-              }
+          {activeRecord && unlocking?.recordId === activeRecord.id && (
+            <UnlockPdfDialog
+              name={unlocking.name}
+              wrongTries={unlocking.wrongTries}
               busy={busy}
-              readOnly={readOnly}
-              unreadable={snapshot.recovery === "unreadableSlot"}
-              notice={notice}
-              onClose={() => setActiveRecordId(null)}
-              onRename={() =>
-                setRenameTarget({
-                  kind: "document",
-                  id: activeRecord.id,
-                  name: activeRecord.displayName,
-                })
+              onUnlock={unlockPdf}
+              onCancel={() => setUnlocking(null)}
+            />
+          )}
+          {activeRecord &&
+            !renameTarget &&
+            !pendingAction &&
+            !shownPhoto &&
+            unlocking?.recordId !== activeRecord.id && (
+              <RecordDetails
+                record={activeRecord}
+                folders={folders}
+                moveTargets={inShared ? moveTargets : undefined}
+                onMoveTo={(to, folderId) =>
+                  moveToPerson([activeRecord.id], to, folderId)
+                }
+                busy={busy}
+                readOnly={readOnly}
+                unreadable={snapshot.recovery === "unreadableSlot"}
+                notice={notice}
+                onClose={() => setActiveRecordId(null)}
+                onRename={() =>
+                  setRenameTarget({
+                    kind: "document",
+                    id: activeRecord.id,
+                    name: activeRecord.displayName,
+                  })
+                }
+                onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
+                onDelete={() =>
+                  setConfirmation({
+                    action: "delete",
+                    recordId: activeRecord.id,
+                  })
+                }
+                onExport={() =>
+                  setConfirmation({
+                    action: "export",
+                    recordId: activeRecord.id,
+                  })
+                }
+                onViewPhoto={
+                  photoRecordId === activeRecord.id
+                    ? () => void viewPhoto(activeRecord.id)
+                    : undefined
+                }
+                locked={lockedPdfId === activeRecord.id}
+                // Desktop only: phones cannot start the PDF helper yet.
+                onUnlock={
+                  lockedPdfId === activeRecord.id && computer
+                    ? () =>
+                        setUnlocking({
+                          recordId: activeRecord.id,
+                          name: activeRecord.displayName,
+                          wrongTries: 0,
+                        })
+                    : undefined
+                }
+                onRead={
+                  namedAsPdf(activeRecord.displayName)
+                    ? () => {
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
+              />
+            )}
+          {readerRecord && (
+            <DocumentReader
+              record={readerRecord}
+              viewPage={(page, width, password) =>
+                bridge.viewPage(readerRecord.id, page, width, password)
               }
-              onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
-              onDelete={() =>
-                setConfirmation({ action: "delete", recordId: activeRecord.id })
-              }
-              onExport={() =>
-                setConfirmation({ action: "export", recordId: activeRecord.id })
-              }
-              onViewPhoto={
-                photoRecordId === activeRecord.id
-                  ? () => void viewPhoto(activeRecord.id)
-                  : undefined
-              }
+              cancelView={() => void bridge.cancelView().catch(() => undefined)}
+              onClose={() => setReaderRecordId(null)}
             />
           )}
           {activeRecord && pendingAction === "delete" && (

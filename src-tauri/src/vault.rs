@@ -114,7 +114,7 @@ const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 // The sanitizer caps record names at this many bytes and manifest validation
 // caps them at this many characters. A name never has more characters than
 // bytes, so every sanitized name passes validation when it is read back.
-const MAX_RECORD_NAME_LEN: usize = 240;
+pub(crate) const MAX_RECORD_NAME_LEN: usize = 240;
 const ARGON_MEMORY_KIB: u32 = 64 * 1024;
 const ARGON_ITERATIONS: u32 = 3;
 const ARGON_LANES: u32 = 4;
@@ -230,6 +230,28 @@ pub enum VaultError {
     ImportBatchLimit,
     #[error("a file to import is not a PDF")]
     NotPdf,
+    #[error("the document is locked with a password")]
+    PdfLocked,
+    #[error("the document is not locked with a password")]
+    PdfNotLocked,
+    #[error("an unlocked copy of the document is already stored")]
+    PdfAlreadyUnlocked,
+    #[error("the password did not open the locked document")]
+    PdfWrongPassword,
+    #[error("the locked document could not be opened")]
+    PdfUnlockFailed,
+    #[error("locked documents cannot be opened on this device")]
+    PdfUnlockUnavailable,
+    #[error("locked documents cannot be opened safely on this system")]
+    PdfUnlockNoSandbox,
+    #[error("the locked document is too large to open")]
+    PdfTooLarge,
+    #[error("the document could not be shown")]
+    PdfViewFailed,
+    #[error("documents cannot be shown on this device yet")]
+    PdfViewUnavailable,
+    #[error("documents cannot be shown safely on this system")]
+    PdfViewNoSandbox,
     #[error("there is not enough space to complete the operation")]
     NoSpace,
     #[error("the storage operation could not be completed")]

@@ -45,6 +45,7 @@ const vault = {
 function renderLibrary() {
   const bridge = {
     snapshot: vi.fn().mockResolvedValue(vault),
+    isLockedPdf: vi.fn().mockResolvedValue(false),
   } as unknown as VaultBridge;
   render(
     <VaultLibrary

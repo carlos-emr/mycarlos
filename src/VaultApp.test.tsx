@@ -24,6 +24,7 @@ import type {
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
+  ViewedPage,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import { setLocaleOverride, translate } from "./i18n";
@@ -113,6 +114,8 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     isPhoto: vi.fn().mockResolvedValue(false),
+    isLockedPdf: vi.fn().mockResolvedValue(false),
+    unlockPdf: vi.fn(),
     viewPhoto: vi
       .fn()
       .mockRejectedValue({ code: "not_a_photo", message: "FAKE not a photo." }),
@@ -125,6 +128,10 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [], notPdf: [] }),
     moveToPerson: vi.fn().mockResolvedValue({ moved: [], alreadyThere: [] }),
+    viewPage: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no reader in this test")),
+    cancelView: vi.fn().mockResolvedValue(undefined),
     removeUnavailableRecords: vi.fn().mockResolvedValue([]),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
@@ -1078,6 +1085,124 @@ describe("durable vault UI", () => {
         { name: "Move to" },
       ),
     ).toBeDisabled();
+  });
+
+  it("keeps photos in the photo viewer rather than offering the PDF reader", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "photo-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Photo.jpg",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      isPhoto: vi.fn().mockResolvedValue(true),
+      viewPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,FAKE"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("FAKE_Photo.jpg"));
+    const view = await screen.findByRole("button", { name: "View photo" });
+    expect(screen.queryByRole("button", { name: "Read" })).toBeNull();
+    await user.click(view);
+    expect(bridge.viewPhoto).toHaveBeenCalledWith("photo-1");
+    expect(bridge.viewPage).not.toHaveBeenCalled();
+  });
+
+  it("reads a stored document inside myCarlos, then goes back to the library", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      viewPage: vi.fn().mockResolvedValue({
+        pageCount: 1,
+        width: 800,
+        height: 1035,
+        image:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        text: "FAKE letter text",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Letter.pdf"));
+    await user.click(screen.getByRole("button", { name: "Read" }));
+    const reader = await screen.findByRole("dialog", {
+      name: "FAKE_Letter.pdf",
+    });
+    expect(
+      await within(reader).findByRole("img", {
+        name: "Page 1 of 1. The page's text follows.",
+      }),
+    ).toBeVisible();
+    expect(bridge.viewPage).toHaveBeenCalledWith(
+      "record-1",
+      0,
+      expect.any(Number),
+      undefined,
+    );
+    await user.click(within(reader).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  });
+
+  it("closes the reader, and stops its page, when the vault locks", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      // Still drawing when the lock comes.
+      viewPage: vi.fn(() => new Promise<ViewedPage>(() => undefined)),
+    });
+    render(<VaultApp bridge={bridge} />);
+
+    await user.click(await screen.findByText("FAKE_Letter.pdf"));
+    await user.click(screen.getByRole("button", { name: "Read" }));
+    expect(
+      await screen.findByRole("dialog", { name: "FAKE_Letter.pdf" }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bridge.cancelView).toHaveBeenCalled();
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {

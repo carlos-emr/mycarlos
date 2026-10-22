@@ -36,6 +36,26 @@ install a newer build if a terminal appears alongside the app.
 To erase evaluation data, use **Security > Erase entire vault** before uninstalling. App removal
 can leave app-data files behind, and vault reset cannot erase readable exports.
 
+## Opening locked documents and reading documents
+
+myCarlos opens and draws PDFs in a separate helper program, which Windows runs in an
+AppContainer: a sandbox with no network and no access to your files (#63). The helper's only
+environment is a placeholder LOCALAPPDATA (`C:\mycarlos-none`), which Windows needs to start an
+AppContainer. It is not a real folder, and none of your settings or folders is passed to the helper. The installer allows that
+sandbox to start myCarlos's own program, by letting `ALL APPLICATION PACKAGES` read and run the
+install folder. If myCarlos ever says a document cannot be opened or shown "safely on this system",
+the helper could not be started in its sandbox, and nothing was opened. Reinstalling with this
+installer restores the permission.
+
+Developers running a build from source give their build folder the same permission once, from the
+repository folder:
+
+```powershell
+icacls src-tauri\target\debug /grant "*S-1-15-2-1:(OI)(CI)(RX)"
+```
+
+The Rust tests do this for the test programs they start as the helper.
+
 ## Moving documents with drag and drop
 
 Use **Choose files to import** to bring PDFs into the vault. Dragging files from Windows File
