@@ -7024,7 +7024,7 @@ mod tests {
         let original = BASE64
             .decode(document["pdf_b64"].as_str().unwrap())
             .unwrap();
-        let temp = tempdir().unwrap();
+        let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         store.create(PASSWORD, "FAKE Patient", 1).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
