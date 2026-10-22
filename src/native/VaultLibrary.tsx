@@ -258,8 +258,7 @@ export function VaultLibrary({
       ),
     [snapshot.records, locationProfileId],
   );
-  // Where a document in Shared with me can go: each person's records and
-  // folders.
+  // Where a document can go: each person's records and folders.
   const moveTargets = useMemo(
     () =>
       people.map((person) => ({
@@ -598,15 +597,14 @@ export function VaultLibrary({
     folderId: string | null,
     toProfileId = profileId,
   ) => {
-    if (inShared && item.kind === "records") {
+    if (item.kind === "records" && (inShared || toProfileId !== profileId)) {
       moveToPerson(item.ids, toProfileId, folderId);
       return;
     }
-    // A person's documents and folders stay theirs; only Shared with me's
-    // files go to a person.
+    // Folders stay with their person; documents can move between people.
     if (toProfileId !== profileId) {
       setNotice(
-        "Documents and folders stay with their person. Only files in Shared with me can be moved to a person.",
+        "Folders stay with their person. Move individual documents to another person instead.",
       );
       return;
     }
@@ -788,8 +786,8 @@ export function VaultLibrary({
       if (erased) window.location.reload();
       else setNotice("Vault erase cancelled. Nothing changed.");
     }, ["the words you typed"]);
-  /** Moves documents from Shared with me to a person, into one of their
-   * folders or none (#61). One the person already has stays where it is. */
+  /** Moves documents to another person, into one of their folders or none.
+   * One the person already has stays where it is. */
   const moveToPerson = (
     ids: string[],
     toProfileId: string,
@@ -812,6 +810,7 @@ export function VaultLibrary({
           ? `${profileName(toProfileId)}'s records`
           : "My records";
       const where = folder ? `${theirs}, folder ${folder.name}` : theirs;
+      const source = inShared ? "Shared with me" : `${profileName(profileId)}'s records`;
       if (outcome.moved.includes(activeRecordId ?? "")) setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !outcome.moved.includes(id)),
@@ -825,7 +824,7 @@ export function VaultLibrary({
             : "",
         ...outcome.alreadyThere.map(
           (name) =>
-            `${name} was already in ${theirs}, so it stayed in Shared with me.`,
+            `${name} was already in ${theirs}, so it stayed in ${source}.`,
         ),
       ];
       setNotice(said.filter(Boolean).join(" "));
@@ -1583,9 +1582,11 @@ export function VaultLibrary({
             <RecordDetails
               record={activeRecord}
               folders={folders}
-              moveTargets={inShared ? moveTargets : undefined}
+              moveTargets={inShared || people.length > 1 ? moveTargets : undefined}
               onMoveTo={(to, folderId) =>
-                moveToPerson([activeRecord.id], to, folderId)
+                to === activeRecord.profileId
+                  ? void moveRecord(activeRecord.id, folderId)
+                  : moveToPerson([activeRecord.id], to, folderId)
               }
               busy={busy}
               readOnly={readOnly}

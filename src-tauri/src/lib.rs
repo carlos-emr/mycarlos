@@ -2166,7 +2166,7 @@ async fn received_accept(
     }
 }
 
-/// Moves files from Shared with me to a person, into the folders chosen (#61). A file the
+/// Moves files to another person, into the folders chosen. A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
 async fn vault_move_to_person(
