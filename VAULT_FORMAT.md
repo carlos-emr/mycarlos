@@ -755,7 +755,12 @@ Shared PDF hints are not saved in the manifest or history. Only explicitly label
 names (Patient name / Patient full name) and optional exact ISO dates (DOB / Date of birth /
 Birth date) from the existing sandbox helper's bounded first-page text are considered.
 When a date is present, its label must be adjacent to the name label (ignoring blank lines);
-possibly truncated text and repeated identity labels yield no hint.
+possibly truncated text and repeated identity labels yield no hint. The existing reader may
+flatten visually separate PDF text positioned with `Td` or `Tm`; visual positioning alone is
+not an identity boundary. The two tiny test PDFs are handwritten FAKE fixtures: `labelled.pdf`
+uses an explicit `T*` text-line break; `flat-text.pdf` uses `Td` positioning and deliberately
+finds no identity. They are not representative CARLOS output or clinic captures. Bundled dev
+PDFs using `Patient:` and positioned text do not demonstrate this suggestion feature.
 Conflicting or malformed labels, unsupported layouts, encrypted PDFs without an unlocked
 copy, missing text and unavailable helpers yield no hint. No OCR or free-text date guessing
 is performed. The hint never changes source verification and never moves a record by itself.

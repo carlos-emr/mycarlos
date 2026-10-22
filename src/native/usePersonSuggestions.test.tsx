@@ -17,14 +17,16 @@ const people = [
 function Probe({
   bridge,
   paused = false,
+  documents = records,
 }: {
   bridge: VaultBridge;
   paused?: boolean;
+  documents?: VaultRecord[];
 }) {
-  const hints = usePersonSuggestions(bridge, records, people, paused);
+  const hints = usePersonSuggestions(bridge, documents, people, paused);
   return (
     <>
-      {records.map((r) => (
+      {documents.map((r) => (
         <div key={r.id}>
           {hints.suggestionFor(r.id) ? `Offer ${r.id}` : `None ${r.id}`}
           <button onClick={() => hints.dismiss(r.id)}>Dismiss {r.id}</button>
@@ -68,6 +70,38 @@ describe("session-only document suggestions", () => {
       <Probe bridge={{ sharedIdentity: read } as unknown as VaultBridge} />,
     );
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/Offer/)).not.toBeInTheDocument();
+  });
+  it("clears hints and stops queued requests when native auto-lock wins the UI poll", async () => {
+    let lock!: (error: unknown) => void;
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({
+        name: "FAKE Mary Smith",
+        birthDate: "1958-03-12",
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            lock = reject;
+          }),
+      )
+      .mockResolvedValue({ name: "FAKE Mary Smith" });
+    const queued = [
+      ...records,
+      { ...records[0], id: "c", displayName: "FAKE c.pdf" },
+    ];
+    render(
+      <Probe
+        bridge={{ sharedIdentity: read } as unknown as VaultBridge}
+        documents={queued}
+      />,
+    );
+    await screen.findByText("Offer a");
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    lock({ code: "locked" });
+    await screen.findByText("None a");
+    expect(read).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/Offer/)).not.toBeInTheDocument();
   });
 });

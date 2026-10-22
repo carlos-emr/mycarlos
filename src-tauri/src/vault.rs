@@ -1859,6 +1859,25 @@ impl VaultStore {
     }
 
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
+        self.read_record(record_id, writer, true)
+    }
+
+    /// Background suggestions are not patient activity. Keep cancellation and
+    /// object authentication, but do not postpone the native idle deadline.
+    pub(crate) fn read_for_suggestion<W: Write>(
+        &self,
+        record_id: Uuid,
+        writer: W,
+    ) -> Result<(), VaultError> {
+        self.read_record(record_id, writer, false)
+    }
+
+    fn read_record<W: Write>(
+        &self,
+        record_id: Uuid,
+        writer: W,
+        report_progress: bool,
+    ) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let record = unlocked
@@ -1876,9 +1895,15 @@ impl VaultStore {
             &record.wrapped_object_key,
             record.id.as_bytes(),
         )?;
+        let writer = CancellableWriter::new(writer, Arc::clone(&self.cancel_io));
+        let writer = if report_progress {
+            writer.with_progress(&self.idle)
+        } else {
+            writer
+        };
         verify_object(
             &self.root.join("objects").join(&record.object_name),
-            CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle),
+            writer,
             unlocked.manifest.vault_id,
             record.id,
             &object_key,
@@ -16189,5 +16214,41 @@ mod tests {
                 .iter()
                 .all(|p| p.full_name.is_none() && p.birth_date.is_none()));
         }
+    }
+    #[test]
+    fn suggestion_reads_keep_the_idle_deadline_and_normal_exports_report_progress() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Mary", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let payload = b"FAKE authenticated document contents";
+        let record = store
+            .import(profile, vec![], vec![source("FAKE.pdf", payload)], 2)
+            .unwrap()
+            .imported[0];
+        let before = Instant::now() - Duration::from_secs(1);
+        store.idle().arm(before);
+        let due = before + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        assert!(store.idle().is_due(due));
+        let mut read = Vec::new();
+        store.read_for_suggestion(record, &mut read).unwrap();
+        assert_eq!(read, payload);
+        assert!(
+            store.idle().is_due(due),
+            "background reading must not postpone auto-lock"
+        );
+        store.export(record, io::sink()).unwrap();
+        assert!(
+            !store.idle().is_due(due),
+            "patient exports still count as progress"
+        );
+        store.cancel_io.store(true, Ordering::Release);
+        assert!(store.read_for_suggestion(record, io::sink()).is_err());
+        store.cancel_io.store(false, Ordering::Release);
+        store.lock();
+        assert!(matches!(
+            store.read_for_suggestion(record, io::sink()),
+            Err(VaultError::Locked)
+        ));
     }
 }

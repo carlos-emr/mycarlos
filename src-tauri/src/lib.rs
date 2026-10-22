@@ -2149,6 +2149,10 @@ async fn vault_shared_identity(
     store: State<'_, Arc<VaultStore>>,
     record_id: Uuid,
 ) -> CommandResult<Option<document_identity::FoundIdentity>> {
+    // Phones cannot run this helper. Return before decrypting any document.
+    if !cfg!(desktop) {
+        return Ok(None);
+    }
     let ticket = pdf_view::ViewTicket::identity();
     let store = Arc::clone(store.inner());
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -2171,7 +2175,7 @@ async fn vault_shared_identity(
         }
         let mut document =
             zeroize::Zeroizing::new(Vec::with_capacity(record.plaintext_size as usize));
-        store.export(record_id, &mut *document)?;
+        store.read_for_suggestion(record_id, &mut *document)?;
         let found = match pdf_view::view_in_helper(&document, "", 0, 1, &ticket) {
             pdf_view::Outcome::Shown(shown) => {
                 document_identity::from_text(&zeroize::Zeroizing::new(shown.text))

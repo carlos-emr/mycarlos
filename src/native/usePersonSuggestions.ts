@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  FoundIdentity,
-  PatientProfile,
-  VaultBridge,
-  VaultRecord,
+import {
+  isLockedError,
+  type FoundIdentity,
+  type PatientProfile,
+  type VaultBridge,
+  type VaultRecord,
 } from "../vault";
 import { personFor } from "./personMatch";
 
@@ -21,6 +22,7 @@ export function usePersonSuggestions(
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const mounted = useRef(false);
   const working = useRef(false);
+  const stopped = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -28,7 +30,8 @@ export function usePersonSuggestions(
     };
   }, []);
   useEffect(() => {
-    if (paused || !bridge.sharedIdentity || working.current) return;
+    if (paused || stopped.current || !bridge.sharedIdentity || working.current)
+      return;
     const record = records.find(
       (r) =>
         r.available &&
@@ -40,10 +43,18 @@ export function usePersonSuggestions(
     working.current = true;
     void bridge
       .sharedIdentity(record.id)
-      .catch(() => null)
+      .catch((error: unknown) => {
+        // Native auto-lock may beat the renderer's status poll. Stop the entire
+        // queue, rather than asking once per remaining PDF, and hide cached hints.
+        if (isLockedError(error)) {
+          stopped.current = true;
+          if (mounted.current) setFound(new Map());
+        }
+        return null;
+      })
       .then((identity) => {
         working.current = false;
-        if (mounted.current)
+        if (mounted.current && !stopped.current)
           setFound((previous) => new Map(previous).set(record.id, identity));
       });
   }, [bridge, records, found, paused]);
