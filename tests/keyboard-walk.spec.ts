@@ -142,21 +142,22 @@ test("the library works from the keyboard alone: open, move and search", async (
   );
 
   // A confirmation takes the place of the details: Escape cancels it, and the
-  // details come back with focus on their Close button.
+  // details come back with focus on their Close button. Hiding a document
+  // asks nothing (#71), so this walks the readable-copy confirmation.
   await letter.focus();
   await page.keyboard.press("Enter");
   const letterDetails = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
   await letterDetails
-    .getByRole("button", { name: "Permanently delete" })
+    .getByRole("button", { name: "Save a copy to this computer" })
     .focus();
   await page.keyboard.press("Enter");
   const confirm = page.getByRole("alertdialog", {
-    name: "Permanently delete this document?",
+    name: "Save a readable copy?",
   });
   await expect(confirm).toBeVisible();
   await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
-  await walk(page, "delete confirmation", "[role=alertdialog]");
-  await screenReaderSmoke(page, "delete confirmation", confirm);
+  await walk(page, "copy confirmation", "[role=alertdialog]");
+  await screenReaderSmoke(page, "copy confirmation", confirm);
   await page.keyboard.press("Escape");
   await expect(confirm).toBeHidden();
   await expect(
@@ -235,7 +236,9 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expectAnnounced(page, "FAKE Results moved.");
 
   // Search, and Escape to clear it.
-  const search = page.getByRole("searchbox", { name: "Search this location" });
+  const search = page.getByRole("searchbox", {
+    name: "Search everything in My records",
+  });
   await search.focus();
   await page.keyboard.type("Letters");
   await expect(page.getByRole("article")).toHaveCount(1);
@@ -387,10 +390,6 @@ test("Settings work from the keyboard alone", async ({ page }) => {
   await page.getByRole("button", { name: "Shorter delay" }).focus();
   await page.keyboard.press("Enter");
   await expectAnnounced(page, "4 minutes");
-  // The erase controls open from the keyboard (and are left alone).
-  await page.getByText("Show reset controls").focus();
-  await page.keyboard.press("Enter");
-  await walk(page, "Security, reset controls shown");
 
   await page.getByRole("button", { name: "Preferences", exact: true }).focus();
   await page.keyboard.press("Enter");
@@ -427,7 +426,9 @@ test("locking, by hand or automatically, leaves focus where unlocking starts", a
 
   await page.keyboard.type("FAKE passphrase for the fake");
   await page.keyboard.press("Enter");
-  const search = page.getByRole("searchbox", { name: "Search this location" });
+  const search = page.getByRole("searchbox", {
+    name: "Search everything in My records",
+  });
   await expect(search).toBeVisible();
   await search.focus();
 

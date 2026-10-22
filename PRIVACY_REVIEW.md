@@ -35,12 +35,46 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 
 | What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person) | Yes, each with its own key        |
+| Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
 | Passphrase       | Never stored. The vault's key is stored locked with a key worked out from the passphrase each time it is typed                                                                                             | The vault's key is locked with it |
 | Recovery key     | Never stored in the vault. The vault's key is stored locked with the recovery key, with a random id and the date it was set up                                                                             | The vault's key is locked with it |
+
+**Nothing is deleted** (#71, decided 16 October). A document the patient no longer wants to see
+is hidden: it leaves every view but the **Hidden** list, and stays in the vault, encrypted, with
+its name and details, until the patient restores it. This holds even for a document about someone
+else sent by mistake. A document whose encrypted file went missing is hidden in the same way, as
+damaged. The app tells the patient this in Security, under "What myCarlos keeps". Hidden
+documents are in every backup, like the rest.
+
+**A history is kept** (#71's second part). The vault records, encrypted with everything else,
+when it was opened (and with which secret), and each document added, renamed (both names),
+moved (the folders' names then), hidden, restored, or saved outside the vault as a readable copy,
+with where it was saved (a file path, or a document provider's address on Android), and when
+backups were saved, and where. It also records when the passphrase was changed (never the
+passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
+(its names then). It keeps the names as they were at each moment, so a document
+renamed or hidden can still be read off the history. The history is never shown in the app, and
+the app never changes or removes an entry. It is in every backup. The app tells the patient this
+in Security, under "What myCarlos keeps". There is no way to save the history outside the vault:
+Ben chose (19 October) to keep it on the device only, tamper-evident.
+
+**Nothing erases a vault either** (#71's third part). Starting again ("Set vault aside", under
+"Forgot your passphrase?" on the unlock screen; Security no longer offers it) and restoring a backup over a vault both
+set the vault aside: it moves, whole and still encrypted, into a `set-aside` folder next to it,
+with its documents, names, history and keys, and its passphrase or recovery key still opens it. The
+app cannot open it again yet, and never deletes it: storage grows with each one. On a computer,
+freeing the space, or making sure it is gone, means deleting its folder by hand; the confirmation
+dialog names the folder. On Android and iPhone the folder is private to the app: the
+only way to remove a vault set aside is to clear myCarlos's data, or uninstall it, which removes
+every vault on the device, the one in use too. This matters when someone else knows the old
+passphrase and can reach the device: a new vault does not shut them out of the old one until it
+is removed, and on a phone that means losing the new vault as well. This phone limit is accepted
+(decided 19 October), and for the same reason Security no longer offers starting again as a way to
+shut someone out. The unlock screen says what is kept; the native confirmation says who can still
+open it and how to remove it on that platform.
 
 Adding a document copies it into the vault. **The original file stays where it was** (for example
 in a Downloads folder or an email app), unencrypted; the app does not remove it or remind the
@@ -51,6 +85,12 @@ is open, into "Shared with me", which belongs to no one until the patient moves 
 person. While the vault is locked, the shared file is only remembered (where it is, not what is in
 it), and the lock screen shows how many are waiting, never their names; if myCarlos closes first,
 it is forgotten. The app that shared it keeps its own copy.
+
+A **PDF locked with a password** (as CARLOS sends documents) is stored as it came. When the
+patient unlocks it with the document password from their patient portal, an unlocked copy is
+encrypted into the vault beside it, and the locked original is kept, renamed "… (locked
+original).pdf"; the patient can delete either. The password is used once, by a separate helper
+process with no vault keys, and is never stored, shown again or logged.
 
 A **photo taken in myCarlos** has no original: it goes from the camera to the app's memory and is
 encrypted into the vault, and is never saved anywhere else. It carries no place, camera or other
@@ -261,7 +301,11 @@ where the patient puts it.
 
 These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FORMAT.md`,
 `MVP_STATUS.md`, `SECURITY_OPERATIONS.md`, `PRODUCT_DECISIONS.md`, `TESTING.md`, `WINDOWS.md`):
-
+- **No document can be deleted** (#71). A patient who wants something gone from the device can
+  only hide it; it stays in the vault and in its backups, and the vault grows with what is
+  hidden. The history keeps each document's names, and where copies were saved, for good. A vault
+  set aside (when starting again, or restoring over it) stays on the device until its folder is
+  deleted by hand.
 - **An old passphrase can still work.** Changing the passphrase, or replacing the recovery key,
   does not shut out someone who knows the old one and has a copy of the vault from before the
   change (a device backup, a copied folder, a backup file). The vault's own key never changes: the
@@ -272,9 +316,9 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
   while a file window it opened is showing) and the passphrase.
-- **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place
-  until the vault is erased, and some app files, such as the lock-delay setting, even after; the
-  app's instructions say to erase the vault first. On
+- **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
+  vaults set aside included, and some app files, such as the lock-delay setting; the app's
+  instructions say to delete the vault's folder by hand. On
   Android and iPhone, removing the app removes the vault too (as the platforms' guides say; not
   yet seen on a device).
 - **Rolling back the vault's files from outside the app** (for example restoring older copies of
