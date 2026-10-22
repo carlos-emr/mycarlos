@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../Icon";
+import { useI18n } from "../i18n";
 import type { NativeZoom } from "./nativeZoom";
 import {
   ZOOM_LEVELS,
@@ -61,9 +62,10 @@ export const useNativeZoom = () => useContext(NativeZoomContext);
  * focus is: a key or the wheel works on every screen, not only Preferences. */
 function ZoomAnnouncer({ zoom }: { zoom: Zoom }) {
   const level = useSyncExternalStore(zoom.subscribe, zoom.level);
+  const { t } = useI18n();
   return (
     <p className="sr-only" role="status" aria-atomic="true">
-      {`Text size ${zoomPercent(level)}`}
+      {t("textSize.announce", { percent: zoomPercent(level) })}
     </p>
   );
 }
@@ -84,7 +86,9 @@ const percentOf = (level: number) => String(Math.round(level * 100));
  */
 export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   const level = useSyncExternalStore(zoom.subscribe, zoom.level);
-  const modifier = mac ? "Command" : "Ctrl";
+  const { t } = useI18n();
+  // Ctrl is written the same in every language CARLOS ships.
+  const modifier = mac ? t("textSize.key.command") : "Ctrl";
   const smallest = level === ZOOM_LEVELS[0];
   const largest = level === ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
   const id = useId();
@@ -177,14 +181,15 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     <section className="setting-row native-setting-form text-size-setting">
       <div>
         <h2>
-          <Icon name="text-size" /> Text size{" "}
+          <Icon name="text-size" /> {t("textSize.title")}{" "}
           <span className="state-pill">{zoomPercent(level)}</span>
         </h2>
         <p id={helpId}>
-          Makes everything in myCarlos larger or smaller, from{" "}
-          {ZOOM_MIN_PERCENT}% to {ZOOM_MAX_PERCENT}%. myCarlos remembers the
-          size on this computer. You can also hold {modifier} and press plus,
-          minus or 0.
+          {t("textSize.help", {
+            min: ZOOM_MIN_PERCENT,
+            max: ZOOM_MAX_PERCENT,
+            modifier,
+          })}
         </p>
       </div>
       <div>
@@ -193,7 +198,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
           <button
             className="button text-size-step"
             type="button"
-            aria-label="Smaller text"
+            aria-label={t("textSize.smaller")}
             aria-disabled={smallest}
             onClick={() => {
               if (!smallest) step("out");
@@ -202,7 +207,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
             <span aria-hidden="true">−</span>
           </button>
           <label className="text-size-box">
-            <span className="sr-only">Text size in percent</span>
+            <span className="sr-only">{t("textSize.box")}</span>
             <input
               type="text"
               inputMode="decimal"
@@ -250,7 +255,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
             ref={larger}
             className="button text-size-step"
             type="button"
-            aria-label="Larger text"
+            aria-label={t("textSize.larger")}
             aria-disabled={largest}
             onClick={() => {
               if (!largest) step("in");
@@ -268,7 +273,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
                 step("reset");
               }}
             >
-              Back to normal size
+              {t("textSize.reset")}
             </button>
           )}
         </div>

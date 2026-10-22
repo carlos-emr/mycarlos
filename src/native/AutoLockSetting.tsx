@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { useI18n } from "../i18n";
 import { AUTO_LOCK_MAX, AUTO_LOCK_MIN } from "./autoLock";
 
 /**
@@ -14,17 +15,18 @@ export function AutoLockSetting({
   minutes: number;
   onMinutes: (minutes: number) => void;
 }) {
+  const { t } = useI18n();
   const valueId = useId();
   return (
     <div
       className="text-size-control auto-lock-control"
       role="group"
-      aria-label="Automatic lock delay"
+      aria-label={t("security.autoLock.label")}
     >
       <button
         className="button text-size-step"
         type="button"
-        aria-label="Shorter delay"
+        aria-label={t("security.autoLock.shorter")}
         aria-describedby={valueId}
         aria-disabled={minutes <= AUTO_LOCK_MIN}
         onClick={() => {
@@ -34,12 +36,12 @@ export function AutoLockSetting({
         <span aria-hidden="true">−</span>
       </button>
       <span className="auto-lock-value" id={valueId} aria-live="polite">
-        {minutes} minute{minutes === 1 ? "" : "s"}
+        {t("security.autoLock.minutes", { count: minutes })}
       </span>
       <button
         className="button text-size-step"
         type="button"
-        aria-label="Longer delay"
+        aria-label={t("security.autoLock.longer")}
         aria-describedby={valueId}
         aria-disabled={minutes >= AUTO_LOCK_MAX}
         onClick={() => {

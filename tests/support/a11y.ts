@@ -111,6 +111,10 @@ export async function fakeVault(
               return { platform: "windows" };
             case "vault_status":
               return status;
+            // These accessibility journeys have no files waiting to be shared.
+            // The app still polls the intake while locked and after unlocking.
+            case "received_list":
+              return { files: [], notice: { dropped: 0, refusedShares: 0 } };
             case "vault_snapshot":
               return structuredClone(snapshot);
             case "vault_passphrase_rules":

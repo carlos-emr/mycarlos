@@ -1,20 +1,28 @@
+import type { MessageKey } from "./i18n";
+
 export type AppearanceMode = "system" | "light" | "dark";
 export type AppearanceTheme = "light" | "dark";
 
 export const APPEARANCE_STORAGE_KEY = "mycarlos.appearance.v1";
 
+/** What went wrong, as the message's key, or "" for nothing: the screen
+ * words it in the language in use, also after the language changes. */
+export type AppearanceError =
+  | ""
+  | Extract<MessageKey, `appearance.error.${string}`>;
+
 export interface AppearanceState {
   mode: AppearanceMode;
   theme: AppearanceTheme;
-  storageError: string;
-  nativeError: string;
+  storageError: AppearanceError;
+  nativeError: AppearanceError;
 }
 
 export interface Appearance {
   snapshot: () => AppearanceState;
   subscribe: (listener: () => void) => () => void;
   set: (mode: AppearanceMode) => void;
-  setNativeError: (message: string) => void;
+  setNativeError: (error: AppearanceError) => void;
 }
 
 export function appearanceMode(value: unknown): AppearanceMode {
@@ -26,14 +34,13 @@ export function startAppearance(): Appearance {
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
   const forced = window.matchMedia("(forced-colors: active)");
   let mode: AppearanceMode = "system";
-  let storageError = "";
+  let storageError: AppearanceError = "";
   let storage: Storage | undefined;
   try {
     storage = window.localStorage;
     mode = appearanceMode(storage.getItem(APPEARANCE_STORAGE_KEY));
   } catch {
-    storageError =
-      "The saved appearance could not be read. Using System for this session.";
+    storageError = "appearance.error.unreadable";
   }
   const theme = (): AppearanceTheme =>
     mode === "system" ? (dark.matches ? "dark" : "light") : mode;
@@ -102,14 +109,13 @@ export function startAppearance(): Appearance {
         storage.setItem(APPEARANCE_STORAGE_KEY, mode);
         storageError = "";
       } catch {
-        storageError =
-          "Appearance changed for this session, but could not be remembered on this device.";
+        storageError = "appearance.error.notRemembered";
       }
       publish();
     },
-    setNativeError(message) {
-      if (state.nativeError === message) return;
-      state = { ...state, nativeError: message };
+    setNativeError(error) {
+      if (state.nativeError === error) return;
+      state = { ...state, nativeError: error };
       listeners.forEach((listener) => listener());
     },
   };

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useModalFocus } from "../useModalFocus";
+import { useI18n } from "../i18n";
 
 // How far the photo can be zoomed, as a multiple of its fitted width. Each
 // level is a class in styles.css: the CSP allows no inline styles.
@@ -28,6 +29,7 @@ export function PhotoViewer({
   url: string;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [level, setLevel] = useState(0);
   const [dragging, setDragging] = useState(false);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -79,7 +81,7 @@ export function PhotoViewer({
       >
         <header className="dialog-head">
           <div>
-            <span className="eyebrow">Photo</span>
+            <span className="eyebrow">{t("photo.eyebrow")}</span>
             <h2 id="photo-viewer-title">{name}</h2>
           </div>
         </header>
@@ -89,7 +91,7 @@ export function PhotoViewer({
           ref={frameRef}
           className={`photo-viewer-frame zoom-${String(zoom).replace(".", "-")}${zoom > 1 ? " can-drag" : ""}${dragging ? " dragging" : ""}`}
           role="region"
-          aria-label="Photo. Zoom in to see details; drag or scroll to move around."
+          aria-label={t("photo.area")}
           tabIndex={0}
           onPointerDown={(event) => {
             // A finger pans as on any page; only a mouse or pen drags here.
@@ -130,10 +132,12 @@ export function PhotoViewer({
           onPointerCancel={endDrag}
           onLostPointerCapture={endDrag}
         >
-          <img src={url} alt={`Photo: ${name}`} draggable={false} />
+          <img src={url} alt={t("photo.alt", { name })} draggable={false} />
         </div>
         <p className="native-dialog-status" role="status">
-          {zoom === 1 ? "Fitted to the window." : `Zoomed to ${zoom * 100}%.`}
+          {zoom === 1
+            ? t("photo.fitted")
+            : t("photo.zoomed", { percent: zoom * 100 })}
         </p>
         <footer className="dialog-actions">
           <button
@@ -142,7 +146,7 @@ export function PhotoViewer({
             disabled={level === 0}
             onClick={() => zoomTo(Math.max(0, level - 1))}
           >
-            Zoom out
+            {t("photo.zoomOut")}
           </button>
           <button
             className="button"
@@ -150,7 +154,7 @@ export function PhotoViewer({
             disabled={level === ZOOM_LEVELS.length - 1}
             onClick={() => zoomTo(Math.min(ZOOM_LEVELS.length - 1, level + 1))}
           >
-            Zoom in
+            {t("photo.zoomIn")}
           </button>
           <button
             ref={closeRef}
@@ -158,7 +162,7 @@ export function PhotoViewer({
             type="button"
             onClick={onClose}
           >
-            Close
+            {t("photo.close")}
           </button>
         </footer>
       </section>
