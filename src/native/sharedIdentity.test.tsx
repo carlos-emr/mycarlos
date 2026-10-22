@@ -203,6 +203,40 @@ describe("shared PDF suggestions use explicit Move", () => {
     }
   });
 
+  it("keeps the encrypted backup action inside its row with enlarged text and a wide fallback font", () => {
+    renderLibrary({ updateProfileDetails: vi.fn() });
+    fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
+    const button = screen.getByRole("button", {
+      name: "Save encrypted backup…",
+    });
+    const section = button.closest<HTMLElement>(".setting-row")!;
+    section.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
+    try {
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        for (const width of [760, 320]) {
+          section.style.width = `${width}px`;
+          section.style.maxWidth = "100%";
+          const row = section.getBoundingClientRect();
+          const action = button.getBoundingClientRect();
+          expect(action.left).toBeGreaterThanOrEqual(row.left - 1);
+          expect(action.right).toBeLessThanOrEqual(row.right + 1);
+          expect(button.scrollWidth).toBeLessThanOrEqual(
+            button.clientWidth + 1,
+          );
+          expect(button.scrollHeight).toBeLessThanOrEqual(
+            button.clientHeight + 1,
+          );
+          expect(section.scrollWidth).toBeLessThanOrEqual(
+            section.clientWidth + 1,
+          );
+        }
+      }
+    } finally {
+      document.documentElement.style.fontSize = "";
+    }
+  });
+
   it("creates a profile with its optional details in one native call", async () => {
     const createProfile = vi.fn().mockResolvedValue("p9");
     const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
