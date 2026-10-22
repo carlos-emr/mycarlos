@@ -187,7 +187,9 @@ fn exact_name(bytes: &[u8]) -> bool {
         || (bytes.starts_with(&[0xfe, 0xff])
             && bytes[2..].len() == MANIFEST_NAME.len() * 2
             && bytes[2..]
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .zip(MANIFEST_NAME)
                 .all(|(pair, byte)| pair == [0, *byte]))
 }
@@ -222,7 +224,7 @@ fn manifest(doc: &lopdf::Document) -> Result<Option<Vec<u8>>, Refusal> {
             if entries.len() > 256 || !entries.len().is_multiple_of(2) {
                 return Err(Refusal::BadManifest);
             }
-            for pair in entries.chunks_exact(2) {
+            for pair in entries.as_chunks::<2>().0 {
                 if pair[0].as_str().ok().is_some_and(exact_name) {
                     matches.push(pair[1].as_reference().map_err(|_| Refusal::BadManifest)?);
                 }
