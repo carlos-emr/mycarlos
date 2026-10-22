@@ -47,6 +47,8 @@ export const ptBR: Record<MessageKey, Message> = {
     "Seu cofre fica neste dispositivo. Se você criou um em outro dispositivo, ele continua lá e não aparecerá aqui.",
   "create.profile.label": "De quem são os registros que você vai guardar aqui?",
   "create.profile.tooLong": "Este nome é longo demais. Encurte-o.",
+  "create.profile.sharedTaken":
+    "“{folder}” é onde ficam os arquivos compartilhados. Escolha outro nome.",
   "create.submit": "Criar cofre",
 
   "unlock.title": "Desbloqueie seu cofre",
@@ -55,6 +57,14 @@ export const ptBR: Record<MessageKey, Message> = {
     many: "O cofre é bloqueado após {count} de minutos de inatividade e sempre que o myCarlos fica oculto, por exemplo minimizado ou enviado para segundo plano.",
     other:
       "O cofre é bloqueado após {count} minutos de inatividade e sempre que o myCarlos fica oculto, por exemplo minimizado ou enviado para segundo plano.",
+  },
+  "unlock.waiting.one":
+    "Um arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{folder}”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.",
+  "unlock.waiting": {
+    one: "{count} arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{folder}”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.",
+    many: "{count} arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{folder}”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.",
+    other:
+      "{count} arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{folder}”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.",
   },
   "unlock.submit": "Desbloquear",
   "unlock.forgot.summary": "Esqueceu sua frase secreta?",
