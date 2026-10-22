@@ -16,6 +16,7 @@ export {
   translate,
 } from "./core";
 export type { Params } from "./core";
+export { withElements } from "./elements";
 export { CATALOGUES } from "./locales";
 export type { MessageKey } from "./locales";
 export { DEFAULT_LOCALE, LOCALES } from "./types";

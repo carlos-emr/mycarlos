@@ -2,6 +2,7 @@ import { AutoLockSetting } from "./AutoLockSetting";
 import { DEFAULT_AUTO_LOCK_MINUTES } from "./autoLock";
 import { TextSizeSetting, useNativeZoom } from "./TextSizeSetting";
 import { VaultAuthFrame } from "./VaultAuth";
+import { useI18n } from "../i18n";
 
 /**
  * First setup's first screen (#69): the choices that make the rest of setup
@@ -19,47 +20,36 @@ export function ComfortSetup({
   onDone: () => void;
 }) {
   const native = useNativeZoom();
+  const { t } = useI18n();
   return (
     <VaultAuthFrame state="Setting up">
       <section
         className="vault-card comfort-setup"
         aria-labelledby="comfort-title"
       >
-        <p className="vault-kicker">myCarlos private records</p>
-        <h1 id="comfort-title">Make myCarlos comfortable for you</h1>
-        <p>
-          Choose what suits you before you set up. Each choice works at once.
-        </p>
+        <p className="vault-kicker">{t("auth.kicker")}</p>
+        <h1 id="comfort-title">{t("comfort.title")}</h1>
+        <p>{t("comfort.intro")}</p>
         {/* Language (#46) comes first here once it is in. */}
         <div className="setting-list comfort-list">
           {native ? (
             <>
               <TextSizeSetting zoom={native.zoom} mac={native.mac} />
-              <p className="comfort-sample">
-                This is how text looks in myCarlos. Press − or + until it is
-                easy to read.
-              </p>
+              <p className="comfort-sample">{t("comfort.sample")}</p>
             </>
           ) : (
             <section className="setting-row">
               <div>
-                <h2>Text size</h2>
-                <p>
-                  Here, text size follows your device: its own text size
-                  setting, or the browser's zoom.
-                </p>
+                <h2>{t("textSize.title")}</h2>
+                <p>{t("textSize.followsDevice")}</p>
               </div>
             </section>
           )}
           {/* Appearance (#47 / PR #60) goes here once it is in. */}
           <section className="setting-row native-setting-form">
             <div>
-              <h2>Lock automatically</h2>
-              <p>
-                myCarlos locks itself when it has not been used for this long,
-                so that nobody else can see your records. Choose from 1 to 15
-                minutes.
-              </p>
+              <h2>{t("security.autoLock.title")}</h2>
+              <p>{t("comfort.autoLock.body")}</p>
             </div>
             <div>
               <AutoLockSetting
@@ -70,12 +60,17 @@ export function ComfortSetup({
           </section>
         </div>
         <p>
-          You can change these any time in Settings: Text size under
-          Preferences, and Lock automatically under Security.
+          {t("comfort.later", {
+            settings: t("sidebar.settings"),
+            textSize: t("textSize.title"),
+            preferences: t("sidebar.preferences"),
+            autoLock: t("security.autoLock.title"),
+            security: t("security.title"),
+          })}
         </p>
         <div className="comfort-actions">
           <button className="button primary" type="button" onClick={onDone}>
-            Continue
+            {t("comfort.continue")}
           </button>
           <button
             className="button"
@@ -86,7 +81,7 @@ export function ComfortSetup({
               onDone();
             }}
           >
-            Use the usual settings
+            {t("comfort.usual")}
           </button>
         </div>
       </section>

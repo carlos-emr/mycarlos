@@ -241,7 +241,17 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
       recovery: null,
       recoveryKeySetAtMs: 1,
       recoveryKeyLabel: "FAKE-KEY1",
+      sharedProfileId: "shared-profile",
     };
+    // A file shared from another app, waiting until the vault is open, then
+    // added to Shared with me (#61).
+    let waiting = [
+      {
+        id: "shared",
+        name: "FAKE Referral.pdf",
+        sourceLabel: "Manual import — unverified",
+      },
+    ];
     Reflect.set(window, "__unexpectedIpc", []);
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
@@ -259,6 +269,35 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
+        if (command === "received_list")
+          return {
+            files: structuredClone(waiting),
+            notice: { dropped: 0, refusedShares: 0 },
+          };
+        if (command === "received_accept") {
+          snapshot.profiles.push({
+            id: "shared-profile",
+            displayName: "Shared with me",
+            createdAtMs: 2,
+          });
+          snapshot.records.push({
+            id: "shared-record",
+            profileId: "shared-profile",
+            folderIds: [],
+            displayName: "FAKE Referral.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/octet-stream",
+            plaintextSize: 4096,
+            importedAtMs: 3,
+            available: true,
+          });
+          waiting = [];
+          return {
+            imported: ["shared-record"],
+            skippedDuplicates: [],
+            notPdf: [],
+          };
+        }
         // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
         // Kept as well as thrown: a screen showing an error notice could still pass axe.
@@ -320,6 +359,24 @@ async function walkTheVault(large: LargeText) {
   await expectNoViolations(page, "document details", large.cutOff);
   await page.getByRole("button", { name: "Close document details" }).click();
   await expect(details).toBeHidden();
+
+  await openSection(page, "shared", "Shared with me");
+  await expect(
+    page.getByRole("heading", { name: "Shared with me" }),
+  ).toBeVisible();
+  await expectNoViolations(page, "Shared with me", large.cutOff);
+  await page
+    .getByRole("button", { name: "Details for FAKE Referral.pdf" })
+    .click();
+  const shared = page.getByRole("dialog", { name: "FAKE Referral.pdf" });
+  await expect(shared.getByRole("combobox", { name: "Move to" })).toBeVisible();
+  await expectNoViolations(
+    page,
+    "Shared with me, a file's details",
+    large.cutOff,
+  );
+  await page.getByRole("button", { name: "Close document details" }).click();
+  await expect(shared).toBeHidden();
 
   await openSection(page, "security", "Security");
   await expect(page.getByRole("heading", { name: "Security" })).toBeVisible();

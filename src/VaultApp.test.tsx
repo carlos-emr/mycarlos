@@ -26,6 +26,7 @@ import type {
   VaultSnapshot,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import { setLocaleOverride, translate } from "./i18n";
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -118,6 +119,14 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     hideRecord: vi.fn().mockResolvedValue(undefined),
     unhideRecord: vi.fn().mockResolvedValue(undefined),
     hideUnavailableRecords: vi.fn().mockResolvedValue([]),
+    listReceived: vi.fn().mockResolvedValue({
+      files: [],
+      notice: { dropped: 0, refusedShares: 0 },
+    }),
+    acceptReceived: vi
+      .fn()
+      .mockResolvedValue({ imported: [], skippedDuplicates: [], notPdf: [] }),
+    moveToPerson: vi.fn().mockResolvedValue({ moved: [], alreadyThere: [] }),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
@@ -547,6 +556,566 @@ describe("durable vault UI", () => {
       "profile-1",
       [],
     );
+  });
+
+  // A vault whose waiting files go into Shared with me when accepted, and
+  // leave it when moved (#61).
+  function sharedVault(
+    people: string[],
+    waiting: string[],
+    overrides: Partial<VaultBridge> = {},
+  ) {
+    const SHARED = "shared-profile";
+    const vault: VaultSnapshot = {
+      profiles: people.map((displayName, index) => ({
+        id: `profile-${index + 1}`,
+        displayName,
+        createdAtMs: 1,
+      })),
+      folders: [],
+      records: [],
+      recovery: null,
+      sharedProfileId: SHARED,
+    };
+    let queue = waiting.map((name, index) => ({
+      id: `shared-${index + 1}`,
+      name,
+      sourceLabel: "Manual import — unverified",
+    }));
+    const bridge = nativeBridge({
+      unlock: vi.fn(async () => structuredClone(vault)),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      listReceived: vi.fn(async () => ({
+        files: structuredClone(queue),
+        notice: { dropped: 0, refusedShares: 0 },
+      })),
+      acceptReceived: vi.fn(async () => {
+        const added = queue.filter((file) => file.name.endsWith(".pdf"));
+        const notPdf = queue
+          .filter((file) => !file.name.endsWith(".pdf"))
+          .map((file) => file.name);
+        if (added.length && !vault.profiles.some((p) => p.id === SHARED))
+          vault.profiles.push({
+            id: SHARED,
+            displayName: "Shared with me",
+            createdAtMs: 2,
+          });
+        for (const file of added)
+          vault.records.push({
+            id: `record-${file.id}`,
+            profileId: SHARED,
+            folderIds: [],
+            displayName: file.name,
+            sourceLabel: file.sourceLabel,
+            mediaType: "application/octet-stream",
+            plaintextSize: 2048,
+            importedAtMs: 3,
+            available: true,
+          });
+        queue = [];
+        return {
+          imported: added.map((file) => `record-${file.id}`),
+          skippedDuplicates: [],
+          notPdf,
+        };
+      }),
+      moveToPerson: vi.fn(
+        async (ids: string[], profileId: string, folderIds: string[]) => {
+          for (const record of vault.records)
+            if (ids.includes(record.id)) {
+              record.profileId = profileId;
+              record.folderIds = folderIds;
+            }
+          return { moved: ids, alreadyThere: [] };
+        },
+      ),
+      ...overrides,
+    });
+    const arrive = (name: string) =>
+      queue.push({
+        id: `shared-${queue.length + 9}`,
+        name,
+        sourceLabel: "Manual import — unverified",
+      });
+    return { bridge, vault, arrive };
+  }
+
+  async function unlockWith(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+  }
+
+  it("keeps shared files waiting while locked, puts them in Shared with me at unlock, and moves one to the person (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(
+      ["Jamie"],
+      ["FAKE_Bloodwork.pdf", "FAKE_Xray.pdf"],
+    );
+    render(<VaultApp bridge={bridge} />);
+
+    // Whoever is looking on has not unlocked: a count, no names.
+    expect(
+      await screen.findByText(
+        "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("FAKE_Bloodwork.pdf")).toBeNull();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+
+    await unlockWith(user);
+    // Said once, politely; the folder says how many are new.
+    expect(
+      await screen.findByText("2 shared files were added to Shared with me."),
+    ).toHaveAttribute("aria-live", "polite");
+    expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    const folder = screen.getByRole("button", {
+      name: "Shared with me, 2 new",
+    });
+    // With one person it sits beside My records, at the top level and in no
+    // one's records (Ben, 21 Oct).
+    const mine = within(
+      screen.getByRole("navigation", { name: "Record library" }),
+    ).getByRole("button", { name: /^My records/ });
+    expect(
+      mine.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(folder.style.paddingLeft).toBe("");
+
+    await user.click(folder);
+    expect(
+      await screen.findByRole("heading", { name: "Shared with me" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Move them into your folders whenever you like\./),
+    ).toBeVisible();
+    // Seen: no longer new.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Shared with me" }),
+      ).toBeVisible(),
+    );
+    // Nothing is made in it.
+    for (const name of ["Choose files to import", "New folder"])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByText("New folder")).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Details for FAKE_Bloodwork.pdf",
+      }),
+    );
+    const details = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
+    const moveTo = within(details).getByRole("combobox", { name: "Move to" });
+    expect(
+      within(moveTo)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Shared with me", "My records"]);
+    await user.selectOptions(moveTo, "My records");
+    // Choosing only picks where it goes; Move moves it (#91).
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    await user.click(within(details).getByRole("button", { name: "Move" }));
+    expect(bridge.moveToPerson).toHaveBeenCalledWith(
+      ["record-shared-1"],
+      "profile-1",
+      [],
+    );
+    expect(
+      await screen.findByText("FAKE_Bloodwork.pdf moved to My records."),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("article", { name: "FAKE_Bloodwork.pdf document" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByRole("article", { name: "FAKE_Xray.pdf document" }),
+    ).toBeVisible();
+  });
+
+  it("keeps Shared hidden documents restorable without mixing a person's Hidden list", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(["Jamie", "Morgan"], ["FAKE_Shared.pdf"]);
+    vault.records.push({ id: "hidden-jamie", profileId: "profile-1", folderIds: [], displayName: "FAKE_Jamie_hidden.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true, hidden: { atMs: 2, reason: "patient" } });
+    vault.records.push({ id: "active-morgan", profileId: "profile-2", folderIds: [], displayName: "FAKE_Morgan.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true });
+    vi.mocked(bridge.hideRecord).mockImplementation(async (id) => {
+      vault.records.find((record) => record.id === id)!.hidden = { atMs: 3, reason: "patient" };
+    });
+    vi.mocked(bridge.unhideRecord).mockImplementation(async (id) => {
+      vault.records.find((record) => record.id === id)!.hidden = null;
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    expect(screen.queryByText("FAKE_Jamie_hidden.pdf")).not.toBeInTheDocument();
+    const nav = () => screen.getByRole("navigation", { name: "Record library" });
+    await user.click(within(nav()).getByRole("button", { name: /^Shared with me/ }));
+    await user.click(await screen.findByRole("button", { name: "Details for FAKE_Shared.pdf" }));
+    const details = screen.getByRole("dialog", { name: "FAKE_Shared.pdf" });
+    await user.click(within(details).getByRole("button", { name: "Hide" }));
+    await waitFor(() => expect(bridge.hideRecord).toHaveBeenCalledWith("record-shared-1"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    const row = await screen.findByRole("article", { name: "FAKE_Shared.pdf, hidden" });
+    expect(within(row).getByText("Shared with me")).toBeVisible();
+    expect(screen.getByRole("complementary")).toHaveTextContent("1 document · 0 folders");
+    expect(screen.queryByText("FAKE_Jamie_hidden.pdf")).not.toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: "Restore FAKE_Shared.pdf" }));
+    await waitFor(() => expect(bridge.unhideRecord).toHaveBeenCalledWith("record-shared-1"));
+    await user.click(within(nav()).getByRole("button", { name: /^Shared with me/ }));
+    expect(await screen.findByRole("article", { name: "FAKE_Shared.pdf document" })).toBeVisible();
+    await user.click(within(nav()).getByRole("button", { name: /^Jamie/ }));
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    expect(await screen.findByRole("article", { name: "FAKE_Jamie_hidden.pdf, hidden" })).toBeVisible();
+    expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
+  });
+
+  it("with several people, keeps Shared with me outside everyone's records and moves the selected to one person (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(["Jamie", "Morgan"], ["FAKE_Xray.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const folder = await screen.findByRole("button", {
+      name: "Shared with me, 1 new",
+    });
+    // Each person is a top-level folder, and Shared with me is one beside
+    // them, after both and inside neither (Ben, 21 Oct).
+    const sidebar = folder.closest("aside")!;
+    const library = within(sidebar).getByRole("navigation", {
+      name: "Record library",
+    });
+    const people = ["Jamie", "Morgan"].map((name) =>
+      within(library).getByRole("button", { name: new RegExp(`^${name}`) }),
+    );
+    for (const person of people)
+      expect(
+        person.compareDocumentPosition(folder) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    expect(folder.style.paddingLeft).toBe("");
+    expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
+
+    await user.click(folder);
+    expect(
+      await screen.findByText(
+        /They are in no one's records until you move each one to the person it is for\./,
+      ),
+    ).toBeVisible();
+    // While it is open, no person is chosen.
+    for (const person of people)
+      expect(person).not.toHaveAttribute("aria-current");
+    expect(
+      within(sidebar).queryByText("Jamie", { selector: ".brand small" }),
+    ).toBeNull();
+    // No person's path or picker above it.
+    expect(
+      within(screen.getByRole("main")).queryByRole("group", {
+        name: "Patient",
+      }),
+    ).toBeNull();
+    expect(
+      within(screen.getByRole("main")).queryByRole("button", {
+        name: "My records",
+      }),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Select FAKE_Xray.pdf" }),
+    );
+    const moveSelected = screen.getByRole("combobox", {
+      name: "Move selected to",
+    });
+    expect(
+      within(moveSelected)
+        .getAllByRole("group")
+        .map((group) => group.getAttribute("label")),
+    ).toEqual(["Jamie", "Morgan"]);
+    await user.selectOptions(moveSelected, "Morgan's records");
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    expect(bridge.moveToPerson).toHaveBeenCalledWith(
+      ["record-shared-1"],
+      "profile-2",
+      [],
+    );
+    expect(
+      await screen.findByText("FAKE_Xray.pdf moved to Morgan's records."),
+    ).toBeVisible();
+  });
+
+  it("with several people, lists every person's folders, and counts the whole vault while Shared with me is open (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["Jamie", "Morgan"],
+      ["FAKE_Xray.pdf"],
+    );
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Labs",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "record-morgan",
+      profileId: "profile-2",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const shared = await screen.findByRole("button", {
+      name: "Shared with me, 1 new",
+    });
+    const sidebar = shared.closest("aside")!;
+    const library = within(sidebar).getByRole("navigation", {
+      name: "Record library",
+    });
+    const footer = () => sidebar.querySelector(".storage small");
+    const names = () =>
+      Array.from(library.querySelectorAll(".native-nav-name")).map(
+        (name) => name.textContent,
+      );
+    // Jamie's folder sits under Jamie; the footer counts Jamie's.
+    expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
+    expect(footer()).toHaveTextContent("0 documents · 1 folder");
+
+    await user.click(shared);
+    await screen.findByRole("heading", { name: "Shared with me" });
+    // The tree stays; the footer counts the whole vault, as it is no one's.
+    expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
+    expect(footer()).toHaveTextContent("2 documents · 1 folder");
+
+    await user.click(within(library).getByRole("button", { name: /^Morgan/ }));
+    expect(footer()).toHaveTextContent("1 document · 0 folders");
+  });
+
+  it("with several people, opens a person's records when one is chosen from Shared with me (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(["Jamie", "Morgan"], ["FAKE_Xray.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+    );
+    await screen.findByRole("heading", { name: "Shared with me" });
+    const library = screen.getByRole("navigation", { name: "Record library" });
+    await user.click(within(library).getByRole("button", { name: /^Morgan/ }));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Morgan" }),
+    ).toBeVisible();
+    expect(
+      within(library).getByRole("button", { name: /^Morgan/ }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("with several people, moves a shared file to the person whose folder it is dropped on, and keeps a person's documents theirs (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["Jamie", "Morgan"],
+      ["FAKE_Scan.pdf"],
+    );
+    vault.folders.push({
+      id: "folder-2",
+      profileId: "profile-2",
+      parentId: null,
+      name: "FAKE School forms",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "record-jamie",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Jamie.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const library = () =>
+      screen.getByRole("navigation", { name: "Record library" });
+    // Jamie is open: Jamie's document dropped on Morgan stays Jamie's.
+    const jamiesFile = await screen.findByRole("article", {
+      name: "FAKE_Jamie.pdf document",
+    });
+    const kept = dragTransfer();
+    fireDragEvent("dragstart", jamiesFile, { dataTransfer: kept });
+    const morgan = within(library()).getByRole("button", { name: /^Morgan/ });
+    fireDragEvent("dragover", morgan, { dataTransfer: kept });
+    fireDragEvent("drop", morgan, { dataTransfer: kept });
+    expect(
+      await screen.findByText(
+        "Documents and folders stay with their person. Only files in Shared with me can be moved to a person.",
+      ),
+    ).toBeVisible();
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+
+    // From Shared with me, dropped on Morgan's folder: it goes to Morgan.
+    await user.click(
+      within(library()).getByRole("button", { name: /^Shared with me/ }),
+    );
+    const file = await screen.findByRole("article", {
+      name: "FAKE_Scan.pdf document",
+    });
+    const moved = dragTransfer();
+    fireDragEvent("dragstart", file, { dataTransfer: moved });
+    const forms = within(library()).getByRole("button", {
+      name: /^FAKE School forms/,
+    });
+    fireDragEvent("dragover", forms, { dataTransfer: moved });
+    fireDragEvent("drop", forms, { dataTransfer: moved });
+    await waitFor(() =>
+      expect(bridge.moveToPerson).toHaveBeenCalledWith(
+        ["record-shared-1"],
+        "profile-2",
+        ["folder-2"],
+      ),
+    );
+  });
+
+  it("moves nothing when a drag in Shared with me is let go over the list, and moves to the folder it is dropped on (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(["Jamie"], ["FAKE_Scan.pdf"]);
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Labs",
+      createdAtMs: 1,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+    );
+    const file = await screen.findByRole("article", {
+      name: "FAKE_Scan.pdf document",
+    });
+    // Let go where it started: abandoned, as anywhere else.
+    const abandoned = dragTransfer();
+    fireDragEvent("dragstart", file, { dataTransfer: abandoned });
+    fireDragEvent("dragover", screen.getByRole("main"), {
+      dataTransfer: abandoned,
+    });
+    fireDragEvent("drop", screen.getByRole("main"), {
+      dataTransfer: abandoned,
+    });
+    fireDragEvent("dragend", file, { dataTransfer: abandoned });
+    await act(async () => undefined);
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    expect(file).toBeVisible();
+
+    // Dropped on the person's folder in the sidebar: it goes there.
+    const moved = dragTransfer();
+    fireDragEvent("dragstart", file, { dataTransfer: moved });
+    const labs = within(
+      screen.getByRole("navigation", { name: "Record library" }),
+    ).getByRole("button", { name: /FAKE Labs/ });
+    fireDragEvent("dragover", labs, { dataTransfer: moved });
+    fireDragEvent("drop", labs, { dataTransfer: moved });
+    await waitFor(() =>
+      expect(bridge.moveToPerson).toHaveBeenCalledWith(
+        ["record-shared-1"],
+        "profile-1",
+        ["folder-1"],
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "FAKE_Scan.pdf moved to My records, folder FAKE Labs.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("lets no person be called Shared with me (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sharedVault(["Jamie"], [], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.type(
+      screen.getByLabelText("New profile name"),
+      " shared WITH me ",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Shared with me is where shared files go. Choose another name.",
+    );
+    expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+    expect(bridge.createProfile).not.toHaveBeenCalled();
+  });
+
+  it("adds a file shared while the vault is open, and names one that is not a PDF (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, arrive } = sharedVault(["Jamie"], ["FAKE_Letter.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await screen.findByRole("button", { name: "Shared with me, 1 new" });
+
+    // A share arrives, and the window comes back to the front.
+    arrive("FAKE_Photo.jpg");
+    arrive("FAKE_Scan.pdf");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(
+      await screen.findByText(
+        "FAKE_Photo.jpg is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.",
+      ),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("button", { name: "Shared with me, 2 new" }),
+    ).toBeVisible();
+    expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows in Shared with me why nothing can be moved while changes are paused (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(["Jamie"], [], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    vault.profiles.push({
+      id: "shared-profile",
+      displayName: "Shared with me",
+      createdAtMs: 2,
+    });
+    vault.records.push({
+      id: "record-1",
+      profileId: "shared-profile",
+      folderIds: [],
+      displayName: "FAKE_Scan.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 3,
+      available: true,
+    });
+    vault.recovery = "writeFailed";
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Shared with me" }),
+    );
+    expect(await screen.findByText("Changes are paused.")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Details for FAKE_Scan.pdf" }),
+    );
+    expect(
+      within(screen.getByRole("dialog", { name: "FAKE_Scan.pdf" })).getByRole(
+        "combobox",
+        { name: "Move to" },
+      ),
+    ).toBeDisabled();
   });
 
   it("presents durable records as a navigable filing cabinet", async () => {
@@ -6053,6 +6622,70 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "Unlock your vault" });
     vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
     await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
+  });
+});
+
+describe("the app's notices in the language in use (#46)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    // Not about the recovery key offer: it was made earlier today.
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+
+  it("says what happened in Polish, with its plural forms", async () => {
+    const user = userEvent.setup();
+    const pl = (key: Parameters<typeof translate>[1], count?: number) =>
+      translate("pl", key, count === undefined ? {} : { count });
+    setLocaleOverride("pl");
+    onTestFinished(() => {
+      setLocaleOverride(null);
+      window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    });
+    window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    render(<VaultApp bridge={nativeBridge()} />);
+    fireEvent.change(await screen.findByLabelText(pl("passphrase.label")), {
+      target: { value: "river-azimuth-cobalt-sparrow-934" },
+    });
+    await user.click(screen.getByRole("button", { name: pl("unlock.submit") }));
+    expect(await screen.findByText(pl("notice.unlocked"))).toBeVisible();
+    expect(pl("notice.unlocked")).toBe("Sejf odblokowany.");
+
+    // 5 → 6 minutes: Polish says "6 minut" (many).
+    await user.click(
+      screen.getAllByRole("button", { name: pl("security.title") })[0],
+    );
+    const delay = screen.getByRole("group", {
+      name: pl("security.autoLock.label"),
+    });
+    await user.click(
+      within(delay).getByRole("button", {
+        name: pl("security.autoLock.longer"),
+      }),
+    );
+    expect(
+      await screen.findByText("Automatyczna blokada ustawiona na 6 minut."),
+    ).toBeVisible();
+    expect(screen.queryByText(/Automatic locking set/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
+    expect(screen.queryByText("Vault locked.")).toBeNull();
+  });
+
+  it("names the import button as the library shows it when a file is dropped while locked", async () => {
+    setLocaleOverride("fr");
+    onTestFinished(() => setLocaleOverride(null));
+    render(<VaultApp bridge={nativeBridge()} />);
+    await screen.findByLabelText(translate("fr", "passphrase.label"));
+    const files = new DataTransfer();
+    files.items.add(new File(["%PDF-1.7"], "FAKE.pdf"));
+    fireDragEvent("drop", document.body, { dataTransfer: files });
+    expect(
+      await screen.findByText(
+        "Pour importer des PDF, déverrouillez votre coffre-fort et utilisez Choose files to import. Le glisser-déposer déplace les documents déjà dans myCarlos.",
+      ),
+    ).toBeVisible();
   });
 });
 
