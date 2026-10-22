@@ -278,3 +278,9 @@ the same input cap. It preserves the original object and returns optional epheme
 unverified diagnostics, without raw manifest/name/date-of-birth/key data. No authenticated
 clinic links exist in the app yet: production supplies no pins and cannot grant Verified.
 FAKE fixture pins are test inputs only. No new network access or vault format is introduced.
+
+The embedded v1 producer contract permits explicit null for clinic/recipient IDs and
+unknown descriptive metadata (CARLOS `DocumentManifest` Javadoc, lines 35–54). The Rust
+reader accepts those null values but still requires every member; unknown members, missing
+members and wrong value types fail closed. Neither an absent clinic claim nor an absent
+recipient can become Verified. This changes no outer portal delivery schema or vault format.

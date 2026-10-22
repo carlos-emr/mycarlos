@@ -272,3 +272,8 @@ Authenticated portal linking is absent. Production pins are empty; fixture keys 
 never a fallback and no production Verified claim is added. Trust persistence and key
 change/revocation rechecks remain #55 dependencies. No new network path or vault-format
 change is introduced by this checkpoint.
+
+Explicit v1 null metadata is accepted without inventing identity or service information.
+Member presence is still mandatory, and relaxing descriptive metadata does not relax
+signer, exact digest, clinic or recipient binding. A signed PDF with no clinic/recipient
+claim remains unbound under an explicit test pin and unverified without authenticated pins.

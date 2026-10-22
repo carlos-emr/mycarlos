@@ -567,6 +567,59 @@ mod tests {
     use base64::{engine::general_purpose::STANDARD, Engine};
 
     #[test]
+    #[ignore = "requires private FAKE producer inputs and the real built helper; never publish its payload"]
+    fn private_native_producer_null_manifest_is_signed_but_never_matched() {
+        use der::{Decode, Encode};
+        use sha2::{Digest, Sha256};
+        assert!(std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE").is_some());
+        let metadata_path = std::env::var_os("MYCARLOS_TEST_PRIVATE_INTEROP_INPUT")
+            .expect("private FAKE input metadata is required");
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(metadata_path).unwrap()).unwrap();
+        let pdf = std::fs::read(metadata["pdf"].as_str().unwrap()).unwrap();
+        let certificate = std::fs::read(metadata["publicCertificate"].as_str().unwrap()).unwrap();
+        let hash = |bytes: &[u8]| {
+            Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        assert_eq!(hash(&pdf), metadata["pdfSHA256"].as_str().unwrap());
+        assert_eq!(
+            hash(&certificate),
+            metadata["certificateSHA256"].as_str().unwrap()
+        );
+        assert_eq!(pdf.len(), metadata["pdfBytes"].as_u64().unwrap() as usize);
+        let certificate = x509_cert::Certificate::from_der(&certificate).unwrap();
+        let spki = certificate
+            .tbs_certificate
+            .subject_public_key_info
+            .to_der()
+            .unwrap();
+        let kid = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(spki));
+        // This is a deliberately explicit test pin, not an authenticated portal link.
+        let link = PinnedLink {
+            clinic_id: "FAKE-private-clinic".to_owned(),
+            recipient_id: "FAKE-private-recipient".to_owned(),
+            signer_kids: vec![kid],
+        };
+        let checked = verify(&pdf, "", &[link], &|| false);
+        let Ok(Verdict::SignedNotMatched {
+            manifest: Some(manifest),
+            ..
+        }) = checked
+        else {
+            panic!("private FAKE producer must remain signed but unbound");
+        };
+        assert!(manifest.clinic_id.is_none());
+        assert!(manifest.recipient_id.is_none());
+        assert!(matches!(
+            verify(&pdf, "", &[], &|| false),
+            Err(Failure::Refused(Refusal::UnknownSigner))
+        ));
+    }
+
+    #[test]
     fn current_fixtures_pass_the_complete_two_stage_check_with_explicit_fake_pins() {
         let fixtures: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"

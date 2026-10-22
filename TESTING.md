@@ -638,3 +638,14 @@ the_confined_signature_helper_reports`). Then set
 --ignored --test-threads=1`. It requires the exact `unknown_signer` refusal from the real
 helper path, alongside byte preservation. The executable override exists only in unit-test
 builds, never production; a generic helper failure cannot satisfy this test.
+
+Nullable v1 tests cover explicit null, missing members, wrong types, size bounds and the
+clinic/recipient binding policy. An optional ignored private-producer test reads only a
+FAKE captured PDF and its public certificate from metadata named by
+`MYCARLOS_TEST_PRIVATE_INTEROP_INPUT`; with the real helper configured as above, run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib
+private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
+--test-threads=1`. It requires signed-but-unbound under an explicit FAKE test pin and
+`unknown_signer` with no pins. Private captures, metadata and certificates are not committed
+or published, and the public fixture is not regenerated. This opt-in check is separate from
+the public fixture tests and does not establish a production authenticated clinic link.

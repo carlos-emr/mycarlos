@@ -136,9 +136,12 @@ pub struct Manifest {
     pub document_id: String,
     pub version: u32,
     pub issued_at: i64,
-    pub clinic_id: String,
-    pub clinic_name: String,
-    pub provider_name: String,
+    #[serde(deserialize_with = "present_nullable")]
+    pub clinic_id: Option<String>,
+    #[serde(deserialize_with = "present_nullable")]
+    pub clinic_name: Option<String>,
+    #[serde(deserialize_with = "present_nullable")]
+    pub provider_name: Option<String>,
     pub kid: String,
     /// Present in every manifest; null when the patient had no portal link.
     #[serde(deserialize_with = "present_nullable")]
@@ -150,22 +153,26 @@ pub struct Manifest {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestPatient {
-    pub name: String,
-    pub birth_date: String,
+    #[serde(deserialize_with = "present_nullable")]
+    pub name: Option<String>,
+    #[serde(deserialize_with = "present_nullable")]
+    pub birth_date: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestDocument {
-    pub title: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub service_date: String,
+    #[serde(deserialize_with = "present_nullable")]
+    pub title: Option<String>,
+    #[serde(rename = "type", deserialize_with = "present_nullable")]
+    pub kind: Option<String>,
+    #[serde(deserialize_with = "present_nullable")]
+    pub service_date: Option<String>,
     pub media_type: String,
 }
 
-/// A missing `recipient_id` is a shape error; only an explicit null is "no
-/// recipient".
+/// Optional v1 values may explicitly be null; their members must still exist.
+/// Plain Option/default deserialization would incorrectly accept missing keys.
 fn present_nullable<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     Option::deserialize(d)
 }
@@ -218,12 +225,33 @@ pub fn check(
         return Err(Refusal::ManifestNotSigned);
     }
     let manifest = parse_manifest(bytes)?;
-    if manifest.kid != signed.kid {
+    bind_manifest(signed.kid, manifest, &pinned)
+}
+
+/// Only called after the exact manifest digest and signer are authenticated.
+/// Optional descriptive metadata cannot supply an absent clinic/recipient binding.
+fn bind_manifest(
+    kid: String,
+    manifest: Manifest,
+    pinned: &[&PinnedLink],
+) -> Result<Verdict, Refusal> {
+    if manifest.kid != kid {
         return Err(Refusal::KidMismatch);
     }
+    let Some(claimed_clinic) = manifest.clinic_id.clone() else {
+        return Ok(Verdict::SignedNotMatched {
+            kid,
+            clinic_id: pinned
+                .first()
+                .ok_or(Refusal::UnknownSigner)?
+                .clinic_id
+                .clone(),
+            manifest: Some(manifest),
+        });
+    };
     let clinic: Vec<&&PinnedLink> = pinned
         .iter()
-        .filter(|link| link.clinic_id == manifest.clinic_id)
+        .filter(|link| link.clinic_id == claimed_clinic)
         .collect();
     if clinic.is_empty() {
         return Err(Refusal::ClinicMismatch);
@@ -233,14 +261,11 @@ pub fn check(
         .as_deref()
         .is_some_and(|recipient| clinic.iter().any(|link| link.recipient_id == recipient));
     Ok(if for_this_patient {
-        Verdict::Verified {
-            kid: signed.kid,
-            manifest,
-        }
+        Verdict::Verified { kid, manifest }
     } else {
         Verdict::SignedNotMatched {
-            kid: signed.kid,
-            clinic_id: manifest.clinic_id.clone(),
+            kid,
+            clinic_id: claimed_clinic,
             manifest: Some(manifest),
         }
     })
@@ -720,7 +745,7 @@ mod tests {
             panic!("not verified");
         };
         assert_eq!(kid, link.signer_kids[0]);
-        assert_eq!(manifest.clinic_id, "clinic-a");
+        assert_eq!(manifest.clinic_id.as_deref(), Some("clinic-a"));
         assert_eq!(
             manifest.recipient_id.as_deref(),
             Some(link.recipient_id.as_str())
@@ -1002,6 +1027,132 @@ mod tests {
         }
         assert_eq!(
             parse_manifest(&vec![b' '; MAX_MANIFEST_BYTES + 1]),
+            Err(Refusal::BadManifest)
+        );
+    }
+
+    const NULLABLE_MEMBERS: &[&str] = &[
+        "/clinic_id",
+        "/clinic_name",
+        "/provider_name",
+        "/recipient_id",
+        "/patient/name",
+        "/patient/birth_date",
+        "/document/title",
+        "/document/type",
+        "/document/service_date",
+    ];
+
+    fn canonical_test_manifest(value: &serde_json::Value) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        write_canonical(value, &mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn optional_v1_values_accept_explicit_null_but_keep_every_member_required() {
+        let (_, documents) = fixture();
+        let sent = document(&documents, "signed-send-to-mycarlos.pdf");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(sent.manifest.as_deref().unwrap()).unwrap();
+        for pointer in NULLABLE_MEMBERS {
+            *value.pointer_mut(pointer).unwrap() = serde_json::Value::Null;
+        }
+        let parsed = parse_manifest(&canonical_test_manifest(&value)).unwrap();
+        assert!(parsed.clinic_id.is_none() && parsed.recipient_id.is_none());
+        assert!(parsed.patient.name.is_none() && parsed.patient.birth_date.is_none());
+        assert!(
+            parsed.document.title.is_none()
+                && parsed.document.kind.is_none()
+                && parsed.document.service_date.is_none()
+        );
+        for pointer in NULLABLE_MEMBERS {
+            let mut missing = value.clone();
+            let (parent, member) = pointer.rsplit_once('/').unwrap();
+            assert!(missing
+                .pointer_mut(parent)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(member)
+                .is_some());
+            assert_eq!(
+                parse_manifest(&canonical_test_manifest(&missing)),
+                Err(Refusal::BadManifest),
+                "missing {pointer}"
+            );
+            let mut wrong_type = value.clone();
+            *wrong_type.pointer_mut(pointer).unwrap() = serde_json::json!(17);
+            assert_eq!(
+                parse_manifest(&canonical_test_manifest(&wrong_type)),
+                Err(Refusal::BadManifest),
+                "wrong type {pointer}"
+            );
+        }
+        for parent in ["/patient", "/document"] {
+            let mut wrong_shape = value.clone();
+            *wrong_shape.pointer_mut(parent).unwrap() = serde_json::Value::Null;
+            assert_eq!(
+                parse_manifest(&canonical_test_manifest(&wrong_shape)),
+                Err(Refusal::BadManifest)
+            );
+        }
+    }
+
+    #[test]
+    fn clinic_and_recipient_bindings_are_both_required_after_authentication() {
+        let (link, documents) = fixture();
+        let sent = document(&documents, "signed-send-to-mycarlos.pdf");
+        let base = parse_manifest(sent.manifest.as_deref().unwrap()).unwrap();
+        assert!(matches!(
+            bind_manifest(link.signer_kids[0].clone(), base.clone(), &[&link]),
+            Ok(Verdict::Verified { .. })
+        ));
+        for (no_clinic, no_recipient) in [(true, false), (false, true), (true, true)] {
+            let mut manifest = base.clone();
+            if no_clinic {
+                manifest.clinic_id = None;
+            }
+            if no_recipient {
+                manifest.recipient_id = None;
+            }
+            assert!(matches!(
+                bind_manifest(link.signer_kids[0].clone(), manifest, &[&link]),
+                Ok(Verdict::SignedNotMatched { .. })
+            ));
+        }
+        let mut wrong_clinic = base.clone();
+        wrong_clinic.clinic_id = Some("FAKE another clinic".to_owned());
+        assert_eq!(
+            bind_manifest(link.signer_kids[0].clone(), wrong_clinic, &[&link]),
+            Err(Refusal::ClinicMismatch)
+        );
+        let mut wrong_recipient = base;
+        wrong_recipient.recipient_id = Some("FAKE another recipient".to_owned());
+        assert!(matches!(
+            bind_manifest(link.signer_kids[0].clone(), wrong_recipient, &[&link]),
+            Ok(Verdict::SignedNotMatched { .. })
+        ));
+    }
+
+    #[test]
+    fn allowing_null_claims_does_not_weaken_the_exact_signed_digest_or_size_limit() {
+        let (link, documents) = fixture();
+        let sent = document(&documents, "signed-send-to-mycarlos.pdf");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(sent.manifest.as_deref().unwrap()).unwrap();
+        for pointer in NULLABLE_MEMBERS {
+            *value.pointer_mut(pointer).unwrap() = serde_json::Value::Null;
+        }
+        let nullable = canonical_test_manifest(&value);
+        assert!(parse_manifest(&nullable).is_ok());
+        assert_eq!(
+            check(&sent.pdf, &sent.layout, Some(&nullable), &[link]),
+            Err(Refusal::ManifestNotSigned)
+        );
+        value["document"]["title"] = serde_json::json!("x".repeat(MAX_MANIFEST_BYTES));
+        assert_eq!(
+            parse_manifest(&canonical_test_manifest(&value)),
             Err(Refusal::BadManifest)
         );
     }
