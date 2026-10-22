@@ -1649,11 +1649,11 @@ impl VaultStore {
         Ok(shared_profile_id(unlocked.manifest.vault_id))
     }
 
-    /// Moves files from Shared with me to a person, into the folders chosen
-    /// (#61). A file's duplicate fingerprint is keyed with its person, so each
+    /// Moves files to another person, into the folders chosen. A file's
+    /// duplicate fingerprint is keyed with its person, so each
     /// is read once to key it again; nothing is encrypted again, since a
     /// file's encryption is bound to the vault and the file, not the person.
-    /// A file the person already has stays in Shared with me and is named in
+    /// A file the person already has stays with its source and is named in
     /// the outcome.
     pub fn move_to_profile(
         &self,
@@ -1694,9 +1694,9 @@ impl VaultStore {
                 .iter()
                 .find(|record| record.id == *record_id)
                 .ok_or(VaultError::NotFound)?;
-            // Only out of Shared with me: moving between people is not a
-            // feature.
-            if record.profile_id != shared {
+            // Folder changes within the same person use assign_folders;
+            // this operation changes the person and their keyed fingerprint.
+            if record.profile_id == profile_id {
                 return Err(VaultError::Invalid);
             }
             if unlocked.unavailable.contains(&record.id) {
@@ -1749,7 +1749,9 @@ impl VaultStore {
                     to.clone(),
                 );
                 entry.profile_id = Some(profile_id);
-                entry.how = Some("shared".to_owned());
+                if record.profile_id == shared {
+                    entry.how = Some("shared".to_owned());
+                }
                 entry
             })
             .collect();
@@ -8658,10 +8660,10 @@ mod tests {
             again
         );
 
-        // Only out of Shared with me, never into it, and into the person's
-        // own folders only.
+        // Never into Shared with me or the same person, and into the target
+        // person's own folders only.
         assert!(matches!(
-            store.move_to_profile(vec![added[0]], morgan, vec![]),
+            store.move_to_profile(vec![added[0]], jamie, vec![]),
             Err(VaultError::Invalid)
         ));
         let last = store
@@ -8682,6 +8684,144 @@ mod tests {
         store.unlock(PASSWORD).unwrap();
         assert_eq!(record(added[1]).profile_id, jamie);
         assert_eq!(record(again[0]).profile_id, morgan);
+    }
+
+    #[test]
+    fn a_filed_document_moves_between_people_without_changing_its_object() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let morgan = store.create_profile("Morgan", 2).unwrap();
+        let old_folder = store.create_folder(jamie, None, "Old folder", 3).unwrap();
+        let labs = store.create_folder(morgan, None, "Labs", 4).unwrap();
+        // Treat document content as opaque, including any embedded signatures.
+        let original = b"%PDF-1.7\nFAKE original document\n\x00\xff\r\n%%EOF";
+        let id = store
+            .import(
+                jamie,
+                vec![old_folder],
+                vec![source("original.pdf", original)],
+                5,
+            )
+            .unwrap()
+            .imported[0];
+        let before = store.session().as_ref().unwrap().manifest.records[0].clone();
+        let history_before = history_events_for_test(&store).len();
+        let object = root.join("objects").join(&before.object_name);
+        let ciphertext = fs::read(&object).unwrap();
+
+        let outcome = store.move_to_profile(vec![id], morgan, vec![labs]).unwrap();
+        assert_eq!(outcome.moved, vec![id]);
+        assert!(outcome.already_there.is_empty());
+        let after = store.session().as_ref().unwrap().manifest.records[0].clone();
+        assert_ne!(after.fingerprint, before.fingerprint);
+        let mut expected = before.clone();
+        expected.profile_id = morgan;
+        expected.folder_ids = vec![labs];
+        expected.fingerprint = after.fingerprint.clone();
+        assert!(after == expected); // Includes identity, object name/key and all source metadata.
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        let history_objects = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .len();
+        assert_eq!(
+            fs::read_dir(root.join("objects")).unwrap().count(),
+            1 + history_objects
+        );
+        let history = history_events_for_test(&store);
+        assert_eq!(history.len(), history_before + 1);
+        let moved = history.last().unwrap();
+        assert_eq!(moved.event, HistoryEvent::Moved);
+        assert_eq!(moved.record_id, Some(id));
+        assert_eq!(moved.profile_id, Some(morgan));
+        assert_eq!(moved.how, None);
+        let from = moved.from.as_ref().unwrap();
+        let to = moved.to.as_ref().unwrap();
+        assert_eq!(from.len(), 1);
+        assert_eq!(to.len(), 1);
+        assert_eq!(
+            (from[0].id, from[0].name.as_str()),
+            (old_folder, "Old folder")
+        );
+        assert_eq!((to[0].id, to[0].name.as_str()), (labs, "Labs"));
+        assert_eq!(
+            store
+                .import(morgan, vec![], vec![source("again.pdf", original)], 6)
+                .unwrap()
+                .skipped_duplicates,
+            vec!["again.pdf"]
+        );
+
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let reopened = store.snapshot().unwrap().records.remove(0);
+        assert_eq!(reopened.id, id);
+        assert_eq!(reopened.profile_id, morgan);
+        assert_eq!(reopened.folder_ids, vec![labs]);
+        let mut exported = Vec::new();
+        store.export(id, &mut exported).unwrap();
+        assert_eq!(exported, original);
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        // Moving back is valid and recomputes the original per-person fingerprint.
+        store
+            .move_to_profile(vec![id], jamie, vec![old_folder])
+            .unwrap();
+        assert!(store.session().as_ref().unwrap().manifest.records[0] == before);
+    }
+
+    #[test]
+    fn a_filed_document_stays_at_source_on_duplicate_invalid_target_or_unreadable_batch() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let morgan = store.create_profile("Morgan", 2).unwrap();
+        let labs = store.create_folder(jamie, None, "Labs", 3).unwrap();
+        let ids = store
+            .import(
+                jamie,
+                vec![labs],
+                vec![source("same.pdf", b"same"), source("other.pdf", b"other")],
+                4,
+            )
+            .unwrap()
+            .imported;
+        store
+            .import(morgan, vec![], vec![source("existing.pdf", b"same")], 5)
+            .unwrap();
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let outcome = store.move_to_profile(vec![ids[0]], morgan, vec![]).unwrap();
+        assert!(outcome.moved.is_empty());
+        assert_eq!(outcome.already_there, vec!["same.pdf"]);
+        assert!(store.session().as_ref().unwrap().manifest == before);
+        for (target, folders) in [
+            (morgan, vec![labs]), // Folder belongs to source, not destination.
+            (store.shared_profile().unwrap(), vec![]),
+            (Uuid::new_v4(), vec![]),
+            (jamie, vec![]), // Same-person folder changes use assign_folders.
+        ] {
+            assert!(store.move_to_profile(ids.clone(), target, folders).is_err());
+            assert!(store.session().as_ref().unwrap().manifest == before);
+        }
+        assert!(store
+            .move_to_profile(vec![ids[1], Uuid::new_v4()], morgan, vec![])
+            .is_err());
+        assert!(store.session().as_ref().unwrap().manifest == before);
+        // A later unreadable object cannot leave earlier batch items moved.
+        let missing = before.records.iter().find(|r| r.id == ids[0]).unwrap();
+        fs::remove_file(root.join("objects").join(&missing.object_name)).unwrap();
+        assert!(store
+            .move_to_profile(vec![ids[1], ids[0]], morgan, vec![])
+            .is_err());
+        assert!(store.session().as_ref().unwrap().manifest == before);
     }
 
     #[test]

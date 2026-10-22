@@ -313,7 +313,7 @@ export interface VaultBridge {
   /** Adds every waiting file to Shared with me; a file that is not a PDF is
    * forgotten and named. If anything else fails, they all keep waiting. */
   acceptReceived(): Promise<ReceivedAcceptOutcome>;
-  /** Moves files from Shared with me to a person, into the folders named. */
+  /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
     profileId: string,

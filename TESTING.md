@@ -144,7 +144,10 @@ On every platform:
    the two Bloodwork files are identical.
 5. Create a folder with **New folder**, open a document and use **Move to** to put it in the
    folder, then rename the document (**Rename document** in its details) and the folder
-   (**Rename folder**).
+   (**Rename folder**). With two people in the vault, open a filed document's details,
+   choose the other person's records or one of their folders under **Move to**, then press
+   **Move**. Check it appears there and its saved copy is unchanged. If that person already
+   has the same file, the document stays with its original person and the notice says so.
 6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
 7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
