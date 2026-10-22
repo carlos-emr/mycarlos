@@ -421,7 +421,8 @@ export const pl: Record<MessageKey, Message> = {
     "Sejf otwarto kluczem odzyskiwania. Od teraz proszę używać nowego hasła głównego.",
   "notice.recoveredReadOnly":
     "Sejf otwarto kluczem odzyskiwania w trybie tylko do odczytu; hasło główne się nie zmieniło. Co zrobić, opisuje komunikat w bibliotece.",
-  "notice.eraseCancelled": "Nic się nie zmieniło: sejf nie został odłożony na bok.",
+  "notice.eraseCancelled":
+    "Nic się nie zmieniło: sejf nie został odłożony na bok.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "nazwę",

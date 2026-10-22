@@ -16,10 +16,7 @@ import {
   nameIsShared,
   nameTooLong,
 } from "./recordPresentation";
-import {
-  MIN_PASSPHRASE_CHARS,
-  tooShortPassphrase,
-} from "./VaultAuth";
+import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";

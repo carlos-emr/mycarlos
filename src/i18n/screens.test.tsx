@@ -100,7 +100,11 @@ describe("Settings > Security in each language", () => {
       setLocaleOverride(locale);
       renderSecurity();
       // Set-aside replaces destructive reset; Settings has no erase control.
-      expect(screen.queryByRole("heading", { name: translate(locale, "security.erase.title") })).toBeNull();
+      expect(
+        screen.queryByRole("heading", {
+          name: translate(locale, "security.erase.title"),
+        }),
+      ).toBeNull();
 
       expect(document.documentElement.lang).toBe(locale);
       expect(

@@ -411,7 +411,8 @@ export const fr: Record<MessageKey, Message> = {
     "Coffre-fort ouvert avec votre clé de récupération. Utilisez désormais votre nouvelle phrase secrète.",
   "notice.recoveredReadOnly":
     "Coffre-fort ouvert en lecture seule avec votre clé de récupération, et votre phrase secrète n’a pas changé. Consultez l’avis dans la bibliothèque pour savoir quoi faire.",
-  "notice.eraseCancelled": "Rien n’a changé : le coffre-fort n’a pas été mis de côté.",
+  "notice.eraseCancelled":
+    "Rien n’a changé : le coffre-fort n’a pas été mis de côté.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "le nom",
