@@ -3,6 +3,11 @@ import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
+import {
+  MoveTargetSelect,
+  parseMoveTarget,
+  type MoveTarget,
+} from "./MoveTargetSelect";
 
 interface RecordDetailsProps {
   record: VaultRecord;
@@ -18,6 +23,9 @@ interface RecordDetailsProps {
   onClose: () => void;
   onRename: () => void;
   onMove: (folderId: string | null) => Promise<void>;
+  /** For a document in Shared with me (#61): who it can go to, and the move. */
+  moveTargets?: MoveTarget[];
+  onMoveTo?: (profileId: string, folderId: string | null) => void;
   /** Takes the document out of view (#71); it is never deleted. */
   onHide: () => void;
   onExport: () => void;
@@ -34,6 +42,8 @@ export function RecordDetails({
   onClose,
   onRename,
   onMove,
+  moveTargets,
+  onMoveTo,
   onHide,
   onExport,
   onViewPhoto,
@@ -43,15 +53,20 @@ export function RecordDetails({
   // Chromium every arrow key on a closed list changes its value, which moved
   // the document at once.
   const currentFolderId = record.folderIds[0] ?? "";
+  // In Shared with me (#61) the list names a person's records or one of their
+  // folders, and "" is staying in Shared with me.
+  const current = moveTargets ? "" : currentFolderId;
   // A choice made for this document where it is now; a move or another
   // document starts again from where the document is.
-  const placement = `${record.id}:${currentFolderId}`;
-  const [choice, setChoice] = useState({
-    placement,
-    folderId: currentFolderId,
-  });
-  const destination =
-    choice.placement === placement ? choice.folderId : currentFolderId;
+  const placement = `${record.id}:${record.profileId}:${currentFolderId}`;
+  const [choice, setChoice] = useState({ placement, value: current });
+  const destination = choice.placement === placement ? choice.value : current;
+  const move = () => {
+    refocusMoveTo.current = true;
+    if (!moveTargets) return void onMove(destination || null);
+    const { profileId, folderId } = parseMoveTarget(destination);
+    onMoveTo?.(profileId, folderId);
+  };
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
   // Pressing Move disables it while the move runs, and it stays disabled
@@ -155,7 +170,7 @@ export function RecordDetails({
               {record.folderIds
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
-                .join(", ") || "My records"}
+                .join(", ") || (moveTargets ? "Shared with me" : "My records")}
             </dd>
           </div>
         </dl>
@@ -187,30 +202,39 @@ export function RecordDetails({
           <div className="native-dialog-move">
             <label>
               Move to
-              <select
-                ref={moveToRef}
-                disabled={busy || readOnly}
-                value={destination}
-                onChange={(event) =>
-                  setChoice({ placement, folderId: event.target.value })
-                }
-              >
-                <option value="">My records</option>
-                {folders.map((folder) => (
-                  <option value={folder.id} key={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
+              {moveTargets ? (
+                <MoveTargetSelect
+                  ref={moveToRef}
+                  label="Move to"
+                  targets={moveTargets}
+                  value={destination}
+                  current="Shared with me"
+                  disabled={busy || readOnly}
+                  onChange={(value) => setChoice({ placement, value })}
+                />
+              ) : (
+                <select
+                  ref={moveToRef}
+                  disabled={busy || readOnly}
+                  value={destination}
+                  onChange={(event) =>
+                    setChoice({ placement, value: event.target.value })
+                  }
+                >
+                  <option value="">My records</option>
+                  {folders.map((folder) => (
+                    <option value={folder.id} key={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
             <button
               className="button"
               type="button"
-              disabled={busy || readOnly || destination === currentFolderId}
-              onClick={() => {
-                refocusMoveTo.current = true;
-                void onMove(destination || null);
-              }}
+              disabled={busy || readOnly || destination === current}
+              onClick={move}
             >
               Move
             </button>

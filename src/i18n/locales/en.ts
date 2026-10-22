@@ -52,6 +52,8 @@ export const en = {
     "Your vault stays on this device. If you created one on another device, it is still there, and will not appear here.",
   "create.profile.label": "Whose records will you keep here?",
   "create.profile.tooLong": "This name is too long. Shorten it.",
+  "create.profile.sharedTaken":
+    "{folder} is where shared files go. Choose another name.",
   "create.submit": "Create vault",
 
   // Unlock
@@ -60,6 +62,13 @@ export const en = {
     one: "The vault locks after {count} minute of inactivity and whenever myCarlos is hidden, for example minimized or sent to the background.",
     other:
       "The vault locks after {count} minutes of inactivity and whenever myCarlos is hidden, for example minimized or sent to the background.",
+  },
+  "unlock.waiting.one":
+    "One shared file is waiting. Unlock and it goes into {folder}. If myCarlos closes first, it is not kept: share it again.",
+  "unlock.waiting": {
+    one: "{count} shared file is waiting. Unlock and it goes into {folder}. If myCarlos closes first, it is not kept: share it again.",
+    other:
+      "{count} shared files are waiting. Unlock and they go into {folder}. If myCarlos closes first, they are not kept: share them again.",
   },
   "unlock.submit": "Unlock",
   "unlock.forgot.summary": "Forgot your passphrase?",
@@ -129,6 +138,347 @@ export const en = {
   "restore.restoring":
     "Restoring the backup. This can take a while for a large vault…",
   "restore.cancelled": "Restore cancelled. Nothing changed.",
+
+  // Shared
+  "common.cancel": "Cancel",
+
+  // Library sidebar
+  "sidebar.label": "Record library",
+  "sidebar.myRecords": "My records",
+  "sidebar.settings": "Settings",
+  "sidebar.preferences": "Preferences",
+  "sidebar.storage": "Encrypted local vault",
+  "sidebar.documents": { one: "{count} document", other: "{count} documents" },
+  "sidebar.folderCount": { one: "{count} folder", other: "{count} folders" },
+
+  // Text size (Settings > Preferences)
+  "textSize.title": "Text size",
+  "textSize.announce": "Text size {percent}",
+  "textSize.help":
+    "Makes everything in myCarlos larger or smaller, from {min}% to {max}%. myCarlos remembers the size on this computer. You can also hold {modifier} and press plus, minus or 0.",
+  "textSize.key.command": "Command",
+  "textSize.smaller": "Smaller text",
+  "textSize.larger": "Larger text",
+  "textSize.box": "Text size in percent",
+  "textSize.reset": "Back to normal size",
+  "textSize.notNumber": "Type a number from {min} to {max}.",
+  "textSize.smallest": "The smallest size is {min}%.",
+  "textSize.largest": "The largest size is {max}%.",
+  "textSize.between": "{typed}% is between sizes, so it is {size}.",
+
+  // Rename a document or folder
+  "rename.title.document": "Rename document",
+  "rename.title.folder": "Rename folder",
+  "rename.label.folder": "Folder name",
+  "rename.label.document": "File name",
+  "rename.help.folder":
+    "The folder and its contents stay in the same location.",
+  "rename.help.document":
+    "This changes the name in myCarlos and the suggested export name.",
+  "rename.help.documentExtension":
+    "This changes the name in myCarlos and the suggested export name. The {extension} extension stays the same.",
+  "rename.stemMissing": "Enter a name before {extension}.",
+  "rename.gainsExtension":
+    "This document's name has no .pdf extension, so it cannot end in .pdf.",
+  "rename.tooLong": "This name is too long. Shorten it to save.",
+  "rename.unsafe":
+    "Document names cannot contain {characters} or invisible control characters, or end with a dot.",
+  "rename.reserved":
+    '"{word}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.',
+  "rename.saving": "Saving…",
+  "rename.save": "Save name",
+
+  // Settings > Security
+  "security.title": "Security",
+  "security.subtitle": "Your encrypted vault and access settings",
+  "security.devBuild.title": "Development build.",
+  "security.devBuild.body": "Use synthetic files only.",
+  "security.encryption.title": "Encryption",
+  "security.encryption.state": "On — always",
+  "security.encryption.body":
+    "Files, names, folders, and record details are encrypted on this device.",
+  "security.autoLock.title": "Lock automatically",
+  "security.autoLock.minutes": {
+    one: "{count} minute",
+    other: "{count} minutes",
+  },
+  "security.autoLock.body":
+    "The vault locks after the selected period without keyboard, pointer, or touch activity. Choose from 1 to 15 minutes.",
+  "security.autoLock.label": "Automatic lock delay",
+  "security.autoLock.shorter": "Shorter delay",
+  "security.autoLock.longer": "Longer delay",
+  "security.lockNow": "Lock now",
+  "security.recoveryKey.title": "Recovery key",
+  "security.recoveryKey.setUpOn": "Set up {date}",
+  "security.recoveryKey.notSetUp": "Not set up",
+  "security.recoveryKey.body":
+    "Opens your vault if you forget your passphrase. Only you have it: nobody at your clinic or at myCarlos can open your vault for you. Replacing it stops the old one working.",
+  "security.recoveryKey.current":
+    "Your current key has the label {label}. A kit or note with this label is the one that works; one with another label does not open this vault. Kits and notes made before labels were shown have none: one without a label may still be this key, set up on {date}.",
+  "security.recoveryKey.replace": "Replace recovery key",
+  "security.recoveryKey.setUp": "Set up recovery key",
+  "security.backup.title": "Encrypted backup",
+  "security.backup.body":
+    "One file holding your whole vault, still encrypted. Keep it somewhere other than this device, such as a USB drive. It opens with the passphrase or recovery key you have when you save it, and keeps opening with them even after you change them here. To restore one, lock the vault and choose Restore from a backup.",
+  "security.oldBackups.title": "Your older backups",
+  "security.oldBackups.intro":
+    "The kit for an earlier recovery key may have been lost or seen, and it still opens backups saved before that key was replaced.",
+  "security.oldBackups.saveWhenWritable":
+    "Once the vault accepts changes again, save a new backup: choose Save encrypted backup.",
+  "security.oldBackups.saveNow":
+    "Save a new backup now: choose Save encrypted backup.",
+  "security.oldBackups.keepCopy":
+    "Keep it, or a copy of it, somewhere other than this device, such as a USB stick or a cloud drive.",
+  "security.oldBackups.thenDelete":
+    "Then delete the older backups. Once the new one is saved, this says how.",
+  "security.oldBackups.none": "I have no older backups",
+  "security.oldBackups.named": "Your new backup is “{name}”.",
+  "security.oldBackups.namedWithSize": "Your new backup is “{name}” ({size}).",
+  "security.oldBackups.justSaved":
+    "Your new backup is the one you just saved, on {date} at about {time}: your files app shows when each file was saved, and its size.",
+  "security.oldBackups.justSavedWithSize":
+    "Your new backup is the one you just saved, on {date} at about {time} ({size}): your files app shows when each file was saved, and its size.",
+  "security.oldBackups.deleteOlder":
+    "Delete the older backups: files whose names start with “myCarlos backup”, and any you renamed, other than the new one and its copies. They are wherever you saved them: a folder, a USB stick, or on a phone the Files app or a cloud drive.",
+  "security.oldBackups.inPlace":
+    "If you saved it in place of an older backup, that file is now your new backup: keep it.",
+  "security.oldBackups.done": "Done with older backups",
+  "security.backup.save": "Save encrypted backup…",
+  "security.passphrase.title": "Change passphrase",
+  "security.passphrase.rules":
+    "Use at least {min} characters and avoid common names or predictable phrases. Your recovery key, if you have one, keeps working; without one, forgetting the new passphrase means erasing the vault.",
+  "security.passphrase.copies":
+    "Changing your passphrase keeps out someone who only knows the old one. If they may also have a copy of your vault, such as a backup of this device or a saved backup file, a new passphrase is not enough: the old one still opens that copy, and with that copy they could open a newer one they got later. Shutting them out takes a new vault, and care not to lose documents on the way. Ask for help before you erase anything.",
+  "security.passphrase.current": "Current passphrase",
+  "security.passphrase.currentTooLong":
+    "The current passphrase is longer than any vault passphrase. Check what you typed.",
+  "security.passphrase.mismatch": "New passphrases do not match.",
+  "security.passphrase.newTooLong":
+    "The new passphrase is too long. Shorten it.",
+  "security.passphrase.newTooShort":
+    "The new passphrase is too short. Use at least {min} characters.",
+  "security.passphrase.submit": "Change passphrase",
+  "security.speed.title": "Speed test, for testers",
+  "security.speed.body":
+    "Measures how long this device takes to check a passphrase. It uses a made-up passphrase, not yours, and changes nothing. It takes a few seconds, longer on an older phone. Close other apps first, and stay on this screen until it is done. Send the result with the device's make and model.",
+  "security.speed.run": "Run speed test",
+  "security.speed.measuring": "Measuring…",
+  "security.copies.title": "Readable copies and screenshots",
+  "security.copies.body":
+    "Exports and screenshots leave vault protection. Hiding a document in myCarlos does not erase those copies or the clinic's source medical record.",
+  "security.profiles.title": "Patient profiles",
+  "security.profiles.body":
+    "Keep each person’s filing cabinet separate inside this vault.",
+  "security.profiles.label": "New profile name",
+  "security.profiles.add": "Add profile",
+  "security.erase.title": "Erase entire vault",
+  "security.erase.body":
+    "Permanently deletes every encrypted document, profile, and folder. This cannot be undone.",
+  "security.erase.show": "Show reset controls",
+  "security.erase.submit": "Erase entire vault",
+
+  // Recovery key setup, and the printed kit
+  "recoveryKey.printUnavailable":
+    "Printing is not available here. Save the kit, or write the key down.",
+  "recoveryKey.chooseReason": "Choose why you are replacing your recovery key.",
+  "recoveryKey.kitSaved":
+    "Recovery kit saved. The key starts working once you finish the check.",
+  "recoveryKey.typedCount": {
+    one: "You typed {count} letter or digit. Your recovery key has {total} letters and digits: 7 groups of 4. Check what you wrote.",
+    other:
+      "You typed {count} letters and digits. Your recovery key has {total} letters and digits: 7 groups of 4. Check what you wrote.",
+  },
+  "recoveryKey.notChanged":
+    "Your recovery key was not changed. Your current key still works. To change it, press Check and save again.",
+  "recoveryKey.threeMisses":
+    "That did not match three times. Look at your recovery key again, then check it.",
+  "recoveryKey.leave.required": "Lock vault and finish later",
+  "recoveryKey.leave.offered": "Set up later",
+  "recoveryKey.title.replace": "Replace your recovery key",
+  "recoveryKey.title.setUp": "Set up a recovery key",
+  "recoveryKey.title.key": "Your recovery key",
+  "recoveryKey.title.check": "Check your recovery key",
+  "recoveryKey.discard.title": "Discard this recovery key?",
+  "recoveryKey.discard.body":
+    "This recovery key is not set up yet, so it will never open the vault. myCarlos locks the vault now. After you unlock it, you can set up a new key.",
+  "recoveryKey.discard.confirm": "Discard key and lock",
+  "recoveryKey.about.offered":
+    "Your vault is open. It has no recovery key yet. Without one, if you forget your passphrase, the only way back in is to erase the vault.",
+  "recoveryKey.about.what":
+    "A recovery key opens your vault if you forget your passphrase. Only you will have it: nobody at your clinic or at myCarlos can open your vault for you.",
+  "recoveryKey.about.replacing":
+    "Your current recovery key stops working once you have checked the new one.",
+  "recoveryKey.about.type":
+    "Type your passphrase to make your recovery key. It is shown next: choose Continue only when nobody else can see your screen.",
+  "recoveryKey.about.typeAgain":
+    "Type your passphrase again to make your recovery key. It is shown next: choose Continue only when nobody else can see your screen.",
+  "recoveryKey.about.typeNew":
+    "Type your passphrase to make your new recovery key. It is shown next: choose Continue only when nobody else can see your screen.",
+  "recoveryKey.about.typeAgainNew":
+    "Type your passphrase again to make your new recovery key. It is shown next: choose Continue only when nobody else can see your screen.",
+  "recoveryKey.reason.legend": "Why are you replacing it?",
+  "recoveryKey.reason.hint": "If you are not sure, choose the first.",
+  "recoveryKey.reason.exposed":
+    "Its kit or note may have been lost, or seen by someone else",
+  "recoveryKey.reason.routine": "I just want a new key: its kit is safe",
+  "recoveryKey.continue": "Continue",
+  "recoveryKey.keyboardHint":
+    "Escape leaves this setup. During first setup it asks first, because leaving locks the vault and an unfinished key will not work.",
+  "recoveryKey.instructions":
+    "Write it down, or save or print the kit, and keep it somewhere private, away from this device. This is the only time myCarlos shows it. Next, you type it all back to check it. Stay in myCarlos until the check is done: leaving or locking cancels this key.",
+  "recoveryKey.hiddenWhileSaving": "Hidden while the kit is being saved.",
+  "recoveryKey.group": "Group {number}: {characters}",
+  "recoveryKey.label":
+    "Key label: {label}. Write it next to the key. It is not secret: in Security, myCarlos shows the label of the key that works, so you can tell which kit is current.",
+  "recoveryKey.saveKit": "Save recovery kit…",
+  "recoveryKey.printKit": "Print recovery kit",
+  "recoveryKey.next": "Next: check your recovery key",
+  "recoveryKey.check.label": "Your recovery key",
+  "recoveryKey.check.hint":
+    "Type your whole recovery key, as you wrote it down or saved it: 7 groups of 4 letters and digits. Dashes, spaces and other punctuation do not matter.",
+  "recoveryKey.back": "Back: read your recovery key",
+  "recoveryKey.checkAndSave": "Check and save",
+  "kit.title": "myCarlos recovery kit",
+  "kit.printed": "Printed {date}",
+  "kit.labelPrinted": "Key label: {label} · Printed {date}",
+  "kit.labelNote":
+    "The label is not secret. In Security, myCarlos shows the label of the recovery key that works now: a kit with a different label no longer opens the vault.",
+  "kit.use":
+    "If you forget your myCarlos passphrase, this key opens your vault on this device and lets you choose a new passphrase. It works once you have finished the check in myCarlos.",
+  "kit.keep":
+    "Keep it somewhere private and away from the device. Anyone with this key and a copy of your vault can open it. If you set up a new recovery key, this one no longer opens the vault on this device.",
+
+  // First setup: comfort settings, before the passphrase
+  "comfort.title": "Make myCarlos comfortable for you",
+  "comfort.intro":
+    "Choose what suits you before you set up. Each choice works at once.",
+  "comfort.sample":
+    "This is how text looks in myCarlos. Press − or + until it is easy to read.",
+  "textSize.followsDevice":
+    "Here, text size follows your device: its own text size setting, or the browser's zoom.",
+  "comfort.autoLock.body":
+    "myCarlos locks itself when it has not been used for this long, so that nobody else can see your records. Choose from 1 to 15 minutes.",
+  "comfort.later":
+    "You can change these any time in {settings}: {textSize} under {preferences}, and {autoLock} under {security}.",
+  "comfort.continue": "Continue",
+  "comfort.usual": "Use the usual settings",
+
+  // Notices after vault actions (the app's status line)
+  "notice.iosKeepOpen":
+    "Keep myCarlos open: switching apps pauses this transfer.",
+  "notice.dropRefused":
+    "To import PDFs, unlock your vault and use {button}. Drag and drop moves documents already in myCarlos.",
+  "notice.lockedIdle": {
+    one: "Locked after {count} minute without use.",
+    other: "Locked after {count} minutes without use.",
+  },
+  "notice.lockedHidden":
+    "Locked because myCarlos was minimized or sent to the background.",
+  "notice.locked": "Vault locked.",
+  "notice.autoLockSet": {
+    one: "Automatic locking set to {count} minute.",
+    other: "Automatic locking set to {count} minutes.",
+  },
+  "notice.backupCutOff":
+    "The backup stopped because the vault locked. No backup was saved. Keep your older backups. {note}",
+  "notice.transferUnfinished": "The transfer did not finish.",
+  "notice.restored":
+    "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
+  "notice.createdThenLocked":
+    "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
+  "notice.created":
+    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+  "notice.unlockedRecovery":
+    "Vault unlocked in read-only recovery mode. See the notice in the library for what to do.",
+  "notice.unlocked": "Vault unlocked.",
+  "notice.recovered":
+    "Vault opened with your recovery key. Use your new passphrase from now on.",
+  "notice.recoveredReadOnly":
+    "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
+  "notice.eraseCancelled": "Vault erase cancelled. Nothing changed.",
+
+  // What to check after a refusal, and other errors the app words itself
+  "box.name": "the name",
+  "box.passphrase": "the passphrase",
+  "box.currentPassphrase": "the current passphrase",
+  "box.newPassphrase": "the new passphrase",
+  "box.recoveryKey": "the recovery key",
+  "box.typedWords": "the words you typed",
+  "box.profileName": "the profile name",
+  "box.folderName": "the folder name",
+  "error.checkBoxes": "Check {boxes}, then try again.",
+  "error.retryIn": {
+    one: "Try again in {count} second.",
+    other: "Try again in {count} seconds.",
+  },
+  "error.fallback": "The vault operation could not be completed.",
+  "error.damaged":
+    'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.',
+  "error.damaged.where": "added {date}",
+  "error.damaged.whereFor": "added {date}, in {person}'s records",
+
+  // The warning before the automatic lock (#68)
+  "lockWarning.title": {
+    one: "myCarlos will lock in {count} second to keep your records private.",
+    other:
+      "myCarlos will lock in {count} seconds to keep your records private.",
+  },
+  "lockWarning.help": "To keep it open, press {keepOpen}, or any key.",
+  "lockWarning.left": {
+    one: "{count} second left.",
+    other: "{count} seconds left.",
+  },
+  "lockWarning.keepOpen": "Keep open",
+
+  // Settings > Preferences, and Appearance (#47)
+  "preferences.subtitle": "How myCarlos looks on this computer",
+  "appearance.title": "Appearance",
+  "appearance.help":
+    "{system} follows your device's light or dark appearance. High contrast follows your device automatically.",
+  "appearance.system": "System",
+  "appearance.light": "Light",
+  "appearance.dark": "Dark",
+  "appearance.error.unreadable":
+    "The saved appearance could not be read. Using {system} for this session.",
+  "appearance.error.notRemembered":
+    "Appearance changed for this session, but could not be remembered on this device.",
+  "appearance.error.window":
+    "Window appearance could not follow this choice. You can keep using myCarlos.",
+
+  // A document shown as a photo
+  "photo.eyebrow": "Photo",
+  "photo.alt": "Photo: {name}",
+  "photo.area": "Photo. Zoom in to see details; drag or scroll to move around.",
+  "photo.fitted": "Fitted to the window.",
+  "photo.zoomed": "Zoomed to {percent}%.",
+  "photo.zoomOut": "Zoom out",
+  "photo.zoomIn": "Zoom in",
+  "photo.close": "Close",
+
+  // The library's folders and documents, as a list or a grid
+  "library.items": {
+    one: "{count} visible library item",
+    other: "{count} visible library items",
+  },
+  "library.column.name": "Name",
+  "library.column.source": "Source",
+  "library.column.added": "Date added",
+  "library.folder.label": "{name} folder",
+  "library.folder.open": "Open {name}",
+  "library.folder.items": {
+    one: "{count} item",
+    other: "{count} items",
+  },
+  "library.folder.rename": "Rename folder {name}",
+  "library.rename": "Rename",
+  "library.document.label": "{name} document",
+  "library.document.details": "Details for {name}",
+  "library.details": "Details",
+  "library.select": "Select {name}",
+  "library.empty.title": "This location is empty",
+  "library.empty.help": "Add a folder or import a document here.",
+  "library.noMatch.title": "No matching records",
+  "library.noMatch.help": "Try another search.",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
