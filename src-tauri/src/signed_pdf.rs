@@ -367,7 +367,12 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
         return Err(Bad);
     }
     // CARLOS names its signer by issuer and serial number.
-    let SignerIdentifier::IssuerAndSerialNumber(id) = sid.decode_as().map_err(|_| Bad)? else {
+    let original_sid = sid.to_der().map_err(|_| Bad)?;
+    let parsed_sid = SignerIdentifier::from_der(&original_sid).map_err(|_| Bad)?;
+    if parsed_sid.to_der().map_err(|_| Bad)? != original_sid {
+        return Err(Bad);
+    }
+    let SignerIdentifier::IssuerAndSerialNumber(id) = parsed_sid else {
         return Err(Bad);
     };
     let cert: &Certificate = certificates
