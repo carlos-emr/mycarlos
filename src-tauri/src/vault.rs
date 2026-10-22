@@ -34,11 +34,12 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
-/// size class; format 3 adds the history. Formats 1 and 2 are still read; an
+/// size class; format 3 adds the history; format 4 adds profile identity details.
+/// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 3;
+const VAULT_FORMAT: u32 = 4;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -381,6 +382,33 @@ pub struct PatientProfile {
     pub id: Uuid,
     pub display_name: String,
     pub created_at_ms: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_identity"
+    )]
+    pub full_name: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_identity"
+    )]
+    pub birth_date: Option<String>,
+}
+
+// A present identity field must be a string, never null. Together with the
+// format gate below this also rejects null identity fields declared as format 1–3.
+fn present_identity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileDetails {
+    pub full_name: Option<String>,
+    pub birth_date: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -895,6 +923,8 @@ impl VaultStore {
                     id: Uuid::new_v4(),
                     display_name: initial_profile.trim().to_owned(),
                     created_at_ms: now_ms,
+                    full_name: None,
+                    birth_date: None,
                 }],
                 folders: Vec::new(),
                 records: Vec::new(),
@@ -1105,8 +1135,7 @@ impl VaultStore {
         remove_staging(&self.root);
         remove_abandoned_atomic_writes(&self.root);
         quarantine_orphan_objects(&self.root, &manifest);
-        // A format 1 or 2 vault becomes format 3 here, in a commit of its
-        // own (#71).
+        // An older manifest becomes the current format in a commit of its own.
         let mut manifest = manifest;
         if recovery.is_none() {
             match upgrade_manifest(&self.root, &master_key, &mut manifest) {
@@ -1230,8 +1259,25 @@ impl VaultStore {
         }
     }
 
+    #[cfg(test)]
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
+        self.create_profile_with_details(
+            display_name,
+            ProfileDetails::default(),
+            &utc_date_text(now_ms),
+            now_ms,
+        )
+    }
+
+    pub fn create_profile_with_details(
+        &self,
+        display_name: &str,
+        details: ProfileDetails,
+        today: &str,
+        now_ms: u64,
+    ) -> Result<Uuid, VaultError> {
         validate_person_name(display_name)?;
+        let (full_name, birth_date) = checked_profile_details(details, today, now_ms)?;
         self.mutate_recorded(|manifest, entries| {
             let id = Uuid::new_v4();
             let display_name = display_name.trim().to_owned();
@@ -1243,8 +1289,38 @@ impl VaultStore {
                 id,
                 display_name,
                 created_at_ms: now_ms,
+                full_name,
+                birth_date,
             });
             Ok(id)
+        })
+    }
+
+    pub fn update_profile_details(
+        &self,
+        id: Uuid,
+        details: ProfileDetails,
+        today: &str,
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
+        let (full_name, birth_date) = checked_profile_details(details, today, now_ms)?;
+        self.mutate_recorded(|manifest, entries| {
+            if id == shared_profile_id(manifest.vault_id) {
+                return Err(VaultError::Invalid);
+            }
+            let profile = manifest
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == id)
+                .ok_or(VaultError::NotFound)?;
+            if profile.full_name != full_name || profile.birth_date != birth_date {
+                profile.full_name = full_name;
+                profile.birth_date = birth_date;
+                let mut entry = HistoryEntry::new(HistoryEvent::ProfileDetailsChanged, now_ms);
+                entry.profile_id = Some(id);
+                entries.push(entry);
+            }
+            Ok(())
         })
     }
 
@@ -1600,6 +1676,8 @@ impl VaultStore {
                     id: shared,
                     display_name: SHARED_PROFILE_NAME.to_owned(),
                     created_at_ms: now_ms,
+                    full_name: None,
+                    birth_date: None,
                 });
             }
             next.records
@@ -3488,6 +3566,18 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         if profile.id.is_nil()
             || !profile_ids.insert(profile.id)
             || validate_name(&profile.display_name).is_err()
+            || profile
+                .full_name
+                .as_ref()
+                .is_some_and(|name| name != name.trim() || validate_name(name).is_err())
+            || profile
+                .birth_date
+                .as_ref()
+                .is_some_and(|date| !valid_birth_date(date))
+            || (manifest.format_version < 4
+                && (profile.full_name.is_some() || profile.birth_date.is_some()))
+            || (profile.id == shared_profile_id(vault_id)
+                && (profile.full_name.is_some() || profile.birth_date.is_some()))
         {
             return Err(VaultError::Corrupt);
         }
@@ -4747,15 +4837,15 @@ fn commit_manifest_redundant(
     Ok(true)
 }
 
-/// Moves a format 1 or 2 manifest to format 3 (#71) in a commit of its own,
-/// so that both slots hold format 3 before anything only format 3 can hold
+/// Moves an older manifest to the current format in a commit of its own,
+/// so that both slots hold the current format before anything only it can hold
 /// (a history; for format 1, a hidden document) is written: a crash between
-/// the two writes leaves a format 3 slot that holds nothing an older build,
+/// the two writes leaves a new-format slot that holds nothing an older build,
 /// opening the other slot, could lose. The state is the one already
 /// authenticated and is not changed, so whether its files are all there is
 /// not checked again (a vault with lost documents is upgraded before they
 /// are hidden). Returns whether both slots were written; nothing is written
-/// for a format 3 manifest.
+/// for an already current manifest.
 fn upgrade_manifest(
     root: &Path,
     master_key: &[u8; 32],
@@ -6303,6 +6393,68 @@ fn validate_person_name(name: &str) -> Result<(), VaultError> {
     Ok(())
 }
 
+/// Exact Gregorian date only; no locale-dependent date interpretation.
+pub(crate) fn valid_birth_date(date: &str) -> bool {
+    let b = date.as_bytes();
+    if b.len() != 10
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || !b
+            .iter()
+            .enumerate()
+            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+    {
+        return false;
+    }
+    let year: u32 = date[..4].parse().unwrap_or(0);
+    let month: u32 = date[5..7].parse().unwrap_or(0);
+    let day: u32 = date[8..].parse().unwrap_or(0);
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let max = match month {
+        2 => {
+            if leap {
+                29
+            } else {
+                28
+            }
+        }
+        4 | 6 | 9 | 11 => 30,
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        _ => 0,
+    };
+    year > 0 && day > 0 && day <= max
+}
+
+fn checked_profile_details(
+    details: ProfileDetails,
+    today: &str,
+    now_ms: u64,
+) -> Result<(Option<String>, Option<String>), VaultError> {
+    // Calendar dates come from this device's renderer, as for backup names. Bound its
+    // local day to the native clock's adjacent UTC dates, covering all time zones.
+    if !valid_birth_date(today)
+        || today < utc_date_text(now_ms.saturating_sub(86_400_000)).as_str()
+        || today > utc_date_text(now_ms.saturating_add(86_400_000)).as_str()
+    {
+        return Err(VaultError::Invalid);
+    }
+    let full_name = details
+        .full_name
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    let birth_date = details.birth_date.filter(|s| !s.is_empty());
+    if full_name
+        .as_ref()
+        .is_some_and(|name| validate_name(name).is_err())
+        || birth_date
+            .as_ref()
+            .is_some_and(|date| !valid_birth_date(date) || date.as_str() > today)
+    {
+        return Err(VaultError::Invalid);
+    }
+    Ok((full_name, birth_date))
+}
+
 /// The people a vault keeps records for: every profile but the shared one.
 fn people(manifest: &Manifest) -> impl Iterator<Item = &PatientProfile> {
     let shared = shared_profile_id(manifest.vault_id);
@@ -7015,11 +7167,15 @@ mod tests {
                     id: first_profile,
                     display_name: "Jamie".to_owned(),
                     created_at_ms: 1,
+                    full_name: None,
+                    birth_date: None,
                 },
                 PatientProfile {
                     id: second_profile,
                     display_name: "Morgan".to_owned(),
                     created_at_ms: 2,
+                    full_name: None,
+                    birth_date: None,
                 },
             ],
             folders: vec![
@@ -12459,6 +12615,8 @@ mod tests {
                 id: profile,
                 display_name: "Jamie".to_owned(),
                 created_at_ms: 1,
+                full_name: None,
+                birth_date: None,
             }],
             folders: vec![],
             records: records
@@ -15841,6 +15999,195 @@ mod tests {
             &head,
         ] {
             assert!(documented.contains(value.as_str()), "{value}");
+        }
+    }
+    fn identity_details() -> ProfileDetails {
+        ProfileDetails {
+            full_name: Some("  FAKE Mary Smith  ".into()),
+            birth_date: Some("1958-03-12".into()),
+        }
+    }
+
+    #[test]
+    fn identity_details_persist_encrypt_restore_and_keep_history_private() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        store.create(PASSWORD, "FAKE Mary", now).unwrap();
+        let id = store.snapshot().unwrap().profiles[0].id;
+        store
+            .update_profile_details(id, identity_details(), &today, now)
+            .unwrap();
+        let entry = history_events(&store).pop().unwrap();
+        assert_eq!(entry.event, HistoryEvent::ProfileDetailsChanged);
+        assert_eq!(entry.profile_id, Some(id));
+        assert_eq!(entry.name, None);
+        assert_eq!(entry.old_name, None);
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(!json.contains("Mary") && !json.contains("1958"));
+        let count = history_events(&store).len();
+        store
+            .update_profile_details(id, identity_details(), &today, now)
+            .unwrap();
+        assert_eq!(history_events(&store).len(), count);
+        let mut backup = Vec::new();
+        store.backup(&mut backup, now).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].clone();
+        assert_eq!(profile.full_name.as_deref(), Some("FAKE Mary Smith"));
+        assert_eq!(profile.birth_date.as_deref(), Some("1958-03-12"));
+        for slot in 0..2 {
+            let bytes = fs::read(manifest_path(&store.root, slot)).unwrap();
+            assert!(!bytes.windows(15).any(|w| w == b"FAKE Mary Smith"));
+        }
+        let restored = VaultStore::new(temp.path().join("restored").join("vault"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert!(restored.snapshot().unwrap().profiles[0] == profile);
+        restored
+            .update_profile_details(id, ProfileDetails::default(), &today, now)
+            .unwrap();
+        let cleared = &restored.snapshot().unwrap().profiles[0];
+        assert!(cleared.full_name.is_none() && cleared.birth_date.is_none());
+    }
+
+    #[test]
+    fn identity_details_validate_and_refuse_read_only_or_shared_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        store.create(PASSWORD, "FAKE Mary", now).unwrap();
+        let id = store.snapshot().unwrap().profiles[0].id;
+        for date in [
+            "1900-02-29",
+            "2000-02-30",
+            "2026-13-01",
+            "0000-01-01",
+            "03/12/1958",
+            "2999-01-01",
+        ] {
+            assert!(matches!(
+                store.update_profile_details(
+                    id,
+                    ProfileDetails {
+                        full_name: None,
+                        birth_date: Some(date.into())
+                    },
+                    &today,
+                    now
+                ),
+                Err(VaultError::Invalid)
+            ));
+        }
+        assert!(valid_birth_date("2000-02-29"));
+        assert!(valid_birth_date("0001-01-01"));
+        assert!(store
+            .update_profile_details(id, identity_details(), "2999-01-01", now)
+            .is_err());
+        assert!(store
+            .update_profile_details(
+                store.snapshot().unwrap().shared_profile_id,
+                identity_details(),
+                &today,
+                now
+            )
+            .is_err());
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::LostObjects);
+        let before = history_events(&store).len();
+        assert!(matches!(
+            store.update_profile_details(id, identity_details(), &today, now),
+            Err(VaultError::RecoveryMode)
+        ));
+        assert!(matches!(
+            store.create_profile_with_details("FAKE New", identity_details(), &today, now),
+            Err(VaultError::RecoveryMode)
+        ));
+        assert_eq!(history_events(&store).len(), before);
+        assert!(store.snapshot().unwrap().profiles[0].full_name.is_none());
+    }
+
+    #[test]
+    fn identity_details_and_history_commit_together_or_neither() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        store.create(PASSWORD, "FAKE Mary", now).unwrap();
+        let id = store.snapshot().unwrap().profiles[0].id;
+        let count = history_events(&store).len();
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
+            let _fail = FailAt::new(boundary);
+            assert!(store
+                .update_profile_details(id, identity_details(), &today, now)
+                .is_err());
+            assert!(store.snapshot().unwrap().profiles[0].full_name.is_none());
+            assert_eq!(history_events(&store).len(), count);
+        }
+    }
+
+    #[test]
+    fn identity_details_create_atomically_and_old_formats_reject_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        let now = 1_792_713_600_000;
+        store.create(PASSWORD, "FAKE First", now).unwrap();
+        let id = store
+            .create_profile_with_details("FAKE Mary", identity_details(), &utc_date_text(now), now)
+            .unwrap();
+        let profile = store
+            .snapshot()
+            .unwrap()
+            .profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .unwrap();
+        assert_eq!(profile.full_name.as_deref(), Some("FAKE Mary Smith"));
+        let manifest = store.session().as_ref().unwrap().manifest.clone();
+        for version in [1, 2, 3] {
+            let mut old = manifest.clone();
+            old.format_version = version;
+            old.history = HistoryState::default();
+            assert!(validate_manifest_structure(&old, old.vault_id).is_err());
+        }
+        for field in ["fullName", "birthDate"] {
+            let mut value = serde_json::to_value(&profile).unwrap();
+            value[field] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<PatientProfile>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn identity_format_four_migrates_all_older_formats_without_record_loss() {
+        let temp = tempfile::tempdir().unwrap();
+        for version in [1, 2, 3] {
+            let root = temp.path().join(format!("v{version}"));
+            let (store, ids, key, vault_id) =
+                old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);
+            let before = slots(&root, &key, vault_id);
+            store.unlock(PASSWORD).unwrap();
+            let after = slots(&root, &key, vault_id);
+            assert!(after.iter().all(|(format, _, _)| *format == 4));
+            assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
+            assert_eq!(store.snapshot().unwrap().records.len(), ids.len());
+            assert!(store
+                .snapshot()
+                .unwrap()
+                .profiles
+                .iter()
+                .all(|p| p.full_name.is_none() && p.birth_date.is_none()));
         }
     }
 }

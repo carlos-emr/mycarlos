@@ -1,3 +1,10 @@
+import {
+  PersonDetailsFields,
+  PersonDetailsList,
+  detailsProblem,
+  trimmedDetails,
+} from "./PersonDetails";
+import type { PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
@@ -29,7 +36,12 @@ interface SecuritySettingsProps {
   onAutoLockMinutes: (value: unknown) => void;
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
-  onCreateProfile: (name: string) => Promise<boolean>;
+  onCreateProfile: (name: string, details?: PersonDetails) => Promise<boolean>;
+  people?: PatientProfile[];
+  onUpdateProfileDetails?: (
+    id: string,
+    details: PersonDetails,
+  ) => Promise<boolean>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -93,6 +105,8 @@ export function SecuritySettings({
   onLock,
   onChangePassphrase,
   onCreateProfile,
+  people = [],
+  onUpdateProfileDetails,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -144,6 +158,7 @@ export function SecuritySettings({
     }
   };
   const [profileName, setProfileName] = useState("");
+  const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
@@ -171,8 +186,21 @@ export function SecuritySettings({
   const submitProfile = (event: FormEvent) => {
     event.preventDefault();
     // Cleared only once the profile exists, so a refused name can be corrected.
-    void onCreateProfile(profileName).then((created) => {
-      if (created) setProfileName("");
+    if (
+      busy ||
+      readOnly ||
+      (onUpdateProfileDetails && detailsProblem(profileDetails))
+    )
+      return;
+    void (
+      onUpdateProfileDetails
+        ? onCreateProfile(profileName, trimmedDetails(profileDetails))
+        : onCreateProfile(profileName)
+    ).then((created) => {
+      if (created) {
+        setProfileName("");
+        setProfileDetails({});
+      }
     });
   };
   return (
@@ -479,11 +507,22 @@ export function SecuritySettings({
             {nameIsShared(profileName) && (
               <p role="alert">{SHARED_NAME_TAKEN}</p>
             )}
+            {onUpdateProfileDetails && (
+              <fieldset disabled={busy || readOnly}>
+                <PersonDetailsFields
+                  details={profileDetails}
+                  onChange={setProfileDetails}
+                />
+              </fieldset>
+            )}
             <button
               className="button"
               disabled={
                 busy ||
                 readOnly ||
+                Boolean(
+                  onUpdateProfileDetails && detailsProblem(profileDetails),
+                ) ||
                 !profileName.trim() ||
                 nameTooLong(profileName) ||
                 nameIsShared(profileName)
@@ -492,6 +531,13 @@ export function SecuritySettings({
               {t("security.profiles.add")}
             </button>
           </form>
+          {onUpdateProfileDetails && (
+            <PersonDetailsList
+              people={people}
+              busy={busy || readOnly}
+              onSave={onUpdateProfileDetails}
+            />
+          )}
         </section>
       </div>
     </main>

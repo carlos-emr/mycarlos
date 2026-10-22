@@ -487,9 +487,10 @@ how, place, placeSha256, previousSession, prev`
 
 `event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
 `hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
-`passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
+`passphraseChanged`, `profileCreated`, `profileDetailsChanged`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
 `{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
-`folderId`) and its `name` afterwards. Shared intake also gives the reserved source
+`folderId`) and its `name` afterwards, except `profileDetailsChanged`, which records only
+`profileId` and never the identity values. Shared intake also gives the reserved source
 `profileId`; its move to a person records `moved` with `how: "shared"` and the destination
 `profileId`, even when both locations have no folders. The move and its history entry commit
 together. For folder events, `folderCreated` gives in `to` the folder it was made in,
@@ -723,3 +724,42 @@ state, described in the recovery-key sections above.
   activation code awaits an actual v2.
 - The application has been extracted into this dedicated repository; protected release infrastructure
   and the remaining review gates are still required before release. See [HANDOFF.md](HANDOFF.md).
+
+
+### Manifest format 4: optional profile identity details
+
+Format 4 adds optional `fullName` and `birthDate` to each patient profile in the encrypted
+manifest. `fullName` is a trimmed nonempty name, bounded by the existing 120-character name
+limit. `birthDate` is an exact Gregorian `YYYY-MM-DD` date (year 0001–9999). Blank details
+are omitted, not serialized as null. Shared with me is a reserved location and cannot carry
+identity details. Formats 1–3 must not carry either field, including null; such manifests are
+refused. No identity details are written to plaintext headers or filenames.
+
+Creation and editing validate dates natively. A new birth date cannot be later than the
+current local calendar day supplied by the renderer; that day must itself be within one day
+of the native UTC date, covering time zones without trusting an arbitrary future date.
+Structural validation of stored dates does not depend on the clock, so a clock correction
+does not damage an existing vault. Editing details records `profileDetailsChanged` with only
+`profileId`, never the old/new full name or birth date. Details and that history entry use the
+existing atomic recorded mutation. Read-only recovery sessions cannot change them.
+
+A writable unlock upgrades formats 1–3 using the existing two-slot upgrade transaction,
+before new fields or events can be written. Profiles, records, folder assignments, document
+objects and existing history are retained. If recovery makes the vault read-only, it stays in
+its older format until a writable unlock is possible. Backups and restores preserve identity
+details. A backup made by a format-4-capable app requires a format-4-capable app to restore;
+an older app refuses the newer manifest. Keep a pre-upgrade backup if returning to an older
+build is needed; there is no lossy downgrade or silent removal of identity details.
+
+Shared PDF hints are not saved in the manifest or history. Only explicitly labelled patient
+names (Patient name / Patient full name) and optional exact ISO dates (DOB / Date of birth /
+Birth date) from the existing sandbox helper's bounded first-page text are considered.
+When a date is present, its label must be adjacent to the name label (ignoring blank lines);
+possibly truncated text and repeated identity labels yield no hint.
+Conflicting or malformed labels, unsupported layouts, encrypted PDFs without an unlocked
+copy, missing text and unavailable helpers yield no hint. No OCR or free-text date guessing
+is performed. The hint never changes source verification and never moves a record by itself.
+The patient must press Move; the existing move and its history entry remain one operation.
+Dismissals and extracted hints last only for the unlocked session. Clinic pickup and automatic
+clinic-to-person links remain dependent on portal linking and authenticated delivery intake
+(portal #41 M2/M4); this change introduces no clinic queue, network client or trust claim.

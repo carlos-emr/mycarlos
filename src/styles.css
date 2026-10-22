@@ -1087,3 +1087,11 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
+
+/* Optional identity details and explicit Shared with me suggestions. */
+.native-person-details-list { list-style: none; padding: 0; min-width: 0; }
+.native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
+.native-person-details-list form { width: 100%; }
+.native-person-details-list fieldset, .native-setting-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.native-person-details-actions, .native-person-suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-person-suggestion { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; white-space: normal; overflow-wrap: anywhere; font-size: 0.85rem; }
