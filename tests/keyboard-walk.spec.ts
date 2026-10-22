@@ -1,0 +1,455 @@
+import { expect, test } from "@playwright/test";
+import {
+  dialogByKeyboard,
+  expectAnnounced,
+  expectOnlyFakedCommands,
+  fakeVault,
+  recordAnnouncements,
+  screenReaderSmoke,
+  walk,
+} from "./support/a11y";
+
+// Keyboard only (#70 step 3): first setup, unlock, the library (open, move,
+// search) and Settings, with Tab, Shift+Tab, Enter, Space, the arrow keys
+// and Escape. On each screen Tab reaches every control in page order, each
+// shows its focus and is not hidden behind anything, and Tab and Shift+Tab go
+// all the way round (walk() in support/a11y.ts). Dialogs keep focus inside,
+// and Escape closes them and gives focus back. The native side is faked.
+//
+// Not covered yet: "Shared with me" (#61), which is not on main.
+
+test.beforeEach(({}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "a phone has no keyboard Tab order to walk",
+  );
+});
+
+test("first setup works from the keyboard alone", async ({ page }) => {
+  await fakeVault(page, "absent", { recoveryKey: false });
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Make myCarlos comfortable for you" }),
+  ).toBeVisible();
+  await walk(page, "comfort settings");
+
+  const size = page.getByRole("textbox", { name: "Text size in percent" });
+  await page.getByRole("button", { name: "Larger text" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(size).not.toHaveValue("100");
+  await expectAnnounced(page, `Text size ${await size.inputValue()}%`);
+
+  await page.getByRole("button", { name: "Longer delay" }).focus();
+  await page.keyboard.press("Space");
+  await expectAnnounced(page, "6 minutes");
+
+  await page.getByRole("button", { name: "Continue" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+  ).toBeVisible();
+  await walk(page, "create the vault");
+
+  await page.getByRole("textbox", { name: "Whose records" }).focus();
+  await page.keyboard.type("FAKE Patient");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("FAKE correct horse battery staple");
+  await page.getByRole("textbox", { name: "Confirm passphrase" }).focus();
+  await page.keyboard.type("FAKE correct horse battery staple");
+  await page.keyboard.press("Enter");
+
+  // A new vault opens on setting up its recovery key, in a dialog that asks
+  // before it is left: Escape asks, and Escape again goes back to it.
+  const setup = page.getByRole("dialog");
+  await expect(setup).toBeVisible();
+  await walk(page, "recovery key setup", "[role=dialog]");
+  await page.keyboard.press("Escape");
+  await expect(setup).toBeVisible();
+  await expect
+    .poll(() =>
+      setup.evaluate((dialog) => dialog.contains(document.activeElement)),
+    )
+    .toBe(true);
+  await walk(page, "leaving the recovery key setup", "[role=dialog]");
+  await page.keyboard.press("Escape");
+  await expect(setup).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("unlocking works from the keyboard alone", async ({ page }) => {
+  await fakeVault(page, "locked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Unlock your vault" }),
+  ).toBeVisible();
+  await walk(page, "unlock");
+
+  // The other ways in open from the keyboard too.
+  for (const section of ["Forgot your passphrase?", "Restore from a backup"]) {
+    await page.getByText(section).focus();
+    await page.keyboard.press("Enter");
+    await walk(page, `unlock, "${section}" open`);
+    await page.getByText(section).focus();
+    await page.keyboard.press("Enter");
+  }
+
+  await page.getByLabel("Passphrase", { exact: true }).focus();
+  await page.keyboard.type("FAKE passphrase for the fake");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+  await expectAnnounced(page, "Vault unlocked.");
+  await expectOnlyFakedCommands(page);
+});
+
+test("a vault without a recovery key offers one, and Escape puts it off", async ({
+  page,
+}) => {
+  await fakeVault(page, "locked", { recoveryKey: false });
+  await page.goto("/");
+  await page.getByLabel("Passphrase", { exact: true }).focus();
+  await page.keyboard.type("FAKE passphrase for the fake");
+  await page.keyboard.press("Enter");
+  const offer = page.getByRole("dialog");
+  await expect(offer).toBeVisible();
+  await walk(page, "recovery key offer", "[role=dialog]");
+  await page.keyboard.press("Escape");
+  await expect(offer).toBeHidden();
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("the library works from the keyboard alone: open, move and search", async ({
+  page,
+}) => {
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+  await walk(page, "library");
+
+  // Open a document's details, and close them with Escape.
+  const letter = page.getByRole("button", {
+    name: "FAKE Letter.pdf",
+    exact: true,
+  });
+  await dialogByKeyboard(page, letter, "FAKE Letter.pdf");
+  await dialogByKeyboard(
+    page,
+    page.getByRole("button", { name: "Rename folder FAKE Results" }),
+    /Rename/,
+  );
+
+  // A confirmation takes the place of the details: Escape cancels it, and the
+  // details come back with focus on their Close button.
+  await letter.focus();
+  await page.keyboard.press("Enter");
+  const letterDetails = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
+  await letterDetails
+    .getByRole("button", { name: "Permanently delete" })
+    .focus();
+  await page.keyboard.press("Enter");
+  const confirm = page.getByRole("alertdialog", {
+    name: "Permanently delete this document?",
+  });
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await walk(page, "delete confirmation", "[role=alertdialog]");
+  await screenReaderSmoke(page, "delete confirmation", confirm);
+  await page.keyboard.press("Escape");
+  await expect(confirm).toBeHidden();
+  await expect(
+    letterDetails.getByRole("button", { name: "Close document details" }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(letterDetails).toBeHidden();
+  await expect(letter).toBeFocused();
+
+  // Move it from its details: choose in "Move to" with the arrow keys, then
+  // Tab to Move. Focus goes back to "Move to" once the move is done.
+  await letter.focus();
+  await page.keyboard.press("Enter");
+  const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
+  const moveTo = details.getByRole("combobox", { name: "Move to" });
+  await moveTo.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(moveTo).toHaveValue("folder");
+  await page.keyboard.press("Tab");
+  await expect(
+    details.getByRole("button", { name: "Move", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "Document moved.");
+  await expect(
+    details.getByRole("definition").filter({ hasText: /^FAKE Results$/ }),
+  ).toBeVisible();
+  await expect(moveTo).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
+
+  // Open the folder, and move a document out with the selection bar.
+  await page.getByRole("button", { name: "Open FAKE Results" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "FAKE Results", level: 1 }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Select FAKE Bloodwork.pdf" }).focus();
+  await page.keyboard.press("Space");
+  const moveSelected = page.getByRole("combobox", { name: "Move selected to" });
+  await expect(moveSelected).toBeVisible();
+  await walk(page, "a folder, with a document selected");
+  await moveSelected.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(moveSelected).toHaveValue("letters");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "1 document moved.");
+
+  // A new folder, named with the keyboard.
+  await page.getByRole("button", { name: "New folder" }).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("FAKE Older");
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "FAKE Older was created.");
+
+  // Back to the top level, and move a folder into another one.
+  await page
+    .getByRole("button", { name: /^My records/ })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "My records", level: 1 }),
+  ).toBeVisible();
+  await page.getByText("Move a folder with the keyboard").focus();
+  await page.keyboard.press("Enter");
+  await walk(page, "library, folder move shown");
+  await page.getByRole("combobox", { name: "Folder", exact: true }).focus();
+  await page.keyboard.press("ArrowDown");
+  await page.getByRole("combobox", { name: "Destination" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await page.getByRole("button", { name: "Move folder" }).focus();
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "FAKE Results moved.");
+
+  // Search, and Escape to clear it.
+  const search = page.getByRole("searchbox", { name: "Search this location" });
+  await search.focus();
+  await page.keyboard.type("Letters");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Open FAKE Letters" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await expectOnlyFakedCommands(page);
+});
+
+// #90: a control that runs something is disabled while it runs, and
+// a focused control that is disabled loses the focus to the page itself;
+// nothing puts it back. A new screen or location (after unlocking, opening a
+// folder, or closing details whose document has moved away) also leaves it
+// on the page. Each place is checked, so the failure lists them all. #75
+// fixed one: after Move in a document's details, focus goes back to "Move to".
+// The other six (unlocking, an import, closing those details, a selection-bar
+// move, Move folder, opening a folder) still fail.
+test("focus is never left on the page itself after an action (#90)", async ({
+  page,
+}) => {
+  test.fail(true, "#90: focus is left on the page after these actions");
+  await fakeVault(page, "locked");
+  await page.goto("/");
+  const lostAfter: string[] = [];
+  const after = async (what: string) => {
+    if (
+      await page.evaluate(
+        () =>
+          !document.activeElement || document.activeElement === document.body,
+      )
+    )
+      lostAfter.push(what);
+  };
+
+  await page.getByLabel("Passphrase", { exact: true }).focus();
+  await page.keyboard.type("FAKE passphrase for the fake");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+  await after("unlocking");
+
+  await page.getByRole("button", { name: "Choose files to import" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
+  ).toBeVisible();
+  await after("an import");
+
+  await page
+    .getByRole("button", { name: "FAKE Letter.pdf", exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
+  await details.getByRole("combobox", { name: "Move to" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await details.getByRole("button", { name: "Move", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    details.getByRole("definition").filter({ hasText: /^FAKE Results$/ }),
+  ).toBeVisible();
+  await after("a move with Move in the details");
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
+  await after("closing details whose document moved away");
+
+  await page.getByRole("button", { name: "Select FAKE Scan.pdf" }).focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Move", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("combobox", { name: "Move selected to" }),
+  ).toBeHidden();
+  await after("a move with the selection bar");
+
+  await page.getByText("Move a folder with the keyboard").focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "Folder", exact: true }).focus();
+  await page.keyboard.press("ArrowDown");
+  await page.getByRole("button", { name: "Move folder" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Move folder" })).toBeEnabled();
+  await after("Move folder");
+
+  await page.getByRole("button", { name: "Open FAKE Letters" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "FAKE Letters", level: 1 }),
+  ).toBeVisible();
+  await after("opening a folder");
+
+  expect(lostAfter, "focus is left on the page itself after").toEqual([]);
+});
+
+// #91 (fixed by #75): "Move to" used to move the document as soon as its
+// value changed, so with the keyboard the first arrow press moved it into the
+// next folder. Now the list only chooses, and Move moves, once.
+test("Move to in a document's details moves it only where the patient chooses (#91)", async ({
+  page,
+}) => {
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "FAKE Letter.pdf", exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  const details = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
+  const moveTo = details.getByRole("combobox", { name: "Move to" });
+  const moves = () =>
+    page.evaluate(
+      () =>
+        (Reflect.get(window, "__ipcCalls") as string[]).filter(
+          (command) => command === "vault_assign_folders",
+        ).length,
+    );
+  await moveTo.focus();
+  // Down to the second folder, FAKE Letters, past FAKE Results.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(moveTo).toHaveValue("letters");
+  expect(await moves(), "moves before the patient presses Move").toBe(0);
+
+  await page.keyboard.press("Tab");
+  await expect(
+    details.getByRole("button", { name: "Move", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "Document moved.");
+  expect(await moves(), "moves after Move is pressed once").toBe(1);
+  await expect(
+    details.getByRole("definition").filter({ hasText: /^FAKE Letters$/ }),
+  ).toBeVisible();
+  // Move is disabled once the document is there; focus goes back to the list.
+  await expect(moveTo).toBeFocused();
+});
+
+test("Settings work from the keyboard alone", async ({ page }) => {
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Security", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Security" })).toBeVisible();
+  await walk(page, "Security");
+  await page.getByRole("button", { name: "Shorter delay" }).focus();
+  await page.keyboard.press("Enter");
+  await expectAnnounced(page, "4 minutes");
+  // The erase controls open from the keyboard (and are left alone).
+  await page.getByText("Show reset controls").focus();
+  await page.keyboard.press("Enter");
+  await walk(page, "Security, reset controls shown");
+
+  await page.getByRole("button", { name: "Preferences", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Preferences" }),
+  ).toBeVisible();
+  await walk(page, "Preferences");
+  // The appearance radios: one Tab stop, the arrow keys choose.
+  await page.getByRole("radio", { name: "System" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("radio", { name: "Light" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Light" })).toBeFocused();
+  await expectOnlyFakedCommands(page);
+});
+
+test("locking, by hand or automatically, leaves focus where unlocking starts", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
+
+  await page
+    .getByRole("button", { name: /Lock now/ })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  const passphrase = page.getByLabel("Passphrase", { exact: true });
+  await expect(passphrase).toBeFocused();
+  // Said as the field's description: the screen opens with it (VaultAuth.tsx).
+  await expect(passphrase).toHaveAccessibleDescription(/Vault locked\./);
+
+  await page.keyboard.type("FAKE passphrase for the fake");
+  await page.keyboard.press("Enter");
+  const search = page.getByRole("searchbox", { name: "Search this location" });
+  await expect(search).toBeVisible();
+  await search.focus();
+
+  // 30 seconds before the automatic lock, a warning takes focus on Keep
+  // open. Any key keeps myCarlos open, Tab too, so there is nothing to walk.
+  const warning = page.getByRole("alertdialog", { name: /will lock in/ });
+  for (const key of ["Escape", "Tab"]) {
+    await page.clock.runFor(4.5 * 60 * 1000 + 1000);
+    await expect(warning).toBeVisible();
+    await expect(
+      warning.getByRole("button", { name: "Keep open" }),
+    ).toBeFocused();
+    await page.keyboard.press(key);
+    await expect(warning, `${key} keeps myCarlos open`).toBeHidden();
+    await expect(search).toBeVisible();
+  }
+
+  // Left alone, it locks, and says why.
+  await page.clock.runFor(5 * 60 * 1000 + 1000);
+  await expect(passphrase).toBeFocused();
+  await expect(passphrase).toHaveAccessibleDescription(
+    /Locked after 5 minutes without use\./,
+  );
+  await expectOnlyFakedCommands(page);
+});
