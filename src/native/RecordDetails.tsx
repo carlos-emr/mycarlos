@@ -53,10 +53,13 @@ export function RecordDetails({
   // Chromium every arrow key on a closed list changes its value, which moved
   // the document at once.
   const currentFolderId = record.folderIds[0] ?? "";
-  const inShared = moveTargets &&
+  const inShared =
+    moveTargets &&
     !moveTargets.some((target) => target.profileId === record.profileId);
   const current = moveTargets
-    ? inShared ? "" : moveTargetValue(record.profileId, currentFolderId || null)
+    ? inShared
+      ? ""
+      : moveTargetValue(record.profileId, currentFolderId || null)
     : currentFolderId;
   // A choice made for this document where it is now; a move or another
   // document starts again from where the document is.

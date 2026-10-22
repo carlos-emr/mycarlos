@@ -924,15 +924,22 @@ describe("durable vault UI", () => {
     fireDragEvent("drop", morgan, { dataTransfer: kept });
     await waitFor(() =>
       expect(bridge.moveToPerson).toHaveBeenCalledWith(
-        ["record-jamie"], "profile-2", [],
+        ["record-jamie"],
+        "profile-2",
+        [],
       ),
     );
-    expect(vault.records.find((record) => record.id === "record-jamie")?.profileId)
-      .toBe("profile-2");
+    expect(
+      vault.records.find((record) => record.id === "record-jamie")?.profileId,
+    ).toBe("profile-2");
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
     // A folder still belongs to its original person.
     const folderDrag = dragTransfer();
-    fireDragEvent("dragstart", within(library()).getByRole("button", { name: /^FAKE Jamie folder/ }), { dataTransfer: folderDrag });
+    fireDragEvent(
+      "dragstart",
+      within(library()).getByRole("button", { name: /^FAKE Jamie folder/ }),
+      { dataTransfer: folderDrag },
+    );
     fireDragEvent("dragover", morgan, { dataTransfer: folderDrag });
     fireDragEvent("drop", morgan, { dataTransfer: folderDrag });
     expect(
@@ -971,64 +978,154 @@ describe("durable vault UI", () => {
     async (folderId) => {
       const user = userEvent.setup();
       const { bridge, vault } = sharedVault(["Jamie", "Morgan"], []);
-      vault.folders.push({ id: "folder-2", profileId: "profile-2", parentId: null, name: "FAKE Results", createdAtMs: 1 });
-      vault.records.push({ id: "filed", profileId: "profile-1", folderIds: [], displayName: "FAKE Filed.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 2, available: true });
+      vault.folders.push({
+        id: "folder-2",
+        profileId: "profile-2",
+        parentId: null,
+        name: "FAKE Results",
+        createdAtMs: 1,
+      });
+      vault.records.push({
+        id: "filed",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE Filed.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/octet-stream",
+        plaintextSize: 2048,
+        importedAtMs: 2,
+        available: true,
+      });
       render(<VaultApp bridge={bridge} />);
       await unlockWith(user);
-      await user.click(await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }));
+      await user.click(
+        await screen.findByRole("button", {
+          name: "Details for FAKE Filed.pdf",
+        }),
+      );
       const details = screen.getByRole("dialog", { name: "FAKE Filed.pdf" });
-      const destination = within(details).getByRole("combobox", { name: "Move to" });
+      const destination = within(details).getByRole("combobox", {
+        name: "Move to",
+      });
       const move = within(details).getByRole("button", { name: "Move" });
       expect(destination).toHaveValue("profile-1|");
       expect(move).toBeDisabled();
-      expect(within(destination).queryByRole("option", { name: "Shared with me" })).not.toBeInTheDocument();
+      expect(
+        within(destination).queryByRole("option", { name: "Shared with me" }),
+      ).not.toBeInTheDocument();
       await user.selectOptions(destination, `profile-2|${folderId ?? ""}`);
       expect(bridge.moveToPerson).not.toHaveBeenCalled();
       await user.click(move);
-      await waitFor(() => expect(bridge.moveToPerson).toHaveBeenCalledExactlyOnceWith(["filed"], "profile-2", folderId ? [folderId] : []));
+      await waitFor(() =>
+        expect(bridge.moveToPerson).toHaveBeenCalledExactlyOnceWith(
+          ["filed"],
+          "profile-2",
+          folderId ? [folderId] : [],
+        ),
+      );
       expect(bridge.assignFolders).not.toHaveBeenCalled();
-      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
       expect(vault.records[0].profileId).toBe("profile-2");
-      await user.click(within(screen.getByRole("navigation", { name: "Record library" })).getByRole("button", { name: /^Morgan/ }));
-      if (folderId) await user.click(screen.getByRole("button", { name: "Open FAKE Results" }));
-      expect(await screen.findByRole("article", { name: "FAKE Filed.pdf document" })).toBeVisible();
+      await user.click(
+        within(
+          screen.getByRole("navigation", { name: "Record library" }),
+        ).getByRole("button", { name: /^Morgan/ }),
+      );
+      if (folderId)
+        await user.click(
+          screen.getByRole("button", { name: "Open FAKE Results" }),
+        );
+      expect(
+        await screen.findByRole("article", { name: "FAKE Filed.pdf document" }),
+      ).toBeVisible();
     },
   );
 
   it("keeps same-person detail moves on the folder assignment path with several people", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie", "Morgan"], []);
-    vault.folders.push({ id: "folder-1", profileId: "profile-1", parentId: null, name: "FAKE Results", createdAtMs: 1 });
-    vault.records.push({ id: "filed", profileId: "profile-1", folderIds: [], displayName: "FAKE Filed.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 2, available: true });
-    vi.mocked(bridge.assignFolders).mockImplementation(async (_id, folders) => { vault.records[0].folderIds = folders; });
+    vault.folders.push({
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Results",
+      createdAtMs: 1,
+    });
+    vault.records.push({
+      id: "filed",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE Filed.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
+    vi.mocked(bridge.assignFolders).mockImplementation(async (_id, folders) => {
+      vault.records[0].folderIds = folders;
+    });
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
-    await user.click(await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }),
+    );
     const details = screen.getByRole("dialog", { name: "FAKE Filed.pdf" });
-    const destination = within(details).getByRole("combobox", { name: "Move to" });
+    const destination = within(details).getByRole("combobox", {
+      name: "Move to",
+    });
     await user.selectOptions(destination, "profile-1|folder-1");
     await user.click(within(details).getByRole("button", { name: "Move" }));
-    await waitFor(() => expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("filed", ["folder-1"]));
+    await waitFor(() =>
+      expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("filed", [
+        "folder-1",
+      ]),
+    );
     expect(bridge.moveToPerson).not.toHaveBeenCalled();
     expect(details).toBeVisible();
     await waitFor(() => expect(destination).toHaveFocus());
     expect(destination).toHaveValue("profile-1|folder-1");
-    expect(within(details).getByRole("button", { name: "Move" })).toBeDisabled();
+    expect(
+      within(details).getByRole("button", { name: "Move" }),
+    ).toBeDisabled();
   });
 
   it("keeps a filed duplicate in its original person and reports that source", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie", "Morgan"], [], {
-      moveToPerson: vi.fn().mockResolvedValue({ moved: [], alreadyThere: ["FAKE Filed.pdf"] }),
+      moveToPerson: vi
+        .fn()
+        .mockResolvedValue({ moved: [], alreadyThere: ["FAKE Filed.pdf"] }),
     });
-    vault.records.push({ id: "filed", profileId: "profile-1", folderIds: [], displayName: "FAKE Filed.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 2048, importedAtMs: 2, available: true });
+    vault.records.push({
+      id: "filed",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE Filed.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    });
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
-    await user.click(await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }),
+    );
     const details = screen.getByRole("dialog", { name: "FAKE Filed.pdf" });
-    await user.selectOptions(within(details).getByRole("combobox", { name: "Move to" }), "profile-2|");
+    await user.selectOptions(
+      within(details).getByRole("combobox", { name: "Move to" }),
+      "profile-2|",
+    );
     await user.click(within(details).getByRole("button", { name: "Move" }));
-    expect(await within(details).findByText("FAKE Filed.pdf was already in Morgan's records, so it stayed in Jamie's records.")).toBeVisible();
+    expect(
+      await within(details).findByText(
+        "FAKE Filed.pdf was already in Morgan's records, so it stayed in Jamie's records.",
+      ),
+    ).toBeVisible();
     expect(vault.records[0].profileId).toBe("profile-1");
     expect(details).toBeVisible();
   });

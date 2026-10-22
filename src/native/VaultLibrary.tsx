@@ -811,7 +811,9 @@ export function VaultLibrary({
           ? `${profileName(toProfileId)}'s records`
           : "My records";
       const where = folder ? `${theirs}, folder ${folder.name}` : theirs;
-      const source = inShared ? "Shared with me" : `${profileName(profileId)}'s records`;
+      const source = inShared
+        ? "Shared with me"
+        : `${profileName(profileId)}'s records`;
       if (outcome.moved.includes(activeRecordId ?? "")) setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !outcome.moved.includes(id)),
@@ -1583,7 +1585,9 @@ export function VaultLibrary({
             <RecordDetails
               record={activeRecord}
               folders={folders}
-              moveTargets={inShared || people.length > 1 ? moveTargets : undefined}
+              moveTargets={
+                inShared || people.length > 1 ? moveTargets : undefined
+              }
               onMoveTo={(to, folderId) =>
                 to === activeRecord.profileId
                   ? void moveRecord(activeRecord.id, folderId)

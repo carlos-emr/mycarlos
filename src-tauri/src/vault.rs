@@ -7418,8 +7418,15 @@ mod tests {
         let labs = store.create_folder(morgan, None, "Labs", 4).unwrap();
         // Treat document content as opaque, including any embedded signatures.
         let original = b"%PDF-1.7\nFAKE original document\n\x00\xff\r\n%%EOF";
-        let id = store.import(jamie, vec![old_folder], vec![source("original.pdf", original)], 5)
-            .unwrap().imported[0];
+        let id = store
+            .import(
+                jamie,
+                vec![old_folder],
+                vec![source("original.pdf", original)],
+                5,
+            )
+            .unwrap()
+            .imported[0];
         let before = store.session().as_ref().unwrap().manifest.records[0].clone();
         let object = root.join("objects").join(&before.object_name);
         let ciphertext = fs::read(&object).unwrap();
@@ -7436,8 +7443,13 @@ mod tests {
         assert!(after == expected); // Includes identity, object name/key and all source metadata.
         assert_eq!(fs::read(&object).unwrap(), ciphertext);
         assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
-        assert_eq!(store.import(morgan, vec![], vec![source("again.pdf", original)], 6)
-            .unwrap().skipped_duplicates, vec!["again.pdf"]);
+        assert_eq!(
+            store
+                .import(morgan, vec![], vec![source("again.pdf", original)], 6)
+                .unwrap()
+                .skipped_duplicates,
+            vec!["again.pdf"]
+        );
 
         store.lock();
         store.unlock(PASSWORD).unwrap();
@@ -7450,7 +7462,9 @@ mod tests {
         assert_eq!(exported, original);
         assert_eq!(fs::read(&object).unwrap(), ciphertext);
         // Moving back is valid and recomputes the original per-person fingerprint.
-        store.move_to_profile(vec![id], jamie, vec![old_folder]).unwrap();
+        store
+            .move_to_profile(vec![id], jamie, vec![old_folder])
+            .unwrap();
         assert!(store.session().as_ref().unwrap().manifest.records[0] == before);
     }
 
@@ -7463,9 +7477,18 @@ mod tests {
         let jamie = store.snapshot().unwrap().profiles[0].id;
         let morgan = store.create_profile("Morgan", 2).unwrap();
         let labs = store.create_folder(jamie, None, "Labs", 3).unwrap();
-        let ids = store.import(jamie, vec![labs], vec![source("same.pdf", b"same"), source("other.pdf", b"other")], 4)
-            .unwrap().imported;
-        store.import(morgan, vec![], vec![source("existing.pdf", b"same")], 5).unwrap();
+        let ids = store
+            .import(
+                jamie,
+                vec![labs],
+                vec![source("same.pdf", b"same"), source("other.pdf", b"other")],
+                4,
+            )
+            .unwrap()
+            .imported;
+        store
+            .import(morgan, vec![], vec![source("existing.pdf", b"same")], 5)
+            .unwrap();
         let before = store.session().as_ref().unwrap().manifest.clone();
         let outcome = store.move_to_profile(vec![ids[0]], morgan, vec![]).unwrap();
         assert!(outcome.moved.is_empty());
@@ -7480,12 +7503,16 @@ mod tests {
             assert!(store.move_to_profile(ids.clone(), target, folders).is_err());
             assert!(store.session().as_ref().unwrap().manifest == before);
         }
-        assert!(store.move_to_profile(vec![ids[1], Uuid::new_v4()], morgan, vec![]).is_err());
+        assert!(store
+            .move_to_profile(vec![ids[1], Uuid::new_v4()], morgan, vec![])
+            .is_err());
         assert!(store.session().as_ref().unwrap().manifest == before);
         // A later unreadable object cannot leave earlier batch items moved.
         let missing = before.records.iter().find(|r| r.id == ids[0]).unwrap();
         fs::remove_file(root.join("objects").join(&missing.object_name)).unwrap();
-        assert!(store.move_to_profile(vec![ids[1], ids[0]], morgan, vec![]).is_err());
+        assert!(store
+            .move_to_profile(vec![ids[1], ids[0]], morgan, vec![])
+            .is_err());
         assert!(store.session().as_ref().unwrap().manifest == before);
     }
 
