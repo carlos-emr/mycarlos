@@ -7586,14 +7586,25 @@ mod tests {
         // Shared intake retains the same hide/restore guarantees as a person's files.
         let object = {
             let guard = store.session();
-            let record = guard.as_ref().unwrap().manifest.records.iter()
-                .find(|record| record.id == added[0]).unwrap();
+            let record = guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == added[0])
+                .unwrap();
             temp.path().join("vault/objects").join(&record.object_name)
         };
         let ciphertext = fs::read(&object).unwrap();
         store.hide_record(added[0], 5).unwrap();
-        let hidden = store.snapshot().unwrap().records.into_iter()
-            .find(|record| record.id == added[0]).unwrap();
+        let hidden = store
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .find(|record| record.id == added[0])
+            .unwrap();
         assert_eq!(hidden.profile_id, shared);
         assert!(hidden.hidden.is_some());
         assert_eq!(fs::read(&object).unwrap(), ciphertext);
