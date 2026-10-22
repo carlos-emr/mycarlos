@@ -43,7 +43,12 @@ import {
   type OldBackupsGuide,
 } from "./oldBackups";
 
-type NativeSection = "records" | "shared" | "hidden" | "security" | "preferences";
+type NativeSection =
+  | "records"
+  | "shared"
+  | "hidden"
+  | "security"
+  | "preferences";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
 const PHONE_TABS: ReadonlyArray<[NativeSection, string]> = [
@@ -244,7 +249,9 @@ export function VaultLibrary({
   );
   const peopleRecords = useMemo(
     () =>
-      snapshot.records.filter((record) => record.profileId !== sharedProfileId && !record.hidden),
+      snapshot.records.filter(
+        (record) => record.profileId !== sharedProfileId && !record.hidden,
+      ),
     [snapshot.records, sharedProfileId],
   );
   const inShared = section === "shared";
@@ -256,8 +263,8 @@ export function VaultLibrary({
   );
   // The documents where the patient is: a person's, or Shared with me's.
   const locationProfileId = inShared ? sharedProfileId : profileId;
-  const hiddenLocationProfileId = section === "hidden"
-    ? hiddenProfileId ?? profileId : locationProfileId;
+  const hiddenLocationProfileId =
+    section === "hidden" ? (hiddenProfileId ?? profileId) : locationProfileId;
   const openHidden = () => {
     if (section === "hidden") return;
     setHiddenProfileId(locationProfileId ?? profileId);
@@ -271,9 +278,11 @@ export function VaultLibrary({
     [snapshot.records, locationProfileId],
   );
   const hiddenRecords = useMemo(
-    () => snapshot.records.filter(
-      (record) => record.profileId === hiddenLocationProfileId && record.hidden,
-    ),
+    () =>
+      snapshot.records.filter(
+        (record) =>
+          record.profileId === hiddenLocationProfileId && record.hidden,
+      ),
     [snapshot.records, hiddenLocationProfileId],
   );
   // Where a document in Shared with me can go: each person's records and
@@ -967,7 +976,9 @@ export function VaultLibrary({
                     ? "page"
                     : undefined
                 }
-                onClick={() => value === "hidden" ? openHidden() : setSection(value)}
+                onClick={() =>
+                  value === "hidden" ? openHidden() : setSection(value)
+                }
               >
                 {value === "records" && sharedNew
                   ? `${label} (${sharedNew} new)`
@@ -988,7 +999,13 @@ export function VaultLibrary({
           >
             <LibrarySidebar
               profileName={
-                (!inShared && !(section === "hidden" && hiddenLocationProfileId === sharedProfileId) && profile?.displayName) || "Private vault"
+                (!inShared &&
+                  !(
+                    section === "hidden" &&
+                    hiddenLocationProfileId === sharedProfileId
+                  ) &&
+                  profile?.displayName) ||
+                "Private vault"
               }
               people={people}
               profileId={profileId}
@@ -999,12 +1016,16 @@ export function VaultLibrary({
               disabled={busy || readOnly}
               drag={drag}
               hiddenCount={hiddenRecords.length}
-              hiddenFromShared={section === "hidden" && hiddenLocationProfileId === sharedProfileId}
+              hiddenFromShared={
+                section === "hidden" &&
+                hiddenLocationProfileId === sharedProfileId
+              }
               onOpenPerson={openPerson}
               onOpenFolder={(person, folderId) => openPerson(person, folderId)}
               sharedNew={sharedNew}
               vaultTotals={{
-                documents: snapshot.records.filter((record) => !record.hidden).length,
+                documents: snapshot.records.filter((record) => !record.hidden)
+                  .length,
                 folders: snapshot.folders.length,
               }}
               onOpenShared={() => {
@@ -1479,7 +1500,11 @@ export function VaultLibrary({
             {section === "hidden" && (
               <HiddenDocuments
                 records={hiddenRecords}
-                rootName={hiddenLocationProfileId === sharedProfileId ? "Shared with me" : "My records"}
+                rootName={
+                  hiddenLocationProfileId === sharedProfileId
+                    ? "Shared with me"
+                    : "My records"
+                }
                 folderNameById={folderNameById}
                 busy={busy}
                 readOnly={readOnly}

@@ -227,6 +227,8 @@ describe("the person-folder sidebar in each language", () => {
         } as unknown as VaultDragDrop,
         onOpenPerson: vi.fn(),
         onOpenFolder: vi.fn(),
+        hiddenCount: 0,
+        onOpenHidden: vi.fn(),
         onOpenSecurity: vi.fn(),
         onOpenPreferences: vi.fn(),
       };

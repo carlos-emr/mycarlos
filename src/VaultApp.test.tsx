@@ -737,51 +737,126 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
-  it.each([false, true])("keeps Shared hidden documents restorable without mixing a person's Hidden list (phone: %s)", async (phone) => {
-    if (phone) {
-      await page.viewport(390, 844);
-      onTestFinished(() => page.viewport(1100, 760));
-    }
-    const user = userEvent.setup();
-    const { bridge, vault } = sharedVault(["Jamie", "Morgan"], ["FAKE_Shared.pdf"]);
-    vault.records.push({ id: "hidden-jamie", profileId: "profile-1", folderIds: [], displayName: "FAKE_Jamie_hidden.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true, hidden: { atMs: 2, reason: "patient" } });
-    vault.records.push({ id: "active-morgan", profileId: "profile-2", folderIds: [], displayName: "FAKE_Morgan.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true });
-    vi.mocked(bridge.hideRecord).mockImplementation(async (id) => {
-      vault.records.find((record) => record.id === id)!.hidden = { atMs: 3, reason: "patient" };
-    });
-    vi.mocked(bridge.unhideRecord).mockImplementation(async (id) => {
-      vault.records.find((record) => record.id === id)!.hidden = null;
-    });
-    render(<VaultApp bridge={bridge} />);
-    await unlockWith(user);
-    expect(screen.queryByText("FAKE_Jamie_hidden.pdf")).not.toBeInTheDocument();
-    const nav = () => screen.getByRole("navigation", { name: "Record library" });
-    await user.click(within(nav()).getByRole("button", { name: /^Shared with me/ }));
-    await user.click(await screen.findByRole("button", { name: "Details for FAKE_Shared.pdf" }));
-    const details = screen.getByRole("dialog", { name: "FAKE_Shared.pdf" });
-    await user.click(within(details).getByRole("button", { name: "Hide" }));
-    await waitFor(() => expect(bridge.hideRecord).toHaveBeenCalledWith("record-shared-1"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
-    const row = await screen.findByRole("article", { name: "FAKE_Shared.pdf, hidden" });
-    expect(within(row).getByText("Shared with me")).toBeVisible();
-    expect(screen.getByRole("complementary", { hidden: true })).toHaveTextContent("1 document · 0 folders");
-    // Reopening the selected Hidden entry must retain Shared as its source.
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
-    expect(screen.getByRole("article", { name: "FAKE_Shared.pdf, hidden" })).toBeVisible();
-    expect(within(row).getByText("Shared with me")).toBeVisible();
-    expect(screen.getByRole("complementary", { hidden: true })).toHaveTextContent("1 document · 0 folders");
-    expect(screen.queryByText("FAKE_Jamie_hidden.pdf")).not.toBeInTheDocument();
-    await user.click(within(row).getByRole("button", { name: "Restore FAKE_Shared.pdf" }));
-    await waitFor(() => expect(bridge.unhideRecord).toHaveBeenCalledWith("record-shared-1"));
-    await user.click(within(nav()).getByRole("button", { name: /^Shared with me/ }));
-    expect(await screen.findByRole("article", { name: "FAKE_Shared.pdf document" })).toBeVisible();
-    await user.click(within(nav()).getByRole("button", { name: /^Jamie/ }));
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
-    expect(await screen.findByRole("article", { name: "FAKE_Jamie_hidden.pdf, hidden" })).toBeVisible();
-    expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
-  });
+  it.each([false, true])(
+    "keeps Shared hidden documents restorable without mixing a person's Hidden list (phone: %s)",
+    async (phone) => {
+      if (phone) {
+        await page.viewport(390, 844);
+        onTestFinished(() => page.viewport(1100, 760));
+      }
+      const user = userEvent.setup();
+      const { bridge, vault } = sharedVault(
+        ["Jamie", "Morgan"],
+        ["FAKE_Shared.pdf"],
+      );
+      vault.records.push({
+        id: "hidden-jamie",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE_Jamie_hidden.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/octet-stream",
+        plaintextSize: 200,
+        importedAtMs: 1,
+        available: true,
+        hidden: { atMs: 2, reason: "patient" },
+      });
+      vault.records.push({
+        id: "active-morgan",
+        profileId: "profile-2",
+        folderIds: [],
+        displayName: "FAKE_Morgan.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/octet-stream",
+        plaintextSize: 200,
+        importedAtMs: 1,
+        available: true,
+      });
+      vi.mocked(bridge.hideRecord).mockImplementation(async (id) => {
+        vault.records.find((record) => record.id === id)!.hidden = {
+          atMs: 3,
+          reason: "patient",
+        };
+      });
+      vi.mocked(bridge.unhideRecord).mockImplementation(async (id) => {
+        vault.records.find((record) => record.id === id)!.hidden = null;
+      });
+      render(<VaultApp bridge={bridge} />);
+      await unlockWith(user);
+      expect(
+        screen.queryByText("FAKE_Jamie_hidden.pdf"),
+      ).not.toBeInTheDocument();
+      const nav = () =>
+        screen.getByRole("navigation", { name: "Record library" });
+      await user.click(
+        within(nav()).getByRole("button", { name: /^Shared with me/ }),
+      );
+      await user.click(
+        await screen.findByRole("button", {
+          name: "Details for FAKE_Shared.pdf",
+        }),
+      );
+      const details = screen.getByRole("dialog", { name: "FAKE_Shared.pdf" });
+      await user.click(within(details).getByRole("button", { name: "Hide" }));
+      await waitFor(() =>
+        expect(bridge.hideRecord).toHaveBeenCalledWith("record-shared-1"),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+      const row = await screen.findByRole("article", {
+        name: "FAKE_Shared.pdf, hidden",
+      });
+      expect(within(row).getByText("Shared with me")).toBeInTheDocument();
+      expect(
+        screen.getByRole("complementary", { hidden: true }),
+      ).toHaveTextContent("1 document · 0 folders");
+      // Reopening the selected Hidden entry must retain Shared as its source.
+      await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+      expect(
+        screen.getByRole("article", { name: "FAKE_Shared.pdf, hidden" }),
+      ).toBeVisible();
+      expect(within(row).getByText("Shared with me")).toBeInTheDocument();
+      expect(
+        screen.getByRole("complementary", { hidden: true }),
+      ).toHaveTextContent("1 document · 0 folders");
+      expect(
+        screen.queryByText("FAKE_Jamie_hidden.pdf"),
+      ).not.toBeInTheDocument();
+      await user.click(
+        within(row).getByRole("button", { name: "Restore FAKE_Shared.pdf" }),
+      );
+      await waitFor(() =>
+        expect(bridge.unhideRecord).toHaveBeenCalledWith("record-shared-1"),
+      );
+      if (phone) {
+        await user.click(
+          within(screen.getByRole("navigation", { name: "Section" })).getByRole(
+            "button",
+            { name: /^Records/ },
+          ),
+        );
+      }
+      await user.click(
+        within(nav()).getByRole("button", { name: /^Shared with me/ }),
+      );
+      expect(
+        await screen.findByRole("article", {
+          name: "FAKE_Shared.pdf document",
+        }),
+      ).toBeVisible();
+      await user.click(within(nav()).getByRole("button", { name: /^Jamie/ }));
+      await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+      expect(
+        await screen.findByRole("article", {
+          name: "FAKE_Jamie_hidden.pdf, hidden",
+        }),
+      ).toBeVisible();
+      expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
+    },
+  );
 
   it("with several people, keeps Shared with me outside everyone's records and moves the selected to one person (#61)", async () => {
     const user = userEvent.setup();
