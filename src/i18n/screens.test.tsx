@@ -48,7 +48,6 @@ function renderSecurity() {
       onLock={vi.fn().mockResolvedValue(undefined)}
       onChangePassphrase={vi.fn().mockResolvedValue(undefined)}
       onCreateProfile={vi.fn().mockResolvedValue(true)}
-      onReset={vi.fn().mockResolvedValue(undefined)}
       recoveryKeySetAtMs={Date.UTC(2026, 9, 1)}
       recoveryKeyLabel="BEAD"
       onSetUpRecoveryKey={vi.fn()}
@@ -100,6 +99,12 @@ describe("Settings > Security in each language", () => {
     it(`shows the Security screen in ${locale}`, () => {
       setLocaleOverride(locale);
       renderSecurity();
+      // Set-aside replaces destructive reset; Settings has no erase control.
+      expect(
+        screen.queryByRole("heading", {
+          name: translate(locale, "security.erase.title"),
+        }),
+      ).toBeNull();
 
       expect(document.documentElement.lang).toBe(locale);
       expect(

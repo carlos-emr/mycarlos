@@ -46,6 +46,12 @@ privacy, accessibility, or clinical review.
       formats 1 and 2 in a commit of its own; locks recorded at the next unlock. Not shown in the
       app; Ben chose tamper-evident on the device only (19 Oct); no export. Must not ship before
       part C (set aside).
+- [x] Vaults set aside, never erased (#71 part C): starting again and restoring over a vault move
+      it, whole and encrypted, into `set-aside/`, recorded in its history when it is open; a
+      `reset-pending` folder an older build left is set aside too. No removal kind covers a vault.
+      Reopening a vault set aside from the app is a follow-up. Starting again is offered only on
+      the unlock screen, not in Security (decided 19 October): on Android and iPhone a vault set
+      aside goes only with every vault (clearing the app's data or uninstalling), an accepted limit.
 - [x] Abrupt-process-termination recovery matrix after object chunk writes, staging, object rename,
       both manifest commits, each hiding boundary, and each upgrade write.
 - [x] Deterministic `NoSpace` failure injection during object writing and before/after durable

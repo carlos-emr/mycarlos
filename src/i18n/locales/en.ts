@@ -74,14 +74,14 @@ export const en = {
   "unlock.forgot.summary": "Forgot your passphrase?",
   "unlock.noKey.heading": "No recovery key?",
   "unlock.noKey.body":
-    "Without one, the only way back in is to erase myCarlos and start again.",
+    "Without one, the only way back in is to set this vault aside and start again. The vault set aside stays on this device, encrypted, but nobody can open it without its passphrase.",
   "restore.summary": "Restore from a backup",
 
-  // Erase the vault
+  // Set the vault aside
   "reset.plainly":
-    "Erasing deletes all your documents, folders and patient profiles from myCarlos on this computer, and it cannot be undone. To be sure, type the words below exactly.",
+    "Setting the vault aside takes all your documents, folders and patient profiles out of myCarlos on this computer. They stay on this computer, encrypted, but nobody can open them without the passphrase. To be sure, type the words below exactly.",
   "reset.type": "Type {phrase}",
-  "reset.submit": "Erase vault",
+  "reset.submit": "Set vault aside",
 
   // Open with the recovery key
   "recover.intro":
@@ -123,17 +123,17 @@ export const en = {
   },
   "restore.consequence.nothing": "Restoring puts this vault on this device.",
   "restore.consequence.same":
-    "The vault on this device holds the same documents. Restoring replaces it with this backup.",
+    "The vault on this device holds the same documents. Restoring sets it aside and puts this backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.",
   "restore.consequence.differs":
-    "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring replaces the vault with the backup: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with.",
+    "The vault on this device may not be the same as this backup: it may have changed since, or part of it could not be read. Restoring sets the vault aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.",
   "restore.consequence.otherVault":
-    "This device has a different vault. Restoring erases it, permanently, and puts the backup in its place.",
+    "This device has a different vault. Restoring sets it aside and puts the backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.",
   "restore.consequence.unreadable":
-    "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring erases it, permanently, and puts the backup in its place.",
+    "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets it aside and puts the backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.",
   "restore.agree.erase":
-    "Erase the vault on this device and restore the backup",
+    "Set the vault on this device aside and restore the backup",
   "restore.agree.replace":
-    "Replace the vault on this device with this backup and lose what changed since",
+    "Set the vault on this device aside, with what changed since, and restore this backup",
   "restore.submit": "Restore backup",
   "restore.restoring":
     "Restoring the backup. This can take a while for a large vault…",
@@ -246,9 +246,9 @@ export const en = {
   "security.backup.save": "Save encrypted backup…",
   "security.passphrase.title": "Change passphrase",
   "security.passphrase.rules":
-    "Use at least {min} characters and avoid common names or predictable phrases. Your recovery key, if you have one, keeps working; without one, forgetting the new passphrase means erasing the vault.",
+    "Use at least {min} characters and avoid common names or predictable phrases. Your recovery key, if you have one, keeps working; without one, forgetting the new passphrase means setting the vault aside and starting again.",
   "security.passphrase.copies":
-    "Changing your passphrase keeps out someone who only knows the old one. If they may also have a copy of your vault, such as a backup of this device or a saved backup file, a new passphrase is not enough: the old one still opens that copy, and with that copy they could open a newer one they got later. Shutting them out takes a new vault, and care not to lose documents on the way. Ask for help before you erase anything.",
+    "Changing your passphrase keeps out someone who only knows the old one. If they may also have a copy of your vault, such as a backup of this device or a saved backup file, a new passphrase is not enough: the old one still opens that copy, and with that copy they could open a newer one they got later. Shutting them out takes a new vault, and care not to lose documents on the way. Ask for help before you set your vault aside.",
   "security.passphrase.current": "Current passphrase",
   "security.passphrase.currentTooLong":
     "The current passphrase is longer than any vault passphrase. Check what you typed.",
@@ -303,7 +303,7 @@ export const en = {
     "This recovery key is not set up yet, so it will never open the vault. myCarlos locks the vault now. After you unlock it, you can set up a new key.",
   "recoveryKey.discard.confirm": "Discard key and lock",
   "recoveryKey.about.offered":
-    "Your vault is open. It has no recovery key yet. Without one, if you forget your passphrase, the only way back in is to erase the vault.",
+    "Your vault is open. It has no recovery key yet. Without one, if you forget your passphrase, the only way back in is to set the vault aside and start again.",
   "recoveryKey.about.what":
     "A recovery key opens your vault if you forget your passphrase. Only you will have it: nobody at your clinic or at myCarlos can open your vault for you.",
   "recoveryKey.about.replacing":
@@ -387,7 +387,7 @@ export const en = {
   "notice.createdThenLocked":
     "Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.",
   "notice.created":
-    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not mean erasing it.",
+    "Encrypted vault created. Set up a recovery key, so that a forgotten passphrase does not lock you out of your documents for good.",
   "notice.unlockedRecovery":
     "Vault unlocked in read-only recovery mode. See the notice in the library for what to do.",
   "notice.unlocked": "Vault unlocked.",
@@ -395,7 +395,7 @@ export const en = {
     "Vault opened with your recovery key. Use your new passphrase from now on.",
   "notice.recoveredReadOnly":
     "Vault opened read-only with your recovery key, and your passphrase is unchanged. See the notice in the library for what to do.",
-  "notice.eraseCancelled": "Vault erase cancelled. Nothing changed.",
+  "notice.eraseCancelled": "Nothing changed: the vault was not set aside.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "the name",

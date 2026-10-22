@@ -115,12 +115,15 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - Nothing is deleted (#71): a document is hidden, which marks it in both manifest slots and keeps
   its encrypted file and key, and it can be restored from **Hidden**. Direct file removal is
   disallowed crate-wide by clippy; the one removal helper names what it may remove (stages,
-  uncommitted ciphertext, export staging, superseded files, and, until vaults are set aside, a
-  reset vault).
+  uncommitted ciphertext, export staging, superseded files). Starting again, or restoring a backup
+  over a vault, sets the vault aside, whole and encrypted, in a `set-aside` folder beside it; the
+  app never deletes one. On Android and iPhone a vault set aside can only be removed by clearing
+  the app's data or uninstalling it, which removes every vault (an accepted limit), so starting
+  again is offered only on the unlock screen ("Forgot your passphrase?"), not in Security.
 - An encrypted history records each unlock, each passphrase change, each profile added, each
-  folder made, renamed or moved, and what happens to each document (added, renamed, moved, hidden,
-  restored, saved outside the vault), hash-chained so that a changed or missing entry shows. It is
-  never shown in the app and stays on the device, with no export (#71).
+  folder made, renamed or moved, each vault set aside, and what happens to each document (added,
+  renamed, moved, hidden, restored, saved outside the vault), hash-chained so that a changed or
+  missing entry shows. It is never shown in the app and stays on the device, with no export (#71).
 - Abrupt-termination tests exercise recovery after chunk writes, staging, object rename, redundant
   manifest commits, and each hiding boundary. Corruption tests cover bit flips, truncation,
   ciphertext swapping, exact chunk boundaries, structured semantic manifest mutations,

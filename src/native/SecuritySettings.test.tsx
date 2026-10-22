@@ -34,7 +34,6 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     onLock: vi.fn().mockResolvedValue(undefined),
     onChangePassphrase: vi.fn().mockResolvedValue(undefined),
     onCreateProfile: vi.fn().mockResolvedValue(true),
-    onReset: vi.fn().mockResolvedValue(undefined),
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
@@ -266,19 +265,35 @@ describe("SecuritySettings privacy notice", () => {
     expect(notice).toHaveTextContent(
       /does not show it, and never changes or removes it/,
     );
+    expect(notice).toHaveTextContent(
+      /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,
+    );
   });
 });
 
 describe("SecuritySettings passphrase change", () => {
-  it("says what a new passphrase does not protect, without urging an erase", () => {
+  it("says what a new passphrase does not protect, without urging a new vault", () => {
     renderSettings();
     const limit =
       screen.getByText(/a new passphrase\s+is not enough/).textContent ?? "";
     expect(limit).toMatch(/the old one still opens that copy/);
-    expect(limit).toMatch(/Ask for help before you erase anything/);
+    expect(limit).toMatch(/Ask for help before you set your vault aside/);
     // The steps are in the documents, not here: nothing on this screen
-    // tells a patient to erase.
-    expect(limit).not.toMatch(/erase this vault/);
+    // tells a patient to do it.
+    expect(limit).not.toMatch(/erase|set this vault aside/);
+  });
+
+  it("offers no way to set the vault aside from here (D89)", () => {
+    // Starting again is only on the unlock screen ("Forgot your
+    // passphrase?"): on a phone a vault set aside can't be removed without
+    // removing every vault, so Security doesn't offer it as a fresh start.
+    renderSettings();
+    expect(
+      screen.queryByRole("button", { name: /set vault aside/i }),
+    ).toBeNull();
+    expect(screen.queryByText("Show reset controls")).toBeNull();
+    expect(screen.queryByLabelText(/RESET MYCARLOS VAULT/)).toBeNull();
+    expect(document.body).not.toHaveTextContent(/start again/i);
   });
 
   it("says hiding a document leaves copies outside the vault, not that it deletes (#71)", () => {
