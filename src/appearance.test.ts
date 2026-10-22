@@ -98,8 +98,8 @@ describe("device appearance", () => {
       mode: "dark",
       theme: "dark",
     });
-    expect(appearance.snapshot().storageError).toContain(
-      "could not be remembered",
+    expect(appearance.snapshot().storageError).toBe(
+      "appearance.error.notRemembered",
     );
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
@@ -110,7 +110,9 @@ describe("device appearance", () => {
     });
     const appearance = startAppearance();
     expect(appearance.snapshot().mode).toBe("system");
-    expect(appearance.snapshot().storageError).toContain("could not be read");
+    expect(appearance.snapshot().storageError).toBe(
+      "appearance.error.unreadable",
+    );
   });
 
   it("accepts appearance storage changes but ignores other device preferences", () => {

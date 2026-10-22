@@ -10,7 +10,12 @@ import { Icon } from "../Icon";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../i18n";
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import {
+  NAME_INPUT_MAX_LENGTH,
+  SHARED_FOLDER_NAME,
+  nameIsShared,
+  nameTooLong,
+} from "./recordPresentation";
 import { RestoreBackup } from "./RestoreBackup";
 import {
   MIN_PASSPHRASE_CHARS,
@@ -185,11 +190,13 @@ export function CreateVault({
   const tooLong = utf8Length(passphrase) > MAX_PASSPHRASE_BYTES;
   const tooShort = tooShortPassphrase(passphrase);
   const profileTooLong = nameTooLong(profile);
+  const profileShared = nameIsShared(profile);
   // A rule the vault has said is not met: Create would only be refused.
   const unmet = rules !== null && !(rules.notAName && rules.hardToGuess);
   const invalid =
     !profile.trim() ||
     profileTooLong ||
+    profileShared ||
     tooLong ||
     tooShort ||
     unmet ||
@@ -227,6 +234,11 @@ export function CreateVault({
             />
           </label>
           {profileTooLong && <p role="alert">{t("create.profile.tooLong")}</p>}
+          {profileShared && (
+            <p role="alert">
+              {t("create.profile.sharedTaken", { folder: SHARED_FOLDER_NAME })}
+            </p>
+          )}
           <label>
             {t("passphrase.label")}
             <SecretInput
@@ -308,6 +320,7 @@ export function CreateVault({
 export function UnlockVault({
   busy,
   notice,
+  waiting = 0,
   autoLockMinutes,
   onUnlock,
   onRecover,
@@ -317,6 +330,8 @@ export function UnlockVault({
 }: {
   busy: boolean;
   notice: string;
+  /** How many shared files wait for an unlock. Their names are not shown. */
+  waiting?: number;
   autoLockMinutes: number;
   onUnlock: (passphrase: string) => Promise<void>;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
@@ -348,6 +363,18 @@ export function UnlockVault({
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="unlock-title">{t("unlock.title")}</h1>
         <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
+        {/* Shared files waiting: a count, never a name, since whoever is
+            looking on has not unlocked. */}
+        {waiting > 0 && (
+          <p className="native-received-waiting">
+            {waiting === 1
+              ? t("unlock.waiting.one", { folder: SHARED_FOLDER_NAME })
+              : t("unlock.waiting", {
+                  count: waiting,
+                  folder: SHARED_FOLDER_NAME,
+                })}
+          </p>
+        )}
         <form onSubmit={submit}>
           <label>
             {t("passphrase.label")}

@@ -69,6 +69,14 @@ export const NAME_INPUT_MAX_LENGTH = 2 * MAX_NAME_CHARS;
 export const nameTooLong = (name: string) =>
   [...name.trim()].length > MAX_NAME_CHARS;
 
+/** "Shared with me" is the folder shared files go into (#61), so no person
+ * may be called that. */
+/** The name Shared with me goes by in the library (#61). */
+export const SHARED_FOLDER_NAME = "Shared with me";
+export const SHARED_NAME_TAKEN = `${SHARED_FOLDER_NAME} is where shared files go. Choose another name.`;
+export const nameIsShared = (name: string) =>
+  name.trim().toLowerCase() === "shared with me";
+
 // Search compares text in one form whatever the device's locale: with a
 // Turkish default locale, toLocaleLowerCase() turns "I" into a dotless "ı",
 // so "imaging" would not find "Imaging". NFC makes an accent typed as a
