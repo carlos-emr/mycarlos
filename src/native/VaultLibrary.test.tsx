@@ -42,7 +42,9 @@ const snapshot: VaultSnapshot = {
 function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
   const bridge = {
     updateFolder: vi.fn().mockResolvedValue(undefined),
+    assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
     snapshot: vi.fn().mockResolvedValue(shown),
+    isLockedPdf: vi.fn().mockResolvedValue(false),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
@@ -122,6 +124,339 @@ describe("VaultLibrary folders", () => {
       new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
     );
     expect(row).not.toHaveTextContent(/\bFolder\b/);
+  });
+});
+
+const folder = (id: string, name: string, parentId: string | null) => ({
+  id,
+  profileId: "profile-1",
+  parentId,
+  name,
+  createdAtMs: 1,
+});
+const record = (id: string, displayName: string, folderIds: string[]) => ({
+  id,
+  profileId: "profile-1",
+  folderIds,
+  displayName,
+  sourceLabel: "Manual import — unverified",
+  mediaType: "application/pdf",
+  plaintextSize: 2048,
+  importedAtMs: 1,
+  available: true,
+});
+const filed: VaultSnapshot = {
+  profiles: snapshot.profiles,
+  folders: [
+    folder("lab", "FAKE Lab results", null),
+    folder("lab-2026", "FAKE 2026", "lab"),
+    folder("lab-2026-june", "FAKE June", "lab-2026"),
+    folder("letters", "FAKE Letters", null),
+    folder("letters-june", "FAKE June", "letters"),
+  ],
+  records: [
+    record("top", "FAKE Blood pressure log.pdf", []),
+    record("lab-1", "FAKE Blood test.pdf", ["lab"]),
+    record("lab-deep", "FAKE Blood test.pdf", ["lab-2026-june"]),
+    record("letters-1", "FAKE Blood test referral.pdf", ["letters"]),
+    record("twice", "FAKE Blood count.pdf", ["lab-2026", "letters"]),
+  ],
+  recovery: null,
+};
+
+const search = (label: string, text: string) =>
+  fireEvent.change(screen.getByRole("searchbox", { name: label }), {
+    target: { value: text },
+  });
+// Each document shown, with the folder path given for it.
+const shownDocuments = () =>
+  screen
+    .queryAllByRole("article", { name: / document$/ })
+    .map((row) => [
+      row.getAttribute("aria-label")?.replace(/ document$/, ""),
+      within(row).queryByText(/^In /)?.textContent ?? null,
+    ]);
+const openFolder = (name: RegExp) =>
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Record library" }),
+    ).getByRole("button", { name }),
+  );
+
+describe("VaultLibrary search", () => {
+  const separateScopes: VaultSnapshot = {
+    ...filed,
+    sharedProfileId: "shared",
+    profiles: [
+      ...filed.profiles,
+      { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+      { id: "shared", displayName: "Shared with me", createdAtMs: 3 },
+    ],
+    folders: [
+      ...filed.folders,
+      {
+        ...folder("blake-lab", "FAKE Lab results", null),
+        profileId: "profile-2",
+      },
+    ],
+    records: [
+      ...filed.records,
+      {
+        ...record("blake-top", "FAKE Blood log.pdf", []),
+        profileId: "profile-2",
+      },
+      {
+        ...record("blake-filed", "FAKE Blood test.pdf", ["blake-lab"]),
+        profileId: "profile-2",
+      },
+      {
+        ...record("shared-test", "FAKE Blood shared.pdf", []),
+        profileId: "shared",
+      },
+    ],
+  };
+
+  it("searches only the current person's root and names that person's paths", () => {
+    renderLibrary(separateScopes);
+    search("Search everything in FAKE Avery", "blood");
+    expect(shownDocuments()).toHaveLength(5);
+    expect(
+      shownDocuments().every(([, path]) => path?.startsWith("In FAKE Avery")),
+    ).toBe(true);
+    const sidebar = screen.getByRole("navigation", { name: "Record library" });
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: /^FAKE Blake/ }),
+    );
+    search("Search everything in FAKE Blake", "blood");
+    expect(shownDocuments()).toEqual([
+      ["FAKE Blood log.pdf", "In FAKE Blake"],
+      ["FAKE Blood test.pdf", "In FAKE Blake / FAKE Lab results"],
+    ]);
+    search("Search everything in FAKE Blake", "lab");
+    const folders = screen.getAllByRole("article", { name: / folder$/ });
+    expect(folders).toHaveLength(1);
+    expect(within(folders[0]).getByText("In FAKE Blake")).toBeVisible();
+  });
+
+  it("searches only Shared with me, without person folders or pane drops", () => {
+    const { bridge } = renderLibrary(separateScopes);
+    // Enter Shared from a deep folder so no person's subtree can carry over.
+    openFolder(/^FAKE 2026/);
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: "Record library" }),
+      ).getByRole("button", { name: /^Shared with me/ }),
+    );
+    const sharedRow = () =>
+      screen.getByRole("article", { name: "FAKE Blood shared.pdf document" });
+    dragFolder(sharedRow(), screen.getByRole("main"));
+    search("Search Shared with me", "blood");
+    expect(shownDocuments()).toEqual([
+      ["FAKE Blood shared.pdf", "In Shared with me"],
+    ]);
+    expect(screen.getByText("1 documents found")).toBeVisible();
+    dragFolder(sharedRow(), screen.getByRole("main"));
+    search("Search Shared with me", "lab");
+    expect(screen.queryAllByRole("article", { name: / folder$/ })).toHaveLength(
+      0,
+    );
+    expect(shownDocuments()).toEqual([]);
+    search("Search Shared with me", "");
+    expect(shownDocuments()).toEqual([["FAKE Blood shared.pdf", null]]);
+    expect(bridge.updateFolder).not.toHaveBeenCalled();
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+  });
+
+  it("keeps hidden documents out of recursive search results and their paths", () => {
+    renderLibrary({
+      ...filed,
+      records: filed.records.map((r) =>
+        r.id === "lab-deep"
+          ? { ...r, hidden: { atMs: 2, reason: "patient" as const } }
+          : r,
+      ),
+    });
+    search("Search everything in My records", "blood");
+    expect(shownDocuments()).toHaveLength(4);
+    expect(
+      shownDocuments().some(([, path]) => path?.endsWith("FAKE June")),
+    ).toBe(false);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "blood test");
+    expect(shownDocuments()).toEqual([
+      ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
+    ]);
+  });
+
+  it("from the top level covers the current person, and says where each result is", () => {
+    renderLibrary(filed);
+    search("Search everything in My records", "blood");
+
+    expect(shownDocuments()).toEqual([
+      ["FAKE Blood pressure log.pdf", "In My records"],
+      ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
+      [
+        "FAKE Blood test.pdf",
+        "In My records / FAKE Lab results / FAKE 2026 / FAKE June",
+      ],
+      ["FAKE Blood test referral.pdf", "In My records / FAKE Letters"],
+      [
+        "FAKE Blood count.pdf",
+        "In My records / FAKE Lab results / FAKE 2026; My records / FAKE Letters",
+      ],
+    ]);
+    expect(screen.getByText("0 folders · 5 documents found")).toBeVisible();
+  });
+
+  it("from a folder covers it and every folder beneath it, and nothing else", () => {
+    renderLibrary(filed);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "blood test");
+
+    // The referral matches too, but is filed in another branch.
+    expect(shownDocuments()).toEqual([
+      ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
+      [
+        "FAKE Blood test.pdf",
+        "In My records / FAKE Lab results / FAKE 2026 / FAKE June",
+      ],
+    ]);
+    // The path is read out with the document's buttons too.
+    const deep = screen.getAllByRole("article", {
+      name: "FAKE Blood test.pdf document",
+    })[1];
+    for (const name of ["FAKE Blood test.pdf", "Select FAKE Blood test.pdf"])
+      expect(
+        within(deep).getByRole("button", { name }),
+      ).toHaveAccessibleDescription(
+        "In My records / FAKE Lab results / FAKE 2026 / FAKE June",
+      );
+  });
+
+  it("finds a document two levels below where the search starts", () => {
+    renderLibrary(filed);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "fake blood test.pdf");
+
+    expect(shownDocuments()).toContainEqual([
+      "FAKE Blood test.pdf",
+      "In My records / FAKE Lab results / FAKE 2026 / FAKE June",
+    ]);
+  });
+
+  it("shows a document filed in two folders once, with both paths", () => {
+    renderLibrary(filed);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "count");
+
+    expect(shownDocuments()).toEqual([
+      [
+        "FAKE Blood count.pdf",
+        "In My records / FAKE Lab results / FAKE 2026; My records / FAKE Letters",
+      ],
+    ]);
+  });
+
+  it("finds folders at any depth, each with where it is", () => {
+    renderLibrary(filed);
+    search("Search everything in My records", "june");
+
+    const rows = screen.getAllByRole("article", { name: "FAKE June folder" });
+    expect(
+      rows.map((row) => within(row).getByText(/^In /).textContent),
+    ).toEqual([
+      "In My records / FAKE Lab results / FAKE 2026",
+      "In My records / FAKE Letters",
+    ]);
+    expect(
+      within(rows[0]).getByRole("button", { name: "Open FAKE June" }),
+    ).toHaveAccessibleDescription(
+      "1 item In My records / FAKE Lab results / FAKE 2026",
+    );
+
+    // From a folder: only the folders beneath it, not the open folder itself.
+    openFolder(/^FAKE Letters/);
+    search("Search this folder and its subfolders", "fake");
+    expect(
+      screen
+        .getAllByRole("article", { name: / folder$/ })
+        .map((row) => row.getAttribute("aria-label")),
+    ).toEqual(["FAKE June folder"]);
+  });
+
+  it("goes back to the open folder's own items when cleared", () => {
+    renderLibrary(filed);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "blood");
+    expect(shownDocuments()).toHaveLength(3);
+
+    search("Search this folder and its subfolders", "");
+    expect(shownDocuments()).toEqual([["FAKE Blood test.pdf", null]]);
+    expect(
+      screen
+        .getAllByRole("article", { name: / folder$/ })
+        .map((row) => [
+          row.getAttribute("aria-label"),
+          within(row).queryByText(/^In /),
+        ]),
+    ).toEqual([["FAKE 2026 folder", null]]);
+    expect(
+      screen.getByText("1 folders · 1 documents in this location"),
+    ).toBeVisible();
+  });
+
+  it("moves a result from a subfolder, and starts the selection again when the search changes", async () => {
+    const { bridge } = renderLibrary(filed);
+    search("Search everything in My records", "blood test.pdf");
+    const selectDeep = () =>
+      fireEvent.click(
+        within(
+          screen
+            .getAllByRole("article", { name: "FAKE Blood test.pdf document" })
+            .find((row) => within(row).queryByText(/FAKE June$/))!,
+        ).getByRole("button", { name: "Select FAKE Blood test.pdf" }),
+      );
+    selectDeep();
+    expect(screen.getByText("1 selected")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Move selected to"), {
+      target: { value: "letters" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move" }));
+    await vi.waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
+        ["lab-deep"],
+        ["letters"],
+      ),
+    );
+
+    // Once the search changes, the selection starts again, so a move acts
+    // only on documents chosen while in view.
+    await vi.waitFor(() =>
+      expect(screen.queryByText(/selected$/)).not.toBeInTheDocument(),
+    );
+    selectDeep();
+    expect(screen.getByText("1 selected")).toBeVisible();
+    search("Search everything in My records", "");
+    expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+  });
+
+  it("does not move a result let go of over the results it came from", () => {
+    const { bridge } = renderLibrary(filed);
+    openFolder(/^FAKE Lab results/);
+    search("Search this folder and its subfolders", "june");
+    dragFolder(
+      screen.getByRole("article", { name: "FAKE June folder" }),
+      screen.getByRole("main"),
+    );
+    search("Search this folder and its subfolders", "blood test");
+    dragFolder(
+      screen.getAllByRole("article", {
+        name: "FAKE Blood test.pdf document",
+      })[1],
+      screen.getByRole("main"),
+    );
+    expect(bridge.updateFolder).not.toHaveBeenCalled();
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
   });
 });
 

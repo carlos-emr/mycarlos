@@ -79,10 +79,10 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - One responsive, mock-aligned filing-cabinet screen, rendered in a browser and packaged for
   desktop, Android, and iOS webviews (the mobile packages are unverified; see the table above).
 - A durable native filing cabinet aligned with the discussion mocks in [CARLOS PR #3479](https://github.com/carlos-emr/carlos/pull/3479): patient-profile
-  switching, nested folder navigation, location search, list/grid views, sorting, bulk moves, and
-  drag-and-drop document/folder moves, folder and imported-document renaming, plus plain-language
-  document details and save-copy actions. Renames update encrypted metadata and export suggestions;
-  they preserve document contents and folder locations.
+  switching, nested folder navigation, search of a folder and its subfolders, list/grid views,
+  sorting, bulk moves, and drag-and-drop document/folder moves, folder and imported-document
+  renaming, plus plain-language document details and save-copy actions. Renames update encrypted
+  metadata and export suggestions; they preserve document contents and folder locations.
 - A browser evaluation demo with record-kind filters, Recent, Starred, Trash, Restore, and
   session-only sample folders. Those concepts remain deliberately separate from durable storage
   until their data model and retention rules are implemented.

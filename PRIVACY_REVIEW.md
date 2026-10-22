@@ -86,6 +86,12 @@ person. While the vault is locked, the shared file is only remembered (where it 
 it), and the lock screen shows how many are waiting, never their names; if myCarlos closes first,
 it is forgotten. The app that shared it keeps its own copy.
 
+A **PDF locked with a password** (as CARLOS sends documents) is stored as it came. When the
+patient unlocks it with the document password from their patient portal, an unlocked copy is
+encrypted into the vault beside it, and the locked original is kept, renamed "… (locked
+original).pdf"; the patient can delete either. The password is used once, by a separate helper
+process with no vault keys, and is never stored, shown again or logged.
+
 A **photo taken in myCarlos** has no original: it goes from the camera to the app's memory and is
 encrypted into the vault, and is never saved anywhere else. It carries no place, camera or other
 details: the app makes the JPEG itself, and the vault removes any such details again before

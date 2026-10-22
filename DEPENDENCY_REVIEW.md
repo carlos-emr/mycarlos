@@ -54,6 +54,111 @@ has been suppressed or marked acceptable.
   setting turned on and its permission requests answered (`src-tauri/src/camera_permission.rs`).
   It adds no package to the Rust lockfile.
 
+## Added for password-protected PDFs (#54)
+
+`lopdf` 0.45.0 (MIT) opens a PDF that a sender locked with a password, so that
+an unlocked copy can be stored beside the locked original. It is pinned exactly (`=0.45.0`) because it
+parses untrusted input: each update is a reviewed change. Default features are
+off, so neither `rayon` threads nor `chrono` come with it.
+
+It runs only in the separate helper process (`src-tauri/src/pdf_unlock.rs`),
+never next to the vault keys. Choosing it over `pdf` (whose writing is still
+experimental), `qpdf` (a C++ build for each phone platform) and
+`pdfium-render` (a native PDFium for each platform) is explained in the #23
+design.
+
+The lockfile grows from 486 to 515 packages. They are `lopdf`, `nom`,
+`encoding_rs`, `stringprep`, `weezl`, `rangemap`, `simdutf8` and their Unicode
+tables, plus newer RustCrypto releases (`aes`, `cbc`, `ecb`, `md-5`, `sha2`,
+`digest`, `cipher`, `rand` and their support crates) beside the versions the
+vault already uses. The vault's own encryption is unchanged.
+
+Every new package is MIT, Apache-2.0 or BSD-3-Clause (the WHATWG data in
+`encoding_rs`), all compatible with AGPL-3.0-or-later. CI's dependency job
+(`cargo audit`, the SBOM and the graph check) covers them; the graph check
+passes locally.
+
+## Added for the document reader (#48)
+
+`hayro` 0.8.0 draws a page of a PDF as a picture, so that myCarlos can show
+stored documents. It is pinned exactly (`=0.8.0`) because it parses untrusted
+input, and it runs only in the separate PDF helper (`src-tauri/src/pdf_view.rs`),
+as `lopdf` does.
+
+**Where there is unsafe code:**
+- `hayro` and `hayro-interpret` forbid unsafe code in their own crates.
+- `hayro-syntax`, the PDF parser underneath them, does not.
+  - It has an unsafe lifetime extension of its own (`page.rs`).
+  - `hayro-interpret` always turns on its `unsafe` feature, so turning off
+    `hayro`'s default features cannot avoid it. That feature brings in `flate2`
+    with the `zlib-rs` backend, `memchr`, and the SIMD paths of the JBIG2,
+    JPEG 2000 and JPEG decoders.
+  - `pic-scale`, `moxcms`, `zune-jpeg` and `fearless_simd` use unsafe code
+    internally too.
+- Turning off `hayro`'s own `simd` feature removes only `pic-scale`'s SIMD
+  paths.
+- Feature unification also moves the app's whole `flate2` to `zlib-rs`. Before
+  this, its only other user, `png` (for the app's own trusted icons), used
+  `miniz_oxide`.
+
+This is why the reader parses PDFs only in the helper, never beside the vault
+keys. The helper's real sandbox is #63. `image` 0.25 (already present through
+`hayro`) writes the page picture as PNG, with only the `png` feature. Before display,
+the parent also uses this existing codec to decode and re-encode only RGBA8 page
+pixels: at most 4096 pixels per side, 64 MiB of decoded pixel storage and a 64 MiB
+decoder allocation limit, checked before decoding. Only the newly encoded picture
+is sent to the webview; PDF parsing and the helper's sandbox policy are unchanged.
+
+pdf.js was not chosen. Product decisions forbid rendering an untrusted PDF in
+the privileged webview, and running it in a second webview would need CSP and
+capability changes. A native PDFium or MuPDF build would add a C or C++ parser
+for each platform.
+
+The lockfile grows from 515 to 550 packages: `hayro` and its `hayro-*` parts
+(fonts, CMaps, CCITT, JBIG2, JPEG 2000), the Linebender drawing crates
+(`vello_cpu`, `vello_common`, `kurbo`, `peniko`, `color`, `fearless_simd`),
+font readers (`skrifa`, `read-fonts`, `font-types`), image decoders
+(`zune-jpeg`, `moxcms`, `pic-scale`, `pxfm`) and `zlib-rs`.
+
+Every new package is Apache-2.0, MIT, BSD-3-Clause, Zlib or Unlicense, all
+compatible with AGPL-3.0-or-later. The graph check passes locally; CI's
+`cargo audit` and SBOM jobs cover the rest.
+
+## Added for the PDF helper's sandbox (#63)
+
+Two crates, Linux only, each pinned exactly because the sandbox depends on
+what they do: each update is a reviewed change. Both are used only by the
+helper's `confine` module (`src-tauri/src/pdf_unlock.rs`), before it reads a
+document.
+
+- **`landlock` 0.4.7** (MIT OR Apache-2.0, Rust 1.71). From the Landlock
+  project, whose lead also maintains Landlock in the Linux kernel. It builds a
+  Landlock ruleset that handles every file and network access right and the
+  signal and abstract-socket scopes, with no rule allowing any of them, and
+  applies it to the helper. Best-effort: a kernel without Landlock, or with an
+  older Landlock, enforces what it has. Its unsafe code is the three Landlock
+  system calls and `prctl`. It brings `enumflags2` and `enumflags2_derive`
+  0.7.12 (MIT OR Apache-2.0); `libc` and `thiserror` were already locked.
+- **`seccompiler` 0.5.0** (Apache-2.0 OR BSD-3-Clause). From rust-vmm, and
+  used by Firecracker and Cloud Hypervisor. It compiles the helper's seccomp
+  allowlist to a BPF program for x86_64 or aarch64 and installs it. Required:
+  without it the helper reads nothing. Its unsafe code is the `prctl` and
+  `seccomp` system calls. Its optional `json` feature (`serde`) is off; `libc`
+  was already locked.
+
+Hand-written BPF or `libseccomp` were not chosen: the first is easy to get
+wrong (argument widths, the architecture check), and the second is a C library
+to build and ship. `extrasafe` and `birdcage` wrap the same two kernel features
+with more policy than the helper needs.
+
+On Windows the AppContainer uses the `windows` crate already in the tree, with
+its `Win32_Security_Isolation` feature turned on. macOS calls `sandbox_init`
+from the system library; nothing is added.
+
+The lockfile grows from 550 to 554 packages: `landlock`, `seccompiler`,
+`enumflags2` and `enumflags2_derive`. All are MIT, Apache-2.0 or BSD-3-Clause,
+compatible with AGPL-3.0-or-later.
+
 ## Native remediation
 
 ### Mobile live reload restored

@@ -10,6 +10,7 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isWrongPdfPassword,
   localDateText,
   namedDamage,
   vaultErrorMessage,
@@ -51,6 +52,8 @@ describe("native idle deadline bridge", () => {
     await bridge.listReceived();
     await bridge.acceptReceived();
     await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
+    await bridge.viewPage("record-1", 0, 800);
+    await bridge.viewPage("record-1", 1, 800, "FAKE-portal-2026");
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
       ["received_accept"],
@@ -61,6 +64,28 @@ describe("native idle deadline bridge", () => {
             recordIds: ["record-1"],
             profileId: "profile-1",
             folderIds: ["folder-1"],
+          },
+        },
+      ],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 0,
+            width: 800,
+            password: null,
+          },
+        },
+      ],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 1,
+            width: 800,
+            password: "FAKE-portal-2026",
           },
         },
       ],
@@ -110,6 +135,23 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("vault_view_photo", {
       request: { recordId: "record-1" },
     });
+  });
+
+  it("sends the locked-PDF commands the native side registers (#54)", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(true);
+    await expect(bridge.isLockedPdf("record-1")).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_locked_pdf", {
+      request: { recordId: "record-1" },
+    });
+    invoke.mockResolvedValue({ recordId: "copy-1", originalName: "FAKE" });
+    await bridge.unlockPdf("record-1", "FAKE-portal-2026");
+    expect(invoke).toHaveBeenLastCalledWith("vault_unlock_pdf", {
+      request: { recordId: "record-1", password: "FAKE-portal-2026" },
+    });
+    expect(isWrongPdfPassword({ code: "pdf_wrong_password" })).toBe(true);
+    expect(isWrongPdfPassword({ code: "pdf_unlock_failed" })).toBe(false);
+    expect(isWrongPdfPassword(null)).toBe(false);
   });
 
   it("reads error codes only from objects that carry them", () => {

@@ -109,6 +109,13 @@ export interface RecoverOutcome {
   snapshot: VaultSnapshot;
 }
 
+/** What unlocking a PDF did (#54): the unlocked copy's id, and the name the
+ * locked original now has. */
+export interface UnlockedPdf {
+  recordId: string;
+  originalName: string;
+}
+
 export interface ImportOutcome {
   imported: string[];
   skippedDuplicates: string[];
@@ -293,6 +300,13 @@ export interface VaultBridge {
    * mode. Refused when the vault's own list differs. Resolves to the ids
    * hidden. */
   hideUnavailableRecords(confirmed: string[]): Promise<string[]>;
+  /** Whether a stored PDF may be locked with a password (#54): a scan of its
+   * names only, so the details can offer Unlock. */
+  isLockedPdf(recordId: string): Promise<boolean>;
+  /** Unlocks a stored PDF with the password the patient typed (#54). The
+   * unlocked copy is added beside it with its name; the locked original is
+   * kept, renamed. The password is not kept. */
+  unlockPdf(recordId: string, password: string): Promise<UnlockedPdf>;
   /** The shared files waiting, and what could not be received since the
    * last call (that part is reported once). Works while locked. */
   listReceived(): Promise<ReceivedState>;
@@ -305,6 +319,17 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<MoveOutcome>;
+  /** Page `page` (from 0) of a stored document, about `width` pixels wide,
+   * drawn by the separate PDF helper. `password` is the document's own, when
+   * it is locked with one; it is not kept. */
+  viewPage(
+    recordId: string,
+    page: number,
+    width: number,
+    password?: string,
+  ): Promise<ViewedPage>;
+  /** Stops a page still being drawn: the reader closed. */
+  cancelView(): Promise<void>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -414,9 +439,29 @@ function hasErrorCode(error: unknown, code: string): boolean {
   );
 }
 
+/** One page of a stored document, drawn by myCarlos's PDF helper: a `data:`
+ * URL of its picture, and its text for screen readers and copying. */
+export interface ViewedPage {
+  pageCount: number;
+  width: number;
+  height: number;
+  image: string;
+  text: string;
+}
+
+/** True when the native side refused with `code`. */
+export function hasVaultErrorCode(error: unknown, code: string): boolean {
+  return hasErrorCode(error, code);
+}
+
 /** True when the native side reports that the vault is locked, for example by
  * its own idle deadline while this screen was not running. */
 export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
+
+/** True when a password did not open a locked PDF (#54): the patient may try
+ * again. */
+export const isWrongPdfPassword = (error: unknown) =>
+  hasErrorCode(error, "pdf_wrong_password");
 
 /** True when an operation stopped because a lock was requested while it ran
  * (the vault may still be open if that lock found it no longer due). */
@@ -547,12 +592,23 @@ export function createVaultBridge(): VaultBridge {
       invoke<boolean>("vault_is_photo", { request: { recordId } }),
     viewPhoto: (recordId) =>
       invoke<string>("vault_view_photo", { request: { recordId } }),
+    isLockedPdf: (recordId) =>
+      invoke<boolean>("vault_is_locked_pdf", { request: { recordId } }),
+    unlockPdf: (recordId, password) =>
+      invoke<UnlockedPdf>("vault_unlock_pdf", {
+        request: { recordId, password },
+      }),
     listReceived: () => invoke<ReceivedState>("received_list"),
     acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
+    viewPage: (recordId, page, width, password) =>
+      invoke<ViewedPage>("vault_view_page", {
+        request: { recordId, page, width, password: password ?? null },
+      }),
+    cancelView: () => invoke<void>("vault_view_cancel"),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

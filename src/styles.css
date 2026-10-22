@@ -410,6 +410,24 @@ h1, h2, p { margin: 0; }
 .bulkbar button { padding: 5px 10px; border: 1px solid var(--overlay-line); border-radius: 7px; background: transparent; color: var(--on-bulk); }
 .bulkbar button:hover:not(:disabled) { background: var(--overlay-hover); }
 
+/* The document reader: the page picture scrolls inside it when zoomed in. */
+.record-dialog.native-reader { display: flex; flex-direction: column; width: min(1100px, 100%); max-width: none; height: 92vh; }
+.native-reader-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.native-reader-head h2 { overflow-wrap: anywhere; }
+.native-reader-head p { margin: 2px 0 0; color: var(--ink-soft); font-size: 0.875rem; }
+.native-reader-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.native-reader-where { min-width: 7em; text-align: center; font-weight: 700; }
+.native-reader-zoom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+/* The gutter is kept, so that a page fitted to the width does not scroll sideways once a tall page
+   brings a classic scrollbar. */
+.native-reader-page { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 12px; background: var(--canvas-2); text-align: center; }
+.native-reader-page img { display: inline-block; max-width: none; height: auto; box-shadow: var(--shadow-sm); background: var(--paper); }
+.native-reader-text { max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
+.native-reader-text summary { cursor: pointer; font-weight: 700; }
+.native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
+.native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
   display: grid;
@@ -847,6 +865,9 @@ h1, h2, p { margin: 0; }
 .native-folder-move label { display: grid; min-width: 170px; gap: 5px; font-size: 0.875rem; font-weight: 700; }
 .native-folder-move select { min-width: 0; max-width: 100%; min-height: 39px; padding: 7px 28px 7px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 .native-location-chip { padding: 5px 10px; border-radius: 999px; background: var(--canvas-2); color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+/* A search result's folder path wraps rather than being cut, since its end
+   is often what tells two results apart. */
+.name-copy .native-result-path, .tile-caption .native-result-path { white-space: normal; overflow-wrap: anywhere; }
 .native-drag-hint { color: var(--ink-faint); font-size: 0.875rem; }
 .native-draggable { cursor: grab; transition: opacity 120ms ease, box-shadow 120ms ease, background-color 120ms ease; }
 .native-draggable:active { cursor: grabbing; }
@@ -922,6 +943,9 @@ h1, h2, p { margin: 0; }
 .native-rename-fields p { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
 .native-rename-fields [role="alert"] { color: var(--ink); font-weight: 700; }
 .native-record-rename { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 16px; }
+/* #54: a PDF locked with a password says so above its Unlock. */
+.native-locked-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 4px 20px 12px; color: var(--ink-soft); }
+.native-locked-note .icon { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--ink-faint); }
 
 /* Taking a photo, and viewing one. */
 .camera-dialog, .photo-viewer { width: min(760px, 100%); }

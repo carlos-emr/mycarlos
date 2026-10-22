@@ -29,8 +29,14 @@ interface RecordDetailsProps {
   /** Takes the document out of view (#71); it is never deleted. */
   onHide: () => void;
   onExport: () => void;
+  /** Opens the document in myCarlos's reader. */
+  onRead?: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
+  /** The document is a PDF that may be locked with a password (#54). */
+  locked?: boolean;
+  /** Asks for its password; given only where myCarlos can unlock it. */
+  onUnlock?: () => void;
 }
 export function RecordDetails({
   record,
@@ -46,7 +52,10 @@ export function RecordDetails({
   onMoveTo,
   onHide,
   onExport,
+  onRead,
   onViewPhoto,
+  locked = false,
+  onUnlock,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
   // Choosing in the list only picks a destination; Move moves (#67). In
@@ -174,7 +183,28 @@ export function RecordDetails({
             </dd>
           </div>
         </dl>
+        {locked && (
+          <p className="native-locked-note">
+            <Icon name="lock-open" />
+            <span>
+              {onUnlock
+                ? "Locked with a password. Unlock adds a copy that opens without it, and keeps this one."
+                : "Locked with a password. myCarlos cannot open it on this device yet."}
+            </span>
+          </p>
+        )}
         <div className="native-record-rename">
+          {onUnlock && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={onUnlock}
+            >
+              <Icon name="lock-open" />
+              <span>Unlock…</span>
+            </button>
+          )}
           {onViewPhoto && (
             <button
               className="button"
@@ -247,8 +277,18 @@ export function RecordDetails({
           >
             Hide
           </button>
+          {onRead && (
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy || !record.available}
+              onClick={onRead}
+            >
+              Read
+            </button>
+          )}
           <button
-            className="button primary"
+            className={onRead ? "button" : "button primary"}
             type="button"
             disabled={busy || !record.available}
             onClick={onExport}

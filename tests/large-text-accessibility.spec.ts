@@ -269,6 +269,8 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
+        // A PDF's details ask whether it is locked with a password (#54).
+        if (command === "vault_is_locked_pdf") return false;
         if (command === "received_list")
           return {
             files: structuredClone(waiting),
