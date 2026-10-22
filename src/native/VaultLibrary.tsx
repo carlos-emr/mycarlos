@@ -735,7 +735,7 @@ export function VaultLibrary({
   // Every damaged document in the vault, not only those in view: removal
   // takes them all, so the confirmation names them all.
   const damaged = snapshot.records.filter(
-    (record) => !record.available && !record.hidden,
+    (record) => !record.available && record.hidden?.reason !== "damaged",
   );
   const damagedIds = damaged.map((record) => record.id);
   const damagedCount = damagedIds.length;
