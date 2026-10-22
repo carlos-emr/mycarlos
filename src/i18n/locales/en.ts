@@ -413,7 +413,7 @@ export const en = {
   },
   "error.fallback": "The vault operation could not be completed.",
   "error.damaged":
-    'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.',
+    'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. Keep your older backups. Ask for help recovering this document from a good copy or backup before trying again.',
   "error.damaged.where": "added {date}",
   "error.damaged.whereFor": "added {date}, in {person}'s records",
 

@@ -426,7 +426,7 @@ export const es: Record<MessageKey, Message> = {
   },
   "error.fallback": "No se pudo completar la operación en la bóveda.",
   "error.damaged":
-    "No se guardó ninguna copia de seguridad: el documento «{name}» ({where}) está dañado y ya no se puede leer, y una copia que lo contenga no se podría restaurar. No se cambió nada. Si tiene ese documento en otro lugar, elimínelo aquí y vuelva a añadirlo; si no, eliminarlo le permite hacer una copia de todo lo demás.",
+    "No se guardó ninguna copia de seguridad: el documento «{name}» ({where}) está dañado y ya no se puede leer, y una copia que lo contenga no se podría restaurar. No se cambió nada. Conserve sus copias de seguridad anteriores. Pida ayuda para recuperar este documento desde una copia o copia de seguridad en buen estado antes de volver a intentarlo.",
   "error.damaged.where": "añadido el {date}",
   "error.damaged.whereFor": "añadido el {date}, en los documentos de {person}",
 

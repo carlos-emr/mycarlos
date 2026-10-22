@@ -425,7 +425,7 @@ export const ptBR: Record<MessageKey, Message> = {
   },
   "error.fallback": "Não foi possível concluir a operação no cofre.",
   "error.damaged":
-    "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Se você tiver esse documento em outro lugar, exclua-o aqui e adicione-o de novo; se não, excluí-lo permite fazer cópia de todo o resto.",
+    "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Guarde seus backups anteriores. Peça ajuda para recuperar este documento de uma cópia ou backup em boas condições antes de tentar novamente.",
   "error.damaged.where": "adicionado em {date}",
   "error.damaged.whereFor": "adicionado em {date}, nos documentos de {person}",
 

@@ -571,8 +571,9 @@ work.
 A backup is one `.mycarlosbackup` file holding the vault's ciphertext as the patient sees it. Every
 document is authenticated as it is copied, so a damaged one fails the backup, naming the problem
 while the vault is still there, rather than the restore. The refusal carries that document's id
-(never its name), and the screen names the document, so that the patient can delete it, or add it
-again from another copy, and back up the rest.
+(never its name), and the screen names the document. The patient is told to keep older backups
+and get help recovering the document from a good copy or backup before trying again. A corrupt
+file hidden by the patient is still required in a backup.
 
 ```text
 "MYCARLOS-BACKUP\n"                      16-byte magic, format 1
