@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import axe from "axe-core";
 import userEvent from "@testing-library/user-event";
-import { userEvent as realKeys } from "vitest/browser";
+import { page, userEvent as realKeys } from "vitest/browser";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   forgetRecoveryOffer,
@@ -737,7 +737,11 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
-  it("keeps Shared hidden documents restorable without mixing a person's Hidden list", async () => {
+  it.each([false, true])("keeps Shared hidden documents restorable without mixing a person's Hidden list (phone: %s)", async (phone) => {
+    if (phone) {
+      await page.viewport(390, 844);
+      onTestFinished(() => page.viewport(1100, 760));
+    }
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie", "Morgan"], ["FAKE_Shared.pdf"]);
     vault.records.push({ id: "hidden-jamie", profileId: "profile-1", folderIds: [], displayName: "FAKE_Jamie_hidden.pdf", sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: true, hidden: { atMs: 2, reason: "patient" } });
@@ -762,7 +766,12 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     const row = await screen.findByRole("article", { name: "FAKE_Shared.pdf, hidden" });
     expect(within(row).getByText("Shared with me")).toBeVisible();
-    expect(screen.getByRole("complementary")).toHaveTextContent("1 document · 0 folders");
+    expect(screen.getByRole("complementary", { hidden: true })).toHaveTextContent("1 document · 0 folders");
+    // Reopening the selected Hidden entry must retain Shared as its source.
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    expect(screen.getByRole("article", { name: "FAKE_Shared.pdf, hidden" })).toBeVisible();
+    expect(within(row).getByText("Shared with me")).toBeVisible();
+    expect(screen.getByRole("complementary", { hidden: true })).toHaveTextContent("1 document · 0 folders");
     expect(screen.queryByText("FAKE_Jamie_hidden.pdf")).not.toBeInTheDocument();
     await user.click(within(row).getByRole("button", { name: "Restore FAKE_Shared.pdf" }));
     await waitFor(() => expect(bridge.unhideRecord).toHaveBeenCalledWith("record-shared-1"));
