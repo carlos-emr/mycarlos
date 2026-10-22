@@ -6106,6 +6106,43 @@ describe("durable vault UI", () => {
     ).toBeDisabled();
   });
 
+  it("confirms a patient-hidden missing file but not an already damaged-hidden file", async () => {
+    const user = userEvent.setup();
+    const record = { profileId: "profile-1", folderIds: [], sourceLabel: "Manual import — unverified", mediaType: "application/octet-stream", plaintextSize: 200, importedAtMs: 1, available: false };
+    const lost: VaultSnapshot = { ...emptySnapshot, recovery: "lostObjects", records: [
+      { ...record, id: "patient-hidden", displayName: "FAKE_Hidden_missing.pdf", hidden: { atMs: 2, reason: "patient" } },
+      { ...record, id: "damaged-hidden", displayName: "FAKE_Already_damaged.pdf", hidden: { atMs: 1, reason: "damaged" } },
+    ] };
+    let shown = lost;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(shown)),
+      hideUnavailableRecords: vi.fn(async (ids) => {
+        shown = { ...lost, recovery: null, records: lost.records.map((r) => r.id === "patient-hidden" ? { ...r, hidden: { atMs: 3, reason: "damaged" as const } } : r) };
+        return ids;
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText(/Some encrypted files are missing/);
+    expect(screen.queryByText("FAKE_Hidden_missing.pdf")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide damaged documents" }));
+    const review = screen.getByRole("alertdialog", { name: "Hide 1 damaged document?" });
+    expect(within(review).getByText("FAKE_Hidden_missing.pdf")).toBeVisible();
+    expect(within(review).queryByText("FAKE_Already_damaged.pdf")).not.toBeInTheDocument();
+    expect(bridge.hideUnavailableRecords).not.toHaveBeenCalled();
+    await user.click(within(review).getByRole("button", { name: "Hide" }));
+    await waitFor(() => expect(bridge.hideUnavailableRecords).toHaveBeenCalledExactlyOnceWith(["patient-hidden"]));
+    await screen.findByText("1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.");
+    expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    for (const name of ["FAKE_Hidden_missing.pdf", "FAKE_Already_damaged.pdf"]) {
+      const row = screen.getByRole("article", { name: `${name}, hidden` });
+      expect(row).toBeVisible();
+      expect(within(row).queryByRole("button", { name: `Restore ${name}` })).not.toBeInTheDocument();
+    }
+    expect(shown.records).toHaveLength(2);
+  });
+
   it("hides damaged documents from the recovery banner after confirmation", async () => {
     const user = userEvent.setup();
     const lost = {
