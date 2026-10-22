@@ -20,6 +20,26 @@ const CACHED_CHARACTERS = 48 * 1024 * 1024;
 /** A resize settles before the page is measured again. */
 const RESIZE_SETTLE_MS = 150;
 
+/** Retains drawn pages within the reader's count and character budgets. */
+export function cacheDrawnPage(
+  cache: Map<string, ViewedPage>,
+  key: string,
+  result: ViewedPage,
+) {
+  cache.delete(key);
+  // A page may still be shown, but never retained above the cache's own bound.
+  if (result.image.length > CACHED_CHARACTERS) return;
+  cache.set(key, result);
+  let characters = 0;
+  for (const kept of cache.values()) characters += kept.image.length;
+  for (const [oldest, kept] of cache) {
+    if (cache.size <= CACHED_PAGES && characters <= CACHED_CHARACTERS) break;
+    if (oldest === key) continue;
+    cache.delete(oldest);
+    characters -= kept.image.length;
+  }
+}
+
 /** Reads a stored document inside myCarlos, one page at a time. Each page is
  * drawn by the separate PDF helper, as a picture with its text beside it for
  * screen readers and copying: nothing in the document runs here, and nothing
@@ -95,21 +115,8 @@ export function DocumentReader({
     };
   }, []);
 
-  // Keeps a page drawn, within the cache's bounds: the least recently shown
-  // pages go first.
-  const remember = (key: string, result: ViewedPage) => {
-    const cache = drawn.current;
-    cache.delete(key);
-    cache.set(key, result);
-    let characters = 0;
-    for (const kept of cache.values()) characters += kept.image.length;
-    for (const [oldest, kept] of cache) {
-      if (cache.size <= CACHED_PAGES && characters <= CACHED_CHARACTERS) break;
-      if (oldest === key) continue;
-      cache.delete(oldest);
-      characters -= kept.image.length;
-    }
-  };
+  const remember = (key: string, result: ViewedPage) =>
+    cacheDrawnPage(drawn.current, key, result);
 
   const cssWidth = Math.max(1, Math.round(fitWidth * zoom));
   const pictureWidth = Math.min(

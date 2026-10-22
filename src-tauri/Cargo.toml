@@ -28,7 +28,8 @@ lopdf = { version = "=0.45.0", default-features = false }
 # the same reason. hayro-syntax and the decoders below it use unsafe code (DEPENDENCY_REVIEW);
 # "simd" is off, which leaves out pic-scale's SIMD paths only.
 hayro = { version = "=0.8.0", default-features = false, features = ["embed-fonts", "embed-cmaps"] }
-# Writes the page picture as PNG (already in the tree through hayro).
+# Writes the page picture as PNG; the parent decodes bounded RGBA8 output and encodes its pixels
+# again before display (already in the tree through hayro).
 image = { version = "0.25", default-features = false, features = ["png"] }
 percent-encoding = "2"
 rand = "0.8"

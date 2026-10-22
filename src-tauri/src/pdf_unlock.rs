@@ -37,7 +37,7 @@ const HELPER_MEMORY_LIMIT: u64 = 1 << 30;
 /// The first argument that starts the executable as the helper.
 pub const HELPER_ARG: &str = "--mycarlos-pdf-helper";
 /// The longest password accepted, in UTF-8 bytes. PDF passwords are far shorter.
-const MAX_PASSWORD_BYTES: usize = 4096;
+pub(crate) const MAX_PASSWORD_BYTES: usize = 4096;
 
 const REQUEST_MAGIC: &[u8; 8] = b"MCPDFRQ1";
 pub(crate) const RESPONSE_MAGIC: &[u8; 8] = b"MCPDFRS1";
@@ -521,6 +521,52 @@ pub(crate) enum Unanswered {
     NoSandbox,
 }
 
+/// Fixed local diagnostic categories: never document bytes, names, paths or passwords.
+#[cfg(desktop)]
+#[derive(Debug)]
+enum HelperFailure {
+    Startup,
+    Sandbox,
+    Wait,
+    Timeout,
+    Memory,
+    Cancelled,
+    AnswerTimeout,
+    InvalidAnswer,
+    Exited,
+}
+
+#[cfg(desktop)]
+fn helper_failed(reason: HelperFailure) -> Unanswered {
+    eprintln!("PDF helper: {reason:?}");
+    Unanswered::Failed
+}
+
+/// The process may have exited before its answer reader finishes. The request must still be
+/// current when that answer arrives, including a successful one.
+#[cfg(desktop)]
+fn finish_exchange<T>(
+    code: i32,
+    answer: Result<Option<T>, std::sync::mpsc::RecvTimeoutError>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<T, Unanswered> {
+    if cancelled() {
+        return Err(helper_failed(HelperFailure::Cancelled));
+    }
+    match (code, answer) {
+        (0, Ok(Some(answer))) => Ok(answer),
+        (NO_SANDBOX, _) => {
+            eprintln!("PDF helper: {:?}", HelperFailure::Sandbox);
+            Err(Unanswered::NoSandbox)
+        }
+        (0, Err(std::sync::mpsc::RecvTimeoutError::Timeout)) => {
+            Err(helper_failed(HelperFailure::AnswerTimeout))
+        }
+        (0, _) => Err(helper_failed(HelperFailure::InvalidAnswer)),
+        _ => Err(helper_failed(HelperFailure::Exited)),
+    }
+}
+
 /// Sends one `request` to the helper started by `command` and reads its answer with `read`,
 /// all within `time_limit`. `Failed` when the helper could not be started, ran too long, failed,
 /// answered wrongly, or `cancelled` came true meanwhile, which stops it at once; `NoSandbox`
@@ -535,7 +581,15 @@ pub(crate) fn exchange<T: Send + 'static>(
 ) -> Result<T, Unanswered> {
     use std::time::Instant;
     command.env_clear();
-    let (mut helper, mut input, mut output) = confine::start(command)?;
+    let (mut helper, mut input, mut output) = confine::start(command).inspect_err(|failure| {
+        eprintln!(
+            "PDF helper: {:?}",
+            match failure {
+                Unanswered::NoSandbox => HelperFailure::Sandbox,
+                Unanswered::Failed => HelperFailure::Startup,
+            }
+        );
+    })?;
     let deadline = Instant::now() + time_limit;
     // Written and read on threads of their own, holding their own copies: the helper may
     // answer before it has read everything, neither side may wait on a full pipe while the
@@ -549,27 +603,33 @@ pub(crate) fn exchange<T: Send + 'static>(
     });
     let exited = loop {
         match helper.try_wait() {
-            Ok(Some(code)) => break Some(code),
-            Ok(None) if Instant::now() < deadline && !cancelled() && !helper.over_memory() => {
-                std::thread::sleep(Duration::from_millis(20))
-            }
-            _ => {
+            Ok(Some(code)) => break code,
+            Err(_) => {
                 helper.stop();
-                break None;
+                return Err(helper_failed(HelperFailure::Wait));
+            }
+            Ok(None) => {
+                let reason = if cancelled() {
+                    Some(HelperFailure::Cancelled)
+                } else if Instant::now() >= deadline {
+                    Some(HelperFailure::Timeout)
+                } else if helper.over_memory() {
+                    Some(HelperFailure::Memory)
+                } else {
+                    None
+                };
+                if let Some(reason) = reason {
+                    helper.stop();
+                    return Err(helper_failed(reason));
+                }
+                std::thread::sleep(Duration::from_millis(20));
             }
         }
     };
-    let answer = answer
-        .recv_timeout(
-            deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(200),
-        )
-        .ok()
-        .flatten();
-    match (exited, answer) {
-        (Some(0), Some(answer)) => Ok(answer),
-        (Some(NO_SANDBOX), _) => Err(Unanswered::NoSandbox),
-        _ => Err(Unanswered::Failed),
-    }
+    let answer = answer.recv_timeout(
+        deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(200),
+    );
+    finish_exchange(exited, answer, cancelled)
 }
 
 /// The helper's sandbox and limits (#63). Whatever takes over the helper while it reads a
@@ -1471,6 +1531,29 @@ mod tests {
         command
     }
 
+    #[cfg(desktop)]
+    #[test]
+    fn discards_a_successful_answer_that_arrives_after_cancellation() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        struct Answer(Arc<AtomicBool>);
+        impl Drop for Answer {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        let dropped = Arc::new(AtomicBool::new(false));
+        // The helper has exited successfully, but cancellation happened before its parsed
+        // answer arrived. Even that successful answer must be discarded.
+        let answer = Ok(Some(Answer(Arc::clone(&dropped))));
+        assert!(matches!(
+            finish_exchange(0, answer, &|| true),
+            Err(Unanswered::Failed)
+        ));
+        assert!(dropped.load(Ordering::SeqCst));
+        assert_eq!(finish_exchange(0, Ok(Some(7)), &|| false).unwrap(), 7);
+    }
+
     #[cfg(all(unix, desktop))]
     #[test]
     fn stops_a_helper_that_runs_too_long() {
@@ -1560,8 +1643,12 @@ mod tests {
             }
             held.push(std::hint::black_box(step));
         }
-        std::thread::sleep(Duration::from_secs(60));
-        std::hint::black_box(&held);
+        loop {
+            // park waits on the thread's own lock (futex on Linux), allowed by the actual
+            // helper sandbox. Sleeping would be refused there and could hide a broken limit.
+            std::thread::park();
+            std::hint::black_box(&held);
+        }
     }
 
     /// Sandboxed as the helper: on macOS this shows myCarlos can still read its footprint.
@@ -1573,11 +1660,12 @@ mod tests {
         take_memory_and_wait(HELPER_MEMORY_LIMIT as usize + 256 * 1024 * 1024);
     }
 
-    /// Not sandboxed: on Linux, seccomp would refuse the wait.
+    /// The same sandbox and wait, but below the memory limit: it must survive until timeout.
     #[cfg(desktop)]
     #[test]
     #[ignore = "invoked as a subprocess by the helper memory test"]
     fn small_child() {
+        confine::this_process().unwrap();
         take_memory_and_wait(256 * 1024 * 1024);
     }
 

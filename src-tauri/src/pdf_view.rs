@@ -23,6 +23,7 @@ use zeroize::Zeroizing;
 static VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// One page request. It stays current until a newer request, a lock or the reader closing.
+#[derive(Clone, Copy)]
 pub(crate) struct ViewTicket(u64);
 
 impl ViewTicket {
@@ -161,6 +162,9 @@ fn write_view_request(
     index: u32,
     width: u32,
 ) -> io::Result<()> {
+    if password.len() > pdf_unlock::MAX_PASSWORD_BYTES {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
     out.write_all(VIEW_MAGIC)?;
     pdf_unlock::write_password_and_pdf(out, password.as_bytes(), pdf)?;
     out.write_all(&index.to_le_bytes())?;
@@ -207,7 +211,7 @@ fn write_view_response(out: &mut impl Write, result: &Result<Page, Refusal>) -> 
 }
 
 /// The helper's answer to a page request, or `None` when it is not one. The picture must be a
-/// PNG of the size declared, so the webview is never handed anything else.
+/// PNG of the size declared, decoded within fixed limits and encoded again from its pixels.
 #[cfg(any(desktop, test))]
 fn read_view_response(input: &mut impl Read) -> Option<Result<Page, Refusal>> {
     let mut head = [0u8; 9];
@@ -225,10 +229,7 @@ fn read_view_response(input: &mut impl Read) -> Option<Result<Page, Refusal>> {
         if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
             return None;
         }
-        let png = read_sized(input, MAX_PNG_BYTES)?;
-        if !png_of_size(&png, width, height) {
-            return None;
-        }
+        let png = clean_png(&read_sized(input, MAX_PNG_BYTES)?, width, height)?;
         let text = String::from_utf8(read_sized(input, MAX_PAGE_TEXT_BYTES)?).ok()?;
         Ok(Page {
             page_count,
@@ -251,6 +252,40 @@ fn png_of_size(png: &[u8], width: u32, height: u32) -> bool {
         && &png[12..16] == b"IHDR"
         && png[16..20] == width.to_be_bytes()
         && png[20..24] == height.to_be_bytes()
+}
+
+/// Only the helper's RGBA8 format is accepted. Check dimensions and pixel storage before
+/// starting the decoder; its own allocation limit also bounds PNG metadata and workspace.
+/// The webview receives a fresh PNG containing only the decoded pixels.
+#[cfg(any(desktop, test))]
+fn clean_png(png: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
+    const MAX_DECODED_BYTES: u64 = MAX_SIDE as u64 * MAX_SIDE as u64 * 4;
+    if !(1..=MAX_SIDE).contains(&width)
+        || !(1..=MAX_SIDE).contains(&height)
+        || !png_of_size(png, width, height)
+        || png.len() < 33
+        || png[24] != 8
+        || png[25] != 6
+    {
+        return None;
+    }
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(width);
+    limits.max_image_height = Some(height);
+    limits.max_alloc = Some(MAX_DECODED_BYTES);
+    let mut reader = image::ImageReader::with_format(io::Cursor::new(png), image::ImageFormat::Png);
+    reader.limits(limits);
+    let pixels = reader.decode().ok()?;
+    if (pixels.width(), pixels.height()) != (width, height)
+        || pixels.color() != image::ColorType::Rgba8
+    {
+        return None;
+    }
+    let mut clean = Vec::new();
+    pixels
+        .write_to(&mut io::Cursor::new(&mut clean), image::ImageFormat::Png)
+        .ok()?;
+    (clean.len() <= MAX_PNG_BYTES).then_some(clean)
 }
 
 #[cfg(any(desktop, test))]
@@ -280,6 +315,9 @@ pub(crate) fn view_in_helper(
         if !ticket.is_current() {
             return Outcome::Cancelled;
         }
+        if password.len() > pdf_unlock::MAX_PASSWORD_BYTES {
+            return Outcome::Failed;
+        }
         if pdf.len() > pdf_unlock::MAX_LOCKED_PDF_BYTES {
             return Outcome::Refused(Refusal::TooLarge);
         }
@@ -291,13 +329,17 @@ pub(crate) fn view_in_helper(
         if write_view_request(&mut *request, pdf, password, index, width).is_err() {
             return Outcome::Failed;
         }
-        match pdf_unlock::exchange(
+        let answer = pdf_unlock::exchange(
             command,
             request,
             pdf_unlock::HELPER_TIME_LIMIT,
             read_view_response,
             &|| !ticket.is_current(),
-        ) {
+        );
+        if !ticket.is_current() {
+            return Outcome::Cancelled;
+        }
+        match answer {
             Ok(Ok(page)) => Outcome::Shown(page),
             Ok(Err(refusal)) => Outcome::Refused(refusal),
             Err(_) if !ticket.is_current() => Outcome::Cancelled,
@@ -347,6 +389,12 @@ mod tests {
             assert_eq!(
                 (decoded.width(), decoded.height()),
                 (page.width, page.height)
+            );
+            assert!(
+                decoded.to_rgba8().pixels().any(|pixel| {
+                    pixel[3] > 0 && pixel.0[..3].iter().any(|channel| *channel < 245)
+                }),
+                "the rendered page must contain visible content"
             );
             assert!(page.text.contains("FAKE Hemoglobin"));
             assert!(page.text.contains(&format!("Page {} of 2", index + 1)));
@@ -402,13 +450,76 @@ mod tests {
         );
     }
 
-    /// The start of a PNG of `width` x `height`: enough for the parent's check.
+    /// A header alone: it must never be accepted as a complete page picture.
     fn png_head(width: u32, height: u32) -> Vec<u8> {
         let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
         png.extend_from_slice(&width.to_be_bytes());
         png.extend_from_slice(&height.to_be_bytes());
         png.extend_from_slice(b"FAKE");
         png
+    }
+
+    fn png_image(width: u32, height: u32) -> Vec<u8> {
+        let pixels = image::RgbaImage::from_pixel(width, height, image::Rgba([24, 48, 72, 255]));
+        let mut png = Vec::new();
+        pixels
+            .write_to(&mut io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        png
+    }
+
+    fn response_with_png(png: Vec<u8>, width: u32, height: u32) -> Vec<u8> {
+        let mut response = Vec::new();
+        write_view_response(
+            &mut response,
+            &Ok(Page {
+                page_count: 1,
+                width,
+                height,
+                png,
+                text: "FAKE page".into(),
+            }),
+        )
+        .unwrap();
+        response
+    }
+
+    #[test]
+    fn refuses_incomplete_or_corrupt_page_images() {
+        let valid = png_image(10, 20);
+        for png in [png_head(10, 20), valid[..40].to_vec()] {
+            let response = response_with_png(png, 10, 20);
+            assert!(read_view_response(&mut &response[..]).is_none());
+        }
+        // Oversized declared dimensions are refused before trying to decode any pixels.
+        let response = response_with_png(png_head(MAX_SIDE + 1, MAX_SIDE), MAX_SIDE + 1, MAX_SIDE);
+        assert!(read_view_response(&mut &response[..]).is_none());
+    }
+
+    #[test]
+    fn returns_only_a_fresh_png_of_the_decoded_pixels() {
+        let mut png = png_image(10, 20);
+        let original = image::load_from_memory(&png).unwrap().to_rgba8();
+        png.extend_from_slice(b"FAKE trailing data not part of the picture");
+        let response = response_with_png(png, 10, 20);
+        let page = read_view_response(&mut &response[..]).unwrap().unwrap();
+        assert!(!page
+            .png
+            .ends_with(b"FAKE trailing data not part of the picture"));
+        assert_eq!(
+            image::load_from_memory(&page.png).unwrap().to_rgba8(),
+            original
+        );
+    }
+
+    #[test]
+    fn refuses_an_oversized_password_before_writing_any_request() {
+        let mut request = Vec::new();
+        let password = "é".repeat(pdf_unlock::MAX_PASSWORD_BYTES / 2 + 1);
+        assert!(write_view_request(&mut request, b"FAKE PDF", &password, 0, 300).is_err());
+        assert!(request.is_empty());
+        let password = "a".repeat(pdf_unlock::MAX_PASSWORD_BYTES);
+        assert!(write_view_request(&mut request, b"FAKE PDF", &password, 0, 300).is_ok());
     }
 
     #[test]
@@ -456,7 +567,7 @@ mod tests {
             page_count: 3,
             width: 10,
             height: 20,
-            png: png_head(10, 20),
+            png: png_image(10, 20),
             text: "FAKE text é".to_owned(),
         };
         let mut response = Vec::new();

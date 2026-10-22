@@ -1647,10 +1647,14 @@ export function VaultLibrary({
                         })
                     : undefined
                 }
-                onRead={() => {
-                  setReaderRecordId(activeRecord.id);
-                  setActiveRecordId(null);
-                }}
+                onRead={
+                  namedAsPdf(activeRecord.displayName)
+                    ? () => {
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
               />
             )}
           {readerRecord && (

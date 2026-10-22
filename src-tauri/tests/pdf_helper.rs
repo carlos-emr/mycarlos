@@ -121,6 +121,14 @@ fn the_helper_draws_a_page_of_a_locked_document() {
     let png_length = u64::from_le_bytes(answer[21..29].try_into().unwrap()) as usize;
     let png = &answer[29..29 + png_length];
     assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let decoded = image::load_from_memory(png).unwrap().to_rgba8();
+    assert_eq!((decoded.width(), decoded.height()), (500, number(17)));
+    assert!(
+        decoded
+            .pixels()
+            .any(|pixel| { pixel[3] > 0 && pixel.0[..3].iter().any(|channel| *channel < 245) }),
+        "the real helper must draw visible page content"
+    );
     let text = &answer[29 + png_length + 8..];
     assert!(String::from_utf8_lossy(text).contains("Page 2 of 2"));
 }

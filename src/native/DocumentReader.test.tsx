@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { DocumentReader } from "./DocumentReader";
+import { cacheDrawnPage, DocumentReader } from "./DocumentReader";
 import type { VaultRecord, ViewedPage } from "../vault";
 
 // A real 1 x 1 PNG, so the picture loads.
@@ -58,14 +58,25 @@ describe("the document reader", () => {
     // Fitted to the reader, the page does not scroll sideways.
     const area = picture.parentElement!;
     expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth);
+    const style = getComputedStyle(area);
+    const available = Math.floor(
+      area.clientWidth -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight),
+    );
+    expect(available).toBeGreaterThan(200);
+    expect(
+      Math.abs(picture.getBoundingClientRect().width - available),
+    ).toBeLessThanOrEqual(1);
     // The page count beside the buttons, and said once the page is shown.
     expect(screen.getAllByText("Page 1 of 2")).toHaveLength(2);
     expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2");
     expect(viewPage).toHaveBeenCalledTimes(1);
     const [index, width, password] = viewPage.mock.calls[0];
     expect(index).toBe(0);
-    expect(width).toBeGreaterThan(0);
-    expect(width).toBeLessThanOrEqual(4096);
+    expect(width).toBe(
+      Math.min(4096, Math.round(available * window.devicePixelRatio)),
+    );
     expect(password).toBeUndefined();
     await userEvent.setup().click(screen.getByText("Text on this page"));
     expect(screen.getByText("FAKE text on page 1")).toBeVisible();
@@ -199,6 +210,21 @@ describe("the document reader", () => {
     }
     // Pages 3 to 8 were kept; 1 and 2 had to be drawn again.
     expect(viewPage).toHaveBeenCalledTimes(10);
+  });
+
+  it("does not retain an oversized page in the page cache", () => {
+    const cache = new Map<string, ViewedPage>();
+    cacheDrawnPage(cache, "small", page(1));
+    cacheDrawnPage(cache, "oversized", {
+      ...page(0),
+      image: "a".repeat(48 * 1024 * 1024 + 1),
+    });
+    const retainedCharacters = [...cache.values()].reduce(
+      (sum, kept) => sum + kept.image.length,
+      0,
+    );
+    expect(retainedCharacters).toBeLessThanOrEqual(48 * 1024 * 1024);
+    expect(cache.has("oversized")).toBe(false);
   });
 
   it("lets the keyboard reach a zoomed page, to move it with the arrow keys", async () => {

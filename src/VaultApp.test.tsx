@@ -932,6 +932,36 @@ describe("durable vault UI", () => {
     ).toBeDisabled();
   });
 
+  it("keeps photos in the photo viewer rather than offering the PDF reader", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "photo-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Photo.jpg",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      isPhoto: vi.fn().mockResolvedValue(true),
+      viewPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,FAKE"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText("FAKE_Photo.jpg"));
+    const view = await screen.findByRole("button", { name: "View photo" });
+    expect(screen.queryByRole("button", { name: "Read" })).toBeNull();
+    await user.click(view);
+    expect(bridge.viewPhoto).toHaveBeenCalledWith("photo-1");
+    expect(bridge.viewPage).not.toHaveBeenCalled();
+  });
+
   it("reads a stored document inside myCarlos, then goes back to the library", async () => {
     const user = userEvent.setup();
     const record = {
@@ -940,7 +970,7 @@ describe("durable vault UI", () => {
       folderIds: [],
       displayName: "FAKE_Letter.pdf",
       sourceLabel: "Manual import — unverified",
-      mediaType: "application/pdf",
+      mediaType: "application/octet-stream",
       plaintextSize: 2048,
       importedAtMs: 1,
       available: true,

@@ -103,7 +103,11 @@ as `lopdf` does.
 
 This is why the reader parses PDFs only in the helper, never beside the vault
 keys. The helper's real sandbox is #63. `image` 0.25 (already present through
-`hayro`) writes the page picture as PNG, with only the `png` feature.
+`hayro`) writes the page picture as PNG, with only the `png` feature. Before display,
+the parent also uses this existing codec to decode and re-encode only RGBA8 page
+pixels: at most 4096 pixels per side, 64 MiB of decoded pixel storage and a 64 MiB
+decoder allocation limit, checked before decoding. Only the newly encoded picture
+is sent to the webview; PDF parsing and the helper's sandbox policy are unchanged.
 
 pdf.js was not chosen. Product decisions forbid rendering an untrusted PDF in
 the privileged webview, and running it in a second webview would need CSP and

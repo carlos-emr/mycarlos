@@ -2398,6 +2398,30 @@ struct ViewedPage {
     text: String,
 }
 
+impl ViewedPage {
+    fn from_rendered(
+        shown: pdf_view::Page,
+        ticket: &pdf_view::ViewTicket,
+    ) -> Result<Self, VaultError> {
+        use base64::Engine;
+        let page = Self {
+            page_count: shown.page_count,
+            width: shown.width,
+            height: shown.height,
+            image: format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(&shown.png)
+            ),
+            text: shown.text,
+        };
+        // Encoding a large page takes time too. A lock or close during it discards the result.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(page)
+    }
+}
+
 /// Shows one page of a stored document. The record is decrypted into memory only and handed to
 /// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
 #[tauri::command]
@@ -2405,15 +2429,21 @@ async fn vault_view_page(
     store: State<'_, Arc<VaultStore>>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
-    use base64::Engine;
     use pdf_unlock::Refusal;
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+    {
+        return Err(VaultError::Invalid.into());
+    }
     let (record_id, page, width) = (request.record_id, request.page, request.width);
     let given = request.password.is_some();
     let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
     drop(request);
     // Taken now: a newer page request, a lock or the reader closing stops this one.
     let ticket = pdf_view::ViewTicket::new();
-    run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.inner(), move |store| {
         let size = store
             .snapshot()?
             .records
@@ -2432,16 +2462,7 @@ async fn vault_view_page(
         let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
         store.export(record_id, &mut *document)?;
         match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
-            pdf_view::Outcome::Shown(shown) => Ok(ViewedPage {
-                page_count: shown.page_count,
-                width: shown.width,
-                height: shown.height,
-                image: format!(
-                    "data:image/png;base64,{}",
-                    base64::engine::general_purpose::STANDARD.encode(&shown.png)
-                ),
-                text: shown.text,
-            }),
+            pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
             pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
                 Err(VaultError::PdfWrongPassword)
             }
@@ -2456,7 +2477,12 @@ async fn vault_view_page(
             }
         }
     })
-    .await
+    .await;
+    // A lock can also happen after the blocking task finishes, before this command resumes.
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
 }
 
 /// Stops any page being drawn: the reader closed.
@@ -2953,6 +2979,23 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn does_not_return_a_page_for_a_cancelled_view_ticket() {
+        let ticket = pdf_view::ViewTicket::new();
+        pdf_view::cancel_views();
+        let shown = pdf_view::Page {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            png: vec![],
+            text: "FAKE page text".into(),
+        };
+        assert!(matches!(
+            ViewedPage::from_rendered(shown, &ticket),
+            Err(VaultError::Cancelled)
+        ));
+    }
     const APP_SCHEME: Origin = ("tauri", "localhost");
     const HOST_NAME: Origin = ("http", "tauri.localhost");
     const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
