@@ -52,6 +52,8 @@ export const en = {
     "Your vault stays on this device. If you created one on another device, it is still there, and will not appear here.",
   "create.profile.label": "Whose records will you keep here?",
   "create.profile.tooLong": "This name is too long. Shorten it.",
+  "create.profile.sharedTaken":
+    "{folder} is where shared files go. Choose another name.",
   "create.submit": "Create vault",
 
   // Unlock
@@ -60,6 +62,13 @@ export const en = {
     one: "The vault locks after {count} minute of inactivity and whenever myCarlos is hidden, for example minimized or sent to the background.",
     other:
       "The vault locks after {count} minutes of inactivity and whenever myCarlos is hidden, for example minimized or sent to the background.",
+  },
+  "unlock.waiting.one":
+    "One shared file is waiting. Unlock and it goes into {folder}. If myCarlos closes first, it is not kept: share it again.",
+  "unlock.waiting": {
+    one: "{count} shared file is waiting. Unlock and it goes into {folder}. If myCarlos closes first, it is not kept: share it again.",
+    other:
+      "{count} shared files are waiting. Unlock and they go into {folder}. If myCarlos closes first, they are not kept: share them again.",
   },
   "unlock.submit": "Unlock",
   "unlock.forgot.summary": "Forgot your passphrase?",
@@ -135,10 +144,7 @@ export const en = {
 
   // Library sidebar
   "sidebar.label": "Record library",
-  "sidebar.patient": "Patient",
   "sidebar.myRecords": "My records",
-  "sidebar.folders": "Folders",
-  "sidebar.noFolders": "No folders yet",
   "sidebar.settings": "Settings",
   "sidebar.preferences": "Preferences",
   "sidebar.storage": "Encrypted local vault",

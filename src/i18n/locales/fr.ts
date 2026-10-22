@@ -48,6 +48,8 @@ export const fr: Record<MessageKey, Message> = {
     "Votre coffre-fort reste sur cet appareil. Si vous en avez créé un sur un autre appareil, il s’y trouve toujours et n’apparaîtra pas ici.",
   "create.profile.label": "De qui allez-vous conserver les dossiers ici ?",
   "create.profile.tooLong": "Ce nom est trop long. Raccourcissez-le.",
+  "create.profile.sharedTaken":
+    "« {folder} » est l’endroit où vont les fichiers partagés. Choisissez un autre nom.",
   "create.submit": "Créer le coffre-fort",
 
   "unlock.title": "Déverrouiller votre coffre-fort",
@@ -56,6 +58,14 @@ export const fr: Record<MessageKey, Message> = {
     many: "Le coffre-fort se verrouille après {count} de minutes d’inactivité et chaque fois que myCarlos est masqué, par exemple réduit ou envoyé en arrière-plan.",
     other:
       "Le coffre-fort se verrouille après {count} minutes d’inactivité et chaque fois que myCarlos est masqué, par exemple réduit ou envoyé en arrière-plan.",
+  },
+  "unlock.waiting.one":
+    "Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « {folder} ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.",
+  "unlock.waiting": {
+    one: "{count} fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « {folder} ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.",
+    many: "{count} fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « {folder} ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.",
+    other:
+      "{count} fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « {folder} ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.",
   },
   "unlock.submit": "Déverrouiller",
   "unlock.forgot.summary": "Vous avez oublié votre phrase secrète ?",
@@ -131,10 +141,7 @@ export const fr: Record<MessageKey, Message> = {
 
   // Library sidebar
   "sidebar.label": "Bibliothèque de documents",
-  "sidebar.patient": "Patient",
   "sidebar.myRecords": "Mes documents",
-  "sidebar.folders": "Dossiers",
-  "sidebar.noFolders": "Aucun dossier pour l’instant",
   "sidebar.settings": "Paramètres",
   "sidebar.preferences": "Préférences",
   "sidebar.storage": "Coffre-fort local chiffré",

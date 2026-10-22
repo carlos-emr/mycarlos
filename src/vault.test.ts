@@ -45,6 +45,28 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
   });
 
+  it("sends the shared-file commands the native side registers", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(undefined);
+    await bridge.listReceived();
+    await bridge.acceptReceived();
+    await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
+    expect(invoke.mock.calls).toEqual([
+      ["received_list"],
+      ["received_accept"],
+      [
+        "vault_move_to_person",
+        {
+          request: {
+            recordIds: ["record-1"],
+            profileId: "profile-1",
+            folderIds: ["folder-1"],
+          },
+        },
+      ],
+    ]);
+  });
+
   it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
     const bridge = createVaultBridge();
     const sent: Uint8Array[] = [];

@@ -190,6 +190,15 @@ On every platform:
     does. If you stay away longer than that, the vault may instead lock as you return and leave the
     document out; after you unlock, the app says "The transfer did not finish." Either way nothing
     from the vault is shown meanwhile.
+13. **Shared with me.** With myCarlos closed, open a FAKE PDF with it (on Windows, right-click the
+    file, then **Open with** → myCarlos; on a Mac, the same from Finder). The lock screen says one
+    shared file is waiting, without its name. Unlock: the sidebar shows **Shared with me** with
+    "1 new", and the app says the file was added. With one person in the vault it sits among
+    their folders; with several, above them, outside everyone's records. Open it: the "new" goes,
+    and the file is listed with its size. Open the file's details and choose a place under **Move
+    to**: it moves there, and Shared with me is empty. Open a file that is not a PDF the same way
+    (a FAKE `.txt` renamed `.pdf` will do): after unlocking, the app names it and says it was not
+    added. Sharing from another app on a phone comes with the phone issues (#50 to #53).
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
@@ -211,6 +220,14 @@ Developers can find a fuller checklist, including large files and interrupted tr
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to
 someone listening to it. These checks need a person. Each screen reader below is free, and all
 but NVDA are built in.
+
+Two browser tests go part of the way first, in Chromium with a synthetic vault:
+`tests/keyboard-walk.spec.ts` uses only the keyboard through first setup, unlocking, the library,
+Settings and the lock warning (every control reached in order, focus shown, no traps, Escape
+closes dialogs), and
+`tests/screen-reader-smoke.spec.ts` checks that controls have names, headings go in order and the
+key events are read out. Problems they find are listed with `test.fail` and an issue number. They
+are not a screen reader: the steps below still apply.
 
 | Platform | Screen reader | Turn it on and off | Move / activate |
 | --- | --- | --- | --- |

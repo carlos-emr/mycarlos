@@ -47,6 +47,8 @@ export const es: Record<MessageKey, Message> = {
     "Su bóveda permanece en este dispositivo. Si creó una en otro dispositivo, sigue allí y no aparecerá aquí.",
   "create.profile.label": "¿De quién son los registros que guardará aquí?",
   "create.profile.tooLong": "Este nombre es demasiado largo. Acórtelo.",
+  "create.profile.sharedTaken":
+    "«{folder}» es donde van los archivos compartidos. Elija otro nombre.",
   "create.submit": "Crear bóveda",
 
   "unlock.title": "Desbloquee su bóveda",
@@ -55,6 +57,14 @@ export const es: Record<MessageKey, Message> = {
     many: "La bóveda se bloquea tras {count} de minutos de inactividad y siempre que myCarlos se oculta, por ejemplo al minimizarlo o enviarlo a segundo plano.",
     other:
       "La bóveda se bloquea tras {count} minutos de inactividad y siempre que myCarlos se oculta, por ejemplo al minimizarlo o enviarlo a segundo plano.",
+  },
+  "unlock.waiting.one":
+    "Hay un archivo compartido en espera. Desbloquee la bóveda y pasará a «{folder}». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.",
+  "unlock.waiting": {
+    one: "Hay {count} archivo compartido en espera. Desbloquee la bóveda y pasará a «{folder}». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.",
+    many: "Hay {count} archivos compartidos en espera. Desbloquee la bóveda y pasarán a «{folder}». Si myCarlos se cierra antes, no se conservarán: compártalos de nuevo.",
+    other:
+      "Hay {count} archivos compartidos en espera. Desbloquee la bóveda y pasarán a «{folder}». Si myCarlos se cierra antes, no se conservarán: compártalos de nuevo.",
   },
   "unlock.submit": "Desbloquear",
   "unlock.forgot.summary": "¿Olvidó su frase de contraseña?",
@@ -130,10 +140,7 @@ export const es: Record<MessageKey, Message> = {
 
   // Library sidebar
   "sidebar.label": "Biblioteca de documentos",
-  "sidebar.patient": "Paciente",
   "sidebar.myRecords": "Mis documentos",
-  "sidebar.folders": "Carpetas",
-  "sidebar.noFolders": "Todavía no hay carpetas",
   "sidebar.settings": "Configuración",
   "sidebar.preferences": "Preferencias",
   "sidebar.storage": "Bóveda local cifrada",

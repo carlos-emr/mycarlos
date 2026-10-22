@@ -48,6 +48,8 @@ export const pl: Record<MessageKey, Message> = {
     "Sejf pozostaje na tym urządzeniu. Jeśli został utworzony na innym urządzeniu, nadal tam jest i nie pojawi się tutaj.",
   "create.profile.label": "Czyje dokumenty będą tu przechowywane?",
   "create.profile.tooLong": "Ta nazwa jest zbyt długa. Proszę ją skrócić.",
+  "create.profile.sharedTaken":
+    "„{folder}” to miejsce, do którego trafiają udostępnione pliki. Proszę wybrać inną nazwę.",
   "create.submit": "Utwórz sejf",
 
   "unlock.title": "Odblokuj sejf",
@@ -57,6 +59,15 @@ export const pl: Record<MessageKey, Message> = {
     many: "Sejf blokuje się po {count} minutach bezczynności oraz za każdym razem, gdy myCarlos zostaje ukryty, na przykład zminimalizowany lub przeniesiony do tła.",
     other:
       "Sejf blokuje się po {count} minuty bezczynności oraz za każdym razem, gdy myCarlos zostaje ukryty, na przykład zminimalizowany lub przeniesiony do tła.",
+  },
+  "unlock.waiting.one":
+    "Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{folder}”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.",
+  "unlock.waiting": {
+    one: "{count} udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{folder}”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.",
+    few: "{count} udostępnione pliki czekają. Po odblokowaniu sejfu trafią do „{folder}”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.",
+    many: "{count} udostępnionych plików czeka. Po odblokowaniu sejfu trafią do „{folder}”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.",
+    other:
+      "{count} udostępnionego pliku czeka. Po odblokowaniu sejfu trafią do „{folder}”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.",
   },
   "unlock.submit": "Odblokuj",
   "unlock.forgot.summary": "Nie pamiętasz hasła głównego?",
@@ -136,10 +147,7 @@ export const pl: Record<MessageKey, Message> = {
 
   // Library sidebar
   "sidebar.label": "Biblioteka dokumentów",
-  "sidebar.patient": "Pacjent",
   "sidebar.myRecords": "Moje dokumenty",
-  "sidebar.folders": "Foldery",
-  "sidebar.noFolders": "Brak folderów",
   "sidebar.settings": "Ustawienia",
   "sidebar.preferences": "Preferencje",
   "sidebar.storage": "Lokalny zaszyfrowany sejf",

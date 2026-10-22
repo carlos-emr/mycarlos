@@ -17,7 +17,7 @@ import {
 import { SecuritySettings } from "../native/SecuritySettings";
 import { RecoveryKeySetup } from "../native/RecoveryKeySetup";
 import { AutoLockSetting } from "../native/AutoLockSetting";
-import { ProfileChoice } from "../native/ProfileChoice";
+import { LibrarySidebar } from "../native/LibrarySidebar";
 import { readTypedZoom } from "../native/zoom";
 import { ComfortSetup } from "../native/ComfortSetup";
 import { LockWarning } from "../native/LockWarning";
@@ -175,29 +175,101 @@ describe("Settings > Security in each language", () => {
   });
 });
 
-describe("the patient buttons in each language", () => {
+describe("the person-folder sidebar in each language", () => {
   for (const locale of LOCALES) {
-    it(`names the choice of patient in ${locale}`, () => {
+    it(`keeps the person tree and translates its vault totals in ${locale}`, async () => {
       setLocaleOverride(locale);
-      render(
-        <ProfileChoice
-          profiles={[
-            { id: "p1", displayName: "FAKE Avery", createdAtMs: 1 },
-            { id: "p2", displayName: "FAKE Blake", createdAtMs: 2 },
-          ]}
-          profileId="p1"
-          onChoose={vi.fn()}
+      const user = userEvent.setup();
+      const people = [
+        { id: "p1", displayName: "FAKE Avery", createdAtMs: 1 },
+        { id: "p2", displayName: "FAKE Blake", createdAtMs: 2 },
+      ];
+      const folders: VaultFolder[] = people.map((person) => ({
+        id: `folder-${person.id}`,
+        profileId: person.id,
+        parentId: null,
+        name: "FAKE Results",
+        createdAtMs: 1,
+      }));
+      const records: VaultRecord[] = ["p1", "p1", "p2"].map(
+        (profileId, index) => ({
+          id: `record-${index}`,
+          profileId,
+          folderIds: [],
+          displayName: "FAKE Scan.pdf",
+          sourceLabel: "FAKE source",
+          mediaType: "application/pdf",
+          plaintextSize: 1,
+          importedAtMs: 1,
+          available: true,
+        }),
+      );
+      const props = {
+        profileName: "Private vault",
+        people,
+        profileId: "p1",
+        section: "shared" as const,
+        sharedNew: 2,
+        onOpenShared: vi.fn(),
+        vaultTotals: { documents: 5, folders: 2 },
+        currentFolderId: null,
+        folders,
+        records,
+        disabled: false,
+        drag: {
+          startDrag: vi.fn(),
+          dragOver: vi.fn(),
+          dropInto: vi.fn(),
+          dragEnd: vi.fn(),
+          dragClass: (base: string) => base,
+          dropClass: (base: string) => base,
+        } as unknown as VaultDragDrop,
+        onOpenPerson: vi.fn(),
+        onOpenFolder: vi.fn(),
+        onOpenSecurity: vi.fn(),
+        onOpenPreferences: vi.fn(),
+      };
+      const tr = (
+        key: Parameters<typeof translate>[1],
+        params?: Parameters<typeof translate>[2],
+      ) => translate(locale, key, params);
+      const shown = render(<LibrarySidebar {...props} />);
+      const nav = screen.getByRole("navigation", { name: tr("sidebar.label") });
+      expect(
+        within(nav).getByRole("button", { name: "Shared with me, 2 new" }),
+      ).toHaveAttribute("aria-current", "page");
+      const folder = within(nav).getByRole("button", {
+        name: "FAKE Results (FAKE Blake) 0",
+      });
+      expect(folder).not.toHaveAttribute("draggable", "true");
+      await user.click(folder);
+      expect(props.onOpenFolder).toHaveBeenCalledWith("p2", "folder-p2");
+      await user.click(
+        within(nav).getByRole("button", { name: "FAKE Blake 1" }),
+      );
+      expect(props.onOpenPerson).toHaveBeenCalledWith("p2");
+      expect(screen.getByText(tr("sidebar.settings"))).toBeVisible();
+      expect(screen.getByText(tr("sidebar.storage"))).toBeVisible();
+      expect(shown.container.querySelector(".storage small")).toHaveTextContent(
+        `${tr("sidebar.documents", { count: 5 })} · ${tr("sidebar.folderCount", { count: 2 })}`,
+      );
+
+      // The one-person label stays translated and the footer now counts just
+      // that person's records, rather than the whole vault or all input rows.
+      shown.rerender(
+        <LibrarySidebar
+          {...props}
+          people={[people[0]]}
+          section="records"
+          profileName="FAKE Avery"
         />,
       );
-      const group = screen.getByRole("group", {
-        name: translate(locale, "sidebar.patient"),
-      });
       expect(
-        within(group)
-          .getAllByRole("button")
-          .map((button) => button.textContent),
-      ).toEqual(["FAKE Avery", "FAKE Blake"]);
-      expect(group).toHaveTextContent(translate(locale, "sidebar.patient"));
+        screen.getByRole("button", { name: `${tr("sidebar.myRecords")} 2` }),
+      ).toHaveAttribute("aria-current", "page");
+      expect(shown.container.querySelector(".storage small")).toHaveTextContent(
+        `${tr("sidebar.documents", { count: 2 })} · ${tr("sidebar.folderCount", { count: 1 })}`,
+      );
     });
   }
 });

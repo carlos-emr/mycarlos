@@ -10,7 +10,12 @@ import {
   type SpeedTestReport,
 } from "../vault";
 import { AutoLockSetting } from "./AutoLockSetting";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
+import {
+  NAME_INPUT_MAX_LENGTH,
+  SHARED_NAME_TAKEN,
+  nameIsShared,
+  nameTooLong,
+} from "./recordPresentation";
 import {
   MIN_PASSPHRASE_CHARS,
   ResetConfirmation,
@@ -451,13 +456,17 @@ export function SecuritySettings({
             {nameTooLong(profileName) && (
               <p role="alert">{t("create.profile.tooLong")}</p>
             )}
+            {nameIsShared(profileName) && (
+              <p role="alert">{SHARED_NAME_TAKEN}</p>
+            )}
             <button
               className="button"
               disabled={
                 busy ||
                 readOnly ||
                 !profileName.trim() ||
-                nameTooLong(profileName)
+                nameTooLong(profileName) ||
+                nameIsShared(profileName)
               }
             >
               {t("security.profiles.add")}
