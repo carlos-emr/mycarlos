@@ -498,4 +498,35 @@ export const es: Record<MessageKey, Message> = {
   "library.empty.help": "Añada una carpeta o importe un documento aquí.",
   "library.noMatch.title": "Ningún documento coincide",
   "library.noMatch.help": "Pruebe otra búsqueda.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Nombre completo, como en los documentos de la clínica (opcional)",
+  "personDetails.birthDate": "Fecha de nacimiento (opcional)",
+  "personDetails.help":
+    "Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.",
+  "personDetails.nameTooLong":
+    "Este nombre completo es demasiado largo. Acórtelo.",
+  "personDetails.invalidDate":
+    "Introduzca una fecha de nacimiento válida: año, mes y día.",
+  "personDetails.futureDate": "La fecha de nacimiento no puede ser futura.",
+  "personDetails.list": "Datos de las personas",
+  "personDetails.for": "Datos de {name}",
+  "personDetails.save": "Guardar datos",
+  "personDetails.cancel": "Cancelar",
+  "personDetails.noName": "Sin nombre completo",
+  "personDetails.noDate": "Sin fecha de nacimiento",
+  "personDetails.editFor": "Editar los datos de {name}",
+  "personDetails.edit": "Editar datos",
+  "personDetails.saved": "Se guardaron los datos de {name}.",
+  "personSuggestion.byDate": "coincide la fecha de nacimiento del documento",
+  "personSuggestion.byBoth":
+    "coinciden la fecha de nacimiento y el nombre del documento",
+  "personSuggestion.byName": "coincide el nombre del documento",
+  "personSuggestion.for": "Persona sugerida para {document}",
+  "personSuggestion.offer":
+    "Parece que este documento es para {name} ({why}). ¿Moverlo a sus registros?",
+  "personSuggestion.moveLabel": "Mover {document} a los registros de {name}",
+  "personSuggestion.move": "Mover",
+  "personSuggestion.dismissLabel": "No es esta persona: {document}",
+  "personSuggestion.dismiss": "No es esta persona",
 };

@@ -479,6 +479,34 @@ export const en = {
   "library.empty.help": "Add a folder or import a document here.",
   "library.noMatch.title": "No matching records",
   "library.noMatch.help": "Try another search.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName": "Full name, as on clinic documents (optional)",
+  "personDetails.birthDate": "Birth date (optional)",
+  "personDetails.help":
+    "Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.",
+  "personDetails.nameTooLong": "This full name is too long. Shorten it.",
+  "personDetails.invalidDate":
+    "Enter a valid birth date as year, month and day.",
+  "personDetails.futureDate": "A birth date cannot be in the future.",
+  "personDetails.list": "People's details",
+  "personDetails.for": "Details for {name}",
+  "personDetails.save": "Save details",
+  "personDetails.cancel": "Cancel",
+  "personDetails.noName": "No full name",
+  "personDetails.noDate": "No birth date",
+  "personDetails.editFor": "Edit details for {name}",
+  "personDetails.edit": "Edit details",
+  "personDetails.saved": "Details for {name} saved.",
+  "personSuggestion.byDate": "the birth date on the document matches",
+  "personSuggestion.byBoth": "the birth date and name on the document match",
+  "personSuggestion.byName": "the name on the document matches",
+  "personSuggestion.for": "Suggested person for {document}",
+  "personSuggestion.offer":
+    "Looks like this is for {name} ({why}). Move it to their records?",
+  "personSuggestion.moveLabel": "Move {document} to {name}'s records",
+  "personSuggestion.move": "Move",
+  "personSuggestion.dismissLabel": "Not this person: {document}",
+  "personSuggestion.dismiss": "Not this person",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useI18n } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -6,6 +7,7 @@ import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibraryItemsProps {
   view: "list" | "grid";
+  suggestionFor?: (record: VaultRecord) => ReactNode;
   folders: VaultFolder[];
   records: VaultRecord[];
   selectedIds: string[];
@@ -44,6 +46,7 @@ function EmptyState({ searching }: { searching: boolean }) {
 
 export function LibraryItems({
   view,
+  suggestionFor,
   folders,
   records,
   selectedIds,
@@ -186,6 +189,7 @@ export function LibraryItems({
                   </small>
                 )}
               </span>
+              {suggestionFor?.(record)}
             </div>
             <span className="column">{record.sourceLabel}</span>
             <span className="column">

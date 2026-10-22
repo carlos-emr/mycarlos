@@ -103,6 +103,8 @@ fn main() {
             "vault_restore_inspect",
             "vault_restore",
             "vault_create_profile",
+            "vault_update_profile_details",
+            "vault_shared_identity",
             "vault_create_folder",
             "vault_update_folder",
             "vault_rename_record",

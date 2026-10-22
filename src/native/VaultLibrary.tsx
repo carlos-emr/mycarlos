@@ -1,3 +1,7 @@
+import { t } from "../i18n";
+import type { PersonDetails } from "../vault";
+import { PersonSuggestion } from "./PersonSuggestion";
+import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
@@ -367,6 +371,23 @@ export function VaultLibrary({
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+  const sharedRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (r) => r.profileId === sharedProfileId && !r.hidden,
+      ),
+    [snapshot.records, sharedProfileId],
+  );
+  const suggestions = usePersonSuggestions(
+    bridge,
+    sharedRecords,
+    people,
+    busy ||
+      readOnly ||
+      !inShared ||
+      (view === "grid" && !activeRecordId) ||
+      Boolean(readerRecordId),
+  );
 
   useEffect(() => {
     if (profile && profile.id !== profileId) setProfileId(profile.id);
@@ -878,15 +899,51 @@ export function VaultLibrary({
       await refresh();
       setNotice("Passphrase changed.");
     }, ["box.currentPassphrase", "box.newPassphrase"]);
-  const createProfile = async (name: string) => {
+  const createProfile = async (name: string, details?: PersonDetails) => {
     let created = false;
     await run(async () => {
-      await bridge.createProfile(name);
+      await (details
+        ? bridge.createProfile(name, details)
+        : bridge.createProfile(name));
       created = true;
       await refresh();
       setNotice(`${name} was added.`);
     }, ["box.profileName"]);
     return created;
+  };
+  const renderSuggestion = (record: VaultRecord) => {
+    if (
+      record.profileId !== sharedProfileId ||
+      readOnly ||
+      !record.available ||
+      record.hidden
+    )
+      return null;
+    const suggestion = suggestions.suggestionFor(record.id);
+    return suggestion ? (
+      <PersonSuggestion
+        person={suggestion.person}
+        matchedBy={suggestion.by}
+        documentName={record.displayName}
+        busy={busy || readOnly}
+        onMove={() => moveToPerson([record.id], suggestion.person.id, null)}
+        onDismiss={() => suggestions.dismiss(record.id)}
+      />
+    ) : null;
+  };
+  const updateProfileDetails = async (id: string, details: PersonDetails) => {
+    let saved = false;
+    await run(async () => {
+      await bridge.updateProfileDetails!(id, details);
+      saved = true;
+      await refresh();
+      setNotice(
+        t("personDetails.saved", {
+          name: people.find((p) => p.id === id)?.displayName ?? "",
+        }),
+      );
+    });
+    return saved;
   };
   /** Moves documents to another person, into one of their folders or none.
    * One the person already has stays where it is. */
@@ -1557,6 +1614,7 @@ export function VaultLibrary({
 
                 <LibraryItems
                   view={view}
+                  suggestionFor={renderSuggestion}
                   folders={visibleFolders}
                   records={visibleRecords}
                   selectedIds={selectedIds}
@@ -1627,6 +1685,10 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                people={people}
+                onUpdateProfileDetails={
+                  bridge.updateProfileDetails ? updateProfileDetails : undefined
+                }
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
@@ -1752,6 +1814,7 @@ export function VaultLibrary({
             unlocking?.recordId !== activeRecord.id && (
               <RecordDetails
                 record={activeRecord}
+                suggestion={renderSuggestion(activeRecord)}
                 folders={folders}
                 moveTargets={
                   inShared || people.length > 1 ? moveTargets : undefined
