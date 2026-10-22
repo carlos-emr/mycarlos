@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  within,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
@@ -269,9 +275,14 @@ describe("targets and text sizes in the app (#67)", () => {
         document.querySelector('.native-section-tabs [aria-current="page"]')!,
         screen.getByRole("button", { name: "Security" }),
       ],
+      // On a phone, the people are top-level folders under the path (Ben, 21 Oct).
       [
-        screen.getByRole("button", { name: "FAKE Avery", pressed: true }),
-        screen.getByRole("button", { name: "FAKE Blake", pressed: false }),
+        within(
+          screen.getByRole("navigation", { name: "Record library" }),
+        ).getByRole("button", { name: "FAKE Avery", current: "page" }),
+        within(
+          screen.getByRole("navigation", { name: "Record library" }),
+        ).getByRole("button", { name: "FAKE Blake", current: false }),
       ],
       [
         screen.getByRole("button", { name: "List view", pressed: true }),
