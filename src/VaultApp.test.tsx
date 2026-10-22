@@ -1679,8 +1679,9 @@ describe("durable vault UI", () => {
       snapshot: vi.fn().mockResolvedValue(created),
     });
     render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
     await user.type(
-      await screen.findByLabelText("First patient profile"),
+      await screen.findByLabelText("Whose records will you keep here?"),
       "FAKE Test Patient",
     );
     await user.type(
