@@ -68,6 +68,8 @@ pub(crate) enum Outcome {
     Unavailable,
     /// The helper could not be started, ran out of time or memory, or answered wrongly.
     Failed,
+    /// The helper could not be sandboxed on this system, so it was given nothing to read.
+    NoSandbox,
     /// A newer request, a lock or the reader closing stopped it.
     Cancelled,
 }
@@ -296,10 +298,11 @@ pub(crate) fn view_in_helper(
             read_view_response,
             &|| !ticket.is_current(),
         ) {
-            Some(Ok(page)) => Outcome::Shown(page),
-            Some(Err(refusal)) => Outcome::Refused(refusal),
-            None if !ticket.is_current() => Outcome::Cancelled,
-            None => Outcome::Failed,
+            Ok(Ok(page)) => Outcome::Shown(page),
+            Ok(Err(refusal)) => Outcome::Refused(refusal),
+            Err(_) if !ticket.is_current() => Outcome::Cancelled,
+            Err(pdf_unlock::Unanswered::NoSandbox) => Outcome::NoSandbox,
+            Err(pdf_unlock::Unanswered::Failed) => Outcome::Failed,
         }
     }
     #[cfg(mobile)]

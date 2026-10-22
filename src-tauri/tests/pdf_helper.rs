@@ -1,10 +1,7 @@
 //! The real myCarlos executable, started as the PDF unlock helper (src/pdf_unlock.rs), answers
-//! one request on stdin and exits. This drives it the way the app does, byte for byte.
+//! one request on stdin and exits. This drives it the way the app does, byte for byte: started by
+//! myCarlos's own code, so sandboxed as in the app (on Windows, in its AppContainer).
 
-use std::io::{Read, Write};
-use std::process::{Command, Stdio};
-
-const HELPER_ARG: &str = "--mycarlos-pdf-helper";
 const PASSWORD: &str = "FAKE-portal-2026";
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -16,30 +13,25 @@ fn fixture(name: &str) -> Vec<u8> {
     .unwrap()
 }
 
+/// The executable, which AppContainers may read and run on Windows, as the installer allows.
+fn executable() -> &'static std::path::Path {
+    let executable = std::path::Path::new(env!("CARGO_BIN_EXE_mycarlos-tauri-poc"));
+    #[cfg(windows)]
+    for path in [executable, executable.parent().unwrap()] {
+        let status = std::process::Command::new("icacls")
+            .arg(path)
+            .args(["/grant", "*S-1-15-2-1:(RX)"])
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "{}", path.display());
+    }
+    executable
+}
+
 /// Sends one request; returns the exit code and what came back.
 fn ask(request: &[u8]) -> (Option<i32>, Vec<u8>) {
-    let mut helper = Command::new(env!("CARGO_BIN_EXE_mycarlos-tauri-poc"))
-        .arg(HELPER_ARG)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut stdin = helper.stdin.take().unwrap();
-    let request = request.to_vec();
-    let writer = std::thread::spawn(move || {
-        let _ = stdin.write_all(&request);
-    });
-    let mut answer = Vec::new();
-    helper
-        .stdout
-        .take()
-        .unwrap()
-        .read_to_end(&mut answer)
-        .unwrap();
-    writer.join().unwrap();
-    (helper.wait().unwrap().code(), answer)
+    mycarlos_tauri_poc_lib::pdf_ask_helper_at(executable(), request)
 }
 
 fn request(password: &str, pdf: &[u8]) -> Vec<u8> {
@@ -73,7 +65,7 @@ fn the_helper_unlocks_a_document_and_names_a_wrong_password() {
 /// code.
 #[test]
 fn mycarlos_starts_the_helper_and_takes_its_answer() {
-    let executable = std::path::Path::new(env!("CARGO_BIN_EXE_mycarlos-tauri-poc"));
+    let executable = executable();
     let locked = fixture("text-aes256.pdf");
     let unlocked =
         mycarlos_tauri_poc_lib::pdf_unlock_with_helper_at(executable, &locked, PASSWORD).unwrap();
@@ -89,6 +81,30 @@ fn the_helper_answers_nothing_to_a_request_it_cannot_read() {
     let (code, answer) = ask(b"not a request");
     assert_ne!(code, Some(0));
     assert!(answer.is_empty());
+}
+
+/// On Windows the helper is sandboxed only when myCarlos starts it in its AppContainer. Started
+/// any other way, it reads nothing and says why with its exit code.
+#[cfg(windows)]
+#[test]
+fn the_helper_started_outside_its_app_container_reads_nothing() {
+    use std::io::Write;
+    let mut helper = std::process::Command::new(executable())
+        .arg(mycarlos_tauri_poc_lib::PDF_HELPER_ARG)
+        .env_clear()
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let _ = helper
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&request(PASSWORD, &fixture("text-aes256.pdf")));
+    let output = helper.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
 }
 
 #[test]
