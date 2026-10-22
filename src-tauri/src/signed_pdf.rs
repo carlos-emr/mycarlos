@@ -15,24 +15,21 @@
 //! 4. its recipient against the link: the same recipient is Verified, and
 //!    none or another is "signed, not matched to you", never Verified.
 //!
-//! This module does no PDF parsing. Its caller supplies a structure report
-//! describing signatures and the embedded manifest's bytes. It checks the
-//! reported byte range, /Contents framing, digest and signature against the
-//! file's bytes, and requires the manifest bytes to occur exactly once in
-//! the signed bytes. These raw-byte checks do not independently establish
-//! the complete PDF signature structure or attachment identity. Helper
-//! structure validation and import integration remain later work; the
-//! checker is not wired to the import flow. An encrypted copy (the email
-//! path) stores its manifest encrypted, so it cannot be bound this way yet
-//! and is refused as `encrypted_manifest`.
+//! This module parses CMS and the manifest, never PDF objects. The confined
+//! helper first supplies conservative signature ranges. Main authenticates the
+//! signature and pinned key before sending a password for complete PDF structure
+//! and attachment extraction. The current CMS manifest-digest attribute binds the
+//! exact extracted bytes, including an encrypted email attachment. Unknown pins
+//! never become trusted; production authenticated linking remains future work.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use cms::cert::CertificateChoices;
+use cms::content_info::CmsVersion;
 use cms::content_info::ContentInfo;
-use cms::signed_data::{SignedData, SignerIdentifier};
-use der::asn1::{ObjectIdentifier, OctetString};
-use der::{Any, Decode, Encode, Reader, SliceReader, Tag, Tagged};
+use cms::signed_data::{CertificateSet, EncapsulatedContentInfo, SignerIdentifier};
+use der::asn1::{ObjectIdentifier, OctetString, SetOfVec};
+use der::{Any, Decode, Encode, Reader, SliceReader, Tag, TagNumber, Tagged};
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
 use p256::pkcs8::DecodePublicKey;
@@ -51,6 +48,13 @@ const ID_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101
 const ID_EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 const ID_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 const ID_ECDSA_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+/// 2.25.132515939282652475535231260060469025505, the agreed manifest-digest
+/// attribute. Its UUID arc exceeds const-oid 0.9's u32 arcs. Compare its exact,
+/// canonical DER value, without changing the producer OID or the signed bytes.
+const ID_MANIFEST_DIGEST: &[u8] = &[
+    0x69, 0x81, 0xc7, 0xb1, 0xd2, 0x8f, 0xa3, 0x98, 0x82, 0xb0, 0xcf, 0xbe, 0xa2, 0xb7, 0xa8, 0xff,
+    0xde, 0xe7, 0xb5, 0x61,
+];
 
 /// The most bytes a signature's /Contents may decode to. CARLOS reserves
 /// 8 KiB; anything far larger is not its signature.
@@ -59,7 +63,7 @@ const MAX_CONTENTS_BYTES: usize = 64 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 
 /// Where the PDF's signatures are, as the PDF helper found them.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignatureLayout {
     /// Each signature's /ByteRange `[a, b, c, d]`: bytes `a..a+b` and
     /// `c..c+d` are signed, and `a+b..c` holds the /Contents.
@@ -84,7 +88,7 @@ pub struct PinnedLink {
 
 /// Why a signed PDF is not shown as signed. The names are A3's fixture
 /// codes; the document still imports, as an unverified one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Refusal {
     Unsigned,
@@ -97,14 +101,30 @@ pub enum Refusal {
     NotP256,
     UnknownSigner,
     BadManifest,
-    /// The reported manifest is not one the clinic signed into this file:
-    /// it does not appear verbatim, exactly once, in the signed bytes.
+    /// The exact extracted manifest does not match the authenticated CMS digest.
     ManifestNotSigned,
-    /// The manifest is stored encrypted, so it cannot be tied to the signed
-    /// bytes yet; shown as "not verified (encrypted copy)".
+    /// A password is still required to extract the encrypted manifest.
     EncryptedManifest,
     KidMismatch,
     ClinicMismatch,
+    BadStructure,
+}
+
+/// Before the helper receives a document password, establish a valid signature
+/// from a pinned clinic key. This is repeated against its complete structure report.
+pub(crate) fn authenticate(
+    pdf: &[u8],
+    layout: &SignatureLayout,
+    links: &[PinnedLink],
+) -> Result<(), Refusal> {
+    let signed = check_signature(pdf, layout)?;
+    if !links
+        .iter()
+        .any(|link| link.signer_kids.contains(&signed.kid))
+    {
+        return Err(Refusal::UnknownSigner);
+    }
+    Ok(())
 }
 
 /// What CARLOS put inside the signed revision (A3's manifest note).
@@ -188,15 +208,14 @@ pub fn check(
             manifest: None,
         });
     };
-    // Only a manifest the clinic signed into this file counts, whatever the
-    // helper reported.
-    let [head, tail] = [&pdf[..signed.gap.0], &pdf[signed.gap.1..]];
-    if occurrences(head, bytes) + occurrences(tail, bytes) != 1 {
-        return Err(if layout.encrypted {
-            Refusal::EncryptedManifest
-        } else {
-            Refusal::ManifestNotSigned
-        });
+    // The CMS signed attribute binds the exact extracted bytes, including an
+    // encrypted attachment after its password was supplied. Never reserialize
+    // the JSON before hashing it, or trust a helper's attachment report alone.
+    if bytes.len() > MAX_MANIFEST_BYTES {
+        return Err(Refusal::BadManifest);
+    }
+    if signed.manifest_digest.as_deref() != Some(&Sha256::digest(bytes)[..]) {
+        return Err(Refusal::ManifestNotSigned);
     }
     let manifest = parse_manifest(bytes)?;
     if manifest.kid != signed.kid {
@@ -229,21 +248,7 @@ pub fn check(
 
 struct SignedBy {
     kid: String,
-    /// Where the unsigned /Contents gap starts and ends; the signed bytes
-    /// are everything else, to the end of the file.
-    gap: (usize, usize),
-}
-
-/// How often `needle` appears in `haystack`, counting no further than 2.
-fn occurrences(haystack: &[u8], needle: &[u8]) -> usize {
-    if needle.is_empty() || needle.len() > haystack.len() {
-        return 0;
-    }
-    haystack
-        .windows(needle.len())
-        .filter(|window| *window == needle)
-        .take(2)
-        .count()
+    manifest_digest: Option<Vec<u8>>,
 }
 
 /// Step 1: the signature, on the file's own bytes.
@@ -276,8 +281,7 @@ fn check_signature(pdf: &[u8], layout: &SignatureLayout) -> Result<SignedBy, Ref
     let mut hash = Sha256::new();
     hash.update(&pdf[..b]);
     hash.update(&pdf[c..end]);
-    let kid = verify_cms(&contents, &hash.finalize())?;
-    Ok(SignedBy { kid, gap: (b, c) })
+    verify_cms(&contents, &hash.finalize())
 }
 
 fn decode_hex(hex: &[u8]) -> Option<Vec<u8>> {
@@ -294,7 +298,7 @@ fn decode_hex(hex: &[u8]) -> Option<Vec<u8>> {
 
 /// One CMS SignedData, detached, with a single P-256 signer whose signed
 /// attributes carry `digest`; returns the signer's kid.
-fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<String, Refusal> {
+fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
     use Refusal::BadSignature as Bad;
     let mut reader = SliceReader::new(contents).map_err(|_| Refusal::BadContents)?;
     let info = ContentInfo::decode(&mut reader).map_err(|_| Refusal::BadContents)?;
@@ -307,27 +311,57 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<String, Refusal> {
     if info.content_type != ID_SIGNED_DATA {
         return Err(Bad);
     }
-    let signed: SignedData = info.content.decode_as().map_err(|_| Bad)?;
-    if signed.encap_content_info.econtent.is_some()
-        || signed.encap_content_info.econtent_type != ID_DATA
+    // Decode the CMS envelope with the reviewed DER types. Signed attributes
+    // stay as Any values because const-oid cannot represent the UUID-sized arc.
+    // No OID is substituted, and no attribute is removed or re-ordered.
+    let fields: Vec<Any> = info.content.decode_as().map_err(|_| Bad)?;
+    let [version, algorithms, encapsulated, certificates, signer_infos] = fields.as_slice() else {
+        return Err(Bad);
+    };
+    version.decode_as::<CmsVersion>().map_err(|_| Bad)?;
+    let algorithms: SetOfVec<AlgorithmIdentifierOwned> = algorithms.decode_as().map_err(|_| Bad)?;
+    if algorithms.len() != 1
+        || algorithms
+            .iter()
+            .any(|algorithm| algorithm.oid != ID_SHA256)
     {
         return Err(Bad);
     }
-    let signers: Vec<_> = signed.signer_infos.0.iter().collect();
-    let [signer] = signers.as_slice() else {
+    let encapsulated: EncapsulatedContentInfo = encapsulated.decode_as().map_err(|_| Bad)?;
+    if encapsulated.econtent.is_some() || encapsulated.econtent_type != ID_DATA {
+        return Err(Bad);
+    }
+    let certificates: CertificateSet = implicit_set(certificates, TagNumber::N0)?
+        .decode_as()
+        .map_err(|_| Bad)?;
+    let signers: SetOfVec<Any> = signer_infos.decode_as().map_err(|_| Bad)?;
+    if signers.len() != 1 {
+        return Err(Bad);
+    }
+    let signer_fields: Vec<Any> = signers
+        .iter()
+        .next()
+        .ok_or(Bad)?
+        .decode_as()
+        .map_err(|_| Bad)?;
+    let [version, sid, digest_algorithm, attributes, signature_algorithm, signature] =
+        signer_fields.as_slice()
+    else {
         return Err(Bad);
     };
-    if signer.digest_alg.oid != ID_SHA256 {
+    if version.decode_as::<CmsVersion>().map_err(|_| Bad)? != CmsVersion::V1 {
+        return Err(Bad);
+    }
+    let digest_algorithm: AlgorithmIdentifierOwned =
+        digest_algorithm.decode_as().map_err(|_| Bad)?;
+    if digest_algorithm.oid != ID_SHA256 {
         return Err(Bad);
     }
     // CARLOS names its signer by issuer and serial number.
-    let SignerIdentifier::IssuerAndSerialNumber(id) = &signer.sid else {
+    let SignerIdentifier::IssuerAndSerialNumber(id) = sid.decode_as().map_err(|_| Bad)? else {
         return Err(Bad);
     };
-    let cert: &Certificate = signed
-        .certificates
-        .as_ref()
-        .ok_or(Bad)?
+    let cert: &Certificate = certificates
         .0
         .iter()
         .find_map(|choice| match choice {
@@ -349,46 +383,97 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<String, Refusal> {
     if spki.algorithm.oid != ID_EC_PUBLIC_KEY || curve != Some(ID_P256) {
         return Err(Refusal::NotP256);
     }
-    if signer.signature_algorithm.oid != ID_ECDSA_SHA256 {
+    let signature_algorithm: AlgorithmIdentifierOwned =
+        signature_algorithm.decode_as().map_err(|_| Bad)?;
+    if signature_algorithm.oid != ID_ECDSA_SHA256 {
         return Err(Bad);
     }
     let spki_der = spki.to_der().map_err(|_| Bad)?;
     let cert_hash = Sha256::digest(cert.to_der().map_err(|_| Bad)?);
 
-    let attributes = signer.signed_attrs.as_ref().ok_or(Bad)?;
+    let attributes = implicit_set(attributes, TagNumber::N0)?;
+    let parsed_attributes: SetOfVec<Any> = attributes.decode_as().map_err(|_| Bad)?;
     let mut seen = Vec::new();
     let (mut content_type, mut message_digest, mut signing_cert) = (false, false, false);
-    for attribute in attributes.iter() {
-        if seen.contains(&attribute.oid) {
-            return Err(Bad);
-        }
-        seen.push(attribute.oid);
-        let values: Vec<&Any> = attribute.values.iter().collect();
-        let [value] = values.as_slice() else {
+    let mut manifest_digest = None;
+    for attribute in parsed_attributes.iter() {
+        let parts: Vec<Any> = attribute.decode_as().map_err(|_| Bad)?;
+        let [oid, values] = parts.as_slice() else {
             return Err(Bad);
         };
-        if attribute.oid == ID_CONTENT_TYPE {
+        if oid.tag() != Tag::ObjectIdentifier || !canonical_oid(oid.value()) {
+            return Err(Bad);
+        }
+        if seen.contains(&oid.value()) {
+            return Err(Bad);
+        }
+        seen.push(oid.value());
+        let values: SetOfVec<Any> = values.decode_as().map_err(|_| Bad)?;
+        if values.len() != 1 {
+            return Err(Bad);
+        }
+        let value = values.iter().next().ok_or(Bad)?;
+        if oid.value() == ID_CONTENT_TYPE.as_bytes() {
             content_type = value.decode_as::<ObjectIdentifier>().ok() == Some(ID_DATA);
-        } else if attribute.oid == ID_MESSAGE_DIGEST {
+        } else if oid.value() == ID_MESSAGE_DIGEST.as_bytes() {
             message_digest = value
                 .decode_as::<OctetString>()
                 .is_ok_and(|octets| octets.as_bytes() == digest);
-        } else if attribute.oid == ID_SIGNING_CERT_V2 {
+        } else if oid.value() == ID_SIGNING_CERT_V2.as_bytes() {
             signing_cert = first_cert_hash(value).as_deref() == Some(&cert_hash[..]);
+        } else if oid.value() == ID_MANIFEST_DIGEST {
+            let octets: OctetString = value.decode_as().map_err(|_| Bad)?;
+            if octets.as_bytes().len() != 32 {
+                return Err(Bad);
+            }
+            manifest_digest = Some(octets.as_bytes().to_vec());
         }
     }
     if !(content_type && message_digest && signing_cert) {
         return Err(Bad);
     }
     let key = VerifyingKey::from_public_key_der(&spki_der).map_err(|_| Refusal::NotP256)?;
-    let signature = Signature::from_der(signer.signature.as_bytes()).map_err(|_| Bad)?;
+    let signature: OctetString = signature.decode_as().map_err(|_| Bad)?;
+    let signature = Signature::from_der(signature.as_bytes()).map_err(|_| Bad)?;
     // The signature covers the attributes' DER under the SET OF tag (RFC 5652
     // 5.4). `der` decodes DER only, so re-encoding them gives back exactly the
     // bytes that were signed.
     let signed_attributes = attributes.to_der().map_err(|_| Bad)?;
     key.verify(&signed_attributes, &signature)
         .map_err(|_| Bad)?;
-    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(&spki_der)))
+    Ok(SignedBy {
+        kid: URL_SAFE_NO_PAD.encode(Sha256::digest(&spki_der)),
+        manifest_digest,
+    })
+}
+
+/// Retag an IMPLICIT SET while preserving every encoded value byte.
+fn implicit_set(value: &Any, number: TagNumber) -> Result<Any, Refusal> {
+    if value.tag()
+        != (Tag::ContextSpecific {
+            constructed: true,
+            number,
+        })
+    {
+        return Err(Refusal::BadSignature);
+    }
+    Any::new(Tag::Set, value.value()).map_err(|_| Refusal::BadSignature)
+}
+
+/// DER base-128 subidentifiers may have arbitrarily large arcs, but must be
+/// minimally encoded and terminated. In particular 0x80 cannot start an arc.
+fn canonical_oid(bytes: &[u8]) -> bool {
+    if bytes.is_empty() || bytes.last().is_none_or(|byte| byte & 0x80 != 0) {
+        return false;
+    }
+    let mut first = true;
+    for &byte in bytes {
+        if first && byte == 0x80 {
+            return false;
+        }
+        first = byte & 0x80 == 0;
+    }
+    true
 }
 
 /// SigningCertificateV2 { certs SEQUENCE OF ESSCertIDv2, ... }: the first
@@ -475,10 +560,10 @@ mod tests {
     use super::*;
     use base64::engine::general_purpose::STANDARD;
 
-    /// A3's fixture from CARLOS #5135 (da77843032), byte for byte: change it
+    /// Current fixture from CARLOS #5135 (1f30d9bef7), byte for byte: change it
     /// there first, then here with its new hash.
     const FIXTURE: &[u8] = include_bytes!("../tests/fixtures/mycarlos-signed-pdf-fixtures.json");
-    const FIXTURE_SHA256: &str = "e70c6bf74bc2e508e3c8455bf6c57bc31cfd0354f93ae906db1b603ea23af500";
+    const FIXTURE_SHA256: &str = "f26a292a7ba9ca52e5251b65fb46345c959d784fc3190435ca6b67a024b47169";
 
     #[derive(Deserialize)]
     struct Fixture {
@@ -588,14 +673,7 @@ mod tests {
                 document.manifest.as_deref(),
                 std::slice::from_ref(&link),
             );
-            // The email copy's manifest is stored encrypted, so it cannot be
-            // tied to the signed bytes yet: "not verified (encrypted copy)"
-            // until a binding is agreed with CARLOS.
-            let expect = if name == "signed-email-encrypted.pdf" {
-                "encrypted_manifest"
-            } else {
-                document.expect.as_str()
-            };
+            let expect = document.expect.as_str();
             assert_eq!(code(&result), expect, "{name}");
         }
     }
@@ -704,8 +782,7 @@ mod tests {
             check(&sent.pdf, &SignatureLayout::default(), None, links),
             Err(Refusal::Unsigned)
         );
-        // Another document's manifest, or one the clinic never signed: not
-        // in this file's signed bytes, so not verified.
+        // Another document's manifest cannot match this authenticated CMS digest.
         for other in ["signed-no-recipient.pdf", "refuse-kid-mismatch.pdf"] {
             let other = document(&documents, other).manifest.as_deref();
             assert_eq!(
@@ -721,7 +798,7 @@ mod tests {
         let other = document(&documents, "signed-no-recipient.pdf");
         assert_eq!(
             check(&sent.pdf, &encrypted, other.manifest.as_deref(), links),
-            Err(Refusal::EncryptedManifest)
+            Err(Refusal::ManifestNotSigned)
         );
     }
 
@@ -766,12 +843,16 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_counts_once_and_only_in_the_signed_bytes() {
-        assert_eq!(occurrences(b"abcabcabc", b"abc"), 2, "counts no further");
-        assert_eq!(occurrences(b"xxabcxx", b"abc"), 1);
-        assert_eq!(occurrences(b"xxabxx", b"abc"), 0);
-        assert_eq!(occurrences(b"ab", b"abc"), 0);
-        assert_eq!(occurrences(b"abc", b""), 0);
+    fn oid_arcs_must_be_canonical_even_when_uuid_sized() {
+        assert!(canonical_oid(ID_MANIFEST_DIGEST));
+        for malformed in [
+            b"".as_slice(),
+            &[0x80, 0x69],
+            &[0x69, 0x80, 0x01],
+            &[0x69, 0x81],
+        ] {
+            assert!(!canonical_oid(malformed));
+        }
     }
 
     #[test]

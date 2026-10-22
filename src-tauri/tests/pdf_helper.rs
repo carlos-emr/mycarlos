@@ -44,6 +44,60 @@ fn request(password: &str, pdf: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn the_confined_signature_helper_reports_structure_and_exact_plain_and_encrypted_manifests() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let fixture: serde_json::Value =
+        serde_json::from_slice(include_bytes!("fixtures/mycarlos-signed-pdf-fixtures.json"))
+            .unwrap();
+    for name in ["signed-send-to-mycarlos.pdf", "signed-email-encrypted.pdf"] {
+        let document = fixture["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|document| document["name"].as_str() == Some(name))
+            .unwrap();
+        let pdf = STANDARD
+            .decode(document["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        for stage in [0, 1] {
+            let password = if stage == 1 {
+                document["password"].as_str().unwrap_or("")
+            } else {
+                ""
+            };
+            let mut message = b"MCPDFSG1".to_vec();
+            message.push(stage);
+            message.extend_from_slice(&(password.len() as u32).to_le_bytes());
+            message.extend_from_slice(password.as_bytes());
+            message.extend_from_slice(&(pdf.len() as u64).to_le_bytes());
+            message.extend_from_slice(&pdf);
+            let (code, answer) = ask(&message);
+            assert_eq!(code, Some(0), "{name} stage {stage}");
+            assert_eq!(&answer[..8], b"MCPDFSA1");
+            let size = u32::from_le_bytes(answer[8..12].try_into().unwrap()) as usize;
+            assert!(size <= 128 * 1024);
+            assert_eq!(answer.len(), size + 12);
+            let response: serde_json::Value = serde_json::from_slice(&answer[12..]).unwrap();
+            let report = response
+                .get("Ok")
+                .unwrap_or_else(|| panic!("helper refused {name} stage {stage}"));
+            assert_eq!(report["layout"]["byte_ranges"], document["byte_ranges"]);
+            if stage == 0 {
+                assert!(report["manifest"].is_null());
+            } else {
+                let bytes: Vec<u8> = serde_json::from_value(report["manifest"].clone()).unwrap();
+                assert_eq!(
+                    bytes,
+                    STANDARD
+                        .decode(document["manifest_bytes_b64"].as_str().unwrap())
+                        .unwrap()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn the_helper_unlocks_a_document_and_names_a_wrong_password() {
     let (code, answer) = ask(&request(PASSWORD, &fixture("text-aes256.pdf")));
     assert_eq!(code, Some(0));

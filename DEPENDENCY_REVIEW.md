@@ -255,3 +255,26 @@ backport regressions. Windows installation and the GUI subsystem check passed.
 This run predates restoration of mobile live reload and is historical evidence.
 The restoration triggers fresh checks, including both mobile development builds.
 Device testing and release review remain separate gates.
+
+## Current signed-PDF digest and import analysis (#101)
+
+The pinned RustCrypto versions remain unchanged. CMS signed attributes are decoded as
+strict DER `Any`/`SET OF` values, preserving their exact encoded bytes, so the agreed UUID
+OID `2.25.132515939282652475535231260060469025505` does not pass through const-oid 0.9's
+`u32` arc conversion. OID values must be minimally encoded and terminated; duplicate OIDs,
+multiple values and a manifest digest other than one 32-byte OCTET STRING fail closed.
+ECDSA verifies the original signed-attribute values under the SET tag; no attribute is
+substituted or dropped. The digest is SHA-256 of the exact extracted manifest bytes.
+
+The existing confined PDF helper has a bounded two-stage protocol. A conservative range
+preflight supplies no manifest and uses no PDF password. Main authenticates CMS and a
+trusted pin before the second stage can parse full PDF structure and decrypt/extract the
+matching AF/Data + EmbeddedFiles attachment. Existing lopdf is reused only in that helper.
+Input is capped at 100 MiB, output at 128 KiB, the manifest at 16 KiB and decompressed
+object streams at 16 MiB; existing helper time/memory/confinement limits still apply.
+
+The import pipeline captures its already authenticated object-verification read within
+the same input cap. It preserves the original object and returns optional ephemeral
+unverified diagnostics, without raw manifest/name/date-of-birth/key data. No authenticated
+clinic links exist in the app yet: production supplies no pins and cannot grant Verified.
+FAKE fixture pins are test inputs only. No new network access or vault format is introduced.

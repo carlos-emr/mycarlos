@@ -6,8 +6,9 @@ mod pdf_unlock;
 mod pdf_view;
 mod photo;
 mod received;
-#[allow(dead_code)] // Wired to the import flow in a later step (#55).
+#[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
+mod signed_pdf_helper;
 mod throttle;
 mod vault;
 #[cfg(windows)]

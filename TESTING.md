@@ -610,3 +610,22 @@ including phone layout, live system changes, contrast checks and forced-colours 
 is separate from actual Windows/macOS native appearance testing and the text-size checks on
 real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
 old screenshots and successful CI do not establish Ben's UI approval.
+
+## Signed-PDF checker draft (#101)
+
+The current CARLOS #5135 fixture is copied without regeneration from commit
+`1f30d9bef74c4a5206244db21a367e94f24188df`; its SHA-256 is
+`f26a292a7ba9ca52e5251b65fb46345c959d784fc3190435ca6b67a024b47169`. All keys and patients
+are FAKE. The fixture includes 12 cases, including the encrypted email copy, missing/null
+recipient, tampering, extra update, incomplete ranges, wrong kid, RSA and two signatures.
+
+Focused native tests exercise CMS/current manifest digest and complete helper extraction;
+`tests/pdf_helper.rs` also starts the real confined executable for both plaintext and
+encrypted attachment reports. Import tests check preserved original bytes and honest
+unverified diagnostics. The password is passed for extraction only after signature/pin
+authentication. An unverified or malformed document still imports with its existing
+unverified source label; helper refusal never creates a Verified result.
+
+This is not completion of #55: authenticated portal linking, key replacement/revocation,
+durable trust metadata and rechecking stored documents remain separate work. The app has
+no authenticated clinic pins, so real production imports cannot become Verified yet.

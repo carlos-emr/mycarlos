@@ -257,3 +257,18 @@ must separately approve intended use and data handling.
 - [Apple Keychain Services](https://developer.apple.com/documentation/security/keychain-services)
 - [NIST SP 800-63B authentication guidance](https://pages.nist.gov/800-63-4/sp800-63b.html)
 - [`glib` advisory GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g)
+
+### Signed-PDF import analysis draft (#101)
+
+The import pipeline now invokes a bounded signature analysis without changing stored
+original bytes or the unverified source label. Main checks cryptography and clinic pins
+before a password reaches the confined extraction stage. The current signed CMS digest
+binds exact manifest bytes, including encrypted attachments; helper structure reports
+alone grant no trust. Duplicate attributes, malformed OIDs, altered manifests, missing
+pins and helper failure remain unverified. No manifest patient names, birth dates,
+recipient IDs or raw keys are emitted in import diagnostics.
+
+Authenticated portal linking is absent. Production pins are empty; fixture keys are
+never a fallback and no production Verified claim is added. Trust persistence and key
+change/revocation rechecks remain #55 dependencies. No new network path or vault-format
+change is introduced by this checkpoint.
