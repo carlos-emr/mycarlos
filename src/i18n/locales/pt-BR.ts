@@ -70,13 +70,13 @@ export const ptBR: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "Esqueceu sua frase secreta?",
   "unlock.noKey.heading": "Não tem uma chave de recuperação?",
   "unlock.noKey.body":
-    "Sem ela, a única forma de voltar a entrar é apagar o myCarlos e começar de novo.",
+    "Sem ela, a única forma de voltar a entrar é deixar este cofre de lado e começar de novo. O cofre deixado de lado fica neste dispositivo, criptografado, mas ninguém pode abri-lo sem a frase secreta dele.",
   "restore.summary": "Restaurar a partir de uma cópia de segurança",
 
   "reset.plainly":
-    "Apagar exclui do myCarlos neste computador todos os seus documentos, pastas e perfis de paciente, e isso não pode ser desfeito. Para confirmar, digite exatamente as palavras abaixo.",
+    "Deixar o cofre de lado tira do myCarlos neste computador todos os seus documentos, pastas e perfis de paciente. Eles ficam neste computador, criptografados, mas ninguém pode abri-los sem a frase secreta. Para confirmar, digite exatamente as palavras abaixo.",
   "reset.type": "Digite {phrase}",
-  "reset.submit": "Apagar cofre",
+  "reset.submit": "Deixar o cofre de lado",
 
   "recover.intro":
     "Use sua chave de recuperação para abrir o cofre e escolher uma nova frase secreta.",
@@ -119,17 +119,17 @@ export const ptBR: Record<MessageKey, Message> = {
   "restore.consequence.nothing":
     "Restaurar coloca este cofre neste dispositivo.",
   "restore.consequence.same":
-    "O cofre deste dispositivo contém os mesmos documentos. Restaurar o substitui por esta cópia de segurança.",
+    "O cofre deste dispositivo contém os mesmos documentos. Ao restaurar, ele é deixado de lado e esta cópia de segurança é colocada no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.consequence.differs":
-    "O cofre deste dispositivo pode não ser igual a esta cópia de segurança: ele pode ter mudado desde então, ou uma parte dele não pôde ser lida. Restaurar substitui o cofre pela cópia de segurança: tudo o que estiver no cofre e não estiver na cópia é perdido, e a frase secreta e a chave de recuperação passam a ser as da cópia de segurança.",
+    "O cofre deste dispositivo pode não ser igual a esta cópia de segurança: ele pode ter mudado desde então, ou uma parte dele não pôde ser lida. Ao restaurar, o cofre é deixado de lado e a cópia de segurança é colocada no lugar dele: o que não estiver na cópia não estará mais no cofre que você usa, e a frase secreta e a chave de recuperação passam a ser as da cópia de segurança. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.consequence.otherVault":
-    "Este dispositivo tem um cofre diferente. Restaurar o apaga permanentemente e coloca a cópia de segurança no lugar dele.",
+    "Este dispositivo tem um cofre diferente. Ao restaurar, ele é deixado de lado e a cópia de segurança é colocada no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.consequence.unreadable":
-    "O cofre deste dispositivo não pôde ser lido, então o myCarlos não consegue saber se é aquele de onde esta cópia de segurança veio. Restaurar o apaga permanentemente e coloca a cópia de segurança no lugar dele.",
+    "O cofre deste dispositivo não pôde ser lido, então o myCarlos não consegue saber se é aquele de onde esta cópia de segurança veio. Ao restaurar, ele é deixado de lado e a cópia de segurança é colocada no lugar dele. O cofre deixado de lado fica neste dispositivo, criptografado, mas o myCarlos ainda não consegue abri-lo de novo para você.",
   "restore.agree.erase":
-    "Apagar o cofre deste dispositivo e restaurar a cópia de segurança",
+    "Deixar o cofre deste dispositivo de lado e restaurar a cópia de segurança",
   "restore.agree.replace":
-    "Substituir o cofre deste dispositivo por esta cópia de segurança e perder o que mudou desde então",
+    "Deixar o cofre deste dispositivo de lado, com o que mudou desde então, e restaurar esta cópia de segurança",
   "restore.submit": "Restaurar cópia de segurança",
   "restore.restoring":
     "Restaurando a cópia de segurança. Isso pode demorar em um cofre grande…",
@@ -252,9 +252,9 @@ export const ptBR: Record<MessageKey, Message> = {
   "security.backup.save": "Salvar cópia de segurança criptografada…",
   "security.passphrase.title": "Mudar a frase secreta",
   "security.passphrase.rules":
-    "Use pelo menos {min} caracteres e evite nomes comuns ou frases previsíveis. Sua chave de recuperação, se você tiver uma, continua funcionando; sem ela, esquecer a nova frase secreta significa apagar o cofre.",
+    "Use pelo menos {min} caracteres e evite nomes comuns ou frases previsíveis. Sua chave de recuperação, se você tiver uma, continua funcionando; sem ela, esquecer a nova frase secreta significa deixar o cofre de lado e começar de novo.",
   "security.passphrase.copies":
-    "Mudar a frase secreta impede o acesso de quem só conhece a antiga. Se essa pessoa também puder ter uma cópia do seu cofre, como um backup deste dispositivo ou um arquivo de cópia de segurança salvo, uma nova frase secreta não basta: a antiga ainda abre essa cópia, e com essa cópia ela poderia abrir uma mais recente que conseguir depois. Para deixá-la de fora, é preciso um cofre novo, e cuidado para não perder documentos no caminho. Peça ajuda antes de apagar qualquer coisa.",
+    "Mudar a frase secreta impede o acesso de quem só conhece a antiga. Se essa pessoa também puder ter uma cópia do seu cofre, como um backup deste dispositivo ou um arquivo de cópia de segurança salvo, uma nova frase secreta não basta: a antiga ainda abre essa cópia, e com essa cópia ela poderia abrir uma mais recente que conseguir depois. Para deixá-la de fora, é preciso um cofre novo, e cuidado para não perder documentos no caminho. Peça ajuda antes de deixar seu cofre de lado.",
   "security.passphrase.current": "Frase secreta atual",
   "security.passphrase.currentTooLong":
     "A frase secreta atual é mais longa do que qualquer frase secreta de cofre. Confira o que foi digitado.",
@@ -271,7 +271,7 @@ export const ptBR: Record<MessageKey, Message> = {
   "security.speed.measuring": "Medindo…",
   "security.copies.title": "Cópias legíveis e capturas de tela",
   "security.copies.body":
-    "Exportações e capturas de tela ficam fora da proteção do cofre. Excluir um documento do myCarlos não apaga essas cópias nem o prontuário original da clínica.",
+    "As exportações e capturas de tela ficam fora da proteção do cofre. Ocultar um documento no myCarlos não apaga essas cópias nem o prontuário médico original da clínica.",
   "security.profiles.title": "Perfis de paciente",
   "security.profiles.body":
     "Mantenha separados os documentos de cada pessoa dentro deste cofre.",
@@ -311,7 +311,7 @@ export const ptBR: Record<MessageKey, Message> = {
     "Esta chave de recuperação ainda não está configurada, então nunca vai abrir o cofre. O myCarlos bloqueia o cofre agora. Depois de desbloqueá-lo, você poderá configurar uma nova chave.",
   "recoveryKey.discard.confirm": "Descartar a chave e bloquear",
   "recoveryKey.about.offered":
-    "Seu cofre está aberto. Ele ainda não tem chave de recuperação. Sem ela, se você esquecer sua frase secreta, a única forma de voltar a entrar é apagar o cofre.",
+    "Seu cofre está aberto. Ele ainda não tem chave de recuperação. Sem ela, se você esquecer sua frase secreta, a única forma de voltar a entrar é deixar o cofre de lado e começar de novo.",
   "recoveryKey.about.what":
     "Uma chave de recuperação abre seu cofre se você esquecer sua frase secreta. Só você vai tê-la: ninguém na sua clínica nem no myCarlos pode abrir seu cofre por você.",
   "recoveryKey.about.replacing":
@@ -398,7 +398,7 @@ export const ptBR: Record<MessageKey, Message> = {
   "notice.createdThenLocked":
     "Seu cofre foi criado e depois bloqueado antes que a chave de recuperação pudesse ser gerada. Desbloqueie-o para configurar uma.",
   "notice.created":
-    "Cofre criptografado criado. Configure uma chave de recuperação para que esquecer a frase secreta não signifique apagá-lo.",
+    "Cofre criptografado criado. Configure uma chave de recuperação para que esquecer sua frase secreta não impeça para sempre o acesso aos seus documentos.",
   "notice.unlockedRecovery":
     "Cofre desbloqueado no modo de recuperação somente leitura. Veja o aviso na biblioteca para saber o que fazer.",
   "notice.unlocked": "Cofre desbloqueado.",
@@ -406,7 +406,7 @@ export const ptBR: Record<MessageKey, Message> = {
     "Cofre aberto com sua chave de recuperação. A partir de agora, use sua nova frase secreta.",
   "notice.recoveredReadOnly":
     "Cofre aberto somente para leitura com sua chave de recuperação, e sua frase secreta não mudou. Veja o aviso na biblioteca para saber o que fazer.",
-  "notice.eraseCancelled": "O apagamento do cofre foi cancelado. Nada mudou.",
+  "notice.eraseCancelled": "Nada mudou: o cofre não foi deixado de lado.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "o nome",
@@ -425,7 +425,7 @@ export const ptBR: Record<MessageKey, Message> = {
   },
   "error.fallback": "Não foi possível concluir a operação no cofre.",
   "error.damaged":
-    "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Se você tiver esse documento em outro lugar, exclua-o aqui e adicione-o de novo; se não, excluí-lo permite fazer cópia de todo o resto.",
+    "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Guarde seus backups anteriores. Peça ajuda para recuperar este documento de uma cópia ou backup em boas condições antes de tentar novamente.",
   "error.damaged.where": "adicionado em {date}",
   "error.damaged.whereFor": "adicionado em {date}, nos documentos de {person}",
 

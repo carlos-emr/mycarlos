@@ -9,6 +9,7 @@ export type IconName =
   | "folder-plus"
   | "grid"
   | "heart"
+  | "hidden"
   | "image"
   | "info"
   | "letter"
@@ -64,6 +65,16 @@ export function Icon({ name }: { name: IconName }) {
     case "star":
       content = (
         <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z" />
+      );
+      break;
+    case "hidden":
+      // An eye, struck through: out of view, not gone (#71).
+      content = (
+        <>
+          <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M4 4l16 16" />
+        </>
       );
       break;
     case "trash":

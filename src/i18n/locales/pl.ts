@@ -73,13 +73,13 @@ export const pl: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "Nie pamiętasz hasła głównego?",
   "unlock.noKey.heading": "Nie masz klucza odzyskiwania?",
   "unlock.noKey.body":
-    "Bez niego jedynym sposobem powrotu jest usunięcie myCarlos i rozpoczęcie od nowa.",
+    "Bez niego jedynym sposobem powrotu jest odłożenie tego sejfu i rozpoczęcie od nowa. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany, ale nikt nie może go otworzyć bez jego hasła głównego.",
   "restore.summary": "Przywróć z kopii zapasowej",
 
   "reset.plainly":
-    "Usunięcie kasuje z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów i nie można tego cofnąć. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.",
+    "Odłożenie sejfu usuwa z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym komputerze, zaszyfrowane, ale nikt nie może ich otworzyć bez hasła głównego. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.",
   "reset.type": "Wpisz {phrase}",
-  "reset.submit": "Usuń sejf",
+  "reset.submit": "Odłóż sejf",
 
   "recover.intro":
     "Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.",
@@ -126,17 +126,17 @@ export const pl: Record<MessageKey, Message> = {
   "restore.consequence.nothing":
     "Przywrócenie umieszcza ten sejf na tym urządzeniu.",
   "restore.consequence.same":
-    "Sejf na tym urządzeniu zawiera te same dokumenty. Przywrócenie zastępuje go tą kopią zapasową.",
+    "Sejf na tym urządzeniu zawiera te same dokumenty. Przywrócenie odkłada go i umieszcza w jego miejscu tę kopię zapasową. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany, ale myCarlos nie może go jeszcze ponownie otworzyć.",
   "restore.consequence.differs":
-    "Sejf na tym urządzeniu może nie być taki sam jak ta kopia zapasowa: mógł się od tego czasu zmienić albo jego część nie mogła zostać odczytana. Przywrócenie zastępuje sejf kopią zapasową: wszystko, co jest w sejfie, a czego nie ma w kopii, zostaje utracone, a hasło główne i klucz odzyskiwania stają się tymi, z którymi wykonano kopię.",
+    "Sejf na tym urządzeniu może nie być taki sam jak ta kopia zapasowa: mógł się od tego czasu zmienić albo jego część nie mogła zostać odczytana. Przywrócenie odkłada sejf i umieszcza w jego miejscu kopię zapasową: tego, czego nie ma w kopii, nie będzie już w używanym sejfie, a hasło główne i klucz odzyskiwania stają się tymi, z którymi wykonano kopię. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany, ale myCarlos nie może go jeszcze ponownie otworzyć.",
   "restore.consequence.otherVault":
-    "To urządzenie ma inny sejf. Przywrócenie trwale go usuwa i umieszcza w jego miejscu kopię zapasową.",
+    "To urządzenie ma inny sejf. Przywrócenie odkłada go i umieszcza w jego miejscu kopię zapasową. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany, ale myCarlos nie może go jeszcze ponownie otworzyć.",
   "restore.consequence.unreadable":
-    "Sejfu na tym urządzeniu nie udało się odczytać, więc myCarlos nie może stwierdzić, czy jest to ten, z którego wykonano tę kopię zapasową. Przywrócenie trwale go usuwa i umieszcza w jego miejscu kopię zapasową.",
+    "Sejfu na tym urządzeniu nie udało się odczytać, więc myCarlos nie może stwierdzić, czy jest to ten, z którego wykonano tę kopię zapasową. Przywrócenie odkłada go i umieszcza w jego miejscu kopię zapasową. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany, ale myCarlos nie może go jeszcze ponownie otworzyć.",
   "restore.agree.erase":
-    "Usuń sejf z tego urządzenia i przywróć kopię zapasową",
+    "Odłóż sejf z tego urządzenia i przywróć kopię zapasową",
   "restore.agree.replace":
-    "Zastąp sejf na tym urządzeniu tą kopią zapasową i utrać zmiany wprowadzone od tego czasu",
+    "Odłóż sejf z tego urządzenia, razem ze zmianami wprowadzonymi od tego czasu, i przywróć tę kopię zapasową",
   "restore.submit": "Przywróć kopię zapasową",
   "restore.restoring":
     "Przywracanie kopii zapasowej. W przypadku dużego sejfu może to chwilę potrwać…",
@@ -263,9 +263,9 @@ export const pl: Record<MessageKey, Message> = {
   "security.backup.save": "Zapisz zaszyfrowaną kopię zapasową…",
   "security.passphrase.title": "Zmiana hasła głównego",
   "security.passphrase.rules":
-    "Proszę użyć co najmniej {min} znaków i unikać popularnych imion oraz przewidywalnych fraz. Klucz odzyskiwania, jeśli jest, nadal działa; bez niego zapomnienie nowego hasła głównego oznacza usunięcie sejfu.",
+    "Proszę użyć co najmniej {min} znaków i unikać popularnych imion oraz przewidywalnych fraz. Klucz odzyskiwania, jeśli jest, nadal działa; bez niego zapomnienie nowego hasła głównego oznacza odłożenie sejfu na bok i rozpoczęcie od nowa.",
   "security.passphrase.copies":
-    "Zmiana hasła głównego zatrzymuje kogoś, kto zna tylko stare. Jeśli ta osoba może mieć też kopię sejfu, na przykład kopię zapasową tego urządzenia lub zapisany plik kopii zapasowej, nowe hasło główne nie wystarczy: stare nadal otwiera tę kopię, a dzięki niej osoba ta mogłaby otworzyć nowszą, zdobytą później. Odcięcie jej dostępu wymaga nowego sejfu i ostrożności, by po drodze nie stracić dokumentów. Przed usunięciem czegokolwiek proszę poprosić o pomoc.",
+    "Zmiana hasła głównego zatrzymuje kogoś, kto zna tylko stare. Jeśli ta osoba może mieć też kopię sejfu, na przykład kopię zapasową tego urządzenia lub zapisany plik kopii zapasowej, nowe hasło główne nie wystarczy: stare nadal otwiera tę kopię, a dzięki niej osoba ta mogłaby otworzyć nowszą, zdobytą później. Odcięcie jej dostępu wymaga nowego sejfu i ostrożności, by po drodze nie stracić dokumentów. Przed odłożeniem sejfu na bok proszę poprosić o pomoc.",
   "security.passphrase.current": "Obecne hasło główne",
   "security.passphrase.currentTooLong":
     "Obecne hasło główne jest dłuższe niż jakiekolwiek hasło główne do sejfu. Proszę sprawdzić, co zostało wpisane.",
@@ -282,7 +282,7 @@ export const pl: Record<MessageKey, Message> = {
   "security.speed.measuring": "Pomiar…",
   "security.copies.title": "Czytelne kopie i zrzuty ekranu",
   "security.copies.body":
-    "Eksportowane pliki i zrzuty ekranu nie są już chronione przez sejf. Usunięcie dokumentu z myCarlos nie usunie tych kopii ani źródłowej dokumentacji medycznej w przychodni.",
+    "Wyeksportowane pliki i zrzuty ekranu nie są objęte ochroną sejfu. Ukrycie dokumentu w myCarlos nie usuwa tych kopii ani źródłowej dokumentacji medycznej w przychodni.",
   "security.profiles.title": "Profile pacjentów",
   "security.profiles.body":
     "Dokumenty każdej osoby są przechowywane w tym sejfie oddzielnie.",
@@ -323,7 +323,7 @@ export const pl: Record<MessageKey, Message> = {
     "Ten klucz odzyskiwania nie jest jeszcze skonfigurowany, więc nigdy nie otworzy sejfu. myCarlos teraz blokuje sejf. Po odblokowaniu można będzie skonfigurować nowy klucz.",
   "recoveryKey.discard.confirm": "Odrzuć klucz i zablokuj",
   "recoveryKey.about.offered":
-    "Sejf jest otwarty. Nie ma jeszcze klucza odzyskiwania. Bez niego, w razie zapomnienia hasła głównego, jedynym sposobem powrotu jest usunięcie sejfu.",
+    "Sejf jest otwarty. Nie ma jeszcze klucza odzyskiwania. Bez niego, w razie zapomnienia hasła głównego, jedynym sposobem powrotu jest odłożenie sejfu na bok i rozpoczęcie od nowa.",
   "recoveryKey.about.what":
     "Klucz odzyskiwania otwiera sejf w razie zapomnienia hasła głównego. Będzie go mieć tylko właściciel sejfu: nikt w przychodni ani w myCarlos nie otworzy sejfu w jego imieniu.",
   "recoveryKey.about.replacing":
@@ -413,7 +413,7 @@ export const pl: Record<MessageKey, Message> = {
   "notice.createdThenLocked":
     "Sejf został utworzony, a potem zablokowany, zanim można było utworzyć klucz odzyskiwania. Proszę odblokować sejf, aby skonfigurować klucz.",
   "notice.created":
-    "Utworzono zaszyfrowany sejf. Proszę skonfigurować klucz odzyskiwania, aby zapomniane hasło główne nie oznaczało konieczności usunięcia sejfu.",
+    "Utworzono zaszyfrowany sejf. Proszę skonfigurować klucz odzyskiwania, aby zapomniane hasło główne nie uniemożliwiło na zawsze dostępu do dokumentów.",
   "notice.unlockedRecovery":
     "Sejf odblokowano w trybie odzyskiwania tylko do odczytu. Co zrobić, opisuje komunikat w bibliotece.",
   "notice.unlocked": "Sejf odblokowany.",
@@ -421,7 +421,8 @@ export const pl: Record<MessageKey, Message> = {
     "Sejf otwarto kluczem odzyskiwania. Od teraz proszę używać nowego hasła głównego.",
   "notice.recoveredReadOnly":
     "Sejf otwarto kluczem odzyskiwania w trybie tylko do odczytu; hasło główne się nie zmieniło. Co zrobić, opisuje komunikat w bibliotece.",
-  "notice.eraseCancelled": "Anulowano usuwanie sejfu. Nic się nie zmieniło.",
+  "notice.eraseCancelled":
+    "Nic się nie zmieniło: sejf nie został odłożony na bok.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "nazwę",
@@ -441,7 +442,7 @@ export const pl: Record<MessageKey, Message> = {
   },
   "error.fallback": "Nie udało się wykonać operacji na sejfie.",
   "error.damaged":
-    "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Jeśli ten dokument jest dostępny gdzie indziej, proszę go tutaj usunąć i dodać ponownie; jeśli nie, usunięcie go pozwoli zrobić kopię wszystkiego innego.",
+    "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Proszę zachować wcześniejsze kopie zapasowe. Przed ponowną próbą proszę poprosić o pomoc w odzyskaniu tego dokumentu z nieuszkodzonej kopii lub kopii zapasowej.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
 
