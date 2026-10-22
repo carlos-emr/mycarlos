@@ -1,13 +1,29 @@
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod default_folders;
+mod history;
 mod idle;
+mod pdf_unlock;
+mod pdf_view;
 mod photo;
 mod received;
 mod throttle;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
+
+/// For `main`: the first argument that starts this executable as the PDF unlock helper, and
+/// the helper itself (see `pdf_unlock`).
+pub use pdf_unlock::{
+    helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
+};
+
+/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at` and `ask_helper_at`).
+#[doc(hidden)]
+#[cfg(desktop)]
+pub use pdf_unlock::{
+    ask_helper_at as pdf_ask_helper_at, unlock_with_helper_at as pdf_unlock_with_helper_at,
+};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use idle::{IdleDeadline, Opening};
@@ -166,7 +182,7 @@ impl PublicError {
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
-            message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            message: "Nothing was hidden. The vault cannot be changed right now; the notice above the documents says why.",
             record_id: None,
             note: None,
             retry_after_ms: None,
@@ -225,6 +241,51 @@ impl From<VaultError> for PublicText {
                 code: "not_pdf",
                 message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
             },
+            // The reader asks for the document's password on this code (#64).
+            VaultError::PdfLocked => Self {
+                code: "pdf_locked",
+                message: "This document is locked with a password. Enter the document password from your patient portal.",
+            },
+            VaultError::PdfNotLocked => Self {
+                code: "pdf_not_locked",
+                message: "This document is not locked with a password, so it opens as it is.",
+            },
+            VaultError::PdfAlreadyUnlocked => Self {
+                code: "pdf_already_unlocked",
+                message: "An unlocked copy of this document is already here, so nothing was added.",
+            },
+            VaultError::PdfWrongPassword => Self {
+                code: "pdf_wrong_password",
+                message: "That password did not open the document. Check the document password in your patient portal, then try again.",
+            },
+            VaultError::PdfUnlockFailed => Self {
+                code: "pdf_unlock_failed",
+                message: "myCarlos could not open this locked document. It may be damaged, or locked in a way myCarlos cannot open. The document is unchanged.",
+            },
+            VaultError::PdfUnlockUnavailable => Self {
+                code: "pdf_unlock_unavailable",
+                message: "myCarlos cannot open password-protected documents on this device yet. The document is unchanged.",
+            },
+            VaultError::PdfUnlockNoSandbox => Self {
+                code: "pdf_unlock_no_sandbox",
+                message: "myCarlos cannot open locked documents safely on this system, so this one was not opened. The document is unchanged.",
+            },
+            VaultError::PdfTooLarge => Self {
+                code: "pdf_too_large",
+                message: "This locked document is larger than 100 MB, so myCarlos cannot open it. The document is unchanged.",
+            },
+            VaultError::PdfViewFailed => Self {
+                code: "pdf_view_failed",
+                message: "myCarlos could not show this document. It may be damaged, or use features myCarlos cannot show yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewUnavailable => Self {
+                code: "pdf_view_unavailable",
+                message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewNoSandbox => Self {
+                code: "pdf_view_no_sandbox",
+                message: "myCarlos cannot show documents safely on this system. Save a copy to read it in another app.",
+            },
             VaultError::NoSpace => Self {
                 code: "no_space",
                 message: "There is not enough storage to complete this operation.",
@@ -247,7 +308,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Unreadable => Self {
                 code: "unreadable",
-                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not erase the vault. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not set the vault aside. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -339,7 +400,7 @@ impl Drop for CreateVaultRequest {
 }
 
 #[derive(Deserialize)]
-struct RemoveUnavailableRequest {
+struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
 }
 
@@ -625,7 +686,8 @@ fn save_photo(
 ) -> Result<vault::ImportOutcome, VaultError> {
     let cleaned = photo::clean_jpeg(&photo).map_err(|_| VaultError::NotPhoto)?;
     drop(photo);
-    store.import(
+    // The history says it came from the camera (#71).
+    store.import_from(
         target.profile_id,
         target.folder_ids,
         vec![ImportSource {
@@ -633,6 +695,7 @@ fn save_photo(
             reader: Box::new(std::io::Cursor::new(cleaned)),
         }],
         now_ms(),
+        "camera",
     )
 }
 
@@ -738,6 +801,135 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
         "data:image/jpeg;base64,{}",
         BASE64.encode(&*cleaned)
     ))
+}
+
+/// Whether a stored PDF may be locked with a password (#54), asked when its
+/// details open. This is `pdf_unlock`'s names-only scan, which parses no object,
+/// fed by the export: it stops at the first `/Encrypt`. A match is only a hint;
+/// the helper decides when the patient unlocks it.
+fn is_locked_pdf(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    let mut scan = pdf_unlock::LockScan::default();
+    let exported = store.export(record_id, &mut scan);
+    if scan.found() {
+        return Ok(true);
+    }
+    exported?;
+    Ok(scan.finish())
+}
+
+/// The name a locked original keeps once it is unlocked (#54, Ben's D66): its
+/// own, with " (locked original)" before the extension, which a rename may not
+/// change. The unlocked copy takes the name as it was. A name too long for the
+/// words is shortened before them.
+fn locked_original_name(name: &str) -> String {
+    const WORDS: &str = " (locked original)";
+    let extension = name
+        .char_indices()
+        .rev()
+        .nth(3)
+        .map(|(at, _)| at)
+        .filter(|&at| name[at..].eq_ignore_ascii_case(".pdf"))
+        .unwrap_or(name.len());
+    let (stem, extension) = name.split_at(extension);
+    let room = vault::MAX_RECORD_NAME_LEN - WORDS.chars().count() - extension.chars().count();
+    let stem: String = stem.chars().take(room).collect();
+    format!("{}{WORDS}{extension}", stem.trim_end())
+}
+
+/// What unlocking a PDF did: the unlocked copy, and the original's new name.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockedPdf {
+    record_id: Uuid,
+    original_name: String,
+}
+
+/// Unlocks a stored PDF with the password the patient typed (#54). The
+/// document is opened by the PDF helper (`unlock`, `pdf_unlock::unlock_in_helper`
+/// outside tests), never beside the vault keys. The unlocked copy is stored
+/// beside the original, in the same records and folders, with its name; the
+/// locked original is kept (Ben's D66), renamed. The password is not kept.
+fn unlock_pdf(
+    store: &VaultStore,
+    record_id: Uuid,
+    password: &str,
+    unlock: impl FnOnce(&[u8], &str) -> pdf_unlock::Outcome,
+) -> Result<UnlockedPdf, VaultError> {
+    use pdf_unlock::{Outcome, Refusal};
+    let record = store
+        .snapshot()?
+        .records
+        .into_iter()
+        .find(|record| record.id == record_id)
+        .ok_or(VaultError::NotFound)?;
+    let mut locked = LimitedBuffer::new(pdf_unlock::MAX_LOCKED_PDF_BYTES);
+    let exported = store.export(record_id, &mut locked);
+    if locked.over {
+        return Err(VaultError::PdfTooLarge);
+    }
+    exported?;
+    let unlocked = match unlock(&locked.bytes, password) {
+        Outcome::Unlocked(unlocked) => unlocked,
+        Outcome::Refused(Refusal::NotEncrypted) => return Err(VaultError::PdfNotLocked),
+        Outcome::Refused(Refusal::WrongPassword) => return Err(VaultError::PdfWrongPassword),
+        Outcome::Refused(Refusal::TooLarge) => return Err(VaultError::PdfTooLarge),
+        Outcome::Unavailable => return Err(VaultError::PdfUnlockUnavailable),
+        Outcome::NoSandbox => return Err(VaultError::PdfUnlockNoSandbox),
+        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported | Refusal::NoSuchPage)
+        | Outcome::Failed => return Err(VaultError::PdfUnlockFailed),
+    };
+    drop(locked);
+    let outcome = store.import(
+        record.profile_id,
+        record.folder_ids,
+        vec![ImportSource {
+            display_name: record.display_name.clone(),
+            reader: Box::new(std::io::Cursor::new(unlocked)),
+        }],
+        now_ms(),
+    )?;
+    let Some(&copy) = outcome.imported.first() else {
+        return Err(VaultError::PdfAlreadyUnlocked);
+    };
+    let original_name = locked_original_name(&record.display_name);
+    store.rename_record(record_id, &original_name)?;
+    Ok(UnlockedPdf {
+        record_id: copy,
+        original_name,
+    })
+}
+
+/// A record's file, up to a limit: past it, the export stops and `over` says so.
+/// Wiped when dropped.
+struct LimitedBuffer {
+    bytes: zeroize::Zeroizing<Vec<u8>>,
+    limit: usize,
+    over: bool,
+}
+
+impl LimitedBuffer {
+    fn new(limit: usize) -> Self {
+        Self {
+            bytes: zeroize::Zeroizing::new(Vec::new()),
+            limit,
+            over: false,
+        }
+    }
+}
+
+impl std::io::Write for LimitedBuffer {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if self.bytes.len() + data.len() > self.limit {
+            self.over = true;
+            return Err(std::io::Error::other("the file is over the limit"));
+        }
+        self.bytes.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Finishes an import or export whose picker already closed. The paths the
@@ -915,7 +1107,7 @@ impl PendingPicks {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeleteRecordRequest {
+struct RecordIdRequest {
     record_id: Uuid,
 }
 
@@ -1108,8 +1300,12 @@ async fn vault_lock(
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
+    // A page still being drawn stops with the lock.
+    pdf_view::cancel_views();
     run_blocking(store.inner(), |store| {
         store.lock();
+        // Again once locked: a request that came in meanwhile stops too.
+        pdf_view::cancel_views();
         Ok(())
     })
     .await
@@ -1131,6 +1327,7 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
+        pdf_view::cancel_views();
         picks.clear();
     }
     locked
@@ -1673,6 +1870,7 @@ async fn vault_backup_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let output = app
             .fs()
             .open(destination, options)
@@ -1685,7 +1883,9 @@ async fn vault_backup_picked(
                 bytes: counted,
             }),
             now_ms(),
-        )
+        )?;
+        store.record_backup_saved(&place);
+        Ok(())
     })
     .await
     .map(|()| SavedBackup {
@@ -1788,23 +1988,23 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
     match preview.replaces {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device is not the vault this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::Unreadable => Some(format!(
-            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring sets it aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault => Some(format!(
-            "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
+            "Restoring sets the vault on this device aside and puts the backup in its place, which holds the same {documents}. {SET_ASIDE_KEPT}"
         )),
     }
 }
 
-/// Restores the chosen backup. Replacing a vault erases it, so, as for a
-/// reset, a trusted native dialog confirms that first, and says what would be
-/// lost; the renderer's own agreement is not enough. Returns false if the
+/// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
+/// for a reset, a trusted native dialog confirms that first, and says what
+/// would change; the renderer's own agreement is not enough. Returns false if the
 /// patient cancelled there.
 #[tauri::command]
 async fn vault_restore(
@@ -2025,14 +2225,21 @@ fn open_received_source(
     app: &tauri::AppHandle,
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
-    let path = match file.source {
-        ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path),
-        ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url),
-    };
     Ok(ImportSource {
+        reader: require_pdf(open_received_reader(app, &file)?)?,
         display_name: file.name,
-        reader: require_pdf(open_source_reader(app, path)?)?,
     })
+}
+
+fn open_received_reader(
+    app: &tauri::AppHandle,
+    file: &received::ReceivedFile,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    let path = match &file.source {
+        ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path.clone()),
+        ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url.clone()),
+    };
+    open_source_reader(app, path)
 }
 
 fn open_source_reader(
@@ -2156,7 +2363,7 @@ async fn received_accept(
                 }
             }
         }
-        let outcome = store.import(shared, Vec::new(), sources, now_ms())?;
+        let outcome = store.import_from(shared, Vec::new(), sources, now_ms(), "shared")?;
         Ok(ReceivedAcceptOutcome {
             imported: outcome.imported,
             skipped_duplicates: outcome.skipped_duplicates,
@@ -2174,6 +2381,130 @@ async fn received_accept(
             Err(error)
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewPageRequest {
+    record_id: Uuid,
+    page: u32,
+    width: u32,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ViewPageRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// One page of a stored document, drawn by the PDF helper, and its text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewedPage {
+    page_count: u32,
+    width: u32,
+    height: u32,
+    /// A `data:` URL of the PNG picture: the page's CSP allows only those for pictures.
+    image: String,
+    text: String,
+}
+
+impl ViewedPage {
+    fn from_rendered(
+        shown: pdf_view::Page,
+        ticket: &pdf_view::ViewTicket,
+    ) -> Result<Self, VaultError> {
+        use base64::Engine;
+        let page = Self {
+            page_count: shown.page_count,
+            width: shown.width,
+            height: shown.height,
+            image: format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(&shown.png)
+            ),
+            text: shown.text,
+        };
+        // Encoding a large page takes time too. A lock or close during it discards the result.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(page)
+    }
+}
+
+/// Shows one page of a stored document. The record is decrypted into memory only and handed to
+/// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
+#[tauri::command]
+async fn vault_view_page(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: ViewPageRequest,
+) -> CommandResult<ViewedPage> {
+    use pdf_unlock::Refusal;
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let (record_id, page, width) = (request.record_id, request.page, request.width);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    // Taken now: a newer page request, a lock or the reader closing stops this one.
+    let ticket = pdf_view::ViewTicket::new();
+    let result = run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        // Already replaced by a newer request: nothing to decrypt.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        // Sized up front, so the document is never copied by a growing buffer.
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.export(record_id, &mut *document)?;
+        match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
+            pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            pdf_view::Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            pdf_view::Outcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            pdf_view::Outcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            pdf_view::Outcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
+            pdf_view::Outcome::Cancelled => Err(VaultError::Cancelled),
+            pdf_view::Outcome::Refused(_) | pdf_view::Outcome::Failed => {
+                Err(VaultError::PdfViewFailed)
+            }
+        }
+    })
+    .await;
+    // A lock can also happen after the blocking task finishes, before this command resumes.
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
+}
+
+/// Stops any page being drawn: the reader closed.
+#[tauri::command]
+fn vault_view_cancel() {
+    pdf_view::cancel_views();
 }
 
 /// Moves files from Shared with me to a person, into the folders chosen (#61). A file the
@@ -2269,24 +2600,30 @@ async fn vault_export_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let mut output = app
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
         drop(opening);
-        Ok(store.export(record_id, &mut output))
+        let exported = store.export(record_id, &mut output);
+        if exported.is_ok() {
+            store.record_copy_saved(record_id, &place);
+        }
+        Ok(exported)
     })
     .await?
     .map_err(|_| PublicError::partial_export())
 }
 
+/// Hides the documents shown as damaged (#71: they used to be removed).
 #[tauri::command]
-async fn vault_remove_unavailable_records(
+async fn vault_hide_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
-    request: RemoveUnavailableRequest,
+    request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     run_blocking(store.inner(), move |store| {
-        store.remove_unavailable_records(&request.confirmed)
+        store.hide_unavailable_records(&request.confirmed, now_ms())
     })
     .await
     .map_err(|error| match error.code {
@@ -2331,17 +2668,93 @@ async fn vault_view_photo(
 }
 
 #[tauri::command]
-async fn vault_delete_record(
+async fn vault_is_locked_pdf(
     store: State<'_, Arc<VaultStore>>,
-    request: DeleteRecordRequest,
-) -> CommandResult<()> {
+    request: PhotoRequest,
+) -> CommandResult<bool> {
     run_blocking(store.inner(), move |store| {
-        store.delete_record(request.record_id)
+        is_locked_pdf(store, request.record_id)
     })
     .await
 }
 
-const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockPdfRequest {
+    record_id: Uuid,
+    password: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for UnlockPdfRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
+/// Unlocks a stored PDF with the password the patient typed (#54); see
+/// `unlock_pdf`. The password is used once and wiped.
+#[tauri::command]
+async fn vault_unlock_pdf(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: UnlockPdfRequest,
+) -> CommandResult<UnlockedPdf> {
+    let record_id = request.record_id;
+    let password = zeroize::Zeroizing::new(std::mem::take(&mut request.password));
+    drop(request);
+    run_blocking(store.inner(), move |store| {
+        // The helper's time counts as activity: the vault does not lock under it.
+        let _opening = Opening::new(store.idle());
+        unlock_pdf(store, record_id, &password, pdf_unlock::unlock_in_helper)
+    })
+    .await
+}
+
+/// Hides a document (#71). There is no command that deletes one.
+#[tauri::command]
+async fn vault_hide_record(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.hide_record(request.record_id, now_ms())
+    })
+    .await
+}
+
+/// Puts a hidden document back (#71).
+#[tauri::command]
+async fn vault_unhide_record(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.unhide_record(request.record_id)
+    })
+    .await
+}
+
+/// What a vault set aside (#71) keeps, said wherever one is set aside.
+const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
+
+/// What starting again does (#71), who can still open the vault set aside,
+/// and how to remove it on this platform: on a computer, by deleting its
+/// folder, named here (the dialog is native, never the screen); on a phone,
+/// where the folder is private to the app, only by clearing the app's data
+/// or uninstalling it, which removes every vault.
+fn set_aside_vault_warning(folder: &std::path::Path) -> String {
+    let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
+        "On this phone, vaults set aside stay in myCarlos's private storage, and myCarlos cannot remove them: the only way is to clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone.".to_owned()
+    } else {
+        format!(
+            "To remove a vault set aside, and free its space, close myCarlos and delete its folder in {}.",
+            folder.display()
+        )
+    };
+    format!(
+        "This sets the whole vault aside and starts again with an empty one. {SET_ASIDE_KEPT} myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. {removal}"
+    )
+}
 
 #[tauri::command]
 async fn vault_reset(
@@ -2354,14 +2767,15 @@ async fn vault_reset(
     if request.confirmation != "RESET MYCARLOS VAULT" {
         return Err(PublicError::from(VaultError::Invalid));
     }
+    let warning = set_aside_vault_warning(&store.set_aside_folder().ok_or(VaultError::Storage)?);
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
         confirmed_natively(
             &dialog_app,
-            "Erase the entire myCarlos vault?",
-            ERASE_VAULT_WARNING,
+            "Set this myCarlos vault aside and start again?",
+            warning,
             "Keep this vault",
-            "Erase vault",
+            "Set it aside",
         )
     })
     .await
@@ -2594,13 +3008,18 @@ pub fn run() {
             received_list,
             received_accept,
             vault_move_to_person,
+            vault_view_page,
+            vault_view_cancel,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
             vault_is_photo,
             vault_view_photo,
-            vault_delete_record,
-            vault_remove_unavailable_records,
+            vault_is_locked_pdf,
+            vault_unlock_pdf,
+            vault_hide_record,
+            vault_unhide_record,
+            vault_hide_unavailable_records,
             vault_reset
         ])
         .build(tauri::generate_context!())
@@ -2617,6 +3036,23 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn does_not_return_a_page_for_a_cancelled_view_ticket() {
+        let ticket = pdf_view::ViewTicket::new();
+        pdf_view::cancel_views();
+        let shown = pdf_view::Page {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            png: vec![],
+            text: "FAKE page text".into(),
+        };
+        assert!(matches!(
+            ViewedPage::from_rendered(shown, &ticket),
+            Err(VaultError::Cancelled)
+        ));
+    }
     const APP_SCHEME: Origin = ("tauri", "localhost");
     const HOST_NAME: Origin = ("http", "tauri.localhost");
     const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
@@ -3557,11 +3993,11 @@ mod tests {
     #[test]
     fn only_the_button_that_goes_ahead_counts_as_agreement() {
         let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
-        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        assert!(agreed_natively(&custom("Set it aside"), "Set it aside"));
         for answer in [
             custom("Keep this vault"),
             custom(NATIVE_CANCEL),
-            custom("erase vault"),
+            custom("set it aside"),
             custom(""),
             // What the dialog reports when it is closed, or could not be
             // shown, and what another layout's buttons would report.
@@ -3570,7 +4006,7 @@ mod tests {
             MessageDialogResult::Yes,
             MessageDialogResult::No,
         ] {
-            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+            assert!(!agreed_natively(&answer, "Set it aside"), "{answer:?}");
         }
     }
 
@@ -3589,12 +4025,35 @@ mod tests {
                 && other.contains("3 documents")
         );
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
-        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
+        assert!(
+            unreadable.contains("cannot tell")
+                && unreadable.contains("sets the vault on this device aside")
+        );
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("may not be the same as") && changed.contains("passphrase"));
         assert!(changed.contains("could not be read"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
         assert!(same.contains("the same 3 documents"));
+        // Nothing is erased (#71): every warning says the vault is kept.
+        for warning in [&other, &unreadable, &changed, &same] {
+            assert!(warning.contains(SET_ASIDE_KEPT), "{warning}");
+            assert!(
+                !warning.contains("erase") && !warning.contains("cannot be undone"),
+                "{warning}"
+            );
+        }
+        // Starting again names who can still open the vault set aside, and
+        // how to remove it here: its folder on a computer.
+        let folder =
+            std::path::Path::new("/home/FAKE/.local/share/ca.carlos.mycarlos/vault-home/set-aside");
+        let warning = set_aside_vault_warning(folder);
+        assert!(warning.contains(SET_ASIDE_KEPT));
+        assert!(!warning.contains("erase"));
+        assert!(warning.contains("someone else may know your passphrase, they can still open it"));
+        assert!(warning.ends_with(&format!(
+            "close myCarlos and delete its folder in {}.",
+            folder.display()
+        )));
     }
 
     #[test]
@@ -3797,10 +4256,12 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<MoveToPersonRequest>(&payload);
+            let _ = serde_json::from_slice::<ViewPageRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<PhotoRequest>(&payload);
-            let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
-            let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
+            let _ = serde_json::from_slice::<UnlockPdfRequest>(&payload);
+            let _ = serde_json::from_slice::<RecordIdRequest>(&payload);
+            let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
     }
@@ -4223,5 +4684,310 @@ mod photo_command_tests {
         assert!(save.contains("run_blocking("));
         assert!(body("async fn vault_view_photo(").contains("run_blocking("));
         assert!(body("async fn vault_is_photo(").contains("run_blocking("));
+        // The history says a saved photo came from the camera (#71).
+        let saved = body("fn save_photo(");
+        assert!(saved.contains("store.import_from("));
+        assert!(saved.contains("\"camera\""));
+    }
+}
+
+#[cfg(test)]
+mod locked_pdf_command_tests {
+    use super::*;
+    use pdf_unlock::{Outcome, Refusal};
+    use std::io::Cursor;
+
+    const PASSPHRASE: &str = "river-azimuth-cobalt-sparrow-934";
+    /// The FAKE documents' password (tests/fixtures/locked-pdf/README.md).
+    const DOCUMENT_PASSWORD: &str = "FAKE-portal-2026";
+
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/locked-pdf")
+                .join(name),
+        )
+        .unwrap()
+    }
+
+    /// The helper's work, done here: the test binary is not myCarlos, so it
+    /// cannot be started as the helper (tests/pdf_helper.rs starts the real one).
+    fn in_process(pdf: &[u8], password: &str) -> Outcome {
+        match pdf_unlock::unlock(pdf, password) {
+            Ok(unlocked) => Outcome::Unlocked(unlocked),
+            Err(refusal) => Outcome::Refused(refusal),
+        }
+    }
+
+    /// A vault with one person and a folder, holding `name` made of `bytes`.
+    fn stored(
+        temp: &tempfile::TempDir,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> (VaultStore, Uuid, Uuid, Uuid) {
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSPHRASE, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store
+            .create_folder(profile, None, "FAKE Letters", 2)
+            .unwrap();
+        let outcome = store
+            .import(
+                profile,
+                vec![folder],
+                vec![ImportSource {
+                    display_name: name.to_owned(),
+                    reader: Box::new(Cursor::new(bytes)),
+                }],
+                3,
+            )
+            .unwrap();
+        (store, profile, folder, outcome.imported[0])
+    }
+
+    fn exported(store: &VaultStore, record: Uuid) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        store.export(record, &mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn the_locked_original_keeps_its_extension_and_says_what_it_is() {
+        assert_eq!(
+            locked_original_name("FAKE Letter.pdf"),
+            "FAKE Letter (locked original).pdf"
+        );
+        assert_eq!(
+            locked_original_name("FAKE SCAN.PDF"),
+            "FAKE SCAN (locked original).PDF"
+        );
+        assert_eq!(
+            locked_original_name("FAKE Letter"),
+            "FAKE Letter (locked original)"
+        );
+        assert_eq!(
+            locked_original_name("Zdjęcie ąę.pdf"),
+            "Zdjęcie ąę (locked original).pdf"
+        );
+        // A name already as long as a name can be: the words still fit.
+        let long = format!("{}.pdf", "ł".repeat(vault::MAX_RECORD_NAME_LEN - 4));
+        let original = locked_original_name(&long);
+        assert_eq!(original.chars().count(), vault::MAX_RECORD_NAME_LEN);
+        assert!(original.ends_with("ł (locked original).pdf"));
+    }
+
+    #[test]
+    fn a_stored_pdf_is_found_locked_by_its_names_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile, _, locked) =
+            stored(&temp, "FAKE Letter.pdf", fixture("text-aes256.pdf"));
+        assert!(is_locked_pdf(&store, locked).unwrap());
+        let open = store
+            .import(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: "FAKE Open.pdf".to_owned(),
+                    reader: Box::new(Cursor::new(fixture("text-original.pdf"))),
+                }],
+                4,
+            )
+            .unwrap()
+            .imported[0];
+        assert!(!is_locked_pdf(&store, open).unwrap());
+        assert!(matches!(
+            is_locked_pdf(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn unlocking_adds_the_copy_and_keeps_the_original_renamed() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile, folder, locked) =
+            stored(&temp, "FAKE Letter.pdf", fixture("text-aes256.pdf"));
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        assert_eq!(unlocked.original_name, "FAKE Letter (locked original).pdf");
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 2);
+        let copy = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == unlocked.record_id)
+            .unwrap();
+        let original = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == locked)
+            .unwrap();
+        // The copy takes the name, in the same person's records and folder.
+        assert_eq!(copy.display_name, "FAKE Letter.pdf");
+        assert_eq!(
+            (copy.profile_id, &copy.folder_ids),
+            (profile, &vec![folder])
+        );
+        assert_eq!(original.display_name, "FAKE Letter (locked original).pdf");
+        assert_eq!(original.folder_ids, vec![folder]);
+        // The original is as it came; the copy opens without a password.
+        assert_eq!(exported(&store, locked), fixture("text-aes256.pdf"));
+        assert!(!is_locked_pdf(&store, unlocked.record_id).unwrap());
+        assert!(matches!(
+            pdf_unlock::unlock(&exported(&store, unlocked.record_id), ""),
+            Err(Refusal::NotEncrypted)
+        ));
+
+        // Unlocking the original again adds nothing, and keeps its name.
+        assert!(matches!(
+            unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process),
+            Err(VaultError::PdfAlreadyUnlocked)
+        ));
+        assert_eq!(store.snapshot().unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn a_wrong_password_or_a_failed_helper_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _, locked) = stored(&temp, "FAKE Letter.pdf", fixture("text-aes256.pdf"));
+        let unchanged = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            snapshot.records.len() == 1 && snapshot.records[0].display_name == "FAKE Letter.pdf"
+        };
+        assert!(matches!(
+            unlock_pdf(&store, locked, "FAKE-wrong", in_process),
+            Err(VaultError::PdfWrongPassword)
+        ));
+        assert!(unchanged(&store));
+        for (outcome, expected) in [
+            (Outcome::Refused(Refusal::NotEncrypted), "pdf_not_locked"),
+            (Outcome::Refused(Refusal::TooLarge), "pdf_too_large"),
+            (Outcome::Refused(Refusal::Damaged), "pdf_unlock_failed"),
+            (Outcome::Refused(Refusal::Unsupported), "pdf_unlock_failed"),
+            (Outcome::Failed, "pdf_unlock_failed"),
+            (Outcome::Unavailable, "pdf_unlock_unavailable"),
+            // Where the helper's sandbox cannot be set up (#63).
+            (Outcome::NoSandbox, "pdf_unlock_no_sandbox"),
+        ] {
+            let error = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, |_, _| outcome).unwrap_err();
+            assert_eq!(PublicError::from(error).code, expected);
+            assert!(unchanged(&store));
+        }
+        assert!(matches!(
+            unlock_pdf(&store, Uuid::new_v4(), DOCUMENT_PASSWORD, in_process),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn a_locked_file_in_shared_with_me_is_unlocked_there() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _, _) = stored(&temp, "FAKE Other.pdf", fixture("text-original.pdf"));
+        let shared = store.shared_profile().unwrap();
+        let locked = store
+            .import(
+                shared,
+                vec![],
+                vec![ImportSource {
+                    display_name: "FAKE Referral.pdf".to_owned(),
+                    reader: Box::new(Cursor::new(fixture("text-aes256.pdf"))),
+                }],
+                4,
+            )
+            .unwrap()
+            .imported[0];
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        let copy = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == unlocked.record_id)
+            .unwrap();
+        assert_eq!(copy.profile_id, shared);
+        assert!(copy.folder_ids.is_empty());
+    }
+
+    #[test]
+    fn unlocking_then_hiding_and_setting_aside_keeps_both_pdfs_and_their_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = fixture("text-aes256.pdf");
+        let (store, profile, folder, locked) = stored(&temp, "FAKE Letter.pdf", original.clone());
+        let before = vault::history_events_for_test(&store).len();
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        let copy = unlocked.record_id;
+        assert_ne!(copy, locked);
+        assert_eq!(exported(&store, locked), original);
+        let copy_bytes = exported(&store, copy);
+        assert!(copy_bytes.starts_with(b"%PDF-"));
+        let events = vault::history_events_for_test(&store);
+        assert_eq!(events.len(), before + 2);
+        assert_eq!(events[before].event, history::HistoryEvent::Imported);
+        assert_eq!(events[before].record_id, Some(copy));
+        assert_eq!(events[before + 1].event, history::HistoryEvent::Renamed);
+        assert_eq!(events[before + 1].record_id, Some(locked));
+        store.hide_record(locked, 5).unwrap();
+        store.hide_record(copy, 6).unwrap();
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .all(|r| r.hidden.is_some()));
+        store.unhide_record(copy).unwrap();
+        let aside = store.set_aside_folder().unwrap();
+        store.reset().unwrap();
+        assert_eq!(store.status().unwrap(), vault::VaultStatus::Absent);
+        let folders: Vec<_> = std::fs::read_dir(aside)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_dir())
+            .collect();
+        assert_eq!(folders.len(), 1);
+        let recovered = VaultStore::new(folders[0].clone());
+        recovered.unlock(PASSPHRASE).unwrap();
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 2);
+        let kept = snapshot.records.iter().find(|r| r.id == locked).unwrap();
+        assert_eq!(kept.display_name, "FAKE Letter (locked original).pdf");
+        assert!(kept.hidden.is_some());
+        let readable = snapshot.records.iter().find(|r| r.id == copy).unwrap();
+        assert!(readable.hidden.is_none());
+        assert_eq!(
+            (readable.profile_id, readable.folder_ids.clone()),
+            (profile, vec![folder])
+        );
+        assert_eq!(exported(&recovered, locked), original);
+        assert_eq!(exported(&recovered, copy), copy_bytes);
+        let events = vault::history_events_for_test(&recovered); // Also verifies its pinned chain.
+        assert!(events
+            .iter()
+            .any(|entry| entry.event == history::HistoryEvent::SetAside));
+        for entry in events {
+            let json = String::from_utf8(entry.canonical()).unwrap();
+            assert!(!json.contains(DOCUMENT_PASSWORD) && !json.contains(PASSPHRASE));
+        }
+    }
+
+    #[test]
+    fn a_file_over_the_limit_is_not_read_whole() {
+        let mut buffer = LimitedBuffer::new(4);
+        assert!(std::io::Write::write_all(&mut buffer, b"%PDF").is_ok());
+        assert!(std::io::Write::write_all(&mut buffer, b"-").is_err());
+        assert!(buffer.over);
+        assert_eq!(&buffer.bytes[..], b"%PDF");
+    }
+
+    #[test]
+    fn the_unlock_commands_run_off_the_main_thread_and_wipe_the_password() {
+        let source = include_str!("lib.rs");
+        let body = |name: &str| {
+            let start = source.find(name).unwrap();
+            &source[start..start + source[start..].find("\n}\n").unwrap()]
+        };
+        let unlock = body("async fn vault_unlock_pdf(");
+        assert!(unlock.contains("run_blocking("));
+        assert!(unlock.contains("pdf_unlock::unlock_in_helper"));
+        assert!(unlock.contains("Opening::new(store.idle())"));
+        assert!(unlock.contains("Zeroizing::new(std::mem::take(&mut request.password))"));
+        assert!(body("async fn vault_is_locked_pdf(").contains("run_blocking("));
+        assert!(body("impl Drop for UnlockPdfRequest").contains("self.password.zeroize()"));
     }
 }

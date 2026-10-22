@@ -62,7 +62,8 @@ In a native build, additionally:
    total file size.
 5. Export over an existing synthetic file and confirm a deliberately corrupted record leaves the
    existing destination unchanged.
-6. Permanently delete one record, restart, unlock, and confirm it remains absent.
+6. Hide one record, restart, unlock, and confirm it is listed only under **Hidden**; then
+   **Restore** it and confirm it is back where it was. Nothing deletes a document (#71).
 7. Background the app during import/export and confirm the UI conceals immediately, the transfer
    completes, and the vault then reaches the locked state. Repeat, and on the hidden screen choose
    **Lock now and cancel the transfer**: confirm the native operation is cancelled at its next I/O

@@ -79,10 +79,10 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - One responsive, mock-aligned filing-cabinet screen, rendered in a browser and packaged for
   desktop, Android, and iOS webviews (the mobile packages are unverified; see the table above).
 - A durable native filing cabinet aligned with the discussion mocks in [CARLOS PR #3479](https://github.com/carlos-emr/carlos/pull/3479): patient-profile
-  switching, nested folder navigation, location search, list/grid views, sorting, bulk moves, and
-  drag-and-drop document/folder moves, folder and imported-document renaming, plus plain-language
-  document details and save-copy actions. Renames update encrypted metadata and export suggestions;
-  they preserve document contents and folder locations.
+  switching, nested folder navigation, search of a folder and its subfolders, list/grid views,
+  sorting, bulk moves, and drag-and-drop document/folder moves, folder and imported-document
+  renaming, plus plain-language document details and save-copy actions. Renames update encrypted
+  metadata and export suggestions; they preserve document contents and folder locations.
 - A browser evaluation demo with record-kind filters, Recent, Starred, Trash, Restore, and
   session-only sample folders. Those concepts remain deliberately separate from durable storage
   until their data model and retention rules are implemented.
@@ -112,12 +112,20 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   takes while it makes progress (or while a chosen file is still opening). A native idle deadline also drops the keys shortly after the
   renderer's (the lock delay plus 15 seconds after the last activity it heard of) if the webview
   stops responding.
-- Confirmed individual record deletion updates one durable manifest, unlinks the encrypted object,
-  and then updates the redundant manifest. Both live slots omit the wrapped per-object key when the
-  operation succeeds. Old external backups and future synchronized copies remain outside that
-  local deletion guarantee.
+- Nothing is deleted (#71): a document is hidden, which marks it in both manifest slots and keeps
+  its encrypted file and key, and it can be restored from **Hidden**. Direct file removal is
+  disallowed crate-wide by clippy; the one removal helper names what it may remove (stages,
+  uncommitted ciphertext, export staging, superseded files). Starting again, or restoring a backup
+  over a vault, sets the vault aside, whole and encrypted, in a `set-aside` folder beside it; the
+  app never deletes one. On Android and iPhone a vault set aside can only be removed by clearing
+  the app's data or uninstalling it, which removes every vault (an accepted limit), so starting
+  again is offered only on the unlock screen ("Forgot your passphrase?"), not in Security.
+- An encrypted history records each unlock, each passphrase change, each profile added, each
+  folder made, renamed or moved, each vault set aside, and what happens to each document (added,
+  renamed, moved, hidden, restored, saved outside the vault), hash-chained so that a changed or
+  missing entry shows. It is never shown in the app and stays on the device, with no export (#71).
 - Abrupt-termination tests exercise recovery after chunk writes, staging, object rename, redundant
-  manifest commits, and each deletion boundary. Corruption tests cover bit flips, truncation,
+  manifest commits, and each hiding boundary. Corruption tests cover bit flips, truncation,
   ciphertext swapping, exact chunk boundaries, structured semantic manifest mutations,
   authenticated-generation recovery selection, a preserved malformed-object corpus, one-slot
   recovery, and two-slot fail-closed behavior.
@@ -134,8 +142,8 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 
 It deliberately does **not** implement an in-app document viewer, accounts, synchronization,
 Android cloud backup, CARLOS integration, verified provenance, HealthKit/Health Connect, release
-signing, or app-store packaging. Deletion does not yet propagate tombstones to backups or other
-devices. Apple OS backup may carry the encrypted app-data vault, but restore still requires the
+signing, or app-store packaging. There is no way to delete a document; hidden documents stay in
+the vault and its backups. Apple OS backup may carry the encrypted app-data vault, but restore still requires the
 patient passphrase or recovery key. A successful build and test run is not evidence that the app is ready to hold
 PHI.
 
