@@ -1172,7 +1172,9 @@ mod tests {
         for (pointer, value) in [
             ("/document_id", serde_json::json!("")),
             ("/document_id", serde_json::json!(" \t\n")),
+            ("/document_id", serde_json::Value::Null),
             ("/version", serde_json::json!(0)),
+            ("/version", serde_json::Value::Null),
             ("/document/media_type", serde_json::json!("image/png")),
             ("/document/media_type", serde_json::Value::Null),
         ] {
@@ -1184,6 +1186,24 @@ mod tests {
                 "{pointer}"
             );
         }
+        for pointer in ["/document_id", "/version", "/document/media_type"] {
+            let mut missing = base.clone();
+            let (parent, member) = pointer.rsplit_once('/').unwrap();
+            missing
+                .pointer_mut(parent)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(member);
+            assert_eq!(
+                parse_manifest(&canonical_test_manifest(&missing)),
+                Err(Refusal::BadManifest)
+            );
+        }
+        // The format is v1; a corrected document may have revision 2 or later.
+        let mut correction = base;
+        correction["version"] = serde_json::json!(2);
+        assert!(parse_manifest(&canonical_test_manifest(&correction)).is_ok());
     }
 
     #[test]
