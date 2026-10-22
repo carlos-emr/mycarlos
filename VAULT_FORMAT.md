@@ -673,9 +673,11 @@ state, described in the recovery-key sections above.
 - Restoring an older valid pair of header slots can restore an older passphrase wrapper, or an older
   recovery-key envelope, for the unchanged master key. Patient-pilot backup, recovery-key rotation, and device synchronization must define
   and enforce key-envelope rollback protection.
-- There is no way to delete a document (#71): hidden documents, quarantined objects and their
-  names stay in the vault and its backups, and storage grows with them. Exported plaintext and
-  copies outside the live vault are beyond the app's control.
+- There is no way to delete a document (#71): hidden documents and their names stay in the
+  vault and its portable backups. Unreferenced objects in `quarantine/` stay on this device,
+  but portable vault backups omit them; a separate backup of the device may retain them.
+  Storage grows with retained data. Exported plaintext and copies outside the live vault are
+  beyond the app's control.
 - The history (#71) cannot prove the patient did not rewrite it: a copy of the whole vault put back
   (a backup, or the folder copied back) passes the chain check, since that copy's chain is whole
   in itself, and the device clock can be changed. Only an anchor outside the device (the portal,
