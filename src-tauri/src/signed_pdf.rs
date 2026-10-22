@@ -560,7 +560,13 @@ fn parse_manifest(bytes: &[u8]) -> Result<Manifest, Refusal> {
         serde_json::from_slice(bytes).map_err(|_| Refusal::BadManifest)?;
     let mut canonical = Vec::with_capacity(bytes.len());
     write_canonical(&value, &mut canonical).ok_or(Refusal::BadManifest)?;
-    if canonical != bytes || manifest.v != 1 || manifest.typ != "carlos-document-manifest" {
+    if canonical != bytes
+        || manifest.v != 1
+        || manifest.typ != "carlos-document-manifest"
+        || manifest.document_id.trim().is_empty()
+        || manifest.version == 0
+        || manifest.document.media_type != "application/pdf"
+    {
         return Err(Refusal::BadManifest);
     }
     Ok(manifest)
@@ -1155,6 +1161,29 @@ mod tests {
             parse_manifest(&canonical_test_manifest(&value)),
             Err(Refusal::BadManifest)
         );
+    }
+
+    #[test]
+    fn v1_document_identity_version_and_fixed_media_type_cannot_be_relaxed() {
+        let (_, documents) = fixture();
+        let sent = document(&documents, "signed-send-to-mycarlos.pdf");
+        let base: serde_json::Value =
+            serde_json::from_slice(sent.manifest.as_deref().unwrap()).unwrap();
+        for (pointer, value) in [
+            ("/document_id", serde_json::json!("")),
+            ("/document_id", serde_json::json!(" \t\n")),
+            ("/version", serde_json::json!(0)),
+            ("/document/media_type", serde_json::json!("image/png")),
+            ("/document/media_type", serde_json::Value::Null),
+        ] {
+            let mut invalid = base.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert_eq!(
+                parse_manifest(&canonical_test_manifest(&invalid)),
+                Err(Refusal::BadManifest),
+                "{pointer}"
+            );
+        }
     }
 
     #[test]
