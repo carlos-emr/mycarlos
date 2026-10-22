@@ -441,7 +441,7 @@ export const pl: Record<MessageKey, Message> = {
   },
   "error.fallback": "Nie udało się wykonać operacji na sejfie.",
   "error.damaged":
-    "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Jeśli ten dokument jest dostępny gdzie indziej, proszę go tutaj usunąć i dodać ponownie; jeśli nie, usunięcie go pozwoli zrobić kopię wszystkiego innego.",
+    "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Proszę zachować wcześniejsze kopie zapasowe. Przed ponowną próbą proszę poprosić o pomoc w odzyskaniu tego dokumentu z nieuszkodzonej kopii lub kopii zapasowej.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
 

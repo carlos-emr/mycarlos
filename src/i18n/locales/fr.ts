@@ -430,7 +430,7 @@ export const fr: Record<MessageKey, Message> = {
   },
   "error.fallback": "L’opération sur le coffre-fort n’a pas pu aboutir.",
   "error.damaged":
-    "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Si vous avez ce document ailleurs, supprimez-le ici et ajoutez-le de nouveau ; sinon, le supprimer vous permet de sauvegarder tout le reste.",
+    "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Conservez vos anciennes sauvegardes. Demandez de l’aide pour récupérer ce document à partir d’une copie ou d’une sauvegarde en bon état avant de réessayer.",
   "error.damaged.where": "ajouté le {date}",
   "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
 
