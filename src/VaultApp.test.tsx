@@ -26,6 +26,7 @@ import type {
   VaultSnapshot,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import { setLocaleOverride, translate } from "./i18n";
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -6739,6 +6740,70 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "Unlock your vault" });
     vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
     await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
+  });
+});
+
+describe("the app's notices in the language in use (#46)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    // Not about the recovery key offer: it was made earlier today.
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+
+  it("says what happened in Polish, with its plural forms", async () => {
+    const user = userEvent.setup();
+    const pl = (key: Parameters<typeof translate>[1], count?: number) =>
+      translate("pl", key, count === undefined ? {} : { count });
+    setLocaleOverride("pl");
+    onTestFinished(() => {
+      setLocaleOverride(null);
+      window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    });
+    window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
+    render(<VaultApp bridge={nativeBridge()} />);
+    fireEvent.change(await screen.findByLabelText(pl("passphrase.label")), {
+      target: { value: "river-azimuth-cobalt-sparrow-934" },
+    });
+    await user.click(screen.getByRole("button", { name: pl("unlock.submit") }));
+    expect(await screen.findByText(pl("notice.unlocked"))).toBeVisible();
+    expect(pl("notice.unlocked")).toBe("Sejf odblokowany.");
+
+    // 5 → 6 minutes: Polish says "6 minut" (many).
+    await user.click(
+      screen.getAllByRole("button", { name: pl("security.title") })[0],
+    );
+    const delay = screen.getByRole("group", {
+      name: pl("security.autoLock.label"),
+    });
+    await user.click(
+      within(delay).getByRole("button", {
+        name: pl("security.autoLock.longer"),
+      }),
+    );
+    expect(
+      await screen.findByText("Automatyczna blokada ustawiona na 6 minut."),
+    ).toBeVisible();
+    expect(screen.queryByText(/Automatic locking set/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
+    expect(screen.queryByText("Vault locked.")).toBeNull();
+  });
+
+  it("names the import button as the library shows it when a file is dropped while locked", async () => {
+    setLocaleOverride("fr");
+    onTestFinished(() => setLocaleOverride(null));
+    render(<VaultApp bridge={nativeBridge()} />);
+    await screen.findByLabelText(translate("fr", "passphrase.label"));
+    const files = new DataTransfer();
+    files.items.add(new File(["%PDF-1.7"], "FAKE.pdf"));
+    fireDragEvent("drop", document.body, { dataTransfer: files });
+    expect(
+      await screen.findByText(
+        "Pour importer des PDF, déverrouillez votre coffre-fort et utilisez Choose files to import. Le glisser-déposer déplace les documents déjà dans myCarlos.",
+      ),
+    ).toBeVisible();
   });
 });
 
