@@ -96,6 +96,7 @@ export function VaultLibrary({
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
+  cameraAsking,
   sharedNew = 0,
   onSharedSeen,
 }: {
@@ -135,9 +136,12 @@ export function VaultLibrary({
   /** A dialog of the app's own is over the library (the warning before the
    * automatic lock, #68): the library and any dialog in it are inert. */
   covered?: boolean;
-  /** The desktop platform the camera dialog runs on, or null where photos
-   * cannot be taken yet (phones and tablets). */
+  /** The platform the camera dialog runs on (a computer, or since D97 a
+   * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** On a phone: holds the lock on a hidden app while the system asks
+   * whether myCarlos may use the camera (see CameraDialog). */
+  cameraAsking?: <T>(question: Promise<T>) => Promise<T>;
   /** Files added to Shared with me since the vault was unlocked, until the
    * patient opens it (#61). */
   sharedNew?: number;
@@ -1718,6 +1722,7 @@ export function VaultLibrary({
           {cameraOpen && cameraPlatform && (
             <CameraDialog
               platform={cameraPlatform}
+              whileAsking={cameraAsking}
               notice={notice}
               saving={busy}
               onUse={savePhoto}

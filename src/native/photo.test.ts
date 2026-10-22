@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  CAMERA_PLATFORMS,
   MAX_CAMERA_JPEG_BYTES,
   MAX_PHOTO_SIDE_PX,
   PHOTO_QUALITY,
   cameraFailure,
   cameraFailureMessage,
+  isPhone,
   namedAsPdf,
   photoName,
   encodePhoto,
@@ -225,5 +227,45 @@ describe("camera failures", () => {
     expect(cameraFailureMessage("busy", "windows")).toBe(
       "The camera is in use by another app. Close it, then choose Try again.",
     );
+  });
+
+  it("says where to allow the camera on each phone, and asks no one to connect one (D97)", () => {
+    expect(cameraFailureMessage("denied", "android")).toBe(
+      "myCarlos can't use the camera. Open your phone's Settings, then Apps, then myCarlos, then Permissions, and allow Camera. Then choose Try again.",
+    );
+    expect(cameraFailureMessage("denied", "ios")).toBe(
+      "myCarlos can't use the camera. Open your phone's Settings, then myCarlos, and turn on Camera. Then choose Try again.",
+    );
+    for (const phone of ["android", "ios"]) {
+      expect(cameraFailureMessage("missing", phone)).toBe(
+        "This phone's camera could not be found. Choose Try again.",
+      );
+      expect(cameraFailureMessage("stopped", phone)).toBe(
+        "The camera stopped. Choose Try again.",
+      );
+      expect(cameraFailureMessage("busy", phone)).toBe(
+        "The camera is in use by another app. Close it, then choose Try again.",
+      );
+    }
+    // A computer's stays as it was.
+    expect(cameraFailureMessage("stopped", "linux")).toBe(
+      "The camera stopped. Check that it is connected, then choose Try again.",
+    );
+  });
+});
+
+describe("where the camera is offered (D97)", () => {
+  it("is offered on the computers and the phones", () => {
+    for (const platform of ["windows", "macos", "linux", "android", "ios"])
+      expect(CAMERA_PLATFORMS.has(platform), platform).toBe(true);
+    expect(CAMERA_PLATFORMS.has("freebsd")).toBe(false);
+    expect(CAMERA_PLATFORMS.has("")).toBe(false);
+  });
+
+  it("knows a phone from a computer", () => {
+    expect(isPhone("android")).toBe(true);
+    expect(isPhone("ios")).toBe(true);
+    for (const computer of ["windows", "macos", "linux", ""])
+      expect(isPhone(computer), computer).toBe(false);
   });
 });

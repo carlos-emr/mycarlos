@@ -960,6 +960,7 @@ h1, h2, p { margin: 0; }
 .camera-actions { flex-wrap: wrap; }
 .camera-shutter { font-size: 1.0625rem; }
 .camera-dialog .camera-shutter { min-height: 56px; }
+.camera-actions .button[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
 .photo-viewer-frame { max-height: 70vh; overflow: auto; padding: 12px 20px; background: var(--canvas); }
 .photo-viewer-frame img { display: block; max-width: 100%; max-height: calc(70vh - 24px); margin: 0 auto; }
 .photo-viewer-frame:not(.zoom-1) img { max-width: none; max-height: none; }

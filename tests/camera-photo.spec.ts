@@ -14,8 +14,8 @@ test.use({
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
-async function fakeVault(page: Page) {
-  await page.addInitScript(() => {
+async function fakeVault(page: Page, platform = "windows") {
+  await page.addInitScript((platform) => {
     const snapshot = {
       profiles: [
         { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -33,7 +33,7 @@ async function fakeVault(page: Page) {
       ) => {
         if (command === "vault_status") return "unlocked";
         if (command === "vault_snapshot") return structuredClone(snapshot);
-        if (command === "runtime_info") return { platform: "windows" };
+        if (command === "runtime_info") return { platform };
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
         if (command === "vault_save_photo" && args instanceof Uint8Array) {
@@ -71,7 +71,7 @@ async function fakeVault(page: Page) {
         throw new Error(`Unexpected IPC command: ${command}`);
       },
     });
-  });
+  }, platform);
 }
 
 test("takes a photo with the camera, saves it and shows it", async ({
@@ -164,4 +164,48 @@ test("says how to allow the camera when it is refused", async ({
   await expect(
     page.getByRole("button", { name: "Take a photo" }),
   ).toBeFocused();
+});
+
+test("on a phone, says the phone asks once, takes a photo and says where to allow the camera (D97)", async ({
+  page,
+  context,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone", "a phone's own words");
+  await context.grantPermissions(["camera"]);
+  await fakeVault(page, "android");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  const camera = page.getByRole("dialog", { name: "Take a photo" });
+  await expect(
+    camera.getByText(
+      "Your phone asks once whether myCarlos may use the camera. The camera is on only while you take the photo. It turns off when you take it, cancel, or myCarlos locks.",
+    ),
+  ).toBeVisible();
+  await camera.getByRole("button", { name: "Use the camera" }).click();
+  const shutter = camera.getByRole("button", { name: "Take photo" });
+  await expect(shutter).toBeFocused();
+  expect(
+    (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
+  ).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("phone-camera-live.png") });
+  await shutter.click();
+  await camera.getByRole("button", { name: "Use photo" }).click();
+  await expect(
+    page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ }),
+  ).toBeVisible();
+  const saved = await page.evaluate(() => Reflect.get(window, "__savedPhoto"));
+  expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
+
+  // Refused: where to allow it on the phone.
+  await context.clearPermissions();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  await expect(camera.getByRole("alert")).toHaveText(
+    "myCarlos can't use the camera. Open your phone's Settings, then Apps, then myCarlos, then Permissions, and allow Camera. Then choose Try again.",
+  );
 });

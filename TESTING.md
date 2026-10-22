@@ -180,6 +180,26 @@ On every platform:
     says where to turn it back on, and the rest of the app keeps working. Also check that the
     light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
     is on, or let the vault lock.
+    **On a phone** (Android, or a real iPhone: the iOS Simulator has no camera), **Take a photo**
+    is next to **New** too. The first time, the window says the phone asks once; choose **Use the
+    camera**, and the phone asks whether myCarlos may use the camera (an iPhone with the reason
+    "myCarlos uses the camera to save photos of your health documents…"). Allow it. The vault
+    stays unlocked while the phone asks, the back camera's view shows, and the steps above work
+    the same. Then check:
+    - **No copy anywhere:** after saving a photo, nothing new is in the phone's Photos or Gallery
+      app, or in its Files app.
+    - **Refused:** in the phone's Settings, turn the camera off for myCarlos (Android: Apps →
+      myCarlos → Permissions → Camera; iPhone: myCarlos → Camera) and choose **Take a photo**:
+      the window says where to turn it back on, and the rest of the app keeps working. Turn it
+      on and choose **Try again**. On Android, also choose **Don't allow** twice when asked:
+      Android then stops asking, and the window still says where to allow it.
+    - **Leaving:** with the camera on, go to the home screen and come back: the camera indicator
+      went off and the vault is locked. Do the same while the phone's question is showing: the
+      vault is locked when you come back.
+    - **The indicator:** the camera dot (green on both phones) goes off when you take the photo,
+      choose **Cancel**, or the vault locks.
+    - **TalkBack or VoiceOver:** the shutter is read as "Take photo", and after a photo the focus
+      is on **Use photo**. At the largest text size, every button can be reached.
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
