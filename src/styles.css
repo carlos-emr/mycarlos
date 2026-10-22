@@ -1094,4 +1094,4 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .native-person-details-list form { width: 100%; }
 .native-person-details-list fieldset, .native-setting-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .native-person-details-actions, .native-person-suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.native-person-suggestion { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; white-space: normal; overflow-wrap: anywhere; font-size: 0.85rem; }
+.native-person-suggestion { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; white-space: normal; overflow-wrap: anywhere; font-size: 0.875rem; }
