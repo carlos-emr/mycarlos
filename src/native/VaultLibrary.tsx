@@ -22,6 +22,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
+import { DocumentReader } from "./DocumentReader";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -185,6 +186,8 @@ export function VaultLibrary({
   // Where the selected documents in Shared with me go: "<person>|<folder>".
   const [sharedTarget, setSharedTarget] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  // The document open in the reader, if any.
+  const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -315,6 +318,8 @@ export function VaultLibrary({
   );
   const activeRecord =
     records.find((record) => record.id === activeRecordId) ?? null;
+  const readerRecord =
+    records.find((record) => record.id === readerRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
@@ -1699,8 +1704,26 @@ export function VaultLibrary({
                         })
                     : undefined
                 }
+                onRead={
+                  namedAsPdf(activeRecord.displayName)
+                    ? () => {
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
               />
             )}
+          {readerRecord && (
+            <DocumentReader
+              record={readerRecord}
+              viewPage={(page, width, password) =>
+                bridge.viewPage(readerRecord.id, page, width, password)
+              }
+              cancelView={() => void bridge.cancelView().catch(() => undefined)}
+              onClose={() => setReaderRecordId(null)}
+            />
+          )}
           {activeRecord && pendingAction === "delete" && (
             <ConfirmDialog
               title="Permanently delete this document?"

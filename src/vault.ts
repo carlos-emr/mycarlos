@@ -300,6 +300,17 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<MoveOutcome>;
+  /** Page `page` (from 0) of a stored document, about `width` pixels wide,
+   * drawn by the separate PDF helper. `password` is the document's own, when
+   * it is locked with one; it is not kept. */
+  viewPage(
+    recordId: string,
+    page: number,
+    width: number,
+    password?: string,
+  ): Promise<ViewedPage>;
+  /** Stops a page still being drawn: the reader closed. */
+  cancelView(): Promise<void>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -411,6 +422,21 @@ function hasErrorCode(error: unknown, code: string): boolean {
     error !== null &&
     (error as PublicError).code === code
   );
+}
+
+/** One page of a stored document, drawn by myCarlos's PDF helper: a `data:`
+ * URL of its picture, and its text for screen readers and copying. */
+export interface ViewedPage {
+  pageCount: number;
+  width: number;
+  height: number;
+  image: string;
+  text: string;
+}
+
+/** True when the native side refused with `code`. */
+export function hasVaultErrorCode(error: unknown, code: string): boolean {
+  return hasErrorCode(error, code);
 }
 
 /** True when the native side reports that the vault is locked, for example by
@@ -565,6 +591,11 @@ export function createVaultBridge(): VaultBridge {
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
+    viewPage: (recordId, page, width, password) =>
+      invoke<ViewedPage>("vault_view_page", {
+        request: { recordId, page, width, password: password ?? null },
+      }),
+    cancelView: () => invoke<void>("vault_view_cancel"),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },

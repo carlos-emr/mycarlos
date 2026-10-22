@@ -28,6 +28,8 @@ interface RecordDetailsProps {
   onMoveTo?: (profileId: string, folderId: string | null) => void;
   onDelete: () => void;
   onExport: () => void;
+  /** Opens the document in myCarlos's reader. */
+  onRead?: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
   /** The document is a PDF that may be locked with a password (#54). */
@@ -49,6 +51,7 @@ export function RecordDetails({
   onMoveTo,
   onDelete,
   onExport,
+  onRead,
   onViewPhoto,
   locked = false,
   onUnlock,
@@ -273,8 +276,18 @@ export function RecordDetails({
           >
             Permanently delete
           </button>
+          {onRead && (
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy || !record.available}
+              onClick={onRead}
+            >
+              Read
+            </button>
+          )}
           <button
-            className="button primary"
+            className={onRead ? "button" : "button primary"}
             type="button"
             disabled={busy || !record.available}
             onClick={onExport}

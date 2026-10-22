@@ -504,14 +504,47 @@ locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluat
    device yet", with no Unlock.
 
 The Rust tests unlock every fixture and compare page text and content with the originals. They also
-start the real executable as the helper, once exactly as myCarlos does on each desktop system (with
-the job object on Windows). In child processes they check two things. First, the helper's
-limits stop an ordinary open of a file, socket or pipe; these are resource limits, not a sandbox.
-Second, myCarlos is not dumpable, and as an ordinary user (as CI runs) a limited helper cannot read
-its memory. On Windows, CI checks that a low-integrity helper cannot open myCarlos to read it. A
-helper that grows past its memory limit is stopped well before its time limit: on Linux by its data
-limit, and on macOS, which refuses a data limit, by myCarlos checking its footprint. macOS CI runs
-the Unix checks.
+start the real executable as the helper exactly as myCarlos does on each desktop system: sandboxed,
+and on Windows in its AppContainer and job object. It still unlocks a document and draws a page.
+
+The helper's sandbox (#63) is tested in child processes, in CI on Linux, macOS and Windows:
+- **Escape attempts.** A child sandboxed as the helper is tries to read a file it could read before,
+  write one, connect to a port the test listens on, and start a program. On Linux and macOS it also
+  tries to bind a socket and make a pipe, and then to read and connect again after closing stdin,
+  which would free a descriptor. Every attempt must fail. A control child, started without the
+  sandbox, must succeed at each, so the test cannot pass by doing nothing.
+- **On Linux,** the same child with seccomp alone (no Landlock, no descriptor limit) must fail at
+  each too, and cannot exec another program. A child with Landlock alone must be refused the file
+  (and, from Landlock 4, the connection) when the kernel has Landlock; the test says so when it
+  does not.
+- **Memory.** myCarlos is not dumpable, and as an ordinary user (as CI runs) a sandboxed helper
+  cannot read its memory. On Windows, a helper in its AppContainer cannot open myCarlos to read it,
+  and a helper started outside one reads nothing. A sandboxed helper that grows past its memory limit
+  is stopped well before its time limit: on Linux by its data limit, on Windows by its job, and on
+  macOS, which refuses a data limit, by myCarlos reading its footprint.
+
+On Windows the tests let AppContainers read and run the test programs first (`icacls`, as in
+[WINDOWS.md](WINDOWS.md)), as the installer does for myCarlos.
+
+## Reading a document inside myCarlos
+
+Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-pdf/`.
+
+1. Open a document's details and choose **Read**. The first page shows with "Page 1 of N". The page's
+   text is under **Text on this page**.
+2. **Next page** and **Previous page** move through the document. **Larger**, **Smaller** and
+   **Fit width** change the size; a larger page scrolls inside the reader.
+3. A document stored with its own password (imported with **Import** while still locked) asks for
+   "the document password from your patient portal". A wrong one asks again. The password is used
+   for the pages that follow and is gone when the reader closes.
+4. Lock the vault, or let it lock, while a document is open: the reader closes with the library.
+5. With a screen reader, each page picture is named "Page N of M"; read the page with **Text on this
+   page**. A scanned page may have no text. That is a limitation of this first version.
+6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+
+The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
+the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
+**Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
 
 ## Appearance and Windows high contrast
 

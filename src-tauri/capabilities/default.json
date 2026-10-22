@@ -39,6 +39,8 @@
     "allow-vault-move-to-person",
     "allow-vault-is-locked-pdf",
     "allow-vault-unlock-pdf",
+    "allow-vault-view-page",
+    "allow-vault-view-cancel",
     "allow-vault-export-pick",
     "allow-vault-export-picked",
     "allow-vault-save-photo",

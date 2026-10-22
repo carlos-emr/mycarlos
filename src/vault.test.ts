@@ -52,6 +52,8 @@ describe("native idle deadline bridge", () => {
     await bridge.listReceived();
     await bridge.acceptReceived();
     await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
+    await bridge.viewPage("record-1", 0, 800);
+    await bridge.viewPage("record-1", 1, 800, "FAKE-portal-2026");
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
       ["received_accept"],
@@ -62,6 +64,28 @@ describe("native idle deadline bridge", () => {
             recordIds: ["record-1"],
             profileId: "profile-1",
             folderIds: ["folder-1"],
+          },
+        },
+      ],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 0,
+            width: 800,
+            password: null,
+          },
+        },
+      ],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 1,
+            width: 800,
+            password: "FAKE-portal-2026",
           },
         },
       ],

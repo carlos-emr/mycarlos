@@ -2,6 +2,7 @@
 mod camera_permission;
 mod idle;
 mod pdf_unlock;
+mod pdf_view;
 mod photo;
 mod received;
 mod throttle;
@@ -15,10 +16,12 @@ pub use pdf_unlock::{
     helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
 };
 
-/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at`).
+/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at` and `ask_helper_at`).
 #[doc(hidden)]
 #[cfg(desktop)]
-pub use pdf_unlock::unlock_with_helper_at as pdf_unlock_with_helper_at;
+pub use pdf_unlock::{
+    ask_helper_at as pdf_ask_helper_at, unlock_with_helper_at as pdf_unlock_with_helper_at,
+};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use idle::{IdleDeadline, Opening};
@@ -236,6 +239,11 @@ impl From<VaultError> for PublicText {
                 code: "not_pdf",
                 message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
             },
+            // The reader asks for the document's password on this code (#64).
+            VaultError::PdfLocked => Self {
+                code: "pdf_locked",
+                message: "This document is locked with a password. Enter the document password from your patient portal.",
+            },
             VaultError::PdfNotLocked => Self {
                 code: "pdf_not_locked",
                 message: "This document is not locked with a password, so it opens as it is.",
@@ -256,9 +264,25 @@ impl From<VaultError> for PublicText {
                 code: "pdf_unlock_unavailable",
                 message: "myCarlos cannot open password-protected documents on this device yet. The document is unchanged.",
             },
+            VaultError::PdfUnlockNoSandbox => Self {
+                code: "pdf_unlock_no_sandbox",
+                message: "myCarlos cannot open locked documents safely on this system, so this one was not opened. The document is unchanged.",
+            },
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message: "This locked document is larger than 100 MB, so myCarlos cannot open it. The document is unchanged.",
+            },
+            VaultError::PdfViewFailed => Self {
+                code: "pdf_view_failed",
+                message: "myCarlos could not show this document. It may be damaged, or use features myCarlos cannot show yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewUnavailable => Self {
+                code: "pdf_view_unavailable",
+                message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewNoSandbox => Self {
+                code: "pdf_view_no_sandbox",
+                message: "myCarlos cannot show documents safely on this system. Save a copy to read it in another app.",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
@@ -842,9 +866,9 @@ fn unlock_pdf(
         Outcome::Refused(Refusal::WrongPassword) => return Err(VaultError::PdfWrongPassword),
         Outcome::Refused(Refusal::TooLarge) => return Err(VaultError::PdfTooLarge),
         Outcome::Unavailable => return Err(VaultError::PdfUnlockUnavailable),
-        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported) | Outcome::Failed => {
-            return Err(VaultError::PdfUnlockFailed)
-        }
+        Outcome::NoSandbox => return Err(VaultError::PdfUnlockNoSandbox),
+        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported | Refusal::NoSuchPage)
+        | Outcome::Failed => return Err(VaultError::PdfUnlockFailed),
     };
     drop(locked);
     let outcome = store.import(
@@ -1263,8 +1287,12 @@ async fn vault_lock(
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
+    // A page still being drawn stops with the lock.
+    pdf_view::cancel_views();
     run_blocking(store.inner(), |store| {
         store.lock();
+        // Again once locked: a request that came in meanwhile stops too.
+        pdf_view::cancel_views();
         Ok(())
     })
     .await
@@ -1286,6 +1314,7 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
+        pdf_view::cancel_views();
         picks.clear();
     }
     locked
@@ -2338,6 +2367,130 @@ async fn received_accept(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewPageRequest {
+    record_id: Uuid,
+    page: u32,
+    width: u32,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ViewPageRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// One page of a stored document, drawn by the PDF helper, and its text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewedPage {
+    page_count: u32,
+    width: u32,
+    height: u32,
+    /// A `data:` URL of the PNG picture: the page's CSP allows only those for pictures.
+    image: String,
+    text: String,
+}
+
+impl ViewedPage {
+    fn from_rendered(
+        shown: pdf_view::Page,
+        ticket: &pdf_view::ViewTicket,
+    ) -> Result<Self, VaultError> {
+        use base64::Engine;
+        let page = Self {
+            page_count: shown.page_count,
+            width: shown.width,
+            height: shown.height,
+            image: format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(&shown.png)
+            ),
+            text: shown.text,
+        };
+        // Encoding a large page takes time too. A lock or close during it discards the result.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(page)
+    }
+}
+
+/// Shows one page of a stored document. The record is decrypted into memory only and handed to
+/// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
+#[tauri::command]
+async fn vault_view_page(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: ViewPageRequest,
+) -> CommandResult<ViewedPage> {
+    use pdf_unlock::Refusal;
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let (record_id, page, width) = (request.record_id, request.page, request.width);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    // Taken now: a newer page request, a lock or the reader closing stops this one.
+    let ticket = pdf_view::ViewTicket::new();
+    let result = run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        // Already replaced by a newer request: nothing to decrypt.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        // Sized up front, so the document is never copied by a growing buffer.
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.export(record_id, &mut *document)?;
+        match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
+            pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            pdf_view::Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            pdf_view::Outcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            pdf_view::Outcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            pdf_view::Outcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
+            pdf_view::Outcome::Cancelled => Err(VaultError::Cancelled),
+            pdf_view::Outcome::Refused(_) | pdf_view::Outcome::Failed => {
+                Err(VaultError::PdfViewFailed)
+            }
+        }
+    })
+    .await;
+    // A lock can also happen after the blocking task finishes, before this command resumes.
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
+}
+
+/// Stops any page being drawn: the reader closed.
+#[tauri::command]
+fn vault_view_cancel() {
+    pdf_view::cancel_views();
+}
+
 /// Moves files from Shared with me to a person, into the folders chosen (#61). A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
@@ -2799,6 +2952,8 @@ pub fn run() {
             received_list,
             received_accept,
             vault_move_to_person,
+            vault_view_page,
+            vault_view_cancel,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
@@ -2824,6 +2979,23 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn does_not_return_a_page_for_a_cancelled_view_ticket() {
+        let ticket = pdf_view::ViewTicket::new();
+        pdf_view::cancel_views();
+        let shown = pdf_view::Page {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            png: vec![],
+            text: "FAKE page text".into(),
+        };
+        assert!(matches!(
+            ViewedPage::from_rendered(shown, &ticket),
+            Err(VaultError::Cancelled)
+        ));
+    }
     const APP_SCHEME: Origin = ("tauri", "localhost");
     const HOST_NAME: Origin = ("http", "tauri.localhost");
     const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
@@ -4004,6 +4176,7 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
             let _ = serde_json::from_slice::<MoveToPersonRequest>(&payload);
+            let _ = serde_json::from_slice::<ViewPageRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
             let _ = serde_json::from_slice::<PhotoRequest>(&payload);
             let _ = serde_json::from_slice::<UnlockPdfRequest>(&payload);
@@ -4607,6 +4780,8 @@ mod locked_pdf_command_tests {
             (Outcome::Refused(Refusal::Unsupported), "pdf_unlock_failed"),
             (Outcome::Failed, "pdf_unlock_failed"),
             (Outcome::Unavailable, "pdf_unlock_unavailable"),
+            // Where the helper's sandbox cannot be set up (#63).
+            (Outcome::NoSandbox, "pdf_unlock_no_sandbox"),
         ] {
             let error = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, |_, _| outcome).unwrap_err();
             assert_eq!(PublicError::from(error).code, expected);
