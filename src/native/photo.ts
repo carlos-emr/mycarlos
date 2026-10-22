@@ -24,6 +24,10 @@ export function photoName(now: Date): string {
   return `Photo, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}, ${hours % 12 || 12}.${minutes} ${hours < 12 ? "AM" : "PM"}.jpg`;
 }
 
+/** The JPEG suffix of a photo name, with its stored case, after a nonempty name. */
+export const photoExtension = (name: string) =>
+  /^[\s\S]+(\.jpe?g)$/i.exec(name)?.[1] ?? "";
+
 /** The longest side a photo is saved at; a larger camera frame is scaled
  * down. The vault refuses more than 8192 pixels a side (photo.rs). */
 export const MAX_PHOTO_SIDE_PX = 4096;
@@ -117,6 +121,21 @@ export function photoSize(
  * it is called, as the vault decides by the file's first bytes. */
 export const namedAsPdf = (name: string) => /\.pdf$/i.test(name.trim());
 
+/** Where the camera dialog is offered: the computers (#83) and, since D97,
+ * the phones. */
+export const CAMERA_PLATFORMS: ReadonlySet<string> = new Set([
+  "windows",
+  "macos",
+  "linux",
+  "android",
+  "ios",
+]);
+
+/** Phones: their own words for where the camera is allowed, and the system's
+ * permission question can hide the app while it is asked. */
+export const isPhone = (platform: string) =>
+  platform === "android" || platform === "ios";
+
 /** Why the camera could not be used. */
 export type CameraFailure = "denied" | "missing" | "busy" | "stopped" | "other";
 
@@ -132,8 +151,8 @@ export function cameraFailure(error: unknown): CameraFailure {
   return "other";
 }
 
-/** What to tell the patient, with where to look on their computer when the
- * camera was refused. */
+/** What to tell the patient, with where to look on their computer or phone
+ * when the camera was refused. */
 export function cameraFailureMessage(
   failure: CameraFailure,
   platform: string,
@@ -145,14 +164,23 @@ export function cameraFailureMessage(
           ? "In Windows Settings, open Privacy & security, then Camera, and turn on camera access for desktop apps."
           : platform === "macos"
             ? "In System Settings, open Privacy & Security, then Camera, and turn on myCarlos."
-            : "Check your computer's camera privacy settings and let myCarlos use the camera."
+            : platform === "android"
+              ? "Open your phone's Settings, then Apps, then myCarlos, then Permissions, and allow Camera."
+              : platform === "ios"
+                ? "Open your phone's Settings, then myCarlos, and turn on Camera."
+                : "Check your computer's camera privacy settings and let myCarlos use the camera."
       } Then choose Try again.`;
     case "missing":
-      return "No camera was found. Connect a camera, then choose Try again.";
+      // A phone's camera is built in: nothing to connect.
+      return isPhone(platform)
+        ? "This phone's camera could not be found. Choose Try again."
+        : "No camera was found. Connect a camera, then choose Try again.";
     case "busy":
       return "The camera is in use by another app. Close it, then choose Try again.";
     case "stopped":
-      return "The camera stopped. Check that it is connected, then choose Try again.";
+      return isPhone(platform)
+        ? "The camera stopped. Choose Try again."
+        : "The camera stopped. Check that it is connected, then choose Try again.";
     case "other":
       return "The camera could not be started. Choose Try again.";
   }

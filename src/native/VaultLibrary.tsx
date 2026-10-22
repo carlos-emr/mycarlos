@@ -96,6 +96,7 @@ export function VaultLibrary({
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
+  cameraAsking,
   sharedNew = 0,
   onSharedSeen,
 }: {
@@ -135,9 +136,12 @@ export function VaultLibrary({
   /** A dialog of the app's own is over the library (the warning before the
    * automatic lock, #68): the library and any dialog in it are inert. */
   covered?: boolean;
-  /** The desktop platform the camera dialog runs on, or null where photos
-   * cannot be taken yet (phones and tablets). */
+  /** The platform the camera dialog runs on (a computer, or since D97 a
+   * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** On a phone: holds the lock on a hidden app while the system asks
+   * whether myCarlos may use the camera (see CameraDialog). */
+  cameraAsking?: <T>(question: Promise<T>) => Promise<T>;
   /** Files added to Shared with me since the vault was unlocked, until the
    * patient opens it (#61). */
   sharedNew?: number;
@@ -176,6 +180,8 @@ export function VaultLibrary({
   // Where the selected documents in Shared with me go: "<person>|<folder>".
   const [sharedTarget, setSharedTarget] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  const activeRecordIdRef = useRef(activeRecordId);
+  activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
@@ -271,8 +277,7 @@ export function VaultLibrary({
       ),
     [snapshot.records, hiddenLocationProfileId],
   );
-  // Where a document in Shared with me can go: each person's records and
-  // folders.
+  // Where a document can go: each person's records and folders.
   const moveTargets = useMemo(
     () =>
       people.map((person) => ({
@@ -697,15 +702,14 @@ export function VaultLibrary({
     folderId: string | null,
     toProfileId = profileId,
   ) => {
-    if (inShared && item.kind === "records") {
+    if (item.kind === "records" && (inShared || toProfileId !== profileId)) {
       moveToPerson(item.ids, toProfileId, folderId);
       return;
     }
-    // A person's documents and folders stay theirs; only Shared with me's
-    // files go to a person.
+    // Folders stay with their person; documents can move between people.
     if (toProfileId !== profileId) {
       setNotice(
-        "Documents and folders stay with their person. Only files in Shared with me can be moved to a person.",
+        "Folders stay with their person. Move individual documents to another person instead.",
       );
       return;
     }
@@ -884,8 +888,8 @@ export function VaultLibrary({
     }, ["box.profileName"]);
     return created;
   };
-  /** Moves documents from Shared with me to a person, into one of their
-   * folders or none (#61). One the person already has stays where it is. */
+  /** Moves documents to another person, into one of their folders or none.
+   * One the person already has stays where it is. */
   const moveToPerson = (
     ids: string[],
     toProfileId: string,
@@ -908,6 +912,9 @@ export function VaultLibrary({
           ? `${profileName(toProfileId)}'s records`
           : "My records";
       const where = folder ? `${theirs}, folder ${folder.name}` : theirs;
+      const source = inShared
+        ? "Shared with me"
+        : `${profileName(profileId)}'s records`;
       if (outcome.moved.includes(activeRecordId ?? "")) setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !outcome.moved.includes(id)),
@@ -921,7 +928,7 @@ export function VaultLibrary({
             : "",
         ...outcome.alreadyThere.map(
           (name) =>
-            `${name} was already in ${theirs}, so it stayed in Shared with me.`,
+            `${name} was already in ${theirs}, so it stayed in ${source}.`,
         ),
       ];
       setNotice(said.filter(Boolean).join(" "));
@@ -1715,6 +1722,7 @@ export function VaultLibrary({
           {cameraOpen && cameraPlatform && (
             <CameraDialog
               platform={cameraPlatform}
+              whileAsking={cameraAsking}
               notice={notice}
               saving={busy}
               onUse={savePhoto}
@@ -1745,9 +1753,13 @@ export function VaultLibrary({
               <RecordDetails
                 record={activeRecord}
                 folders={folders}
-                moveTargets={inShared ? moveTargets : undefined}
+                moveTargets={
+                  inShared || people.length > 1 ? moveTargets : undefined
+                }
                 onMoveTo={(to, folderId) =>
-                  moveToPerson([activeRecord.id], to, folderId)
+                  to === activeRecord.profileId
+                    ? void moveRecord(activeRecord.id, folderId)
+                    : moveToPerson([activeRecord.id], to, folderId)
                 }
                 busy={busy}
                 readOnly={readOnly}
@@ -1755,10 +1767,19 @@ export function VaultLibrary({
                 notice={notice}
                 onClose={() => setActiveRecordId(null)}
                 onRename={() =>
-                  setRenameTarget({
-                    kind: "document",
-                    id: activeRecord.id,
-                    name: activeRecord.displayName,
+                  void run(async () => {
+                    const photo =
+                      !namedAsPdf(activeRecord.displayName) &&
+                      (await bridge
+                        .isPhoto(activeRecord.id)
+                        .catch(() => false));
+                    if (activeRecordIdRef.current !== activeRecord.id) return;
+                    setRenameTarget({
+                      kind: "document",
+                      id: activeRecord.id,
+                      name: activeRecord.displayName,
+                      photo,
+                    });
                   })
                 }
                 onMove={(folderId) => moveRecord(activeRecord.id, folderId)}

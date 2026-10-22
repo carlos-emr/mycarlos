@@ -31,6 +31,21 @@ fn extraction_rules_exclude_everything(rules: &str) -> bool {
         })
 }
 
+/// The camera dialog (D97) needs Android's camera permission declared, or
+/// Android refuses it without asking. The camera is not required, nor the
+/// autofocus the permission implies, so devices without them can install the
+/// app, and nothing asks for the microphone.
+fn declares_camera_only(manifest: &str) -> bool {
+    manifest.contains("<uses-permission android:name=\"android.permission.CAMERA\" />")
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
+        )
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />",
+        )
+        && !manifest.contains("android.permission.RECORD_AUDIO")
+}
+
 fn main() {
     if std::env::var("TARGET").is_ok_and(|target| target.contains("android")) {
         let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -53,6 +68,10 @@ fn main() {
                 && std::fs::read_to_string(&rules)
                     .is_ok_and(|rules| extraction_rules_exclude_everything(&rules)),
             "Android backup exclusions must be applied with `npm run android:secure` before every Android build"
+        );
+        assert!(
+            declares_camera_only(&contents),
+            "The camera must be declared (not required, and no microphone) with `npm run android:secure` before every Android build"
         );
     }
     // Without an app manifest Tauri allows every app command from any window and

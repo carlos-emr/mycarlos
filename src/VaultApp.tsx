@@ -25,6 +25,7 @@ import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import { CAMERA_PLATFORMS, isPhone } from "./native/photo";
 import {
   rememberUnfinishedRecoveryKey,
   takeUnfinishedRecoveryKey,
@@ -395,24 +396,26 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Pickers this app opened and has not yet heard back from. Only the pick
   // phase counts: once the paths are chosen, the transfer that follows holds
   // an owed automatic lock until it finishes, with content hidden.
+  // A phone's camera permission question counts too (D97): Android pauses the
+  // page under it, as under a picker.
   const pickersOpenRef = useRef(0);
   const pickerOpenedAtRef = useRef(0);
+  const track = useCallback(async <T,>(picker: Promise<T>): Promise<T> => {
+    if (pickersOpenRef.current === 0) pickerOpenedAtRef.current = Date.now();
+    pickersOpenRef.current += 1;
+    try {
+      return await picker;
+    } finally {
+      pickersOpenRef.current -= 1;
+      // Restart the inactivity deadline: the recheck only sees a picker that
+      // is open when it runs, and it cannot run while the page is suspended
+      // under Android's picker activity.
+      document.dispatchEvent(new Event(PICKER_SETTLED_EVENT));
+      // Let the visibility handler decide again now that the picker is gone.
+      document.dispatchEvent(new Event("visibilitychange"));
+    }
+  }, []);
   const trackedBridge = useMemo<VaultBridge>(() => {
-    const track = async <T,>(picker: Promise<T>): Promise<T> => {
-      if (pickersOpenRef.current === 0) pickerOpenedAtRef.current = Date.now();
-      pickersOpenRef.current += 1;
-      try {
-        return await picker;
-      } finally {
-        pickersOpenRef.current -= 1;
-        // Restart the inactivity deadline: the recheck only sees a picker that
-        // is open when it runs, and it cannot run while the page is suspended
-        // under Android's picker activity.
-        document.dispatchEvent(new Event(PICKER_SETTLED_EVENT));
-        // Let the visibility handler decide again now that the picker is gone.
-        document.dispatchEvent(new Event("visibilitychange"));
-      }
-    };
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       // `run` locks once the operation has reported the transfer's outcome.
       transferHold.transferStarted();
@@ -450,7 +453,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       exportToPicked: (pickId, recordId) =>
         transfer(() => bridge.exportToPicked(pickId, recordId)),
     };
-  }, [bridge, transferHold]);
+  }, [bridge, track, transferHold]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -988,7 +991,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         computer={DESKTOP_PLATFORMS.has(platform)}
         sizesIn1024s={platform === "windows"}
-        cameraPlatform={DESKTOP_PLATFORMS.has(platform) ? platform : null}
+        cameraPlatform={CAMERA_PLATFORMS.has(platform) ? platform : null}
+        cameraAsking={isPhone(platform) ? track : undefined}
         covered={lockWarning !== null}
         sharedNew={sharedNew}
         onSharedSeen={clearSharedNew}

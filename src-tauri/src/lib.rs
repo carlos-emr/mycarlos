@@ -781,6 +781,37 @@ fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     exported.map(|()| false)
 }
 
+/// A photo's name must still describe its JPEG bytes. Ordinary PDF renames
+/// retain the vault's existing metadata-only checks.
+fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<(), VaultError> {
+    let old_name = store
+        .snapshot()?
+        .records
+        .into_iter()
+        .find(|record| record.id == record_id)
+        .ok_or(VaultError::NotFound)?
+        .display_name;
+    // A failed probe establishes no format. Keep the existing metadata-only
+    // rename policy for an unreadable/unknown file, rather than requiring a
+    // readable object just to edit its name.
+    if !old_name.trim().to_ascii_lowercase().ends_with(".pdf")
+        && is_photo(store, record_id).unwrap_or(false)
+    {
+        let valid_jpeg_name = name
+            .trim()
+            .rsplit_once('.')
+            .is_some_and(|(stem, extension)| {
+                !stem.trim().is_empty()
+                    && (extension.eq_ignore_ascii_case("jpg")
+                        || extension.eq_ignore_ascii_case("jpeg"))
+            });
+        if !valid_jpeg_name {
+            return Err(VaultError::Invalid);
+        }
+    }
+    store.rename_record(record_id, name)
+}
+
 /// The photo a record holds, as a `data:image/jpeg` URL for the photo view
 /// (the CSP allows `data:` images). The file's own bytes decide: it must start
 /// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
@@ -2111,7 +2142,7 @@ async fn vault_rename_record(
     request: RenameRecordRequest,
 ) -> CommandResult<()> {
     run_blocking(store.inner(), move |store| {
-        store.rename_record(request.record_id, &request.name)
+        rename_document(store, request.record_id, &request.name)
     })
     .await
 }
@@ -2499,7 +2530,7 @@ fn vault_view_cancel() {
     pdf_view::cancel_views();
 }
 
-/// Moves files from Shared with me to a person, into the folders chosen (#61). A file the
+/// Moves files to another person, into the folders chosen. A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
 async fn vault_move_to_person(
@@ -4495,6 +4526,114 @@ mod photo_command_tests {
             save_photo(&store, target(), Zeroizing::new(CANVAS.to_vec())),
             Err(VaultError::Locked)
         ));
+    }
+
+    #[test]
+    fn renaming_a_photo_keeps_its_jpeg_type_and_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let outcome = save_photo(
+            &store,
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: Vec::new(),
+                name: "Photo.jpg".to_owned(),
+            },
+            Zeroizing::new(CANVAS.to_vec()),
+        )
+        .unwrap();
+        let id = outcome.imported[0];
+        let before = exported(&store, id);
+        for name in [
+            "Holiday.png",
+            "Holiday.pdf",
+            "Holiday",
+            ".jpg",
+            "../Holiday.jpg",
+            "Holiday\\scan.jpg",
+        ] {
+            assert!(
+                matches!(rename_document(&store, id, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+            assert_eq!(store.export_name(id).unwrap(), "Photo.jpg");
+        }
+        for name in ["Holiday.jpg", "Holiday.JPG", "Holiday.jpeg", "Holiday.JPEG"] {
+            rename_document(&store, id, name).unwrap();
+            assert_eq!(store.export_name(id).unwrap(), name);
+            assert_eq!(exported(&store, id), before);
+        }
+    }
+
+    #[test]
+    fn photo_rename_checks_bytes_without_changing_other_document_rules() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let ids = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![
+                    ImportSource {
+                        display_name: "Legacy photo.png".to_owned(),
+                        reader: Box::new(Cursor::new(CANVAS.to_vec())),
+                    },
+                    ImportSource {
+                        display_name: "Other.jpg".to_owned(),
+                        reader: Box::new(Cursor::new(b"ordinary non-JPEG file")),
+                    },
+                    ImportSource {
+                        display_name: "Letter.pdf".to_owned(),
+                        reader: Box::new(Cursor::new(b"%PDF-1.7 FAKE")),
+                    },
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
+        assert!(matches!(
+            rename_document(&store, ids[0], "New.png"),
+            Err(VaultError::Invalid)
+        ));
+        rename_document(&store, ids[0], "Repaired.jpg").unwrap();
+        assert_eq!(exported(&store, ids[0]), CANVAS);
+        rename_document(&store, ids[1], "Other.png").unwrap();
+        rename_document(&store, ids[2], "Renamed.pdf").unwrap();
+        assert!(matches!(
+            rename_document(&store, ids[2], "Renamed.png"),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn an_unknown_unreadable_file_keeps_its_metadata_only_rename_policy() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let id = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: "Other.txt".to_owned(),
+                    reader: Box::new(Cursor::new(b"ordinary non-JPEG file")),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        // Only the document stops authenticating; its history remains intact.
+        // Existing metadata-only renames do not decrypt its contents.
+        let path = vault::record_object_path_for_test(&store, id);
+        let mut bytes = std::fs::read(&path).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        std::fs::write(path, bytes).unwrap();
+        assert!(is_photo(&store, id).is_err());
+        store.rename_record(id, "Other.before").unwrap();
+        rename_document(&store, id, "Other.png").unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().records[0].display_name,
+            "Other.png"
+        );
     }
 
     #[test]
