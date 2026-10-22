@@ -486,7 +486,7 @@ export function SecuritySettings({
             <p>{t("security.copies.body")}</p>
           </div>
         </section>
-        <section className="setting-row native-setting-form">
+        <section className="setting-row native-setting-form native-profile-settings">
           <div>
             <h2>{t("security.profiles.title")}</h2>
             <p>{t("security.profiles.body")}</p>

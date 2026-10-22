@@ -271,6 +271,8 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return;
         // A PDF's details ask whether it is locked with a password (#54).
         if (command === "vault_is_locked_pdf") return false;
+        // These FAKE PDFs carry no patient identity hint.
+        if (command === "vault_shared_identity") return null;
         if (command === "received_list")
           return {
             files: structuredClone(waiting),

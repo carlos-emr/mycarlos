@@ -161,6 +161,48 @@ describe("shared PDF suggestions use explicit Move", () => {
       ).getByRole("group", { name: /Suggested person/ }),
     ).toBeInTheDocument();
   });
+  it("keeps profile instructions, creation, and saved people readable at wide and narrow widths", () => {
+    renderLibrary({ updateProfileDetails: vi.fn() });
+    fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
+    const form = screen
+      .getByRole("textbox", { name: "New profile name" })
+      .closest("form")!;
+    const section = form.parentElement!;
+    const intro = section.firstElementChild!;
+    const list = section.querySelector(".native-person-details-list")!;
+    const overlaps = (a: DOMRect, b: DOMRect) =>
+      Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
+      Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+    try {
+      for (const fontSize of ["16px", "24px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        for (const width of [760, 320]) {
+          section.style.width = `${width}px`;
+          section.style.maxWidth = "100%";
+          const bounds = section.getBoundingClientRect();
+          const boxes = [intro, form, list].map((element) =>
+            element.getBoundingClientRect(),
+          );
+          expect(boxes[0].width).toBeGreaterThanOrEqual(
+            Math.min(220, bounds.width - 4),
+          );
+          for (const box of boxes) {
+            expect(box.left).toBeGreaterThanOrEqual(bounds.left - 1);
+            expect(box.right).toBeLessThanOrEqual(bounds.right + 1);
+          }
+          expect(overlaps(boxes[0], boxes[1])).toBe(false);
+          expect(overlaps(boxes[0], boxes[2])).toBe(false);
+          expect(overlaps(boxes[1], boxes[2])).toBe(false);
+          expect(section.scrollWidth).toBeLessThanOrEqual(
+            section.clientWidth + 1,
+          );
+        }
+      }
+    } finally {
+      document.documentElement.style.fontSize = "";
+    }
+  });
+
   it("creates a profile with its optional details in one native call", async () => {
     const createProfile = vi.fn().mockResolvedValue("p9");
     const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
