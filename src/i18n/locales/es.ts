@@ -70,13 +70,13 @@ export const es: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "¿Olvidó su frase de contraseña?",
   "unlock.noKey.heading": "¿No tiene una clave de recuperación?",
   "unlock.noKey.body":
-    "Sin ella, la única forma de volver a entrar es borrar myCarlos y empezar de nuevo.",
+    "Sin ella, la única forma de volver a entrar es apartar esta bóveda y empezar de nuevo. La bóveda apartada se queda en este dispositivo, cifrada, pero nadie puede abrirla sin su frase de contraseña.",
   "restore.summary": "Restaurar desde una copia de seguridad",
 
   "reset.plainly":
-    "Al borrar se eliminan de myCarlos en este equipo todos sus documentos, carpetas y perfiles de pacientes, y no se puede deshacer. Para confirmarlo, escriba exactamente las palabras de abajo.",
+    "Al apartar la bóveda se quitan de myCarlos en este equipo todos sus documentos, carpetas y perfiles de pacientes. Se quedan en este equipo, cifrados, pero nadie puede abrirlos sin la frase de contraseña. Para confirmarlo, escriba exactamente las palabras de abajo.",
   "reset.type": "Escriba {phrase}",
-  "reset.submit": "Borrar bóveda",
+  "reset.submit": "Apartar la bóveda",
 
   "recover.intro":
     "Use su clave de recuperación para abrir la bóveda y elegir una nueva frase de contraseña.",
@@ -119,17 +119,17 @@ export const es: Record<MessageKey, Message> = {
   "restore.consequence.nothing":
     "Al restaurar, esta bóveda se coloca en este dispositivo.",
   "restore.consequence.same":
-    "La bóveda de este dispositivo contiene los mismos documentos. Al restaurar, se reemplaza por esta copia de seguridad.",
+    "La bóveda de este dispositivo contiene los mismos documentos. Al restaurar, se aparta y se coloca esta copia de seguridad en su lugar. La bóveda apartada se queda en este dispositivo, cifrada, pero myCarlos aún no puede volver a abrirla por usted.",
   "restore.consequence.differs":
-    "Es posible que la bóveda de este dispositivo no sea igual a esta copia de seguridad: puede haber cambiado desde entonces, o una parte no se pudo leer. Al restaurar, la bóveda se reemplaza por la copia de seguridad: se pierde todo lo que esté en la bóveda y no en la copia, y la frase de contraseña y la clave de recuperación pasan a ser las de la copia de seguridad.",
+    "Es posible que la bóveda de este dispositivo no sea igual a esta copia de seguridad: puede haber cambiado desde entonces, o una parte no se pudo leer. Al restaurar, la bóveda se aparta y se coloca la copia de seguridad en su lugar: lo que no esté en la copia ya no estará en la bóveda que usa, y la frase de contraseña y la clave de recuperación pasan a ser las de la copia de seguridad. La bóveda apartada se queda en este dispositivo, cifrada, pero myCarlos aún no puede volver a abrirla por usted.",
   "restore.consequence.otherVault":
-    "Este dispositivo tiene una bóveda distinta. Al restaurar, se borra de forma permanente y se coloca la copia de seguridad en su lugar.",
+    "Este dispositivo tiene una bóveda distinta. Al restaurar, se aparta y se coloca la copia de seguridad en su lugar. La bóveda apartada se queda en este dispositivo, cifrada, pero myCarlos aún no puede volver a abrirla por usted.",
   "restore.consequence.unreadable":
-    "No se pudo leer la bóveda de este dispositivo, por lo que myCarlos no puede saber si es aquella de la que procede esta copia de seguridad. Al restaurar, se borra de forma permanente y se coloca la copia de seguridad en su lugar.",
+    "No se pudo leer la bóveda de este dispositivo, por lo que myCarlos no puede saber si es aquella de la que procede esta copia de seguridad. Al restaurar, se aparta y se coloca la copia de seguridad en su lugar. La bóveda apartada se queda en este dispositivo, cifrada, pero myCarlos aún no puede volver a abrirla por usted.",
   "restore.agree.erase":
-    "Borrar la bóveda de este dispositivo y restaurar la copia de seguridad",
+    "Apartar la bóveda de este dispositivo y restaurar la copia de seguridad",
   "restore.agree.replace":
-    "Reemplazar la bóveda de este dispositivo por esta copia de seguridad y perder lo que haya cambiado desde entonces",
+    "Apartar la bóveda de este dispositivo, con lo que haya cambiado desde entonces, y restaurar esta copia de seguridad",
   "restore.submit": "Restaurar copia de seguridad",
   "restore.restoring":
     "Restaurando la copia de seguridad. Puede tardar un rato si la bóveda es grande…",
@@ -252,9 +252,9 @@ export const es: Record<MessageKey, Message> = {
   "security.backup.save": "Guardar copia de seguridad cifrada…",
   "security.passphrase.title": "Cambiar la frase de contraseña",
   "security.passphrase.rules":
-    "Use al menos {min} caracteres y evite nombres comunes o frases previsibles. Su clave de recuperación, si tiene una, sigue funcionando; sin ella, olvidar la nueva frase de contraseña significa borrar la bóveda.",
+    "Use al menos {min} caracteres y evite nombres comunes o frases previsibles. Su clave de recuperación, si tiene una, sigue funcionando; sin ella, olvidar la nueva frase de contraseña significa dejar la bóveda aparte y empezar de nuevo.",
   "security.passphrase.copies":
-    "Cambiar la frase de contraseña impide el acceso a quien solo conoce la anterior. Si esa persona también podría tener una copia de su bóveda, como una copia de seguridad de este dispositivo o un archivo de copia de seguridad guardado, una nueva frase de contraseña no basta: la anterior sigue abriendo esa copia, y con esa copia podría abrir una más reciente que consiga después. Para dejarla fuera hace falta una bóveda nueva, y cuidado de no perder documentos por el camino. Pida ayuda antes de borrar nada.",
+    "Cambiar la frase de contraseña impide el acceso a quien solo conoce la anterior. Si esa persona también podría tener una copia de su bóveda, como una copia de seguridad de este dispositivo o un archivo de copia de seguridad guardado, una nueva frase de contraseña no basta: la anterior sigue abriendo esa copia, y con esa copia podría abrir una más reciente que consiga después. Para dejarla fuera hace falta una bóveda nueva, y cuidado de no perder documentos por el camino. Pida ayuda antes de dejar su bóveda aparte.",
   "security.passphrase.current": "Frase de contraseña actual",
   "security.passphrase.currentTooLong":
     "La frase de contraseña actual es más larga que cualquier frase de contraseña de bóveda. Revise lo que escribió.",
@@ -312,7 +312,7 @@ export const es: Record<MessageKey, Message> = {
     "Esta clave de recuperación todavía no está configurada, así que nunca abrirá la bóveda. myCarlos bloquea ahora la bóveda. Después de desbloquearla, podrá configurar una clave nueva.",
   "recoveryKey.discard.confirm": "Descartar la clave y bloquear",
   "recoveryKey.about.offered":
-    "Su bóveda está abierta. Todavía no tiene clave de recuperación. Sin ella, si olvida su frase de contraseña, la única forma de volver a entrar es borrar la bóveda.",
+    "Su bóveda está abierta. Todavía no tiene clave de recuperación. Sin ella, si olvida su frase de contraseña, la única forma de volver a entrar es dejar la bóveda aparte y empezar de nuevo.",
   "recoveryKey.about.what":
     "Una clave de recuperación abre su bóveda si olvida su frase de contraseña. Solo usted la tendrá: nadie en su clínica ni en myCarlos puede abrir su bóveda por usted.",
   "recoveryKey.about.replacing":
@@ -399,7 +399,7 @@ export const es: Record<MessageKey, Message> = {
   "notice.createdThenLocked":
     "Su bóveda se creó y luego se bloqueó antes de poder crear su clave de recuperación. Desbloquéela para configurar una.",
   "notice.created":
-    "Bóveda cifrada creada. Configure una clave de recuperación para que olvidar la frase de contraseña no obligue a borrarla.",
+    "Bóveda cifrada creada. Configure una clave de recuperación para que olvidar su frase de contraseña no le impida acceder a sus documentos para siempre.",
   "notice.unlockedRecovery":
     "Bóveda desbloqueada en modo de recuperación de solo lectura. Consulte el aviso en la biblioteca para saber qué hacer.",
   "notice.unlocked": "Bóveda desbloqueada.",
@@ -407,7 +407,7 @@ export const es: Record<MessageKey, Message> = {
     "Bóveda abierta con su clave de recuperación. A partir de ahora, use su nueva frase de contraseña.",
   "notice.recoveredReadOnly":
     "Bóveda abierta en solo lectura con su clave de recuperación; su frase de contraseña no cambió. Consulte el aviso en la biblioteca para saber qué hacer.",
-  "notice.eraseCancelled": "Borrado de la bóveda cancelado. No cambió nada.",
+  "notice.eraseCancelled": "No cambió nada: la bóveda no se dejó aparte.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "el nombre",

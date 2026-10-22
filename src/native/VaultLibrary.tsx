@@ -812,21 +812,6 @@ export function VaultLibrary({
     }, ["box.profileName"]);
     return created;
   };
-  const resetVault = (confirmation: string) =>
-    run(async () => {
-      let erased: boolean;
-      try {
-        erased = await bridge.reset(confirmation);
-      } catch (error) {
-        // A reset closes the native session before it erases anything, so a
-        // failed one leaves the vault locked. Show that instead of a library
-        // whose every action would be refused.
-        await onLock();
-        throw error;
-      }
-      if (erased) window.location.reload();
-      else setNotice("Vault erase cancelled. Nothing changed.");
-    }, ["box.typedWords"]);
   /** Moves documents from Shared with me to a person, into one of their
    * folders or none (#61). One the person already has stays where it is. */
   const moveToPerson = (
@@ -1358,8 +1343,8 @@ export function VaultLibrary({
                     <Icon name="info" />
                     <span>
                       <strong>No recovery key yet.</strong> If you forget your
-                      passphrase without one, the only way back in is to erase
-                      the vault.
+                      passphrase without one, the only way back in is to set the
+                      vault aside and start again.
                     </span>
                     <button
                       className="button"
@@ -1540,7 +1525,6 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
-                onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}

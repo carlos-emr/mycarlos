@@ -211,7 +211,9 @@ them (a backup, a snapshot), and with it the master key. See "Known limits befor
 ```text
 vault-home/               holds only what the vault manages; back up as a whole
   vault-v1.lock           stable OS lock file; never rename or delete while the app is running
-  vault-v1.reset-pending/ retired vault awaiting completion of an already-confirmed reset
+  set-aside/<UTC yyyymmddThhmmssZ>-<uuid>/  a whole vault set aside by a reset or a restore,
+                          headers and all, never removed by the app (#71)
+  vault-v1.reset-pending/ a vault an older build retired to erase; set aside at the next start
   .create-<uuid>/         a vault being created, renamed into place once complete
   .restore-<uuid>/        a backup being restored, not yet verified; removed at the next start
   vault-v1.restore-ready/ a verified restore about to replace the vault; finished at the next start
@@ -234,7 +236,8 @@ vault-home/               holds only what the vault manages; back up as a whole
 Nothing but these entries is ever written to the home, and the home is created private. That is
 what lets a readable export refuse every destination inside it without a list of protected names:
 saving a copy over the lock file, or as a regular file under the pending-reset name, would
-otherwise let a second instance open the vault or block every later unlock.
+otherwise let a second instance open the vault or block every later unlock, and no copy can land
+in `set-aside/`.
 
 An exclusive OS file lock is held throughout each unlocked session and during creation, reset,
 and startup recovery. Another app instance receives an `in_use` error before it can read mutable
@@ -242,12 +245,26 @@ state or perform cleanup. Locking or closing the owning session releases ownersh
 instance must unlock and load the current manifests. The lock file lives outside the vault so
 reset cannot replace the inode/handle being locked. It contains no secret material.
 
-Whole-vault reset renames the vault to the fixed `vault-v1.reset-pending/` sibling before removing
-key envelopes and the remaining files. Startup status, creation, unlock, and reset all finish this
-cleanup under the same OS lock before proceeding. A cleanup error is surfaced and blocks access
-and creation until retry succeeds. Symlink/reparse-point reset directories are rejected. Abrupt-exit
-tests cover the rename and key-removal boundaries; physical power-cut and filesystem durability
-validation remain release gates.
+Nothing erases a vault (#71's third part). A whole-vault reset ("Set vault aside") sets the vault
+aside: one rename, under the same OS lock, moves it whole into
+`set-aside/<UTC yyyymmddThhmmssZ>-<random uuid>/`, headers and all. It stays encrypted, and the
+passphrase or recovery key it had still opens it; the folder's name tells only when it was set
+aside. An open, writable vault first records `setAside`, with that folder's name, in its history;
+the next vault created in the same run of the app names it in its `created` entry. The app cannot
+open a vault set aside yet: the way back is to copy its folder into place by hand, with myCarlos
+closed. The app never removes anything from `set-aside/`, so storage grows with each vault set
+aside. On a computer, freeing the space means deleting a folder by hand: the confirmation dialog
+names it in full. On Android and iPhone the folder is private to the app: only clearing myCarlos's
+data in the system settings, or uninstalling it, removes a vault set aside, and that removes every
+vault on the device, the one in use too. The dialog says so, and says that someone who knows the
+old passphrase can still open the vault set aside until it is removed. This phone limit is accepted
+(decided 19 October), and Security no longer offers starting again: only the unlock screen's
+"Forgot your passphrase?" does, so no screen sets an open vault aside. A `vault-v1.reset-pending/` an older
+build left on its way to erasing a vault, whole or partly erased, is set aside too, at the next
+status, create, unlock or reset, under the same lock; while that cannot be done, access and
+creation are blocked. Symlink/reparse-point reset directories, and a `set-aside` that is not a real
+folder, are rejected. Abrupt-exit tests cover the rename; physical power-cut and filesystem
+durability validation remain release gates.
 
 The encrypted manifest contains profiles, nested folders, folder assignments, sanitized document
 names that the patient may rename, sizes, timestamps, unverified-source labels, per-record
@@ -401,8 +418,9 @@ No viewer, synchronization, analytics, or CARLOS provenance is implemented.
 
 Every removal from storage goes through one helper that names what it removes: a create or
 restore stage, an import's staging or uncommitted ciphertext, an export's stage or journal
-entry, the superseded `header.json`, what the atomic replacement primitive left, and (until #71's
-third part sets vaults aside) a vault a confirmed reset retired or a restore replaced. Direct
+entry, the superseded `header.json`, what the atomic replacement primitive left, and a history
+segment the committed manifest no longer names (below). No kind covers a vault: a reset or a
+restore sets it aside (above). Direct
 `std::fs` removal is disallowed crate-wide by `src-tauri/clippy.toml`, which CI enforces, and a
 scripted session of every document command checks that every object a record ever named is
 still there, byte for byte.
@@ -415,14 +433,119 @@ plaintext with spaces, which JSON ignores, to a size class: the next power of tw
 then tells only roughly how much the vault holds. Format 1 manifests are still read, unpadded; a
 format 1 manifest with a hidden record is refused.
 
-A writable unlock of a format 1 vault upgrades it at once, in a commit of its own that changes
-nothing but the format and the generation: both slots hold format 2 before anything only format 2
-can hold is written. A crash between the two upgrade writes leaves one format 2 slot holding the
-same state as the format 1 slot, so an older build that opens the format 1 slot loses nothing;
-once both slots are format 2, an older build refuses both (it reports the vault as damaged), and
-never reaches its orphan cleanup. An upgrade that cannot write leaves the session read-only, as a
-failed repair does; the next unlock tries again. A vault opened in lost-objects recovery mode is
-upgraded when its damaged documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
+### Manifest format 3 and the history
+
+Format 3 (#71) adds the history: `history: {count, head, segments: [{id, objectName, wrappedKey,
+firstSeq, entryCount}]}`, left out while empty. Formats 1 and 2 are still read; a format 1 or 2
+manifest with a history is refused. It is a format of its own, not an addition to format 2,
+because format 2 can be released before the history is: a build that knows only format 2 reads
+unknown fields as absent, so it would open a format 2 vault with a history, write its manifest
+back without one, and move the segments to `quarantine/` as orphans, losing the record with no
+error. It refuses format 3 instead.
+
+A writable unlock of a format 1 or 2 vault upgrades it to format 3 at once, in a commit of its own
+that changes nothing but the format and the generation: both slots hold format 3 before anything
+only format 3 can hold (a history; for format 1, a hidden document) is written. A crash between
+the two upgrade writes leaves one format 3 slot holding the same state as the older slot, with no
+history, so an older build that opens the older slot loses nothing; once both slots are format 3,
+an older build refuses both (it reports the vault as damaged), and never reaches its orphan
+cleanup. An upgrade that cannot write leaves the session read-only, as a failed repair does; the
+next unlock tries again. A vault opened in lost-objects recovery mode is upgraded when its damaged
+documents are hidden. See `MIGRATIONS.md`, "Manifest additions".
+
+**What is recorded.** One entry per event, appended in the same commit as the change it records,
+so that neither is ever committed without the other: the vault created; the history started (in a
+vault an earlier build made, at its first recorded event); each unlock, with the secret that opened
+it (`passphrase` or `recoveryKey`) and how the session before it ended; a document imported
+(`how: "picked"`, `"camera"` for a photo taken in myCarlos, or `"shared"` for a PDF received from another app), renamed (old and new name), moved (the folders before and after, by id and by
+their names then), hidden (`how: "patient"` or `"damaged"`) or shown again; a readable copy saved,
+and where; a recovery key set; a backup saved, and where; a backup restored (`how: "replaced"`
+when it set a vault aside); and the vault set aside, with the folder it went to, when it was open
+and writable then. A vault created after this run of the app set one aside names that folder in
+its first entry's `place`. An entry about a
+document names it as it was called at that moment. Read-only sessions record nothing. Changing
+the passphrase, profiles and folders themselves are not recorded.
+
+**Locks are recorded at the next unlock.** Nothing is written when the vault locks, so that a lock
+never waits on a write or fails over one. The app remembers, in memory only, when and how the
+session ended (`lockedAt:<ms>:app`, or `:nativeDeadline` when the native idle backstop locked it),
+and the next unlock in the same run of the app records it as `previousSession`. After the app
+restarts it records `notRecorded`. A session that could not record its own unlock (a read-only
+one, or one whose unlock entry could not be written), or that left read-only after a failed write,
+leaves no note of its own: the note waiting from before it is kept and `;notRecorded` added, so
+the next recorded unlock says both how the last recorded session ended and that one went
+unrecorded after it. The vault can therefore show a session's start, but its end only as well as
+this run of the app knew it.
+
+**Entries and the chain.** An entry's canonical form is the UTF-8 JSON of these fields, in this
+order, with no whitespace, absent fields left out, integers as integers, and strings escaped as
+JSON requires and no more (non-ASCII characters are written as themselves; there is no Unicode
+normalization, so the bytes are hashed as written):
+
+`seq, atMs, app, event, recordId, profileId, folderId, name, oldName, from, fromTotal, to, toTotal,
+how, place, placeSha256, previousSession, prev`
+
+`event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
+`hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
+`passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
+`{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
+`folderId`) and its `name` afterwards. Shared intake also gives the reserved source
+`profileId`; its move to a person records `moved` with `how: "shared"` and the destination
+`profileId`, even when both locations have no folders. The move and its history entry commit
+together. For folder events, `folderCreated` gives in `to` the folder it was made in,
+`folderRenamed` the `oldName`, and `folderMoved` the folder it left in `from` and the one it is in
+now in `to` (none for "My records"). `passphraseChanged` says in `how` what replaced it: the
+passphrase in Security (`passphrase`), or the recovery key at the unlock screen (`recoveryKey`,
+right after that unlock's entry, in the same commit). No passphrase or key is ever recorded. A move names at most 32 folders on each side and then gives `fromTotal` or
+`toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
+the whole, so that no entry can outgrow a segment.
+
+- `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
+- `prev` is the previous entry's hash. The first entry's is the genesis value,
+  `SHA-256("mycarlos/history/genesis/v1" ‖ the vault id's 16 bytes)`.
+- `seq` counts from 0. The manifest's authenticated `count` and `head` (the last entry's hash) pin
+  the end, so a changed, missing, reordered or cut-off entry shows, at the first `seq` that does
+  not follow.
+
+Test vectors, which a test in `src-tauri/src/vault.rs` checks against this file. For the vault id
+`00112233-4455-6677-8899-aabbccddeeff`:
+
+- genesis: `c5ecb0cf1c9d1c151c148ab3ab2f3b7deca1fc15094948bb486eced0c990fa60`
+- entry 0: `{"seq":0,"atMs":1767225600000,"app":"0.1.0","event":"created","prev":"c5ecb0cf1c9d1c151c148ab3ab2f3b7deca1fc15094948bb486eced0c990fa60"}`
+- its hash: `1577ce4e606eab3176352f79ffcfaf9b5597ecfdd6bc02601430fd3211573f7c`
+- entry 1: `{"seq":1,"atMs":1767225660000,"app":"0.1.0","event":"renamed","recordId":"10000000-0000-4000-8000-000000000001","name":"Écho \"cardiaque\".pdf","oldName":"scan.pdf","prev":"1577ce4e606eab3176352f79ffcfaf9b5597ecfdd6bc02601430fd3211573f7c"}`
+- its hash, the head: `0178d36064227e0af099fb7c2d51cf80da017fca9e41a96cd59ccb5a18348c78`
+
+**Segments.** Entries are kept in segments of exactly 64 KiB of plaintext: entries one per line,
+then spaces. A segment is closed when the next entry would not fit. Each is an object in
+`objects/`, named like a document's and encrypted in the same chunked envelope under a random key
+of its own, wrapped by the object-wrap key with the associated data
+`"mycarlos-history-segment-v1:" ‖ segment id`; the segment id stands where a document's id does in
+each chunk's associated data. Every segment's file is the same size. Filler segments, holding no
+entry (`entryCount` 0, `firstSeq` 0) and listed after the others, make the number of segments a
+power of two, so that the count of segment-sized files shows only about log₂ of the history's
+length.
+
+**Appending.** The last segment is rewritten copy-on-write with the new entries after its own,
+with new segments when it is full and new fillers when the count passes a power of two: the new
+objects are written and made durable, the manifest naming them is committed, and the superseded
+segment is unlinked between the two manifest writes. A failure before the commit removes what it
+wrote; a crash there leaves objects that orphan cleanup moves to `quarantine/`. A last segment that
+is gone or does not authenticate is kept as it is, and the new entries start a segment of their
+own: the chain goes on from the head the manifest pins, and a check shows the gap. Segments are
+not required objects: a missing one never stops the vault opening.
+
+**Backups and restore.** A backup carries every segment that authenticates; one that is gone or
+damaged is left out. A restore takes segments as optional, authenticates those present, and, before
+the restored vault is put in place, appends `backupRestored` to its history (a backup made by an
+earlier build becomes format 3 there and starts its history). Whether the vault on this device
+"differs from the backup" leaves the history and the format out of the comparison, since every
+unlock, and every backup saved, adds to the history.
+
+**Never shown, and kept on the device.** No command returns the history to the app's screens, and
+nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
+recorded automatically and tamper-evident on the device only, with no auditor export. A backup
+carries it only as part of the encrypted vault.
 
 ## Backup and restore behavior
 
@@ -438,7 +561,8 @@ move a vault with the portable encrypted backup below, and physical OEM transfer
 
 A forgotten passphrase is replaced with the recovery key, if the patient set one up. Without it, the
 only fallback is a typed-confirmation whole-vault reset followed by a trusted native confirmation
-dialog, which permanently removes all local profiles and records. OS cloud backup is to be excluded
+dialog, which sets the vault aside and starts an empty one; without its passphrase, the vault set
+aside cannot be opened. OS cloud backup is to be excluded
 where the platform permits, now that the portable backup exists; that is separate, per-platform
 work.
 
@@ -511,9 +635,9 @@ it in the dialog. The restore itself:
 3. checks the trailer's tag, that it lists exactly the entries read, and that nothing follows it;
 4. writes the header and manifest into the stage, opens it as unlock would (it must be complete and
    writable), and decrypts every object to authenticate it;
-5. renames the verified stage to `vault-v1.restore-ready/`, then retires the live vault to
-   `vault-v1.reset-pending/` and renames the restore into place;
-6. erases the retired vault as a reset does, key envelopes first.
+5. renames the verified stage to `vault-v1.restore-ready/`, then sets the live vault aside, as a
+   reset does, and renames the restore into place. Nothing is erased; the restored vault's
+   `backupRestored` entry says `how: "replaced"` when there was a vault to set aside.
 
 Any failure before step 5 removes the stage and changes nothing else. So does a failure in step 5:
 a failure to retire the live vault, or to rename the restore into place once it is retired, in
@@ -526,9 +650,8 @@ copy's header cannot be removed, is the copy kept whole (as the one vault left, 
 start puts in place): the patient is told to close and reopen myCarlos to finish the restore, and then to
 open the vault with the backup's passphrase or recovery key. From step 5 on, each step is one rename, and every start repeats whatever is
 left: status, create, unlock and reset put a waiting restore in place first when the live vault
-is already retired, then finish erasing a retired vault, then activate a restore still waiting.
-A failure to erase the retired vault after the restore is in place is not a failed restore; the
-erasing is retried at every start. The restored
+is already set aside, then set aside a vault an older build retired, then activate a restore
+still waiting. The restored
 vault is left locked; it opens with the passphrase or recovery key it was backed up with. The
 restore always takes the whole backup: an older backup brings documents hidden since back into view, and
 the passphrase and recovery key it was made with, and the screen and the native dialog say so
@@ -563,7 +686,10 @@ state, described in the recovery-key sections above.
   planned for after the first release, and until then this limit is accepted. The
   only remedy is a new vault, which the app does not guide: save a readable copy of every document
   (one at a time, in every profile; a damaged document cannot be saved), check that each copy
-  opens, erase the vault, create a new one and import the copies. Folders, profiles and the dates
+  opens, lock it and set it aside ("Forgot your passphrase?" on the unlock screen), create a new
+  one and import the copies. The vault set aside stays
+  on the device (#71), and the earlier passphrase still opens it: to keep it from someone who knows
+  that passphrase and can reach the device, delete its folder in `set-aside/` by hand. Folders, profiles and the dates
   added are not kept, the saved copies are not encrypted while they wait, and the recovery key and
   earlier backups belong to the earlier vault: restoring one brings the earlier master key back.
   The earlier passphrase does not itself open a later copy of the vault; the master key taken from
@@ -576,6 +702,15 @@ state, described in the recovery-key sections above.
   but portable vault backups omit them; a separate backup of the device may retain them.
   Storage grows with retained data. Exported plaintext and copies outside the live vault are
   beyond the app's control.
+- The history (#71) cannot prove the patient did not rewrite it: a copy of the whole vault put back
+  (a backup, or the folder copied back) passes the chain check, since that copy's chain is whole
+  in itself, and the device clock can be changed. Only an anchor outside the device (the portal,
+  #55) would catch that. The number of segment-sized files shows the history's length to about a
+  power of two. Locks are recorded only at the next unlock in the same run of the app.
+- Nothing erases a vault (#71): every vault set aside stays on the device, encrypted, and opens
+  with the passphrase or recovery key it had, until its folder is deleted by hand, or, on Android
+  and iPhone, until myCarlos's data is cleared or it is uninstalled, which removes every vault.
+  Storage grows with each one. The app cannot open one yet (reopening is a follow-up).
 - Crash-injection, power-loss, low-disk, physical-device backup/restore, and filesystem-permission
   matrices remain release-gate tests. Abrupt subprocess termination at the application-controlled
   chunk, staging, rename, manifest, and deletion boundaries is automated, along with deterministic

@@ -71,13 +71,13 @@ export const fr: Record<MessageKey, Message> = {
   "unlock.forgot.summary": "Vous avez oublié votre phrase secrète ?",
   "unlock.noKey.heading": "Pas de clé de récupération ?",
   "unlock.noKey.body":
-    "Sans clé, la seule façon de revenir est d’effacer myCarlos et de recommencer.",
+    "Sans clé, la seule façon de revenir est de mettre ce coffre-fort de côté et de recommencer. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais personne ne peut l’ouvrir sans sa phrase secrète.",
   "restore.summary": "Restaurer à partir d’une sauvegarde",
 
   "reset.plainly":
-    "L’effacement supprime de myCarlos sur cet ordinateur tous vos documents, dossiers et profils de patients, et il est irréversible. Pour confirmer, saisissez exactement les mots ci-dessous.",
+    "Mettre le coffre-fort de côté retire de myCarlos sur cet ordinateur tous vos documents, dossiers et profils de patients. Ils restent sur cet ordinateur, chiffrés, mais personne ne peut les ouvrir sans la phrase secrète. Pour confirmer, saisissez exactement les mots ci-dessous.",
   "reset.type": "Saisissez {phrase}",
-  "reset.submit": "Effacer le coffre-fort",
+  "reset.submit": "Mettre le coffre-fort de côté",
 
   "recover.intro":
     "Utilisez votre clé de récupération pour ouvrir le coffre-fort et choisir une nouvelle phrase secrète.",
@@ -120,17 +120,17 @@ export const fr: Record<MessageKey, Message> = {
   "restore.consequence.nothing":
     "La restauration place ce coffre-fort sur cet appareil.",
   "restore.consequence.same":
-    "Le coffre-fort de cet appareil contient les mêmes documents. La restauration le remplace par cette sauvegarde.",
+    "Le coffre-fort de cet appareil contient les mêmes documents. La restauration le met de côté et met cette sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.consequence.differs":
-    "Le coffre-fort de cet appareil pourrait ne pas être identique à cette sauvegarde : il a peut-être changé depuis, ou une partie n’a pas pu être lue. La restauration remplace le coffre-fort par la sauvegarde : tout ce qui se trouve dans le coffre-fort mais pas dans la sauvegarde est perdu, et la phrase secrète et la clé de récupération deviennent celles qui étaient en vigueur lors de la sauvegarde.",
+    "Le coffre-fort de cet appareil pourrait ne pas être identique à cette sauvegarde : il a peut-être changé depuis, ou une partie n’a pas pu être lue. La restauration met le coffre-fort de côté et met la sauvegarde à sa place : ce qui n’est pas dans la sauvegarde n’est plus dans le coffre-fort que vous utilisez, et la phrase secrète et la clé de récupération deviennent celles qui étaient en vigueur lors de la sauvegarde. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.consequence.otherVault":
-    "Cet appareil contient un autre coffre-fort. La restauration l’efface définitivement et met la sauvegarde à sa place.",
+    "Cet appareil contient un autre coffre-fort. La restauration le met de côté et met la sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.consequence.unreadable":
-    "Le coffre-fort de cet appareil n’a pas pu être lu; myCarlos ne peut donc pas savoir s’il s’agit de celui dont cette sauvegarde provient. La restauration l’efface définitivement et met la sauvegarde à sa place.",
+    "Le coffre-fort de cet appareil n’a pas pu être lu ; myCarlos ne peut donc pas savoir s’il s’agit de celui dont cette sauvegarde provient. La restauration le met de côté et met la sauvegarde à sa place. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais myCarlos ne peut pas encore le rouvrir pour vous.",
   "restore.agree.erase":
-    "Effacer le coffre-fort de cet appareil et restaurer la sauvegarde",
+    "Mettre de côté le coffre-fort de cet appareil et restaurer la sauvegarde",
   "restore.agree.replace":
-    "Remplacer le coffre-fort de cet appareil par cette sauvegarde et perdre ce qui a changé depuis",
+    "Mettre de côté le coffre-fort de cet appareil, avec ce qui a changé depuis, et restaurer cette sauvegarde",
   "restore.submit": "Restaurer la sauvegarde",
   "restore.restoring":
     "Restauration de la sauvegarde en cours. Cela peut prendre du temps pour un gros coffre-fort…",
@@ -254,9 +254,9 @@ export const fr: Record<MessageKey, Message> = {
   "security.backup.save": "Enregistrer une sauvegarde chiffrée…",
   "security.passphrase.title": "Changer de phrase secrète",
   "security.passphrase.rules":
-    "Utilisez au moins {min} caractères et évitez les noms courants et les phrases prévisibles. Votre clé de récupération, si vous en avez une, continue de fonctionner; sans clé, oublier la nouvelle phrase secrète oblige à effacer le coffre-fort.",
+    "Utilisez au moins {min} caractères et évitez les noms courants et les phrases prévisibles. Votre clé de récupération, si vous en avez une, continue de fonctionner; sans clé, oublier la nouvelle phrase secrète oblige à mettre le coffre-fort de côté et à recommencer.",
   "security.passphrase.copies":
-    "Changer de phrase secrète bloque une personne qui ne connaît que l’ancienne. Si elle a peut-être aussi une copie de votre coffre-fort, comme une sauvegarde de cet appareil ou un fichier de sauvegarde enregistré, une nouvelle phrase secrète ne suffit pas : l’ancienne ouvre toujours cette copie, et avec cette copie, elle pourrait ouvrir une copie plus récente obtenue plus tard. Pour la tenir à l’écart, il faut un nouveau coffre-fort, et veiller à ne perdre aucun document en chemin. Demandez de l’aide avant d’effacer quoi que ce soit.",
+    "Changer de phrase secrète bloque une personne qui ne connaît que l’ancienne. Si elle a peut-être aussi une copie de votre coffre-fort, comme une sauvegarde de cet appareil ou un fichier de sauvegarde enregistré, une nouvelle phrase secrète ne suffit pas : l’ancienne ouvre toujours cette copie, et avec cette copie, elle pourrait ouvrir une copie plus récente obtenue plus tard. Pour la tenir à l’écart, il faut un nouveau coffre-fort, et veiller à ne perdre aucun document en chemin. Demandez de l’aide avant de mettre votre coffre-fort de côté.",
   "security.passphrase.current": "Phrase secrète actuelle",
   "security.passphrase.currentTooLong":
     "La phrase secrète actuelle est plus longue que n’importe quelle phrase secrète de coffre-fort. Vérifiez ce que vous avez saisi.",
@@ -315,7 +315,7 @@ export const fr: Record<MessageKey, Message> = {
     "Cette clé de récupération n’est pas encore configurée : elle n’ouvrira donc jamais le coffre-fort. myCarlos verrouille maintenant le coffre-fort. Après l’avoir déverrouillé, vous pourrez configurer une nouvelle clé.",
   "recoveryKey.discard.confirm": "Abandonner la clé et verrouiller",
   "recoveryKey.about.offered":
-    "Votre coffre-fort est ouvert. Il n’a pas encore de clé de récupération. Sans clé, si vous oubliez votre phrase secrète, la seule façon de revenir est d’effacer le coffre-fort.",
+    "Votre coffre-fort est ouvert. Il n’a pas encore de clé de récupération. Sans clé, si vous oubliez votre phrase secrète, la seule façon de revenir est de mettre le coffre-fort de côté et de recommencer.",
   "recoveryKey.about.what":
     "Une clé de récupération ouvre votre coffre-fort si vous oubliez votre phrase secrète. Vous serez la seule personne à l’avoir : personne à votre clinique ni chez myCarlos ne peut ouvrir votre coffre-fort à votre place.",
   "recoveryKey.about.replacing":
@@ -403,7 +403,7 @@ export const fr: Record<MessageKey, Message> = {
   "notice.createdThenLocked":
     "Votre coffre-fort a été créé, puis verrouillé avant que sa clé de récupération puisse être créée. Déverrouillez-le pour en configurer une.",
   "notice.created":
-    "Coffre-fort chiffré créé. Configurez une clé de récupération : ainsi, une phrase secrète oubliée n’obligera pas à l’effacer.",
+    "Coffre-fort chiffré créé. Configurez une clé de récupération pour qu’un oubli de votre phrase secrète ne vous prive pas définitivement de vos documents.",
   "notice.unlockedRecovery":
     "Coffre-fort déverrouillé en mode de récupération, en lecture seule. Consultez l’avis dans la bibliothèque pour savoir quoi faire.",
   "notice.unlocked": "Coffre-fort déverrouillé.",
@@ -411,7 +411,8 @@ export const fr: Record<MessageKey, Message> = {
     "Coffre-fort ouvert avec votre clé de récupération. Utilisez désormais votre nouvelle phrase secrète.",
   "notice.recoveredReadOnly":
     "Coffre-fort ouvert en lecture seule avec votre clé de récupération, et votre phrase secrète n’a pas changé. Consultez l’avis dans la bibliothèque pour savoir quoi faire.",
-  "notice.eraseCancelled": "Effacement du coffre-fort annulé. Rien n’a changé.",
+  "notice.eraseCancelled":
+    "Rien n’a changé : le coffre-fort n’a pas été mis de côté.",
 
   // What to check after a refusal, and other errors the app words itself
   "box.name": "le nom",

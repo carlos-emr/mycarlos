@@ -16,11 +16,7 @@ import {
   nameIsShared,
   nameTooLong,
 } from "./recordPresentation";
-import {
-  MIN_PASSPHRASE_CHARS,
-  ResetConfirmation,
-  tooShortPassphrase,
-} from "./VaultAuth";
+import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
@@ -34,7 +30,6 @@ interface SecuritySettingsProps {
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
-  onReset: (confirmation: string) => Promise<void>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -98,7 +93,6 @@ export function SecuritySettings({
   onLock,
   onChangePassphrase,
   onCreateProfile,
-  onReset,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -220,6 +214,20 @@ export function SecuritySettings({
               view: it stays in the encrypted vault, listed under Hidden, and
               can be restored. Readable copies you save outside myCarlos are
               yours to keep or delete.
+            </p>
+            <p>
+              myCarlos also keeps a history: when the vault was opened; when its
+              passphrase or recovery key was set or changed, and when a backup
+              was saved or restored; when each patient profile was added and
+              each folder made, renamed or moved; and when each document was
+              added, renamed, moved, hidden, restored or saved outside myCarlos,
+              and where. It is encrypted with everything else. myCarlos does not
+              show it, and never changes or removes it.
+            </p>
+            <p>
+              Starting again, or restoring a backup over this vault, sets the
+              vault aside: it stays on this device, encrypted. myCarlos never
+              deletes a vault.
             </p>
           </div>
         </section>
@@ -484,20 +492,6 @@ export function SecuritySettings({
               {t("security.profiles.add")}
             </button>
           </form>
-        </section>
-        <section className="setting-row native-danger-setting">
-          <div>
-            <h2>{t("security.erase.title")}</h2>
-            <p>{t("security.erase.body")}</p>
-          </div>
-          <details>
-            <summary>{t("security.erase.show")}</summary>
-            <ResetConfirmation
-              busy={busy}
-              actionLabel={t("security.erase.submit")}
-              onReset={onReset}
-            />
-          </details>
         </section>
       </div>
     </main>
