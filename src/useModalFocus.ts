@@ -8,6 +8,13 @@ const FOCUSABLE_SELECTOR =
 // falls to <body>. Remember that opener so the replacing dialog can return to it.
 let pendingOpener: HTMLElement | null = null;
 
+// The dialogs open now, the last on top (#68): the lock warning opens over
+// whatever dialog is up. Only the top one answers Escape and Tab or pulls the
+// focus back, so an Escape for the warning does not also close, say, Rename
+// beneath it with what was typed there; when the top one closes, the focus
+// goes back to where it was in the one below.
+const openDialogs: symbol[] = [];
+
 export function useModalFocus(
   active: boolean,
   dialogRef: RefObject<HTMLElement | null>,
@@ -21,6 +28,9 @@ export function useModalFocus(
 
   useEffect(() => {
     if (!active) return;
+    const dialog = Symbol("dialog");
+    openDialogs.push(dialog);
+    const onTop = () => openDialogs[openDialogs.length - 1] === dialog;
     const focused = document.activeElement;
     returnFocusRef.current =
       focused instanceof HTMLElement && focused !== document.body
@@ -106,7 +116,7 @@ export function useModalFocus(
     // The Tab's own first move of the focus decides: no later, unrelated
     // move is pulled back.
     const keepInside = (event: FocusEvent) => {
-      if (!leaving) return;
+      if (!leaving || !onTop()) return;
       if (
         event.target instanceof Node &&
         !dialogRef.current?.contains(event.target)
@@ -116,6 +126,7 @@ export function useModalFocus(
     };
 
     const containFocus = (event: KeyboardEvent) => {
+      if (!onTop()) return;
       if (event.key === "Escape") {
         event.preventDefault();
         closeRef.current();
@@ -157,6 +168,7 @@ export function useModalFocus(
     window.addEventListener("keydown", containFocus);
     document.addEventListener("focusin", keepInside, true);
     return () => {
+      openDialogs.splice(openDialogs.indexOf(dialog), 1);
       window.removeEventListener("keydown", containFocus);
       document.removeEventListener("focusin", keepInside, true);
       window.clearTimeout(leavingTimer);

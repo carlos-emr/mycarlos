@@ -6,7 +6,7 @@ test("has no automatically detectable WCAG A/AA violations", async ({
 }, testInfo) => {
   async function expectNoViolations() {
     const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
       .analyze();
     expect(results.violations).toEqual([]);
   }
@@ -98,12 +98,14 @@ test("imports browser-selected PDF metadata for the session", async ({
 
 test("renders hostile metadata as text without making off-origin requests", async ({
   page,
+  baseURL,
 }) => {
+  // The app's own origin, from the config, so the check holds on any port.
+  const appOrigin = new URL(baseURL!).origin;
   const offOriginRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.origin !== "http://127.0.0.1:4173")
-      offOriginRequests.push(request.url());
+    if (url.origin !== appOrigin) offOriginRequests.push(request.url());
   });
   await page.goto("/");
 

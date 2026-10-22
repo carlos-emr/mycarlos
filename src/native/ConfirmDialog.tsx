@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from "react";
+import { useI18n } from "../i18n";
 import { useModalFocus } from "../useModalFocus";
 
 // Destructive and plaintext-exposing actions are confirmed here rather than with
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   details?: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   // Cancel takes the first focus even when something before it can take
@@ -57,7 +59,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className={danger ? "button danger" : "button primary"}

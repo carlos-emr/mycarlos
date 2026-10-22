@@ -1,6 +1,7 @@
 import { SecretInput } from "./SecretInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { useI18n, withElements } from "../i18n";
 import { useModalFocus } from "../useModalFocus";
 import {
   isLockedError,
@@ -79,6 +80,7 @@ export function RecoveryKeySetup({
   /** A key is on screen, and may now be written down or saved. */
   onKeyShown?: (how: { exposed: boolean }) => void;
 }) {
+  const { t } = useI18n();
   const [step, setStep] = useState<Step>(initialKey ? "key" : "passphrase");
   const [key, setKey] = useState(initialKey ?? "");
   const [passphrase, setPassphrase] = useState("");
@@ -143,9 +145,7 @@ export function RecoveryKeySetup({
       window.print();
     } catch {
       setPrinting(false);
-      setError(
-        "Printing is not available here. Save the kit, or write the key down.",
-      );
+      setError(t("recoveryKey.printUnavailable"));
     }
     return () => {
       window.removeEventListener("afterprint", done);
@@ -240,7 +240,7 @@ export function RecoveryKeySetup({
     event.preventDefault();
     if (busy || !passphrase) return;
     if (replacing && exposed === null) {
-      setError("Choose why you are replacing your recovery key.");
+      setError(t("recoveryKey.chooseReason"));
       return;
     }
     const secret = passphrase;
@@ -252,7 +252,7 @@ export function RecoveryKeySetup({
       setStep("key");
     } catch (failure) {
       if (isLockedError(failure)) onLocked();
-      else setError(vaultErrorMessage(failure));
+      else setError(vaultErrorMessage(failure, ["box.passphrase"]));
     } finally {
       setBusy(false);
     }
@@ -264,10 +264,7 @@ export function RecoveryKeySetup({
     setError("");
     setNotice("");
     try {
-      if (await bridge.saveRecoveryKit())
-        setNotice(
-          "Recovery kit saved. The key starts working once you finish the check.",
-        );
+      if (await bridge.saveRecoveryKit()) setNotice(t("recoveryKey.kitSaved"));
     } catch (failure) {
       failed(failure);
     } finally {
@@ -294,7 +291,10 @@ export function RecoveryKeySetup({
     const symbols = typed.replace(/[^\p{L}\p{N}]/gu, "");
     if (symbols.length !== KEY_SYMBOLS) {
       typedWrong(
-        `You typed ${symbols.length === 1 ? "1 letter or digit" : `${symbols.length} letters and digits`}. Your recovery key has ${KEY_SYMBOLS} letters and digits: 7 groups of 4. Check what you wrote.`,
+        t("recoveryKey.typedCount", {
+          count: symbols.length,
+          total: KEY_SYMBOLS,
+        }),
       );
       return;
     }
@@ -317,9 +317,7 @@ export function RecoveryKeySetup({
       // up, and can be checked again.
       else {
         refocusCheck.current = true;
-        setNotice(
-          "Your recovery key was not changed. Your current key still works. To change it, press Check and save again.",
-        );
+        setNotice(t("recoveryKey.notChanged"));
       }
     } catch (failure) {
       // A lock closed this: it says so itself.
@@ -335,9 +333,7 @@ export function RecoveryKeySetup({
         setStep("key");
         // An alert, as it arrives with the step: a status line would not be
         // read out.
-        setError(
-          "That did not match three times. Look at your recovery key again, then check it.",
-        );
+        setError(t("recoveryKey.threeMisses"));
       } else {
         setWrongTries(tries);
         typedWrong(vaultErrorMessage(failure));
@@ -348,18 +344,18 @@ export function RecoveryKeySetup({
   };
 
   const leaveLabel = required
-    ? "Lock vault and finish later"
+    ? t("recoveryKey.leave.required")
     : offered
-      ? "Set up later"
-      : "Cancel";
+      ? t("recoveryKey.leave.offered")
+      : t("common.cancel");
   const title =
     step === "passphrase"
       ? replacing
-        ? "Replace your recovery key"
-        : "Set up a recovery key"
+        ? t("recoveryKey.title.replace")
+        : t("recoveryKey.title.setUp")
       : step === "key"
-        ? "Your recovery key"
-        : "Check your recovery key";
+        ? t("recoveryKey.title.key")
+        : t("recoveryKey.title.check");
 
   return (
     <div
@@ -397,14 +393,12 @@ export function RecoveryKeySetup({
           >
             <header className="dialog-head">
               <h2 id="recovery-key-confirm-title">
-                Discard this recovery key?
+                {t("recoveryKey.discard.title")}
               </h2>
             </header>
             <div className="recovery-key-body">
               <p id="recovery-key-confirm-message">
-                This recovery key is not set up yet, so it will never open the
-                vault. myCarlos locks the vault now. After you unlock it, you
-                can set up a new key.
+                {t("recoveryKey.discard.body")}
               </p>
               <footer className="dialog-actions">
                 <button
@@ -413,14 +407,14 @@ export function RecoveryKeySetup({
                   type="button"
                   onClick={() => setConfirmingLeave(false)}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   className="button danger"
                   type="button"
                   onClick={discardAndLock}
                 >
-                  Discard key and lock
+                  {t("recoveryKey.discard.confirm")}
                 </button>
               </footer>
             </div>
@@ -438,36 +432,25 @@ export function RecoveryKeySetup({
           {step === "passphrase" && (
             <form className="recovery-key-body" onSubmit={(e) => void begin(e)}>
               <div id="recovery-key-about" className="recovery-key-about">
-                {offered && (
-                  <p>
-                    Your vault is open. It has no recovery key yet. Without one,
-                    if you forget your passphrase, the only way back in is to
-                    erase the vault.
-                  </p>
-                )}
+                {offered && <p>{t("recoveryKey.about.offered")}</p>}
+                <p>{t("recoveryKey.about.what")}</p>
+                {replacing && <p>{t("recoveryKey.about.replacing")}</p>}
                 <p>
-                  A recovery key opens your vault if you forget your passphrase.
-                  Only you will have it: nobody at your clinic or at myCarlos
-                  can open your vault for you.
-                </p>
-                {replacing && (
-                  <p>
-                    Your current recovery key stops working once you have
-                    checked the new one.
-                  </p>
-                )}
-                <p>
-                  Type your passphrase{offered ? " again" : ""} to make your{" "}
-                  {replacing ? "new " : ""}recovery key. It is shown next:
-                  choose Continue only when nobody else can see your screen.
+                  {t(
+                    offered
+                      ? replacing
+                        ? "recoveryKey.about.typeAgainNew"
+                        : "recoveryKey.about.typeAgain"
+                      : replacing
+                        ? "recoveryKey.about.typeNew"
+                        : "recoveryKey.about.type",
+                  )}
                 </p>
               </div>
               {replacing && (
                 <fieldset>
-                  <legend>Why are you replacing it?</legend>
-                  <p className="field-hint">
-                    If you are not sure, choose the first.
-                  </p>
+                  <legend>{t("recoveryKey.reason.legend")}</legend>
+                  <p className="field-hint">{t("recoveryKey.reason.hint")}</p>
                   <label className="restore-choice">
                     <input
                       type="radio"
@@ -478,7 +461,7 @@ export function RecoveryKeySetup({
                         setError("");
                       }}
                     />
-                    Its kit or note may have been lost, or seen by someone else
+                    {t("recoveryKey.reason.exposed")}
                   </label>
                   <label className="restore-choice">
                     <input
@@ -490,14 +473,14 @@ export function RecoveryKeySetup({
                         setError("");
                       }}
                     />
-                    I just want a new key: its kit is safe
+                    {t("recoveryKey.reason.routine")}
                   </label>
                 </fieldset>
               )}
               <label>
-                Passphrase
+                {t("passphrase.label")}
                 <SecretInput
-                  aria-label="Passphrase"
+                  aria-label={t("passphrase.label")}
                   type="password"
                   autoComplete="current-password"
                   required
@@ -506,10 +489,7 @@ export function RecoveryKeySetup({
                 />
               </label>
               {utf8Length(passphrase) > MAX_PASSPHRASE_BYTES && (
-                <p role="alert">
-                  This is longer than any vault passphrase. Check what you
-                  typed.
-                </p>
+                <p role="alert">{t("passphrase.longerThanAny")}</p>
               )}
               {error && <p role="alert">{error}</p>}
               <footer className="dialog-actions">
@@ -529,7 +509,7 @@ export function RecoveryKeySetup({
                     utf8Length(passphrase) > MAX_PASSPHRASE_BYTES
                   }
                 >
-                  Continue
+                  {t("recoveryKey.continue")}
                 </button>
               </footer>
             </form>
@@ -539,35 +519,32 @@ export function RecoveryKeySetup({
             <div className="recovery-key-body">
               {keyboardHints && (
                 <p id="recovery-key-keyboard-hint">
-                  Escape leaves this setup. During first setup it asks first,
-                  because leaving locks the vault and an unfinished key will not
-                  work.
+                  {t("recoveryKey.keyboardHint")}
                 </p>
               )}
               <p id="recovery-key-instructions">
-                Write it down, or save or print the kit, and keep it somewhere
-                private, away from this device. This is the only time myCarlos
-                shows it. Next, you type it all back to check it. Stay in
-                myCarlos until the check is done: leaving or locking cancels
-                this key.
+                {t("recoveryKey.instructions")}
               </p>
               {busy ? (
                 // Not left on screen under a save picker.
                 <p className="recovery-key-groups">
-                  Hidden while the kit is being saved.
+                  {t("recoveryKey.hiddenWhileSaving")}
                 </p>
               ) : (
                 <ol
                   className="recovery-key-groups"
                   // Kept a list for readers that drop one styled without markers.
                   role="list"
-                  aria-label="Recovery key"
+                  aria-label={t("recover.key.label")}
                 >
                   {groups.map((group, index) => (
                     <li key={index}>
                       <span aria-hidden="true">{group}</span>
                       <span className="sr-only">
-                        Group {index + 1}: {spoken(group)}
+                        {t("recoveryKey.group", {
+                          number: index + 1,
+                          characters: spoken(group),
+                        })}
                       </span>
                     </li>
                   ))}
@@ -575,9 +552,9 @@ export function RecoveryKeySetup({
               )}
               {label && (
                 <p>
-                  Key label: <KeyLabel label={label} />. Write it next to the
-                  key. It is not secret: in Security, myCarlos shows the label
-                  of the key that works, so you can tell which kit is current.
+                  {withElements(t("recoveryKey.label"), {
+                    label: <KeyLabel label={label} />,
+                  })}
                 </p>
               )}
               <p className="native-dialog-status" role="status">
@@ -600,7 +577,7 @@ export function RecoveryKeySetup({
                   disabled={busy}
                   onClick={() => void saveKit()}
                 >
-                  Save recovery kit…
+                  {t("recoveryKey.saveKit")}
                 </button>
                 {canPrint && (
                   <button
@@ -611,7 +588,7 @@ export function RecoveryKeySetup({
                       printing ? window.print() : setPrinting(true)
                     }
                   >
-                    Print recovery kit
+                    {t("recoveryKey.printKit")}
                   </button>
                 )}
                 <button
@@ -620,37 +597,25 @@ export function RecoveryKeySetup({
                   disabled={busy}
                   onClick={startCheck}
                 >
-                  Next: check your recovery key
+                  {t("recoveryKey.next")}
                 </button>
               </footer>
               {printing &&
                 createPortal(
                   <div className="recovery-kit-print" aria-hidden="true">
-                    <h1>myCarlos recovery kit</h1>
+                    <h1>{t("kit.title")}</h1>
                     <p className="recovery-kit-key">{key}</p>
                     <p>
-                      {label ? `Key label: ${label} · ` : ""}Printed{" "}
-                      {printedDate(new Date())}
+                      {label
+                        ? t("kit.labelPrinted", {
+                            label,
+                            date: printedDate(new Date()),
+                          })
+                        : t("kit.printed", { date: printedDate(new Date()) })}
                     </p>
-                    {label && (
-                      <p>
-                        The label is not secret. In Security, myCarlos shows the
-                        label of the recovery key that works now: a kit with a
-                        different label no longer opens the vault.
-                      </p>
-                    )}
-                    <p>
-                      If you forget your myCarlos passphrase, this key opens
-                      your vault on this device and lets you choose a new
-                      passphrase. It works once you have finished the check in
-                      myCarlos.
-                    </p>
-                    <p>
-                      Keep it somewhere private and away from the device. Anyone
-                      with this key and a copy of your vault can open it. If you
-                      set up a new recovery key, this one no longer opens the
-                      vault on this device.
-                    </p>
+                    {label && <p>{t("kit.labelNote")}</p>}
+                    <p>{t("kit.use")}</p>
+                    <p>{t("kit.keep")}</p>
                   </div>,
                   document.body,
                 )}
@@ -660,7 +625,7 @@ export function RecoveryKeySetup({
           {step === "check" && (
             <form className="recovery-key-body" onSubmit={(e) => void check(e)}>
               <label>
-                Your recovery key
+                {t("recoveryKey.check.label")}
                 <input
                   autoComplete="off"
                   autoCorrect="off"
@@ -678,11 +643,7 @@ export function RecoveryKeySetup({
                   }}
                 />
               </label>
-              <p id="recovery-key-check-hint">
-                Type your whole recovery key, as you wrote it down or saved it:
-                7 groups of 4 letters and digits. Dashes, spaces and other
-                punctuation do not matter.
-              </p>
+              <p id="recovery-key-check-hint">{t("recoveryKey.check.hint")}</p>
               <p className="native-dialog-status" role="status">
                 {notice}
               </p>
@@ -706,14 +667,14 @@ export function RecoveryKeySetup({
                     setStep("key");
                   }}
                 >
-                  Back: read your recovery key
+                  {t("recoveryKey.back")}
                 </button>
                 <button
                   ref={checkButtonRef}
                   className="button primary"
                   disabled={busy || !typed.trim()}
                 >
-                  Check and save
+                  {t("recoveryKey.checkAndSave")}
                 </button>
               </footer>
             </form>

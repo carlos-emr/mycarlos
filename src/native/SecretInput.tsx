@@ -1,4 +1,5 @@
 import { useId, type ComponentPropsWithRef } from "react";
+import { useI18n } from "../i18n";
 
 type Props = Omit<ComponentPropsWithRef<"input">, "value" | "type"> & {
   value: string;
@@ -8,7 +9,10 @@ type Props = Omit<ComponentPropsWithRef<"input">, "value" | "type"> & {
 
 /** Keep the browser's protected input semantics. Only the count, never the
  * secret, goes into the hover text or accessible description. Native screen
- * reader password echo remains controlled by the reader and needs device tests. */
+ * reader password echo remains controlled by the reader and needs device tests.
+ * A secret shown as text is not handed to the spell checker, autocorrection or
+ * capitalization (#69); a caller may still choose its capitalization, as the
+ * recovery key does. */
 export function SecretInput({
   value,
   type = "password",
@@ -16,14 +20,26 @@ export function SecretInput({
   "aria-describedby": describedBy,
   ...props
 }: Props) {
+  const { t } = useI18n();
   const countId = useId();
   const countedValue =
     secretKind === "password" ? value.normalize("NFC") : value;
-  const count = `${Array.from(countedValue).length} character ${secretKind}`;
-  const description = type === "password" ? count : `${count}, shown`;
+  const count = t(
+    secretKind === "password"
+      ? "secret.count.password"
+      : "secret.count.recoveryKey",
+    { count: Array.from(countedValue).length },
+  );
+  const description =
+    type === "password"
+      ? count
+      : t("secret.count.shown", { description: count });
   return (
     <span className="secret-input">
       <input
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
         {...props}
         type={type}
         value={value}

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getLocale, t, type MessageKey } from "./i18n";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -42,6 +43,10 @@ export interface VaultSnapshot {
   recoveryKeySetAtMs?: number | null;
   /** Its short label, which its kit shows (not secret), if it has one. */
   recoveryKeyLabel?: string | null;
+  /** The reserved profile that files shared to myCarlos wait in (#61): shown
+   * as the "Shared with me" folder, never as a person. In `profiles` once the
+   * first file has arrived. */
+  sharedProfileId?: string;
 }
 
 /** One group of the recovery key as the patient typed it back, by position. */
@@ -99,6 +104,41 @@ export interface ImportOutcome {
   skippedDuplicates: string[];
 }
 
+/** What adding the waiting files to Shared with me did (#61). */
+export interface ReceivedAcceptOutcome extends ImportOutcome {
+  /** Names of files that are not PDF documents: not added, and forgotten. */
+  notPdf: string[];
+}
+
+/** What a move out of Shared with me did (#61). */
+export interface MoveOutcome {
+  moved: string[];
+  /** Names of files the person already had, which stay in Shared with me. */
+  alreadyThere: string[];
+}
+
+/** A file another app shared with myCarlos, waiting for the patient to add or
+ * decline it. Where it came from stays native; the page has an id and a name. */
+export interface ReceivedFile {
+  id: string;
+  name: string;
+  /** The label the document will carry once added. */
+  sourceLabel: string;
+}
+
+/** What could not be received since the page last asked. Counts only. */
+export interface ReceiveNotice {
+  /** Shared items that were not files myCarlos accepts, such as text or links. */
+  dropped: number;
+  /** Shares refused whole: too many files would have been waiting. */
+  refusedShares: number;
+}
+
+export interface ReceivedState {
+  files: ReceivedFile[];
+  notice: ReceiveNotice;
+}
+
 /** How long this device took to derive a key from a passphrase. */
 export interface SpeedTestReport {
   memoryKib: number;
@@ -117,9 +157,21 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** Which rules a new passphrase meets, as the vault judges it (#69). */
+export interface PassphraseRules {
+  longEnough: boolean;
+  notAName: boolean;
+  hardToGuess: boolean;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
+  /** First setup's checklist: refused once a vault exists. */
+  passphraseRules(
+    passphrase: string,
+    initialProfileName: string,
+  ): Promise<PassphraseRules>;
   create(
     passphrase: string,
     initialProfileName: string,
@@ -207,7 +259,33 @@ export interface VaultBridge {
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
   exportToPicked(pickId: string, recordId: string): Promise<void>;
+  /** Saves a photo taken with the camera (a JPEG) under `name`, in the
+   * folders given or in My records. The vault cleans and checks it first. */
+  savePhoto(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+    jpeg: Uint8Array,
+  ): Promise<ImportOutcome>;
+  /** Whether a document's file starts as a JPEG does. Only its first bytes
+   * are read; the photo itself stays native. */
+  isPhoto(recordId: string): Promise<boolean>;
+  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
+   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  viewPhoto(recordId: string): Promise<string>;
   deleteRecord(recordId: string): Promise<void>;
+  /** The shared files waiting, and what could not be received since the
+   * last call (that part is reported once). Works while locked. */
+  listReceived(): Promise<ReceivedState>;
+  /** Adds every waiting file to Shared with me; a file that is not a PDF is
+   * forgotten and named. If anything else fails, they all keep waiting. */
+  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Moves files from Shared with me to a person, into the folders named. */
+  moveToPerson(
+    recordIds: string[],
+    profileId: string,
+    folderIds: string[],
+  ): Promise<MoveOutcome>;
   /** Drops the records in `confirmed`, those shown as damaged, whose
    * encrypted file is still missing, so the vault leaves recovery mode.
    * Refused when the vault's own list differs. Resolves to the ids removed. */
@@ -226,7 +304,40 @@ interface PublicError {
   retryAfterMs?: number;
 }
 
-export function vaultErrorMessage(error: unknown): string {
+/** A box the patient typed in, named in the language in use ("the folder
+ * name"), for "Check …, then try again." */
+export type BoxKey = Extract<MessageKey, `box.${string}`>;
+
+/** "a, b and c" in the language in use. English has no comma before "and",
+ * as before. */
+const listed = (items: string[]) => {
+  const locale = getLocale();
+  return new Intl.ListFormat(locale === "en" ? "en-GB" : locale, {
+    type: "conjunction",
+  }).format(items);
+};
+
+/** Of the boxes named with what was typed in them, those holding a control
+ * character: at setup, the one refusal of typed text that the screen does not
+ * catch first. None: a refusal is not about what was typed, as far as the
+ * screen can tell, and is not blamed on a box. */
+export function boxesWithControlCharacters(
+  typed: [value: string, box: BoxKey][],
+): BoxKey[] | undefined {
+  const boxes = typed
+    .filter(([value]) => /\p{Cc}/u.test(value))
+    .map(([, box]) => box);
+  return boxes.length ? boxes : undefined;
+}
+
+/** The message for a failed vault operation. `boxes` names, in plain words,
+ * what the patient typed for it ("the folder name"): a refusal of what was
+ * typed then says which box to check (#69). */
+export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
+  if (boxes?.length && hasErrorCode(error, "invalid"))
+    return t("error.checkBoxes", {
+      boxes: listed(boxes.map((box) => t(box))),
+    });
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {
@@ -234,14 +345,12 @@ export function vaultErrorMessage(error: unknown): string {
       if (typeof note === "string") parts.push(note);
       if (typeof retryAfterMs === "number" && retryAfterMs > 0) {
         const seconds = Math.ceil(retryAfterMs / 1000);
-        parts.push(
-          `Try again in ${seconds} second${seconds === 1 ? "" : "s"}.`,
-        );
+        parts.push(t("error.retryIn", { count: seconds }));
       }
       return parts.join(" ");
     }
   }
-  return "The vault operation could not be completed.";
+  return t("error.fallback");
 }
 
 /** A backup refused over one document that no longer reads, named: the
@@ -260,12 +369,17 @@ export function namedDamage(
     vault.profiles.length > 1
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
-  const where = `added ${new Date(record.importedAtMs).toLocaleDateString()}${profile ? `, in ${profile.displayName}'s records` : ""}`;
+  // As the computer writes dates, whatever language myCarlos uses (Ben,
+  // 21 Oct): a Canadian computer writes 2026-01-15, never 1/15/2026.
+  const date = new Date(record.importedAtMs).toLocaleDateString();
+  const where = profile
+    ? t("error.damaged.whereFor", { date, person: profile.displayName })
+    : t("error.damaged.where", { date });
   // What may be left where it was being saved still holds.
   const { note } = error as PublicError;
   return {
     code: "damaged_document",
-    message: `No backup was saved: the document "${record.displayName}" (${where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. If you have that document elsewhere, delete it here and add it again; if not, deleting it lets you back up everything else.`,
+    message: t("error.damaged", { name: record.displayName, where }),
     ...(typeof note === "string" && { note }),
   };
 }
@@ -317,6 +431,10 @@ export function createVaultBridge(): VaultBridge {
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
+    passphraseRules: (passphrase, initialProfileName) =>
+      invoke<PassphraseRules>("vault_passphrase_rules", {
+        request: { passphrase, initialProfileName },
+      }),
     create: (passphrase, initialProfileName) =>
       invoke<VaultSnapshot>("vault_create", {
         request: { passphrase, initialProfileName },
@@ -395,8 +513,33 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
+    savePhoto: (profileId, folderIds, name, jpeg) => {
+      // One body, as Tauri carries bytes on every platform: the target's
+      // length (4 bytes, big-endian), the target as JSON, then the JPEG.
+      // Custom headers do not reach the vault on Windows.
+      const target = new TextEncoder().encode(
+        JSON.stringify({ profileId, folderIds, name }),
+      );
+      const request = new Uint8Array(4 + target.length + jpeg.length);
+      new DataView(request.buffer).setUint32(0, target.length);
+      request.set(target, 4);
+      request.set(jpeg, 4 + target.length);
+      return invoke<ImportOutcome>("vault_save_photo", request).finally(() =>
+        request.fill(0),
+      );
+    },
+    isPhoto: (recordId) =>
+      invoke<boolean>("vault_is_photo", { request: { recordId } }),
+    viewPhoto: (recordId) =>
+      invoke<string>("vault_view_photo", { request: { recordId } }),
     deleteRecord: (recordId) =>
       invoke<void>("vault_delete_record", { request: { recordId } }),
+    listReceived: () => invoke<ReceivedState>("received_list"),
+    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    moveToPerson: (recordIds, profileId, folderIds) =>
+      invoke<MoveOutcome>("vault_move_to_person", {
+        request: { recordIds, profileId, folderIds },
+      }),
     removeUnavailableRecords: (confirmed) =>
       invoke<string[]>("vault_remove_unavailable_records", {
         request: { confirmed },
