@@ -167,8 +167,16 @@ with the last lines of output.
 8. On the phone: **Settings → General → VPN & Device Management → Developer App → Apple
    Development: (your Apple ID) → Trust**.
 
-**Sample files:** AirDrop the FAKE PDFs in `~/mycarlos/dev-data` to the phone, save them to Files,
-then follow [What to try](#what-to-try).
+**Sample files:** The repository includes five FAKE PDFs in `~/mycarlos/dev-data`. To regenerate
+them, run this in Terminal:
+
+```bash
+cd ~/mycarlos
+npm run dev:data
+```
+
+AirDrop the five `FAKE_*.pdf` files to the phone, save them to Files, then follow
+[What to try](#what-to-try). `FAKE_MANIFEST.json` describes the samples; it is not a PDF to import.
 
 Good to know:
 
@@ -176,7 +184,9 @@ Good to know:
   Repeat steps 5 to 7 to renew it; the vault is kept. A paid developer account makes it a year.
 - **Updating:** `git pull && npm ci`, then steps 5 to 7.
 - **Removing:** delete the app on the phone; its vault goes with it.
-- **Desktop only for now:** locked PDFs, the built-in PDF reader and the camera.
+- **Desktop only for now:** unlocking password-protected PDFs and the built-in PDF reader.
+- **Camera:** enabled on computers, Android and iPhone. Camera permissions and capture still need
+  testing on real phones.
 
 **If something goes wrong:**
 
