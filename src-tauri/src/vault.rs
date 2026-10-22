@@ -1559,7 +1559,9 @@ impl VaultStore {
                 .map(|(_, record)| {
                     let mut entry = record_entry(HistoryEvent::Imported, now_ms, record);
                     entry.how = Some(how.to_owned());
-                    if record.profile_id == shared { entry.profile_id = Some(shared); }
+                    if record.profile_id == shared {
+                        entry.profile_id = Some(shared);
+                    }
                     entry
                 })
                 .collect();
@@ -1686,16 +1688,21 @@ impl VaultStore {
         }
         let at_ms = crate::now_ms();
         let to = folders_at_the_time(&unlocked.manifest, &folder_ids);
-        let entries = unlocked.manifest.records.iter()
+        let entries = unlocked
+            .manifest
+            .records
+            .iter()
             .filter(|record| moved.contains_key(&record.id))
             .map(|record| {
                 let mut entry = record_entry(HistoryEvent::Moved, at_ms, record).with_move(
-                    folders_at_the_time(&unlocked.manifest, &record.folder_ids), to.clone(),
+                    folders_at_the_time(&unlocked.manifest, &record.folder_ids),
+                    to.clone(),
                 );
                 entry.profile_id = Some(profile_id);
                 entry.how = Some("shared".to_owned());
                 entry
-            }).collect();
+            })
+            .collect();
         let mut next = unlocked.manifest.clone();
         for record in &mut next.records {
             if let Some(fingerprint) = moved.get(&record.id) {
@@ -14848,8 +14855,16 @@ mod tests {
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let jamie = store.snapshot().unwrap().profiles[0].id;
         let shared = store.shared_profile().unwrap();
-        let id = store.import_from(shared, vec![], vec![source("shared.pdf", b"unchanged")], 2, "shared")
-            .unwrap().imported[0];
+        let id = store
+            .import_from(
+                shared,
+                vec![],
+                vec![source("shared.pdf", b"unchanged")],
+                2,
+                "shared",
+            )
+            .unwrap()
+            .imported[0];
         let imported = history_events(&store).pop().unwrap();
         assert_eq!(imported.event, HistoryEvent::Imported);
         assert_eq!(imported.how.as_deref(), Some("shared"));
@@ -14858,12 +14873,22 @@ mod tests {
         let record = before.records.iter().find(|r| r.id == id).unwrap();
         let object = root.join("objects").join(&record.object_name);
         let ciphertext = fs::read(&object).unwrap();
-        for boundary in ["history.after-chunk-write", "history.objects-sync", "manifest.before-first-write"] {
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
             {
                 let _fail = FailAt::new(boundary);
-                assert!(matches!(store.move_to_profile(vec![id], jamie, vec![]), Err(VaultError::NoSpace)));
+                assert!(matches!(
+                    store.move_to_profile(vec![id], jamie, vec![]),
+                    Err(VaultError::NoSpace)
+                ));
             }
-            assert!(store.session().as_ref().unwrap().manifest == before, "{boundary}");
+            assert!(
+                store.session().as_ref().unwrap().manifest == before,
+                "{boundary}"
+            );
             assert_eq!(fs::read(&object).unwrap(), ciphertext);
         }
         store.move_to_profile(vec![id], jamie, vec![]).unwrap();
@@ -14877,14 +14902,36 @@ mod tests {
         assert_eq!(moved.from, Some(vec![]));
         assert_eq!(moved.to, Some(vec![]));
         assert_eq!(fs::read(&object).unwrap(), ciphertext);
-        let duplicate = store.import_from(shared, vec![], vec![source("duplicate.pdf", b"unchanged")], 3, "shared")
-            .unwrap().imported[0];
+        let duplicate = store
+            .import_from(
+                shared,
+                vec![],
+                vec![source("duplicate.pdf", b"unchanged")],
+                3,
+                "shared",
+            )
+            .unwrap()
+            .imported[0];
         let before_duplicate = store.session().as_ref().unwrap().manifest.clone();
-        assert!(store.move_to_profile(vec![duplicate], jamie, vec![]).unwrap().moved.is_empty());
+        assert!(store
+            .move_to_profile(vec![duplicate], jamie, vec![])
+            .unwrap()
+            .moved
+            .is_empty());
         assert!(store.session().as_ref().unwrap().manifest == before_duplicate);
         store.lock();
         store.unlock(PASSWORD).unwrap();
-        assert_eq!(store.snapshot().unwrap().records.iter().find(|r| r.id == id).unwrap().profile_id, jamie);
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .profile_id,
+            jamie
+        );
         assert_eq!(fs::read(&object).unwrap(), ciphertext);
         history_events(&store);
     }
