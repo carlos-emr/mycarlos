@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -130,6 +131,49 @@ function renderLibrary(
 }
 
 describe("taking a photo from the library", () => {
+  it("does not reopen Rename when the details close during the photo check", async () => {
+    let answer!: (photo: boolean) => void;
+    const pending = new Promise<boolean>((resolve) => {
+      answer = resolve;
+    });
+    renderLibrary(
+      { ...base, records: [record("other", "Other.jpg")] },
+      {
+        isPhoto: vi.fn(() => pending),
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Other.jpg" }));
+    const details = screen.getByRole("dialog", { name: "Other.jpg" });
+    fireEvent.click(
+      within(details).getByRole("button", { name: "Rename document" }),
+    );
+    fireEvent.click(
+      within(details).getByRole("button", { name: "Close document details" }),
+    );
+    await act(async () => answer(true));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps an unknown unreadable document's metadata-only rename available", async () => {
+    renderLibrary(
+      { ...base, records: [record("other", "Other.txt")] },
+      {
+        isPhoto: vi.fn().mockRejectedValue({
+          code: "storage",
+          message: "FAKE unavailable object",
+        }),
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Other.txt" }));
+    const details = screen.getByRole("dialog", { name: "Other.txt" });
+    fireEvent.click(
+      within(details).getByRole("button", { name: "Rename document" }),
+    );
+    expect(
+      await screen.findByRole("textbox", { name: "File name" }),
+    ).toHaveValue("Other.txt");
+  });
+
   it("opens with no message left over from the library", async () => {
     renderLibrary(base, {}, "windows", "Vault unlocked.");
     expect(screen.getByText("Vault unlocked.")).toBeVisible();
@@ -230,6 +274,15 @@ describe("taking a photo from the library", () => {
       expect(within(details).getByRole("status")).toHaveTextContent(
         "Photo saved as Photo, 17 Oct 2026, 3.05 PM.jpg.",
       ),
+    );
+
+    fireEvent.click(
+      within(details).getByRole("button", { name: "Rename document" }),
+    );
+    const nameField = await screen.findByRole("textbox", { name: "File name" });
+    expect(nameField).toHaveValue("Photo, 17 Oct 2026, 3.05 PM");
+    expect(nameField).toHaveAccessibleDescription(
+      "This changes the name in myCarlos and the suggested export name. The .jpg extension stays the same.",
     );
   });
 

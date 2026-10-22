@@ -182,6 +182,8 @@ export function VaultLibrary({
   // Where the selected documents in Shared with me go: "<person>|<folder>".
   const [sharedTarget, setSharedTarget] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  const activeRecordIdRef = useRef(activeRecordId);
+  activeRecordIdRef.current = activeRecordId;
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -1593,10 +1595,17 @@ export function VaultLibrary({
               notice={notice}
               onClose={() => setActiveRecordId(null)}
               onRename={() =>
-                setRenameTarget({
-                  kind: "document",
-                  id: activeRecord.id,
-                  name: activeRecord.displayName,
+                void run(async () => {
+                  const photo =
+                    !namedAsPdf(activeRecord.displayName) &&
+                    (await bridge.isPhoto(activeRecord.id).catch(() => false));
+                  if (activeRecordIdRef.current !== activeRecord.id) return;
+                  setRenameTarget({
+                    kind: "document",
+                    id: activeRecord.id,
+                    name: activeRecord.displayName,
+                    photo,
+                  });
                 })
               }
               onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
