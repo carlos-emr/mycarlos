@@ -1,5 +1,6 @@
 import { Fragment, useMemo } from "react";
 import { Icon } from "../Icon";
+import { useI18n } from "../i18n";
 import type { PatientProfile, VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 
@@ -82,6 +83,7 @@ export function LibrarySidebar({
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
+  const { t } = useI18n();
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
   const trees = useMemo(
     () =>
@@ -129,7 +131,7 @@ export function LibrarySidebar({
           <small>{profileName}</small>
         </span>
       </div>
-      <nav className="side-nav" aria-label="Record library">
+      <nav className="side-nav" aria-label={t("sidebar.label")}>
         {people.map((person) => {
           const open = section === "records" && person.id === profileId;
           // Only the open person's folders move by drag: a folder does not
@@ -152,7 +154,7 @@ export function LibrarySidebar({
               >
                 <Icon name="folder" />{" "}
                 <span className="native-nav-name">
-                  {personFolderName(person, people)}
+                  {several ? person.displayName : t("sidebar.myRecords")}
                 </span>
                 <span className="nav-count">
                   {counts.loose.get(person.id) ?? 0}
@@ -227,24 +229,24 @@ export function LibrarySidebar({
           <span className="native-nav-name">Shared with me</span>
           {sharedNew > 0 && <span className="nav-count">{sharedNew} new</span>}
         </button>
-        <span className="nav-label">Settings</span>
+        <span className="nav-label">{t("sidebar.settings")}</span>
         <button
           className={section === "security" ? "selected" : ""}
           type="button"
           onClick={onOpenSecurity}
         >
-          <Icon name="shield" /> Security
+          <Icon name="shield" /> {t("security.title")}
         </button>
         <button
           className={section === "preferences" ? "selected" : ""}
           type="button"
           onClick={onOpenPreferences}
         >
-          <Icon name="text-size" /> Preferences
+          <Icon name="text-size" /> {t("sidebar.preferences")}
         </button>
       </nav>
       <div className="storage">
-        <span>Encrypted local vault</span>
+        <span>{t("sidebar.storage")}</span>
         <div className="storage-meter">
           <span
             style={{
@@ -253,8 +255,8 @@ export function LibrarySidebar({
           />
         </div>
         <small>
-          {totals.documents} document{totals.documents === 1 ? "" : "s"} ·{" "}
-          {totals.folders} folder{totals.folders === 1 ? "" : "s"}
+          {t("sidebar.documents", { count: totals.documents })} ·{" "}
+          {t("sidebar.folderCount", { count: totals.folders })}
         </small>
       </div>
     </aside>

@@ -4,6 +4,7 @@ import { Icon } from "../Icon";
 import {
   localDateText,
   namedDamage,
+  type BoxKey,
   type SavedBackup,
   type VaultBridge,
   type VaultFolder,
@@ -113,7 +114,7 @@ export function VaultLibrary({
   notice: string;
   setNotice: (value: string) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
-  run: (operation: () => Promise<void>, boxes?: string[]) => Promise<void>;
+  run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -764,7 +765,7 @@ export function VaultLibrary({
       await bridge.changePassphrase(current, replacement);
       await refresh();
       setNotice("Passphrase changed.");
-    }, ["the current passphrase", "the new passphrase"]);
+    }, ["box.currentPassphrase", "box.newPassphrase"]);
   const createProfile = async (name: string) => {
     let created = false;
     await run(async () => {
@@ -772,7 +773,7 @@ export function VaultLibrary({
       created = true;
       await refresh();
       setNotice(`${name} was added.`);
-    }, ["the profile name"]);
+    }, ["box.profileName"]);
     return created;
   };
   const resetVault = (confirmation: string) =>
@@ -789,7 +790,7 @@ export function VaultLibrary({
       }
       if (erased) window.location.reload();
       else setNotice("Vault erase cancelled. Nothing changed.");
-    }, ["the words you typed"]);
+    }, ["box.typedWords"]);
   /** Moves documents from Shared with me to a person, into one of their
    * folders or none (#61). One the person already has stays where it is. */
   const moveToPerson = (
@@ -851,7 +852,7 @@ export function VaultLibrary({
       await refresh();
       setShowFolderForm(false);
       setNotice(`${name} was created.`);
-    }, ["the folder name"]);
+    }, ["box.folderName"]);
   };
   const moveFolder = () =>
     run(async () => {
