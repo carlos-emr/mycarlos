@@ -250,7 +250,7 @@ export function LibrarySidebar({
           type="button"
           onClick={onOpenPreferences}
         >
-          <Icon name="text-size" /> {t("sidebar.preferences")}
+          <Icon name="settings" /> {t("sidebar.preferences")}
         </button>
         {/* At the bottom of the sidebar, set apart, like the mocks' Trash
             (#71): out of view, not a folder or a setting. */}
