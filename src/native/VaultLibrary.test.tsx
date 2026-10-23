@@ -708,7 +708,6 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       // how many shared files are new (#61).
       expect(tabs.map((tab) => tab.textContent)).toEqual([
         "Records (2 new)",
-        "Hidden",
         "Security",
         "Preferences",
       ]);
