@@ -37,6 +37,7 @@ import {
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { folderPath, folderSubtree, recordPath } from "./folderTree";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import { useLibraryFocus } from "./useLibraryFocus";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 import {
   OLD_BACKUPS_EXPOSED,
@@ -500,12 +501,24 @@ export function VaultLibrary({
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const focusPageIfLost = () =>
-    window.setTimeout(() => {
-      const focused = document.activeElement;
-      if (!focused || focused === document.body || !focused.isConnected)
-        pageHeadingRef.current?.focus();
-    }, ANNOUNCE_DELAY_MS);
+  const libraryRef = useRef<HTMLDivElement | null>(null);
+  useLibraryFocus(
+    libraryRef,
+    pageHeadingRef,
+    Boolean(
+      busy ||
+        covered ||
+        activeRecord ||
+        readerRecordId ||
+        shownPhoto ||
+        renameTarget ||
+        cameraOpen ||
+        confirmation ||
+        confirmHideDamaged ||
+        recoverySetup,
+    ),
+    `${section}:${profileId}:${currentFolderId ?? ""}`,
+  );
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   useEffect(() => {
@@ -932,7 +945,6 @@ export function VaultLibrary({
         ),
       ];
       setNotice(said.filter(Boolean).join(" "));
-      focusPageIfLost();
     });
 
   const moveRecord = (recordId: string, folderId: string | null) =>
@@ -1001,7 +1013,11 @@ export function VaultLibrary({
       : `Search everything in ${rootLocationTitle}`;
 
   return (
-    <div className="evaluation-page native-vault-page" inert={covered}>
+    <div
+      ref={libraryRef}
+      className="evaluation-page native-vault-page"
+      inert={covered}
+    >
       {/* Polite, but not a second status line: the library has one. */}
       <p className="sr-only" aria-live="polite">
         {sharedAnnouncement}
@@ -1683,7 +1699,6 @@ export function VaultLibrary({
                 // shows, and the next setup's record of the key it would
                 // replace, is the vault with this key.
                 void refresh(stored).then(() => tell(saved));
-                focusPageIfLost();
               }}
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
@@ -1705,7 +1720,6 @@ export function VaultLibrary({
                     recordId: activeRecordId,
                   });
                 }
-                focusPageIfLost();
               }}
               onLocked={() => void onLock()}
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
