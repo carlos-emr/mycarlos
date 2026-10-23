@@ -2433,6 +2433,7 @@ struct ViewedPage {
     /// A `data:` URL of the PNG picture: the page's CSP allows only those for pictures.
     image: String,
     text: String,
+    readable_text: String,
 }
 
 impl ViewedPage {
@@ -2450,6 +2451,7 @@ impl ViewedPage {
                 base64::engine::general_purpose::STANDARD.encode(&shown.png)
             ),
             text: shown.text,
+            readable_text: shown.readable_text,
         };
         // Encoding a large page takes time too. A lock or close during it discards the result.
         if !ticket.is_current() {
@@ -3068,6 +3070,7 @@ mod tests {
             height: 1,
             png: vec![],
             text: "FAKE page text".into(),
+            readable_text: "FAKE page text".into(),
         };
         assert!(matches!(
             ViewedPage::from_rendered(shown, &ticket),

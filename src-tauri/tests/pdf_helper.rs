@@ -115,7 +115,7 @@ fn the_helper_draws_a_page_of_a_locked_document() {
     view.extend_from_slice(&500u32.to_le_bytes());
     let (code, answer) = ask(&view);
     assert_eq!(code, Some(0));
-    assert_eq!(&answer[..9], b"MCPDFRS1\0");
+    assert_eq!(&answer[..9], b"MCPDFVR2\0");
     let number = |at: usize| u32::from_le_bytes(answer[at..at + 4].try_into().unwrap());
     assert_eq!((number(9), number(13)), (2, 500), "2 pages, drawn 500 wide");
     let png_length = u64::from_le_bytes(answer[21..29].try_into().unwrap()) as usize;
@@ -129,6 +129,29 @@ fn the_helper_draws_a_page_of_a_locked_document() {
             .any(|pixel| { pixel[3] > 0 && pixel.0[..3].iter().any(|channel| *channel < 245) }),
         "the real helper must draw visible page content"
     );
-    let text = &answer[29 + png_length + 8..];
-    assert!(String::from_utf8_lossy(text).contains("Page 2 of 2"));
+    let text_length_at = 29 + png_length;
+    let text_length = u64::from_le_bytes(
+        answer[text_length_at..text_length_at + 8]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    assert!(text_length <= 256 * 1024);
+    let text_start = text_length_at + 8;
+    let text = std::str::from_utf8(&answer[text_start..text_start + text_length]).unwrap();
+    assert!(text.contains("Page 2 of 2"));
+    let readable_length_at = text_start + text_length;
+    let readable_length = u64::from_le_bytes(
+        answer[readable_length_at..readable_length_at + 8]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    assert!(readable_length <= 256 * 1024);
+    let readable_start = readable_length_at + 8;
+    assert_eq!(answer.len(), readable_start + readable_length);
+    let readable = std::str::from_utf8(&answer[readable_start..]).unwrap();
+    assert!(readable.contains("Page 2 of 2"));
+    assert!(text
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .eq(readable.chars().filter(|c| !c.is_whitespace())));
 }
