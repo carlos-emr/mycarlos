@@ -1,3 +1,4 @@
+import { useTextState } from "../i18n";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -86,7 +87,7 @@ function renderLibrary(
   } as unknown as VaultBridge;
   function Harness() {
     const [snapshot, setSnapshot] = useState(base);
-    const [notice, setNotice] = useState("");
+    const [notice, setNotice] = useTextState();
     return (
       <VaultLibrary
         bridge={bridge}
@@ -172,7 +173,7 @@ describe("a PDF locked with a password (#54)", () => {
     const copy = await screen.findByRole("dialog", { name: "FAKE Letter.pdf" });
     expect(
       within(copy).getByText(
-        "FAKE Letter.pdf unlocked. The locked original is kept as FAKE Letter (locked original).pdf.",
+        "An unlocked copy was added. The locked original is now called FAKE Letter (locked original).pdf.",
       ),
     ).toBeVisible();
     await waitFor(() =>

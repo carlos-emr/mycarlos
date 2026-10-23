@@ -1,3 +1,4 @@
+import { useI18n, t as translateNow } from "../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 
@@ -20,6 +21,7 @@ export function UnlockPdfDialog({
   /** Closes the dialog; the document stays as it is. */
   onCancel: () => void;
 }) {
+  useI18n();
   const [password, setPassword] = useState("");
   const dialogRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -51,17 +53,20 @@ export function UnlockPdfDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
-          <h2 id="unlock-title">Unlock {name}</h2>
+          <h2 id="unlock-title">
+            {translateNow("unlock.submit")} {name}
+          </h2>
         </header>
         <form onSubmit={unlock}>
           <div className="native-rename-fields">
             <p id="unlock-help">
-              This document is locked with a password. Enter the document
-              password from your patient portal. myCarlos adds a copy that opens
-              without it and keeps the locked original. It never keeps the
-              password.
+              {translateNow(
+                "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
+              )}
             </p>
-            <label htmlFor="unlock-password">Document password</label>
+            <label htmlFor="unlock-password">
+              {translateNow("interface.DocumentReader.documentPassword")}
+            </label>
             <input
               ref={inputRef}
               id="unlock-password"
@@ -76,8 +81,9 @@ export function UnlockPdfDialog({
             />
             {wrongTries > 0 && (
               <p id="unlock-error" role="alert" key={wrongTries}>
-                That password did not open the document. Check it in your
-                patient portal, then try again.
+                {translateNow(
+                  "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+                )}
               </p>
             )}
           </div>
@@ -88,10 +94,12 @@ export function UnlockPdfDialog({
               disabled={busy}
               onClick={cancel}
             >
-              Cancel
+              {translateNow("common.cancel")}
             </button>
             <button className="button primary" disabled={busy || !password}>
-              {busy ? "Unlocking…" : "Unlock"}
+              {busy
+                ? translateNow("interface.UnlockPdfDialog.unlocking")
+                : translateNow("unlock.submit")}
             </button>
           </footer>
         </form>

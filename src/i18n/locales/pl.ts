@@ -1,3 +1,4 @@
+import interfaceMessages from "./interface-pl.json" with { type: "json" };
 import type { Message } from "../types";
 import type { MessageKey } from "./en";
 
@@ -5,6 +6,7 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  ...interfaceMessages,
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
   "frame.window.label": "Prywatny sejf myCarlos",

@@ -1,8 +1,10 @@
+import interfaceMessages from "./interface-fr.json" with { type: "json" };
 import type { Message } from "../types";
 import type { MessageKey } from "./en";
 
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
+  ...interfaceMessages,
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
     "N’utilisez pas de véritables renseignements sur des patients",

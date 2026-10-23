@@ -1,3 +1,4 @@
+import { resolveText, formatDate } from "../i18n";
 import {
   cleanup,
   fireEvent,
@@ -93,9 +94,9 @@ describe("VaultLibrary folders", () => {
         }),
       );
       await vi.waitFor(() =>
-        expect(setNotice).toHaveBeenCalledWith(
-          "A folder cannot be moved into itself or its subfolders.",
-        ),
+        expect(
+          setNotice.mock.calls.map(([notice]) => resolveText(notice)),
+        ).toContain("A folder cannot be moved into itself or its subfolders."),
       );
       expect(bridge.updateFolder).not.toHaveBeenCalled();
     },
@@ -120,9 +121,7 @@ describe("VaultLibrary folders", () => {
   it("shows when a folder was added in the Date added column", () => {
     renderLibrary();
     const row = screen.getByRole("article", { name: "FAKE Letters folder" });
-    expect(row).toHaveTextContent(
-      new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
-    );
+    expect(row).toHaveTextContent(formatDate(Date.UTC(2026, 0, 15, 12)));
     expect(row).not.toHaveTextContent(/\bFolder\b/);
   });
 });
@@ -254,7 +253,7 @@ describe("VaultLibrary search", () => {
     expect(shownDocuments()).toEqual([
       ["FAKE Blood shared.pdf", "In Shared with me"],
     ]);
-    expect(screen.getByText("1 documents found")).toBeVisible();
+    expect(screen.getByText("1 document found")).toBeVisible();
     dragFolder(sharedRow(), screen.getByRole("main"));
     search("Search Shared with me", "lab");
     expect(screen.queryAllByRole("article", { name: / folder$/ })).toHaveLength(
@@ -401,7 +400,7 @@ describe("VaultLibrary search", () => {
         ]),
     ).toEqual([["FAKE 2026 folder", null]]);
     expect(
-      screen.getByText("1 folders · 1 documents in this location"),
+      screen.getByText("1 folder · 1 document in this location"),
     ).toBeVisible();
   });
 
@@ -692,9 +691,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       ),
     );
     await vi.waitFor(() =>
-      expect(setNotice).toHaveBeenCalledWith(
-        "FAKE June Letters moved to FAKE Letters.",
-      ),
+      expect(
+        setNotice.mock.calls.map(([notice]) => resolveText(notice)),
+      ).toContain("FAKE June Letters moved to FAKE Letters."),
     );
   });
 

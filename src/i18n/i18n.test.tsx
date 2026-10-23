@@ -53,15 +53,22 @@ describe("catalogue", () => {
       });
       it("uses the same placeholders as English", () => {
         for (const key of keys) {
-          const wanted = placeholders(forms(en[key as keyof typeof en])[0][1]);
+          const source: Message = en[key as keyof typeof en];
           const message = catalogue[key];
-          // A plural message in one language is plain in another only if it
-          // never needed a count; keep the shapes alike.
+          // A lexical singular can say “A file” while its plural shows
+          // {count}. Compare the corresponding English form; categories
+          // English lacks (few/many) inherit its other-form contract.
           expect(typeof message === "string", key).toBe(
-            typeof (en as Record<string, Message>)[key] === "string",
+            typeof source === "string",
           );
           for (const [form, text] of forms(message)) {
-            expect(placeholders(text), `${key} ${form}`).toEqual(wanted);
+            const sourceText =
+              typeof source === "string"
+                ? source
+                : (source[form as keyof typeof source] ?? source.other);
+            expect(placeholders(text), `${key} ${form}`).toEqual(
+              placeholders(sourceText),
+            );
           }
         }
       });
@@ -307,7 +314,9 @@ describe("a rendered screen in each language", () => {
         { target: { value: "shared with ME" } },
       );
       expect(form.getByRole("alert").textContent).toBe(
-        say("create.profile.sharedTaken", { folder: SHARED_FOLDER_NAME }),
+        say("create.profile.sharedTaken", {
+          folder: say("interface.LibrarySidebar.sharedWithMe"),
+        }),
       );
     });
     it(`counts the shared files waiting at unlock in ${locale} (#61)`, () => {
@@ -328,7 +337,7 @@ describe("a rendered screen in each language", () => {
       const { container, rerender } = render(unlock(1));
       const said = () =>
         container.querySelector(".native-received-waiting")?.textContent;
-      const folder = SHARED_FOLDER_NAME;
+      const folder = translate(locale, "interface.LibrarySidebar.sharedWithMe");
       expect(said()).toBe(translate(locale, "unlock.waiting.one", { folder }));
       for (const count of [2, 5, 22]) {
         rerender(unlock(count));

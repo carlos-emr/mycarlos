@@ -1,8 +1,10 @@
+import interfaceMessages from "./interface-es.json" with { type: "json" };
 import type { Message } from "../types";
 import type { MessageKey } from "./en";
 
 /** Spanish, formal register ("usted"). */
 export const es: Record<MessageKey, Message> = {
+  ...interfaceMessages,
   "frame.banner.title": "Versión de desarrollo con datos ficticios",
   "frame.banner.body": "No use información real de pacientes",
   "frame.window.label": "Bóveda privada de myCarlos",

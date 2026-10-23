@@ -509,6 +509,33 @@ with Escape; no destructive operation may occur. These checks cover the tested W
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
 
+The macOS CI job also runs `native_dialog_macos` on the OS main thread, inside
+AppKit's actual application run loop. The Cargo-launched harness uses the pinned
+objc2 example's unbundled-app activation call; this is not production app policy.
+Per-case diagnostics record running/active state, real key-window identity,
+parent/sheet key eligibility, first responder and default-button-cell identity.
+These observations do not replace any keyboard-property or actual-event gate.
+The production sheet observes only its own parent's close notification, ends
+only its own attached sheet, and clamps a late response to cancellation once
+that parent starts closing; completion is delivered at most once.
+
+The harness presents
+an owned test window and the production AppKit sheet in all five languages, posts
+native Return and Escape events, and deliberately activates the second button.
+It checks the exact response for each role and also refuses unknown responses,
+cancellation and closing the parent. All 18 cases are attempted, including actual
+key events after a keyboard-property mismatch; any metadata or behavior failure
+still fails the report. Each appearance, key-window, and completion wait has its
+own five-second deadline, allowing about fifteen seconds per case or 270 seconds
+of waits across 18 cases, plus framework calls and cleanup.
+A timeout fails before cleanup; cleanup cannot
+satisfy an expected response. The job uploads `test-results/native-dialog-macos.json`,
+and a missing report fails the upload step. Linux and Windows print an unsupported
+message for this harness and provide no AppKit evidence. These in-process events
+supplement physical keyboard, Tauri window integration and mobile device checks;
+the report and its CI outcome must be reviewed before claiming platform coverage.
+
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS

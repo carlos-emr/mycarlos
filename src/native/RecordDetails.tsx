@@ -1,8 +1,9 @@
+import { useI18n, t as translateNow, formatDate } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
-import { formatBytes, recordKind } from "./recordPresentation";
+import { formatBytes, recordKind, recordSource } from "./recordPresentation";
 import {
   MoveTargetSelect,
   moveTargetValue,
@@ -58,6 +59,7 @@ export function RecordDetails({
   locked = false,
   onUnlock,
 }: RecordDetailsProps) {
+  useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   // Choosing in the list only picks a destination; Move moves (#67). In
   // Chromium every arrow key on a closed list changes its value, which moved
@@ -111,22 +113,28 @@ export function RecordDetails({
       >
         <header className="dialog-head">
           <div>
-            <span className="eyebrow">Encrypted document</span>
+            <span className="eyebrow">
+              {translateNow("interface.RecordDetails.encryptedDocument")}
+            </span>
             <h2 id="native-record-title">{record.displayName}</h2>
           </div>
           <button
             ref={closeRef}
             className="dialog-close native-dialog-close"
             type="button"
-            aria-label="Close document details"
+            aria-label={translateNow(
+              "interface.RecordDetails.closeDocumentDetails",
+            )}
             onClick={onClose}
           >
-            Close
+            {translateNow("photo.close")}
           </button>
         </header>
         <div
           className="document-preview"
-          aria-label="Encrypted document details"
+          aria-label={translateNow(
+            "interface.RecordDetails.encryptedDocumentDetails",
+          )}
         >
           <span className={`document-icon ${kind.icon}`}>
             <Icon name={kind.icon} />
@@ -140,23 +148,33 @@ export function RecordDetails({
           </div>
           {record.available ? (
             <p id="native-record-about">
-              The file stays encrypted in the vault. Save a copy only when you
-              need a readable file outside myCarlos.
+              {translateNow(
+                "interface.RecordDetails.theFileStaysEncryptedInTheVault",
+              )}
             </p>
           ) : (
             <p id="native-record-about" role="alert">
               {unreadable ? (
                 <>
-                  <strong>This document is unavailable.</strong> Its encrypted
-                  file is missing or could not be read, so a copy cannot be
-                  saved. See the notice in the library for what to check.
+                  <strong>
+                    {translateNow(
+                      "interface.RecordDetails.thisDocumentIsUnavailable",
+                    )}
+                  </strong>{" "}
+                  {translateNow(
+                    "interface.RecordDetails.itsEncryptedFileIsMissingOrCould",
+                  )}
                 </>
               ) : (
                 <>
-                  <strong>This document is damaged.</strong> Its encrypted file
-                  is missing from this device, so a copy cannot be saved.
-                  Restoring the myCarlos data folder from a backup may recover
-                  it.
+                  <strong>
+                    {translateNow(
+                      "interface.RecordDetails.thisDocumentIsDamaged",
+                    )}
+                  </strong>{" "}
+                  {translateNow(
+                    "interface.RecordDetails.itsEncryptedFileIsMissingFromThis",
+                  )}
                 </>
               )}
             </p>
@@ -164,28 +182,36 @@ export function RecordDetails({
         </div>
         <dl className="record-metadata">
           <div>
-            <dt>Kind</dt>
+            <dt>{translateNow("interface.RecordDetails.kind")}</dt>
             <dd>{kind.label}</dd>
           </div>
           <div>
-            <dt>Source</dt>
-            <dd>{record.sourceLabel}</dd>
+            <dt>{translateNow("library.column.source")}</dt>
+            <dd>{recordSource(record)}</dd>
           </div>
           <div>
-            <dt>Date added</dt>
-            <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
+            <dt>{translateNow("library.column.added")}</dt>
+            <dd>
+              {formatDate(record.importedAtMs, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </dd>
           </div>
           <div>
-            <dt>File</dt>
+            <dt>{translateNow("interface.RecordDetails.file")}</dt>
             <dd>{formatBytes(record.plaintextSize)}</dd>
           </div>
           <div>
-            <dt>Folder</dt>
+            <dt>{translateNow("interface.RecordDetails.folder")}</dt>
             <dd>
               {record.folderIds
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
-                .join(", ") || (moveTargets ? "Shared with me" : "My records")}
+                .join(", ") ||
+                (moveTargets
+                  ? translateNow("interface.LibrarySidebar.sharedWithMe")
+                  : translateNow("sidebar.myRecords"))}
             </dd>
           </div>
         </dl>
@@ -194,8 +220,12 @@ export function RecordDetails({
             <Icon name="lock-open" />
             <span>
               {onUnlock
-                ? "Locked with a password. Unlock adds a copy that opens without it, and keeps this one."
-                : "Locked with a password. myCarlos cannot open it on this device yet."}
+                ? translateNow(
+                    "interface.RecordDetails.lockedWithAPasswordUnlockAddsA",
+                  )
+                : translateNow(
+                    "interface.RecordDetails.lockedWithAPasswordMyCarlosCannotOpen",
+                  )}
             </span>
           </p>
         )}
@@ -208,7 +238,7 @@ export function RecordDetails({
               onClick={onUnlock}
             >
               <Icon name="lock-open" />
-              <span>Unlock…</span>
+              <span>{translateNow("interface.RecordDetails.unlock")}</span>
             </button>
           )}
           {onViewPhoto && (
@@ -219,7 +249,7 @@ export function RecordDetails({
               onClick={onViewPhoto}
             >
               <Icon name="image" />
-              <span>View photo</span>
+              <span>{translateNow("interface.RecordDetails.viewPhoto")}</span>
             </button>
           )}
           <button
@@ -228,7 +258,7 @@ export function RecordDetails({
             disabled={busy || readOnly}
             onClick={onRename}
           >
-            Rename document
+            {translateNow("rename.title.document")}
           </button>
         </div>
         <p className="native-dialog-status" role="status">
@@ -237,14 +267,18 @@ export function RecordDetails({
         <footer className="dialog-actions native-dialog-actions">
           <div className="native-dialog-move">
             <label>
-              Move to
+              {translateNow("interface.RecordDetails.moveTo")}
               {moveTargets ? (
                 <MoveTargetSelect
                   ref={moveToRef}
-                  label="Move to"
+                  label={translateNow("interface.RecordDetails.moveTo")}
                   targets={moveTargets}
                   value={destination}
-                  current={inShared ? "Shared with me" : undefined}
+                  current={
+                    inShared
+                      ? translateNow("interface.LibrarySidebar.sharedWithMe")
+                      : undefined
+                  }
                   disabled={busy || readOnly}
                   onChange={(value) => setChoice({ placement, value })}
                 />
@@ -257,7 +291,7 @@ export function RecordDetails({
                     setChoice({ placement, value: event.target.value })
                   }
                 >
-                  <option value="">My records</option>
+                  <option value="">{translateNow("sidebar.myRecords")}</option>
                   {folders.map((folder) => (
                     <option value={folder.id} key={folder.id}>
                       {folder.name}
@@ -272,7 +306,7 @@ export function RecordDetails({
               disabled={busy || readOnly || destination === current}
               onClick={move}
             >
-              Move
+              {translateNow("interface.RecordDetails.move")}
             </button>
           </div>
           <button
@@ -281,7 +315,7 @@ export function RecordDetails({
             disabled={busy || readOnly}
             onClick={onHide}
           >
-            Hide
+            {translateNow("interface.RecordDetails.hide")}
           </button>
           {onRead && (
             <button
@@ -290,7 +324,7 @@ export function RecordDetails({
               disabled={busy || !record.available}
               onClick={onRead}
             >
-              Read
+              {translateNow("interface.RecordDetails.read")}
             </button>
           )}
           <button
@@ -299,7 +333,7 @@ export function RecordDetails({
             disabled={busy || !record.available}
             onClick={onExport}
           >
-            Save a copy to this computer
+            {translateNow("interface.RecordDetails.saveACopyToThisComputer")}
           </button>
         </footer>
       </section>
