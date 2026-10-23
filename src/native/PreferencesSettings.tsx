@@ -1,4 +1,5 @@
 import { TextSizeSetting, useNativeZoom } from "./TextSizeSetting";
+import { LanguageSetting } from "./LanguageSetting";
 import { AppearanceSetting } from "./AppearanceSetting";
 import { useI18n } from "../i18n";
 
@@ -16,6 +17,7 @@ export function PreferencesSettings() {
         </div>
       </div>
       <div className="setting-list">
+        <LanguageSetting />
         <AppearanceSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
