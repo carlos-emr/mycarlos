@@ -1,4 +1,4 @@
-import interfaceMessages from "./interface-pt-BR.json";
+import interfaceMessages from "./interface-pt-BR.json" with { type: "json" };
 import type { Message } from "../types";
 import type { MessageKey } from "./en";
 

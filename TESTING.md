@@ -513,7 +513,12 @@ The macOS CI job also runs `native_dialog_macos` on the OS main thread. It prese
 an owned test window and the production AppKit sheet in all five languages, posts
 native Return and Escape events, and deliberately activates the second button.
 It checks the exact response for each role and also refuses unknown responses,
-cancellation and closing the parent. A timeout fails before cleanup; cleanup cannot
+cancellation and closing the parent. All 18 cases are attempted, including actual
+key events after a keyboard-property mismatch; any metadata or behavior failure
+still fails the report. Each appearance, key-window, and completion wait has its
+own five-second deadline, allowing about fifteen seconds per case or 270 seconds
+of waits across 18 cases, plus framework calls and cleanup.
+A timeout fails before cleanup; cleanup cannot
 satisfy an expected response. The job uploads `test-results/native-dialog-macos.json`,
 and a missing report fails the upload step. Linux and Windows print an unsupported
 message for this harness and provide no AppKit evidence. These in-process events

@@ -1,4 +1,4 @@
-import interfaceMessages from "./interface-en.json";
+import interfaceMessages from "./interface-en.json" with { type: "json" };
 import type { Message } from "../types";
 
 /** The source catalogue. Every other language must have exactly these keys
