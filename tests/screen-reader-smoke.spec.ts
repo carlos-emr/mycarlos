@@ -226,7 +226,7 @@ test("pending search announcements stop when leaving the location (#92)", async 
   });
   await expect(search).toBeVisible();
   await page.clock.pauseAt(new Date());
-  await search.fill("Letter");
+  await search.fill("Results");
   await page.getByRole("button", { name: "Open FAKE Results" }).click();
   await page.clock.runFor(600);
   await expect(
