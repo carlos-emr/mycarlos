@@ -173,7 +173,9 @@ describe("Hidden inside Security", () => {
         expect(back).toHaveFocus();
         await user.keyboard("{Enter}");
         expect(screen.getByRole("heading", { name: security })).toBeVisible();
-        expect(screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) })).toHaveFocus();
+        expect(
+          screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) }),
+        ).toHaveFocus();
         await user.click(
           screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) }),
         );
@@ -202,7 +204,9 @@ describe("Hidden inside Security", () => {
         expect(
           screen.getByRole("button", { name: new RegExp(`^${hidden} 0`) }),
         ).toBeEnabled();
-        const securityNav = within(section).getByRole("button", { name: security });
+        const securityNav = within(section).getByRole("button", {
+          name: security,
+        });
         securityNav.focus();
         await user.keyboard("{Enter}");
         expect(securityNav).toHaveFocus();
