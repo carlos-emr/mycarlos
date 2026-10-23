@@ -1121,3 +1121,17 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
 .language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
 .language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+/* Optional identity details and explicit Shared with me suggestions. */
+.native-person-details-list { list-style: none; padding: 0; min-width: 0; }
+.native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.native-profile-settings > form { width: 100%; min-width: 0; }
+.native-profile-settings label, .native-profile-settings input { min-width: 0; }
+.native-profile-settings input { width: 100%; }
+.native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.native-backup-settings > div > .button { max-width: 100%; }
+.native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }
+.native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
+.native-person-details-list form { width: 100%; }
+.native-person-details-list fieldset, .native-setting-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.native-person-details-actions, .native-person-suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-person-suggestion { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; white-space: normal; overflow-wrap: anywhere; font-size: 0.875rem; }

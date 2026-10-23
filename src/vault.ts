@@ -7,6 +7,17 @@ export interface PatientProfile {
   id: string;
   displayName: string;
   createdAtMs: number;
+  fullName?: string;
+  birthDate?: string;
+}
+
+export interface PersonDetails {
+  fullName?: string;
+  birthDate?: string;
+}
+export interface FoundIdentity {
+  name: string;
+  birthDate?: string;
 }
 
 export interface VaultFolder {
@@ -250,7 +261,12 @@ export interface VaultBridge {
     credential: RestoreCredential,
     replace: boolean,
   ): Promise<boolean>;
-  createProfile(displayName: string): Promise<string>;
+  createProfile(displayName: string, details?: PersonDetails): Promise<string>;
+  updateProfileDetails?(
+    profileId: string,
+    details: PersonDetails,
+  ): Promise<void>;
+  sharedIdentity?(recordId: string): Promise<FoundIdentity | null>;
   createFolder(
     profileId: string,
     parentId: string | null,
@@ -547,8 +563,16 @@ export function createVaultBridge(): VaultBridge {
       invoke<boolean>("vault_restore", {
         request: { pickId, ...credential, replace },
       }),
-    createProfile: (displayName) =>
-      invoke<string>("vault_create_profile", { request: { displayName } }),
+    createProfile: (displayName, details = {}) =>
+      invoke<string>("vault_create_profile", {
+        request: { displayName, details, today: localDateText(new Date()) },
+      }),
+    updateProfileDetails: (profileId, details) =>
+      invoke<void>("vault_update_profile_details", {
+        request: { profileId, details, today: localDateText(new Date()) },
+      }),
+    sharedIdentity: (recordId) =>
+      invoke<FoundIdentity | null>("vault_shared_identity", { recordId }),
     createFolder: (profileId, parentId, name) =>
       invoke<string>("vault_create_folder", {
         request: { profileId, parentId, name },

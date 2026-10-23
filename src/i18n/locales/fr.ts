@@ -513,4 +513,37 @@ export const fr: Record<MessageKey, Message> = {
   "library.empty.help": "Ajoutez un dossier ou importez un document ici.",
   "library.noMatch.title": "Aucun document correspondant",
   "library.noMatch.help": "Essayez une autre recherche.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Nom complet, comme sur les documents de la clinique (facultatif)",
+  "personDetails.birthDate": "Date de naissance (facultative)",
+  "personDetails.help":
+    "Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.",
+  "personDetails.nameTooLong":
+    "Ce nom complet est trop long. Raccourcissez-le.",
+  "personDetails.invalidDate":
+    "Saisissez une date de naissance valide : année, mois et jour.",
+  "personDetails.futureDate":
+    "La date de naissance ne peut pas être dans le futur.",
+  "personDetails.list": "Renseignements des personnes",
+  "personDetails.for": "Renseignements pour {name}",
+  "personDetails.save": "Enregistrer les renseignements",
+  "personDetails.cancel": "Annuler",
+  "personDetails.noName": "Aucun nom complet",
+  "personDetails.noDate": "Aucune date de naissance",
+  "personDetails.editFor": "Modifier les renseignements pour {name}",
+  "personDetails.edit": "Modifier les renseignements",
+  "personDetails.saved": "Renseignements pour {name} enregistrés.",
+  "personSuggestion.byDate": "la date de naissance sur le document correspond",
+  "personSuggestion.byBoth":
+    "la date de naissance et le nom sur le document correspondent",
+  "personSuggestion.byName": "le nom sur le document correspond",
+  "personSuggestion.for": "Personne suggérée pour {document}",
+  "personSuggestion.offer":
+    "Ce document semble être destiné à {name} ({why}). Le déplacer dans ses dossiers ?",
+  "personSuggestion.moveLabel":
+    "Déplacer {document} dans les dossiers de {name}",
+  "personSuggestion.move": "Déplacer",
+  "personSuggestion.dismissLabel": "Pas cette personne : {document}",
+  "personSuggestion.dismiss": "Pas cette personne",
 };

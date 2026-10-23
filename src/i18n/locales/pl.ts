@@ -528,4 +528,35 @@ export const pl: Record<MessageKey, Message> = {
   "library.empty.help": "Proszę dodać tutaj folder lub zaimportować dokument.",
   "library.noMatch.title": "Brak pasujących dokumentów",
   "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Imię i nazwisko, jak na dokumentach z przychodni (opcjonalnie)",
+  "personDetails.birthDate": "Data urodzenia (opcjonalnie)",
+  "personDetails.help":
+    "Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.",
+  "personDetails.nameTooLong": "Imię i nazwisko są zbyt długie. Skróć je.",
+  "personDetails.invalidDate":
+    "Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.",
+  "personDetails.futureDate": "Data urodzenia nie może być w przyszłości.",
+  "personDetails.list": "Dane osób",
+  "personDetails.for": "Dane osoby {name}",
+  "personDetails.save": "Zapisz dane",
+  "personDetails.cancel": "Anuluj",
+  "personDetails.noName": "Brak imienia i nazwiska",
+  "personDetails.noDate": "Brak daty urodzenia",
+  "personDetails.editFor": "Edytuj dane osoby {name}",
+  "personDetails.edit": "Edytuj dane",
+  "personDetails.saved": "Zapisano dane osoby {name}.",
+  "personSuggestion.byDate": "data urodzenia w dokumencie jest zgodna",
+  "personSuggestion.byBoth":
+    "data urodzenia i imię i nazwisko w dokumencie są zgodne",
+  "personSuggestion.byName": "imię i nazwisko w dokumencie są zgodne",
+  "personSuggestion.for": "Sugerowana osoba dla dokumentu {document}",
+  "personSuggestion.offer":
+    "Wygląda na to, że ten dokument jest dla osoby {name} ({why}). Przenieść go do jej dokumentacji?",
+  "personSuggestion.moveLabel":
+    "Przenieś {document} do dokumentacji osoby {name}",
+  "personSuggestion.move": "Przenieś",
+  "personSuggestion.dismissLabel": "To nie ta osoba: {document}",
+  "personSuggestion.dismiss": "To nie ta osoba",
 };

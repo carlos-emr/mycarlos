@@ -507,4 +507,34 @@ export const ptBR: Record<MessageKey, Message> = {
   "library.empty.help": "Adicione uma pasta ou importe um documento aqui.",
   "library.noMatch.title": "Nenhum documento corresponde",
   "library.noMatch.help": "Tente outra pesquisa.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Nome completo, como nos documentos da clínica (opcional)",
+  "personDetails.birthDate": "Data de nascimento (opcional)",
+  "personDetails.help":
+    "Guardados neste cofre criptografado para sugerir a quem um documento compartilhado pertence. Esses dados não verificam a origem de um documento.",
+  "personDetails.nameTooLong": "Este nome completo é muito longo. Encurte-o.",
+  "personDetails.invalidDate":
+    "Digite uma data de nascimento válida: ano, mês e dia.",
+  "personDetails.futureDate": "A data de nascimento não pode estar no futuro.",
+  "personDetails.list": "Dados das pessoas",
+  "personDetails.for": "Dados de {name}",
+  "personDetails.save": "Salvar dados",
+  "personDetails.cancel": "Cancelar",
+  "personDetails.noName": "Sem nome completo",
+  "personDetails.noDate": "Sem data de nascimento",
+  "personDetails.editFor": "Editar dados de {name}",
+  "personDetails.edit": "Editar dados",
+  "personDetails.saved": "Dados de {name} salvos.",
+  "personSuggestion.byDate": "a data de nascimento no documento corresponde",
+  "personSuggestion.byBoth":
+    "a data de nascimento e o nome no documento correspondem",
+  "personSuggestion.byName": "o nome no documento corresponde",
+  "personSuggestion.for": "Pessoa sugerida para {document}",
+  "personSuggestion.offer":
+    "Parece que este documento é para {name} ({why}). Mover para os registros dessa pessoa?",
+  "personSuggestion.moveLabel": "Mover {document} para os registros de {name}",
+  "personSuggestion.move": "Mover",
+  "personSuggestion.dismissLabel": "Não é esta pessoa: {document}",
+  "personSuggestion.dismiss": "Não é esta pessoa",
 };
