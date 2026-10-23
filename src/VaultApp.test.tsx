@@ -722,6 +722,7 @@ describe("durable vault UI", () => {
     await screen.findByText(
       "FAKE_Camera.jpg was hidden. It stays in the vault under Hidden.",
     );
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     expect(
       screen.getByRole("button", { name: "Restore FAKE_Camera.jpg" }),
@@ -750,6 +751,7 @@ describe("durable vault UI", () => {
     await screen.findByText(
       "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
     );
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     expect(
       screen.getByRole("button", { name: "Restore FAKE_Camera.jpg" }),
@@ -976,6 +978,7 @@ describe("durable vault UI", () => {
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
       expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(screen.getByRole("button", { name: /^Hidden/ }));
       const row = await screen.findByRole("article", {
         name: "FAKE_Shared.pdf, hidden",
@@ -984,7 +987,8 @@ describe("durable vault UI", () => {
       expect(
         screen.getByRole("complementary", { hidden: true }),
       ).toHaveTextContent("1 document · 0 folders");
-      // Reopening the selected Hidden entry must retain Shared as its source.
+      // Returning through Security and reopening Hidden retains Shared as its source.
+      await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(screen.getByRole("button", { name: /^Hidden/ }));
       expect(
         screen.getByRole("article", { name: "FAKE_Shared.pdf, hidden" }),
@@ -1019,6 +1023,7 @@ describe("durable vault UI", () => {
         }),
       ).toBeVisible();
       await user.click(within(nav()).getByRole("button", { name: /^Jamie/ }));
+      await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(screen.getByRole("button", { name: /^Hidden/ }));
       expect(
         await screen.findByRole("article", {
@@ -3947,6 +3952,7 @@ describe("durable vault UI", () => {
     expect(screen.queryByText("FAKE_Report.pdf")).not.toBeInTheDocument();
 
     // Under Hidden, with its size, and back with Restore.
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     expect(screen.getByRole("heading", { name: "Hidden" })).toBeVisible();
     expect(screen.getByText("1 document · 2 KB")).toBeVisible();
@@ -6725,6 +6731,7 @@ describe("durable vault UI", () => {
       "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
     );
     expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     for (const name of [
       "FAKE_Hidden_missing.pdf",

@@ -7,6 +7,7 @@ import type { MessageKey } from "./en";
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
   ...interfaceMessages,
+  "hidden.backToSecurity": "Powrót do zabezpieczeń",
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
   "frame.window.label": "Prywatny sejf myCarlos",

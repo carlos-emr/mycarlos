@@ -16,6 +16,7 @@ export function HiddenDocuments({
   readOnly,
   notice,
   onRestore,
+  onBack,
 }: {
   records: VaultRecord[];
   folderNameById: Map<string, string>;
@@ -24,6 +25,7 @@ export function HiddenDocuments({
   readOnly: boolean;
   notice: string;
   onRestore: (record: VaultRecord) => void;
+  onBack?: () => void;
 }) {
   useI18n();
   const total = records.reduce((sum, record) => sum + record.plaintextSize, 0);
@@ -33,6 +35,12 @@ export function HiddenDocuments({
   );
   return (
     <main className="library-main purpose-screen native-hidden">
+      {onBack && (
+        <button className="breadcrumb" type="button" onClick={onBack}>
+          <span aria-hidden="true">‹</span>{" "}
+          {translateNow("hidden.backToSecurity")}
+        </button>
+      )}
       <div className="main-head">
         <div>
           <h1>{translateNow("interface.HiddenDocuments.hidden")}</h1>

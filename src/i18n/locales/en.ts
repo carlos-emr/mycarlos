@@ -7,6 +7,7 @@ import type { Message } from "../types";
  * as plain text, never as HTML. */
 export const en = {
   ...interfaceMessages,
+  "hidden.backToSecurity": "Back to Security",
   // Window frame
   "frame.banner.title": "Synthetic-data development build",
   "frame.banner.body": "Do not use real patient information",

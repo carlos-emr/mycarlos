@@ -6,6 +6,7 @@ import type { MessageKey } from "./en";
  * "escolha") without titles. */
 export const ptBR: Record<MessageKey, Message> = {
   ...interfaceMessages,
+  "hidden.backToSecurity": "Voltar para Segurança",
   "frame.banner.title": "Versão de desenvolvimento com dados fictícios",
   "frame.banner.body": "Não use informações reais de pacientes",
   "frame.window.label": "Cofre privado do myCarlos",

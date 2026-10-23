@@ -39,6 +39,9 @@ interface SecuritySettingsProps {
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
+  hiddenCount: number;
+  hiddenScopeName: string;
+  onOpenHidden: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -129,6 +132,9 @@ export function SecuritySettings({
   onLock,
   onChangePassphrase,
   onCreateProfile,
+  hiddenCount,
+  hiddenScopeName,
+  onOpenHidden,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -252,6 +258,18 @@ export function SecuritySettings({
                 "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
               )}
             </p>
+            <button
+              className="button hidden-settings-entry"
+              type="button"
+              onClick={onOpenHidden}
+            >
+              <Icon name="hidden" />
+              <span className="hidden-entry-copy">
+                {translateNow("interface.HiddenDocuments.hidden")}{" "}
+                <span className="nav-count">{formatNumber(hiddenCount)}</span>
+                <span className="hidden-entry-scope">{hiddenScopeName}</span>
+              </span>
+            </button>
             <p>
               {translateNow(
                 "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",

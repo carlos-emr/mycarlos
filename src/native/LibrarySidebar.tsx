@@ -31,11 +31,8 @@ interface LibrarySidebarProps {
   drag: VaultDragDrop;
   onOpenPerson: (profileId: string) => void;
   onOpenFolder: (profileId: string, folderId: string) => void;
-  /** Hidden documents at the current location (#71). */
-  hiddenCount: number;
   /** Hidden can be opened from Shared with me; keep its whole-vault footer. */
   hiddenFromShared?: boolean;
-  onOpenHidden: () => void;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
 }
@@ -87,9 +84,7 @@ export function LibrarySidebar({
   sharedNew,
   onOpenShared,
   vaultTotals,
-  hiddenCount,
   hiddenFromShared = false,
-  onOpenHidden,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
@@ -256,7 +251,12 @@ export function LibrarySidebar({
         </button>
         <span className="nav-label">{translateNow("sidebar.settings")}</span>
         <button
-          className={section === "security" ? "selected" : ""}
+          className={
+            section === "security" || section === "hidden" ? "selected" : ""
+          }
+          aria-current={
+            section === "security" || section === "hidden" ? "page" : undefined
+          }
           type="button"
           onClick={onOpenSecurity}
         >
@@ -268,17 +268,6 @@ export function LibrarySidebar({
           onClick={onOpenPreferences}
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}
-        </button>
-        {/* At the bottom of the sidebar, set apart, like the mocks' Trash
-            (#71): out of view, not a folder or a setting. */}
-        <button
-          className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
-          type="button"
-          onClick={onOpenHidden}
-        >
-          <Icon name="hidden" />
-          {translateNow("interface.HiddenDocuments.hidden")}{" "}
-          <span className="nav-count">{formatNumber(hiddenCount)}</span>
         </button>
       </nav>
       <div className="storage">
