@@ -43,7 +43,7 @@ export function HiddenDocuments({
   return (
     <main className="library-main purpose-screen native-hidden">
       {onBack && (
-        <button className="breadcrumb" type="button" onClick={onBack}>
+        <button className="button breadcrumb" type="button" onClick={onBack}>
           <span aria-hidden="true">‹</span>{" "}
           {translateNow("hidden.backToSecurity")}
         </button>
