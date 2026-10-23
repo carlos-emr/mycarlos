@@ -83,7 +83,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
-  await expectAnnounced(page, "1 file(s) encrypted and imported.");
+  await expectAnnounced(page, "1 document encrypted and added.");
 
   // A document's details, and a move from there.
   await page

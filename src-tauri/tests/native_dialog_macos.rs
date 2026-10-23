@@ -21,17 +21,11 @@ fn main() {
 #[cfg(target_os = "macos")]
 fn main() {
     use objc2::{rc::autoreleasepool, MainThreadMarker};
-    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+    use objc2_app_kit::NSApplication;
     let mtm = MainThreadMarker::new().expect("AppKit proof must run on the OS main thread");
     autoreleasepool(|_| {
         let app = NSApplication::sharedApplication(mtm);
-        app.finishLaunching();
-        assert!(
-            app.setActivationPolicy(NSApplicationActivationPolicy::Regular),
-            "could not activate the owned test application"
-        );
-        app.activate();
-        let (cases, error) = platform::run(mtm, &app);
+        let (cases, error) = lifecycle::run(mtm, &app);
         let report = serde_json::json!({ "platform": "macOS", "scope": "Actual production AppKit sheet, synthesized native key events and real control activation; no physical keyboard or Tauri pointer-acquisition proof", "passed": error.is_none(), "cases": cases, "error": error });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../test-results/native-dialog-macos.json");
@@ -43,13 +37,89 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
+mod lifecycle {
+    use objc2::{
+        define_class, msg_send, rc::Retained, runtime::AnyObject, sel, DefinedClass,
+        MainThreadMarker, MainThreadOnly, Message,
+    };
+    use objc2_app_kit::{
+        NSApplication, NSApplicationActivationPolicy, NSEvent, NSEventModifierFlags, NSEventType,
+    };
+    use objc2_foundation::{NSObject, NSObjectNSDelayedPerforming, NSObjectProtocol, NSPoint};
+    use serde_json::Value;
+    use std::cell::RefCell;
+    struct RunnerIvars {
+        result: RefCell<Option<(Vec<Value>, Option<String>)>>,
+    }
+    define_class!(
+        #[unsafe(super = NSObject)]
+        #[thread_kind = MainThreadOnly]
+        #[ivars = RunnerIvars]
+        struct EventProofRunner;
+        unsafe impl NSObjectProtocol for EventProofRunner {}
+        impl EventProofRunner {
+            #[unsafe(method(runTests:))]
+            fn run_tests(&self, _argument: Option<&AnyObject>) {
+                let _runner_alive = self.retain();
+                let app = NSApplication::sharedApplication(self.mtm());
+                // The exact objc2 0.6.4 hello_world_app example requires this
+                // for an unbundled Cargo-launched GUI app. Test harness only.
+                #[allow(deprecated)]
+                app.activateIgnoringOtherApps(true);
+                let result = super::platform::run(self.mtm(), &app);
+                *self.ivars().result.borrow_mut() = Some(result);
+                // stop() needs an event to wake run() if nextEvent is waiting.
+                let wake = NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+                    NSEventType::ApplicationDefined, NSPoint::new(0.,0.), NSEventModifierFlags::empty(), 0., 0, None, 0, 0, 0,
+                ).expect("could not create the owned run-loop wake event");
+                app.stop(None);
+                app.postEvent_atStart(&wake, false);
+            }
+        }
+    );
+    impl EventProofRunner {
+        fn new(mtm: MainThreadMarker) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(RunnerIvars {
+                result: RefCell::new(None),
+            });
+            // SAFETY: NSObject init has this exact signature and superclass.
+            unsafe { msg_send![super(this), init] }
+        }
+    }
+    pub fn run(mtm: MainThreadMarker, app: &NSApplication) -> (Vec<Value>, Option<String>) {
+        if !app.setActivationPolicy(NSApplicationActivationPolicy::Regular) {
+            return (
+                Vec::new(),
+                Some("could not set the owned application's activation policy".to_owned()),
+            );
+        }
+        let runner = EventProofRunner::new(mtm);
+        // SAFETY: this one-object selector exists, accepts nil, and is queued
+        // on the current OS main run loop. The retained runner spans app.run().
+        unsafe {
+            runner.performSelector_withObject_afterDelay(sel!(runTests:), None, 0.0);
+        }
+        // AppKit owns launching and its full GUI event loop, not a hand-made
+        // approximation. The delayed selector begins only after run() starts.
+        app.run();
+        let result = runner.ivars().result.borrow_mut().take();
+        result.unwrap_or_else(|| {
+            (
+                Vec::new(),
+                Some("the run-loop proof did not complete".to_owned()),
+            )
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
 mod platform {
     use super::{native_confirmation_macos, ui_text::UiLocale};
     use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertThirdButtonReturn,
-        NSApplication, NSBackingStoreType, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
-        NSModalResponseCancel, NSWindow, NSWindowStyleMask,
+        NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertThirdButtonReturn,
+        NSApplication, NSBackingStoreType, NSCell, NSEvent, NSEventMask, NSEventModifierFlags,
+        NSEventType, NSModalResponseCancel, NSResponder, NSWindow, NSWindowStyleMask,
     };
     use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSPoint, NSRect, NSSize, NSString};
     use serde_json::{json, Value};
@@ -105,7 +175,44 @@ mod platform {
         window
     }
 
+    fn window_state(
+        app: &NSApplication,
+        parent: &NSWindow,
+        sheet: &NSWindow,
+        alert: &NSAlert,
+    ) -> Value {
+        let key = app.keyWindow();
+        let first = sheet.firstResponder();
+        let default = sheet.defaultButtonCell();
+        let buttons = alert.buttons();
+        let default_matches: Vec<bool> = (0..3)
+            .map(|index| {
+                let cell = buttons.objectAtIndex(index).cell();
+                match (&default, &cell) {
+                    (Some(default), Some(cell)) => {
+                        let default_base: &NSCell = default;
+                        std::ptr::eq(default_base, &**cell)
+                    }
+                    _ => false,
+                }
+            })
+            .collect();
+        let first_matches: Vec<bool> = (0..3)
+            .map(|index| {
+                let button = buttons.objectAtIndex(index);
+                let responder: &NSResponder = &button;
+                first
+                    .as_ref()
+                    .is_some_and(|first| std::ptr::eq(&**first, responder))
+            })
+            .collect();
+        json!({ "appRunning": app.isRunning(), "appActive": app.isActive(), "activationPolicy": format!("{:?}", app.activationPolicy()), "keyWindowIsParent": key.as_ref().is_some_and(|key| std::ptr::eq(&**key,parent)), "keyWindowIsSheet": key.as_ref().is_some_and(|key| std::ptr::eq(&**key,sheet)), "parentCanBecomeKey": parent.canBecomeKeyWindow(), "sheetCanBecomeKey": sheet.canBecomeKeyWindow(), "parentStyle": parent.styleMask().bits(), "sheetStyle": sheet.styleMask().bits(), "firstResponderPresent": first.is_some(), "firstResponderMatchesButtons": first_matches, "defaultCellPresent": default.is_some(), "defaultCellMatchesButtons": default_matches })
+    }
+
     pub fn run(mtm: MainThreadMarker, app: &NSApplication) -> (Vec<Value>, Option<String>) {
+        // Still attempt all 18 cases if activation fails: the strict key-window
+        // gates and recorded app state then expose the actual limitation.
+        let _activation_observed = until(app, || app.isActive());
         let mut cases = Vec::new();
         let mut first_error = None;
         for (tag, locale) in [
@@ -159,6 +266,10 @@ mod platform {
         let buttons = alert.buttons();
         let readback = Rc::new(RefCell::new(Vec::<Value>::new()));
         let mut keyboard_role_errors = Vec::new();
+        let mut key_event_posted = false;
+        let diagnostics = Rc::new(RefCell::new(
+            json!({ "initial": window_state(app, &parent, &sheet, &alert) }),
+        ));
         let result = (|| {
             if !until(app, || {
                 parent.attachedSheet().is_some() && sheet.isVisible()
@@ -185,8 +296,14 @@ mod platform {
             match stimulus {
                 "Return" | "Escape" => {
                     sheet.makeKeyAndOrderFront(None);
-                    if !until(app, || sheet.isKeyWindow()) {
+                    let actual_key_window = until(app, || sheet.isKeyWindow());
+                    diagnostics.borrow_mut()["beforeKeyEvent"] =
+                        window_state(app, &parent, &sheet, &alert);
+                    if !actual_key_window {
                         return Err("sheet did not become the actual key window".to_owned());
+                    }
+                    if !app.isRunning() || !app.isActive() {
+                        return Err("the native application was not running and active before the key event".to_owned());
                     }
                     let (key, code) = if stimulus == "Return" {
                         ("\r", 36)
@@ -196,6 +313,7 @@ mod platform {
                     let chars = NSString::from_str(key);
                     let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(NSEventType::KeyDown, NSPoint::new(0.,0.), NSEventModifierFlags::empty(), 0., sheet.windowNumber(), None, &chars, &chars, false, code).ok_or("native key event creation failed")?;
                     app.postEvent_atStart(&event, false);
+                    key_event_posted = true;
                 }
                 "action" => {
                     // SAFETY: this is the retained live second button of the
@@ -209,7 +327,9 @@ mod platform {
                 "close" => parent.close(),
                 _ => unreachable!(),
             }
-            if !until(app, || response.get().is_some()) {
+            let completed = until(app, || response.get().is_some());
+            diagnostics.borrow_mut()["afterStimulus"] = window_state(app, &parent, &sheet, &alert);
+            if !completed {
                 return Err(
                     "native completion timed out after stimulus; cleanup cannot count as proof"
                         .to_owned(),
@@ -242,7 +362,7 @@ mod platform {
             }
             Ok(())
         })();
-        cases.push(json!({ "locale": tag, "stimulus": stimulus, "buttons": *readback.borrow(), "keyboardRoleErrors": keyboard_role_errors, "response": response.get(), "consent": response.get().map(native_confirmation_macos::action_chosen), "callbacks": calls.get(), "passed": result.is_ok(), "error": result.as_ref().err() }));
+        cases.push(json!({ "locale": tag, "stimulus": stimulus, "buttons": *readback.borrow(), "keyboardRoleErrors": keyboard_role_errors, "keyEventPosted": key_event_posted, "appWindowState": *diagnostics.borrow(), "response": response.get(), "consent": response.get().map(native_confirmation_macos::action_chosen), "callbacks": calls.get(), "passed": result.is_ok(), "error": result.as_ref().err() }));
         // Record failure before cleanup. These are only this case's own
         // objects; a cleanup response never turns a timeout into success.
         if parent.attachedSheet().is_some() {
