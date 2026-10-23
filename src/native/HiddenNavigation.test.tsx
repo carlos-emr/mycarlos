@@ -141,8 +141,10 @@ describe("Hidden inside Security", () => {
         expect(entryBox.left).toBeGreaterThanOrEqual(-1);
         expect(entryBox.right).toBeLessThanOrEqual(phone ? 321 : 1101);
         expect(entry.scrollWidth).toBeLessThanOrEqual(entry.clientWidth + 1);
-        await user.click(entry);
+        entry.focus();
+        await user.keyboard("{Enter}");
         expect(screen.getByRole("heading", { name: hidden })).toBeVisible();
+        expect(screen.getByRole("heading", { name: hidden })).toHaveFocus();
         expect(
           screen.getByRole("article", {
             name: translate(locale, "interface.hidden.record", {
@@ -167,8 +169,11 @@ describe("Hidden inside Security", () => {
         expect(back.getBoundingClientRect().right).toBeLessThanOrEqual(
           phone ? 321 : 1101,
         );
-        await user.click(back);
+        await user.tab({ shift: true });
+        expect(back).toHaveFocus();
+        await user.keyboard("{Enter}");
         expect(screen.getByRole("heading", { name: security })).toBeVisible();
+        expect(screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) })).toHaveFocus();
         await user.click(
           screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) }),
         );
@@ -197,6 +202,10 @@ describe("Hidden inside Security", () => {
         expect(
           screen.getByRole("button", { name: new RegExp(`^${hidden} 0`) }),
         ).toBeEnabled();
+        const securityNav = within(section).getByRole("button", { name: security });
+        securityNav.focus();
+        await user.keyboard("{Enter}");
+        expect(securityNav).toHaveFocus();
       });
     }
   }

@@ -40,6 +40,7 @@ interface SecuritySettingsProps {
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
   hiddenCount: number;
+  focusHiddenEntry?: boolean;
   hiddenScopeName: string;
   onOpenHidden: () => void;
   /** When the recovery key was set up, or null if there is none. */
@@ -133,6 +134,7 @@ export function SecuritySettings({
   onChangePassphrase,
   onCreateProfile,
   hiddenCount,
+  focusHiddenEntry = false,
   hiddenScopeName,
   onOpenHidden,
   recoveryKeySetAtMs,
@@ -145,6 +147,10 @@ export function SecuritySettings({
   onSpeedTest,
 }: SecuritySettingsProps) {
   const { t } = useI18n();
+  const hiddenEntryRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (focusHiddenEntry) hiddenEntryRef.current?.focus();
+  }, [focusHiddenEntry]);
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
     result: UiText;
@@ -259,6 +265,7 @@ export function SecuritySettings({
               )}
             </p>
             <button
+              ref={hiddenEntryRef}
               className="button hidden-settings-entry"
               type="button"
               onClick={onOpenHidden}
@@ -266,7 +273,7 @@ export function SecuritySettings({
               <Icon name="hidden" />
               <span className="hidden-entry-copy">
                 {translateNow("interface.HiddenDocuments.hidden")}{" "}
-                <span className="nav-count">{formatNumber(hiddenCount)}</span>
+                <span className="nav-count">{formatNumber(hiddenCount)}</span>{" "}
                 <span className="hidden-entry-scope">{hiddenScopeName}</span>
               </span>
             </button>

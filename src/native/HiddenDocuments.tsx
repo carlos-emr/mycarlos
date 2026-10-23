@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useI18n, t as translateNow, formatDate } from "../i18n";
 import { Icon } from "../Icon";
 import type { VaultRecord } from "../vault";
@@ -17,6 +18,7 @@ export function HiddenDocuments({
   notice,
   onRestore,
   onBack,
+  focusOnOpen = false,
 }: {
   records: VaultRecord[];
   folderNameById: Map<string, string>;
@@ -26,8 +28,13 @@ export function HiddenDocuments({
   notice: string;
   onRestore: (record: VaultRecord) => void;
   onBack?: () => void;
+  focusOnOpen?: boolean;
 }) {
   useI18n();
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (focusOnOpen) headingRef.current?.focus();
+  }, [focusOnOpen]);
   const total = records.reduce((sum, record) => sum + record.plaintextSize, 0);
   // Most recently hidden first.
   const sorted = [...records].sort(
@@ -43,7 +50,9 @@ export function HiddenDocuments({
       )}
       <div className="main-head">
         <div>
-          <h1>{translateNow("interface.HiddenDocuments.hidden")}</h1>
+          <h1 ref={headingRef} tabIndex={-1}>
+            {translateNow("interface.HiddenDocuments.hidden")}
+          </h1>
           <p>
             {translateNow("interface.count.documents", {
               count: records.length,

@@ -165,6 +165,7 @@ export function VaultLibrary({
   // Keep Security’s Hidden entry scoped to the location it was opened from,
   // including Shared; returning from Hidden must retain that location.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
+  const [returnFocusToHidden, setReturnFocusToHidden] = useState(false);
   // The steps for older backups after a key whose kit may have been lost or
   // seen was replaced: kept across locks, until the patient says done.
   const [oldBackupsGuide, setOldBackupsGuideState] =
@@ -271,9 +272,16 @@ export function VaultLibrary({
       ? (hiddenProfileId ?? profileId)
       : locationProfileId;
   const openSecurity = () => {
+    // A persistent navigation button keeps focus when it opens Security.
+    setReturnFocusToHidden(false);
     if (section !== "security" && section !== "hidden") {
       setHiddenProfileId(locationProfileId ?? profileId);
     }
+    setSection("security");
+  };
+  const backToSecurity = () => {
+    // The Back button disappears, so return to the Hidden entry it came from.
+    setReturnFocusToHidden(true);
     setSection("security");
   };
   const hiddenScope = people.find(
@@ -1889,7 +1897,8 @@ export function VaultLibrary({
               <HiddenDocuments
                 records={hiddenRecords}
                 rootName={hiddenScopeName}
-                onBack={openSecurity}
+                onBack={backToSecurity}
+                focusOnOpen
                 folderNameById={folderNameById}
                 busy={busy}
                 readOnly={readOnly}
@@ -1911,6 +1920,7 @@ export function VaultLibrary({
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
                 hiddenCount={hiddenRecords.length}
+                focusHiddenEntry={returnFocusToHidden}
                 hiddenScopeName={hiddenScopeName}
                 onOpenHidden={() => setSection("hidden")}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
