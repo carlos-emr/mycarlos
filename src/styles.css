@@ -1087,3 +1087,6 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
+
+.native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.native-backup-settings > div > .button { max-width: 100%; }

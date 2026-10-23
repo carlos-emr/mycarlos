@@ -292,7 +292,7 @@ export function SecuritySettings({
             </button>
           </div>
         </section>
-        <section className="setting-row">
+        <section className="setting-row native-backup-settings">
           <div>
             <h2>{t("security.backup.title")}</h2>
             <p>{t("security.backup.body")}</p>
