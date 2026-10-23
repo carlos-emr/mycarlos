@@ -280,6 +280,23 @@ mod platform {
             if !std::ptr::eq(&*actual_parent, &*parent) {
                 return Err("sheet attached to the wrong window".to_owned());
             }
+            // AppKit can finish activating the first owned sheet after it
+            // becomes visible. Read strict button metadata only after the
+            // same actual-key-window readiness required for native key events.
+            sheet.makeKeyAndOrderFront(None);
+            let ready_for_metadata = until(app, || {
+                app.isRunning()
+                    && app.isActive()
+                    && sheet.isVisible()
+                    && sheet.isKeyWindow()
+                    && parent
+                        .attachedSheet()
+                        .is_some_and(|attached| std::ptr::eq(&*attached, &*sheet))
+            });
+            diagnostics.borrow_mut()["beforeMetadata"] = window_state(app, &parent, &sheet, &alert);
+            if !ready_for_metadata {
+                return Err("the running active application did not make its visible owned sheet the actual key window before metadata readback".to_owned());
+            }
             for (index, expected_key) in ["\r", "", "\u{1b}"].iter().enumerate() {
                 let button = buttons.objectAtIndex(index);
                 let key = button.keyEquivalent().to_string();
@@ -295,12 +312,13 @@ mod platform {
             }
             match stimulus {
                 "Return" | "Escape" => {
-                    sheet.makeKeyAndOrderFront(None);
-                    let actual_key_window = until(app, || sheet.isKeyWindow());
                     diagnostics.borrow_mut()["beforeKeyEvent"] =
                         window_state(app, &parent, &sheet, &alert);
-                    if !actual_key_window {
-                        return Err("sheet did not become the actual key window".to_owned());
+                    if !sheet.isKeyWindow() {
+                        return Err(
+                            "sheet was no longer the actual key window before the key event"
+                                .to_owned(),
+                        );
                     }
                     if !app.isRunning() || !app.isActive() {
                         return Err("the native application was not running and active before the key event".to_owned());
