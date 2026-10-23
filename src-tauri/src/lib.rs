@@ -6,6 +6,8 @@ mod idle;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod portal_client;
+mod portal_link;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
@@ -196,6 +198,21 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            VaultError::Portal(reason) => {
+                use portal_link::LinkError;
+                match reason {
+                    LinkError::Disabled => Self { code: "portal_link_disabled", message: "Portal linking is not enabled in this build." },
+                    LinkError::Unavailable => Self { code: "portal_link_unavailable", message: "Portal linking is not available on this device yet." },
+                    LinkError::InvalidPortal => Self { code: "portal_link_address", message: "Enter the portal's HTTPS address, without a username, password, query or fragment." },
+                    LinkError::InvalidCode => Self { code: "portal_link_code", message: "Enter the complete code shown by the portal." },
+                    LinkError::InvalidDeviceName => Self { code: "portal_link_device_name", message: "Choose a device name of 1 to 64 characters without control characters." },
+                    LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code." },
+                    LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed." },
+                    LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again." },
+                    LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
+                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
+                }
+            },
             VaultError::Busy => Self {
                 code: "busy",
                 message: "A passphrase check or speed test is running. Wait for it to finish, then try again.",
@@ -1441,6 +1458,53 @@ where
 #[tauri::command]
 async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PortalLinkRequest {
+    portal_base: String,
+    code: String,
+    device_name: String,
+    profile_id: Option<Uuid>,
+}
+
+impl Drop for PortalLinkRequest {
+    fn drop(&mut self) {
+        self.code.zeroize();
+    }
+}
+
+#[tauri::command]
+async fn vault_portal_link(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<portal_link::LinkSummary> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Capture before queuing work: an old IPC request must not begin linking
+    // in a session opened while it waited for a blocking worker.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    // User input already touches the native deadline. HTTP completion is not
+    // new activity and must not keep an unattended or newly unlocked vault open.
+    tauri::async_runtime::spawn_blocking(move || {
+        store.link_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -3099,6 +3163,7 @@ pub fn run() {
             vault_touch,
             vault_set_auto_lock,
             vault_snapshot,
+            vault_portal_link,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,

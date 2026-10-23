@@ -71,6 +71,8 @@ pub enum HistoryEvent {
     /// This vault was set aside (#71's third part): moved, whole and still
     /// encrypted, into `set-aside/`, never erased.
     SetAside,
+    PortalLinkStarted,
+    PortalLinked,
 }
 
 /// A folder as it was named at the time of the event.
@@ -133,6 +135,10 @@ pub struct HistoryEntry {
     /// the app knows ("lockedAt:<ms>:<by>"), or "notRecorded".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portal_link_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinic_key_ids: Option<Vec<String>>,
     /// The hash of the entry before this one.
     pub prev: String,
 }
@@ -158,6 +164,8 @@ impl HistoryEntry {
             place: None,
             place_sha256: None,
             previous_session: None,
+            portal_link_id: None,
+            clinic_key_ids: None,
             prev: String::new(),
         }
     }

@@ -284,3 +284,48 @@ unknown descriptive metadata (CARLOS `DocumentManifest` Javadoc, lines 35–54).
 reader accepts those null values but still requires every member; unknown members, missing
 members and wrong value types fail closed. Neither an absent clinic claim nor an absent
 recipient can become Verified. This changes no outer portal delivery schema or vault format.
+
+## Future native linking dependency selection (#55)
+
+This separate evaluation branch selects exact `ed25519-dalek` 2.2.0 and
+`x25519-dalek` 2.0.1 (BSD-3-Clause). Their 2.x APIs share the existing rand_core
+0.6 / rand 0.8 and SHA-256 0.10 lines. Signing uses a seed-derived public key;
+`hazmat`, legacy compatibility and batch verification are not enabled. Zeroize
+is explicit on both libraries. RustSec RUSTSEC-2022-0093 is fixed from Ed25519
+2.0; this selection does not assert the dependency graph has no other advisories.
+
+The optional network feature selects `reqwest` 0.13.5 (MIT OR Apache-2.0),
+default features off and rustls-no-provider only. Its async exchange is cancelled
+by dropping the send/body future after a native session change. The upstream
+patch also fixes a blocking timeout panic used by other consumers. It shares Tauri's existing reqwest 0.13 line
+but adds a production TLS graph when explicitly enabled. The already locked
+Tokio runtime is a direct optional dependency for the cancellation timer/select. `rustls` 0.23.46
+(Apache-2.0 OR ISC OR MIT) selects ring/std/TLS1.2; no aws-lc build or HTTP/3,
+compression, cookies, HTTP/2 or system-proxy feature is requested. The explicit
+crypto provider avoids process-global provider installation.
+`rustls-platform-verifier` 0.7.1 (MIT OR Apache-2.0) uses the platform trust
+services and requires a JNI 0.22 integration on Android. Its fixes to Android CRL
+fetching, disabled trust anchors and Windows hostname verification take priority
+over retaining the existing JNI 0.21 line.
+The Android Kotlin verifier component and native initialization must be wired
+and tested before Android linking is claimed to work.
+
+The resolved graph, licenses and feature unification require independent review
+before compiling this feature. No HPKE implementation or delivery-v2 dependency
+is introduced by the initial linking slice. Primary selection sources:
+- https://docs.rs/crate/ed25519-dalek/2.2.0
+- https://docs.rs/crate/ed25519-dalek/2.2.0/source/LICENSE
+- https://docs.rs/crate/x25519-dalek/2.0.1/features
+- https://rustsec.org/advisories/RUSTSEC-2022-0093.html
+- https://github.com/seanmonstar/reqwest/releases/tag/v0.13.5
+- https://crates.io/crates/rustls/0.23.46
+- https://github.com/rustls/rustls-platform-verifier/releases/tag/v/0.7.1
+
+Resolved source-only graph review: 576 packages on the integrated baseline,
+602 now (27 additions, one old reqwest entry removed; 26 net). The inherited
+Tauri edges also enable reqwest JSON/stream; default application features remain
+empty and do not enable TLS. With portal-linking, only rustls-no-provider/TLS
+are added to that reqwest edge. ring is 0.17.14 (Apache-2.0 AND ISC); other new
+licenses are BSD-3-Clause, MIT/Apache-2.0, ISC and the bundled root data's
+CDLA-Permissive-2.0. Source metadata/lock resolution is not a build or advisory
+scan. No independent final dependency approval or feature build has passed yet.

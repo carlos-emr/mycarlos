@@ -90,6 +90,7 @@ fn main() {
             "vault_touch",
             "vault_set_auto_lock",
             "vault_snapshot",
+            "vault_portal_link",
             "vault_change_passphrase",
             "vault_recovery_key_begin",
             "vault_recovery_key_confirm",

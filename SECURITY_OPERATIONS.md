@@ -149,3 +149,28 @@ off.
 If a portal or a clinic key may be compromised, follow the incident steps above. The clinic
 revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a revoked
 key, and patients can remove a device under Account → Linked devices in the portal.
+
+## Evaluating authenticated linking (#55)
+
+The future link implementation is built only with explicit native Cargo feature
+`portal-linking`; default builds refuse its command before any write or network
+use. The portal and CARLOS off switches remain separately required. A browser
+mock or a setting in the renderer never supplies production clinic pins.
+
+The typed portal address must be HTTPS with no user information, query or
+fragment. Deployments under a path prefix retain that prefix in the signed raw
+request path. Requests do not follow redirects, use cookies or persist an HTTP
+cache. TLS uses platform certificate validation with a TLS 1.2 minimum; no
+invalid-certificate override or document-selected destination is provided. This client makes direct connections and disables proxy discovery and automatic
+retries; an error after a one-use request is not retried silently. Android
+platform-verifier initialization remains an explicit implementation gate, not
+a claim established by desktop source review. Platform trust facilities can
+perform their own certificate/revocation lookups; these OS operations require
+traffic review alongside the app client.
+
+Link codes and private device keys are absent from errors and diagnostics. Only
+the per-link public keys, generic device name, one-use code and signed v1 claims
+leave the device while linking. Clinic names and computed key fingerprints are
+shown to the patient and recorded in encrypted history; the vault keeps private
+seeds, pins and recipient binding encrypted. Do not send a receipt or claim a
+portal delivery was filed merely because a link request succeeded.

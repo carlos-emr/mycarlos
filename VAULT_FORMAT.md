@@ -768,3 +768,36 @@ The patient must press Move; the existing move and its history entry remain one 
 Dismissals and extracted hints last only for the unlocked session. Clinic pickup and automatic
 clinic-to-person links remain dependent on portal linking and authenticated delivery intake
 (portal #41 M2/M4); this change introduces no clinic queue, network client or trust claim.
+
+### Future manifest format 5: portal link custody (#55)
+
+This future branch reserves format 5 above held profile format 4. It does not
+authorize upgrading the current demo. A writable unlock upgrades older supported
+manifests using the existing redundant/history transaction; read-only recovery
+never writes a migration. Older applications refuse the new version.
+
+`portalLinks` is absent for an empty list, at most 16 entries otherwise. Each
+entry keeps its UUID, canonical HTTPS portal base (including any deployment path),
+a generic patient-edited device name, optional existing-person UUID, creation
+time and two independent 32-byte private seeds (`x25519`, `ed25519`). These seeds
+are inside the authenticated encrypted manifest, never the public snapshot.
+Every clone of the private-seed structure zeroizes on drop.
+
+An entry with no `clinic` is an incomplete attempt. It is durably committed
+before the one-use code is sent; the code is never stored in the vault. An entry
+becomes linked only when a valid response binds its derived device key ID to
+a recipient, clinic ID/name and 1–16 canonical P-256 SPKI keys with hash-derived
+IDs and active/revoked status, including at least one active key. Duplicate
+link IDs, device IDs, key IDs or response members are refused.
+
+`portalLinkStarted` and `portalLinked` are history events. Both have a
+`portalLinkId`; success also records the clinic name and complete `clinicKeyIds`
+in that same encrypted commit. New optional history fields appear before `prev`
+and are omitted when absent, preserving the old canonical bytes.
+
+The public snapshot carries native availability and redacted summaries (portal
+base, generic device name, clinic name, key fingerprints, person and incomplete
+state). It carries no private seeds, SPKI blobs or recipient IDs. Backup already
+contains this encrypted manifest and hence retains link custody. Signed-original
+object metadata, durable verification results, rechecks and the restore notice
+are further format-5 work; their absence must not be reported as complete #55.

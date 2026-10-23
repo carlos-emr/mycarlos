@@ -1,5 +1,6 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
+use crate::portal_link::{self, LinkSummary, StoredLink};
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -22,7 +23,7 @@ use std::{
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, MutexGuard, PoisonError,
     },
     time::{Duration, Instant},
@@ -39,7 +40,7 @@ use zxcvbn::{zxcvbn, Score};
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 4;
+const VAULT_FORMAT: u32 = 5;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -229,6 +230,8 @@ fn cancelled_io_error() -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum VaultError {
+    #[error("the portal link could not be completed")]
+    Portal(portal_link::LinkError),
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
@@ -481,6 +484,9 @@ struct Manifest {
     profiles: Vec<PatientProfile>,
     folders: Vec<VaultFolder>,
     records: Vec<StoredRecord>,
+    /// Format 5. Includes incomplete attempts, whose clinic is absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    portal_links: Vec<StoredLink>,
     /// The history (#71): where its segments are, and the end of its chain.
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
@@ -540,6 +546,8 @@ pub struct VaultSnapshot {
     pub profiles: Vec<PatientProfile>,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
+    pub portal_linking_enabled: bool,
+    pub portal_links: Vec<LinkSummary>,
     /// Why the session is read-only, if it is.
     pub recovery: Option<RecoveryReason>,
     /// When the vault's recovery key was set up, if it has one.
@@ -737,6 +745,9 @@ pub struct VaultStore {
     root: PathBuf,
     unlocked: Mutex<Option<UnlockedVault>>,
     kdf_running: AtomicBool,
+    /// Changes when a session opens or begins locking. Network work never
+    /// holds the vault mutex and may not apply across this boundary.
+    portal_session: AtomicU64,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -755,6 +766,7 @@ impl VaultStore {
             root,
             unlocked: Mutex::new(None),
             kdf_running: AtomicBool::new(false),
+            portal_session: AtomicU64::new(0),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -814,6 +826,7 @@ impl VaultStore {
     fn session(&self) -> MutexGuard<'_, Option<UnlockedVault>> {
         self.unlocked.lock().unwrap_or_else(|poisoned| {
             let mut guard = poisoned.into_inner();
+            self.portal_session.fetch_add(1, Ordering::AcqRel);
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
@@ -940,6 +953,7 @@ impl VaultStore {
                 folders: Vec::new(),
                 records: Vec::new(),
                 history: HistoryState::default(),
+                portal_links: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -1177,6 +1191,7 @@ impl VaultStore {
     /// Every unlocked session has an idle deadline, started with it under the
     /// session lock.
     fn open_session(&self, guard: &mut Option<UnlockedVault>, vault: UnlockedVault) {
+        self.portal_session.fetch_add(1, Ordering::AcqRel);
         *guard = Some(vault);
         self.idle.arm(Instant::now());
     }
@@ -1198,6 +1213,8 @@ impl VaultStore {
     /// a new session starts, or activity arrives, while it waits, it can stop
     /// a transfer without locking.
     fn lock_if(&self, due: impl Fn() -> bool, by: &str) -> bool {
+        self.portal_session.fetch_add(1, Ordering::AcqRel);
+        run_at_test_boundary("portal.lock-after-ticket");
         self.cancel_io.store(true, Ordering::Release);
         let locked = {
             let mut guard = self.session();
@@ -1238,6 +1255,13 @@ impl VaultStore {
 
     fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
         VaultSnapshot {
+            portal_linking_enabled: crate::portal_client::available(),
+            portal_links: unlocked
+                .manifest
+                .portal_links
+                .iter()
+                .map(StoredLink::summary)
+                .collect(),
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
             records: unlocked
@@ -1278,6 +1302,134 @@ impl VaultStore {
             &utc_date_text(now_ms),
             now_ms,
         )
+    }
+
+    /// The feature check precedes key generation, vault writes and HTTP. The
+    /// one-use code is transient: only the pending private seeds are persisted.
+    pub fn portal_link_ticket(&self) -> u64 {
+        self.portal_session.load(Ordering::Acquire)
+    }
+
+    pub fn link_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<LinkSummary, VaultError> {
+        self.link_portal_using(
+            portal,
+            code,
+            device_name,
+            profile_id,
+            (now_ms, session),
+            |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
+        )
+    }
+
+    fn link_portal_using(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        context: (u64, u64),
+        post: impl FnOnce(
+            portal_link::LinkRequest,
+            &str,
+            &dyn Fn() -> bool,
+        ) -> Result<portal_link::LinkedClinic, portal_link::LinkError>,
+    ) -> Result<LinkSummary, VaultError> {
+        use portal_link::LinkError;
+        let (now_ms, session) = context;
+        if !portal_link::enabled() {
+            return Err(VaultError::Portal(LinkError::Disabled));
+        }
+        if !crate::portal_client::available() {
+            return Err(VaultError::Portal(LinkError::Unavailable));
+        }
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let normalized = portal_link::normalize_code(code).map_err(VaultError::Portal)?;
+        let pending = StoredLink::pending(portal, device_name, profile_id, now_ms)
+            .map_err(VaultError::Portal)?;
+        let pending = self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            if manifest.portal_links.len() >= portal_link::MAX_LINKS {
+                return Err(VaultError::Invalid);
+            }
+            if let Some(profile) = profile_id {
+                require_profile(manifest, profile)?;
+                if profile == shared_profile_id(manifest.vault_id) {
+                    return Err(VaultError::Invalid);
+                }
+            }
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkStarted, now_ms);
+            entry.portal_link_id = Some(pending.id);
+            entry.profile_id = profile_id;
+            entries.push(entry);
+            manifest.portal_links.push(pending.clone());
+            run_at_test_boundary("portal.pending-before-commit");
+            Ok(pending)
+        })?;
+        // A degraded redundant write may have committed pending state but made
+        // the vault read-only. Do not consume a code unless success can be saved.
+        {
+            let guard = self.session();
+            let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+            if unlocked.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+        }
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let request = pending
+            .request(&normalized, now_ms / 1000)
+            .map_err(VaultError::Portal)?;
+        let pending_id = pending.id;
+        let device_key_id = pending.keys.device_key_id();
+        drop(pending);
+        drop(normalized);
+        let clinic = post(request, &device_key_id, &cancelled).map_err(VaultError::Portal)?;
+        clinic
+            .validate(&device_key_id)
+            .map_err(VaultError::Portal)?;
+        // The HTTP exchange held no vault lock. Check the session again under
+        // that lock before committing pins, with the same history transaction.
+        self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            let link = manifest
+                .portal_links
+                .iter_mut()
+                .find(|link| link.id == pending_id)
+                .ok_or(VaultError::NotFound)?;
+            if link.clinic.is_some() || link.keys.device_key_id() != device_key_id {
+                return Err(VaultError::Invalid);
+            }
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinked, crate::now_ms());
+            entry.portal_link_id = Some(link.id);
+            entry.profile_id = link.profile_id;
+            entry.name = Some(clinic.clinic_name.clone());
+            entry.clinic_key_ids = Some(
+                clinic
+                    .clinic_keys
+                    .iter()
+                    .map(|key| key.kid.clone())
+                    .collect(),
+            );
+            entries.push(entry);
+            link.clinic = Some(clinic);
+            Ok(link.summary())
+        })
     }
 
     pub fn create_profile_with_details(
@@ -2635,6 +2787,7 @@ impl VaultStore {
     /// recovery key it had still opens it. Nothing is erased. An open,
     /// writable vault records it in its history first.
     pub fn reset(&self) -> Result<(), VaultError> {
+        self.portal_session.fetch_add(1, Ordering::AcqRel);
         self.cancel_io.store(true, Ordering::Release);
         let mut guard = self.session();
         // Holding the mutex means the cancelled operation has stopped. Clear the
@@ -3660,6 +3813,24 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     }
 
     let mut record_ids = HashSet::new();
+    if manifest.portal_links.len() > portal_link::MAX_LINKS
+        || (manifest.format_version < 5 && !manifest.portal_links.is_empty())
+    {
+        return Err(VaultError::Corrupt);
+    }
+    let mut link_ids = HashSet::new();
+    let mut device_ids = HashSet::new();
+    for link in &manifest.portal_links {
+        if !link_ids.insert(link.id)
+            || !device_ids.insert(link.keys.device_key_id())
+            || link.validate().is_err()
+            || link
+                .profile_id
+                .is_some_and(|id| !profile_ids.contains(&id) || id == shared_profile_id(vault_id))
+        {
+            return Err(VaultError::Corrupt);
+        }
+    }
     let mut object_names = HashSet::new();
     for record in &manifest.records {
         if record.id.is_nil()
@@ -7135,6 +7306,111 @@ pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[cfg(not(feature = "portal-linking"))]
+    #[test]
+    fn portal_link_default_off_refuses_before_creating_files_or_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("not-created");
+        let store = VaultStore::new(root.clone());
+        assert!(matches!(
+            store.link_portal(
+                "https://fake.example",
+                "FAKE0001-FAKE7-Q2M4K",
+                "myCarlos",
+                None,
+                1,
+                store.portal_link_ticket()
+            ),
+            Err(VaultError::Portal(portal_link::LinkError::Disabled))
+        ));
+        assert!(!root.exists());
+    }
+
+    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[test]
+    fn portal_link_lock_started_during_pending_commit_never_sends_http() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let ticket = store.portal_link_ticket();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (handle_tx, handle_rx) = mpsc::channel();
+        let locker = Arc::clone(&store);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "portal.pending-before-commit",
+                Box::new(move || {
+                    let locker = Arc::clone(&locker);
+                    let started_tx = started_tx.clone();
+                    let (gate_tx, gate_rx) = mpsc::channel();
+                    let handle = std::thread::spawn(move || {
+                        AT_TEST_BOUNDARY.with(|slot| {
+                            *slot.borrow_mut() = Some((
+                                "portal.lock-after-ticket",
+                                Box::new(move || {
+                                    started_tx.send(()).unwrap();
+                                    gate_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                                }),
+                            ));
+                        });
+                        locker.lock();
+                    });
+                    started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                    handle_tx.send((handle, gate_tx)).unwrap();
+                }),
+            ));
+        });
+        let sent = AtomicUsize::new(0);
+        let result = store.link_portal_using(
+            "https://fake.example",
+            "FAKE0001-FAKE7-Q2M4K",
+            "myCarlos",
+            None,
+            (2, ticket),
+            |_, _, _| {
+                sent.fetch_add(1, Ordering::SeqCst);
+                Err(portal_link::LinkError::Network)
+            },
+        );
+        let (handle, gate) = handle_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        gate.send(()).unwrap();
+        handle.join().unwrap();
+        assert!(matches!(
+            result,
+            Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+        ));
+        assert_eq!(sent.load(Ordering::SeqCst), 0);
+        store.unlock(PASSWORD).unwrap();
+        let summary = store.snapshot().unwrap().portal_links;
+        assert_eq!(summary.len(), 1);
+        assert!(summary[0].incomplete);
+    }
+
+    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[test]
+    fn portal_link_queued_old_session_ticket_does_not_mutate_new_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let old = store.portal_link_ticket();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let result = store.link_portal_using(
+            "https://fake.example",
+            "FAKE0001-FAKE7-Q2M4K",
+            "myCarlos",
+            None,
+            (2, old),
+            |_, _, _| panic!("an old IPC ticket cannot send HTTP"),
+        );
+        assert!(matches!(
+            result,
+            Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+        ));
+        assert!(before == store.session().as_ref().unwrap().manifest);
+    }
     use std::{
         io::Cursor,
         process::{Command, Stdio},
@@ -7327,6 +7603,7 @@ mod tests {
                 },
             ],
             history: HistoryState::default(),
+            portal_links: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -8090,7 +8367,9 @@ mod tests {
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let lock = sibling_path(&root, ".lock").unwrap();
         let inode_before = fs::metadata(&lock).unwrap();
+        let portal_ticket = store.portal_link_ticket();
         store.reset().unwrap();
+        assert_ne!(store.portal_link_ticket(), portal_ticket);
         assert_eq!(store.status().unwrap(), VaultStatus::Absent);
         assert!(same_file(&inode_before, &fs::metadata(&lock).unwrap()));
     }
@@ -12499,7 +12778,9 @@ mod tests {
         assert!(store.unlocked.is_poisoned());
 
         // The interrupted session is not trusted: the vault reports locked.
+        let portal_ticket = store.portal_link_ticket();
         assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        assert_ne!(store.portal_link_ticket(), portal_ticket);
         assert!(!store.unlocked.is_poisoned());
         // And, as after any lock, it has no idle deadline.
         assert!(!store.idle().is_due(idle_past(Instant::now())));
@@ -12745,6 +13026,7 @@ mod tests {
                 })
                 .collect(),
             history: HistoryState::default(),
+            portal_links: Vec::new(),
         }
     }
 
@@ -16272,16 +16554,16 @@ mod tests {
     }
 
     #[test]
-    fn identity_format_four_migrates_all_older_formats_without_record_loss() {
+    fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3] {
+        for version in [1, 2, 3, 4] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);
             let before = slots(&root, &key, vault_id);
             store.unlock(PASSWORD).unwrap();
             let after = slots(&root, &key, vault_id);
-            assert!(after.iter().all(|(format, _, _)| *format == 4));
+            assert!(after.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
             assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
             assert_eq!(store.snapshot().unwrap().records.len(), ids.len());
             assert!(store

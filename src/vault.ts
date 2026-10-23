@@ -59,6 +59,9 @@ export interface VaultSnapshot {
   profiles: PatientProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];
+  /** Native compile capability; absent/false keeps the linking flow hidden. */
+  portalLinkingEnabled?: boolean;
+  portalLinks?: PortalLinkSummary[];
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
   recoveryKeySetAtMs?: number | null;
@@ -68,6 +71,23 @@ export interface VaultSnapshot {
    * as the "Shared with me" folder, never as a person. In `profiles` once the
    * first file has arrived. */
   sharedProfileId?: string;
+}
+
+export interface PortalLinkSummary {
+  id: string;
+  portalBase: string;
+  deviceName: string;
+  profileId: string | null;
+  clinicName: string | null;
+  fingerprints: string[];
+  incomplete: boolean;
+}
+
+export interface PortalLinkInput {
+  portalBase: string;
+  code: string;
+  deviceName: string;
+  profileId: string | null;
 }
 
 /** One group of the recovery key as the patient typed it back, by position. */
@@ -216,6 +236,7 @@ export interface VaultBridge {
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
+  linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -532,6 +553,8 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
+    linkPortal: (request) =>
+      invoke<PortalLinkSummary>("vault_portal_link", { request }),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },

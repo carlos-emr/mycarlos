@@ -277,3 +277,31 @@ Explicit v1 null metadata is accepted without inventing identity or service info
 Member presence is still mandatory, and relaxing descriptive metadata does not relax
 signer, exact digest, clinic or recipient binding. A signed PDF with no clinic/recipient
 claim remains unbound under an explicit test pin and unverified without authenticated pins.
+
+## Authenticated portal link implementation (#55, evaluation feature)
+
+The future linking build is selected natively with Cargo feature `portal-linking`,
+which is absent from default features. A renderer value cannot turn it on. The
+native command refuses before generating keys, changing the vault or making a
+request when the feature is off. This separate future branch includes held profile
+format 4 and reserves manifest format 5; it does not authorize that migration for
+the current demo.
+
+Linking sends only the v1 code, a patient-edited generic device name, two fresh
+per-link public keys and their possession assertion to the HTTPS portal address
+the patient supplies. Portal SMS MFA authenticates the code's browser session;
+myCarlos neither collects an MFA secret nor adds another authentication factor.
+No URL from a PDF or manifest selects an endpoint. The native client uses only the
+portal base path plus `/api/mycarlos/`, refuses redirects, bounds response bodies
+and request duration, and never logs request, response, assertion or URL contents.
+The production webview CSP and PDF helper network boundary remain unchanged.
+
+Private link seeds and received pins are encrypted within the vault. Pending keys
+are committed before the one-use code is sent; linked state is committed only
+after response validation, with history. Network work releases the session lock;
+a session generation rejects any completion after locking, even after unlock.
+A lost one-use response can leave a device registered at the portal without a
+completed local link: this must be reported as incomplete, never guessed successful.
+A recovery endpoint, live key refresh and signed-replacement statement are shared
+v1 contract work, not an invented delivery v2. Their absence prevents claiming
+the whole #55 key lifecycle or the send/pickup/delete flow complete.
