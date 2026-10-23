@@ -446,7 +446,10 @@ export interface ViewedPage {
   width: number;
   height: number;
   image: string;
+  /** Legacy extraction, unchanged for consumers that require its exact output. */
   text: string;
+  /** Reader-only extraction retaining supported PDF line-position boundaries. */
+  readableText?: string;
 }
 
 /** True when the native side refused with `code`. */

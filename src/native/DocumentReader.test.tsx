@@ -47,6 +47,32 @@ function renderReader(
 }
 
 describe("the document reader", () => {
+  it("shows reader-only line boundaries without changing legacy text", async () => {
+    const raw =
+      "FAKE Imaging ReportPatient: FAKE Morgan PatientFinding: HbA1c 1.5 mg 120/80";
+    const readable =
+      "FAKE Imaging Report\nPatient: FAKE Morgan Patient\nFinding: HbA1c 1.5 mg 120/80";
+    const supplied = { ...page(0), text: raw, readableText: readable };
+    renderReader(vi.fn(async () => supplied));
+    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await userEvent.setup().click(screen.getByText("Text on this page"));
+    const text = document.querySelector(".native-reader-text div")!;
+    expect(text.textContent).toBe(readable);
+    expect(getComputedStyle(text).whiteSpace).toBe("pre-wrap");
+    expect(supplied.text).toBe(raw);
+  });
+
+  it("counts both text representations in its page cache budget", () => {
+    const cache = new Map<string, ViewedPage>();
+    cacheDrawnPage(cache, "large-text", {
+      ...page(0),
+      image: "a".repeat(24 * 1024 * 1024),
+      text: "b".repeat(12 * 1024 * 1024),
+      readableText: "c".repeat(12 * 1024 * 1024 + 1),
+    });
+    expect(cache.has("large-text")).toBe(false);
+  });
+
   it("shows the first page, its text and where the document came from", async () => {
     const { viewPage } = renderReader();
     const reader = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });

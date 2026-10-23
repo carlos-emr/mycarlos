@@ -14,7 +14,7 @@ const ZOOM_STEP = 1.25;
 /** The widest picture the helper draws (pdf_view::MAX_SIDE). */
 const MAX_PICTURE_WIDTH = 4096;
 /** Pages kept while the reader is open, so that going back is quick: at most
- * this many, and at most this many characters of picture data. */
+ * this many, and at most this many characters across picture and text data. */
 const CACHED_PAGES = 6;
 const CACHED_CHARACTERS = 48 * 1024 * 1024;
 /** A resize settles before the page is measured again. */
@@ -28,15 +28,17 @@ export function cacheDrawnPage(
 ) {
   cache.delete(key);
   // A page may still be shown, but never retained above the cache's own bound.
-  if (result.image.length > CACHED_CHARACTERS) return;
+  const charactersIn = (page: ViewedPage) =>
+    page.image.length + page.text.length + (page.readableText?.length ?? 0);
+  if (charactersIn(result) > CACHED_CHARACTERS) return;
   cache.set(key, result);
   let characters = 0;
-  for (const kept of cache.values()) characters += kept.image.length;
+  for (const kept of cache.values()) characters += charactersIn(kept);
   for (const [oldest, kept] of cache) {
     if (cache.size <= CACHED_PAGES && characters <= CACHED_CHARACTERS) break;
     if (oldest === key) continue;
     cache.delete(oldest);
-    characters -= kept.image.length;
+    characters -= charactersIn(kept);
   }
 }
 
@@ -314,7 +316,7 @@ export function DocumentReader({
           <details className="native-reader-text">
             <summary>Text on this page</summary>
             <div>
-              {shown.text.trim() ||
+              {(shown.readableText ?? shown.text).trim() ||
                 "No text could be read on this page. It may be a scan."}
             </div>
           </details>
