@@ -72,6 +72,8 @@ mod platform {
             app.sendEvent(&event);
         }
     }
+    // Each wait has its own five-second deadline. A case can use three waits;
+    // all 18 cases allow about 270 seconds of waiting, plus calls and cleanup.
     fn until(app: &NSApplication, predicate: impl Fn() -> bool) -> bool {
         let deadline = Instant::now() + Duration::from_secs(5);
         while !predicate() {
@@ -105,6 +107,7 @@ mod platform {
 
     pub fn run(mtm: MainThreadMarker, app: &NSApplication) -> (Vec<Value>, Option<String>) {
         let mut cases = Vec::new();
+        let mut first_error = None;
         for (tag, locale) in [
             ("en", UiLocale::En),
             ("fr", UiLocale::Fr),
@@ -114,16 +117,16 @@ mod platform {
         ] {
             for stimulus in ["Return", "Escape", "action"] {
                 if let Err(error) = case(mtm, app, tag, locale, stimulus, &mut cases) {
-                    return (cases, Some(error));
+                    first_error.get_or_insert(error);
                 }
             }
         }
         for stimulus in ["unknown", "cancel", "close"] {
             if let Err(error) = case(mtm, app, "fr", UiLocale::Fr, stimulus, &mut cases) {
-                return (cases, Some(error));
+                first_error.get_or_insert(error);
             }
         }
-        (cases, None)
+        (cases, first_error)
     }
 
     fn case(
@@ -155,6 +158,7 @@ mod platform {
         let sheet = alert.window();
         let buttons = alert.buttons();
         let readback = Rc::new(RefCell::new(Vec::<Value>::new()));
+        let mut keyboard_role_errors = Vec::new();
         let result = (|| {
             if !until(app, || {
                 parent.attachedSheet().is_some() && sheet.isVisible()
@@ -171,7 +175,8 @@ mod platform {
                 let modifiers = button.keyEquivalentModifierMask().bits();
                 readback.borrow_mut().push(json!({ "index": index, "title": button.title().to_string(), "key": key, "modifiers": modifiers }));
                 if key != *expected_key || modifiers != 0 {
-                    return Err(format!("incorrect keyboard role for button {index}"));
+                    keyboard_role_errors
+                        .push(format!("incorrect keyboard role for button {index}"));
                 }
             }
             if buttons.objectAtIndex(2).title().to_string() != locale.text("native.cancel") {
@@ -230,9 +235,14 @@ mod platform {
                     calls.get()
                 ));
             }
+            // Retain the strict metadata failure, but send the actual event
+            // first so a failed report still records real keyboard behavior.
+            if let Some(error) = keyboard_role_errors.first() {
+                return Err(error.clone());
+            }
             Ok(())
         })();
-        cases.push(json!({ "locale": tag, "stimulus": stimulus, "buttons": *readback.borrow(), "response": response.get(), "consent": response.get().map(native_confirmation_macos::action_chosen), "callbacks": calls.get(), "passed": result.is_ok(), "error": result.as_ref().err() }));
+        cases.push(json!({ "locale": tag, "stimulus": stimulus, "buttons": *readback.borrow(), "keyboardRoleErrors": keyboard_role_errors, "response": response.get(), "consent": response.get().map(native_confirmation_macos::action_chosen), "callbacks": calls.get(), "passed": result.is_ok(), "error": result.as_ref().err() }));
         // Record failure before cleanup. These are only this case's own
         // objects; a cleanup response never turns a timeout into success.
         if parent.attachedSheet().is_some() {
