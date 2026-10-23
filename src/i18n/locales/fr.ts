@@ -455,10 +455,11 @@ export const fr: Record<MessageKey, Message> = {
   "preferences.subtitle": "L’apparence de myCarlos sur cet ordinateur",
   "appearance.title": "Apparence",
   "appearance.help":
-    "{system} suit l’apparence claire ou sombre de votre appareil. Le contraste élevé suit automatiquement votre appareil.",
+    "{system} suit l’apparence claire ou sombre de votre appareil. Le contraste élevé utilise un fond noir et du texte clair. Les couleurs de contraste de votre appareil restent prioritaires.",
   "appearance.system": "Système",
   "appearance.light": "Clair",
   "appearance.dark": "Sombre",
+  "appearance.highContrast": "Contraste élevé",
   "appearance.error.unreadable":
     "L’apparence enregistrée n’a pas pu être lue. L’option {system} est utilisée pendant cette session.",
   "appearance.error.notRemembered":

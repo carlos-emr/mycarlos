@@ -434,10 +434,11 @@ export const en = {
   "preferences.subtitle": "How myCarlos looks on this computer",
   "appearance.title": "Appearance",
   "appearance.help":
-    "{system} follows your device's light or dark appearance. High contrast follows your device automatically.",
+    "{system} follows your device's light or dark appearance. High contrast uses a black background and bright text. Your device's contrast colors always take priority.",
   "appearance.system": "System",
   "appearance.light": "Light",
   "appearance.dark": "Dark",
+  "appearance.highContrast": "High contrast",
   "appearance.error.unreadable":
     "The saved appearance could not be read. Using {system} for this session.",
   "appearance.error.notRemembered":

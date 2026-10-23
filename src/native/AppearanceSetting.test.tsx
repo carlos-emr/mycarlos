@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("Appearance in Preferences", () => {
-  it("offers all three choices beside Text size even without desktop zoom", async () => {
+  it("offers all four choices beside Text size even without desktop zoom", async () => {
     const user = userEvent.setup();
     const appearance = startAppearance();
     render(
@@ -22,7 +22,7 @@ describe("Appearance in Preferences", () => {
         <PreferencesSettings />
       </AppearanceProvider>,
     );
-    // Three radio buttons, all in view, instead of a dropdown (#67).
+    // Four radio buttons, all in view, instead of a dropdown (#67).
     const group = screen.getByRole("group", { name: "Appearance" });
     expect(screen.queryByRole("combobox", { name: "Appearance" })).toBeNull();
     const choices = within(group).getAllByRole("radio");
@@ -30,12 +30,13 @@ describe("Appearance in Preferences", () => {
       "system",
       "light",
       "dark",
+      "high-contrast",
     ]);
     expect(
       choices.map(
         (choice) => (choice.closest("label") as HTMLElement).textContent,
       ),
-    ).toEqual(["System", "Light", "Dark"]);
+    ).toEqual(["System", "Light", "Dark", "High contrast"]);
     expect(within(group).getByRole("radio", { name: "System" })).toBeChecked();
     expect(
       screen.getByText(/Here, text size follows your device/),
@@ -47,6 +48,16 @@ describe("Appearance in Preferences", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("dark");
     expect(group).toHaveAccessibleDescription(/System follows your device/);
+    const highContrast = within(group).getByRole("radio", {
+      name: "High contrast",
+    });
+    await user.click(highContrast);
+    expect(highContrast).toBeChecked();
+    expect(highContrast).toHaveFocus();
+    expect(document.documentElement.dataset.theme).toBe("high-contrast");
+    expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe(
+      "high-contrast",
+    );
     // Each choice's whole row is a 44px target.
     for (const choice of choices)
       expect(
