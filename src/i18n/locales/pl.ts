@@ -468,10 +468,11 @@ export const pl: Record<MessageKey, Message> = {
   "preferences.subtitle": "Wygląd myCarlos na tym komputerze",
   "appearance.title": "Wygląd",
   "appearance.help":
-    "Opcja „{system}” dopasowuje się do jasnego lub ciemnego wyglądu urządzenia. Wysoki kontrast włącza się automatycznie zgodnie z urządzeniem.",
+    "Opcja „{system}” dopasowuje się do jasnego lub ciemnego wyglądu urządzenia. Wysoki kontrast używa czarnego tła i jasnego tekstu. Kolory kontrastu ustawione na urządzeniu zawsze mają pierwszeństwo.",
   "appearance.system": "Systemowy",
   "appearance.light": "Jasny",
   "appearance.dark": "Ciemny",
+  "appearance.highContrast": "Wysoki kontrast",
   "appearance.error.unreadable":
     "Nie udało się odczytać zapisanego wyglądu. W tej sesji używana jest opcja „{system}”.",
   "appearance.error.notRemembered":

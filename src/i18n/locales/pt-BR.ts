@@ -449,10 +449,11 @@ export const ptBR: Record<MessageKey, Message> = {
   "preferences.subtitle": "Como o myCarlos aparece neste computador",
   "appearance.title": "Aparência",
   "appearance.help":
-    "{system} segue a aparência clara ou escura do seu dispositivo. O alto contraste segue o seu dispositivo automaticamente.",
+    "{system} segue a aparência clara ou escura do seu dispositivo. O alto contraste usa fundo preto e texto claro. As cores de contraste do seu dispositivo sempre têm prioridade.",
   "appearance.system": "Sistema",
   "appearance.light": "Claro",
   "appearance.dark": "Escuro",
+  "appearance.highContrast": "Alto contraste",
   "appearance.error.unreadable":
     "Não foi possível ler a aparência salva. Usando {system} nesta sessão.",
   "appearance.error.notRemembered":

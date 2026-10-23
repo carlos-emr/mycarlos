@@ -450,10 +450,11 @@ export const es: Record<MessageKey, Message> = {
   "preferences.subtitle": "Cómo se ve myCarlos en este equipo",
   "appearance.title": "Apariencia",
   "appearance.help":
-    "{system} sigue la apariencia clara u oscura de su dispositivo. El alto contraste sigue a su dispositivo automáticamente.",
+    "{system} sigue la apariencia clara u oscura de su dispositivo. El alto contraste usa un fondo negro y texto claro. Los colores de contraste de su dispositivo siempre tienen prioridad.",
   "appearance.system": "Sistema",
   "appearance.light": "Claro",
   "appearance.dark": "Oscuro",
+  "appearance.highContrast": "Alto contraste",
   "appearance.error.unreadable":
     "No se pudo leer la apariencia guardada. Se usa {system} durante esta sesión.",
   "appearance.error.notRemembered":
