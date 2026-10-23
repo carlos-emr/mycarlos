@@ -214,6 +214,7 @@ describe("a PDF locked with a password (#54)", () => {
         name: "Details for FAKE Letter (locked original).pdf",
       }),
     ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     const hidden = screen.getByRole("article", {
       name: "FAKE Letter.pdf, hidden",

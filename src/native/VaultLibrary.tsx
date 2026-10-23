@@ -67,7 +67,6 @@ type NativeSection =
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
 const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
   ["records", "interface.VaultLibrary.records"],
-  ["hidden", "interface.HiddenDocuments.hidden"],
   ["security", "security.title"],
   ["preferences", "sidebar.preferences"],
 ];
@@ -163,8 +162,10 @@ export function VaultLibrary({
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
-  // Keep Hidden scoped to the location it was opened from, including Shared.
+  // Keep Security’s Hidden entry scoped to the location it was opened from,
+  // including Shared; returning from Hidden must retain that location.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
+  const [returnFocusToHidden, setReturnFocusToHidden] = useState(false);
   // The steps for older backups after a key whose kit may have been lost or
   // seen was replaced: kept across locks, until the patient says done.
   const [oldBackupsGuide, setOldBackupsGuideState] =
@@ -267,12 +268,31 @@ export function VaultLibrary({
   // The documents where the patient is: a person's, or Shared with me's.
   const locationProfileId = inShared ? sharedProfileId : profileId;
   const hiddenLocationProfileId =
-    section === "hidden" ? (hiddenProfileId ?? profileId) : locationProfileId;
-  const openHidden = () => {
-    if (section === "hidden") return;
-    setHiddenProfileId(locationProfileId ?? profileId);
-    setSection("hidden");
+    section === "hidden" || section === "security"
+      ? (hiddenProfileId ?? profileId)
+      : locationProfileId;
+  const openSecurity = () => {
+    // A persistent navigation button keeps focus when it opens Security.
+    setReturnFocusToHidden(false);
+    if (section !== "security" && section !== "hidden") {
+      setHiddenProfileId(locationProfileId ?? profileId);
+    }
+    setSection("security");
   };
+  const backToSecurity = () => {
+    // The Back button disappears, so return to the Hidden entry it came from.
+    setReturnFocusToHidden(true);
+    setSection("security");
+  };
+  const hiddenScope = people.find(
+    (person) => person.id === hiddenLocationProfileId,
+  );
+  const hiddenScopeName =
+    hiddenLocationProfileId === sharedProfileId
+      ? translateNow("interface.LibrarySidebar.sharedWithMe")
+      : hiddenScope
+        ? personFolderName(hiddenScope, people)
+        : translateNow("sidebar.myRecords");
   const records = useMemo(
     () =>
       snapshot.records.filter(
@@ -1228,12 +1248,14 @@ export function VaultLibrary({
                 key={value}
                 type="button"
                 aria-current={
-                  section === value || (value === "records" && inShared)
+                  section === value ||
+                  (value === "records" && inShared) ||
+                  (value === "security" && section === "hidden")
                     ? "page"
                     : undefined
                 }
                 onClick={() =>
-                  value === "hidden" ? openHidden() : setSection(value)
+                  value === "security" ? openSecurity() : setSection(value)
                 }
               >
                 {value === "records" && sharedNew
@@ -1276,7 +1298,6 @@ export function VaultLibrary({
               records={peopleRecords}
               disabled={busy || readOnly}
               drag={drag}
-              hiddenCount={hiddenRecords.length}
               hiddenFromShared={
                 section === "hidden" &&
                 hiddenLocationProfileId === sharedProfileId
@@ -1293,8 +1314,7 @@ export function VaultLibrary({
                 setSection("shared");
                 setCurrentFolderId(null);
               }}
-              onOpenHidden={openHidden}
-              onOpenSecurity={() => setSection("security")}
+              onOpenSecurity={openSecurity}
               onOpenPreferences={() => setSection("preferences")}
             />
 
@@ -1876,11 +1896,9 @@ export function VaultLibrary({
             {section === "hidden" && (
               <HiddenDocuments
                 records={hiddenRecords}
-                rootName={
-                  hiddenLocationProfileId === sharedProfileId
-                    ? translateNow("interface.LibrarySidebar.sharedWithMe")
-                    : translateNow("sidebar.myRecords")
-                }
+                rootName={hiddenScopeName}
+                onBack={backToSecurity}
+                focusOnOpen
                 folderNameById={folderNameById}
                 busy={busy}
                 readOnly={readOnly}
@@ -1901,6 +1919,10 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                hiddenCount={hiddenRecords.length}
+                focusHiddenEntry={returnFocusToHidden}
+                hiddenScopeName={hiddenScopeName}
+                onOpenHidden={() => setSection("hidden")}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}

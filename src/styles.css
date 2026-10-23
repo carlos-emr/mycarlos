@@ -549,7 +549,6 @@ h1, h2, p { margin: 0; }
 /* #71: the Hidden list keeps the trash list's layout, but its dates are when a document was
    hidden, not a countdown to deletion: nothing is deleted. */
 .native-hidden-list .file-row .hidden-date { color: var(--ink-soft); }
-.side-nav .native-hidden-nav { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
 .trash-marker { display: grid; place-items: center; color: var(--ink-faint); }
 .trash-marker .icon { width: 15px; height: 15px; }
 .countdown { color: var(--amber) !important; font-weight: 700; }
@@ -566,6 +565,9 @@ h1, h2, p { margin: 0; }
   border-bottom: 1px solid var(--line);
 }
 .setting-row > div { flex: 1; min-width: 0; }
+.hidden-settings-entry { max-width: 100%; }
+.hidden-entry-copy { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.hidden-entry-scope { display: block; color: var(--ink-soft); font-weight: 400; }
 .old-backups-guide {
   margin-top: 10px;
   padding: 11px 13px;

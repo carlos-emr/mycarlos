@@ -5,6 +5,7 @@ import type { MessageKey } from "./en";
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
   ...interfaceMessages,
+  "hidden.backToSecurity": "Retour à la sécurité",
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
     "N’utilisez pas de véritables renseignements sur des patients",
