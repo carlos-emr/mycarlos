@@ -48,6 +48,13 @@ afterEach(() => vi.useRealTimers());
 
 describe("library focus recovery", () => {
   it("focuses the heading on entry only when focus is lost", () => {
+    // Like the unlock field: the browser document has focus, but its focused
+    // control is removed as the library opens. An unfocused window must not
+    // have its focus changed by recovery.
+    const previous = document.createElement("input");
+    document.body.append(previous);
+    previous.focus();
+    previous.remove();
     render(<Library />);
     frame();
     expect(screen.getByRole("heading")).toHaveFocus();
