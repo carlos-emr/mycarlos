@@ -1114,3 +1114,9 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
+
+/* Available before opening a vault, with a full-width native control. */
+.language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
+.language-compact label { font-size: 0.875rem; font-weight: 700; }
+.language-compact select { min-width: 0; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+.language-compact p:not(.sr-only) { margin: 0; color: var(--red); overflow-wrap: anywhere; font-size: 0.875rem; }

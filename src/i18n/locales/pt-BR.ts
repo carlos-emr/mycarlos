@@ -447,6 +447,15 @@ export const ptBR: Record<MessageKey, Message> = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "Como o myCarlos aparece neste computador",
+  "language.title": "Idioma",
+  "language.help":
+    "Salvo neste dispositivo. Seus documentos mantêm o idioma original.",
+  "language.system": "Padrão do sistema",
+  "language.error.unreadable":
+    "Não foi possível ler o idioma salvo. O idioma do dispositivo será usado nesta sessão.",
+  "language.error.notRemembered":
+    "Idioma alterado nesta sessão, mas não foi possível salvá-lo neste dispositivo.",
+
   "appearance.title": "Aparência",
   "appearance.help":
     "{system} segue a aparência clara ou escura do seu dispositivo. O alto contraste usa fundo preto e texto claro. As cores de contraste do seu dispositivo sempre têm prioridade.",
