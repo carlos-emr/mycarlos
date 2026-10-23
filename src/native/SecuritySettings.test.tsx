@@ -47,6 +47,56 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
 const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
+describe("SecuritySettings profile layout", () => {
+  it("keeps the profile name and Add profile action inside their section with enlarged text", () => {
+    renderSettings();
+    const input = screen.getByRole("textbox", { name: "New profile name" });
+    const button = screen.getByRole("button", { name: "Add profile" });
+    input.closest("main")!.classList.add("native-vault-page");
+    fireEvent.change(input, { target: { value: "FAKE Profile" } });
+    const form = input.closest("form")!;
+    const section = form.closest<HTMLElement>(".setting-row")!;
+    const intro = section.firstElementChild!;
+    section.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
+    const overlaps = (a: DOMRect, b: DOMRect) =>
+      Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
+      Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+    try {
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        for (const width of [760, 320]) {
+          section.style.width = `${width}px`;
+          section.style.maxWidth = "100%";
+          const row = section.getBoundingClientRect();
+          const introduction = intro.getBoundingClientRect();
+          expect(introduction.width).toBeGreaterThanOrEqual(
+            Math.min(220, row.width - 4),
+          );
+          for (const control of [form, input, button]) {
+            const box = control.getBoundingClientRect();
+            expect(box.left).toBeGreaterThanOrEqual(row.left - 1);
+            expect(box.right).toBeLessThanOrEqual(row.right + 1);
+          }
+          expect(overlaps(introduction, form.getBoundingClientRect())).toBe(
+            false,
+          );
+          expect(button.scrollWidth).toBeLessThanOrEqual(
+            button.clientWidth + 1,
+          );
+          expect(button.scrollHeight).toBeLessThanOrEqual(
+            button.clientHeight + 1,
+          );
+          expect(section.scrollWidth).toBeLessThanOrEqual(
+            section.clientWidth + 1,
+          );
+        }
+      }
+    } finally {
+      document.documentElement.style.fontSize = "";
+    }
+  });
+});
+
 describe("SecuritySettings speed test", () => {
   it("does not start while another vault action is busy", () => {
     const props = renderSettings({ busy: true });
