@@ -509,7 +509,17 @@ with Escape; no destructive operation may occur. These checks cover the tested W
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
 
-The macOS CI job also runs `native_dialog_macos` on the OS main thread. It presents
+The macOS CI job also runs `native_dialog_macos` on the OS main thread, inside
+AppKit's actual application run loop. The Cargo-launched harness uses the pinned
+objc2 example's unbundled-app activation call; this is not production app policy.
+Per-case diagnostics record running/active state, real key-window identity,
+parent/sheet key eligibility, first responder and default-button-cell identity.
+These observations do not replace any keyboard-property or actual-event gate.
+The production sheet observes only its own parent's close notification, ends
+only its own attached sheet, and clamps a late response to cancellation once
+that parent starts closing; completion is delivered at most once.
+
+The harness presents
 an owned test window and the production AppKit sheet in all five languages, posts
 native Return and Escape events, and deliberately activates the second button.
 It checks the exact response for each role and also refuses unknown responses,

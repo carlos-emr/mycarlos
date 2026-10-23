@@ -70,7 +70,7 @@ windows = { version = "=0.61.3", features = [
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "=0.6.4"
 block2 = "=0.6.2"
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSNotification"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
 
 [dev-dependencies]
@@ -108,4 +108,4 @@ harness = false
 # Only the platform event harness needs event construction and run-loop dates.
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSDate", "NSRunLoop"] }
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSGraphics", "NSGraphicsContext", "NSRunningApplication"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSGraphics", "NSGraphicsContext", "NSRunningApplication", "NSActionCell", "NSButtonCell", "NSCell"] }
