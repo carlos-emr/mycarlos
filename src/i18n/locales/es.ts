@@ -496,6 +496,10 @@ export const es: Record<MessageKey, Message> = {
   "library.select": "Seleccionar {name}",
   "library.empty.title": "Esta ubicación está vacía",
   "library.empty.help": "Añada una carpeta o importe un documento aquí.",
+  "library.search.results":
+    "Resultados de la búsqueda. Carpetas: {folders}. Documentos: {documents}.",
+  "library.search.cleared":
+    "Búsqueda borrada. Carpetas en esta ubicación: {folders}. Documentos: {documents}.",
   "library.noMatch.title": "Ningún documento coincide",
   "library.noMatch.help": "Pruebe otra búsqueda.",
 };
