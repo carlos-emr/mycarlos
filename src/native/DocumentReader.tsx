@@ -251,7 +251,10 @@ export function DocumentReader({
             </button>
           </span>
         </div>
-        <p className="native-dialog-status" role="status">
+        <p
+          className={loading && !asking ? "native-dialog-status" : "sr-only"}
+          role="status"
+        >
           {loading && !asking
             ? `Opening page ${page + 1}…`
             : current
