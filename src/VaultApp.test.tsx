@@ -990,10 +990,13 @@ describe("durable vault UI", () => {
       // Returning through Security and reopening Hidden retains Shared as its source.
       await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+      const reopenedRow = screen.getByRole("article", {
+        name: "FAKE_Shared.pdf, hidden",
+      });
+      expect(reopenedRow).toBeVisible();
       expect(
-        screen.getByRole("article", { name: "FAKE_Shared.pdf, hidden" }),
-      ).toBeVisible();
-      expect(within(row).getByText("Shared with me")).toBeInTheDocument();
+        within(reopenedRow).getByText("Shared with me"),
+      ).toBeInTheDocument();
       expect(
         screen.getByRole("complementary", { hidden: true }),
       ).toHaveTextContent("1 document · 0 folders");
@@ -1001,7 +1004,9 @@ describe("durable vault UI", () => {
         screen.queryByText("FAKE_Jamie_hidden.pdf"),
       ).not.toBeInTheDocument();
       await user.click(
-        within(row).getByRole("button", { name: "Restore FAKE_Shared.pdf" }),
+        within(reopenedRow).getByRole("button", {
+          name: "Restore FAKE_Shared.pdf",
+        }),
       );
       await waitFor(() =>
         expect(bridge.unhideRecord).toHaveBeenCalledWith("record-shared-1"),
