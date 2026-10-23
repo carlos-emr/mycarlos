@@ -801,3 +801,28 @@ state). It carries no private seeds, SPKI blobs or recipient IDs. Backup already
 contains this encrypted manifest and hence retains link custody. Signed-original
 object metadata, durable verification results, rechecks and the restore notice
 are further format-5 work; their absence must not be reported as complete #55.
+
+#### Format-5 original-PDF custody source checkpoint
+
+`originalPdf`, when present on a record, describes a separate MCVO1 object: its
+own UUID, object name, wrapped independent random key, plaintext size and SHA-256.
+The source implementation retains this for every accepted PDF, including unsigned,
+unknown-signer and oversized input, so custody does not depend on a hostile PDF's
+signature classification. This costs approximately two encrypted PDF objects per
+record. Camera JPEGs do not normally carry a PDF header and retain one object.
+
+The copy streams from an authenticated read of the incoming encrypted object,
+before helper parsing, into the existing XChaCha20-Poly1305 framing. No readable
+temporary file is made; one output chunk is held until the final-chunk bit is
+known. Both references enter the same durable record/history commit, backup,
+restore and orphan-reference set. New original-object UUIDs cannot alias records
+or history segments. The original's plaintext hash is checked on export/backup/
+restore. Saving or sharing selects the original; viewing uses the intact display
+object. Conservative identity suggestions prefer raw original PDF bytes and
+continue using helper raw text, never readableText.
+
+A missing original does not remove the intact display. Its presence is exposed
+separately; backup/export refuse an unavailable or unauthentic original. This is
+a private source checkpoint: the new custody tests have not run, durable
+verification state/rechecks and missing/corrupt-source downgrade history still
+need implementation, and no full #55 or platform claim follows from these edits.

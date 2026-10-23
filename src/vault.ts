@@ -42,6 +42,8 @@ export interface VaultRecord {
   /** Set while the document is hidden (#71): out of every view but Hidden,
    * with its encrypted file kept. Nothing is ever deleted. */
   hidden?: HiddenRecord | null;
+  /** The separate exact incoming PDF, retained independently of display bytes. */
+  originalPdfAvailable?: boolean;
 }
 
 /** When, and why, a document was hidden (#71). */

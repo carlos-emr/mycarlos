@@ -34,6 +34,8 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
+mod original_pdf;
+
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details.
 /// Formats 1–3 are still read; an
@@ -442,6 +444,48 @@ struct StoredRecord {
     /// document keeps its encrypted file; nothing is ever deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     hidden: Option<Hidden>,
+    /// A second independently encrypted copy of the incoming PDF bytes. Keep
+    /// it even when no linked signer can authenticate the document yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    original_pdf: Option<StoredOriginalPdf>,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredOriginalPdf {
+    id: Uuid,
+    object_name: String,
+    plaintext_size: u64,
+    sha256: String,
+    wrapped_object_key: WrappedSecret,
+}
+
+#[derive(Clone, Copy)]
+struct RecordObject<'a> {
+    id: Uuid,
+    object_name: &'a str,
+    plaintext_size: u64,
+    wrapped_key: &'a WrappedSecret,
+    sha256: Option<&'a str>,
+}
+
+impl StoredRecord {
+    fn objects(&self) -> impl Iterator<Item = RecordObject<'_>> {
+        std::iter::once(RecordObject {
+            id: self.id,
+            object_name: &self.object_name,
+            plaintext_size: self.plaintext_size,
+            wrapped_key: &self.wrapped_object_key,
+            sha256: None,
+        })
+        .chain(self.original_pdf.as_ref().map(|original| RecordObject {
+            id: original.id,
+            object_name: &original.object_name,
+            plaintext_size: original.plaintext_size,
+            wrapped_key: &original.wrapped_object_key,
+            sha256: Some(&original.sha256),
+        }))
+    }
 }
 
 /// When, and why, a document was hidden.
@@ -538,6 +582,8 @@ pub struct VaultRecord {
     pub available: bool,
     /// Set while the document is hidden (#71).
     pub hidden: Option<Hidden>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_pdf_available: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1285,6 +1331,9 @@ impl VaultStore {
                         object_is_present(root, record)
                     },
                     hidden: record.hidden,
+                    original_pdf_available: record.original_pdf.as_ref().map(|original| {
+                        object_presence_name(root, &original.object_name) == ObjectPresence::Present
+                    }),
                 })
                 .collect(),
             recovery: unlocked.recovery,
@@ -1787,30 +1836,41 @@ impl VaultStore {
                     &object_key,
                     encrypted.plaintext_size,
                 )?;
+                let wrapped_object_key =
+                    wrap_secret(&keys.object_wrap, &object_key, record_id.as_bytes())?;
+                let mut record = StoredRecord {
+                    id: record_id,
+                    profile_id,
+                    folder_ids: folder_ids.clone(),
+                    display_name: sanitize_basename(&source.display_name),
+                    source_label: MANUAL_IMPORT_LABEL.to_owned(),
+                    media_type: "application/octet-stream".to_owned(),
+                    plaintext_size: encrypted.plaintext_size,
+                    imported_at_ms: now_ms,
+                    object_name,
+                    fingerprint,
+                    wrapped_object_key,
+                    hidden: None,
+                    original_pdf: None,
+                };
+                // Preserve raw bytes before helper parsing/rendering, including
+                // unsigned or too-large PDFs whose signatures cannot be ruled
+                // out here. This costs a second PDF object, never a plaintext file.
+                if signature_probe.is_pdf() {
+                    record.original_pdf = Some(self.stage_original_pdf(
+                        unlocked.manifest.vault_id,
+                        &keys,
+                        &record,
+                        &object_path,
+                        &stage,
+                    )?);
+                }
                 if let Some(reason) =
                     signature_probe.finish(&|| self.cancel_io.load(Ordering::Acquire))
                 {
                     unverified_signatures.push(ImportVerification { record_id, reason });
                 }
-                let wrapped_object_key =
-                    wrap_secret(&keys.object_wrap, &object_key, record_id.as_bytes())?;
-                staged.push((
-                    object_path,
-                    StoredRecord {
-                        id: record_id,
-                        profile_id,
-                        folder_ids: folder_ids.clone(),
-                        display_name: sanitize_basename(&source.display_name),
-                        source_label: MANUAL_IMPORT_LABEL.to_owned(),
-                        media_type: "application/octet-stream".to_owned(),
-                        plaintext_size: encrypted.plaintext_size,
-                        imported_at_ms: now_ms,
-                        object_name,
-                        fingerprint,
-                        wrapped_object_key,
-                        hidden: None,
-                    },
-                ));
+                staged.push((object_path, record));
             }
             if self.cancel_io.load(Ordering::Acquire) {
                 return Err(VaultError::Cancelled);
@@ -1828,9 +1888,13 @@ impl VaultStore {
             terminate_at_test_boundary("import.after-staging");
 
             let objects = self.root.join("objects");
-            for (path, record) in &staged {
-                let destination = objects.join(&record.object_name);
-                fs::rename(path, &destination)?;
+            for (_, record) in &staged {
+                for object in record.objects() {
+                    fs::rename(
+                        stage.join(object.object_name),
+                        objects.join(object.object_name),
+                    )?;
+                }
             }
             // The manifest about to be committed references these objects. If
             // their directory entries are not durable, a power loss could leave
@@ -1881,10 +1945,12 @@ impl VaultStore {
         if result.is_err() {
             let objects = self.root.join("objects");
             for (_, record) in &staged {
-                let _ = remove_owned_file(
-                    objects.join(&record.object_name),
-                    Removable::UncommittedObject,
-                );
+                for object in record.objects() {
+                    let _ = remove_owned_file(
+                        objects.join(object.object_name),
+                        Removable::UncommittedObject,
+                    );
+                }
             }
             sync_parent(&objects);
         }
@@ -1897,6 +1963,53 @@ impl VaultStore {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         Ok(shared_profile_id(unlocked.manifest.vault_id))
+    }
+
+    fn stage_original_pdf(
+        &self,
+        vault_id: Uuid,
+        keys: &DerivedKeys,
+        record: &StoredRecord,
+        source: &Path,
+        stage: &Path,
+    ) -> Result<StoredOriginalPdf, VaultError> {
+        let source_key = unwrap_secret(
+            &keys.object_wrap,
+            &record.wrapped_object_key,
+            record.id.as_bytes(),
+        )?;
+        let id = Uuid::new_v4();
+        let object_name = format!("{}.mcobj", Uuid::new_v4());
+        let mut original_key = Zeroizing::new([0; 32]);
+        OsRng.fill_bytes(original_key.as_mut());
+        let mut writer = original_pdf::OriginalWriter::new(
+            &stage.join(&object_name),
+            ObjectContext {
+                vault_id,
+                record_id: id,
+                profile_id: record.profile_id,
+            },
+            &original_key,
+        )?;
+        verify_object(
+            source,
+            CancellableWriter::new(&mut writer, Arc::clone(&self.cancel_io)),
+            vault_id,
+            record.id,
+            &source_key,
+            record.plaintext_size,
+        )?;
+        let (plaintext_size, sha256) = writer.finish()?;
+        if plaintext_size != record.plaintext_size {
+            return Err(VaultError::Corrupt);
+        }
+        Ok(StoredOriginalPdf {
+            id,
+            object_name,
+            plaintext_size,
+            sha256,
+            wrapped_object_key: wrap_secret(&keys.object_wrap, &original_key, id.as_bytes())?,
+        })
     }
 
     /// Moves files to another person, into the folders chosen. A file's
@@ -2031,17 +2144,27 @@ impl VaultStore {
     }
 
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
-        self.read_record(record_id, writer, true)
+        self.read_record(record_id, writer, true, true)
     }
 
-    /// Background suggestions are not patient activity. Keep cancellation and
-    /// object authentication, but do not postpone the native idle deadline.
+    /// A rendered page is never a replacement for a signed original on save.
+    /// Views may still use intact display bytes when an original is unavailable.
+    pub(crate) fn read_for_view<W: Write>(
+        &self,
+        record_id: Uuid,
+        writer: W,
+    ) -> Result<(), VaultError> {
+        self.read_record(record_id, writer, true, false)
+    }
+
+    /// Identity comes from the original raw PDF, never a rendered copy or
+    /// readableText. Background suggestions do not postpone the idle deadline.
     pub(crate) fn read_for_suggestion<W: Write>(
         &self,
         record_id: Uuid,
         writer: W,
     ) -> Result<(), VaultError> {
-        self.read_record(record_id, writer, false)
+        self.read_record(record_id, writer, false, true)
     }
 
     fn read_record<W: Write>(
@@ -2049,6 +2172,7 @@ impl VaultStore {
         record_id: Uuid,
         writer: W,
         report_progress: bool,
+        prefer_original: bool,
     ) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -2058,28 +2182,40 @@ impl VaultStore {
             .iter()
             .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
-        if unlocked.unavailable.contains(&record.id) {
+        let original = prefer_original
+            .then_some(record.original_pdf.as_ref())
+            .flatten();
+        if original.is_none() && unlocked.unavailable.contains(&record.id) {
             return Err(VaultError::Corrupt);
         }
         let keys = derive_keys(unlocked.manifest.vault_id, &unlocked.master_key)?;
-        let object_key = unwrap_secret(
-            &keys.object_wrap,
-            &record.wrapped_object_key,
-            record.id.as_bytes(),
-        )?;
+        let object = original
+            .map(|original| RecordObject {
+                id: original.id,
+                object_name: &original.object_name,
+                plaintext_size: original.plaintext_size,
+                wrapped_key: &original.wrapped_object_key,
+                sha256: Some(&original.sha256),
+            })
+            .unwrap_or(RecordObject {
+                id: record.id,
+                object_name: &record.object_name,
+                plaintext_size: record.plaintext_size,
+                wrapped_key: &record.wrapped_object_key,
+                sha256: None,
+            });
         let writer = CancellableWriter::new(writer, Arc::clone(&self.cancel_io));
         let writer = if report_progress {
             writer.with_progress(&self.idle)
         } else {
             writer
         };
-        verify_object(
-            &self.root.join("objects").join(&record.object_name),
-            writer,
+        read_object_ref(
+            &self.root.join("objects").join(object.object_name),
             unlocked.manifest.vault_id,
-            record.id,
-            &object_key,
-            record.plaintext_size,
+            &keys,
+            object,
+            writer,
         )
     }
 
@@ -2836,9 +2972,7 @@ impl VaultStore {
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
         for record in &unlocked.manifest.records {
-            if self.backs_up_object(record) {
-                self.verify_for_backup_object(unlocked, &parts.keys, record)?;
-            }
+            self.verify_for_backup_object(unlocked, &parts.keys, record)?;
         }
         Ok(())
     }
@@ -2867,17 +3001,24 @@ impl VaultStore {
             &mut parts.manifest_data.as_slice(),
         )?;
         for record in &manifest.records {
-            if !self.backs_up_object(record) {
-                continue;
-            }
             // A restore refuses the whole backup over one object that does not
             // authenticate, so a damaged one is found now, while the vault
             // and its other documents are still here, not when it is needed.
             self.verify_for_backup_object(unlocked, &parts.keys, record)?;
-            let path = self.root.join("objects").join(&record.object_name);
-            let mut object = open_regular_read(&path)?;
-            let length = object.metadata()?.len();
-            backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
+            for reference in record
+                .objects()
+                .filter(|object| self.backs_up_record_object(record, *object))
+            {
+                let path = self.root.join("objects").join(reference.object_name);
+                let mut object = open_regular_read(&path)?;
+                let length = object.metadata()?.len();
+                backup.entry(
+                    BACKUP_KIND_OBJECT,
+                    reference.object_name,
+                    length,
+                    &mut object,
+                )?;
+            }
         }
         // The history's segments (#71). One that is gone or damaged is left
         // out rather than failing the backup: a restore takes segments as
@@ -2908,8 +3049,9 @@ impl VaultStore {
 
     /// Whether a backup carries a record's object: every one the vault needs,
     /// and a document hidden as damaged only if its file came back (#71).
-    fn backs_up_object(&self, record: &StoredRecord) -> bool {
-        object_required(record) || object_is_present(&self.root, record)
+    fn backs_up_record_object(&self, record: &StoredRecord, object: RecordObject<'_>) -> bool {
+        object_required(record)
+            || object_presence_name(&self.root, object.object_name) == ObjectPresence::Present
     }
 
     /// Every check that refuses a backup before its documents are read, and
@@ -2950,24 +3092,24 @@ impl VaultStore {
         record: &StoredRecord,
     ) -> Result<(), VaultError> {
         let vault_id = unlocked.manifest.vault_id;
-        let object_key = unwrap_secret(
-            &keys.object_wrap,
-            &record.wrapped_object_key,
-            record.id.as_bytes(),
-        )?;
-        verify_object(
-            &self.root.join("objects").join(&record.object_name),
-            CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
-                .with_progress(&self.idle),
-            vault_id,
-            record.id,
-            &object_key,
-            record.plaintext_size,
-        )
-        .map_err(|error| match error {
-            VaultError::Corrupt => VaultError::DamagedDocument(record.id),
-            error => error,
-        })
+        for object in record
+            .objects()
+            .filter(|object| self.backs_up_record_object(record, *object))
+        {
+            read_object_ref(
+                &self.root.join("objects").join(object.object_name),
+                vault_id,
+                keys,
+                object,
+                CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                    .with_progress(&self.idle),
+            )
+            .map_err(|error| match error {
+                VaultError::Corrupt => VaultError::DamagedDocument(record.id),
+                error => error,
+            })?;
+        }
+        Ok(())
     }
 
     /// Saves a backup to a file the patient chose, as an export is saved:
@@ -3195,7 +3337,11 @@ impl VaultStore {
             let mut wanted: HashMap<&str, u64> = manifest
                 .records
                 .iter()
-                .map(|record| (record.object_name.as_str(), record.plaintext_size))
+                .flat_map(|record| {
+                    record
+                        .objects()
+                        .map(|object| (object.object_name, object.plaintext_size))
+                })
                 .chain(segments.iter().map(|segment| {
                     (
                         segment.object_name.as_str(),
@@ -3209,7 +3355,7 @@ impl VaultStore {
                 .records
                 .iter()
                 .filter(|record| !object_required(record))
-                .map(|record| record.object_name.as_str())
+                .flat_map(|record| record.objects().map(|object| object.object_name))
                 .chain(segments.iter().map(|segment| segment.object_name.as_str()))
                 .collect();
             while let Some((kind, name, length)) = reader.next_entry()? {
@@ -3253,26 +3399,25 @@ impl VaultStore {
             }
             let keys = derive_keys(header.vault_id, &master_key)?;
             for record in &manifest.records {
-                if !object_required(record) && !object_is_present(&stage, record) {
-                    continue;
+                for object in record.objects() {
+                    if !object_required(record)
+                        && object_presence_name(&stage, object.object_name)
+                            != ObjectPresence::Present
+                    {
+                        continue;
+                    }
+                    read_object_ref(
+                        &stage.join("objects").join(object.object_name),
+                        header.vault_id,
+                        &keys,
+                        object,
+                        CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io)),
+                    )
+                    .map_err(|error| match error {
+                        VaultError::Cancelled => error,
+                        _ => VaultError::BackupUnreadable,
+                    })?;
                 }
-                let object_key = unwrap_secret(
-                    &keys.object_wrap,
-                    &record.wrapped_object_key,
-                    record.id.as_bytes(),
-                )?;
-                verify_object(
-                    &stage.join("objects").join(&record.object_name),
-                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io)),
-                    header.vault_id,
-                    record.id,
-                    &object_key,
-                    record.plaintext_size,
-                )
-                .map_err(|error| match error {
-                    VaultError::Cancelled => error,
-                    _ => VaultError::BackupUnreadable,
-                })?;
             }
             for segment in segments {
                 if fs::symlink_metadata(stage.join("objects").join(&segment.object_name)).is_err() {
@@ -3719,8 +3864,12 @@ enum ObjectPresence {
 }
 
 fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
+    object_presence_name(root, &record.object_name)
+}
+
+fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
     let objects = root.join("objects");
-    match fs::symlink_metadata(objects.join(&record.object_name)) {
+    match fs::symlink_metadata(objects.join(object_name)) {
         Ok(metadata) if is_regular_non_reparse(&metadata) => ObjectPresence::Present,
         // A link, or a Windows reparse point such as a cloud placeholder, is
         // refused when opened, but the content may be intact behind it.
@@ -3813,6 +3962,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     }
 
     let mut record_ids = HashSet::new();
+    let mut object_ids = HashSet::new();
     if manifest.portal_links.len() > portal_link::MAX_LINKS
         || (manifest.format_version < 5 && !manifest.portal_links.is_empty())
     {
@@ -3835,6 +3985,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     for record in &manifest.records {
         if record.id.is_nil()
             || !record_ids.insert(record.id)
+            || !object_ids.insert(record.id)
             || !profile_ids.contains(&record.profile_id)
             || !valid_record_name(&record.display_name)
             || record.source_label != MANUAL_IMPORT_LABEL
@@ -3847,6 +3998,22 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || (record.hidden.is_some() && manifest.format_version < MANIFEST_FORMAT_HIDDEN)
         {
             return Err(VaultError::Corrupt);
+        }
+        if let Some(original) = &record.original_pdf {
+            if manifest.format_version < 5
+                || original.id.is_nil()
+                || !object_ids.insert(original.id)
+                || !valid_object_name(&original.object_name)
+                || !object_names.insert(original.object_name.as_str())
+                || !valid_wrapped_secret(&original.wrapped_object_key)
+                || original.sha256.len() != 64
+                || !original
+                    .sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                return Err(VaultError::Corrupt);
+            }
         }
         let unique_folders: HashSet<_> = record.folder_ids.iter().collect();
         if unique_folders.len() != record.folder_ids.len()
@@ -3885,6 +4052,7 @@ fn validate_history<'a>(
         let filler = index >= data;
         if segment.id.is_nil()
             || !ids.insert(segment.id)
+            || !object_ids.insert(segment.id)
             || !valid_object_name(&segment.object_name)
             || !object_names.insert(segment.object_name.as_str())
             || !valid_wrapped_secret(&segment.wrapped_key)
@@ -5775,6 +5943,40 @@ fn encrypt_object(
     })
 }
 
+fn read_object_ref<W: Write>(
+    path: &Path,
+    vault_id: Uuid,
+    keys: &DerivedKeys,
+    object: RecordObject<'_>,
+    writer: W,
+) -> Result<(), VaultError> {
+    let key = unwrap_secret(&keys.object_wrap, object.wrapped_key, object.id.as_bytes())?;
+    if let Some(expected) = object.sha256 {
+        let mut hashed = original_pdf::HashWriter::new(writer);
+        verify_object(
+            path,
+            &mut hashed,
+            vault_id,
+            object.id,
+            &key,
+            object.plaintext_size,
+        )?;
+        if hashed.digest() != expected {
+            return Err(VaultError::Corrupt);
+        }
+        Ok(())
+    } else {
+        verify_object(
+            path,
+            writer,
+            vault_id,
+            object.id,
+            &key,
+            object.plaintext_size,
+        )
+    }
+}
+
 fn verify_object<W: Write>(
     path: &Path,
     mut writer: W,
@@ -6537,7 +6739,7 @@ fn quarantine_orphan_objects(root: &Path, manifest: &Manifest) {
     let referenced: HashSet<&str> = manifest
         .records
         .iter()
-        .map(|record| record.object_name.as_str())
+        .flat_map(|record| record.objects().map(|object| object.object_name))
         .chain(
             manifest
                 .history
@@ -7462,6 +7664,166 @@ mod tests {
         }
     }
 
+    fn original_pdf_fixture() -> (tempfile::TempDir, VaultStore, Uuid, Vec<u8>) {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let bytes = b"%PDF-1.7\r\nFAKE verbatim source\n\x00\xff\r\n%%EOF".to_vec();
+        let id = store
+            .import(profile, vec![], vec![source("FAKE source.pdf", &bytes)], 2)
+            .unwrap()
+            .imported[0];
+        (temp, store, id, bytes)
+    }
+
+    #[test]
+    fn original_pdf_raw_bytes_have_an_independent_encrypted_object_and_key() {
+        use sha2::Digest;
+        let (_temp, store, id, bytes) = original_pdf_fixture();
+        {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            let record = &open.manifest.records[0];
+            let original = record.original_pdf.as_ref().unwrap();
+            assert_ne!(record.id, original.id);
+            assert_ne!(record.object_name, original.object_name);
+            assert_eq!(original.plaintext_size, bytes.len() as u64);
+            assert_eq!(
+                original.sha256,
+                Sha256::digest(&bytes)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            );
+            let keys = derive_keys(open.manifest.vault_id, &open.master_key).unwrap();
+            let display_key = unwrap_secret(
+                &keys.object_wrap,
+                &record.wrapped_object_key,
+                record.id.as_bytes(),
+            )
+            .unwrap();
+            let original_key = unwrap_secret(
+                &keys.object_wrap,
+                &original.wrapped_object_key,
+                original.id.as_bytes(),
+            )
+            .unwrap();
+            assert!(display_key.as_slice() != original_key.as_slice());
+            assert_ne!(
+                fs::read(store.root.join("objects").join(&record.object_name)).unwrap(),
+                fs::read(store.root.join("objects").join(&original.object_name)).unwrap()
+            );
+        }
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(
+            store.snapshot().unwrap().records[0].original_pdf_available,
+            Some(true)
+        );
+        let mut saved = Vec::new();
+        store.export(id, &mut saved).unwrap();
+        assert_eq!(saved, bytes);
+    }
+
+    #[test]
+    fn original_pdf_references_survive_move_hide_unlock_backup_and_restore() {
+        let (temp, store, id, bytes) = original_pdf_fixture();
+        let original_name = store.session().as_ref().unwrap().manifest.records[0]
+            .original_pdf
+            .as_ref()
+            .unwrap()
+            .object_name
+            .clone();
+        let other = store.create_profile("FAKE Other", 3).unwrap();
+        store.move_to_profile(vec![id], other, vec![]).unwrap();
+        store.hide_record(id, 4).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(
+            store.root.join("objects").join(&original_name).is_file(),
+            "unlock must not quarantine a referenced original"
+        );
+        assert!(store.snapshot().unwrap().records[0].hidden.is_some());
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 5).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert!(restored.root.join("objects").join(&original_name).is_file());
+        assert_eq!(restored.snapshot().unwrap().records[0].profile_id, other);
+        restored.unhide_record(id).unwrap();
+        let mut saved = Vec::new();
+        restored.export(id, &mut saved).unwrap();
+        assert_eq!(saved, bytes);
+    }
+
+    #[test]
+    fn original_pdf_missing_or_corrupt_does_not_remove_the_intact_view() {
+        for corrupt in [false, true] {
+            let (_temp, store, id, bytes) = original_pdf_fixture();
+            let original_name = store.session().as_ref().unwrap().manifest.records[0]
+                .original_pdf
+                .as_ref()
+                .unwrap()
+                .object_name
+                .clone();
+            let path = store.root.join("objects").join(original_name);
+            if corrupt {
+                let mut data = fs::read(&path).unwrap();
+                let last = data.len() - 1;
+                data[last] ^= 1;
+                fs::write(&path, data).unwrap();
+            } else {
+                fs::remove_file(&path).unwrap();
+            }
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            assert!(store.snapshot().unwrap().records[0].available);
+            assert_eq!(
+                store.snapshot().unwrap().records[0].original_pdf_available,
+                Some(corrupt)
+            );
+            let mut view = Vec::new();
+            store.read_for_view(id, &mut view).unwrap();
+            assert_eq!(view, bytes);
+            assert!(matches!(
+                store.export(id, io::sink()),
+                Err(VaultError::Corrupt)
+            ));
+            assert!(
+                matches!(store.verify_for_backup(), Err(VaultError::DamagedDocument(owner)) if owner == id)
+            );
+        }
+    }
+
+    #[test]
+    fn original_pdf_write_failure_does_not_commit_half_an_import() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        {
+            let _fail = FailAt::new("original.after-chunk-write");
+            assert!(store
+                .import(
+                    profile,
+                    vec![],
+                    vec![source("FAKE.pdf", b"%PDF-1.7\nFAKE bytes")],
+                    2
+                )
+                .is_err());
+        }
+        assert!(store.session().as_ref().unwrap().manifest == before);
+        assert_eq!(fs::read_dir(store.root.join("staging")).unwrap().count(), 0);
+    }
+
     #[test]
     #[ignore = "requires the real built helper; set MYCARLOS_TEST_SIGNED_HELPER_EXE and run explicitly"]
     fn signed_import_analysis_preserves_original_bytes_and_never_invents_a_clinic_link() {
@@ -7504,6 +7866,16 @@ mod tests {
         assert_eq!(exported, original);
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.records[0].source_label, MANUAL_IMPORT_LABEL);
+        assert_eq!(snapshot.records[0].original_pdf_available, Some(true));
+        {
+            let guard = store.session();
+            let record = &guard.as_ref().unwrap().manifest.records[0];
+            assert!(record
+                .original_pdf
+                .as_ref()
+                .is_some_and(|original| original.id != record.id
+                    && original.object_name != record.object_name));
+        }
         let report = serde_json::to_string(&imported).unwrap();
         assert!(!report.contains("recipient_id"));
         assert!(!report.contains("birth_date"));
@@ -7586,6 +7958,7 @@ mod tests {
                     fingerprint: BASE64.encode([0x33_u8; 32]),
                     wrapped_object_key: wrapped.clone(),
                     hidden: None,
+                    original_pdf: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -7600,6 +7973,7 @@ mod tests {
                     fingerprint: BASE64.encode([0x44_u8; 32]),
                     wrapped_object_key: wrapped,
                     hidden: None,
+                    original_pdf: None,
                 },
             ],
             history: HistoryState::default(),
@@ -13023,6 +13397,7 @@ mod tests {
                         ciphertext: String::new(),
                     },
                     hidden: None,
+                    original_pdf: None,
                 })
                 .collect(),
             history: HistoryState::default(),

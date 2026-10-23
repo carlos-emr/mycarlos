@@ -803,7 +803,7 @@ impl std::io::Write for FileStart {
 /// checks the whole file.
 fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     let mut start = FileStart::default();
-    let exported = store.export(record_id, &mut start);
+    let exported = store.read_for_view(record_id, &mut start);
     if start.complete() {
         return Ok(start.bytes == photo::JPEG_START);
     }
@@ -849,7 +849,7 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
 /// shown. The record is unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
-    let exported = store.export(record_id, &mut buffer);
+    let exported = store.read_for_view(record_id, &mut buffer);
     if buffer.refused {
         return Err(VaultError::NotPhoto);
     }
@@ -867,7 +867,7 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
 /// the helper decides when the patient unlocks it.
 fn is_locked_pdf(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     let mut scan = pdf_unlock::LockScan::default();
-    let exported = store.export(record_id, &mut scan);
+    let exported = store.read_for_view(record_id, &mut scan);
     if scan.found() {
         return Ok(true);
     }
@@ -921,7 +921,7 @@ fn unlock_pdf(
         .find(|record| record.id == record_id)
         .ok_or(VaultError::NotFound)?;
     let mut locked = LimitedBuffer::new(pdf_unlock::MAX_LOCKED_PDF_BYTES);
-    let exported = store.export(record_id, &mut locked);
+    let exported = store.read_for_view(record_id, &mut locked);
     if locked.over {
         return Err(VaultError::PdfTooLarge);
     }
@@ -2654,7 +2654,7 @@ async fn vault_view_page(
         }
         // Sized up front, so the document is never copied by a growing buffer.
         let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
-        store.export(record_id, &mut *document)?;
+        store.read_for_view(record_id, &mut *document)?;
         match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
             pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
             pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
