@@ -2,7 +2,7 @@
 
 This guide is for anyone who wants to install an evaluation build and try it, without building
 anything. Every change to `main` publishes installable builds for Windows, macOS, Android and the
-iOS Simulator.
+iOS Simulator. Only a real iPhone or iPad needs a build of your own, on a Mac.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
@@ -41,9 +41,10 @@ which records the source it was built from; include it in bug reports. (It is no
 check: the run page in step 2 is.) Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
-There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer
-account and signing. Linux has an unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`,
-kept for 7 days) for compatibility checks only.
+There is no download for a real iPhone or iPad yet. With a Mac you can build one and install it
+yourself: see [iPhone or iPad (build it on a Mac)](#iphone-or-ipad-build-it-on-a-mac). Linux has an
+unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`, kept for 7 days) for compatibility
+checks only.
 
 ## Install
 
@@ -104,6 +105,107 @@ install over it; each build may be signed with a different debug key. Uninstalli
    `Terminal`, press Return), type `xattr -dr com.apple.quarantine ` (with the trailing space),
    drag the app into the Terminal window to fill in its location, and press Return.
 4. Drag the sample PDFs onto the Simulator window; they are saved to the Files app.
+
+### iPhone or iPad (build it on a Mac)
+
+This is the one install in this guide that builds myCarlos from source. You need a Mac that can
+run the current Xcode, with about 40 GB of free storage; the iPhone or iPad and its cable; and an
+Apple ID (a free one is enough). The first time takes an hour or more, mostly downloads. These
+steps have not been tried on a real device yet: if one fails, [report it](#report-what-you-find)
+with the last lines of output.
+
+**Once, on the Mac:**
+
+1. Install **Xcode** from the App Store and open it. Agree to the licence, and when it asks which
+   platforms to add, include **iOS**.
+2. In Terminal, install Homebrew, Node, CocoaPods and Rust:
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   brew install node cocoapods
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+   If Homebrew ends with **Next steps** (adding `brew` to your PATH), run those before the second
+   line; take Rust's default install. Then open a new Terminal window and check that
+   `xcode-select -p` ends in `Xcode.app/Contents/Developer`. If it doesn't, run
+   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+3. In Xcode, choose **Xcode → Settings → Accounts**, press **+** and sign in with your Apple ID.
+   Select the team marked **(Personal Team)**, press **Manage Certificates…**, then
+   **+ → Apple Development**.
+4. Get the code:
+
+   ```bash
+   git clone https://github.com/carlos-emr/mycarlos.git ~/mycarlos
+   cd ~/mycarlos
+   npm ci
+   rustup target add aarch64-apple-ios
+   ```
+
+**Each time you install** (from `~/mycarlos`):
+
+5. Set the signing team. The variable lasts only for that Terminal window. The first time, also
+   create the iPhone project with `npm run tauri ios init`.
+
+   ```bash
+   export APPLE_DEVELOPMENT_TEAM=$(security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p')
+   echo "$APPLE_DEVELOPMENT_TEAM"   # a 10-character team ID; if empty, redo step 3
+   ```
+
+6. Plug in the phone, tap **Trust** and enter its passcode. The first time, Xcode may take a few
+   minutes preparing it (**Window → Devices and Simulators**), and on iOS 16 or later you must turn
+   on **Settings → Privacy & Security → Developer Mode** (the phone restarts). If that switch is
+   missing, open the Devices window in Xcode with the phone connected, then look again.
+7. Build and install, with the phone unlocked:
+
+   ```bash
+   npm run tauri ios run
+   ```
+
+   Pick the phone if it lists devices, and allow the keychain prompt (**Always Allow**). The first
+   time, the app installs but won't open until step 8; then run this step again.
+8. On the phone: **Settings → General → VPN & Device Management → Developer App → Apple
+   Development: (your Apple ID) → Trust**.
+
+**Sample files:** The repository includes five FAKE PDFs in `~/mycarlos/dev-data`. To regenerate
+them, run this in Terminal:
+
+```bash
+cd ~/mycarlos
+npm run dev:data
+```
+
+AirDrop the five `FAKE_*.pdf` files to the phone, save them to Files, then follow
+[What to try](#what-to-try). `FAKE_MANIFEST.json` describes the samples; it is not a PDF to import.
+
+Good to know:
+
+- **Free Apple ID:** the app stops opening after 7 days, and at most 3 such apps fit on the phone.
+  Repeat steps 5 to 7 to renew it; the vault is kept. A paid developer account makes it a year.
+- **Updating:** `git pull && npm ci`, then steps 5 to 7.
+- **Removing:** delete the app on the phone; its vault goes with it.
+- **Desktop only for now:** unlocking password-protected PDFs and the built-in PDF reader.
+- **Camera:** enabled on computers, Android and iPhone. Camera permissions and capture still need
+  testing on real phones.
+
+**If something goes wrong:**
+
+| You see | Do this |
+| --- | --- |
+| `xcodebuild` "requires Xcode, but active developer directory … is a command line tools instance" | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
+| "iOS … is not installed" | Xcode → Settings → Components: install the iOS platform |
+| "can't find crate for `core`" or "target may not be installed" | In `~/mycarlos`: `rustup target add aarch64-apple-ios` |
+| `pod: command not found` | `brew install cocoapods`, then open a new Terminal |
+| "No signing certificate" or "requires a development team" | Repeat step 3, then step 5 in the same Terminal window |
+| "Failed to register bundle identifier" or "identifier not available" | Set your own `"identifier"` in `src-tauri/tauri.conf.json` (e.g. `ca.carlos.mycarlos.yourname`), rerun `npm run tauri ios init`, don't commit it. It installs as a separate app |
+| "Developer Mode disabled" or "the device is locked" | Step 6 (Developer Mode); unlock the phone and run step 7 again |
+| "Unable to launch … invalid code signature or its profile has not been explicitly trusted" | Step 8, then step 7 again |
+| "maximum number of apps for free development profiles" | Delete another app you installed from Xcode, then step 7 again |
+| The app stopped opening after a week | The free 7-day profile ran out: steps 5 to 7 |
+| The phone isn't listed | Use a data cable (not charge-only), unlock the phone, tap **Trust**; check **Window → Devices and Simulators** |
+| The build stops with "No space left on device" | Free storage; `rm -rf ~/mycarlos/src-tauri/target` clears old builds |
+
+Anything else: [report it](#report-what-you-find) with the last lines of output.
 
 ## What to try
 
