@@ -720,7 +720,7 @@ describe("durable vault UI", () => {
     ).toBeUndefined();
 
     await user.click(screen.getByText("FAKE_Camera.jpg"));
-    await user.click(screen.getByRole("button", { name: "Hide", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Hide" }));
     await screen.findByText(
       "FAKE_Camera.jpg was hidden. It is listed under Hidden, where you can restore it.",
     );
@@ -748,7 +748,7 @@ describe("durable vault UI", () => {
       ).getByRole("button", { name: /^My records/ }),
     );
     await user.click(screen.getByText("FAKE_Report.pdf"));
-    await user.click(screen.getByRole("button", { name: "Hide", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Hide" }));
     await screen.findByText(
       "FAKE_Report.pdf was hidden. It is listed under Hidden, where you can restore it.",
     );
@@ -794,7 +794,7 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(releaseOld).toBeTypeOf("function"));
     await user.click(screen.getByText("FAKE_Camera.jpg"));
     rejectNext = true;
-    await user.click(screen.getByRole("button", { name: "Hide", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Hide" }));
     await waitFor(() =>
       expect(screen.getByRole("status")).not.toBeEmptyDOMElement(),
     );
