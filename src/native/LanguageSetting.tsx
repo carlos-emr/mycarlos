@@ -20,43 +20,24 @@ export function LanguageSetting({ compact = false }: { compact?: boolean }) {
   const state = useSyncExternalStore(subscribeLocale, getLanguagePreference);
   const { t } = useI18n();
   const id = useId();
-  if (compact)
-    return (
-      <div className="language-compact">
-        <label htmlFor={id}>{t("language.title")}</label>
-        <select
-          id={id}
-          value={state.choice ?? ""}
-          aria-describedby={`${id}-help${state.error ? ` ${id}-error` : ""}`}
-          onChange={(event) =>
-            rememberLocale((event.target.value || null) as Locale | null)
-          }
-        >
-          <option value="">{t("appearance.system")}</option>
-          {LANGUAGES.map(([locale, label]) => (
-            <option key={locale} value={locale} lang={locale}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <p id={`${id}-help`} className="sr-only">
+  return (
+    <section
+      className={
+        compact ? "language-compact" : "setting-row native-setting-form"
+      }
+    >
+      <div>
+        {compact ? (
+          <span className="language-title">{t("language.title")}</span>
+        ) : (
+          <h2>{t("language.title")}</h2>
+        )}
+        <p id={`${id}-help`} className={compact ? "sr-only" : undefined}>
           {t("language.help")}
         </p>
-        {state.error && (
-          <p id={`${id}-error`} role="alert">
-            {t(state.error)}
-          </p>
-        )}
-      </div>
-    );
-  return (
-    <section className="setting-row native-setting-form">
-      <div>
-        <h2>{t("language.title")}</h2>
-        <p id={`${id}-help`}>{t("language.help")}</p>
       </div>
       <fieldset
-        className="appearance-choice language-choice"
+        className={`appearance-choice language-choice${compact ? " language-choices-compact" : ""}`}
         aria-describedby={`${id}-help${state.error ? ` ${id}-error` : ""}`}
       >
         <legend className="sr-only">{t("language.title")}</legend>
@@ -64,6 +45,7 @@ export function LanguageSetting({ compact = false }: { compact?: boolean }) {
           <input
             type="radio"
             name={id}
+            value=""
             checked={state.choice === null}
             onChange={() => rememberLocale(null)}
           />

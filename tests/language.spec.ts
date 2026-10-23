@@ -98,7 +98,13 @@ test("setup language translates the form without resetting drafts at 320px and e
   await page.setViewportSize({ width: 320, height: 700 });
   await fakeVault(page, "absent", { recoveryKey: false });
   await page.goto("/");
-  await page.getByRole("combobox", { name: "Language" }).selectOption("fr");
+  await expect(
+    page.getByRole("group", { name: "Language" }).getByRole("radio"),
+  ).toHaveCount(6);
+  await expect(page.getByRole("combobox", { name: "Language" })).toHaveCount(0);
+  await page.getByRole("radio", { name: "English", exact: true }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("radio", { name: "Français" })).toBeFocused();
   await expect(
     page.getByRole("heading", {
       name: translate("fr", "comfort.title"),
@@ -119,9 +125,7 @@ test("setup language translates the form without resetting drafts at 320px and e
   });
   await profile.fill("FAKE Language Patient");
   await password.fill("FAKE draft");
-  await page
-    .getByRole("combobox", { name: translate("fr", "language.title") })
-    .selectOption("pl");
+  await page.getByRole("radio", { name: "Polski" }).check();
   await expect(
     page.getByRole("textbox", {
       name: translate("pl", "create.profile.label"),
@@ -142,6 +146,21 @@ test("setup language translates the form without resetting drafts at 320px and e
   await page.locator("html").evaluate((element) => {
     element.style.fontSize = "200%";
   });
+  const choicesFit = await page
+    .locator(".language-choice label")
+    .evaluateAll((labels) =>
+      labels.every((label) => {
+        const box = label.getBoundingClientRect();
+        const span = label.querySelector("span")!;
+        return (
+          box.left >= 0 &&
+          box.right <= innerWidth &&
+          box.height >= 44 &&
+          span.scrollWidth <= span.clientWidth + 1
+        );
+      }),
+    );
+  expect(choicesFit).toBe(true);
   const headingFits = await page
     .locator(".vault-card h1")
     .evaluate((heading) => heading.scrollWidth <= heading.clientWidth + 1);

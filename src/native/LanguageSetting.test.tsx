@@ -77,9 +77,10 @@ describe("saved app language", () => {
       const password = form.getByLabelText("Passphrase", { exact: true });
       fireEvent.change(name, { target: { value: "FAKE Language Patient" } });
       fireEvent.change(password, { target: { value: "FAKE draft" } });
-      fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
-        target: { value: locale },
-      });
+      const languageChoice = container.querySelector<HTMLInputElement>(
+        `.language-choice input[value="${locale}"]`,
+      )!;
+      fireEvent.click(languageChoice);
       expect(
         screen.getByRole("heading", {
           name: translate(locale, "create.title"),
@@ -136,7 +137,8 @@ describe("saved app language", () => {
     });
     initLocale();
     render(<LanguageSetting compact />);
-    expect(screen.getByRole("combobox", { name: "Language" })).toHaveValue("");
+    expect(screen.queryByRole("combobox", { name: "Language" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "System default" })).toBeChecked();
     expect(screen.getByRole("alert")).toHaveTextContent(
       translate("en", "language.error.unreadable"),
     );

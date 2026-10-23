@@ -1115,8 +1115,9 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
 
-/* Available before opening a vault, with a full-width native control. */
+/* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
-.language-compact label { font-size: 0.875rem; font-weight: 700; }
-.language-compact select { min-width: 0; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
-.language-compact p:not(.sr-only) { margin: 0; color: var(--red); overflow-wrap: anywhere; font-size: 0.875rem; }
+.language-title { font-size: 0.875rem; font-weight: 700; }
+.language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
+.language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
+.language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
