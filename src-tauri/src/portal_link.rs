@@ -12,6 +12,7 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub const MAX_LINKS: usize = 16;
+pub const MAX_PORTAL_UTF8_BYTES: usize = 1024;
 #[cfg(any(feature = "portal-linking", test))]
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024;
 const CODE_ALPHABET: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -29,9 +30,13 @@ pub enum LinkError {
     InvalidCode,
     InvalidDeviceName,
     InvalidResponse,
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     Network,
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     CodeRejected,
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     ClinicKeysMissing,
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     DeviceExists,
     Cancelled,
 }
@@ -125,10 +130,6 @@ impl LinkedClinic {
             || !bounded_label(&self.clinic_name, 240)
             || self.clinic_keys.is_empty()
             || self.clinic_keys.len() > 16
-            || !self
-                .clinic_keys
-                .iter()
-                .any(|k| k.status == KeyStatus::Active)
         {
             return Err(LinkError::InvalidResponse);
         }
@@ -138,6 +139,20 @@ impl LinkedClinic {
                 return Err(LinkError::InvalidResponse);
             }
             key.validate()?;
+        }
+        Ok(())
+    }
+
+    /// The portal refuses a new link without an active clinic key. Stored
+    /// inventories must also represent a later complete revocation faithfully.
+    pub fn validate_initial(&self, expected_device: &str) -> Result<(), LinkError> {
+        self.validate(expected_device)?;
+        if !self
+            .clinic_keys
+            .iter()
+            .any(|key| key.status == KeyStatus::Active)
+        {
+            return Err(LinkError::InvalidResponse);
         }
         Ok(())
     }
@@ -300,7 +315,7 @@ pub struct LinkRequest {
 }
 
 pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
-    if input.len() > 1024 || input.trim() != input || input.contains('\\') {
+    if input.len() > MAX_PORTAL_UTF8_BYTES || input.trim() != input || input.contains('\\') {
         return Err(LinkError::InvalidPortal);
     }
     let url = Url::parse(input).map_err(|_| LinkError::InvalidPortal)?;
@@ -313,7 +328,11 @@ pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
     {
         return Err(LinkError::InvalidPortal);
     }
-    Ok(url.as_str().trim_end_matches('/').to_owned())
+    let canonical = url.as_str().trim_end_matches('/').to_owned();
+    if canonical.len() > MAX_PORTAL_UTF8_BYTES {
+        return Err(LinkError::InvalidPortal);
+    }
+    Ok(canonical)
 }
 
 pub fn normalize_code(input: &str) -> Result<Zeroizing<String>, LinkError> {
@@ -374,7 +393,7 @@ pub fn parse_response(bytes: &[u8], expected_device: &str) -> Result<LinkedClini
     }
     let clinic: LinkedClinic =
         serde_json::from_slice(bytes).map_err(|_| LinkError::InvalidResponse)?;
-    clinic.validate(expected_device)?;
+    clinic.validate_initial(expected_device)?;
     Ok(clinic)
 }
 
@@ -421,6 +440,72 @@ mod tests {
         assert_eq!(
             normalize_portal("https://fake.example/patient/"),
             Ok("https://fake.example/patient".to_owned())
+        );
+    }
+
+    #[test]
+    fn portal_link_unicode_expansion_respects_the_stored_canonical_bound() {
+        let base = "https://fake.example/";
+        let allowed = (1024 - base.len()) / 6;
+        let padding = "x".repeat(1024 - base.len() - allowed * 6);
+        let near = format!("{base}{}{padding}", "é".repeat(allowed));
+        let canonical = normalize_portal(&near).unwrap();
+        assert_eq!(
+            canonical,
+            format!("{base}{}{padding}", "%C3%A9".repeat(allowed))
+        );
+        assert_eq!(canonical.len(), 1024);
+        assert_eq!(normalize_portal(&canonical).unwrap(), canonical);
+        let one_over = format!("{near}x");
+        assert!(one_over.len() <= 1024);
+        assert_eq!(normalize_portal(&one_over), Err(LinkError::InvalidPortal));
+        let expanded = format!("{base}{}", "é".repeat(allowed + 1));
+        assert!(
+            expanded.len() <= 1024,
+            "the raw input passes its separate byte bound"
+        );
+        assert_eq!(normalize_portal(&expanded), Err(LinkError::InvalidPortal));
+        assert!(StoredLink::pending(&expanded, "myCarlos", None, 1).is_err());
+    }
+
+    #[test]
+    fn portal_link_stored_inventory_retains_revoked_status_through_roundtrip() {
+        use p256::ecdsa::SigningKey as ClinicSigningKey;
+        let mut link = StoredLink::pending("https://fake.example", "myCarlos", None, 1).unwrap();
+        let spki = ClinicSigningKey::from_slice(&[7; 32])
+            .unwrap()
+            .verifying_key()
+            .to_public_key_der()
+            .unwrap();
+        link.clinic = Some(LinkedClinic {
+            recipient_id: "FAKE_recipient".to_owned(),
+            device_key_id: link.keys.device_key_id(),
+            clinic_id: "FAKE_clinic".to_owned(),
+            clinic_name: "FAKE Clinic".to_owned(),
+            clinic_keys: vec![ClinicKey {
+                kid: B64.encode(Sha256::digest(spki.as_bytes())),
+                spki: B64.encode(spki.as_bytes()),
+                status: KeyStatus::Revoked,
+            }],
+        });
+        assert!(
+            link.validate().is_ok(),
+            "revocation must remain persistable"
+        );
+        let bytes = Zeroizing::new(serde_json::to_vec(&link).unwrap());
+        let reopened: StoredLink = serde_json::from_slice(&bytes).unwrap();
+        assert!(reopened.validate().is_ok());
+        assert_eq!(
+            reopened.clinic.as_ref().unwrap().clinic_keys[0].status,
+            KeyStatus::Revoked
+        );
+        assert!(
+            parse_response(
+                &serde_json::to_vec(reopened.clinic.as_ref().unwrap()).unwrap(),
+                &link.keys.device_key_id()
+            )
+            .is_err(),
+            "a new link still needs an active key"
         );
     }
 

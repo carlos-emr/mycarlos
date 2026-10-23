@@ -1399,7 +1399,7 @@ impl VaultStore {
         drop(normalized);
         let clinic = post(request, &device_key_id, &cancelled).map_err(VaultError::Portal)?;
         clinic
-            .validate(&device_key_id)
+            .validate_initial(&device_key_id)
             .map_err(VaultError::Portal)?;
         // The HTTP exchange held no vault lock. Check the session again under
         // that lock before committing pins, with the same history transaction.
