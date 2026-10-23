@@ -699,13 +699,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   // These are handed to the library, which unmounts on lock. A call that is
   // still in flight then belongs to a finished session and is ignored.
+  const refreshIssuedRef = useRef(0);
+  const refreshAppliedRef = useRef(0);
   const session = sessionRef.current;
   const inSession = () => sessionRef.current === session;
   // `known` is the vault as a command that changed it returned it, taken
   // under the same guard as the change: nothing to ask again.
   const refresh = async (known?: VaultSnapshot) => {
+    const request = ++refreshIssuedRef.current;
     const next = known ?? (await bridge.snapshot());
-    if (inSession()) setSnapshot(next);
+    // Received intake can refresh alongside a library action. An older reply
+    // must not roll back a later successful result. Compare applied successes,
+    // so a later failed request does not discard a usable earlier result.
+    if (inSession() && request > refreshAppliedRef.current) {
+      refreshAppliedRef.current = request;
+      setSnapshot(next);
+    }
     return next;
   };
   const setSessionNotice = (message: string) => {

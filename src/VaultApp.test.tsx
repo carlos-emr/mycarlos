@@ -647,6 +647,172 @@ describe("durable vault UI", () => {
     return { bridge, vault, arrive };
   }
 
+  // Diagnostic regressions use NativeVault's actual refresh/received handlers,
+  // not a replacement VaultLibrary run/refresh harness. Only the native bridge
+  // replies are controlled; these FAKE records do not establish JPEG integrity.
+  function photoRefreshVault() {
+    const result = sharedVault(["FAKE Patient"], [], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+      isPhoto: vi.fn(async (id: string) => id === "FAKE-photo"),
+    });
+    result.vault.records.push(
+      {
+        id: "FAKE-photo",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE_Camera.jpg",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/octet-stream",
+        plaintextSize: 2048,
+        importedAtMs: 1,
+        available: true,
+      },
+      {
+        id: "FAKE-pdf",
+        profileId: "profile-1",
+        folderIds: [],
+        displayName: "FAKE_Report.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: 2,
+        available: true,
+      },
+    );
+    vi.mocked(result.bridge.hideRecord).mockImplementation(async (id) => {
+      result.vault.records = result.vault.records.map((record) =>
+        record.id === id
+          ? { ...record, hidden: { atMs: 10, reason: "patient" as const } }
+          : record,
+      );
+    });
+    return result;
+  }
+
+  it("keeps a hidden camera photo when an older same-session shared refresh arrives", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault, arrive } = photoRefreshVault();
+    let holdNext = false;
+    let releaseOld: (() => void) | undefined;
+    const snapshot = vi.mocked(bridge.snapshot).mockImplementation(() => {
+      const captured = structuredClone(vault);
+      if (holdNext) {
+        holdNext = false;
+        return new Promise<VaultSnapshot>((resolve) => {
+          releaseOld = () => resolve(captured);
+        });
+      }
+      return Promise.resolve(captured);
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText("FAKE_Camera.jpg");
+    expect(snapshot).toHaveBeenCalledTimes(1);
+
+    // Received intake is outside run/busy and is a reachable second source of
+    // snapshots. Empty focus/visibility notifications alone cannot do this.
+    holdNext = true;
+    arrive("FAKE_Incoming.pdf");
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(releaseOld).toBeTypeOf("function"));
+    expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    expect(
+      vault.records.find((record) => record.id === "FAKE-photo")?.hidden,
+    ).toBeUndefined();
+
+    await user.click(screen.getByText("FAKE_Camera.jpg"));
+    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await screen.findByText(
+      "FAKE_Camera.jpg was hidden. It is listed under Hidden, where you can restore it.",
+    );
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    expect(
+      screen.getByRole("button", { name: "Restore FAKE_Camera.jpg" }),
+    ).toBeVisible();
+    await act(async () => releaseOld!());
+    expect(
+      vault.records.find((record) => record.id === "FAKE-photo")?.hidden
+        ?.reason,
+    ).toBe("patient");
+    expect
+      .soft(
+        screen.queryByRole("button", { name: "Restore FAKE_Camera.jpg" }),
+        "A late background refresh must not remove the hidden photo",
+      )
+      .toBeVisible();
+
+    // Continue after the invariant failure to verify the user's later action:
+    // a fresh PDF-hide snapshot reveals the already-committed hidden photo.
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Record library" }),
+      ).getByRole("button", { name: /^My records/ }),
+    );
+    await user.click(screen.getByText("FAKE_Report.pdf"));
+    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await screen.findByText(
+      "FAKE_Report.pdf was hidden. It is listed under Hidden, where you can restore it.",
+    );
+    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    expect(
+      screen.getByRole("button", { name: "Restore FAKE_Camera.jpg" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Restore FAKE_Report.pdf" }),
+    ).toBeVisible();
+    expect(bridge.hideRecord).toHaveBeenCalledTimes(2);
+    expect(snapshot).toHaveBeenCalledTimes(4);
+  });
+
+  it("still applies an earlier successful refresh when a later refresh fails", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault, arrive } = photoRefreshVault();
+    let holdNext = false;
+    let rejectNext = false;
+    let releaseOld: (() => void) | undefined;
+    vi.mocked(bridge.snapshot).mockImplementation(() => {
+      if (rejectNext) {
+        rejectNext = false;
+        return Promise.reject({
+          code: "storage",
+          message: "FAKE interrupted snapshot response.",
+        });
+      }
+      const captured = structuredClone(vault);
+      if (holdNext) {
+        holdNext = false;
+        return new Promise<VaultSnapshot>((resolve) => {
+          releaseOld = () => resolve(captured);
+        });
+      }
+      return Promise.resolve(captured);
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText("FAKE_Camera.jpg");
+    holdNext = true;
+    arrive("FAKE_Incoming.pdf");
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(releaseOld).toBeTypeOf("function"));
+    await user.click(screen.getByText("FAKE_Camera.jpg"));
+    rejectNext = true;
+    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).not.toBeEmptyDOMElement(),
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent("was hidden");
+    expect(
+      vault.records.find((record) => record.id === "FAKE-photo")?.hidden
+        ?.reason,
+    ).toBe("patient");
+    await act(async () => releaseOld!());
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Record library" }),
+      ).getByRole("button", { name: /^Shared with me/ }),
+    );
+    expect(await screen.findByText("FAKE_Incoming.pdf")).toBeVisible();
+    expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+  });
+
   async function unlockWith(user: ReturnType<typeof userEvent.setup>) {
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await user.type(
