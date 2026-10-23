@@ -1,3 +1,4 @@
+import { getLocale } from "../i18n";
 import { describe, expect, it } from "vitest";
 import {
   fileExtension,
@@ -40,7 +41,9 @@ describe("recordKind", () => {
 
 describe("formatBytes", () => {
   it("chooses the unit after rounding", () => {
-    expect(formatBytes(1023)).toBe("1023 B");
+    expect(formatBytes(1023)).toBe(
+      `${new Intl.NumberFormat(getLocale()).format(1023)} B`,
+    );
     expect(formatBytes(2048)).toBe("2 KB");
     expect(formatBytes(1_048_100)).toBe("1.0 MB");
   });

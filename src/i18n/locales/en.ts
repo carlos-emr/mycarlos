@@ -1,3 +1,4 @@
+import interfaceMessages from "./interface-en.json";
 import type { Message } from "../types";
 
 /** The source catalogue. Every other language must have exactly these keys
@@ -5,6 +6,7 @@ import type { Message } from "../types";
  * must use the same {placeholders} as the English text. Text goes into the page
  * as plain text, never as HTML. */
 export const en = {
+  ...interfaceMessages,
   // Window frame
   "frame.banner.title": "Synthetic-data development build",
   "frame.banner.body": "Do not use real patient information",

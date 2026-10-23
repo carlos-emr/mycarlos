@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../Icon";
-import { useI18n } from "../i18n";
+import { useI18n, deferredText, resolveText, type UiText } from "../i18n";
 import type { NativeZoom } from "./nativeZoom";
 import {
   ZOOM_LEVELS,
@@ -100,7 +100,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   // the size as it is.
   const [draft, setDraft] = useState<string | null>(null);
   // A refusal or a note about the size typed, shown under the box.
-  const [message, setMessage] = useState<{ text: string; error: boolean }>({
+  const [message, setMessage] = useState<{ text: UiText; error: boolean }>({
     text: "",
     error: false,
   });
@@ -156,13 +156,18 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   // Applies what is typed. A refusal keeps the text, to be corrected.
   const apply = (next: EventTarget | null = null) => {
     if (draft === null) return;
-    const typed = readTypedZoom(draft);
+    const input = draft;
+    const typed = readTypedZoom(input);
+    const feedback = deferredText(() => {
+      const current = readTypedZoom(input);
+      return "error" in current ? current.error : current.note;
+    });
     if ("error" in typed) {
-      setMessage({ text: typed.error, error: true });
+      setMessage({ text: feedback, error: true });
       return;
     }
     setDraft(null);
-    setMessage({ text: typed.note, error: false });
+    setMessage({ text: feedback, error: false });
     // Leaving the box for "Back to normal size" with 100 typed: the button
     // goes before its click lands, and the focus must not be lost with it.
     if (typed.level === 1 && next !== null && next === back.current)
@@ -284,7 +289,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
           }
           aria-live="polite"
         >
-          {message.text}
+          {resolveText(message.text)}
         </p>
       </div>
     </section>

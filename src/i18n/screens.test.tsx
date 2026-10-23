@@ -9,6 +9,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import {
   LOCALES,
+  formatDate,
   setLocaleOverride,
   translate,
   withElements,
@@ -243,7 +244,12 @@ describe("the person-folder sidebar in each language", () => {
       const shown = render(<LibrarySidebar {...props} />);
       const nav = screen.getByRole("navigation", { name: tr("sidebar.label") });
       expect(
-        within(nav).getByRole("button", { name: "Shared with me, 2 new" }),
+        within(nav).getByRole("button", {
+          name: tr("interface.sidebar.sharedNew", {
+            shared: tr("interface.LibrarySidebar.sharedWithMe"),
+            new: tr("interface.count.new", { count: 2 }),
+          }),
+        }),
       ).toHaveAttribute("aria-current", "page");
       const folder = within(nav).getByRole("button", {
         name: "FAKE Results (FAKE Blake) 0",
@@ -638,21 +644,25 @@ describe("the library list and grid in each language", () => {
           name: tr("library.folder.open", { name }),
         }),
       ).toHaveAccessibleDescription(
-        `${tr("library.folder.items", { count: 3 })} In FAKE Avery / FAKE Parent`,
+        `${tr("library.folder.items", { count: 3 })} ${tr("interface.inLocation", { location: "FAKE Avery / FAKE Parent" })}`,
       );
       for (const buttonName of [file, tr("library.select", { name: file })])
         expect(
           screen.getByRole("button", { name: buttonName }),
         ).toHaveAccessibleDescription(
-          "In FAKE Avery / FAKE Parent / FAKE Labs",
+          tr("interface.inLocation", {
+            location: "FAKE Avery / FAKE Parent / FAKE Labs",
+          }),
         );
-      expect(
-        screen.getAllByText(new Date(added).toLocaleDateString()),
-      ).toHaveLength(2);
+      expect(screen.getAllByText(formatDate(added))).toHaveLength(2);
       results.unmount();
 
       const grid = renderItems("grid", undefined, true);
-      expect(screen.getByText("In FAKE Avery / FAKE Parent")).toBeVisible();
+      expect(
+        screen.getByText(
+          tr("interface.inLocation", { location: "FAKE Avery / FAKE Parent" }),
+        ),
+      ).toBeVisible();
       expect(
         screen.getByRole("button", {
           name: tr("library.select", { name: file }),
@@ -681,14 +691,10 @@ describe("the library list and grid in each language", () => {
     });
   }
 
-  it("keeps the device's date format while the language follows the system", () => {
-    // As the rest of the app does (Settings > Security, the recovery kit):
-    // a Canadian device writes 2026-01-15 whatever language is shown.
+  it("shows dates in the selected app language", () => {
     setLocaleOverride("fr");
     renderItems("list");
-    expect(
-      screen.getAllByText(new Date(added).toLocaleDateString()),
-    ).toHaveLength(2);
+    expect(screen.getAllByText(formatDate(added))).toHaveLength(2);
   });
 
   it("counts items with each language's forms", () => {

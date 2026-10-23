@@ -497,6 +497,8 @@ pub struct VaultRecord {
     pub folder_ids: Vec<Uuid>,
     pub display_name: String,
     pub source_label: String,
+    /// Presentation identity; the stored source label remains unchanged.
+    pub source_kind: &'static str,
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
@@ -1210,6 +1212,7 @@ impl VaultStore {
                     folder_ids: record.folder_ids.clone(),
                     display_name: record.display_name.clone(),
                     source_label: record.source_label.clone(),
+                    source_kind: "manual",
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
@@ -2188,18 +2191,30 @@ impl VaultStore {
     /// The recovery kit for the key shown by `begin_recovery_key` and not yet
     /// confirmed: the key, when it was made and what it is for. It names no
     /// patient or document, so a kit someone else finds says nothing more.
+    #[cfg(test)]
     pub fn recovery_kit(&self, now_ms: u64) -> Result<Zeroizing<String>, VaultError> {
+        self.recovery_kit_in(now_ms, crate::ui_text::UiLocale::En)
+    }
+
+    pub fn recovery_kit_in(
+        &self,
+        now_ms: u64,
+        locale: crate::ui_text::UiLocale,
+    ) -> Result<Zeroizing<String>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let pending = unlocked
             .pending_recovery_key
             .as_ref()
             .ok_or(VaultError::Invalid)?;
-        Ok(recovery_kit_text(
-            &encode_recovery_key(&pending.key),
-            &recovery_key_label(pending.key_id),
-            now_ms,
-        ))
+        Ok(Zeroizing::new(locale.render(
+            "native.kit.text",
+            &[
+                ("key", &encode_recovery_key(&pending.key)),
+                ("label", &recovery_key_label(pending.key_id)),
+                ("date", &utc_date_text(now_ms)),
+            ],
+        )))
     }
 
     /// The short label of the key being set up, which its kits show. Not
@@ -2252,13 +2267,23 @@ impl VaultStore {
     /// Saves the recovery kit to a file the patient chose, as an export is
     /// saved: never inside the vault home, private to the user, and replacing
     /// a link at the destination rather than writing through it.
+    #[cfg(test)]
     pub fn save_recovery_kit(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
+        self.save_recovery_kit_in(destination, now_ms, crate::ui_text::UiLocale::En)
+    }
+
+    pub fn save_recovery_kit_in(
+        &self,
+        destination: &Path,
+        now_ms: u64,
+        locale: crate::ui_text::UiLocale,
+    ) -> Result<(), VaultError> {
         let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
         }
-        let kit = self.recovery_kit(now_ms)?;
+        let kit = self.recovery_kit_in(now_ms, locale)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -4039,32 +4064,6 @@ fn recovery_key_label(key_id: Uuid) -> String {
 
 /// The text of a recovery kit. Plain text, so that it prints and opens
 /// anywhere; the date is UTC.
-fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
-    let (year, month, day) = utc_date(now_ms);
-    Zeroizing::new(format!(
-        "myCarlos recovery kit\n\
-         =====================\n\
-         \n\
-         Recovery key:  {key}\n\
-         Key label:     {label} (not secret: it tells kits apart)\n\
-         Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
-         \n\
-         What it is for\n\
-         If you forget your myCarlos passphrase, this key opens your vault on\n\
-         this device and lets you choose a new passphrase. It works once you\n\
-         have finished the check in myCarlos that follows saving this kit.\n\
-         \n\
-         Keep it safe\n\
-         - Keep this kit somewhere private and away from the device, for\n  \
-         example printed and stored with your important papers. Anyone with\n  \
-         this key and a copy of your vault can open it.\n\
-         - If you set up a new recovery key, this one no longer opens the\n  \
-         vault on this device.\n\
-         - Neither your clinic nor the makers of myCarlos can open your vault\n  \
-         for you.\n"
-    ))
-}
-
 /// The UTC date of `ms`, as `YYYY-MM-DD`.
 pub(crate) fn utc_date_text(ms: u64) -> String {
     let (year, month, day) = utc_date(ms);
@@ -10139,10 +10138,34 @@ mod tests {
         assert!(label
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
-        assert!(kit.contains(&format!("Key label:     {label}")));
+        assert!(kit.contains(&format!("Key label: {label}")));
         assert!(!name.contains("Jamie"));
         // The page asks for it to print it on the kit.
         assert_eq!(store.pending_recovery_key_label().unwrap(), label);
+
+        // Every language keeps the native-held key, label and date exact;
+        // the person's name never enters any kit.
+        for locale in [
+            crate::ui_text::UiLocale::En,
+            crate::ui_text::UiLocale::Fr,
+            crate::ui_text::UiLocale::Es,
+            crate::ui_text::UiLocale::Pl,
+            crate::ui_text::UiLocale::PtBr,
+        ] {
+            let localized = store.recovery_kit_in(1_790_553_600_000, locale).unwrap();
+            assert!(
+                localized.contains(&key)
+                    && localized.contains(&label)
+                    && localized.contains("2026-09-28")
+            );
+            assert!(!localized.contains("Jamie"));
+        }
+        let polish_file = temp.path().join("kit-pl.txt");
+        store
+            .save_recovery_kit_in(&polish_file, 1, crate::ui_text::UiLocale::Pl)
+            .unwrap();
+        let polish = fs::read_to_string(&polish_file).unwrap();
+        assert!(polish.contains("Klucz odzyskiwania") && polish.contains(&key));
 
         // Saved as an export is: outside the vault home, and private.
         let outside = temp.path().join("kit.txt");

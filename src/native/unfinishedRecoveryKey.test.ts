@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { describe, expect, it } from "vitest";
 import {
   OLD_BACKUPS_EXPOSED,
@@ -17,10 +18,10 @@ describe("how an unfinished key setup ended", () => {
       false,
     );
     expect(exposed).toMatch(/^The recovery key you were shown was saved/);
-    expect(exposed).toContain(OLD_BACKUPS_EXPOSED);
+    expect(exposed).toContain(t(OLD_BACKUPS_EXPOSED));
     // A routine replacement: nothing to delete.
     const routine = unfinishedRecoveryKeyMessage({ setAtMs: 5 }, 9, false);
-    expect(routine).toContain(OLD_BACKUPS_ROUTINE);
+    expect(routine).toContain(t(OLD_BACKUPS_ROUTINE));
     expect(routine).not.toMatch(/delete/i);
     // A vault opened read-only cannot save a backup: keep the old ones.
     const readOnly = unfinishedRecoveryKeyMessage(
@@ -28,8 +29,8 @@ describe("how an unfinished key setup ended", () => {
       9,
       true,
     );
-    expect(readOnly).toContain(OLD_BACKUPS_KEEP);
-    expect(readOnly).not.toContain(OLD_BACKUPS_EXPOSED);
+    expect(readOnly).toContain(t(OLD_BACKUPS_KEEP));
+    expect(readOnly).not.toContain(t(OLD_BACKUPS_EXPOSED));
   });
 
   it("says nothing about backups when no key was replaced", () => {

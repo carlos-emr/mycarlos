@@ -1,25 +1,32 @@
+import { t as translateNow, formatNumber, type MessageKey } from "../i18n";
 import type { IconName } from "../Icon";
 
 export function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  // Compare the rounded figure, so a size just under 1 MB is not "1024 KB".
+  if (value < 1024) return `${formatNumber(value)} B`;
   const kilobytes = Math.round(value / 1024);
-  if (kilobytes < 1024) return `${kilobytes} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (kilobytes < 1024) return `${formatNumber(kilobytes)} KB`;
+  return `${formatNumber(value / (1024 * 1024), undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
 }
 
-/** A saved file's size as the platform's own file app shows it, so that the
- * patient can find it there: in 1000s (kB, MB), as Android's Files, macOS
- * Finder and Linux file managers count, or in 1024s (KB, MB) as Windows
- * Explorer does; and the exact count, which every file app can show. */
+/** The selected app locale formats sizes; the platform still determines
+ * whether its file app counts in 1000s or 1024s. */
 export function formatFileSize(value: number, in1024s: boolean): string {
-  const exact = `${value.toLocaleString()} bytes`;
+  const exact = translateNow("interface.size.bytes", { count: value });
   if (in1024s) return value < 1024 ? exact : `${formatBytes(value)}, ${exact}`;
   if (value < 1000) return exact;
   const kilobytes = Math.round(value / 1000);
-  if (kilobytes < 1000) return `${kilobytes} kB, ${exact}`;
-  return `${(value / 1_000_000).toFixed(1)} MB, ${exact}`;
+  if (kilobytes < 1000) return `${formatNumber(kilobytes)} kB, ${exact}`;
+  return `${formatNumber(value / 1_000_000, undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB, ${exact}`;
 }
+
+/** Native supplies this presentation identity separately from stored metadata. */
+export const recordSource = (record: {
+  sourceLabel: string;
+  sourceKind?: "manual";
+}) =>
+  record.sourceKind === "manual"
+    ? translateNow("record.source.manual")
+    : record.sourceLabel;
 
 // A kind is only a hint drawn from the file name, so it must not fire on a
 // fragment of another word: "Latest" is not a test, "Collaboration" is not a lab
@@ -27,25 +34,34 @@ export function formatFileSize(value: number, in1024s: boolean): string {
 // accepts "Bloodwork", "tests" and "scanned".
 const KIND_RULES: {
   icon: IconName;
-  label: string;
+  label: MessageKey;
   stems: string[];
   exact?: string[];
 }[] = [
   {
     icon: "flask",
-    label: "Test result",
+    label: "interface.recordPresentation.testResult",
     stems: ["blood", "test", "laboratory"],
     // "lab" as a stem would also claim "label".
     exact: ["lab", "labs"],
   },
-  { icon: "image", label: "Imaging", stems: ["imag", "xray", "scan"] },
-  { icon: "pill", label: "Prescription", stems: ["prescri", "medicat"] },
+  {
+    icon: "image",
+    label: "interface.recordPresentation.imaging",
+    stems: ["imag", "xray", "scan"],
+  },
+  {
+    icon: "pill",
+    label: "interface.recordPresentation.prescription",
+    stems: ["prescri", "medicat"],
+  },
 ];
 
 export function recordKind(name: string): { icon: IconName; label: string } {
   // A photo saved from the camera, or any JPEG by its name. (Whether a file
   // can be shown as a photo is decided by its bytes, in the vault.)
-  if (/\.jpe?g$/i.test(name.trim())) return { icon: "camera", label: "Photo" };
+  if (/\.jpe?g$/i.test(name.trim()))
+    return { icon: "camera", label: translateNow("photo.eyebrow") };
   // Not the locale's lower case: under a Turkish locale "IMAGING" becomes
   // "ımagıng", which matches none of the ASCII stems below.
   const words = name
@@ -55,9 +71,9 @@ export function recordKind(name: string): { icon: IconName; label: string } {
   for (const { icon, label, stems, exact = [] } of KIND_RULES) {
     const matches = (word: string) =>
       exact.includes(word) || stems.some((stem) => word.startsWith(stem));
-    if (words.some(matches)) return { icon, label };
+    if (words.some(matches)) return { icon, label: translateNow(label) };
   }
-  return { icon: "letter", label: "Document" };
+  return { icon: "letter", label: translateNow("record.kind.document") };
 }
 
 // The vault allows profile and folder names of at most this many characters

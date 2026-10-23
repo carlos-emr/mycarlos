@@ -1,3 +1,4 @@
+import { setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -512,4 +513,23 @@ describe("PreferencesSettings", () => {
       screen.getByText(/Here, text size follows your device/),
     ).toBeVisible();
   });
+});
+
+it("updates an existing text-size refusal without replacing its typed draft", () => {
+  setLocaleOverride("en");
+  show();
+  const input = box();
+  fireEvent.change(input, { target: { value: "FAKE" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(screen.getByText("Type a number from 80 to 400.")).toBeVisible();
+  act(() => setLocaleOverride("fr"));
+  expect(
+    screen.getByRole("textbox", { name: translate("fr", "textSize.box") }),
+  ).toBe(input);
+  expect(input).toHaveValue("FAKE");
+  expect(
+    screen.getByText(
+      translate("fr", "textSize.notNumber", { min: 80, max: 400 }),
+    ),
+  ).toBeVisible();
 });

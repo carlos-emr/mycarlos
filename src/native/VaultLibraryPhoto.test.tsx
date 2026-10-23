@@ -1,3 +1,4 @@
+import { useTextState } from "../i18n";
 import {
   act,
   fireEvent,
@@ -100,7 +101,7 @@ function renderLibrary(
   } as unknown as VaultBridge;
   function Harness() {
     const [snapshot, setSnapshot] = useState(initial);
-    const [notice, setNotice] = useState(initialNotice);
+    const [notice, setNotice] = useTextState(initialNotice);
     return (
       <VaultLibrary
         bridge={bridge}
@@ -273,7 +274,7 @@ describe("taking a photo from the library", () => {
     ).toBeEnabled();
     await waitFor(() =>
       expect(within(details).getByRole("status")).toHaveTextContent(
-        "Photo saved as Photo, 17 Oct 2026, 3.05 PM.jpg.",
+        "Photo, 17 Oct 2026, 3.05 PM.jpg was saved in myCarlos.",
       ),
     );
 
