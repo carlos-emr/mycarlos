@@ -142,6 +142,10 @@ test("setup language translates the form without resetting drafts at 320px and e
   await page.locator("html").evaluate((element) => {
     element.style.fontSize = "200%";
   });
+  const headingFits = await page
+    .locator(".vault-card h1")
+    .evaluate((heading) => heading.scrollWidth <= heading.clientWidth + 1);
+  expect(headingFits).toBe(true);
   const create = page.getByRole("button", {
     name: translate("pl", "create.submit"),
     exact: true,
