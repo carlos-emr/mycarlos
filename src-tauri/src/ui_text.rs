@@ -78,7 +78,7 @@ impl UiLocale {
         };
         let mut result = String::new();
         for (index, digit) in digits.chars().enumerate() {
-            if index > 0 && (digits.len() - index) % 3 == 0 {
+            if index > 0 && (digits.len() - index).is_multiple_of(3) {
                 result.push_str(separator);
             }
             result.push(digit);
@@ -104,7 +104,9 @@ impl UiLocale {
             }
             Self::Pl => "many",
             Self::Fr | Self::PtBr if count <= 1 => "one",
-            Self::Fr | Self::Es | Self::PtBr if count > 0 && count % 1_000_000 == 0 => "many",
+            Self::Fr | Self::Es | Self::PtBr if count > 0 && count.is_multiple_of(1_000_000) => {
+                "many"
+            }
             _ if count == 1 => "one",
             _ => "other",
         };
@@ -214,7 +216,7 @@ mod reset_tests {
             assert!(!locale.reset_phrase_matches(&format!("{phrase} ")));
             assert!(!locale.reset_phrase_matches("FAKE"));
             assert!(!locale.reset_phrase_matches(
-                &locales[(index + 1) % locales.len()].text("native.reset.phrase")
+                locales[(index + 1) % locales.len()].text("native.reset.phrase")
             ));
         }
         assert!(UiLocale::default().reset_phrase_matches("RESET MYCARLOS VAULT"));

@@ -84,8 +84,10 @@ pub(crate) fn present(
     let safe_button = alert.addButtonWithTitle(&NSString::from_str(keep));
     let action_button = alert.addButtonWithTitle(&NSString::from_str(action));
     let cancel_button = alert.addButtonWithTitle(&NSString::from_str(cancel));
-    // AppKit guesses shortcuts from titles when adding buttons. Override ALL
-    // three only after adding them: Return keeps data, Escape cancels, and the
+    // Finish AppKit's otherwise lazy layout before overriding its guessed
+    // shortcuts. Layout can reset keys assigned before the sheet is prepared.
+    alert.layout();
+    // Override ALL three roles: Return keeps data, Escape cancels, and the
     // irreversible action has no keyboard equivalent in any language.
     for (button, key) in [
         (&safe_button, "\r"),
