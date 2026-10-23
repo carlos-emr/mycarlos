@@ -411,12 +411,14 @@ test("manual high contrast persists with readable controls and yields to OS colo
   );
   // The current native screens contain no links. A normal link fixture checks
   // the palette's link styling without adding product copy or a navigation path.
-  await page.locator(".appearance-choice").evaluate((group) => {
-    const link = document.createElement("a");
-    link.href = "#fake-contrast-target";
-    link.textContent = "FAKE test link";
-    group.append(link);
-  });
+  await page
+    .getByRole("group", { name: "Appearance", exact: true })
+    .evaluate((group) => {
+      const link = document.createElement("a");
+      link.href = "#fake-contrast-target";
+      link.textContent = "FAKE test link";
+      group.append(link);
+    });
   const link = page.getByRole("link", { name: "FAKE test link" });
   await contrast(page, "a", "color", 7);
   await expect(link).toHaveCSS("text-decoration-line", "underline");

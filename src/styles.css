@@ -169,7 +169,7 @@
   background: var(--paper);
   box-shadow: var(--shadow);
 }
-.vault-card h1 { margin: 2px 0 10px; }
+.vault-card h1 { margin: 2px 0 10px; overflow-wrap: anywhere; }
 .vault-card > p { color: var(--ink-soft); line-height: 1.55; }
 .vault-card form { display: grid; gap: 12px; margin-top: 20px; }
 .vault-card > .button { margin-top: 20px; }
@@ -1114,3 +1114,10 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
+
+/* Visible choices before opening a vault, wrapping instead of a dropdown. */
+.language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
+.language-title { font-size: 0.875rem; font-weight: 700; }
+.language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
+.language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
+.language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }

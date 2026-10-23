@@ -432,6 +432,15 @@ export const en = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "How myCarlos looks on this computer",
+  "language.title": "Language",
+  "language.help":
+    "Remembered on this device. Your documents stay in their original language.",
+  "language.system": "System default",
+  "language.error.unreadable":
+    "Your saved language could not be read. Using your device's language for this session.",
+  "language.error.notRemembered":
+    "Language changed for this session, but could not be remembered on this device.",
+
   "appearance.title": "Appearance",
   "appearance.help":
     "{system} follows your device's light or dark appearance. High contrast uses a black background and bright text. Your device's contrast colors always take priority.",
