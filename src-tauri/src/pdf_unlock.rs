@@ -397,6 +397,9 @@ pub fn helper_main() -> i32 {
     if &magic == crate::pdf_view::VIEW_MAGIC {
         return crate::pdf_view::answer(&mut input, &mut io::stdout().lock());
     }
+    if &magic == crate::signed_pdf_helper::MAGIC {
+        return crate::signed_pdf_helper::answer(&mut input, &mut io::stdout().lock());
+    }
     if &magic != REQUEST_MAGIC {
         return 3;
     }
