@@ -1,3 +1,4 @@
+use crate::default_folders::DefaultFolder;
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -845,15 +846,40 @@ impl VaultStore {
         judge_new_passphrase(passphrase, &[initial_profile], false)
     }
 
+    /// Test shorthand: a vault that starts with the default folders (#66) in
+    /// the default language. The app goes through `create_with_folders`.
+    #[cfg(test)]
     pub fn create(
         &self,
         passphrase: &str,
         initial_profile: &str,
         now_ms: u64,
     ) -> Result<(), VaultError> {
+        self.create_with_folders(
+            passphrase,
+            initial_profile,
+            crate::default_folders::for_language(None),
+            now_ms,
+        )
+    }
+
+    /// Creates a vault whose first profile starts with `starting_folders`.
+    /// They are written in the same save that creates the vault, so no vault
+    /// ever holds only part of the set; after that they are ordinary folders.
+    pub fn create_with_folders(
+        &self,
+        passphrase: &str,
+        initial_profile: &str,
+        starting_folders: &[DefaultFolder],
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
         let _work = self.start_kdf_work()?;
         validate_person_name(initial_profile)?;
         validate_new_passphrase(passphrase, &[initial_profile])?;
+        // Checked before anything is written: a set that breaks a folder rule
+        // creates no vault at all.
+        let profile_id = Uuid::new_v4();
+        let folders = new_vault_folders(profile_id, starting_folders, now_ms)?;
         let mut guard = self.session();
         if guard.is_some() {
             return Err(VaultError::AlreadyExists);
@@ -892,11 +918,11 @@ impl VaultStore {
                 vault_id,
                 generation: 1,
                 profiles: vec![PatientProfile {
-                    id: Uuid::new_v4(),
+                    id: profile_id,
                     display_name: initial_profile.trim().to_owned(),
                     created_at_ms: now_ms,
                 }],
-                folders: Vec::new(),
+                folders,
                 records: Vec::new(),
                 history: HistoryState::default(),
             };
@@ -3511,7 +3537,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         let mut seen = HashSet::new();
         let mut depth = 1;
         while let Some(id) = parent_id {
-            if !seen.insert(id) || depth >= 32 {
+            if !seen.insert(id) || depth >= MAX_FOLDER_DEPTH {
                 return Err(VaultError::Corrupt);
             }
             let (parent_profile_id, next_parent_id) =
@@ -6370,6 +6396,54 @@ fn folder_map(manifest: &Manifest) -> HashMap<Uuid, Option<Uuid>> {
         .collect()
 }
 
+/// The most levels a folder tree may have, counting a folder at the top as 1.
+const MAX_FOLDER_DEPTH: usize = 32;
+
+/// The folders a new vault's first profile starts with: each name checked as
+/// a folder the patient makes would be, parents before their children, all
+/// made at `now_ms`.
+fn new_vault_folders(
+    profile_id: Uuid,
+    set: &[DefaultFolder],
+    now_ms: u64,
+) -> Result<Vec<VaultFolder>, VaultError> {
+    fn add(
+        folders: &mut Vec<VaultFolder>,
+        profile_id: Uuid,
+        parent_id: Option<Uuid>,
+        set: &[DefaultFolder],
+        depth: usize,
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
+        for folder in set {
+            validate_name(folder.name)?;
+            if depth > MAX_FOLDER_DEPTH {
+                return Err(VaultError::Invalid);
+            }
+            let id = Uuid::new_v4();
+            folders.push(VaultFolder {
+                id,
+                profile_id,
+                parent_id,
+                name: folder.name.trim().to_owned(),
+                created_at_ms: now_ms,
+            });
+            add(
+                folders,
+                profile_id,
+                Some(id),
+                folder.children,
+                depth + 1,
+                now_ms,
+            )?;
+        }
+        Ok(())
+    }
+    let mut folders = Vec::new();
+    add(&mut folders, profile_id, None, set, 1, now_ms)?;
+    Ok(folders)
+}
+
 fn ensure_depth(
     manifest: &Manifest,
     mut parent: Option<Uuid>,
@@ -6383,7 +6457,7 @@ fn ensure_depth(
             return Err(VaultError::Corrupt);
         }
         depth += 1;
-        if depth > 32 {
+        if depth > MAX_FOLDER_DEPTH {
             return Err(VaultError::Invalid);
         }
         parent = *parents.get(&id).ok_or(VaultError::NotFound)?;
@@ -6937,6 +7011,7 @@ pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
+    use crate::default_folders;
     use proptest::prelude::*;
     use std::{
         io::Cursor,
@@ -7388,7 +7463,12 @@ mod tests {
         let mut output = Vec::new();
         store.export(record, &mut output).unwrap();
         assert_eq!(output, b"keep this record");
-        assert_eq!(store.snapshot().unwrap().folders[0].name, "Second process");
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .folders
+            .iter()
+            .any(|folder| folder.name == "Second process"));
     }
 
     #[test]
@@ -8020,7 +8100,12 @@ mod tests {
         let mut output = Vec::new();
         restarted.export(record, &mut output).unwrap();
         assert_eq!(output, b"private clinical bytes");
-        assert_eq!(restarted.snapshot().unwrap().folders[0].name, "Hospital");
+        assert!(restarted
+            .snapshot()
+            .unwrap()
+            .folders
+            .iter()
+            .any(|folder| folder.name == "Hospital"));
     }
 
     #[test]
@@ -13305,7 +13390,11 @@ mod tests {
         store.update_folder(root, Some(chain[29]), "Root").unwrap();
         store.lock();
         store.unlock(PASSWORD).unwrap();
-        assert_eq!(store.snapshot().unwrap().folders.len(), 34);
+        // The 34 made here, beside the set the vault started with.
+        assert_eq!(
+            store.snapshot().unwrap().folders.len(),
+            34 + starting_set_shape(default_folders::PLACEHOLDER_SET).len()
+        );
     }
 
     #[test]
@@ -15173,6 +15262,166 @@ mod tests {
         }
     }
 
+    /// `(parent name, name)` for each folder of `set`, parents before children.
+    fn starting_set_shape(set: &[DefaultFolder]) -> Vec<(Option<String>, String)> {
+        fn walk(
+            set: &[DefaultFolder],
+            parent: Option<&str>,
+            shape: &mut Vec<(Option<String>, String)>,
+        ) {
+            for folder in set {
+                shape.push((parent.map(str::to_owned), folder.name.to_owned()));
+                walk(folder.children, Some(folder.name), shape);
+            }
+        }
+        let mut shape = Vec::new();
+        walk(set, None, &mut shape);
+        shape
+    }
+
+    fn folder_shape(folders: &[VaultFolder]) -> Vec<(Option<String>, String)> {
+        let names: HashMap<Uuid, &str> = folders
+            .iter()
+            .map(|folder| (folder.id, folder.name.as_str()))
+            .collect();
+        folders
+            .iter()
+            .map(|folder| {
+                (
+                    folder.parent_id.map(|parent| names[&parent].to_owned()),
+                    folder.name.clone(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn new_vault_holds_the_whole_starting_set_in_its_first_save() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 7).unwrap();
+        let expected = starting_set_shape(default_folders::PLACEHOLDER_SET);
+        assert!(expected.iter().any(|(parent, _)| parent.is_some()));
+
+        // Read the first save itself (generation 1) from disk.
+        let guard = store.session();
+        let unlocked = guard.as_ref().unwrap();
+        let vault_id = unlocked.manifest.vault_id;
+        let keys = derive_keys(vault_id, &unlocked.master_key).unwrap();
+        let SlotReading::Authentic {
+            manifest: first, ..
+        } = read_manifest_slot_reading(&store.root, &keys.manifest, vault_id, 1)
+        else {
+            panic!("the first save is not readable");
+        };
+        drop(guard);
+        assert_eq!(first.generation, 1);
+        // The starting folders and the initial pinned history are present in
+        // that same first save, before the second manifest slot is written.
+        assert_eq!(first.history.count, 1);
+        assert_eq!(events_of(&history_events(&store)), [HistoryEvent::Created]);
+        assert_eq!(folder_shape(&first.folders), expected);
+        let profile_id = first.profiles[0].id;
+        for folder in &first.folders {
+            assert_eq!(folder.profile_id, profile_id);
+            assert_eq!(folder.created_at_ms, 7);
+            assert!(validate_name(&folder.name).is_ok());
+        }
+        // What the library shows at once is that same set.
+        assert_eq!(folder_shape(&store.snapshot().unwrap().folders), expected);
+    }
+
+    #[test]
+    fn every_language_starts_with_a_set_that_passes_the_folder_rules() {
+        for language in [
+            None,
+            Some("en"),
+            Some("fr"),
+            Some("es"),
+            Some("pl"),
+            Some("xx"),
+        ] {
+            let set = default_folders::for_language(language);
+            let profile_id = Uuid::new_v4();
+            let folders = new_vault_folders(profile_id, set, 1).unwrap();
+            assert!(!folders.is_empty());
+            assert_eq!(folder_shape(&folders), starting_set_shape(set));
+            for folder in &folders {
+                assert!(validate_name(&folder.name).is_ok());
+                assert_eq!(folder.name, folder.name.trim());
+            }
+            // The manifest a new vault writes accepts them.
+            let manifest = Manifest {
+                format_version: VAULT_FORMAT,
+                vault_id: Uuid::new_v4(),
+                generation: 1,
+                profiles: vec![PatientProfile {
+                    id: profile_id,
+                    display_name: "Jamie".to_owned(),
+                    created_at_ms: 1,
+                }],
+                folders,
+                records: Vec::new(),
+                history: HistoryState::default(),
+            };
+            validate_manifest_structure(&manifest, manifest.vault_id).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_starting_set_that_breaks_a_folder_rule_creates_no_vault() {
+        const BLANK: &[DefaultFolder] = &[DefaultFolder {
+            name: "  ",
+            children: &[],
+        }];
+        const NESTED_BLANK: &[DefaultFolder] = &[DefaultFolder {
+            name: "Fine",
+            children: BLANK,
+        }];
+        for set in [BLANK, NESTED_BLANK] {
+            let temp = tempfile::tempdir().unwrap();
+            let store = VaultStore::new(temp.path().join("vault"));
+            assert!(matches!(
+                store.create_with_folders(PASSWORD, "Jamie", set, 1),
+                Err(VaultError::Invalid)
+            ));
+            assert!(matches!(store.status(), Ok(VaultStatus::Absent)));
+        }
+    }
+
+    #[test]
+    fn an_existing_vault_is_never_given_the_starting_set() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        // A vault made before #66, which its patient has since organised.
+        store
+            .create_with_folders(PASSWORD, "Jamie", &[], 1)
+            .unwrap();
+        let profile_id = store.snapshot().unwrap().profiles[0].id;
+        store
+            .create_folder(profile_id, None, "Hospital", 2)
+            .unwrap();
+        let generation = store.session().as_ref().unwrap().manifest.generation;
+        let folders_before = store.snapshot().unwrap().folders;
+        let history_before = history_events(&store).len();
+        store.lock();
+
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        let names: Vec<&str> = snapshot
+            .folders
+            .iter()
+            .map(|folder| folder.name.as_str())
+            .collect();
+        assert_eq!(names, ["Hospital"]);
+        // A writable unlock records its history (#71), without seeding or
+        // changing the folders of an existing vault.
+        assert!(snapshot.folders == folders_before);
+        assert!(store.session().as_ref().unwrap().manifest.generation > generation);
+        let history = history_events(&store);
+        assert_eq!(history.len(), history_before + 1);
+        assert_eq!(history.last().unwrap().event, HistoryEvent::Unlocked);
+    }
     // ------------------------------------------------------------ history (#71)
 
     /// Every file under `root`, read whole.
