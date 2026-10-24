@@ -41,6 +41,7 @@
     "allow-vault-unlock-pdf",
     "allow-vault-view-page",
     "allow-vault-view-cancel",
+    "allow-vault-read-native-pdf",
     "allow-vault-export-pick",
     "allow-vault-export-picked",
     "allow-vault-save-photo",

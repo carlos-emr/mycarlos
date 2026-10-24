@@ -3,6 +3,11 @@ import type { MessageKey } from "./en";
 
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
+  "reader.iphone.opening": "Ouverture du document…",
+  "reader.iphone.tooLarge":
+    "Ce PDF dépasse 20 Mo. Enregistrez une copie pour le lire dans une autre application.",
+  "reader.iphone.failed":
+    "myCarlos n’a pas pu afficher ce document. Enregistrez une copie pour le lire dans une autre application.",
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
     "N’utilisez pas de véritables renseignements sur des patients",

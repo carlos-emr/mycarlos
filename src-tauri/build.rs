@@ -117,6 +117,7 @@ fn main() {
             "vault_unlock_pdf",
             "vault_view_page",
             "vault_view_cancel",
+            "vault_read_native_pdf",
             "vault_export_pick",
             "vault_export_picked",
             "vault_save_photo",

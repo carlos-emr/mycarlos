@@ -2,6 +2,8 @@
 mod camera_permission;
 mod history;
 mod idle;
+#[cfg(any(target_os = "ios", test))]
+mod ios_pdf;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -272,6 +274,10 @@ impl From<VaultError> for PublicText {
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message: "This locked document is larger than 100 MB, so myCarlos cannot open it. The document is unchanged.",
+            },
+            VaultError::PdfMobileTooLarge => Self {
+                code: "pdf_mobile_too_large",
+                message: "This PDF is larger than 20 MB. Save a copy to read it in another app.",
             },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
@@ -1317,19 +1323,23 @@ async fn vault_unlock(
 
 #[tauri::command]
 async fn vault_lock(
+    app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
     // A page still being drawn stops with the lock.
     pdf_view::cancel_views();
-    run_blocking(store.inner(), |store| {
+    cancel_native_pdf(&app);
+    let result = run_blocking(store.inner(), |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         pdf_view::cancel_views();
         Ok(())
     })
-    .await
+    .await;
+    cancel_native_pdf(&app);
+    result
 }
 
 /// How often the native timer checks the idle deadline.
@@ -2526,8 +2536,118 @@ async fn vault_view_page(
 
 /// Stops any page being drawn: the reader closed.
 #[tauri::command]
-fn vault_view_cancel() {
+fn vault_view_cancel(app: tauri::AppHandle) {
     pdf_view::cancel_views();
+    cancel_native_pdf(&app);
+}
+
+/// Cancels both the native view and an older open still waiting to reach it.
+fn cancel_native_pdf(_app: &tauri::AppHandle) {
+    #[cfg(target_os = "ios")]
+    {
+        let generation = ios_pdf::GATE.next();
+        let app = _app.clone();
+        tauri::async_runtime::spawn(async move {
+            tauri_plugin_ios_pdf::close(&app, generation).await;
+        });
+    }
+}
+
+/// Called synchronously by the iOS lifecycle observer, including while a
+/// native begin is queued or an export is running and no reader exists yet.
+#[cfg(target_os = "ios")]
+#[no_mangle]
+pub extern "C" fn mycarlos_pdf_background() {
+    ios_pdf::GATE.next();
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePdfRequest {
+    record_id: Uuid,
+    close_label: String,
+}
+
+/// iOS uses a separate, bridge-free native WebKit view, never the app webview.
+#[tauri::command]
+async fn vault_read_native_pdf(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    request: NativePdfRequest,
+    activity: tauri::ipc::Channel<()>,
+) -> CommandResult<()> {
+    #[cfg(target_os = "ios")]
+    {
+        if request.close_label.is_empty()
+            || request.close_label.len() > 128
+            || request.close_label.chars().any(char::is_control)
+        {
+            return Err(VaultError::Invalid.into());
+        }
+        let generation = ios_pdf::GATE.next();
+        // This native lifecycle epoch changes on backgrounding even when no
+        // reader is visible yet. Returning to active cannot revive an old export.
+        let epoch = tauri_plugin_ios_pdf::begin(&app)
+            .await
+            .ok_or_else(|| PublicError::from(VaultError::Cancelled))?;
+        let (document, title) = run_blocking(store.inner(), move |store| {
+            if !ios_pdf::GATE.current(generation) {
+                return Err(VaultError::Cancelled);
+            }
+            ios_pdf::prepare(store, request.record_id)
+        })
+        .await?;
+        if !ios_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        let encoded = zeroize::Zeroizing::new(BASE64.encode(&*document));
+        drop(document);
+        let activity_store = Arc::clone(store.inner());
+        let activity_app = app.clone();
+        let renderer_activity = activity;
+        #[derive(Deserialize)]
+        struct ReaderInput {
+            event: String,
+        }
+        let reader_activity = ios_pdf::ActivityGate::new(generation);
+        let activity = tauri::ipc::Channel::<()>::new(move |message| {
+            let Ok(input) = message.deserialize::<ReaderInput>() else {
+                return Ok(());
+            };
+            if reader_activity.accepts(&ios_pdf::GATE, &input.event) {
+                if activity_store.idle().touch_before_deadline(Instant::now()) {
+                    let _ = renderer_activity.send(());
+                } else {
+                    cancel_native_pdf(&activity_app);
+                }
+            }
+            Ok(())
+        });
+        let shown = tauri_plugin_ios_pdf::open(
+            &app,
+            tauri_plugin_ios_pdf::Document {
+                generation,
+                epoch,
+                data: &encoded,
+                title: &title,
+                close_label: &request.close_label,
+                activity,
+            },
+        )
+        .await;
+        if !ios_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        if !shown {
+            return Err(VaultError::PdfViewFailed.into());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, store, request.record_id, request.close_label, activity);
+        Err(VaultError::PdfViewUnavailable.into())
+    }
 }
 
 /// Moves files to another person, into the folders chosen. A file the
@@ -2903,7 +3023,10 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "ios")]
+    let builder = builder.plugin(tauri_plugin_ios_pdf::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
@@ -2989,11 +3112,14 @@ pub fn run() {
             }
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            let idle_app = app.handle().clone();
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
-                    lock_if_idle(&store, &picks, Instant::now());
+                    if lock_if_idle(&store, &picks, Instant::now()) {
+                        cancel_native_pdf(&idle_app);
+                    }
                 })?;
             Ok(())
         })
@@ -3033,6 +3159,7 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_read_native_pdf,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,

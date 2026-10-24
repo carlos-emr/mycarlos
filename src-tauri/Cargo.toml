@@ -53,6 +53,9 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
 seccompiler = "=0.5.0"
 
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-ios-pdf = { path = "ios-pdf" }
+
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"

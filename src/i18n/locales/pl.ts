@@ -5,6 +5,11 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  "reader.iphone.opening": "Otwieranie dokumentu…",
+  "reader.iphone.tooLarge":
+    "Ten plik PDF jest większy niż 20 MB. Zapisz kopię, aby przeczytać go w innej aplikacji.",
+  "reader.iphone.failed":
+    "myCarlos nie może wyświetlić tego dokumentu. Zapisz kopię, aby przeczytać go w innej aplikacji.",
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
   "frame.window.label": "Prywatny sejf myCarlos",

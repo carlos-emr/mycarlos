@@ -4,6 +4,11 @@ import type { MessageKey } from "./en";
 /** Brazilian Portuguese, polite register: the "você" imperative ("use",
  * "escolha") without titles. */
 export const ptBR: Record<MessageKey, Message> = {
+  "reader.iphone.opening": "Abrindo documento…",
+  "reader.iphone.tooLarge":
+    "Este PDF tem mais de 20 MB. Salve uma cópia para lê-lo em outro aplicativo.",
+  "reader.iphone.failed":
+    "O myCarlos não conseguiu exibir este documento. Salve uma cópia para lê-lo em outro aplicativo.",
   "frame.banner.title": "Versão de desenvolvimento com dados fictícios",
   "frame.banner.body": "Não use informações reais de pacientes",
   "frame.window.label": "Cofre privado do myCarlos",

@@ -569,11 +569,37 @@ Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-
 4. Lock the vault, or let it lock, while a document is open: the reader closes with the library.
 5. With a screen reader, each page picture is named "Page N of M"; read the page with **Text on this
    page**. A scanned page may have no text. That is a limitation of this first version.
-6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+6. On Android, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+   The draft iPhone path presents a separate native WebKit PDF view (see below).
 
-The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
+On desktop, the helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
 the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
 **Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
+
+### iPhone PDF preview — draft device checks
+
+The iPhone path uses a separate native `WKWebView`, without the app's Tauri bridge or scripts.
+It passes the PDF in native memory, uses a nonpersistent WebKit store and creates no plaintext
+file itself. WebKit controls its PDF implementation; this does not establish the desktop
+helper's process isolation or sandbox guarantees. Android and the desktop reader are unchanged.
+
+Mac/iOS compilation and real iPhone checks are required before treating this draft as ready.
+Browser tests cover routing and callback lifecycle; Linux tests cover bounded export and
+cancellation/activity gates. They do not demonstrate native PDF rendering or VoiceOver.
+With FAKE PDFs only, check on Simulator and then a real iPhone:
+
+1. Open **Read**, scroll and pinch through a multipage PDF, then use the native **Close**.
+   Verify the stored file is unchanged. Test a scanned PDF and an encrypted PDF; record any
+   platform limitations rather than assuming the desktop password controls apply.
+2. Background during a slow open and while a page is visible. Return to the app: the earlier
+   request must never reopen. Lock, switch records and close during a pending open as well.
+3. Set automatic lock to one minute. Genuine scrolling/zooming must postpone both clocks;
+   leaving the reader alone must close it. Input after the lock is owed must not revive it.
+4. Test a damaged PDF and one larger than 20 MiB. The reader must leave a recoverable screen
+   with **Close**, with no phantom success or plaintext export. PDF links and long-press menus
+   must not open websites, downloads, another window or another app.
+5. With VoiceOver, confirm the document and **Close** are reachable, page text is readable
+   where WebKit supports it, and focus returns after closing. Repeat with larger text.
 
 ## Appearance and Windows high contrast
 

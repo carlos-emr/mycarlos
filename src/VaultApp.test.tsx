@@ -134,6 +134,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockRejectedValue(new Error("FAKE: no reader in this test")),
     cancelView: vi.fn().mockResolvedValue(undefined),
+    readNativePdf: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
@@ -1471,6 +1472,82 @@ describe("durable vault UI", () => {
     await user.click(within(reader).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  });
+
+  it("routes iPhone reading to the native view and cancels it when the vault locks", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    let finish!: () => void;
+    const bridge = nativeBridge({
+      platform: vi.fn().mockResolvedValue("ios"),
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      readNativePdf: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText(record.displayName));
+    await user.click(screen.getByRole("button", { name: "Read" }));
+    await waitFor(() =>
+      expect(bridge.readNativePdf).toHaveBeenCalledWith(record.id, "Close"),
+    );
+    expect(bridge.viewPage).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+    );
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    expect(bridge.cancelView).toHaveBeenCalled();
+    await act(async () => finish());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps Android's unsupported reader response distinct from the iPhone path", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "record-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: "FAKE_Letter.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 1,
+      available: true,
+    };
+    const bridge = nativeBridge({
+      platform: vi.fn().mockResolvedValue("android"),
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+      viewPage: vi.fn().mockRejectedValue({
+        code: "pdf_view_unavailable",
+        message: "FAKE Android reader unavailable",
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText(record.displayName));
+    await user.click(screen.getByRole("button", { name: "Read" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "FAKE Android reader unavailable",
+    );
+    expect(bridge.readNativePdf).not.toHaveBeenCalled();
   });
 
   it("closes the reader, and stops its page, when the vault locks", async () => {
@@ -5854,7 +5931,12 @@ describe("durable vault UI", () => {
     );
   });
 
-  it.each(["wheel", "pointermove", "keydown"])(
+  it.each([
+    "wheel",
+    "pointermove",
+    "keydown",
+    "mycarlos-native-reader-activity",
+  ])(
     "treats %s as activity that postpones the inactivity lock",
     async (activity) => {
       vi.useFakeTimers();
