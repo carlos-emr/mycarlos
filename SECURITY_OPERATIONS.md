@@ -174,3 +174,26 @@ leave the device while linking. Clinic names and computed key fingerprints are
 shown to the patient and recorded in encrypted history; the vault keeps private
 seeds, pins and recipient binding encrypted. Do not send a receipt or claim a
 portal delivery was filed merely because a link request succeeded.
+
+## Gated Windows send/delete evaluation
+
+Build with `npm run tauri -- build --features portal-linking` only in the isolated
+synthetic evaluation. Default builds remain OFF. `scripts/test-native-delivery.ps1`
+provides focused Windows checks and an optional feature-enabled installer build.
+
+The explicit Check for new documents action uses only the saved HTTPS portal
+base. Native code signs fixed mailbox/receipt and first-device approval routes;
+no downloaded URL selects a destination. The first mailbox page includes a
+per-link history anchor. Native code verifies the HPKE package, clinic signature,
+exact signed PDF bytes and embedded clinic/recipient/patient binding, then saves
+both PDF objects, metadata, history and a single retained receipt. Only that
+saved receipt can reach the portal. Receipt retry survives a lost response,
+restart and backup/restore; a new outer nonce never changes the inner receipt.
+
+The initial-device approval intent publishes both public keys and immutable
+clinic/recipient/portal binding to the saved portal. Staff must compare the
+full fingerprint on the actual device. The client verifies and saves the signed
+clinic challenge/acceptance before reporting clinic approval. Later-device
+approval, key-catalogue refresh, lost-all-devices recovery, mobile support and
+notification scheduling require their own remaining implementation/validation.
+Do not enable rollout from Linux component or FAKE-trust interoperability tests.

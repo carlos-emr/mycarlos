@@ -34,6 +34,7 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
+mod delivery;
 mod original_pdf;
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
@@ -42,7 +43,7 @@ mod original_pdf;
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 5;
+const VAULT_FORMAT: u32 = 6;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -234,6 +235,8 @@ fn cancelled_io_error() -> io::Error {
 pub enum VaultError {
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
+    #[error("a document from the clinic could not be verified; no receipt was sent")]
+    PickupRefused,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
@@ -448,6 +451,8 @@ struct StoredRecord {
     /// it even when no linked signer can authenticate the document yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     original_pdf: Option<StoredOriginalPdf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivery: Option<crate::portal_delivery::Custody>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -584,6 +589,8 @@ pub struct VaultRecord {
     pub hidden: Option<Hidden>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_pdf_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verified_clinic_name: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -794,6 +801,7 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: AtomicU64,
+    portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -813,6 +821,7 @@ impl VaultStore {
             unlocked: Mutex::new(None),
             kdf_running: AtomicBool::new(false),
             portal_session: AtomicU64::new(0),
+            portal_check_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -1331,6 +1340,10 @@ impl VaultStore {
                         object_is_present(root, record)
                     },
                     hidden: record.hidden,
+                    verified_clinic_name: delivery::verified_clinic(
+                        record,
+                        &unlocked.manifest.portal_links,
+                    ),
                     original_pdf_available: record.original_pdf.as_ref().map(|original| {
                         object_presence_name(root, &original.object_name) == ObjectPresence::Present
                     }),
@@ -1852,6 +1865,7 @@ impl VaultStore {
                     wrapped_object_key,
                     hidden: None,
                     original_pdf: None,
+                    delivery: None,
                 };
                 // Preserve raw bytes before helper parsing/rendering, including
                 // unsigned or too-large PDFs whose signatures cannot be ruled
@@ -3981,7 +3995,8 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     let mut link_ids = HashSet::new();
     let mut device_ids = HashSet::new();
     for link in &manifest.portal_links {
-        if !link_ids.insert(link.id)
+        if (manifest.format_version < 6 && link.approval.is_some())
+            || !link_ids.insert(link.id)
             || !device_ids.insert(link.keys.device_key_id())
             || link.validate().is_err()
             || link
@@ -3992,6 +4007,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         }
     }
     let mut object_names = HashSet::new();
+    let mut delivery_ids = HashSet::new();
     for record in &manifest.records {
         if record.id.is_nil()
             || !record_ids.insert(record.id)
@@ -4024,6 +4040,15 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             {
                 return Err(VaultError::Corrupt);
             }
+        }
+        if (manifest.format_version < 6 && record.delivery.is_some())
+            || record
+                .delivery
+                .as_ref()
+                .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
+            || !delivery::valid_custody(record, &manifest.portal_links)
+        {
+            return Err(VaultError::Corrupt);
         }
         let unique_folders: HashSet<_> = record.folder_ids.iter().collect();
         if unique_folders.len() != record.folder_ids.len()
@@ -5299,7 +5324,9 @@ fn write_history_segment(
     let wrapped_key = wrap_secret(&keys.object_wrap, &segment_key, &segment_key_aad(id))?;
     // Publish only after sync_all in encrypt_object. Windows cannot fsync a
     // directory through std, so use the same write-through move as documents.
-    let path = root.join("objects").join(format!("{}.mcobj", Uuid::new_v4()));
+    let path = root
+        .join("objects")
+        .join(format!("{}.mcobj", Uuid::new_v4()));
     let written = encrypt_object(
         Box::new(io::Cursor::new(plaintext)),
         &path,
@@ -6647,8 +6674,12 @@ fn publish_object(source: &Path, destination: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
         let absolute = |path: &Path| -> io::Result<PathBuf> {
-            let parent = path.parent().ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
-            let name = path.file_name().ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            let parent = path
+                .parent()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            let name = path
+                .file_name()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
             Ok(fs::canonicalize(parent)?.join(name))
         };
         atomicwrites::move_atomic(&absolute(source)?, &absolute(destination)?)
@@ -7721,25 +7752,50 @@ mod tests {
         // is supplied by the caller, as with an ordinary selected vault.
         let root = temp.path().join("long-root-".repeat(16)).join("vault");
         fs::create_dir_all(root.parent().unwrap()).unwrap();
-        let extended = fs::canonicalize(root.parent().unwrap()).unwrap().join("vault");
+        let extended = fs::canonicalize(root.parent().unwrap())
+            .unwrap()
+            .join("vault");
         let setup = VaultStore::new(extended);
         setup.create(PASSWORD, "FAKE Person", 1).unwrap();
         setup.lock();
         drop(setup);
         assert!(root.as_os_str().encode_wide().count() < 260);
-        assert!(root.join("manifest-0.bin").as_os_str().encode_wide().count() < 260);
-        assert!(root.join("staging").join(Uuid::new_v4().to_string()).join(format!("{}.mcobj", Uuid::new_v4())).as_os_str().encode_wide().count() >= 260);
+        assert!(
+            root.join("manifest-0.bin")
+                .as_os_str()
+                .encode_wide()
+                .count()
+                < 260
+        );
+        assert!(
+            root.join("staging")
+                .join(Uuid::new_v4().to_string())
+                .join(format!("{}.mcobj", Uuid::new_v4()))
+                .as_os_str()
+                .encode_wide()
+                .count()
+                >= 260
+        );
         let store = VaultStore::new(root.clone());
         store.unlock(PASSWORD).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
         let bytes = b"%PDF-1.7\nFAKE Windows long path\n%%EOF";
-        let id = store.import(profile, vec![], vec![source("FAKE.pdf", bytes)], 2).unwrap().imported[0];
+        let id = store
+            .import(profile, vec![], vec![source("FAKE.pdf", bytes)], 2)
+            .unwrap()
+            .imported[0];
         store.lock();
         store.unlock(PASSWORD).unwrap();
         let mut original = Vec::new();
         store.export(id, &mut original).unwrap();
         assert_eq!(original, bytes);
-        assert_eq!(history_events(&store).iter().filter(|e| e.event == HistoryEvent::Imported).count(), 1);
+        assert_eq!(
+            history_events(&store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::Imported)
+                .count(),
+            1
+        );
         store.verify_for_backup().unwrap();
     }
 
@@ -7765,15 +7821,27 @@ mod tests {
             restarted.unlock(PASSWORD).unwrap();
             let snapshot = restarted.snapshot().unwrap();
             assert_eq!(snapshot.records.len(), usize::from(committed), "{boundary}");
-            assert_eq!(document_files(&root), 2 * usize::from(committed), "{boundary}");
+            assert_eq!(
+                document_files(&root),
+                2 * usize::from(committed),
+                "{boundary}"
+            );
             assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-            let imports:Vec<_> = history_events(&restarted).into_iter().filter(|entry| entry.event == HistoryEvent::Imported).collect();
+            let imports: Vec<_> = history_events(&restarted)
+                .into_iter()
+                .filter(|entry| entry.event == HistoryEvent::Imported)
+                .collect();
             assert_eq!(imports.len(), usize::from(committed), "{boundary}");
             if committed {
                 assert_eq!(imports[0].record_id, Some(snapshot.records[0].id));
                 let mut original = Vec::new();
-                restarted.export(snapshot.records[0].id, &mut original).unwrap();
-                assert_eq!(original, b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF");
+                restarted
+                    .export(snapshot.records[0].id, &mut original)
+                    .unwrap();
+                assert_eq!(
+                    original,
+                    b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF"
+                );
                 restarted.verify_for_backup().unwrap();
             }
         }
@@ -7786,7 +7854,10 @@ mod tests {
         let unlocked = guard.as_ref().unwrap();
         let mut manifest = unlocked.manifest.clone();
         manifest.records[0].original_pdf.as_mut().unwrap().id = manifest.history.segments[0].id;
-        assert!(matches!(validate_manifest_structure(&manifest, manifest.vault_id), Err(VaultError::Corrupt)));
+        assert!(matches!(
+            validate_manifest_structure(&manifest, manifest.vault_id),
+            Err(VaultError::Corrupt)
+        ));
     }
 
     #[test]
@@ -8071,6 +8142,7 @@ mod tests {
                     wrapped_object_key: wrapped.clone(),
                     hidden: None,
                     original_pdf: None,
+                    delivery: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -8086,6 +8158,7 @@ mod tests {
                     wrapped_object_key: wrapped,
                     hidden: None,
                     original_pdf: None,
+                    delivery: None,
                 },
             ],
             history: HistoryState::default(),
@@ -13515,6 +13588,7 @@ mod tests {
                     },
                     hidden: None,
                     original_pdf: None,
+                    delivery: None,
                 })
                 .collect(),
             history: HistoryState::default(),
@@ -17048,7 +17122,7 @@ mod tests {
     #[test]
     fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3, 4] {
+        for version in [1, 2, 3, 4, 5] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);

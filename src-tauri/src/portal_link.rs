@@ -59,7 +59,7 @@ impl PrivateKeys {
         result
     }
 
-    fn public(&self) -> ([u8; 32], [u8; 32]) {
+    pub(crate) fn public(&self) -> ([u8; 32], [u8; 32]) {
         let x = x25519_dalek::StaticSecret::from(self.x25519);
         let ed = SigningKey::from_bytes(&self.ed25519);
         (
@@ -74,6 +74,52 @@ impl PrivateKeys {
         digest.update(b"mycarlos-device-key-v1");
         digest.update(frame(&[&x, &ed]));
         B64.encode(digest.finalize())
+    }
+
+    pub(crate) fn sign(&self, payload: &[u8]) -> String {
+        let signature = SigningKey::from_bytes(&self.ed25519).sign(payload);
+        format!(
+            "{}.{}",
+            B64.encode(payload),
+            B64.encode(signature.to_bytes())
+        )
+    }
+
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn open_seal(&self, sealed: &[u8], aad: &[u8]) -> Result<Zeroizing<Vec<u8>>, ()> {
+        use hpke::{
+            aead::ChaCha20Poly1305, kdf::HkdfSha256, kem::X25519HkdfSha256, Deserializable, Kem,
+            OpModeR,
+        };
+        type K = X25519HkdfSha256;
+        if sealed.len() < 49 {
+            return Err(());
+        }
+        let private = <K as Kem>::PrivateKey::from_bytes(&self.x25519).map_err(|_| ())?;
+        let enc = <K as Kem>::EncappedKey::from_bytes(&sealed[..32]).map_err(|_| ())?;
+        let mut context = hpke::setup_receiver::<ChaCha20Poly1305, HkdfSha256, K>(
+            &OpModeR::Base,
+            &private,
+            &enc,
+            b"carlos-emr/mycarlos-delivery/v1",
+        )
+        .map_err(|_| ())?;
+        context
+            .open(&sealed[32..], aad)
+            .map(Zeroizing::new)
+            .map_err(|_| ())
+    }
+
+    pub(crate) fn anchor(&self, head: &[u8; 32]) -> Result<String, LinkError> {
+        use hmac::{Hmac, Mac};
+        let mut key = Zeroizing::new([0; 32]);
+        hkdf::Hkdf::<Sha256>::new(None, &self.ed25519)
+            .expand(b"mycarlos/vault-head/v1", key.as_mut())
+            .map_err(|_| LinkError::InvalidResponse)?;
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(key.as_ref()).map_err(|_| LinkError::InvalidResponse)?;
+        mac.update(head);
+        Ok(hex(&mac.finalize().into_bytes()))
     }
 }
 
@@ -169,6 +215,8 @@ pub struct StoredLink {
     pub keys: PrivateKeys,
     /// None means an incomplete attempt, never a trusted clinic link.
     pub clinic: Option<LinkedClinic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<crate::portal_approval::Attempt>,
 }
 
 #[derive(Clone, Serialize)]
@@ -181,6 +229,10 @@ pub struct LinkSummary {
     pub clinic_name: Option<String>,
     pub fingerprints: Vec<String>,
     pub incomplete: bool,
+    pub device_key_id: String,
+    pub device_fingerprint: String,
+    pub approval_requested: bool,
+    pub clinic_approved: bool,
 }
 
 impl StoredLink {
@@ -202,6 +254,7 @@ impl StoredLink {
             created_at_ms: now_ms,
             keys: PrivateKeys::generate(),
             clinic: None,
+            approval: None,
         })
     }
 
@@ -209,6 +262,13 @@ impl StoredLink {
         if self.id.is_nil()
             || normalize_portal(&self.portal_base)? != self.portal_base
             || !bounded_label(&self.device_name, 64)
+        {
+            return Err(LinkError::InvalidResponse);
+        }
+        if self
+            .approval
+            .as_ref()
+            .is_some_and(|a| !crate::portal_approval::valid_saved(self, a))
         {
             return Err(LinkError::InvalidResponse);
         }
@@ -231,6 +291,12 @@ impl StoredLink {
                 .map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()).collect())
                 .unwrap_or_default(),
             incomplete: self.clinic.is_none(),
+            approval_requested: self.approval.is_some(),
+            clinic_approved: crate::portal_approval::currently_approved(self),
+            device_key_id: self.keys.device_key_id(),
+            device_fingerprint: hex(&B64
+                .decode(self.keys.device_key_id())
+                .expect("generated device id")),
         }
     }
 

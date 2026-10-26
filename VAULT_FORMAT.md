@@ -835,3 +835,43 @@ separately; backup/export refuse an unavailable or unauthentic original. This is
 a private source checkpoint: focused original custody and process-restart tests pass on Linux; durable
 verification state/rechecks and missing/corrupt-source downgrade history still
 need implementation, and no full #55 or platform claim follows from these edits.
+
+#### Format 6: clinic delivery custody and first-device approval
+
+Format 6 prevents older writers from discarding delivery or approval evidence.
+Writable unlock upgrades formats 1–5 before adding it. Header and object formats
+are unchanged. Default builds still disable all portal network commands, and
+can open and back up this encrypted evidence without enabling network access.
+
+A received record's optional `delivery` contains its saved link UUID, complete
+outer identity, authenticated delivery manifest and exact compact signature,
+checked PDF document ID/revision, check time, filing history head, exact signed
+receipt, and optional terminal receipt outcome (`picked_up` or `gone`). The
+receipt is outside the chain because it authenticates the per-link HMAC of the
+head after `deliveryFiled`. Both independent PDF objects and history segments
+are synced/published before the manifest that owns them and the receipt. No
+receipt is exposed to the HTTP path until this custody commit succeeds.
+An uncertain manifest publication preserves possibly referenced objects and
+makes the session read-only until restart reconciliation.
+
+Same-link delivery IDs are stable. Identical ciphertext retries do not add a
+record or regenerate the receipt; a different ciphertext under an existing ID
+is refused. Pending receipts are retried before a new mailbox listing, using
+exact saved compact bytes and a fresh outer request assertion. Only strict
+200 `picked_up` or 404 `delivery_not_found` responses settle retry; a generic
+404, refusal, timeout or lost reply does not. Settlement appends history and
+retains the original receipt. `gone` never represents a cryptographic pickup.
+
+A link's optional `approval` keeps one first-device request UUID, exact signed
+intent and expiry, and any verified challenge/acceptance. Intent and history
+are committed before POST. This milestone implements `staff_first` only, with
+null predecessor; it does not authorize a later-device or lost-all-devices
+fallback. Exact clinic signatures bind the saved portal base, recipient, both
+public keys, device ID, request, challenge and original compact hashes. Unsigned
+portal status alone never establishes approval. Stored historical evidence
+remains readable after revocation; current approval requires active pinned keys.
+Full device code/fingerprint in the snapshot are public identifiers only.
+
+Linux shared-vector, real-helper interoperability and subprocess-crash tests
+are partial evidence. Supported Windows filesystem behavior, real portal HTTP,
+actual linking/staff approval and full native UI flow remain enablement gates.

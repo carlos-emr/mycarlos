@@ -1,5 +1,5 @@
-//! The only production HTTP client. Its sole current operation is a typed v1
-//! link request; callers cannot supply arbitrary routes, headers or destinations.
+//! The production HTTP boundary for the gated native portal flow. Destinations
+//! come only from saved consented links; renderer input cannot select API routes.
 
 use crate::portal_link::{LinkError, LinkRequest, LinkedClinic};
 
@@ -14,7 +14,6 @@ pub fn link(
     cancelled: impl Fn() -> bool,
 ) -> Result<LinkedClinic, LinkError> {
     use crate::portal_link::{parse_response, MAX_RESPONSE_BYTES};
-    use std::{sync::Arc, time::Duration};
 
     if cancelled() {
         return Err(LinkError::Cancelled);
@@ -26,28 +25,7 @@ pub fn link(
 
     #[cfg(not(target_os = "android"))]
     {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let tls = rustls::ClientConfig::builder_with_provider(provider.clone())
-            .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
-            .map_err(|_| LinkError::Network)?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(
-                rustls_platform_verifier::Verifier::new(provider)
-                    .map_err(|_| LinkError::Network)?,
-            ))
-            .with_no_client_auth();
-        let client = reqwest::Client::builder()
-            .use_preconfigured_tls(tls)
-            .https_only(true)
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .no_proxy()
-            .referer(false)
-            .pool_max_idle_per_host(0)
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|_| LinkError::Network)?;
+        let client = client()?;
         let exchange = async {
             let mut response = client
                 .post(request.endpoint)
@@ -103,7 +81,7 @@ pub fn link(
                 _ = async {
                     loop {
                         if cancelled() { break; }
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                     }
                 } => Err(LinkError::Cancelled),
                 result = exchange => result,
@@ -115,4 +93,143 @@ pub fn link(
 #[cfg(not(feature = "portal-linking"))]
 pub fn link(_: LinkRequest, _: &str, _: impl Fn() -> bool) -> Result<LinkedClinic, LinkError> {
     Err(LinkError::Disabled)
+}
+
+#[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+fn client() -> Result<reqwest::Client, LinkError> {
+    use std::{sync::Arc, time::Duration};
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let tls = rustls::ClientConfig::builder_with_provider(provider.clone())
+        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .map_err(|_| LinkError::Network)?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(
+            rustls_platform_verifier::Verifier::new(provider).map_err(|_| LinkError::Network)?,
+        ))
+        .with_no_client_auth();
+    reqwest::Client::builder()
+        .use_preconfigured_tls(tls)
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .no_proxy()
+        .referer(false)
+        .pool_max_idle_per_host(0)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|_| LinkError::Network)
+}
+
+#[cfg(feature = "portal-linking")]
+pub(crate) struct ApiResponse {
+    pub status: u16,
+    pub body: zeroize::Zeroizing<Vec<u8>>,
+}
+
+#[cfg(feature = "portal-linking")]
+pub(crate) fn api(
+    link: &crate::portal_link::StoredLink,
+    method: &str,
+    suffix: &str,
+    body: Vec<u8>,
+    anchor: Option<&str>,
+    max: usize,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ApiResponse, LinkError> {
+    if cancelled() {
+        return Err(LinkError::Cancelled);
+    }
+    #[cfg(target_os = "android")]
+    {
+        let _ = (link, method, suffix, body, anchor, max);
+        return Err(LinkError::Unavailable);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use crate::portal_link::frame;
+        use serde::Serialize;
+        use sha2::{Digest, Sha256};
+        // All callers construct a fixed /api/mycarlos/ route, never a returned
+        // download address. The saved portal base is the sole destination.
+        if !suffix.starts_with("/api/mycarlos/") || suffix.contains('#') || body.len() > 32768 {
+            return Err(LinkError::InvalidResponse);
+        }
+        let endpoint = tauri::Url::parse(&format!("{}{}", link.portal_base, suffix))
+            .map_err(|_| LinkError::InvalidPortal)?;
+        let clinic = link.clinic.as_ref().ok_or(LinkError::InvalidResponse)?;
+        let request_hash: String = Sha256::digest(frame(&[
+            method.as_bytes(),
+            endpoint.path().as_bytes(),
+            endpoint.query().unwrap_or("").as_bytes(),
+            &body,
+        ]))
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+        #[derive(Serialize)]
+        struct Claims<'a> {
+            aud: &'a str,
+            exp: u64,
+            iat: u64,
+            iss: &'a str,
+            jti: uuid::Uuid,
+            kid: String,
+            recipient_id: &'a str,
+            request_hash: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            vault_head_link: Option<&'a str>,
+        }
+        let now = crate::now_ms() / 1000;
+        let payload = serde_json::to_vec(&Claims {
+            aud: "carlos-patient-portal-device-api",
+            exp: now + 60,
+            iat: now,
+            iss: "mycarlos",
+            jti: uuid::Uuid::new_v4(),
+            kid: link.keys.device_key_id(),
+            recipient_id: &clinic.recipient_id,
+            request_hash,
+            vault_head_link: anchor,
+        })
+        .map_err(|_| LinkError::InvalidResponse)?;
+        let assertion = link.keys.sign(&payload);
+        let client = client()?;
+        let method = reqwest::Method::from_bytes(method.as_bytes())
+            .map_err(|_| LinkError::InvalidResponse)?;
+        let exchange = async {
+            let mut response = client
+                .request(method, endpoint)
+                .header("Content-Type", "application/json")
+                .header("X-MyCarlos-Device-Assertion", assertion)
+                .body(body)
+                .send()
+                .await
+                .map_err(|_| LinkError::Network)?;
+            if cancelled() {
+                return Err(LinkError::Cancelled);
+            }
+            if response.content_length().is_some_and(|n| n > max as u64) {
+                return Err(LinkError::InvalidResponse);
+            }
+            let status = response.status().as_u16();
+            let mut body = zeroize::Zeroizing::new(Vec::new());
+            while let Some(chunk) = response.chunk().await.map_err(|_| LinkError::Network)? {
+                if cancelled() {
+                    return Err(LinkError::Cancelled);
+                }
+                if body.len().saturating_add(chunk.len()) > max {
+                    return Err(LinkError::InvalidResponse);
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(ApiResponse { status, body })
+        };
+        tauri::async_runtime::block_on(async {
+            tokio::select! { biased;
+                _=async {loop {if cancelled(){break;} tokio::time::sleep(std::time::Duration::from_millis(50)).await;}}=>Err(LinkError::Cancelled),
+                result=exchange=>result,
+            }
+        })
+    }
 }

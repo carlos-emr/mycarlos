@@ -305,3 +305,20 @@ completed local link: this must be reported as incomplete, never guessed success
 A recovery endpoint, live key refresh and signed-replacement statement are shared
 v1 contract work, not an invented delivery v2. Their absence prevents claiming
 the whole #55 key lifecycle or the send/pickup/delete flow complete.
+
+### Private first-device pickup candidate (26 October 2026)
+
+The same default-off feature now includes explicit mailbox checks and first-device
+approval requests. All destinations remain the saved consented HTTPS portal.
+The renderer receives redacted native summaries, never seeds, decrypted packages,
+receipts or recipient IDs. Native code validates original signed package/PDF
+bindings before an atomic custody transaction publishes original/display objects,
+history, verification metadata and exact kept receipt. Receipt sending is a
+separate step after that commit, with restart-safe exact-byte retry. A generic
+HTTP 404 never settles a receipt. An uncertain commit preserves objects and
+requires restart repair. Full-device fingerprints are public identifiers for
+staff comparison, not approval credentials; only a bound clinic signature grants
+native approval status. Historical proof verification cannot grant current trust
+after signer revocation. Key refresh and broader approval/recovery flows remain
+unfinished and defaults remain OFF. Linux FAKE interoperability and subprocess
+crash checks do not establish Windows or live portal end-to-end behavior.

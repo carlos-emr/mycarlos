@@ -73,6 +73,10 @@ pub enum HistoryEvent {
     SetAside,
     PortalLinkStarted,
     PortalLinked,
+    DeviceApprovalRequested,
+    DeviceApprovalVerified,
+    DeliveryFiled,
+    DeliveryReceiptSettled,
 }
 
 /// A folder as it was named at the time of the event.
@@ -139,6 +143,10 @@ pub struct HistoryEntry {
     pub portal_link_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clinic_key_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ciphertext_sha256: Option<String>,
     /// The hash of the entry before this one.
     pub prev: String,
 }
@@ -166,6 +174,8 @@ impl HistoryEntry {
             previous_session: None,
             portal_link_id: None,
             clinic_key_ids: None,
+            delivery_id: None,
+            ciphertext_sha256: None,
             prev: String::new(),
         }
     }

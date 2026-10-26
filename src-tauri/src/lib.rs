@@ -6,8 +6,11 @@ mod idle;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod portal_approval;
 mod portal_client;
+mod portal_delivery;
 mod portal_link;
+mod portal_pickup;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
@@ -198,6 +201,7 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
@@ -1505,6 +1509,47 @@ async fn vault_portal_link(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
     .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_request_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
+}
+
+#[tauri::command]
+async fn vault_check_documents(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<portal_pickup::CheckResult> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = store;
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
 }
 
 #[tauri::command]
@@ -3164,6 +3209,8 @@ pub fn run() {
             vault_set_auto_lock,
             vault_snapshot,
             vault_portal_link,
+            vault_check_documents,
+            vault_request_device_approval,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,

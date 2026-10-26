@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 default = []
 # Evaluation only. The native link command refuses before any write or request
 # unless this build feature is explicitly selected; renderer state cannot enable it.
-portal-linking = ["dep:reqwest", "dep:rustls", "dep:rustls-platform-verifier", "dep:tokio"]
+portal-linking = ["dep:reqwest", "dep:rustls", "dep:rustls-platform-verifier", "dep:tokio", "dep:hpke"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -33,6 +33,9 @@ der = { version = "=0.7.10", features = ["alloc", "oid"] }
 ecdsa = { version = "=0.17.0", features = ["der"] }
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "zeroize"] }
 hkdf = "0.12"
+# Only the frozen X25519 suite. Disable default P256 KEM to keep the current
+# independent P256 verifier stack and avoid old EC dependencies.
+hpke = { version = "=0.13.0", default-features = false, features = ["std", "x25519"], optional = true }
 hmac = "0.12"
 libc = "0.2"
 # Opens a password-protected PDF, only ever in the separate helper process (src/pdf_unlock.rs).

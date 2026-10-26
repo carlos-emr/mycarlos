@@ -334,3 +334,27 @@ are added to that reqwest edge. ring is 0.17.14 (Apache-2.0 AND ISC); other new
 licenses are BSD-3-Clause, MIT/Apache-2.0, ISC and the bundled root data's
 CDLA-Permissive-2.0. Source metadata/lock resolution is not a build or advisory
 scan. No independent final dependency approval or feature build has passed yet.
+
+### Gated native pickup and first-device approval (26 October 2026)
+
+The `portal-linking` feature now also selects pinned `hpke = 0.13.0`
+(MIT OR Apache-2.0), with defaults disabled and only `std,x25519`. The frozen
+suite is DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305, base mode,
+sequence zero. Curve operations and HPKE composition use the upstream library;
+there is no custom curve or HPKE implementation. Its optional P256 KEM is OFF,
+so it does not restore the older P256/crypto-bigint stack removed in #122.
+
+The resolved additions are hpke 0.13.0, aes 0.8.4, aes-gcm 0.10.3, ctr 0.9.2,
+ghash 0.5.1 and polyval 0.6.2. AES-GCM is a nonoptional upstream dependency even
+though this application selects ChaCha20-Poly1305 only. Existing X25519, SHA256,
+HKDF, HMAC, ChaCha20Poly1305 and zeroize lines are reused. HPKE private keys,
+shared secrets, AEAD keys/nonces and exporter secrets zeroize on drop; opened
+plaintext is held in `Zeroizing` buffers. The upstream crate reports a review
+of its earlier 0.8 implementation, not a paid audit of this pinned version.
+
+Primary source: https://github.com/rozbb/rust-hpke/tree/v0.13.0
+and https://docs.rs/crate/hpke/0.13.0/source/Cargo.toml.orig .
+Unchanged shared M0 package vectors and RFC 9180 A.2.1 sequence zero have passed
+on Linux. Actual Java-produced PAdES package opening and retained receipt
+verification have also passed with explicit FAKE test trust. This is neither
+an independent dependency approval nor Windows/native portal enablement.
