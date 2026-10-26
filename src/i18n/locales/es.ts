@@ -21,7 +21,10 @@ export const es: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Vinculación incompleta. Revise los dispositivos vinculados en el portal antes de volver a intentarlo.",
   "portal.approved": "La clínica aprobó este dispositivo.",
-  "portal.awaiting": "Esperando la aprobación de la clínica.",
+  "portal.notRequested":
+    "Solicite la aprobación de la clínica para recibir documentos en este dispositivo.",
+  "portal.awaiting":
+    "Solicitud de aprobación guardada. Busque actualizaciones o envíela de nuevo.",
   "portal.deviceCode": "Código del dispositivo",
   "portal.copy": "Copiar código del dispositivo",
   "portal.copied": "Código del dispositivo copiado.",

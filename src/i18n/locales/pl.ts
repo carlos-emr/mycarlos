@@ -22,7 +22,10 @@ export const pl: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.",
   "portal.approved": "Przychodnia zatwierdziła to urządzenie.",
-  "portal.awaiting": "Oczekiwanie na zatwierdzenie przez przychodnię.",
+  "portal.notRequested":
+    "Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.",
+  "portal.awaiting":
+    "Zapisano prośbę o zatwierdzenie. Sprawdź aktualizacje lub wyślij ją ponownie.",
   "portal.deviceCode": "Kod urządzenia",
   "portal.copy": "Kopiuj kod urządzenia",
   "portal.copied": "Skopiowano kod urządzenia.",

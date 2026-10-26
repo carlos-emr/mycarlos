@@ -180,7 +180,9 @@ export function PortalDocuments({
               ? t("portal.incomplete")
               : link.clinicApproved
                 ? t("portal.approved")
-                : t("portal.awaiting")}
+                : link.approvalRequested
+                  ? t("portal.awaiting")
+                  : t("portal.notRequested")}
           </p>
           <label>
             {t("portal.deviceCode")}

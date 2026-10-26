@@ -21,7 +21,10 @@ export const fr: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.",
   "portal.approved": "La clinique a approuvé cet appareil.",
-  "portal.awaiting": "En attente de l’approbation de la clinique.",
+  "portal.notRequested":
+    "Demandez l’approbation de la clinique pour recevoir des documents sur cet appareil.",
+  "portal.awaiting":
+    "Demande d’approbation enregistrée. Vérifiez les mises à jour ou renvoyez-la.",
   "portal.deviceCode": "Code de l’appareil",
   "portal.copy": "Copier le code de l’appareil",
   "portal.copied": "Code de l’appareil copié.",

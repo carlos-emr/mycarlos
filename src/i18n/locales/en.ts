@@ -23,7 +23,10 @@ export const en = {
   "portal.incomplete":
     "Link incomplete. Check Linked devices in the portal before trying again.",
   "portal.approved": "The clinic approved this device.",
-  "portal.awaiting": "Waiting for clinic approval.",
+  "portal.notRequested":
+    "Request clinic approval to receive documents on this device.",
+  "portal.awaiting":
+    "Approval request saved. Check for updates or send it again.",
   "portal.deviceCode": "Device code",
   "portal.copy": "Copy device code",
   "portal.copied": "Device code copied.",

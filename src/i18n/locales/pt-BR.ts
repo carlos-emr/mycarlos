@@ -22,7 +22,10 @@ export const ptBR: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Vinculação incompleta. Confira os dispositivos vinculados no portal antes de tentar novamente.",
   "portal.approved": "A clínica aprovou este dispositivo.",
-  "portal.awaiting": "Aguardando a aprovação da clínica.",
+  "portal.notRequested":
+    "Solicite a aprovação da clínica para receber documentos neste dispositivo.",
+  "portal.awaiting":
+    "Solicitação de aprovação salva. Verifique atualizações ou envie novamente.",
   "portal.deviceCode": "Código do dispositivo",
   "portal.copy": "Copiar código do dispositivo",
   "portal.copied": "Código do dispositivo copiado.",

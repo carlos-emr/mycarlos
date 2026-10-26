@@ -77,13 +77,36 @@ describe("native clinic document controls", () => {
     if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1")
       await page.screenshot({ path: "portal-disabled-before.png" });
   });
+  it("does not imply a clinic request was sent before the intent is saved", () => {
+    const { bridge } = fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [{ ...link, approvalRequested: false }],
+      },
+    });
+    expect(
+      screen.getByText(
+        "Request clinic approval to receive documents on this device.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+  });
   it("shows the complete selectable actual-device identifiers while approval is pending", async () => {
     fixture();
     expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
     expect(screen.getByLabelText("Full device fingerprint")).toHaveValue(
       fingerprint,
     );
-    expect(screen.getByText("Waiting for clinic approval.")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
     expect(
       screen.queryByText("The clinic approved this device."),
     ).not.toBeInTheDocument();
@@ -91,10 +114,13 @@ describe("native clinic document controls", () => {
     await user.click(screen.getByLabelText("Device code"));
     const input = screen.getByLabelText("Device code") as HTMLInputElement;
     expect(input.selectionEnd! - input.selectionStart!).toBe(deviceCode.length);
-    if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1")
+    if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
+      const section = screen.getByRole("region", { name: "Clinic documents" });
+      await page.viewport(1100, Math.ceil(section.scrollHeight) + 50);
       await page
         .getByRole("region", { name: "Clinic documents" })
         .screenshot({ path: "portal-pending-after.png" });
+    }
     await page.viewport(360, 780);
     const oldSize = document.documentElement.style.fontSize;
     try {
