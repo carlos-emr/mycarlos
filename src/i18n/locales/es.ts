@@ -3,6 +3,52 @@ import type { MessageKey } from "./en";
 
 /** Spanish, formal register ("usted"). */
 export const es: Record<MessageKey, Message> = {
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Documentos de la clínica",
+  "portal.intro":
+    "Vincule myCarlos con la dirección y el código que aparecen en su portal de pacientes.",
+  "portal.address": "Dirección HTTPS del portal",
+  "portal.code": "Código de vinculación",
+  "portal.deviceName": "Nombre de este dispositivo",
+  "portal.person": "De quién son los documentos",
+  "portal.matchPerson": "Usar los datos del documento",
+  "portal.routing":
+    "Los documentos se guardan bajo la persona cuyo nombre completo y fecha de nacimiento coincidan. Los demás van a Compartidos conmigo.",
+  "portal.link": "Vincular con la clínica",
+  "portal.check": "Buscar documentos nuevos",
+  "portal.result":
+    "Documentos nuevos guardados: {added}. Documentos que no se pudieron verificar: {refused}.",
+  "portal.incomplete":
+    "Vinculación incompleta. Revise los dispositivos vinculados en el portal antes de volver a intentarlo.",
+  "portal.approved": "La clínica aprobó este dispositivo.",
+  "portal.awaiting": "Esperando la aprobación de la clínica.",
+  "portal.deviceCode": "Código del dispositivo",
+  "portal.copy": "Copiar código del dispositivo",
+  "portal.copied": "Código del dispositivo copiado.",
+  "portal.copyFailed":
+    "Seleccione el código completo del dispositivo y cópielo.",
+  "portal.fingerprint": "Huella completa del dispositivo",
+  "portal.compare":
+    "Pida al personal de la clínica que compare toda esta huella en esta pantalla antes de aprobar este dispositivo.",
+  "portal.requestApproval": "Solicitar aprobación de la clínica",
+  "portal.sourceVerified": "De {clinic} · Verificado",
+  "portal.errorAddress":
+    "Introduzca la dirección HTTPS del portal sin nombre de usuario, contraseña, parámetros de consulta ni fragmento.",
+  "portal.errorCode":
+    "Introduzca el código de vinculación completo de su portal de pacientes.",
+  "portal.errorDeviceName":
+    "Elija un nombre de dispositivo de 1 a 64 caracteres sin caracteres de control.",
+  "portal.errorCodeRejected":
+    "El portal no aceptó ese código. Cree otro código de vinculación en su portal de pacientes.",
+  "portal.errorKeys":
+    "La clínica aún no ha publicado una clave de firma. La vinculación está incompleta.",
+  "portal.errorExists":
+    "Este dispositivo ya está registrado. Revise los dispositivos vinculados en su portal de pacientes.",
+  "portal.errorIncomplete":
+    "No se pudo completar la solicitud al portal. Revise la conexión y el reloj del dispositivo y vuelva a intentarlo.",
+  "portal.errorRefused":
+    "No se pudo verificar un documento de la clínica. No se añadió ni se envió un acuse de recibo.",
+
   "frame.banner.title": "Versión de desarrollo con datos ficticios",
   "frame.banner.body": "No use información real de pacientes",
   "frame.window.label": "Bóveda privada de myCarlos",

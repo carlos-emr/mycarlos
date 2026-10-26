@@ -5,6 +5,50 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Dokumenty z przychodni",
+  "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",
+  "portal.address": "Adres HTTPS portalu",
+  "portal.code": "Kod połączenia",
+  "portal.deviceName": "Nazwa tego urządzenia",
+  "portal.person": "Czyja dokumentacja",
+  "portal.matchPerson": "Dopasuj dane z dokumentu",
+  "portal.routing":
+    "Dokumenty trafiają do osoby o zgodnym pełnym imieniu i nazwisku oraz dacie urodzenia. Pozostałe trafiają do Udostępnionych mi.",
+  "portal.link": "Połącz z przychodnią",
+  "portal.check": "Sprawdź nowe dokumenty",
+  "portal.result":
+    "Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
+  "portal.incomplete":
+    "Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.",
+  "portal.approved": "Przychodnia zatwierdziła to urządzenie.",
+  "portal.awaiting": "Oczekiwanie na zatwierdzenie przez przychodnię.",
+  "portal.deviceCode": "Kod urządzenia",
+  "portal.copy": "Kopiuj kod urządzenia",
+  "portal.copied": "Skopiowano kod urządzenia.",
+  "portal.copyFailed": "Zaznacz cały kod urządzenia i skopiuj go.",
+  "portal.fingerprint": "Pełny odcisk urządzenia",
+  "portal.compare":
+    "Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.",
+  "portal.requestApproval": "Poproś przychodnię o zatwierdzenie",
+  "portal.sourceVerified": "Z {clinic} · Zweryfikowano",
+  "portal.errorAddress":
+    "Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.",
+  "portal.errorCode":
+    "Wpisz pełny kod połączenia wyświetlany w portalu pacjenta.",
+  "portal.errorDeviceName":
+    "Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.",
+  "portal.errorCodeRejected":
+    "Portal nie zaakceptował kodu. Utwórz nowy kod połączenia w portalu pacjenta.",
+  "portal.errorKeys":
+    "Przychodnia nie opublikowała jeszcze klucza podpisu. Połączenie jest nieukończone.",
+  "portal.errorExists":
+    "To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.",
+  "portal.errorIncomplete":
+    "Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.",
+  "portal.errorRefused":
+    "Nie udało się zweryfikować dokumentu z przychodni. Nie dodano go ani nie wysłano potwierdzenia odbioru.",
+
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
   "frame.window.label": "Prywatny sejf myCarlos",

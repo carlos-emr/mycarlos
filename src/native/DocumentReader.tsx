@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import {
@@ -63,6 +64,7 @@ export function DocumentReader({
   cancelView?: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -190,7 +192,13 @@ export function DocumentReader({
         <header className="dialog-head native-reader-head">
           <div>
             <h2 id="reader-title">{record.displayName}</h2>
-            <p id="reader-trust">{record.sourceLabel}</p>
+            <p id="reader-trust">
+              {record.verifiedClinicName
+                ? t("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : record.sourceLabel}
+            </p>
           </div>
           <button
             ref={closeRef}

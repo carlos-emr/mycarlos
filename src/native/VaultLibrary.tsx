@@ -25,6 +25,7 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
@@ -1500,6 +1501,16 @@ export function VaultLibrary({
                   </div>
                 )}
 
+                <PortalDocuments
+                  compact
+                  bridge={bridge}
+                  snapshot={snapshot}
+                  busy={busy}
+                  readOnly={readOnly}
+                  run={run}
+                  refresh={refresh}
+                  setNotice={setNotice}
+                />
                 <label className="search">
                   <Icon name="search" />
                   <span className="sr-only">{searchLabel}</span>
@@ -1677,6 +1688,17 @@ export function VaultLibrary({
 
             {section === "security" && (
               <SecuritySettings
+                clinicDocuments={
+                  <PortalDocuments
+                    bridge={bridge}
+                    snapshot={snapshot}
+                    busy={busy}
+                    readOnly={readOnly}
+                    run={run}
+                    refresh={refresh}
+                    setNotice={setNotice}
+                  />
+                }
                 busy={busy}
                 readOnly={readOnly}
                 notice={notice}

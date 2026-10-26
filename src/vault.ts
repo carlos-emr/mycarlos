@@ -44,6 +44,7 @@ export interface VaultRecord {
   hidden?: HiddenRecord | null;
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
+  verifiedClinicName?: string;
 }
 
 /** When, and why, a document was hidden (#71). */
@@ -83,6 +84,10 @@ export interface PortalLinkSummary {
   clinicName: string | null;
   fingerprints: string[];
   incomplete: boolean;
+  deviceKeyId: string;
+  deviceFingerprint: string;
+  approvalRequested: boolean;
+  clinicApproved: boolean;
 }
 
 export interface PortalLinkInput {
@@ -239,6 +244,12 @@ export interface VaultBridge {
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
   linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
+  checkDocuments?(): Promise<{
+    added: number;
+    refused: number;
+    receiptsPending: number;
+  }>;
+  requestDeviceApproval?(linkId: string): Promise<void>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -416,6 +427,18 @@ export function boxesWithControlCharacters(
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */
 export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
+  const portalErrors = {
+    portal_link_address: "portal.errorAddress",
+    portal_link_code: "portal.errorCode",
+    portal_link_device_name: "portal.errorDeviceName",
+    portal_link_code_rejected: "portal.errorCodeRejected",
+    portal_link_keys_missing: "portal.errorKeys",
+    portal_link_device_exists: "portal.errorExists",
+    portal_link_incomplete: "portal.errorIncomplete",
+    pickup_refused: "portal.errorRefused",
+  } as const;
+  for (const [code, key] of Object.entries(portalErrors))
+    if (hasErrorCode(error, code)) return t(key);
   if (boxes?.length && hasErrorCode(error, "invalid"))
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
@@ -555,6 +578,9 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
+    checkDocuments: () => invoke("vault_check_documents"),
+    requestDeviceApproval: (linkId) =>
+      invoke("vault_request_device_approval", { linkId }),
     linkPortal: (request) =>
       invoke<PortalLinkSummary>("vault_portal_link", { request }),
     changePassphrase: (currentPassphrase, newPassphrase) =>

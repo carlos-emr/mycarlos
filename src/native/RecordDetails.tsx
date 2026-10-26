@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
@@ -60,6 +61,7 @@ export function RecordDetails({
   locked = false,
   onUnlock,
 }: RecordDetailsProps) {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   // Choosing in the list only picks a destination; Move moves (#67). In
   // Chromium every arrow key on a closed list changes its value, which moved
@@ -171,7 +173,13 @@ export function RecordDetails({
           </div>
           <div>
             <dt>Source</dt>
-            <dd>{record.sourceLabel}</dd>
+            <dd>
+              {record.verifiedClinicName
+                ? t("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : record.sourceLabel}
+            </dd>
           </div>
           <div>
             <dt>Date added</dt>

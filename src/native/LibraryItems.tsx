@@ -191,7 +191,13 @@ export function LibraryItems({
               </span>
               {suggestionFor?.(record)}
             </div>
-            <span className="column">{record.sourceLabel}</span>
+            <span className="column">
+              {record.verifiedClinicName
+                ? t("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : record.sourceLabel}
+            </span>
             <span className="column">
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>

@@ -3,6 +3,52 @@ import type { MessageKey } from "./en";
 
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Documents de la clinique",
+  "portal.intro":
+    "Associez myCarlos avec l’adresse et le code affichés dans votre portail patient.",
+  "portal.address": "Adresse HTTPS du portail",
+  "portal.code": "Code d’association",
+  "portal.deviceName": "Nom de cet appareil",
+  "portal.person": "Dossiers de quelle personne",
+  "portal.matchPerson": "Utiliser les renseignements du document",
+  "portal.routing":
+    "Les documents sont classés sous la personne dont le nom complet et la date de naissance correspondent. Les autres vont dans Partagés avec moi.",
+  "portal.link": "Associer à la clinique",
+  "portal.check": "Rechercher de nouveaux documents",
+  "portal.result":
+    "Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
+  "portal.incomplete":
+    "Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.",
+  "portal.approved": "La clinique a approuvé cet appareil.",
+  "portal.awaiting": "En attente de l’approbation de la clinique.",
+  "portal.deviceCode": "Code de l’appareil",
+  "portal.copy": "Copier le code de l’appareil",
+  "portal.copied": "Code de l’appareil copié.",
+  "portal.copyFailed":
+    "Sélectionnez le code entier de l’appareil et copiez-le.",
+  "portal.fingerprint": "Empreinte complète de l’appareil",
+  "portal.compare":
+    "Demandez au personnel de la clinique de comparer cette empreinte entière sur cet écran avant d’approuver cet appareil.",
+  "portal.requestApproval": "Demander l’approbation de la clinique",
+  "portal.sourceVerified": "De {clinic} · Vérifié",
+  "portal.errorAddress":
+    "Saisissez l’adresse HTTPS du portail sans nom d’utilisateur, mot de passe, paramètres de requête ni fragment.",
+  "portal.errorCode":
+    "Saisissez le code d’association complet affiché dans votre portail patient.",
+  "portal.errorDeviceName":
+    "Choisissez un nom d’appareil de 1 à 64 caractères sans caractères de contrôle.",
+  "portal.errorCodeRejected":
+    "Le portail a refusé ce code. Créez un nouveau code d’association dans votre portail patient.",
+  "portal.errorKeys":
+    "La clinique n’a pas encore publié de clé de signature. L’association est incomplète.",
+  "portal.errorExists":
+    "Cet appareil est déjà enregistré. Consultez les appareils associés dans votre portail patient.",
+  "portal.errorIncomplete":
+    "La demande au portail n’a pas abouti. Vérifiez votre connexion et l’horloge de l’appareil, puis réessayez.",
+  "portal.errorRefused":
+    "Un document de la clinique n’a pas pu être vérifié. Il n’a pas été ajouté et aucun accusé de réception n’a été envoyé.",
+
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
     "N’utilisez pas de véritables renseignements sur des patients",

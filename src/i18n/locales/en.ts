@@ -5,6 +5,51 @@ import type { Message } from "../types";
  * must use the same {placeholders} as the English text. Text goes into the page
  * as plain text, never as HTML. */
 export const en = {
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Clinic documents",
+  "portal.intro":
+    "Link myCarlos using the address and code shown in your patient portal.",
+  "portal.address": "Portal HTTPS address",
+  "portal.code": "Linking code",
+  "portal.deviceName": "Name for this device",
+  "portal.person": "Whose records",
+  "portal.matchPerson": "Match the document details",
+  "portal.routing":
+    "Documents go to a person with a matching full name and birth date. Other documents go to Shared with me.",
+  "portal.link": "Link to clinic",
+  "portal.check": "Check for new documents",
+  "portal.result":
+    "New documents saved: {added}. Documents that could not be verified: {refused}.",
+  "portal.incomplete":
+    "Link incomplete. Check Linked devices in the portal before trying again.",
+  "portal.approved": "The clinic approved this device.",
+  "portal.awaiting": "Waiting for clinic approval.",
+  "portal.deviceCode": "Device code",
+  "portal.copy": "Copy device code",
+  "portal.copied": "Device code copied.",
+  "portal.copyFailed": "Select the entire device code and copy it.",
+  "portal.fingerprint": "Full device fingerprint",
+  "portal.compare":
+    "Ask clinic staff to compare this entire fingerprint on this screen before approving this device.",
+  "portal.requestApproval": "Request clinic approval",
+  "portal.sourceVerified": "From {clinic} · Verified",
+  "portal.errorAddress":
+    "Enter the portal HTTPS address without a username, password, query, or fragment.",
+  "portal.errorCode":
+    "Enter the complete linking code shown in your patient portal.",
+  "portal.errorDeviceName":
+    "Choose a device name of 1 to 64 characters without control characters.",
+  "portal.errorCodeRejected":
+    "The portal did not accept that code. Make a new linking code in your patient portal.",
+  "portal.errorKeys":
+    "The clinic has not published a signing key yet. Linking is incomplete.",
+  "portal.errorExists":
+    "This device is already registered. Check Linked devices in your patient portal.",
+  "portal.errorIncomplete":
+    "The portal request could not be completed. Check your connection and device clock, then try again.",
+  "portal.errorRefused":
+    "A clinic document could not be verified. It was not added and no pickup receipt was sent.",
+
   // Window frame
   "frame.banner.title": "Synthetic-data development build",
   "frame.banner.body": "Do not use real patient information",

@@ -6,7 +6,13 @@ import {
 } from "./PersonDetails";
 import type { PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "../Icon";
 import { useI18n, withElements, type MessageKey, type Params } from "../i18n";
 import {
@@ -29,6 +35,7 @@ import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
 
 interface SecuritySettingsProps {
+  clinicDocuments?: ReactNode;
   busy: boolean;
   readOnly: boolean;
   notice: string;
@@ -97,6 +104,7 @@ function newBackupText(
 }
 
 export function SecuritySettings({
+  clinicDocuments,
   busy,
   readOnly,
   notice,
@@ -221,6 +229,7 @@ export function SecuritySettings({
       <p className="status-line" role="status" aria-live="polite">
         {notice}
       </p>
+      {clinicDocuments}
       <div className="setting-list">
         <section className="setting-row">
           <div>
