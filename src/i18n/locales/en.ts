@@ -432,12 +432,22 @@ export const en = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "How myCarlos looks on this computer",
+  "language.title": "Language",
+  "language.help":
+    "Remembered on this device. Your documents stay in their original language.",
+  "language.system": "System default",
+  "language.error.unreadable":
+    "Your saved language could not be read. Using your device's language for this session.",
+  "language.error.notRemembered":
+    "Language changed for this session, but could not be remembered on this device.",
+
   "appearance.title": "Appearance",
   "appearance.help":
-    "{system} follows your device's light or dark appearance. High contrast follows your device automatically.",
+    "{system} follows your device's light or dark appearance. High contrast uses a black background and bright text. Your device's contrast colors always take priority.",
   "appearance.system": "System",
   "appearance.light": "Light",
   "appearance.dark": "Dark",
+  "appearance.highContrast": "High contrast",
   "appearance.error.unreadable":
     "The saved appearance could not be read. Using {system} for this session.",
   "appearance.error.notRemembered":
@@ -477,6 +487,10 @@ export const en = {
   "library.select": "Select {name}",
   "library.empty.title": "This location is empty",
   "library.empty.help": "Add a folder or import a document here.",
+  "library.search.results":
+    "Search results. Folders: {folders}. Documents: {documents}.",
+  "library.search.cleared":
+    "Search cleared. Folders in this location: {folders}. Documents: {documents}.",
   "library.noMatch.title": "No matching records",
   "library.noMatch.help": "Try another search.",
 } as const satisfies Record<string, Message>;

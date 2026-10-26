@@ -1,3 +1,4 @@
+import { LanguageSetting } from "./LanguageSetting";
 import { AutoLockSetting } from "./AutoLockSetting";
 import { DEFAULT_AUTO_LOCK_MINUTES } from "./autoLock";
 import { TextSizeSetting, useNativeZoom } from "./TextSizeSetting";
@@ -27,10 +28,10 @@ export function ComfortSetup({
         className="vault-card comfort-setup"
         aria-labelledby="comfort-title"
       >
+        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="comfort-title">{t("comfort.title")}</h1>
         <p>{t("comfort.intro")}</p>
-        {/* Language (#46) comes first here once it is in. */}
         <div className="setting-list comfort-list">
           {native ? (
             <>

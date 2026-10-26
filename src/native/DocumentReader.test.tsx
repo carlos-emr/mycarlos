@@ -47,6 +47,32 @@ function renderReader(
 }
 
 describe("the document reader", () => {
+  it("shows reader-only line boundaries without changing legacy text", async () => {
+    const raw =
+      "FAKE Imaging ReportPatient: FAKE Morgan PatientFinding: HbA1c 1.5 mg 120/80";
+    const readable =
+      "FAKE Imaging Report\nPatient: FAKE Morgan Patient\nFinding: HbA1c 1.5 mg 120/80";
+    const supplied = { ...page(0), text: raw, readableText: readable };
+    renderReader(vi.fn(async () => supplied));
+    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await userEvent.setup().click(screen.getByText("Text on this page"));
+    const text = document.querySelector(".native-reader-text div")!;
+    expect(text.textContent).toBe(readable);
+    expect(getComputedStyle(text).whiteSpace).toBe("pre-wrap");
+    expect(supplied.text).toBe(raw);
+  });
+
+  it("counts both text representations in its page cache budget", () => {
+    const cache = new Map<string, ViewedPage>();
+    cacheDrawnPage(cache, "large-text", {
+      ...page(0),
+      image: "a".repeat(24 * 1024 * 1024),
+      text: "b".repeat(12 * 1024 * 1024),
+      readableText: "c".repeat(12 * 1024 * 1024 + 1),
+    });
+    expect(cache.has("large-text")).toBe(false);
+  });
+
   it("shows the first page, its text and where the document came from", async () => {
     const { viewPage } = renderReader();
     const reader = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
@@ -68,8 +94,14 @@ describe("the document reader", () => {
     expect(
       Math.abs(picture.getBoundingClientRect().width - available),
     ).toBeLessThanOrEqual(1);
-    // The page count beside the buttons, and said once the page is shown.
-    expect(screen.getAllByText("Page 1 of 2")).toHaveLength(2);
+    // One visible count beside the buttons; the completion is still announced.
+    const counts = screen.getAllByText("Page 1 of 2");
+    expect(
+      counts.filter((count) => {
+        const bounds = count.getBoundingClientRect();
+        return bounds.width > 1 && bounds.height > 1;
+      }),
+    ).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2");
     expect(viewPage).toHaveBeenCalledTimes(1);
     const [index, width, password] = viewPage.mock.calls[0];
@@ -154,9 +186,9 @@ describe("the document reader", () => {
     const { onClose } = renderReader(
       vi.fn().mockRejectedValue(refusal("pdf_view_failed")),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "FAKE pdf_view_failed",
-    );
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("FAKE pdf_view_failed");
+    expect(failure).toBeVisible();
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
     );
@@ -175,6 +207,10 @@ describe("the document reader", () => {
     );
     const { cancelView, unmount } = renderReader(viewPage);
     expect(await screen.findByText("Opening page 1…")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Opening page 1…");
+    expect(
+      screen.getByRole("status").getBoundingClientRect().height,
+    ).toBeGreaterThan(1);
     // Sizes and pages cannot be asked for while one is being drawn.
     for (const name of ["Larger", "Smaller", "Next page"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
@@ -245,9 +281,9 @@ describe("the document reader", () => {
     renderReader(viewPage);
     await screen.findByRole("img", { name: /^Page 1 of 2/ });
     await user.click(screen.getByRole("button", { name: "Next page" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "FAKE pdf_view_failed",
-    );
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("FAKE pdf_view_failed");
+    expect(failure).toBeVisible();
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.queryByText("Text on this page")).toBeNull();
   });

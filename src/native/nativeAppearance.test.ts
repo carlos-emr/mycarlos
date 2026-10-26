@@ -32,7 +32,7 @@ describe("native appearance", () => {
   });
 
   it.each(["windows", "macos", "linux"])(
-    "sets desktop %s to System, Light and Dark",
+    "sets desktop %s to System, Light, Dark and high contrast",
     async (platform) => {
       vi.mocked(invoke).mockResolvedValue({ platform });
       const appearance = startAppearance();
@@ -43,6 +43,9 @@ describe("native appearance", () => {
       await tick();
       expect(setTheme).toHaveBeenLastCalledWith("light");
       appearance.set("dark");
+      await tick();
+      expect(setTheme).toHaveBeenLastCalledWith("dark");
+      appearance.set("high-contrast");
       await tick();
       expect(setTheme).toHaveBeenLastCalledWith("dark");
       expect(vi.getTimerCount()).toBe(0);
