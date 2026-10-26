@@ -3,6 +3,102 @@
 //! Those must come from the actual HTTPS portal and production native flow.
 use super::*;
 
+#[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptLoss {
+    receipt_post_attempts: usize,
+    delivery_id: Option<String>,
+    reply_dropped: bool,
+    successful_status: Option<u16>,
+    receipt_request_body_sha256: Option<String>,
+    kept_receipt_sha256: Option<String>,
+}
+
+fn check_tracing_receipts(
+    store: &VaultStore,
+    session: u64,
+    drop_delivery_id: Option<&str>,
+    trace: &std::cell::RefCell<ReceiptLoss>,
+) -> Result<crate::portal_pickup::CheckResult, VaultError> {
+    store
+        .portal_check_running
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .map_err(|_| VaultError::Invalid)?;
+    struct Running<'a>(&'a AtomicBool);
+    impl Drop for Running<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    let _running = Running(&store.portal_check_running);
+    crate::portal_pickup::check_using(
+        store,
+        session,
+        &crate::portal_approval::ApprovalHttp,
+        |link, method, suffix, body, anchor, max, cancelled| {
+            let receipt_post = method == "POST" && suffix.ends_with("/receipt");
+            if let Some(target) = drop_delivery_id {
+                let target_path = format!("/api/mycarlos/deliveries/{target}");
+                if (method == "GET"
+                    && suffix.starts_with("/api/mycarlos/deliveries/")
+                    && suffix != target_path)
+                    || (receipt_post && suffix != format!("{target_path}/receipt"))
+                {
+                    return Err(crate::portal_link::LinkError::InvalidResponse);
+                }
+            }
+            let hashes = if receipt_post {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct ReceiptBody<'a> {
+                    receipt: &'a str,
+                }
+                let parsed: ReceiptBody<'_> = serde_json::from_slice(&body)
+                    .map_err(|_| crate::portal_link::LinkError::InvalidResponse)?;
+                trace.borrow_mut().receipt_post_attempts += 1;
+                Some((
+                    crate::portal_delivery::sha256(&body),
+                    crate::portal_delivery::sha256(parsed.receipt.as_bytes()),
+                ))
+            } else {
+                None
+            };
+            // The original production transport performs the real HTTPS call,
+            // including every saved-origin, assertion, cancellation and TLS check.
+            let response =
+                crate::portal_client::api(link, method, suffix, body, anchor, max, cancelled)?;
+            if let Some((body_hash, receipt_hash)) = hashes {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Status {
+                    status: String,
+                }
+                let picked_up = response.status == 200
+                    && serde_json::from_slice::<Status>(&response.body)
+                        .ok()
+                        .is_some_and(|s| s.status == "picked_up");
+                let mut trace = trace.borrow_mut();
+                trace.delivery_id = suffix
+                    .strip_prefix("/api/mycarlos/deliveries/")
+                    .and_then(|v| v.strip_suffix("/receipt"))
+                    .map(str::to_owned);
+                trace.receipt_request_body_sha256 = Some(body_hash);
+                trace.kept_receipt_sha256 = Some(receipt_hash);
+                if picked_up {
+                    trace.successful_status = Some(response.status);
+                }
+                if picked_up && drop_delivery_id.is_some() && !trace.reply_dropped {
+                    trace.reply_dropped = true;
+                    // Lose only this already successful response. Do not replay
+                    // the POST, alter proof bytes, or settle native custody.
+                    return Err(crate::portal_link::LinkError::Network);
+                }
+            }
+            Ok(response)
+        },
+    )
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Config {
@@ -84,6 +180,7 @@ fn native_portal_real_https_flow() {
             "request",
             "restart-request",
             "check",
+            "check-drop-receipt-reply",
             "inspect",
             "verify"
         ]
@@ -102,6 +199,7 @@ fn native_portal_real_https_flow() {
         _ => panic!("unexpected native vault status"),
     }
     let mut check_result = None;
+    let receipt_loss = std::cell::RefCell::new(ReceiptLoss::default());
     let operation: Result<(), VaultError> = (|| {
         let session = store.portal_link_ticket();
         if phase == "link" {
@@ -132,7 +230,32 @@ fn native_portal_real_https_flow() {
         match phase.as_str() {
             "request" => store.request_staff_approval(links[0].id, session)?,
             "restart-request" => store.restart_staff_approval(links[0].id, session)?,
-            "check" => check_result = Some(store.check_documents(session)?),
+            "check" => {
+                check_result = Some(check_tracing_receipts(
+                    &store,
+                    session,
+                    None,
+                    &receipt_loss,
+                )?)
+            }
+            "check-drop-receipt-reply" => {
+                assert!(
+                    store.pending_receipts(&links[0], session)?.is_empty(),
+                    "start lost-reply evidence without an older pending receipt"
+                );
+                let target = std::env::var("MYCARLOS_NATIVE_FLOW_DROP_DELIVERY_ID")
+                    .expect("explicit public target delivery UUID is required");
+                assert!(
+                    crate::portal_delivery::uuid4(&target),
+                    "target must be canonical UUIDv4"
+                );
+                check_result = Some(check_tracing_receipts(
+                    &store,
+                    session,
+                    Some(&target),
+                    &receipt_loss,
+                )?);
+            }
             "verify" => verify_original(
                 &store,
                 config
@@ -162,10 +285,28 @@ fn native_portal_real_https_flow() {
     let records = {
         let guard = reopened.session();
         let open = guard.as_ref().unwrap();
-        open.manifest.records.iter().filter_map(|r|r.delivery.as_ref().map(|c|serde_json::json!({"recordId":r.id,"deliveryId":c.outer.delivery_id,"keptReceiptSha256":crate::portal_delivery::sha256(c.receipt.as_bytes()),"originalSha256":c.manifest.document.sha256,"receiptPending":c.receipt_outcome.is_none(),"receiptOutcome":c.receipt_outcome,"verified":super::delivery::verified_clinic(r,&open.manifest.portal_links).is_some()}))).collect::<Vec<_>>()
+        open.manifest.records.iter().filter_map(|r|r.delivery.as_ref().map(|c|serde_json::json!({"recordId":r.id,"deliveryId":c.outer.delivery_id,"keptReceiptSha256":crate::portal_delivery::sha256(c.receipt.as_bytes()),"originalSha256":c.manifest.document.sha256,"serviceDate":c.manifest.document.service_date,"receiptPending":c.receipt_outcome.is_none(),"receiptOutcome":c.receipt_outcome,"verified":super::delivery::verified_clinic(r,&open.manifest.portal_links).is_some()}))).collect::<Vec<_>>()
     };
-    let report = serde_json::json!({"scope":"actual native APIs and HTTPS; does not establish Windows/native UI behavior","phase":phase,"vaultReopened":true,"nativeErrorCode":error_code,"recovery":snapshot.recovery,"links":snapshot.portal_links,"records":records,"checkResult":check_result});
+    let loss = receipt_loss.into_inner();
+    let report = serde_json::json!({"scope":"actual native APIs and HTTPS; does not establish Windows/native UI behavior","phase":phase,"vaultReopened":true,"nativeErrorCode":error_code,"recovery":snapshot.recovery,"links":snapshot.portal_links,"records":records,"checkResult":check_result,"receiptTrace":if phase=="check" || phase=="check-drop-receipt-reply" {Some(&loss)}else{None}});
     fs::write(&config.report, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    if phase == "check-drop-receipt-reply" {
+        assert!(
+            loss.reply_dropped && loss.successful_status == Some(200),
+            "one actual successful receipt response must have been dropped"
+        );
+        assert_eq!(
+            loss.receipt_post_attempts, 1,
+            "the lost-reply phase must perform exactly one receipt POST"
+        );
+        assert!(
+            records.iter().any(|r| r["keptReceiptSha256"].as_str()
+                == loss.kept_receipt_sha256.as_deref()
+                && r["receiptPending"] == true
+                && r["receiptOutcome"].is_null()),
+            "the exact kept receipt must remain pending after native lock/reopen"
+        );
+    }
     assert!(
         error_code.is_none(),
         "native phase failed; inspect the content-free report"
