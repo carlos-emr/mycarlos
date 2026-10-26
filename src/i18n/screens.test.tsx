@@ -52,6 +52,7 @@ function renderSecurity() {
       hiddenCount={0}
       hiddenScopeName="FAKE Avery"
       onOpenHidden={vi.fn()}
+      onOpenAuditHistory={vi.fn()}
       recoveryKeySetAtMs={Date.UTC(2026, 9, 1)}
       recoveryKeyLabel="BEAD"
       onSetUpRecoveryKey={vi.fn()}

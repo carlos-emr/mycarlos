@@ -1285,6 +1285,50 @@ struct SpeedTestReport {
     app_version: String,
 }
 
+/// The history shown in Security, after the native side has verified its
+/// complete chain. IDs and chain hashes stay native.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuditHistoryEntry {
+    seq: u64,
+    at_ms: u64,
+    app: String,
+    event: history::HistoryEvent,
+    name: Option<String>,
+    old_name: Option<String>,
+    from: Option<Vec<String>>,
+    from_total: Option<u64>,
+    to: Option<Vec<String>>,
+    to_total: Option<u64>,
+    how: Option<String>,
+    place: Option<String>,
+    previous_session: Option<String>,
+}
+
+impl From<history::HistoryEntry> for AuditHistoryEntry {
+    fn from(entry: history::HistoryEntry) -> Self {
+        Self {
+            seq: entry.seq,
+            at_ms: entry.at_ms,
+            app: entry.app,
+            event: entry.event,
+            name: entry.name,
+            old_name: entry.old_name,
+            from: entry
+                .from
+                .map(|folders| folders.into_iter().map(|folder| folder.name).collect()),
+            from_total: entry.from_total,
+            to: entry
+                .to
+                .map(|folders| folders.into_iter().map(|folder| folder.name).collect()),
+            to_total: entry.to_total,
+            how: entry.how,
+            place: entry.place,
+            previous_session: entry.previous_session,
+        }
+    }
+}
+
 /// Times the passphrase key derivation on this device, for the record in
 /// ARGON2_BENCHMARK.md. It uses a made-up passphrase, reads no vault and
 /// changes nothing.
@@ -1502,6 +1546,27 @@ where
 #[tauri::command]
 async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+/// Reads and verifies the complete audit history before returning it. Any
+/// damaged or unreadable segment makes the read fail as a whole.
+#[tauri::command]
+async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vec<AuditHistoryEntry>> {
+    match run_blocking(store.inner(), VaultStore::history_entries).await {
+        Ok(entries) => Ok(entries.into_iter().map(Into::into).collect()),
+        Err(error) if matches!(error.code, "corrupt" | "unreadable" | "storage") => {
+            Err(PublicError {
+                code: "history_unverified",
+                message: "The history could not be read and verified. No events are shown.",
+                message_key: "interface.history.error.unverified",
+                record_id: None,
+                note: None,
+                note_key: None,
+                retry_after_ms: None,
+            })
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
@@ -3144,6 +3209,7 @@ pub fn run() {
             vault_touch,
             vault_set_auto_lock,
             vault_snapshot,
+            vault_history,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,

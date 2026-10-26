@@ -71,6 +71,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     setAutoLock: vi.fn().mockResolvedValue(undefined),
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(emptySnapshot),
+    history: vi.fn().mockResolvedValue([]),
     changePassphrase: vi.fn().mockResolvedValue(undefined),
     // Tests that set up a recovery key say so; the others get a vault without
     // one, as when making the key fails after the vault was created.

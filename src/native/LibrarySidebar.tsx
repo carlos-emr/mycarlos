@@ -14,7 +14,13 @@ interface LibrarySidebarProps {
   people: PatientProfile[];
   /** The open person, while their records are shown. */
   profileId: string;
-  section: "records" | "shared" | "hidden" | "security" | "preferences";
+  section:
+    | "records"
+    | "shared"
+    | "hidden"
+    | "history"
+    | "security"
+    | "preferences";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
   sharedNew: number;
@@ -252,10 +258,18 @@ export function LibrarySidebar({
         <span className="nav-label">{translateNow("sidebar.settings")}</span>
         <button
           className={
-            section === "security" || section === "hidden" ? "selected" : ""
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "selected"
+              : ""
           }
           aria-current={
-            section === "security" || section === "hidden" ? "page" : undefined
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "page"
+              : undefined
           }
           type="button"
           onClick={onOpenSecurity}

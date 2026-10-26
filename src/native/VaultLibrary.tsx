@@ -24,6 +24,7 @@ import {
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
 import { HiddenDocuments } from "./HiddenDocuments";
+import { AuditHistory } from "./AuditHistory";
 import { UnlockPdfDialog } from "./UnlockPdfDialog";
 import {
   RecoveryKeySetup,
@@ -61,6 +62,7 @@ type NativeSection =
   | "records"
   | "shared"
   | "hidden"
+  | "history"
   | "security"
   | "preferences";
 /** The phone's tabs. Records holds the people and Shared with me, as the
@@ -166,6 +168,7 @@ export function VaultLibrary({
   // including Shared; returning from Hidden must retain that location.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
   const [returnFocusToHidden, setReturnFocusToHidden] = useState(false);
+  const [returnFocusToHistory, setReturnFocusToHistory] = useState(false);
   // The steps for older backups after a key whose kit may have been lost or
   // seen was replaced: kept across locks, until the patient says done.
   const [oldBackupsGuide, setOldBackupsGuideState] =
@@ -282,6 +285,7 @@ export function VaultLibrary({
   const openSecurity = () => {
     // A persistent navigation button keeps focus when it opens Security.
     setReturnFocusToHidden(false);
+    setReturnFocusToHistory(false);
     if (section !== "security" && section !== "hidden") {
       setHiddenProfileId(locationProfileId ?? profileId);
     }
@@ -290,6 +294,12 @@ export function VaultLibrary({
   const backToSecurity = () => {
     // The Back button disappears, so return to the Hidden entry it came from.
     setReturnFocusToHidden(true);
+    setReturnFocusToHistory(false);
+    setSection("security");
+  };
+  const backFromHistoryToSecurity = () => {
+    setReturnFocusToHidden(false);
+    setReturnFocusToHistory(true);
     setSection("security");
   };
   const hiddenScope = people.find(
@@ -1314,7 +1324,8 @@ export function VaultLibrary({
                 aria-current={
                   section === value ||
                   (value === "records" && inShared) ||
-                  (value === "security" && section === "hidden")
+                  (value === "security" &&
+                    (section === "hidden" || section === "history"))
                     ? "page"
                     : undefined
                 }
@@ -1987,6 +1998,14 @@ export function VaultLibrary({
               />
             )}
 
+            {section === "history" && (
+              <AuditHistory
+                bridge={bridge}
+                onBack={backFromHistoryToSecurity}
+                onLock={onLock}
+              />
+            )}
+
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "security" && (
@@ -2001,8 +2020,13 @@ export function VaultLibrary({
                 onCreateProfile={createProfile}
                 hiddenCount={hiddenRecords.length}
                 focusHiddenEntry={returnFocusToHidden}
+                focusAuditEntry={returnFocusToHistory}
                 hiddenScopeName={hiddenScopeName}
                 onOpenHidden={() => setSection("hidden")}
+                onOpenAuditHistory={() => {
+                  setReturnFocusToHistory(false);
+                  setSection("history");
+                }}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}

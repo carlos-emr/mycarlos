@@ -1,6 +1,6 @@
 //! The vault's history (#71): one entry per event, hash-chained, kept inside
 //! the vault in encrypted segments that look like documents. The app only
-//! ever appends to it, and never shows it in its screens.
+//! ever appends to it; Security can show a verified, read-only view.
 //!
 //! An entry's canonical form is the UTF-8 JSON `serde_json` writes for
 //! [`HistoryEntry`]: its fields in the order declared here, absent optional

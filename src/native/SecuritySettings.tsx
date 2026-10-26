@@ -43,6 +43,8 @@ interface SecuritySettingsProps {
   focusHiddenEntry?: boolean;
   hiddenScopeName: string;
   onOpenHidden: () => void;
+  focusAuditEntry?: boolean;
+  onOpenAuditHistory: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -137,6 +139,8 @@ export function SecuritySettings({
   focusHiddenEntry = false,
   hiddenScopeName,
   onOpenHidden,
+  focusAuditEntry = false,
+  onOpenAuditHistory,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -148,9 +152,13 @@ export function SecuritySettings({
 }: SecuritySettingsProps) {
   const { t } = useI18n();
   const hiddenEntryRef = useRef<HTMLButtonElement | null>(null);
+  const auditEntryRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (focusHiddenEntry) hiddenEntryRef.current?.focus();
   }, [focusHiddenEntry]);
+  useEffect(() => {
+    if (focusAuditEntry) auditEntryRef.current?.focus();
+  }, [focusAuditEntry]);
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
     result: UiText;
@@ -282,6 +290,17 @@ export function SecuritySettings({
                 "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
               )}
             </p>
+            <button
+              ref={auditEntryRef}
+              className="button hidden-settings-entry"
+              type="button"
+              onClick={onOpenAuditHistory}
+            >
+              <Icon name="clock" />
+              <span className="hidden-entry-copy">
+                {translateNow("interface.history.title")}
+              </span>
+            </button>
             <p>
               {translateNow(
                 "interface.SecuritySettings.startingAgainOrRestoringABackupOver",

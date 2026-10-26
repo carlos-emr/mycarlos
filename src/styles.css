@@ -568,6 +568,14 @@ h1, h2, p { margin: 0; }
 .hidden-settings-entry { max-width: 100%; }
 .hidden-entry-copy { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .hidden-entry-scope { display: block; color: var(--ink-soft); font-weight: 400; }
+.audit-history-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.audit-history-entry { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; }
+.audit-history-entry h2 { margin: 0; font-size: 1rem; }
+.audit-history-date { margin: 4px 0 10px; color: var(--ink-soft); }
+.audit-history-entry dl { display: grid; gap: 5px; margin: 0; }
+.audit-history-entry dl > div { display: grid; grid-template-columns: minmax(110px, 0.3fr) 1fr; gap: 10px; }
+.audit-history-entry dt { color: var(--ink-soft); }
+.audit-history-entry dd { margin: 0; overflow-wrap: anywhere; }
 .old-backups-guide {
   margin-top: 10px;
   padding: 11px 13px;

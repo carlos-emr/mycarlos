@@ -37,6 +37,7 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     hiddenCount: 0,
     hiddenScopeName: "My records",
     onOpenHidden: vi.fn(),
+    onOpenAuditHistory: vi.fn(),
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
@@ -266,7 +267,7 @@ describe("SecuritySettings privacy notice", () => {
       /also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
     );
     expect(notice).toHaveTextContent(
-      /does not show it, and never changes or removes it/,
+      /can read it here; myCarlos never changes or removes it/,
     );
     expect(notice).toHaveTextContent(
       /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,

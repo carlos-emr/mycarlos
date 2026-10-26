@@ -186,6 +186,42 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** An audit event returned only after native code verifies the complete
+ * encrypted history chain. */
+export interface AuditHistoryEntry {
+  seq: number;
+  atMs: number;
+  app: string;
+  event:
+    | "created"
+    | "historyStarted"
+    | "unlocked"
+    | "imported"
+    | "renamed"
+    | "moved"
+    | "hidden"
+    | "restored"
+    | "copySaved"
+    | "recoveryKeySet"
+    | "backupSaved"
+    | "backupRestored"
+    | "passphraseChanged"
+    | "profileCreated"
+    | "folderCreated"
+    | "folderRenamed"
+    | "folderMoved"
+    | "setAside";
+  name: string | null;
+  oldName: string | null;
+  from: string[] | null;
+  fromTotal: number | null;
+  to: string[] | null;
+  toTotal: number | null;
+  how: string | null;
+  place: string | null;
+  previousSession: string | null;
+}
+
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
 export interface PassphraseRules {
   longEnough: boolean;
@@ -214,6 +250,8 @@ export interface VaultBridge {
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
+  /** Reads the whole audit history only if its encrypted chain verifies. */
+  history(): Promise<AuditHistoryEntry[]>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -558,6 +596,7 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
+    history: () => invoke<AuditHistoryEntry[]>("vault_history"),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },

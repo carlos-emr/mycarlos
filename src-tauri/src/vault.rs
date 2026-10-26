@@ -1209,6 +1209,40 @@ impl VaultStore {
         ))
     }
 
+    /// Reads the whole encrypted audit history and verifies it against the
+    /// manifest before returning any entries. A caller never receives a
+    /// partial chain.
+    pub fn history_entries(&self) -> Result<Vec<HistoryEntry>, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let manifest = &unlocked.manifest;
+        if manifest.history.is_empty() {
+            return if manifest.format_version < MANIFEST_FORMAT_HISTORY {
+                Ok(Vec::new())
+            } else {
+                Err(VaultError::Corrupt)
+            };
+        }
+        let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
+        let mut entries = Vec::new();
+        for segment in &manifest.history.segments {
+            entries.extend(read_history_segment(
+                &self.root,
+                &keys,
+                manifest.vault_id,
+                segment,
+            )?);
+        }
+        history::verify(
+            manifest.vault_id,
+            &entries,
+            manifest.history.count,
+            &manifest.history.head,
+        )
+        .map_err(|_| VaultError::Corrupt)?;
+        Ok(entries)
+    }
+
     fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
         VaultSnapshot {
             profiles: unlocked.manifest.profiles.clone(),
@@ -6924,7 +6958,7 @@ pub(crate) fn record_object_path_for_test(store: &VaultStore, record_id: Uuid) -
     store.root.join("objects").join(&record.object_name)
 }
 
-// Shared by native command and vault tests; no production history-read command.
+// Shared by native command and vault tests.
 #[cfg(test)]
 pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
     let guard = store.session();
