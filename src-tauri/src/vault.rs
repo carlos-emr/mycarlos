@@ -606,6 +606,10 @@ pub struct VaultRecord {
     pub original_pdf_available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_clinic_name: Option<String>,
+    /// Exact service date from a clinic delivery; an empty string means the
+    /// clinic did not record one. This is independent of the date added here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clinic_service_date: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1361,6 +1365,10 @@ impl VaultStore {
                         record,
                         &unlocked.manifest.portal_links,
                     ),
+                    clinic_service_date: record
+                        .delivery
+                        .as_ref()
+                        .map(|delivery| delivery.manifest.document.service_date.clone()),
                     original_pdf_available: record.original_pdf.as_ref().map(|original| {
                         object_presence_name(root, &original.object_name) == ObjectPresence::Present
                     }),

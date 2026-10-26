@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { ClinicServiceDate } from "./ClinicServiceDate";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import {
@@ -199,6 +200,11 @@ export function DocumentReader({
                   })
                 : record.sourceLabel}
             </p>
+            {record.clinicServiceDate !== undefined && (
+              <p>
+                <ClinicServiceDate value={record.clinicServiceDate} />
+              </p>
+            )}
           </div>
           <button
             ref={closeRef}

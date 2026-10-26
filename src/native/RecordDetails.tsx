@@ -185,6 +185,16 @@ export function RecordDetails({
             <dt>Date added</dt>
             <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
           </div>
+          {record.clinicServiceDate !== undefined && (
+            <div>
+              <dt>{t("portal.serviceDateLabel")}</dt>
+              <dd>
+                {record.clinicServiceDate === ""
+                  ? t("portal.dateNotRecorded")
+                  : record.clinicServiceDate}
+              </dd>
+            </div>
+          )}
           <div>
             <dt>File</dt>
             <dd>{formatBytes(record.plaintextSize)}</dd>

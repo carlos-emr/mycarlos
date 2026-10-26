@@ -5,6 +5,9 @@ import type { Message } from "../types";
  * must use the same {placeholders} as the English text. Text goes into the page
  * as plain text, never as HTML. */
 export const en = {
+  "portal.serviceDateLabel": "Service date",
+  "portal.serviceDate": "Service date: {date}",
+  "portal.dateNotRecorded": "Date not recorded",
   "portal.restartApproval": "Start a new approval request",
   "portal.approvalExpired":
     "This approval request expired. Check for updates before starting a new request.",

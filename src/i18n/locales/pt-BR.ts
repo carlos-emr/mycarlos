@@ -4,6 +4,9 @@ import type { MessageKey } from "./en";
 /** Brazilian Portuguese, polite register: the "você" imperative ("use",
  * "escolha") without titles. */
 export const ptBR: Record<MessageKey, Message> = {
+  "portal.serviceDateLabel": "Data do atendimento",
+  "portal.serviceDate": "Data do atendimento: {date}",
+  "portal.dateNotRecorded": "Data não registrada",
   "portal.restartApproval": "Iniciar outra solicitação de aprovação",
   "portal.approvalExpired":
     "Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.",

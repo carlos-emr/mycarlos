@@ -3,6 +3,9 @@ import type { MessageKey } from "./en";
 
 /** Spanish, formal register ("usted"). */
 export const es: Record<MessageKey, Message> = {
+  "portal.serviceDateLabel": "Fecha del servicio",
+  "portal.serviceDate": "Fecha del servicio: {date}",
+  "portal.dateNotRecorded": "Fecha no registrada",
   "portal.restartApproval": "Iniciar otra solicitud de aprobación",
   "portal.approvalExpired":
     "Esta solicitud de aprobación caducó. Busque actualizaciones antes de iniciar otra solicitud.",

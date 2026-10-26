@@ -27,6 +27,7 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
         || c.manifest.device_key_id != c.outer.device_key_id
         || c.manifest.document.sha256 != original.sha256
         || c.manifest.document.size != original.plaintext_size
+        || !wire::service_date(&c.manifest.document.service_date)
         || c.pdf_document_id.is_empty()
         || c.pdf_document_id.len() > 128
         || c.pdf_version == 0
@@ -287,11 +288,10 @@ impl VaultStore {
                 .kind
                 .as_ref()
                 .is_some_and(|v| v != &opened.manifest.document.kind)
-            || pdf
-                .document
-                .service_date
-                .as_ref()
-                .is_some_and(|v| v != &opened.manifest.document.service_date)
+            || !wire::service_dates_match(
+                pdf.document.service_date.as_deref(),
+                &opened.manifest.document.service_date,
+            )
             || pdf.document.media_type != opened.manifest.document.media_type
             || pdf
                 .clinic_name
@@ -504,6 +504,209 @@ impl VaultStore {
         }
         let _ = remove_owned_dir_all(&stage, Removable::ImportStaging);
         result
+    }
+}
+
+#[cfg(all(test, feature = "portal-linking"))]
+mod unknown_service_date_tests {
+    use super::*;
+    use serde_json::{json, Value};
+    const PASSWORD: &str = "meadow-planet-copper-window-743";
+
+    fn packet(canonical: bool) -> Value {
+        serde_json::from_str(if canonical {
+            include_str!("../../tests/fixtures/java-unknown-date-canonical-v1.json")
+        } else {
+            include_str!("../../tests/fixtures/java-unknown-date-legacy-v1.json")
+        })
+        .unwrap()
+    }
+    fn link(packet: &Value) -> StoredLink {
+        let mut shared: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/delivery-contract.json"))
+                .unwrap();
+        shared["receiver"] = packet["receiver"].clone();
+        wire::tests::fixture_link(&shared)
+    }
+    fn store(root: PathBuf, link: &StoredLink) -> VaultStore {
+        let store = VaultStore::new(root);
+        store
+            .create(PASSWORD, "FAKE Unknown Date Patient", 1)
+            .unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        store
+    }
+
+    #[test]
+    fn unknown_service_date_survives_real_signed_custody_and_reopen_without_date_inference() {
+        for canonical in [true, false] {
+            let packet = packet(canonical);
+            let link = link(&packet);
+            let outer: wire::Outer = serde_json::from_value(packet["outer"].clone()).unwrap();
+            let sealed = wire::decode(packet["blob"].as_str().unwrap()).unwrap();
+            let opened =
+                wire::open(&outer, &sealed, &link, &[], packet["now"].as_u64().unwrap()).unwrap();
+            assert!(opened.manifest.document.service_date.is_empty());
+            let original = BASE64
+                .decode(packet["pdf_base64"].as_str().unwrap())
+                .unwrap();
+            assert_eq!(original.as_slice(), opened.pdf.as_slice());
+            let manifest = BASE64
+                .decode(packet["embedded_manifest_base64"].as_str().unwrap())
+                .unwrap();
+            let layout = crate::signed_pdf::SignatureLayout {
+                byte_ranges: vec![serde_json::from_value(packet["byte_ranges"].clone()).unwrap()],
+                update_after_signature: false,
+                encrypted: false,
+            };
+            let clinic = link.clinic.as_ref().unwrap();
+            let pins = crate::signed_pdf::PinnedLink {
+                clinic_id: clinic.clinic_id.clone(),
+                recipient_id: clinic.recipient_id.clone(),
+                signer_kids: clinic
+                    .clinic_keys
+                    .iter()
+                    .filter(|k| k.status == KeyStatus::Active)
+                    .map(|k| k.kid.clone())
+                    .collect(),
+            };
+            let crate::signed_pdf::Verdict::Verified {
+                manifest: checked, ..
+            } = crate::signed_pdf::check(&original, &layout, Some(&manifest), &[pins]).unwrap()
+            else {
+                panic!("actual Java CMS and embedded manifest must verify");
+            };
+            assert_eq!(
+                checked.document.service_date.as_deref(),
+                if canonical { None } else { Some("") }
+            );
+            assert!(wire::service_dates_match(
+                checked.document.service_date.as_deref(),
+                &opened.manifest.document.service_date
+            ));
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
+            let store = store(root.clone(), &link);
+            // Date added is deliberately different from the fixture's dates.
+            let added_at = 1_701_234_567_890;
+            let (id, added) = store
+                .commit_delivery(
+                    &outer,
+                    opened,
+                    &link,
+                    &checked,
+                    added_at,
+                    store.portal_link_ticket(),
+                )
+                .unwrap();
+            assert!(added);
+            let receipt = store
+                .pending_receipts(&link, store.portal_link_ticket())
+                .unwrap()[0]
+                .receipt
+                .clone();
+            store.lock();
+            drop(store);
+            let reopened = VaultStore::new(root);
+            reopened.unlock(PASSWORD).unwrap();
+            let snapshot = reopened.snapshot().unwrap();
+            assert_eq!(snapshot.records[0].clinic_service_date.as_deref(), Some(""));
+            assert_eq!(snapshot.records[0].imported_at_ms, added_at);
+            let mut saved = Vec::new();
+            reopened.export(id, &mut saved).unwrap();
+            assert_eq!(saved, original);
+            assert_eq!(
+                reopened
+                    .pending_receipts(&link, reopened.portal_link_ticket())
+                    .unwrap()[0]
+                    .receipt,
+                receipt
+            );
+            let guard = reopened.session();
+            let open = guard.as_ref().unwrap();
+            assert!(open.manifest.records[0]
+                .delivery
+                .as_ref()
+                .unwrap()
+                .manifest
+                .document
+                .service_date
+                .is_empty());
+            assert!(valid_custody(
+                &open.manifest.records[0],
+                &open.manifest.portal_links
+            ));
+            drop(guard);
+            assert_eq!(
+                crate::vault::history_events_for_test(&reopened)
+                    .iter()
+                    .filter(|e| e.event == HistoryEvent::DeliveryFiled)
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires the actual confined helper; explicit synthetic date binding evidence"]
+    fn signed_pdf_unknown_and_known_date_conflicts_refuse_before_custody() {
+        assert!(std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE").is_some());
+        let known: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/java-delivery-interop-v1.json"
+        ))
+        .unwrap();
+        for (packet, date) in [
+            (packet(true), "2024-02-29"),
+            (packet(false), "2024-02-29"),
+            (known.clone(), ""),
+            (known, "2000-02-29"),
+        ] {
+            let now = crate::now_ms() / 1000;
+            let (mut outer, sealed, link, _) = wire::tests::mutated_packet(&packet, |m| {
+                m["document"]["service_date"] = json!(date);
+                m["created_at"] = json!(now);
+                m["expires_at"] = json!(now + 3600);
+            });
+            outer.created_at = now;
+            outer.expires_at = now + 3600;
+            let opened = wire::open(&outer, &sealed, &link, &[], now).unwrap();
+            let clinic = link.clinic.as_ref().unwrap();
+            let pins = crate::signed_pdf::PinnedLink {
+                clinic_id: clinic.clinic_id.clone(),
+                recipient_id: clinic.recipient_id.clone(),
+                signer_kids: clinic
+                    .clinic_keys
+                    .iter()
+                    .filter(|k| k.status == KeyStatus::Active)
+                    .map(|k| k.kid.clone())
+                    .collect(),
+            };
+            assert!(matches!(
+                crate::signed_pdf_helper::verify(&opened.pdf, "", &[pins], &|| false),
+                Ok(crate::signed_pdf::Verdict::Verified { .. })
+            ));
+            let temp = tempfile::tempdir().unwrap();
+            let store = store(temp.path().join("vault"), &link);
+            let history_before = crate::vault::history_events_for_test(&store).len();
+            assert!(matches!(
+                store.receive_delivery(&outer, &sealed, &link, store.portal_link_ticket()),
+                Err(VaultError::PickupRefused)
+            ));
+            assert!(store.snapshot().unwrap().records.is_empty());
+            assert!(store
+                .pending_receipts(&link, store.portal_link_ticket())
+                .unwrap()
+                .is_empty());
+            assert_eq!(
+                crate::vault::history_events_for_test(&store).len(),
+                history_before
+            );
+        }
     }
 }
 

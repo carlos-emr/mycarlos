@@ -5,6 +5,9 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  "portal.serviceDateLabel": "Data świadczenia",
+  "portal.serviceDate": "Data świadczenia: {date}",
+  "portal.dateNotRecorded": "Data nie została zapisana",
   "portal.restartApproval": "Rozpocznij nową prośbę o zatwierdzenie",
   "portal.approvalExpired":
     "Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",

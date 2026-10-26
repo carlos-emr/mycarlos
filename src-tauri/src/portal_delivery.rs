@@ -233,7 +233,7 @@ pub fn open(
         || !label(&manifest.provider_name, 240)
         || !label(&manifest.patient.name, 240)
         || !date(&manifest.patient.birth_date)
-        || !date(&manifest.document.service_date)
+        || !service_date(&manifest.document.service_date)
         || !label(&manifest.document.title, 240)
         || !label(&manifest.document.kind, 64)
         || manifest.document.media_type != "application/pdf"
@@ -338,7 +338,21 @@ pub fn uuid4(s: &str) -> bool {
 fn label(s: &str, max: usize) -> bool {
     !s.is_empty() && s.chars().count() <= max && !s.chars().any(char::is_control)
 }
+pub(crate) fn service_date(s: &str) -> bool {
+    s.is_empty() || date(s)
+}
+
+/// Unknown v1 dates bind only to unknown dates in the signed PDF. A missing
+/// PDF date never authorizes a known delivery date or a guessed timestamp.
 #[cfg(feature = "portal-linking")]
+pub(crate) fn service_dates_match(pdf: Option<&str>, delivery: &str) -> bool {
+    service_date(delivery)
+        && match pdf {
+            None | Some("") => delivery.is_empty(),
+            Some(pdf) => !delivery.is_empty() && date(pdf) && pdf == delivery,
+        }
+}
+
 fn date(s: &str) -> bool {
     let b = s.as_bytes();
     if b.len() != 10
@@ -382,6 +396,163 @@ pub(crate) mod tests {
     use serde_json::{json, Value};
     fn fixture() -> Value {
         serde_json::from_str(include_str!("../tests/fixtures/delivery-contract.json")).unwrap()
+    }
+
+    // Resign and reseal a derived test packet with the existing public FAKE
+    // fixture keys. Frozen fixture bytes and production trust are unchanged.
+    fn packet_with_claims(change: impl FnOnce(&mut Value)) -> (Outer, Vec<u8>, StoredLink, u64) {
+        mutated_packet(&fixture()["packages"]["accept"][0], change)
+    }
+
+    pub(crate) fn mutated_packet(
+        packet: &Value,
+        change: impl FnOnce(&mut Value),
+    ) -> (Outer, Vec<u8>, StoredLink, u64) {
+        use hpke::{
+            aead::ChaCha20Poly1305, kdf::HkdfSha256, kem::X25519HkdfSha256, Deserializable, Kem,
+            OpModeS, Serializable,
+        };
+        use p256::ecdsa::{signature::Signer, SigningKey};
+        struct Rng;
+        impl hpke::rand_core::RngCore for Rng {
+            fn next_u32(&mut self) -> u32 {
+                rand::RngCore::next_u32(&mut rand::rngs::OsRng)
+            }
+            fn next_u64(&mut self) -> u64 {
+                rand::RngCore::next_u64(&mut rand::rngs::OsRng)
+            }
+            fn fill_bytes(&mut self, bytes: &mut [u8]) {
+                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, bytes);
+            }
+        }
+        impl hpke::rand_core::CryptoRng for Rng {}
+        type K = X25519HkdfSha256;
+        let mut x = fixture();
+        if let Some(receiver) = packet.get("receiver") {
+            x["receiver"] = receiver.clone();
+        }
+        let link = fixture_link(&x);
+        let mut outer: Outer = serde_json::from_value(packet["outer"].clone()).unwrap();
+        let aad = frame(&[
+            outer.delivery_id.as_bytes(),
+            outer.recipient_id.as_bytes(),
+            outer.device_key_id.as_bytes(),
+        ]);
+        let old = decode(packet["blob"].as_str().unwrap()).unwrap();
+        let plain = link.keys.open_seal(&old, &aad).unwrap();
+        let mut parts = unframe(&plain).unwrap();
+        let (payload, _) =
+            split_compact(std::str::from_utf8(parts[1]).unwrap(), MAX_COMPACT).unwrap();
+        let mut claims: Value = serde_json::from_slice(&payload).unwrap();
+        change(&mut claims);
+        let payload = serde_json::to_vec(&claims).unwrap();
+        // This fixed fixture hash is below n-1, so the documented scalar
+        // derivation is SHA256(seed)+1. from_slice enforces the curve order.
+        let mut scalar: [u8; 32] = Sha256::digest(
+            x["keys"]["clinic_a"]["seed_text"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+        )
+        .into();
+        for byte in scalar.iter_mut().rev() {
+            let (value, carry) = byte.overflowing_add(1);
+            *byte = value;
+            if !carry {
+                break;
+            }
+        }
+        let signer = SigningKey::from_slice(&scalar).unwrap();
+        let signature: Signature = signer.sign(&payload);
+        let compact = format!(
+            "{}.{}",
+            B64.encode(&payload),
+            B64.encode(signature.to_bytes())
+        );
+        parts[1] = compact.as_bytes();
+        let plain = frame(&parts);
+        let public = <K as Kem>::PublicKey::from_bytes(&link.keys.public().0).unwrap();
+        let (enc, mut context) = hpke::setup_sender::<ChaCha20Poly1305, HkdfSha256, K, _>(
+            &OpModeS::Base,
+            &public,
+            b"carlos-emr/mycarlos-delivery/v1",
+            &mut Rng,
+        )
+        .unwrap();
+        let mut sealed = enc.to_bytes().to_vec();
+        sealed.extend(context.seal(&plain, &aad).unwrap());
+        outer.size = sealed.len() as u64;
+        outer.ciphertext_sha256 = sha256(&sealed);
+        (outer, sealed, link, packet["now"].as_u64().unwrap())
+    }
+
+    #[test]
+    fn explicit_unknown_service_date_is_accepted_but_invalid_known_dates_are_refused() {
+        for (value, valid) in [
+            (json!(""), true),
+            (json!("2024-02-29"), true),
+            (json!("2025-02-29"), false),
+            (json!("1900-02-29"), false),
+            (json!("0000-01-01"), false),
+            (json!("2026-04-31"), false),
+            (json!("2026-1-01"), false),
+            (json!(" "), false),
+            (json!("not recorded"), false),
+            (Value::Null, false),
+        ] {
+            let (outer, sealed, link, now) =
+                packet_with_claims(|m| m["document"]["service_date"] = value.clone());
+            let opened = open(&outer, &sealed, &link, &[], now);
+            if valid {
+                assert_eq!(
+                    opened.unwrap().manifest.document.service_date,
+                    value.as_str().unwrap()
+                );
+            } else {
+                assert!(matches!(opened, Err(Refusal::BadManifest)), "{value}");
+            }
+        }
+        for field in ["missing service date", "unknown birth date"] {
+            let (outer, sealed, link, now) = packet_with_claims(|m| {
+                if field == "missing service date" {
+                    m["document"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("service_date");
+                } else {
+                    m["patient"]["birth_date"] = json!("");
+                }
+            });
+            assert!(
+                matches!(
+                    open(&outer, &sealed, &link, &[], now),
+                    Err(Refusal::BadManifest)
+                ),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn service_dates_bind_unknown_only_to_unknown_and_known_only_to_exact_valid_date() {
+        for (pdf, delivery, expected) in [
+            (None, "", true),
+            (Some(""), "", true),
+            (Some("2024-02-29"), "2024-02-29", true),
+            (None, "2024-02-29", false),
+            (Some(""), "2024-02-29", false),
+            (Some("2024-02-29"), "", false),
+            (Some("2024-02-28"), "2024-02-29", false),
+            (Some("2025-02-29"), "2025-02-29", false),
+            (Some(" "), "", false),
+            (None, " ", false),
+        ] {
+            assert_eq!(
+                service_dates_match(pdf, delivery),
+                expected,
+                "{pdf:?} / {delivery}"
+            );
+        }
     }
     pub(crate) fn fixture_link(x: &Value) -> StoredLink {
         let seed = |name: &str| {

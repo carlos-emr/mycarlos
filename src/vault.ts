@@ -45,6 +45,8 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
+  clinicServiceDate?: string;
 }
 
 /** When, and why, a document was hidden (#71). */
