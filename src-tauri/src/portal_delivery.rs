@@ -1,7 +1,9 @@
 //! Frozen delivery-v1 package checks. Untrusted wire values never grant custody.
 //! PDF verification and durable filing are separate mandatory steps in the vault.
 
-use crate::portal_link::{frame, ClinicKey, KeyStatus, StoredLink};
+#[cfg(feature = "portal-linking")]
+use crate::portal_link::{frame, StoredLink};
+use crate::portal_link::{ClinicKey, KeyStatus};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use p256::{
     ecdsa::{signature::Verifier, Signature, VerifyingKey},
@@ -10,28 +12,39 @@ use p256::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+#[cfg(feature = "portal-linking")]
 use zeroize::Zeroizing;
 
 pub const MAX_SEALED: usize = 20 * 1024 * 1024;
+#[cfg(feature = "portal-linking")]
 const MAX_COMPACT: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Refusal {
     UnsupportedVersion,
+    #[cfg(feature = "portal-linking")]
     HashMismatch,
+    #[cfg(feature = "portal-linking")]
     WrongRecipient,
+    #[cfg(feature = "portal-linking")]
     WrongDevice,
+    #[cfg(feature = "portal-linking")]
     DecryptFailed,
     BadPackage,
     BadManifest,
+    #[cfg(feature = "portal-linking")]
     WrongClinic,
     UnknownClinicKey,
     RevokedClinicKey,
     BadSignature,
+    #[cfg(feature = "portal-linking")]
     IdMismatch,
+    #[cfg(feature = "portal-linking")]
     DocumentHashMismatch,
+    #[cfg(feature = "portal-linking")]
     Expired,
+    #[cfg(all(test, feature = "portal-linking"))]
     Replayed,
 }
 
@@ -116,6 +129,7 @@ pub struct Manifest {
     pub kid: String,
 }
 
+#[cfg(feature = "portal-linking")]
 pub struct Opened {
     pub manifest: Manifest,
     pub manifest_compact: String,
@@ -261,6 +275,7 @@ pub fn open(
     })
 }
 
+#[cfg(feature = "portal-linking")]
 fn unframe(mut bytes: &[u8]) -> Result<Vec<&[u8]>, Refusal> {
     let mut parts = Vec::new();
     while !bytes.is_empty() {
@@ -319,9 +334,11 @@ pub fn key_id(s: &str) -> bool {
 pub fn uuid4(s: &str) -> bool {
     Uuid::parse_str(s).is_ok_and(|u| u.get_version_num() == 4 && u.to_string() == s)
 }
+#[cfg(feature = "portal-linking")]
 fn label(s: &str, max: usize) -> bool {
     !s.is_empty() && s.chars().count() <= max && !s.chars().any(char::is_control)
 }
+#[cfg(feature = "portal-linking")]
 fn date(s: &str) -> bool {
     let b = s.as_bytes();
     if b.len() != 10
@@ -551,6 +568,7 @@ pub struct Receipt {
     pub vault_head_link: String,
 }
 impl Receipt {
+    #[cfg(feature = "portal-linking")]
     pub fn new(outer: &Outer, manifest: &Manifest, anchor: String, now: u64) -> Self {
         Self {
             aud: "carlos-delivery-receipt".into(),

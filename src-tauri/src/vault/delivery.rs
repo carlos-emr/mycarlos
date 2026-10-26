@@ -1,6 +1,8 @@
 //! Native custody transaction. No network call is permitted while a vault lock is held.
 use super::*;
-use crate::portal_delivery::{self as wire, Custody, Receipt, ReceiptOutcome};
+use crate::portal_delivery::{self as wire, Receipt};
+#[cfg(feature = "portal-linking")]
+use crate::portal_delivery::{Custody, ReceiptOutcome};
 use crate::portal_link::KeyStatus;
 
 pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
@@ -305,15 +307,7 @@ impl VaultStore {
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
-        self.commit_delivery(
-            outer,
-            opened,
-            link,
-            &pdf.document_id,
-            pdf.version,
-            crate::now_ms(),
-            session,
-        )
+        self.commit_delivery(outer, opened, link, &pdf, crate::now_ms(), session)
     }
 
     fn commit_delivery(
@@ -321,8 +315,7 @@ impl VaultStore {
         outer: &wire::Outer,
         opened: wire::Opened,
         link: &StoredLink,
-        pdf_id: &str,
-        pdf_version: u32,
+        pdf: &crate::signed_pdf::Manifest,
         now: u64,
         session: u64,
     ) -> Result<(Uuid, bool), VaultError> {
@@ -450,8 +443,8 @@ impl VaultStore {
                 outer: outer.clone(),
                 manifest: opened.manifest,
                 manifest_compact: opened.manifest_compact,
-                pdf_document_id: pdf_id.into(),
-                pdf_version,
+                pdf_document_id: pdf.document_id.clone(),
+                pdf_version: pdf.version,
                 checked_at_ms: now,
                 anchor_head: prepared.state.head.clone(),
                 receipt,
@@ -1379,8 +1372,7 @@ mod approval_recovery_tests {
                 &outer,
                 opened,
                 &link,
-                &checked.document_id,
-                checked.version,
+                &checked,
                 crate::now_ms(),
                 store.portal_link_ticket(),
             )

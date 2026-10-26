@@ -237,15 +237,19 @@ fn cancelled_io_error() -> io::Error {
 pub enum VaultError {
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
+    #[cfg(feature = "portal-linking")]
     #[error("a document from the clinic could not be verified; no receipt was sent")]
     PickupRefused,
+    #[cfg(feature = "portal-linking")]
     #[error("the clinic approval request is no longer pending")]
     ApprovalTerminal(
         crate::portal_approval::ApprovalState,
         Option<crate::portal_approval::ApprovalReason>,
     ),
+    #[cfg(feature = "portal-linking")]
     #[error("the saved approval request was not found on the portal")]
     ApprovalRequestMissing,
+    #[cfg(feature = "portal-linking")]
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
     #[error("another passphrase operation or speed test is running")]
@@ -812,6 +816,7 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: AtomicU64,
+    #[cfg(feature = "portal-linking")]
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
@@ -832,6 +837,7 @@ impl VaultStore {
             unlocked: Mutex::new(None),
             kdf_running: AtomicBool::new(false),
             portal_session: AtomicU64::new(0),
+            #[cfg(feature = "portal-linking")]
             portal_check_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),

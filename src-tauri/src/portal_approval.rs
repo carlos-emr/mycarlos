@@ -17,6 +17,7 @@ impl ApprovalState {
     pub fn terminal_failure(self) -> bool {
         matches!(self, Self::Refused | Self::Expired | Self::Cancelled)
     }
+    #[cfg(feature = "portal-linking")]
     pub fn code(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -43,6 +44,7 @@ pub enum ApprovalReason {
     NoAcceptedApprover,
 }
 impl ApprovalReason {
+    #[cfg(feature = "portal-linking")]
     pub fn needs_clinic(self) -> bool {
         matches!(self, Self::StaffRequired | Self::NoAcceptedApprover)
     }
@@ -195,6 +197,7 @@ mod native {
     }
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
+    #[cfg(feature = "portal-linking")]
     struct Status {
         #[serde(deserialize_with = "uuid4")]
         request_id: Uuid,
@@ -206,11 +209,13 @@ mod native {
         #[serde(deserialize_with = "nullable_reason")]
         reason: Option<ApprovalReason>,
     }
+    #[cfg(feature = "portal-linking")]
     fn nullable_reason<'de, D: serde::Deserializer<'de>>(
         d: D,
     ) -> Result<Option<ApprovalReason>, D::Error> {
         Option::deserialize(d)
     }
+    #[cfg(feature = "portal-linking")]
     pub(crate) fn parse_status(
         link: &StoredLink,
         attempt: &Attempt,

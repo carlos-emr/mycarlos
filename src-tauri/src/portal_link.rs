@@ -76,6 +76,7 @@ impl PrivateKeys {
         B64.encode(digest.finalize())
     }
 
+    #[cfg(feature = "portal-linking")]
     pub(crate) fn sign(&self, payload: &[u8]) -> String {
         let signature = SigningKey::from_bytes(&self.ed25519).sign(payload);
         format!(

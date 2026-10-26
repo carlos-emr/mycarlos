@@ -201,14 +201,18 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            #[cfg(feature="portal-linking")]
             VaultError::ApprovalTerminal(state,reason) => match state {
                 portal_approval::ApprovalState::Expired => Self {code:"approval_expired",message:"This clinic approval request expired. Check for updates before starting a new request."},
                 portal_approval::ApprovalState::Cancelled => Self {code:"approval_cancelled",message:"This clinic approval request was cancelled. Check for updates before starting a new request."},
                 _ if reason.is_some_and(|r|r.needs_clinic()) => Self {code:"approval_contact_clinic",message:"The clinic cannot approve this request here. Contact your clinic for next steps."},
                 _ => Self {code:"approval_refused",message:"The clinic refused this device approval request. Contact your clinic before trying again."},
             },
+            #[cfg(feature="portal-linking")]
             VaultError::ApprovalRequestMissing => Self {code:"approval_missing",message:"Your saved approval request was not found on the portal. Send the saved request again."},
+            #[cfg(feature="portal-linking")]
             VaultError::ApprovalNeedsClinic => Self {code:"approval_contact_clinic",message:"Clinic approval needs to be checked before another request. Contact your clinic for next steps."},
+            #[cfg(feature="portal-linking")]
             VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;

@@ -91,7 +91,18 @@ pub fn link(
 }
 
 #[cfg(not(feature = "portal-linking"))]
-pub fn link(_: LinkRequest, _: &str, _: impl Fn() -> bool) -> Result<LinkedClinic, LinkError> {
+pub fn link(
+    request: LinkRequest,
+    _: &str,
+    _: impl Fn() -> bool,
+) -> Result<LinkedClinic, LinkError> {
+    // Disabled builds discard prepared material locally; no transport exists.
+    let LinkRequest {
+        endpoint,
+        body,
+        assertion,
+    } = request;
+    drop((endpoint, body, assertion));
     Err(LinkError::Disabled)
 }
 
