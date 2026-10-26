@@ -1893,7 +1893,7 @@ impl VaultStore {
                     // atomicwrites uses MoveFileExW(MOVEFILE_WRITE_THROUGH)
                     // on Windows and syncs both directories on Unix. The
                     // receipt path must never outrun publication of an object.
-                    atomicwrites::move_atomic(
+                    publish_object(
                         &stage.join(object.object_name),
                         &objects.join(object.object_name),
                     )?;
@@ -5315,7 +5315,7 @@ fn write_history_segment(
         let _ = remove_owned_file(&path, Removable::UncommittedObject);
         return Err(error);
     }
-    if let Err(error) = atomicwrites::move_atomic(&path, &root.join("objects").join(&object_name)) {
+    if let Err(error) = publish_object(&path, &root.join("objects").join(&object_name)) {
         let _ = remove_owned_file(&path, Removable::UncommittedObject);
         return Err(error.into());
     }
@@ -6640,6 +6640,23 @@ fn open_private_new(path: &Path) -> Result<File, VaultError> {
     options.open(path).map_err(Into::into)
 }
 
+/// Keep std's extended Windows path handling when calling atomicwrites' raw
+/// MoveFileExW. Both parents already exist; canonicalizing each supplies the
+/// verbatim absolute prefix without requiring the destination file to exist.
+fn publish_object(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        let absolute = |path: &Path| -> io::Result<PathBuf> {
+            let parent = path.parent().ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            let name = path.file_name().ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            Ok(fs::canonicalize(parent)?.join(name))
+        };
+        atomicwrites::move_atomic(&absolute(source)?, &absolute(destination)?)
+    }
+    #[cfg(not(windows))]
+    atomicwrites::move_atomic(source, destination)
+}
+
 /// Makes renames into `directory` durable, reporting failure. Windows cannot
 /// open a directory this way; there the renames rely on the filesystem journal.
 ///
@@ -7695,6 +7712,28 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn should_import_original_and_history_when_windows_staging_exceeds_max_path() {
+        let temp = tempfile::tempdir().unwrap();
+        // The destination manifest fits MAX_PATH; the staging UUID + two
+        // object UUIDs takes object publication past it. No verbatim prefix
+        // is supplied by the caller, as with an ordinary selected vault.
+        let root = temp.path().join("long-root-".repeat(16)).join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let bytes = b"%PDF-1.7\nFAKE Windows long path\n%%EOF";
+        let id = store.import(profile, vec![], vec![source("FAKE.pdf", bytes)], 2).unwrap().imported[0];
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let mut original = Vec::new();
+        store.export(id, &mut original).unwrap();
+        assert_eq!(original, bytes);
+        assert_eq!(history_events(&store).iter().filter(|e| e.event == HistoryEvent::Imported).count(), 1);
+        store.verify_for_backup().unwrap();
+    }
+
+    #[test]
     fn should_retain_both_pdf_objects_and_history_when_restarted_after_publication() {
         let temp = tempfile::tempdir().unwrap();
         let template = temp.path().join("template");
@@ -7718,7 +7757,10 @@ mod tests {
             assert_eq!(snapshot.records.len(), usize::from(committed), "{boundary}");
             assert_eq!(document_files(&root), 2 * usize::from(committed), "{boundary}");
             assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
+            let imports:Vec<_> = history_events(&restarted).into_iter().filter(|entry| entry.event == HistoryEvent::Imported).collect();
+            assert_eq!(imports.len(), usize::from(committed), "{boundary}");
             if committed {
+                assert_eq!(imports[0].record_id, Some(snapshot.records[0].id));
                 let mut original = Vec::new();
                 restarted.export(snapshot.records[0].id, &mut original).unwrap();
                 assert_eq!(original, b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF");
