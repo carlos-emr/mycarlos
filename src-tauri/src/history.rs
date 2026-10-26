@@ -75,6 +75,8 @@ pub enum HistoryEvent {
     PortalLinked,
     DeviceApprovalRequested,
     DeviceApprovalVerified,
+    DeviceApprovalStatusChanged,
+    DeviceApprovalRequestRestarted,
     DeliveryFiled,
     DeliveryReceiptSettled,
 }

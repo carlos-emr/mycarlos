@@ -730,74 +730,93 @@ mod tests {
 }
 
 #[cfg(feature = "portal-linking")]
+pub(crate) trait ApprovalExchange {
+    fn get(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<crate::portal_approval::Attempt>, VaultError>;
+    fn post(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<crate::portal_approval::Attempt, VaultError>;
+}
+#[cfg(feature = "portal-linking")]
+struct ApprovalHttp;
+#[cfg(feature = "portal-linking")]
+impl ApprovalExchange for ApprovalHttp {
+    fn get(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<crate::portal_approval::Attempt>, VaultError> {
+        crate::portal_approval::refresh(link, attempt, cancelled)
+    }
+    fn post(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<crate::portal_approval::Attempt, VaultError> {
+        crate::portal_approval::publish(link, attempt, anchor, cancelled)
+    }
+}
+#[cfg(feature = "portal-linking")]
 impl VaultStore {
     pub(crate) fn request_staff_approval(
         &self,
         link_id: Uuid,
         session: u64,
     ) -> Result<(), VaultError> {
-        let link = self
-            .delivery_links(session)?
-            .into_iter()
-            .find(|l| l.id == link_id)
-            .ok_or(VaultError::NotFound)?;
-        if link
-            .approval
-            .as_ref()
-            .is_some_and(|a| a.acceptance.is_some())
-        {
+        self.request_staff_approval_using(link_id, session, false, &ApprovalHttp)
+    }
+    pub(crate) fn restart_staff_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        self.request_staff_approval_using(link_id, session, true, &ApprovalHttp)
+    }
+    fn approval_error(link: &StoredLink, missing: bool) -> Result<(), VaultError> {
+        if crate::portal_approval::currently_approved(link) {
             return Ok(());
         }
-        let now = crate::now_ms();
-        let attempt = match &link.approval {
-            Some(a) if a.expires_at > now / 1000 => a.clone(),
-            _ => crate::portal_approval::create(&link, now / 1000)?,
-        };
-        let saved = self.mutate_recorded(|m, entries| {
-            if self.portal_link_ticket() != session {
-                return Err(VaultError::Cancelled);
-            }
-            let current = m
-                .portal_links
-                .iter_mut()
-                .find(|l| l.id == link_id)
-                .ok_or(VaultError::NotFound)?;
-            if current != &link {
-                return Err(VaultError::Invalid);
-            }
-            if current.approval.as_ref() != Some(&attempt) {
-                current.approval = Some(attempt.clone());
-                let mut entry = HistoryEntry::new(HistoryEvent::DeviceApprovalRequested, now);
-                entry.portal_link_id = Some(link_id);
-                entry.how = Some("staff_first".into());
-                entries.push(entry);
-            }
-            Ok(current.clone())
-        })?;
-        // A degraded local commit retains exact intent but cannot publish a
-        // new action until the vault has repaired its redundant manifest.
-        self.delivery_links(session)?;
-        let anchor = self.delivery_anchor(&saved, session)?;
-        crate::portal_approval::publish(&saved, &attempt, &anchor, &|| {
-            self.portal_link_ticket() != session
-        })
-    }
-    pub(crate) fn refresh_staff_approval(
-        &self,
-        link: &StoredLink,
-        session: u64,
-    ) -> Result<StoredLink, VaultError> {
-        let Some(attempt) = &link.approval else {
-            return Ok(link.clone());
-        };
-        if attempt.acceptance.is_some() {
-            return Ok(link.clone());
+        if link
+            .approval
+            .iter()
+            .chain(link.approval_history.iter())
+            .any(|a| a.acceptance.is_some())
+        {
+            return Err(VaultError::ApprovalNeedsClinic);
         }
-        let next = crate::portal_approval::refresh(link, attempt, &|| {
-            self.portal_link_ticket() != session
-        })?;
-        if &next == attempt {
-            return Ok(link.clone());
+        if let Some(attempt) = &link.approval {
+            if attempt.state().terminal_failure() {
+                return Err(VaultError::ApprovalTerminal(
+                    attempt.state(),
+                    attempt.reason,
+                ));
+            }
+            if missing {
+                return Err(VaultError::ApprovalRequestMissing);
+            }
+        }
+        Ok(())
+    }
+    fn save_approval_state(
+        &self,
+        old: &StoredLink,
+        next: StoredLink,
+        session: u64,
+        restarted: bool,
+    ) -> Result<StoredLink, VaultError> {
+        if &next == old {
+            return Ok(next);
         }
         self.mutate_recorded(|m, entries| {
             if self.portal_link_ticket() != session {
@@ -806,19 +825,465 @@ impl VaultStore {
             let current = m
                 .portal_links
                 .iter_mut()
-                .find(|l| l.id == link.id)
+                .find(|l| l.id == old.id)
                 .ok_or(VaultError::NotFound)?;
-            if current != link {
+            if current != old {
                 return Err(VaultError::Invalid);
             }
-            if next.acceptance.is_some() {
-                let mut entry =
-                    HistoryEntry::new(HistoryEvent::DeviceApprovalVerified, crate::now_ms());
-                entry.portal_link_id = Some(link.id);
-                entries.push(entry);
-            }
-            current.approval = Some(next);
-            Ok(current.clone())
+            let newly_accepted =
+                next.approval
+                    .iter()
+                    .chain(next.approval_history.iter())
+                    .any(|a| {
+                        a.acceptance.is_some()
+                            && !old.approval.iter().chain(old.approval_history.iter()).any(
+                                |before| {
+                                    before.request_id == a.request_id
+                                        && before.acceptance == a.acceptance
+                                },
+                            )
+                    });
+            let event = if restarted {
+                HistoryEvent::DeviceApprovalRequestRestarted
+            } else if old.approval.is_none() {
+                HistoryEvent::DeviceApprovalRequested
+            } else if newly_accepted {
+                HistoryEvent::DeviceApprovalVerified
+            } else {
+                HistoryEvent::DeviceApprovalStatusChanged
+            };
+            let mut entry = HistoryEntry::new(event, crate::now_ms());
+            entry.portal_link_id = Some(old.id);
+            entry.how = Some(
+                next.approval
+                    .as_ref()
+                    .map(|a| a.state().code())
+                    .unwrap_or("pending")
+                    .into(),
+            );
+            entries.push(entry);
+            *current = next.clone();
+            Ok(next)
         })
+    }
+    fn reconcile_approvals(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+    ) -> Result<(StoredLink, bool), VaultError> {
+        if crate::portal_approval::currently_approved(link) {
+            return Ok((link.clone(), false));
+        }
+        let cancelled = || self.portal_link_ticket() != session;
+        let mut next = link.clone();
+        let mut missing = false;
+        if let Some(attempt) = &link.approval {
+            if attempt.acceptance.is_none() {
+                match http.get(link, attempt, &cancelled)? {
+                    Some(reply) => next.approval = Some(reply),
+                    None => missing = true,
+                }
+            }
+        }
+        // Retain and recheck original IDs even after an explicit restart. A
+        // portal's unsigned terminal status cannot erase a later returned,
+        // correctly signed acceptance for a previously issued request.
+        for (index, attempt) in link.approval_history.iter().enumerate() {
+            if attempt.acceptance.is_none() {
+                if let Some(reply) = http.get(link, attempt, &cancelled)? {
+                    next.approval_history[index] = reply;
+                }
+            }
+        }
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        let saved = self.save_approval_state(link, next, session, false)?;
+        Ok((saved, missing))
+    }
+    fn request_staff_approval_using(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        restart: bool,
+        http: &impl ApprovalExchange,
+    ) -> Result<(), VaultError> {
+        let initial = self
+            .delivery_links(session)?
+            .into_iter()
+            .find(|l| l.id == link_id)
+            .ok_or(VaultError::NotFound)?;
+        let (mut link, _missing) = self.reconcile_approvals(&initial, session, http)?;
+        if crate::portal_approval::currently_approved(&link) {
+            return Ok(());
+        }
+        if link
+            .approval
+            .iter()
+            .chain(link.approval_history.iter())
+            .any(|a| a.acceptance.is_some())
+        {
+            return Err(VaultError::ApprovalNeedsClinic);
+        }
+        let now = crate::now_ms() / 1000;
+        if restart {
+            let prior = link.approval.as_ref().ok_or(VaultError::Invalid)?;
+            if prior.state() == crate::portal_approval::ApprovalState::Refused {
+                return Err(VaultError::ApprovalTerminal(prior.state(), prior.reason));
+            }
+            if prior.expires_at > now
+                && prior.state() != crate::portal_approval::ApprovalState::Cancelled
+            {
+                return Err(VaultError::Invalid);
+            }
+            if link.approval_history.len() + 1 >= crate::portal_approval::MAX_APPROVAL_REQUESTS {
+                return Err(VaultError::ApprovalNeedsClinic);
+            }
+            let mut next = link.clone();
+            next.approval_history.push(prior.clone());
+            next.approval = Some(crate::portal_approval::create(&link, now)?);
+            link = self.save_approval_state(&link, next, session, true)?;
+        } else if link.approval.is_none() {
+            let mut next = link.clone();
+            next.approval = Some(crate::portal_approval::create(&link, now)?);
+            link = self.save_approval_state(&link, next, session, false)?;
+        } else {
+            Self::approval_error(&link, false)?;
+        }
+        // A saved request is always retried byte-for-byte, including after its
+        // local clock expiry. Only explicit restart creates another ID.
+        self.delivery_links(session)?;
+        let attempt = link.approval.as_ref().ok_or(VaultError::Invalid)?;
+        let anchor = self.delivery_anchor(&link, session)?;
+        let reply = http.post(&link, attempt, &anchor, &|| {
+            self.portal_link_ticket() != session
+        })?;
+        let mut next = link.clone();
+        next.approval = Some(reply);
+        let saved = self.save_approval_state(&link, next, session, false)?;
+        Self::approval_error(&saved, false)
+    }
+    pub(crate) fn refresh_staff_approval(
+        &self,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<StoredLink, VaultError> {
+        self.refresh_staff_approval_using(link, session, &ApprovalHttp)
+    }
+    fn refresh_staff_approval_using(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+    ) -> Result<StoredLink, VaultError> {
+        let (saved, missing) = self.reconcile_approvals(link, session, http)?;
+        Self::approval_error(&saved, missing)?;
+        Ok(saved)
+    }
+}
+
+#[cfg(all(test, feature = "portal-linking"))]
+mod approval_recovery_tests {
+    use super::*;
+    use crate::portal_approval::{self, ApprovalReason as Reason, ApprovalState as State, Attempt};
+    use std::collections::VecDeque;
+    const PASSWORD: &str = "meadow-planet-copper-window-743";
+    enum Reply {
+        Accepted,
+        Pending,
+        Terminal(State, Reason),
+        Missing,
+        Network,
+    }
+    struct Script<'a> {
+        gets: Mutex<VecDeque<Reply>>,
+        posts: Mutex<VecDeque<Reply>>,
+        calls: Mutex<Vec<(&'static str, Uuid, String)>>,
+        lock_on_get: Option<&'a VaultStore>,
+        check_saved_on_post: Option<&'a VaultStore>,
+    }
+    impl<'a> Script<'a> {
+        fn new(gets: Vec<Reply>, posts: Vec<Reply>) -> Self {
+            Self {
+                gets: Mutex::new(gets.into()),
+                posts: Mutex::new(posts.into()),
+                calls: Mutex::new(Vec::new()),
+                lock_on_get: None,
+                check_saved_on_post: None,
+            }
+        }
+        fn response(
+            reply: Reply,
+            link: &StoredLink,
+            attempt: &Attempt,
+        ) -> Result<Option<Attempt>, VaultError> {
+            let fixture: serde_json::Value = serde_json::from_str(include_str!(
+                "../../tests/fixtures/device-approval-contract-v1.json"
+            ))
+            .unwrap();
+            let body = match reply {
+                Reply::Missing => return Ok(None),
+                Reply::Network => return Err(VaultError::Portal(portal_link::LinkError::Network)),
+                Reply::Accepted => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":fixture["flows"]["first"]["challenge"]["compact"],"acceptance":fixture["flows"]["first"]["acceptance"]["compact"],"reason":null})
+                }
+                Reply::Pending => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null})
+                }
+                Reply::Terminal(state, reason) => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":state,"challenge":null,"acceptance":null,"reason":reason})
+                }
+            };
+            // Exercise the real strict HTTP response/proof parser. The script
+            // supplies only synthetic wire replies, never a trusted boolean.
+            decode(link, attempt, &serde_json::to_vec(&body).unwrap()).map(Some)
+        }
+    }
+    fn decode(link: &StoredLink, attempt: &Attempt, bytes: &[u8]) -> Result<Attempt, VaultError> {
+        portal_approval::parse_status(link, attempt, bytes)
+    }
+    impl ApprovalExchange for Script<'_> {
+        fn get(
+            &self,
+            link: &StoredLink,
+            attempt: &Attempt,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Option<Attempt>, VaultError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(("GET", attempt.request_id, attempt.intent.clone()));
+            if let Some(store) = self.lock_on_get {
+                store.lock();
+            }
+            Self::response(
+                self.gets
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("unexpected GET"),
+                link,
+                attempt,
+            )
+        }
+        fn post(
+            &self,
+            link: &StoredLink,
+            attempt: &Attempt,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Attempt, VaultError> {
+            if let Some(store) = self.check_saved_on_post {
+                let saved = store.delivery_links(store.portal_link_ticket()).unwrap();
+                assert_eq!(
+                    saved[0].approval.as_ref().unwrap().intent,
+                    attempt.intent,
+                    "intent must be durable before HTTP"
+                );
+                assert!(crate::vault::history_events_for_test(store)
+                    .iter()
+                    .any(|e| e.event == HistoryEvent::DeviceApprovalRequested));
+            }
+            self.calls
+                .lock()
+                .unwrap()
+                .push(("POST", attempt.request_id, attempt.intent.clone()));
+            Self::response(
+                self.posts
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("unexpected POST"),
+                link,
+                attempt,
+            )?
+            .ok_or(VaultError::Invalid)
+        }
+    }
+    fn setup(saved: bool) -> (tempfile::TempDir, VaultStore, StoredLink, Attempt) {
+        let (_, mut link, attempt) = portal_approval::first_fixture();
+        if saved {
+            link.approval = Some(attempt.clone());
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Approval Patient", 1).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        (temp, store, link, attempt)
+    }
+    fn restart(store: VaultStore) -> VaultStore {
+        let root = store.root.clone();
+        store.lock();
+        drop(store);
+        let store = VaultStore::new(root);
+        store.unlock(PASSWORD).unwrap();
+        store
+    }
+    fn saved(store: &VaultStore) -> StoredLink {
+        store
+            .delivery_links(store.portal_link_ticket())
+            .unwrap()
+            .remove(0)
+    }
+    #[test]
+    fn should_recover_original_acceptance_after_expiry_and_restart_before_request_or_explicit_restart(
+    ) {
+        for explicit_restart in [false, true] {
+            let (_temp, store, link, attempt) = setup(true);
+            let store = restart(store);
+            assert!(attempt.expires_at < crate::now_ms() / 1000);
+            let http = Script::new(vec![Reply::Accepted], vec![]);
+            store
+                .request_staff_approval_using(
+                    link.id,
+                    store.portal_link_ticket(),
+                    explicit_restart,
+                    &http,
+                )
+                .unwrap();
+            let current = saved(&store);
+            assert_eq!(
+                current.approval.as_ref().unwrap().request_id,
+                attempt.request_id
+            );
+            assert!(current.approval_history.is_empty());
+            assert!(current.summary().clinic_approved);
+            let calls = http.calls.lock().unwrap();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].0, "GET");
+            assert_eq!(calls[0].1, attempt.request_id);
+            let store = restart(store);
+            assert!(saved(&store).summary().clinic_approved);
+        }
+    }
+    #[test]
+    fn should_retry_identical_expired_intent_after_lost_reply_without_minting_another_request() {
+        let (_temp, store, link, attempt) = setup(true);
+        let http = Script::new(vec![Reply::Missing], vec![Reply::Network]);
+        assert!(store
+            .request_staff_approval_using(link.id, store.portal_link_ticket(), false, &http)
+            .is_err());
+        let store = restart(store);
+        let http = Script::new(vec![Reply::Missing], vec![Reply::Pending]);
+        store
+            .request_staff_approval_using(link.id, store.portal_link_ticket(), false, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(
+            current.approval.as_ref().unwrap().request_id,
+            attempt.request_id
+        );
+        assert_eq!(current.approval.as_ref().unwrap().intent, attempt.intent);
+        assert!(current.approval_history.is_empty());
+        let calls = http.calls.lock().unwrap();
+        assert_eq!(calls[1], ("POST", attempt.request_id, attempt.intent));
+    }
+    #[test]
+    fn should_persist_terminal_get_status_and_reason_and_report_a_controlled_error() {
+        for (state, reason) in [
+            (State::Refused, Reason::StaffRequired),
+            (State::Expired, Reason::ChallengeExpired),
+            (State::Cancelled, Reason::ChallengeCancelled),
+        ] {
+            let (_temp, store, link, _) = setup(true);
+            let http = Script::new(vec![Reply::Terminal(state, reason)], vec![]);
+            assert!(
+                matches!(store.refresh_staff_approval_using(&link,store.portal_link_ticket(),&http),Err(VaultError::ApprovalTerminal(s,Some(r))) if s==state && r==reason)
+            );
+            let store = restart(store);
+            let current = saved(&store);
+            assert_eq!(current.summary().approval_status, Some(state));
+            assert_eq!(current.summary().approval_reason, Some(reason));
+            assert!(!current.summary().clinic_approved);
+            assert!(crate::vault::history_events_for_test(&store)
+                .iter()
+                .any(|e| e.event == HistoryEvent::DeviceApprovalStatusChanged));
+        }
+    }
+    #[test]
+    fn should_persist_terminal_post_response_after_durable_intent_and_return_an_error() {
+        for (state, reason) in [
+            (State::Refused, Reason::NoAcceptedApprover),
+            (State::Expired, Reason::ChallengeExpired),
+            (State::Cancelled, Reason::ChallengeCancelled),
+        ] {
+            let (_temp, store, link, _) = setup(false);
+            let mut http = Script::new(vec![], vec![Reply::Terminal(state, reason)]);
+            http.check_saved_on_post = Some(&store);
+            assert!(
+                matches!(store.request_staff_approval_using(link.id,store.portal_link_ticket(),false,&http),Err(VaultError::ApprovalTerminal(s,Some(r))) if s==state && r==reason)
+            );
+            drop(http);
+            let store = restart(store);
+            let current = saved(&store);
+            assert_eq!(current.approval.as_ref().unwrap().state(), state);
+            assert_eq!(current.approval.as_ref().unwrap().reason, Some(reason));
+            assert!(!current.summary().clinic_approved);
+        }
+    }
+    #[test]
+    fn should_retain_prior_id_on_explicit_restart_and_recover_its_later_signed_acceptance() {
+        let (_temp, store, link, attempt) = setup(true);
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![Reply::Pending],
+        );
+        store
+            .request_staff_approval_using(link.id, store.portal_link_ticket(), true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_ne!(
+            current.approval.as_ref().unwrap().request_id,
+            attempt.request_id
+        );
+        assert_eq!(current.approval_history.len(), 1);
+        assert_eq!(current.approval_history[0].intent, attempt.intent);
+        let store = restart(store);
+        let current = saved(&store);
+        let http = Script::new(vec![Reply::Pending, Reply::Accepted], vec![]);
+        let current = store
+            .refresh_staff_approval_using(&current, store.portal_link_ticket(), &http)
+            .unwrap();
+        assert!(current.summary().clinic_approved);
+        assert_eq!(current.approval_history[0].request_id, attempt.request_id);
+        let store = restart(store);
+        assert!(saved(&store).summary().clinic_approved);
+    }
+    #[test]
+    fn should_preserve_original_request_when_status_reconciliation_fails() {
+        let (_temp, store, link, attempt) = setup(true);
+        let http = Script::new(vec![Reply::Network], vec![]);
+        assert!(store
+            .request_staff_approval_using(link.id, store.portal_link_ticket(), true, &http)
+            .is_err());
+        let current = saved(&store);
+        assert_eq!(current.approval.as_ref().unwrap().intent, attempt.intent);
+        assert!(current.approval_history.is_empty());
+        assert_eq!(http.calls.lock().unwrap().len(), 1);
+    }
+    #[test]
+    fn should_refuse_valid_late_status_after_lock_without_committing_approval() {
+        let (_temp, store, link, attempt) = setup(true);
+        let mut http = Script::new(vec![Reply::Accepted], vec![]);
+        http.lock_on_get = Some(&store);
+        assert!(matches!(
+            store.request_staff_approval_using(link.id, store.portal_link_ticket(), false, &http),
+            Err(VaultError::Cancelled)
+        ));
+        drop(http);
+        store.unlock(PASSWORD).unwrap();
+        let current = saved(&store);
+        assert_eq!(
+            current.approval.as_ref().unwrap().request_id,
+            attempt.request_id
+        );
+        assert!(current.approval.as_ref().unwrap().acceptance.is_none());
+        assert!(!current.summary().clinic_approved);
     }
 }

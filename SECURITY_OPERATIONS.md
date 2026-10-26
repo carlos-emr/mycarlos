@@ -197,3 +197,12 @@ clinic challenge/acceptance before reporting clinic approval. Later-device
 approval, key-catalogue refresh, lost-all-devices recovery, mobile support and
 notification scheduling require their own remaining implementation/validation.
 Do not enable rollout from Linux component or FAKE-trust interoperability tests.
+
+Approval recovery does not replace an expired saved request automatically.
+Native code first reconciles the original ID, verifies any acceptance, and keeps
+old IDs/proofs through an explicit restart. A portal's unsigned terminal status
+cannot erase the only path back to a previously committed clinic acceptance.
+Terminal reasons are a bounded enum displayed as plain guidance, never actor
+identifiers or clinical data. A refusal requiring clinic intervention does not
+fall back to another first-device approval. A signature that remains valid as
+historical evidence does not override current key revocation.

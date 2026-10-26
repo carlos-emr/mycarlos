@@ -93,6 +93,7 @@ fn main() {
             "vault_portal_link",
             "vault_check_documents",
             "vault_request_device_approval",
+            "vault_restart_device_approval",
             "vault_change_passphrase",
             "vault_recovery_key_begin",
             "vault_recovery_key_confirm",

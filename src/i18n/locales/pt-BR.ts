@@ -4,6 +4,19 @@ import type { MessageKey } from "./en";
 /** Brazilian Portuguese, polite register: the "você" imperative ("use",
  * "escolha") without titles. */
 export const ptBR: Record<MessageKey, Message> = {
+  "portal.restartApproval": "Iniciar outra solicitação de aprovação",
+  "portal.approvalExpired":
+    "Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.",
+  "portal.approvalCancelled":
+    "Esta solicitação de aprovação foi cancelada. Verifique atualizações antes de iniciar outra solicitação.",
+  "portal.approvalRefused":
+    "A clínica recusou esta solicitação de aprovação do dispositivo. Entre em contato com a clínica para saber os próximos passos.",
+  "portal.approvalContact":
+    "A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.",
+  "portal.approvalMissing":
+    "Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.",
+  "portal.confirmationsPending":
+    "Documentos salvos aguardando confirmação de retirada: {count}. Verifique novamente para concluir a confirmação. Suas cópias salvas permanecem no cofre.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos da clínica",
   "portal.intro":

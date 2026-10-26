@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useI18n } from "../i18n";
-import type { VaultBridge, VaultSnapshot } from "../vault";
+import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
 interface Props {
   bridge: VaultBridge;
@@ -59,6 +59,28 @@ export function PortalDocuments({
   )
     return null;
   const links = snapshot.portalLinks ?? [];
+  const terminal = (link: PortalLinkSummary) =>
+    ["refused", "expired", "cancelled", "accepted"].includes(
+      link.approvalStatus ?? "",
+    );
+  const approvalMessage = (link: PortalLinkSummary) => {
+    if (link.incomplete) return t("portal.incomplete");
+    if (link.clinicApproved) return t("portal.approved");
+    if (link.approvalStatus === "expired") return t("portal.approvalExpired");
+    if (link.approvalStatus === "cancelled")
+      return t("portal.approvalCancelled");
+    if (
+      link.approvalStatus === "accepted" ||
+      ["staff_required", "no_accepted_approver"].includes(
+        link.approvalReason ?? "",
+      )
+    )
+      return t("portal.approvalContact");
+    if (link.approvalStatus === "refused") return t("portal.approvalRefused");
+    return t(
+      link.approvalRequested ? "portal.awaiting" : "portal.notRequested",
+    );
+  };
   const disabled = busy || readOnly;
   const check = () =>
     void run(async () => {
@@ -67,10 +89,19 @@ export function PortalDocuments({
         await refresh();
         if (shown.current)
           setNotice(
-            t("portal.result", {
-              added: result.added,
-              refused: result.refused,
-            }),
+            [
+              t("portal.result", {
+                added: result.added,
+                refused: result.refused,
+              }),
+              ...(result.receiptsPending > 0
+                ? [
+                    t("portal.confirmationsPending", {
+                      count: result.receiptsPending,
+                    }),
+                  ]
+                : []),
+            ].join(" "),
           );
       } catch (error) {
         await refresh();
@@ -175,15 +206,7 @@ export function PortalDocuments({
         <div className="portal-link" key={link.id}>
           <h3>{link.clinicName ?? link.portalBase}</h3>
           <p className="portal-address">{link.portalBase}</p>
-          <p>
-            {link.incomplete
-              ? t("portal.incomplete")
-              : link.clinicApproved
-                ? t("portal.approved")
-                : link.approvalRequested
-                  ? t("portal.awaiting")
-                  : t("portal.notRequested")}
-          </p>
+          <p>{approvalMessage(link)}</p>
           <label>
             {t("portal.deviceCode")}
             <input
@@ -225,7 +248,9 @@ export function PortalDocuments({
               <button
                 className="button"
                 type="button"
-                disabled={disabled || !bridge.requestDeviceApproval}
+                disabled={
+                  disabled || terminal(link) || !bridge.requestDeviceApproval
+                }
                 onClick={() =>
                   void run(async () => {
                     try {
@@ -238,6 +263,24 @@ export function PortalDocuments({
               >
                 {t("portal.requestApproval")}
               </button>
+              {link.approvalCanRestart && (
+                <button
+                  className="button"
+                  type="button"
+                  disabled={disabled || !bridge.restartDeviceApproval}
+                  onClick={() =>
+                    void run(async () => {
+                      try {
+                        await bridge.restartDeviceApproval!(link.id);
+                      } finally {
+                        await refresh();
+                      }
+                    })
+                  }
+                >
+                  {t("portal.restartApproval")}
+                </button>
+              )}
             </>
           )}
         </div>

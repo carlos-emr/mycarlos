@@ -3,6 +3,19 @@ import type { MessageKey } from "./en";
 
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
+  "portal.restartApproval": "Créer une nouvelle demande d’approbation",
+  "portal.approvalExpired":
+    "Cette demande d’approbation a expiré. Vérifiez les mises à jour avant de créer une nouvelle demande.",
+  "portal.approvalCancelled":
+    "Cette demande d’approbation a été annulée. Vérifiez les mises à jour avant de créer une nouvelle demande.",
+  "portal.approvalRefused":
+    "La clinique a refusé cette demande d’approbation de l’appareil. Contactez votre clinique pour connaître les prochaines étapes.",
+  "portal.approvalContact":
+    "L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.",
+  "portal.approvalMissing":
+    "Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.",
+  "portal.confirmationsPending":
+    "Documents enregistrés en attente de confirmation de réception : {count}. Vérifiez à nouveau pour terminer la confirmation. Vos copies enregistrées restent dans le coffre.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documents de la clinique",
   "portal.intro":

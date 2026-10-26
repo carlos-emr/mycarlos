@@ -875,3 +875,31 @@ Full device code/fingerprint in the snapshot are public identifiers only.
 Linux shared-vector, real-helper interoperability and subprocess-crash tests
 are partial evidence. Supported Windows filesystem behavior, real portal HTTP,
 actual linking/staff approval and full native UI flow remain enablement gates.
+
+#### Format 7: recoverable approval requests and terminal status
+
+Format 7 retains original request IDs across explicit restarts. Each link keeps
+its current `approval` and bounded `approvalHistory` (at most 16 requests in all).
+No request/proof is dropped to make room: a full history stops new requests and
+asks the patient to contact the clinic. Each attempt can also keep its typed
+advisory `status` and controlled `reason`; old format-6 attempts with neither
+field remain readable. Current approval still requires a verified acceptance,
+never an unsigned status. Header/object formats and M3 wire bytes are unchanged.
+
+Request sends and restart actions first reconcile all retained unaccepted IDs.
+An accepted response is verified and saved before any restart decision. Ordinary
+retry keeps the original intent/request ID even after local expiry. A separate,
+explicit restart may create a new intent only after reconciliation, retaining
+the complete old attempt. A later valid acceptance for a retained ID still
+establishes this same device's approval; current key trust remains mandatory.
+A failed/unknown reconciliation never starts a replacement automatically.
+
+Typed refused/expired/cancelled states and their controlled reasons are committed
+with history before a visible error is returned. Both POST replies and GET
+updates take this path. Unknown reasons, malformed replies and invalid proofs
+are refused. Check for new documents cannot silently turn a terminal refusal
+into a successful pending check. The UI distinguishes exact retry from explicit
+restart and preserves terminal guidance after reopening the vault. Upgrade
+coverage includes formats 1–6. Production-boundary tests exercise the real
+vault/proof parser with scripted synthetic HTTP replies; those tests do not
+claim live network or Windows end-to-end completion.

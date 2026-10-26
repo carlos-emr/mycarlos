@@ -43,6 +43,7 @@ function fixture(
       .fn()
       .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
     requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   const refresh = vi.fn().mockResolvedValue(snapshot);
   const failures: unknown[] = [];
@@ -188,6 +189,91 @@ describe("native clinic document controls", () => {
     expect(
       screen.getByRole("button", { name: "Request clinic approval" }),
     ).toBeDisabled();
+  });
+  it("shows terminal states without implying approval is pending and makes restart a separate action", async () => {
+    const { bridge, props, rerender } = fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [
+          {
+            ...link,
+            approvalStatus: "expired",
+            approvalReason: "challenge_expired",
+            approvalCanRestart: true,
+          },
+        ],
+      },
+    });
+    expect(
+      screen.getByText(
+        "This approval request expired. Check for updates before starting a new request.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Request clinic approval" }),
+    ).toBeDisabled();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Start a new approval request" }),
+      );
+    await waitFor(() =>
+      expect(bridge.restartDeviceApproval).toHaveBeenCalledWith(link.id),
+    );
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    rerender(
+      <PortalDocuments
+        {...props}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [
+            {
+              ...link,
+              approvalStatus: "refused",
+              approvalReason: "staff_required",
+              approvalCanRestart: false,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Clinic approval needs to be checked. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Start a new approval request" }),
+    ).not.toBeInTheDocument();
+  });
+  it("shows pending pickup confirmation while preserving the number of documents saved", async () => {
+    const { bridge, props } = fixture();
+    vi.mocked(bridge.checkDocuments!).mockResolvedValue({
+      added: 1,
+      refused: 0,
+      receiptsPending: 1,
+    });
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Check for new documents" }));
+    await waitFor(() =>
+      expect(props.setNotice).toHaveBeenCalledWith(
+        expect.stringContaining("New documents saved: 1."),
+      ),
+    );
+    expect(props.setNotice).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.",
+      ),
+    );
+    expect(props.setNotice).not.toHaveBeenCalledWith(
+      expect.stringContaining("Picked up"),
+    );
   });
   it("renders the linking and fingerprint labels in every supported language", () => {
     fixture();

@@ -5,6 +5,19 @@ import type { Message } from "../types";
  * must use the same {placeholders} as the English text. Text goes into the page
  * as plain text, never as HTML. */
 export const en = {
+  "portal.restartApproval": "Start a new approval request",
+  "portal.approvalExpired":
+    "This approval request expired. Check for updates before starting a new request.",
+  "portal.approvalCancelled":
+    "This approval request was cancelled. Check for updates before starting a new request.",
+  "portal.approvalRefused":
+    "The clinic refused this device approval request. Contact your clinic for next steps.",
+  "portal.approvalContact":
+    "Clinic approval needs to be checked. Contact your clinic for next steps.",
+  "portal.approvalMissing":
+    "Your saved approval request was not found on the portal. Send the saved request again.",
+  "portal.confirmationsPending":
+    "Saved documents awaiting pickup confirmation: {count}. Check again to finish confirmation. Your saved copies stay in the vault.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Clinic documents",
   "portal.intro":

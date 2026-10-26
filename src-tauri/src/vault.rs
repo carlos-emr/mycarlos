@@ -43,7 +43,7 @@ mod original_pdf;
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 6;
+const VAULT_FORMAT: u32 = 7;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -237,6 +237,15 @@ pub enum VaultError {
     Portal(portal_link::LinkError),
     #[error("a document from the clinic could not be verified; no receipt was sent")]
     PickupRefused,
+    #[error("the clinic approval request is no longer pending")]
+    ApprovalTerminal(
+        crate::portal_approval::ApprovalState,
+        Option<crate::portal_approval::ApprovalReason>,
+    ),
+    #[error("the saved approval request was not found on the portal")]
+    ApprovalRequestMissing,
+    #[error("clinic approval needs review before another request")]
+    ApprovalNeedsClinic,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
@@ -3996,6 +4005,12 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     let mut device_ids = HashSet::new();
     for link in &manifest.portal_links {
         if (manifest.format_version < 6 && link.approval.is_some())
+            || (manifest.format_version < 7
+                && (!link.approval_history.is_empty()
+                    || link
+                        .approval
+                        .as_ref()
+                        .is_some_and(|a| a.status.is_some() || a.reason.is_some())))
             || !link_ids.insert(link.id)
             || !device_ids.insert(link.keys.device_key_id())
             || link.validate().is_err()
@@ -17122,7 +17137,7 @@ mod tests {
     #[test]
     fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3, 4, 5] {
+        for version in [1, 2, 3, 4, 5, 6] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);

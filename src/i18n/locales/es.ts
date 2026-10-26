@@ -3,6 +3,19 @@ import type { MessageKey } from "./en";
 
 /** Spanish, formal register ("usted"). */
 export const es: Record<MessageKey, Message> = {
+  "portal.restartApproval": "Iniciar otra solicitud de aprobación",
+  "portal.approvalExpired":
+    "Esta solicitud de aprobación caducó. Busque actualizaciones antes de iniciar otra solicitud.",
+  "portal.approvalCancelled":
+    "Esta solicitud de aprobación se canceló. Busque actualizaciones antes de iniciar otra solicitud.",
+  "portal.approvalRefused":
+    "La clínica rechazó esta solicitud de aprobación del dispositivo. Consulte con su clínica los próximos pasos.",
+  "portal.approvalContact":
+    "Es necesario revisar la aprobación de la clínica. Consulte con su clínica los próximos pasos.",
+  "portal.approvalMissing":
+    "No se encontró su solicitud de aprobación guardada en el portal. Vuelva a enviar la solicitud guardada.",
+  "portal.confirmationsPending":
+    "Documentos guardados pendientes de confirmación de recepción: {count}. Compruebe de nuevo para completar la confirmación. Sus copias guardadas permanecen en la bóveda.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos de la clínica",
   "portal.intro":

@@ -5,6 +5,19 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  "portal.restartApproval": "Rozpocznij nową prośbę o zatwierdzenie",
+  "portal.approvalExpired":
+    "Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+  "portal.approvalCancelled":
+    "Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+  "portal.approvalRefused":
+    "Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
+  "portal.approvalContact":
+    "Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
+  "portal.approvalMissing":
+    "Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.",
+  "portal.confirmationsPending":
+    "Zapisane dokumenty oczekujące na potwierdzenie odbioru: {count}. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Dokumenty z przychodni",
   "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",

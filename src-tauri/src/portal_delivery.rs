@@ -395,6 +395,7 @@ pub(crate) mod tests {
             keys,
             clinic: Some(clinic),
             approval: None,
+            approval_history: Vec::new(),
         }
     }
     #[test]

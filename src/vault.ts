@@ -88,6 +88,27 @@ export interface PortalLinkSummary {
   deviceFingerprint: string;
   approvalRequested: boolean;
   clinicApproved: boolean;
+  approvalStatus?:
+    | "pending"
+    | "challenge_ready"
+    | "accepted"
+    | "refused"
+    | "expired"
+    | "cancelled"
+    | null;
+  approvalReason?:
+    | "invalid_proof"
+    | "candidate_changed"
+    | "binding_changed"
+    | "predecessor_not_accepted"
+    | "predecessor_removed"
+    | "stale_predecessor"
+    | "challenge_expired"
+    | "challenge_cancelled"
+    | "staff_required"
+    | "no_accepted_approver"
+    | null;
+  approvalCanRestart?: boolean;
 }
 
 export interface PortalLinkInput {
@@ -250,6 +271,7 @@ export interface VaultBridge {
     receiptsPending: number;
   }>;
   requestDeviceApproval?(linkId: string): Promise<void>;
+  restartDeviceApproval?(linkId: string): Promise<void>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -428,6 +450,11 @@ export function boxesWithControlCharacters(
  * typed then says which box to check (#69). */
 export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
   const portalErrors = {
+    approval_expired: "portal.approvalExpired",
+    approval_cancelled: "portal.approvalCancelled",
+    approval_refused: "portal.approvalRefused",
+    approval_contact_clinic: "portal.approvalContact",
+    approval_missing: "portal.approvalMissing",
     portal_link_address: "portal.errorAddress",
     portal_link_code: "portal.errorCode",
     portal_link_device_name: "portal.errorDeviceName",
@@ -579,6 +606,8 @@ export function createVaultBridge(): VaultBridge {
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
     checkDocuments: () => invoke("vault_check_documents"),
+    restartDeviceApproval: (linkId) =>
+      invoke("vault_restart_device_approval", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
     linkPortal: (request) =>

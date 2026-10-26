@@ -217,6 +217,8 @@ pub struct StoredLink {
     pub clinic: Option<LinkedClinic>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<crate::portal_approval::Attempt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub approval_history: Vec<crate::portal_approval::Attempt>,
 }
 
 #[derive(Clone, Serialize)]
@@ -233,6 +235,9 @@ pub struct LinkSummary {
     pub device_fingerprint: String,
     pub approval_requested: bool,
     pub clinic_approved: bool,
+    pub approval_status: Option<crate::portal_approval::ApprovalState>,
+    pub approval_reason: Option<crate::portal_approval::ApprovalReason>,
+    pub approval_can_restart: bool,
 }
 
 impl StoredLink {
@@ -255,6 +260,7 @@ impl StoredLink {
             keys: PrivateKeys::generate(),
             clinic: None,
             approval: None,
+            approval_history: Vec::new(),
         })
     }
 
@@ -265,10 +271,18 @@ impl StoredLink {
         {
             return Err(LinkError::InvalidResponse);
         }
-        if self
-            .approval
-            .as_ref()
-            .is_some_and(|a| !crate::portal_approval::valid_saved(self, a))
+        let mut request_ids = std::collections::HashSet::new();
+        if self.approval_history.len() + usize::from(self.approval.is_some())
+            > crate::portal_approval::MAX_APPROVAL_REQUESTS
+            || (!self.approval_history.is_empty() && self.approval.is_none())
+            || self
+                .approval
+                .iter()
+                .chain(self.approval_history.iter())
+                .any(|a| {
+                    !request_ids.insert(a.request_id)
+                        || !crate::portal_approval::valid_saved(self, a)
+                })
         {
             return Err(LinkError::InvalidResponse);
         }
@@ -279,6 +293,12 @@ impl StoredLink {
     }
 
     pub fn summary(&self) -> LinkSummary {
+        let approved = crate::portal_approval::currently_approved(self);
+        let accepted = self
+            .approval
+            .iter()
+            .chain(self.approval_history.iter())
+            .any(|a| a.acceptance.is_some());
         LinkSummary {
             id: self.id,
             portal_base: self.portal_base.clone(),
@@ -292,7 +312,26 @@ impl StoredLink {
                 .unwrap_or_default(),
             incomplete: self.clinic.is_none(),
             approval_requested: self.approval.is_some(),
-            clinic_approved: crate::portal_approval::currently_approved(self),
+            clinic_approved: approved,
+            approval_status: if accepted {
+                Some(crate::portal_approval::ApprovalState::Accepted)
+            } else {
+                self.approval.as_ref().map(|a| a.state())
+            },
+            approval_reason: if accepted {
+                None
+            } else {
+                self.approval.as_ref().and_then(|a| a.reason)
+            },
+            approval_can_restart: !accepted
+                && self.approval.as_ref().is_some_and(|a| {
+                    a.state() != crate::portal_approval::ApprovalState::Refused
+                        && (matches!(
+                            a.state(),
+                            crate::portal_approval::ApprovalState::Expired
+                                | crate::portal_approval::ApprovalState::Cancelled
+                        ) || a.expires_at <= crate::now_ms() / 1000)
+                }),
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())
