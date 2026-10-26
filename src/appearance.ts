@@ -1,7 +1,7 @@
 import type { MessageKey } from "./i18n";
 
-export type AppearanceMode = "system" | "light" | "dark";
-export type AppearanceTheme = "light" | "dark";
+export type AppearanceMode = "system" | "light" | "dark" | "high-contrast";
+export type AppearanceTheme = Exclude<AppearanceMode, "system">;
 
 export const APPEARANCE_STORAGE_KEY = "mycarlos.appearance.v1";
 
@@ -26,7 +26,9 @@ export interface Appearance {
 }
 
 export function appearanceMode(value: unknown): AppearanceMode {
-  return value === "light" || value === "dark" ? value : "system";
+  return value === "light" || value === "dark" || value === "high-contrast"
+    ? value
+    : "system";
 }
 
 /** Device preferences apply to locked screens too, without opening the vault. */

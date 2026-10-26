@@ -413,7 +413,10 @@ test("Settings work from the keyboard alone", async ({ page }) => {
   ).toBeVisible();
   await walk(page, "Preferences");
   // The appearance radios: one Tab stop, the arrow keys choose.
-  await page.getByRole("radio", { name: "System" }).focus();
+  await page
+    .getByRole("group", { name: "Appearance", exact: true })
+    .getByRole("radio", { name: "System", exact: true })
+    .focus();
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("radio", { name: "Light" })).toBeChecked();
   await expect(page.getByRole("radio", { name: "Light" })).toBeFocused();

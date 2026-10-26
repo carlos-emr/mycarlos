@@ -120,6 +120,30 @@
   --disabled-bg: #21372f;
 }
 
+/* An explicit app palette. System forced colours below retain priority;
+   document/print paper keeps its existing content colours. */
+:root[data-theme="high-contrast"] {
+  color-scheme: dark;
+  --ink: #fff; --ink-soft: #fff; --ink-faint: #fff;
+  --paper: #000; --canvas: #000; --canvas-2: #000;
+  --line: #fff; --control-line: #fff; --metadata-line: #fff;
+  --teal: #ffff00; --teal-dark: #ffff7a; --teal-soft: #000; --teal-line: #ffff00;
+  --amber: #ffff00; --amber-soft: #000; --warning-ink: #fff; --warning-line: #ffff00;
+  --green: #aaffaa; --green-soft: #000; --green-line: #aaffaa;
+  --red: #ff9b9b; --danger-soft: #000; --danger-line: #ff9b9b;
+  --blue: #00ffff; --blue-soft: #000; --purple: #ffff00; --purple-soft: #000;
+  --focus: #00ffff; --on-accent: #000;
+  --bulk: #000; --on-bulk: #fff; --bulk-soft: #fff;
+  --overlay-line: #fff; --overlay-hover: #202020; --hover: #202020;
+  --disabled-ink: #bfbfbf; --disabled-bg: #202020;
+  --toggle-off: #fff; --toggle-thumb: #000;
+  --auth-start: #000; --auth-middle: #000; --auth-end: #000;
+  --window-dot: #fff; --shadow: none; --shadow-sm: none; --thumb-shadow: none;
+  --backdrop: rgb(0 0 0 / 85%); --dialog-shadow: none;
+}
+
+:root[data-theme="high-contrast"] a:any-link { color: var(--blue); text-decoration: underline; }
+
 /* Before the module loads there is no app content yet, but its canvas follows System. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) { background: var(--startup-dark-canvas); color-scheme: dark; }
@@ -145,7 +169,7 @@
   background: var(--paper);
   box-shadow: var(--shadow);
 }
-.vault-card h1 { margin: 2px 0 10px; }
+.vault-card h1 { margin: 2px 0 10px; overflow-wrap: anywhere; }
 .vault-card > p { color: var(--ink-soft); line-height: 1.55; }
 .vault-card form { display: grid; gap: 12px; margin-top: 20px; }
 .vault-card > .button { margin-top: 20px; }
@@ -1047,7 +1071,9 @@ h1, h2, p { margin: 0; }
 .appearance-choice { display: grid; gap: 2px; min-width: min(100%, 230px); max-width: 330px; margin: 0; padding: 0; border: 0; }
 /* The whole row of each choice is a target of at least 44px (#67). */
 .appearance-choice .appearance-option { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--ink); font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+.appearance-choice .appearance-option span { min-width: 0; overflow-wrap: anywhere; }
 .appearance-choice .appearance-option input { flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; }
+:root[data-theme="high-contrast"] :is(button:disabled, .button[aria-disabled="true"]) { opacity: 1; }
 .appearance-error { color: var(--red); font-size: 0.875rem; }
 .vault-card input, .native-inline-form input, .native-setting-form input, .native-danger-setting input,
 .native-profile-select select, .native-sort select, .native-dialog-actions select, .native-folder-move select, .native-setting-form select,
@@ -1056,7 +1082,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 
 /* System colours retain outlines and selection when Windows removes shadows and gradients. */
 @media (forced-colors: active) {
-  :root, :root[data-theme="dark"] {
+  :root, :root[data-theme] {
     --ink: CanvasText; --ink-soft: CanvasText; --ink-faint: CanvasText;
     --paper: Canvas; --canvas: Canvas; --canvas-2: Canvas;
     --line: ButtonBorder; --control-line: ButtonBorder; --focus: Highlight;
@@ -1069,6 +1095,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
     --overlay-line: ButtonBorder; --overlay-hover: Canvas; --hover: Canvas;
     --disabled-ink: GrayText; --disabled-bg: Canvas; --toggle-off: ButtonFace; --toggle-thumb: ButtonText;
   }
+  :root[data-theme] a:any-link { color: LinkText; }
   .side-nav button.selected, .chip.selected, button[aria-pressed="true"], .check.checked, .native-drop-target {
     outline: 2px solid Highlight; outline-offset: -2px;
   }
@@ -1087,3 +1114,10 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
+
+/* Visible choices before opening a vault, wrapping instead of a dropdown. */
+.language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
+.language-title { font-size: 0.875rem; font-weight: 700; }
+.language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
+.language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
+.language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }

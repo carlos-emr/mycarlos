@@ -42,7 +42,11 @@ export function startNativeAppearance(appearance: Appearance): () => void {
     });
     void (async () => {
       try {
-        await getCurrentWindow().setTheme(mode === "system" ? null : mode);
+        // The app supplies its own high-contrast palette; the existing native
+        // API accepts only light/dark, so use dark chrome beside the black canvas.
+        await getCurrentWindow().setTheme(
+          mode === "system" ? null : mode === "high-contrast" ? "dark" : mode,
+        );
         if (stopped) return;
         if (current === generation) {
           pending = false;

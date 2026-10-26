@@ -7,12 +7,13 @@ import type {
 } from "../appearance";
 import { useI18n, type MessageKey } from "../i18n";
 
-// All three choices stay in view: a short list of radio buttons is easier to
+// All four choices stay in view: a short list of radio buttons is easier to
 // read and press than a dropdown (#67).
 const CHOICES: ReadonlyArray<[AppearanceMode, MessageKey]> = [
   ["system", "appearance.system"],
   ["light", "appearance.light"],
   ["dark", "appearance.dark"],
+  ["high-contrast", "appearance.highContrast"],
 ];
 
 export function AppearanceSetting() {
@@ -50,7 +51,7 @@ function AppearanceChoice({ appearance }: { appearance: Appearance }) {
               checked={state.mode === mode}
               onChange={() => appearance.set(mode)}
             />
-            {t(label)}
+            <span>{t(label)}</span>
           </label>
         ))}
         {error && (
