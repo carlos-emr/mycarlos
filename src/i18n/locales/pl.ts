@@ -529,6 +529,10 @@ export const pl: Record<MessageKey, Message> = {
   "library.select": "Zaznacz {name}",
   "library.empty.title": "To miejsce jest puste",
   "library.empty.help": "Proszę dodać tutaj folder lub zaimportować dokument.",
+  "library.search.results":
+    "Wyniki wyszukiwania. Foldery: {folders}. Dokumenty: {documents}.",
+  "library.search.cleared":
+    "Wyszukiwanie wyczyszczone. Foldery w tej lokalizacji: {folders}. Dokumenty: {documents}.",
   "library.noMatch.title": "Brak pasujących dokumentów",
   "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
 };

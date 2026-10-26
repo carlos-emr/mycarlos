@@ -11,6 +11,7 @@ import {
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
+import { useI18n } from "../i18n";
 import {
   isWrongPdfPassword,
   localDateText,
@@ -157,7 +158,7 @@ export function VaultLibrary({
   /** The patient opened Shared with me: its new files have been seen. */
   onSharedSeen?: () => void;
 }) {
-  useI18n();
+  const { t } = useI18n();
   const [profileId, setProfileId] = useState(
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
@@ -185,6 +186,14 @@ export function VaultLibrary({
   }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Only a change made in the search box requests an announcement. Folder
+  // and person changes also clear the query, but must not announce that reset.
+  const [searchRequest, setSearchRequest] = useState<{
+    query: string;
+    location: string;
+  } | null>(null);
+  const [searchAnnouncement, setSearchAnnouncement] = useState("");
+  const announcedSearchRef = useRef(searchRequest);
   const [view, setView] = useState<NativeView>("list");
   const [sort, setSort] = useState<NativeSort>("newest");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -398,6 +407,62 @@ export function VaultLibrary({
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+  const searchLocation = `${section}:${profileId}:${currentFolderId ?? ""}`;
+  const searchBlocked = Boolean(
+    covered ||
+      busy ||
+      activeRecord ||
+      readerRecordId ||
+      shownPhoto ||
+      renameTarget ||
+      cameraOpen ||
+      confirmHideDamaged ||
+      recoverySetup ||
+      (section !== "records" && !inShared),
+  );
+  useEffect(() => {
+    // Empty the existing live region while typing so even another search
+    // with the same result count produces a fresh, atomic announcement.
+    setSearchAnnouncement("");
+    if (!searchRequest) return;
+    if (
+      searchBlocked ||
+      searchRequest.location !== searchLocation ||
+      searchRequest.query !== query
+    ) {
+      setSearchRequest(null);
+      return;
+    }
+    // Once clearing has been announced, later imports must not repeat it.
+    if (!normalizedQuery && announcedSearchRef.current === searchRequest)
+      return;
+    const timer = window.setTimeout(() => {
+      announcedSearchRef.current = searchRequest;
+      setSearchAnnouncement(
+        normalizedQuery && !visibleFolders.length && !visibleRecords.length
+          ? t("library.noMatch.title")
+          : t(
+              normalizedQuery
+                ? "library.search.results"
+                : "library.search.cleared",
+              {
+                folders: visibleFolders.length,
+                documents: visibleRecords.length,
+              },
+            ),
+      );
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [
+    query,
+    normalizedQuery,
+    searchRequest,
+    searchLocation,
+    searchBlocked,
+    visibleFolders.length,
+    visibleRecords.length,
+    t,
+  ]);
 
   useEffect(() => {
     if (profile && profile.id !== profileId) setProfileId(profile.id);
@@ -1338,6 +1403,14 @@ export function VaultLibrary({
                     : (event) => dropInto(event, currentFolderId)
                 }
               >
+                <p
+                  className="sr-only"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  data-search-status
+                >
+                  {searchAnnouncement}
+                </p>
                 <div className="native-profile-row">
                   {/* Shared with me is no one's: no person's path above it. */}
                   {inShared ? (
@@ -1714,7 +1787,15 @@ export function VaultLibrary({
                   <input
                     type="search"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setQuery(value);
+                      setSearchRequest(
+                        value.trim() || query.trim()
+                          ? { query: value, location: searchLocation }
+                          : null,
+                      );
+                    }}
                     placeholder={searchLabel}
                   />
                 </label>

@@ -645,6 +645,17 @@ impl<W: Write> Write for CancellableWriter<W> {
 pub struct ImportOutcome {
     pub imported: Vec<Uuid>,
     pub skipped_duplicates: Vec<String>,
+    /// Ephemeral diagnostics only: never a durable trust decision or a claim
+    /// of verification without an authenticated clinic link.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unverified_signatures: Vec<ImportVerification>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportVerification {
+    pub record_id: Uuid,
+    pub reason: crate::signed_pdf_helper::Failure,
 }
 
 /// What a move out of "Shared with me" did (#61).
@@ -1510,6 +1521,7 @@ impl VaultStore {
         let mut batch_fingerprints = HashSet::new();
         let mut staged = Vec::new();
         let mut skipped_duplicates = Vec::new();
+        let mut unverified_signatures = Vec::new();
 
         let result = (|| {
             for source in sources {
@@ -1540,15 +1552,21 @@ impl VaultStore {
                     skipped_duplicates.push(sanitize_basename(&source.display_name));
                     continue;
                 }
+                let mut signature_probe = crate::signed_pdf_helper::ImportProbe::new();
                 verify_object(
                     &object_path,
-                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                    CancellableWriter::new(&mut signature_probe, Arc::clone(&self.cancel_io))
                         .with_progress(&self.idle),
                     unlocked.manifest.vault_id,
                     record_id,
                     &object_key,
                     encrypted.plaintext_size,
                 )?;
+                if let Some(reason) =
+                    signature_probe.finish(&|| self.cancel_io.load(Ordering::Acquire))
+                {
+                    unverified_signatures.push(ImportVerification { record_id, reason });
+                }
                 let wrapped_object_key =
                     wrap_secret(&keys.object_wrap, &object_key, record_id.as_bytes())?;
                 staged.push((
@@ -1579,6 +1597,7 @@ impl VaultStore {
                 return Ok(ImportOutcome {
                     imported: Vec::new(),
                     skipped_duplicates,
+                    unverified_signatures: Vec::new(),
                 });
             }
             terminate_at_test_boundary("import.after-staging");
@@ -1629,6 +1648,7 @@ impl VaultStore {
             Ok(ImportOutcome {
                 imported: staged.iter().map(|(_, record)| record.id).collect(),
                 skipped_duplicates,
+                unverified_signatures,
             })
         })();
         if result.is_err() {
@@ -6986,6 +7006,63 @@ mod tests {
             display_name: name.to_owned(),
             reader: Box::new(Cursor::new(data.to_vec())),
         }
+    }
+
+    #[test]
+    #[ignore = "requires the real built helper; set MYCARLOS_TEST_SIGNED_HELPER_EXE and run explicitly"]
+    fn signed_import_analysis_preserves_original_bytes_and_never_invents_a_clinic_link() {
+        assert!(
+            std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE").is_some(),
+            "run the documented real-helper import check, not the unit-test executable"
+        );
+        let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
+        ))
+        .unwrap();
+        let document = &fixture["documents"][0];
+        let original = BASE64
+            .decode(document["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE Signed.pdf", &original)],
+                2,
+            )
+            .unwrap();
+        assert_eq!(imported.imported.len(), 1);
+        assert_eq!(imported.unverified_signatures.len(), 1);
+        assert!(matches!(
+            imported.unverified_signatures[0].reason,
+            crate::signed_pdf_helper::Failure::Refused(crate::signed_pdf::Refusal::UnknownSigner)
+        ));
+        assert_eq!(
+            imported.unverified_signatures[0].record_id,
+            imported.imported[0]
+        );
+        let mut exported = Vec::new();
+        store.export(imported.imported[0], &mut exported).unwrap();
+        assert_eq!(exported, original);
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records[0].source_label, MANUAL_IMPORT_LABEL);
+        let report = serde_json::to_string(&imported).unwrap();
+        assert!(!report.contains("recipient_id"));
+        assert!(!report.contains("birth_date"));
+        assert!(!report.contains("signer_kid"));
+        let unsigned = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE Unsigned.pdf", b"%PDF-1.7\nFAKE unsigned")],
+                3,
+            )
+            .unwrap();
+        assert!(unsigned.unverified_signatures.is_empty());
     }
 
     fn valid_manifest_fixture(root: &Path) -> (Uuid, Manifest) {

@@ -514,6 +514,10 @@ export const fr: Record<MessageKey, Message> = {
   "library.select": "Sélectionner {name}",
   "library.empty.title": "Cet emplacement est vide",
   "library.empty.help": "Ajoutez un dossier ou importez un document ici.",
+  "library.search.results":
+    "Résultats de la recherche. Dossiers : {folders}. Documents : {documents}.",
+  "library.search.cleared":
+    "Recherche effacée. Dossiers à cet emplacement : {folders}. Documents : {documents}.",
   "library.noMatch.title": "Aucun document correspondant",
   "library.noMatch.help": "Essayez une autre recherche.",
 };
