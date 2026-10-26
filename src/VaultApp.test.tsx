@@ -2941,7 +2941,9 @@ describe("durable vault UI", () => {
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
     await user.click(
-      within(screen.getByRole("main")).getByRole("button", { name: "Lock now" }),
+      within(screen.getByRole("main")).getByRole("button", {
+        name: "Lock now",
+      }),
     );
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await act(async () => {
