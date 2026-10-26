@@ -358,6 +358,7 @@
   "interface.history.empty": "No hay eventos en el historial.",
   "interface.history.events": {
     "one": "{count} evento",
+    "many": "{count} eventos",
     "other": "{count} eventos"
   },
   "interface.history.name": "Nombre",
