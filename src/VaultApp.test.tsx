@@ -1501,9 +1501,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: "FAKE_Letter.pdf" }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "Lock now" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Lock now" }));
     expect(
       await screen.findByRole("heading", { name: "Unlock your vault" }),
     ).toBeVisible();
@@ -2942,9 +2940,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
-    await user.click(
-      screen.getByRole("button", { name: "Lock now" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Lock now" }));
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));

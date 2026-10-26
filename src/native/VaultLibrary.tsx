@@ -1282,7 +1282,9 @@ export function VaultLibrary({
                       {currentFolder && (
                         <>
                           <span aria-hidden="true">›</span>
-                          <strong aria-hidden="true">{currentFolder.name}</strong>
+                          <strong aria-hidden="true">
+                            {currentFolder.name}
+                          </strong>
                         </>
                       )}
                     </>
