@@ -507,6 +507,10 @@ export const ptBR: Record<MessageKey, Message> = {
   "library.select": "Selecionar {name}",
   "library.empty.title": "Este local está vazio",
   "library.empty.help": "Adicione uma pasta ou importe um documento aqui.",
+  "library.search.results":
+    "Resultados da busca. Pastas: {folders}. Documentos: {documents}.",
+  "library.search.cleared":
+    "Busca limpa. Pastas neste local: {folders}. Documentos: {documents}.",
   "library.noMatch.title": "Nenhum documento corresponde",
   "library.noMatch.help": "Tente outra pesquisa.",
 };

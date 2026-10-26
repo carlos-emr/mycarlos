@@ -637,3 +637,42 @@ including phone layout, live system changes, contrast checks and forced-colours 
 is separate from actual Windows/macOS native appearance testing and the text-size checks on
 real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
 old screenshots and successful CI do not establish Ben's UI approval.
+
+## Signed-PDF checker draft (#101)
+
+The current CARLOS #5135 fixture is copied without regeneration from commit
+`1f30d9bef74c4a5206244db21a367e94f24188df`; its SHA-256 is
+`f26a292a7ba9ca52e5251b65fb46345c959d784fc3190435ca6b67a024b47169`. All keys and patients
+are FAKE. The fixture includes 12 cases, including the encrypted email copy, missing/null
+recipient, tampering, extra update, incomplete ranges, wrong kid, RSA and two signatures.
+
+Focused native tests exercise CMS/current manifest digest and complete helper extraction;
+`tests/pdf_helper.rs` also starts the real confined executable for both plaintext and
+encrypted attachment reports. Import tests check preserved original bytes and honest
+unverified diagnostics. The password is passed for extraction only after signature/pin
+authentication. An unverified or malformed document still imports with its existing
+unverified source label; helper refusal never creates a Verified result.
+
+This is not completion of #55: authenticated portal linking, key replacement/revocation,
+durable trust metadata and rechecking stored documents remain separate work. The app has
+no authenticated clinic pins, so real production imports cannot become Verified yet.
+
+For the explicit real-helper import check, first build/run the signature helper integration
+case (`cargo test --manifest-path src-tauri/Cargo.toml --test pdf_helper
+the_confined_signature_helper_reports`). Then set
+`MYCARLOS_TEST_SIGNED_HELPER_EXE` to that build's absolute app-executable path and run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib signed_import_analysis --
+--ignored --test-threads=1`. It requires the exact `unknown_signer` refusal from the real
+helper path, alongside byte preservation. The executable override exists only in unit-test
+builds, never production; a generic helper failure cannot satisfy this test.
+
+Nullable v1 tests cover explicit null, missing members, wrong types, size bounds and the
+clinic/recipient binding policy. An optional ignored private-producer test reads only a
+FAKE captured PDF and its public certificate from metadata named by
+`MYCARLOS_TEST_PRIVATE_INTEROP_INPUT`; with the real helper configured as above, run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib
+private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
+--test-threads=1`. It requires signed-but-unbound under an explicit FAKE test pin and
+`unknown_signer` with no pins. Private captures, metadata and certificates are not committed
+or published, and the public fixture is not regenerated. This opt-in check is separate from
+the public fixture tests and does not establish a production authenticated clinic link.
