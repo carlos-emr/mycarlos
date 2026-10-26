@@ -11,7 +11,6 @@ import {
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
-import { useI18n } from "../i18n";
 import {
   isWrongPdfPassword,
   localDateText,
