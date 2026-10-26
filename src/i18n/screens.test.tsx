@@ -246,13 +246,15 @@ describe("the person-folder sidebar in each language", () => {
         within(nav).getByRole("button", { name: "Shared with me, 2 new" }),
       ).toHaveAttribute("aria-current", "page");
       const folder = within(nav).getByRole("button", {
-        name: "FAKE Results (FAKE Blake) 0",
+        name: `FAKE Results (FAKE Blake), ${tr("sidebar.fileCount", { count: 0 })}`,
       });
       expect(folder).not.toHaveAttribute("draggable", "true");
       await user.click(folder);
       expect(props.onOpenFolder).toHaveBeenCalledWith("p2", "folder-p2");
       await user.click(
-        within(nav).getByRole("button", { name: "FAKE Blake 1" }),
+        within(nav).getByRole("button", {
+          name: `FAKE Blake, ${tr("sidebar.fileCount", { count: 1 })}`,
+        }),
       );
       expect(props.onOpenPerson).toHaveBeenCalledWith("p2");
       expect(screen.getByText(tr("sidebar.settings"))).toBeVisible();
@@ -272,7 +274,9 @@ describe("the person-folder sidebar in each language", () => {
         />,
       );
       expect(
-        screen.getByRole("button", { name: `${tr("sidebar.myRecords")} 2` }),
+        screen.getByRole("button", {
+          name: `${tr("sidebar.myRecords")}, ${tr("sidebar.fileCount", { count: 2 })}`,
+        }),
       ).toHaveAttribute("aria-current", "page");
       expect(shown.container.querySelector(".storage small")).toHaveTextContent(
         `${tr("sidebar.documents", { count: 2 })} · ${tr("sidebar.folderCount", { count: 1 })}`,

@@ -150,6 +150,7 @@ export const en = {
   "sidebar.storage": "Encrypted local vault",
   "sidebar.documents": { one: "{count} document", other: "{count} documents" },
   "sidebar.folderCount": { one: "{count} folder", other: "{count} folders" },
+  "sidebar.fileCount": { one: "{count} file", other: "{count} files" },
 
   // Text size (Settings > Preferences)
   "textSize.title": "Text size",
@@ -172,11 +173,11 @@ export const en = {
   "rename.label.folder": "Folder name",
   "rename.label.document": "File name",
   "rename.help.folder":
-    "The folder and its contents stay in the same location.",
+    "Please type what you'd like to rename this folder to. Note: the folder and its contents stay in the same location.",
   "rename.help.document":
-    "This changes the name in myCarlos and the suggested export name.",
+    "Please type what you'd like to rename this file to. Note: this does not change the file type.",
   "rename.help.documentExtension":
-    "This changes the name in myCarlos and the suggested export name. The {extension} extension stays the same.",
+    "Please type what you'd like to rename this file to. Note: the {extension} extension stays the same.",
   "rename.stemMissing": "Enter a name before {extension}.",
   "rename.gainsExtension":
     "This document's name has no .pdf extension, so it cannot end in .pdf.",

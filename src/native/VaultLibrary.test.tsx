@@ -490,18 +490,17 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     expect(screen.getByRole("button", { name: "Grid view" })).toHaveTextContent(
       "Grid",
     );
-    // Sort is a row of radio buttons, not a dropdown with only an icon.
+    // Each sort choice is a separate tab stop.
     const sort = screen.getByRole("group", { name: "Sort by" });
-    expect(
-      within(sort)
-        .getAllByRole("radio")
-        .map((choice) => choice.closest("label")?.textContent),
-    ).toEqual(["Newest first", "Name A–Z"]);
-    expect(
-      within(sort).getByRole("radio", { name: "Newest first" }),
-    ).toBeChecked();
-    fireEvent.click(within(sort).getByRole("radio", { name: "Name A–Z" }));
-    expect(within(sort).getByRole("radio", { name: "Name A–Z" })).toBeChecked();
+    const sortChoices = within(sort).getAllByRole("button");
+    expect(sortChoices.map((choice) => choice.textContent)).toEqual([
+      "Newest first",
+      "Name A–Z",
+    ]);
+    expect(sortChoices.map((choice) => choice.tabIndex)).toEqual([0, 0]);
+    expect(sortChoices[0]).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(sortChoices[1]);
+    expect(sortChoices[1]).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(details);
     expect(
       screen.getByRole("button", { name: "Close document details" }),

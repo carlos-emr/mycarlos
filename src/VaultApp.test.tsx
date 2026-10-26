@@ -1502,7 +1502,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("dialog", { name: "FAKE_Letter.pdf" }),
     ).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+      screen.getByRole("button", { name: "Lock now" }),
     );
     expect(
       await screen.findByRole("heading", { name: "Unlock your vault" }),
@@ -2943,7 +2943,7 @@ describe("durable vault UI", () => {
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
     await user.click(
-      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+      screen.getByRole("button", { name: "Lock now" }),
     );
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await act(async () => {

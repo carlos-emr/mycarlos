@@ -154,6 +154,11 @@ export function VaultLibrary({
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const pendingHeadingFocusRef = useRef<{
+    profileId: string;
+    folderId: string | null;
+  } | null>(null);
   // Keep Hidden scoped to the location it was opened from, including Shared.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
   // The steps for older backups after a key whose kit may have been lost or
@@ -538,6 +543,12 @@ export function VaultLibrary({
   }, [profileId]);
   /** Opens a person's top-level folder, or one of their folders. */
   const openPerson = (person: string, folderId: string | null = null) => {
+    if (
+      section !== "records" ||
+      person !== profileId ||
+      folderId !== currentFolderId
+    )
+      pendingHeadingFocusRef.current = { profileId: person, folderId };
     setSection("records");
     if (person === profileId) {
       setCurrentFolderId(folderId);
@@ -546,6 +557,22 @@ export function VaultLibrary({
     openingFolderRef.current = folderId;
     setProfileId(person);
   };
+
+  useEffect(() => {
+    const pending = pendingHeadingFocusRef.current;
+    if (
+      !pending ||
+      pending.profileId !== profileId ||
+      pending.folderId !== currentFolderId ||
+      section !== "records"
+    )
+      return;
+    pendingHeadingFocusRef.current = null;
+    const frame = window.requestAnimationFrame(() =>
+      pageHeadingRef.current?.focus(),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentFolderId, profileId, section]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -565,7 +592,6 @@ export function VaultLibrary({
   // A dialog returns focus to the button that opened it. When that button is
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
-  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const focusPageIfLost = () =>
     window.setTimeout(() => {
       const focused = document.activeElement;
@@ -1069,10 +1095,20 @@ export function VaultLibrary({
   return (
     <div className="evaluation-page native-vault-page" inert={covered}>
       {/* Polite, but not a second status line: the library has one. */}
-      <p className="sr-only" aria-live="polite">
+      <p
+        className="sr-only"
+        aria-live="polite"
+        inert={Boolean(renameTarget)}
+        aria-hidden={Boolean(renameTarget)}
+      >
         {sharedAnnouncement}
       </p>
-      <div className="evaluation-banner" role="note">
+      <div
+        className="evaluation-banner"
+        role="note"
+        inert={covered || Boolean(renameTarget)}
+        aria-hidden={covered || Boolean(renameTarget)}
+      >
         <strong>Synthetic-data development build</strong>
         <span>
           Files and record details are encrypted and saved on this device
@@ -1092,6 +1128,7 @@ export function VaultLibrary({
                 confirmHideDamaged ||
                 recoverySetup,
             )}
+            aria-hidden={Boolean(renameTarget)}
           >
             <span className="window-dots" aria-hidden="true">
               <i />
@@ -1102,6 +1139,7 @@ export function VaultLibrary({
             <button
               className="unlock-pill native-lock-button"
               type="button"
+              aria-label={t("security.lockNow")}
               onClick={() => void onLock()}
             >
               <Icon name="lock-open" /> Unlocked · Lock now
@@ -1120,6 +1158,7 @@ export function VaultLibrary({
                 confirmHideDamaged ||
                 recoverySetup,
             )}
+            aria-hidden={Boolean(renameTarget)}
           >
             {PHONE_TABS.map(([value, label]) => (
               <button
@@ -1150,6 +1189,7 @@ export function VaultLibrary({
                 confirmHideDamaged ||
                 recoverySetup,
             )}
+            aria-hidden={Boolean(renameTarget)}
           >
             <LibrarySidebar
               profileName={
@@ -1235,17 +1275,14 @@ export function VaultLibrary({
                           dragOver(event, "breadcrumb:root")
                         }
                         onDrop={(event) => dropInto(event, null)}
-                        onClick={() => {
-                          setSection("records");
-                          setCurrentFolderId(null);
-                        }}
+                        onClick={() => openPerson(profileId, null)}
                       >
                         {profile ? personFolderName(profile, people) : ""}
                       </button>
                       {currentFolder && (
                         <>
                           <span aria-hidden="true">›</span>
-                          <strong>{currentFolder.name}</strong>
+                          <strong aria-hidden="true">{currentFolder.name}</strong>
                         </>
                       )}
                     </>
@@ -1545,21 +1582,23 @@ export function VaultLibrary({
                   </span>
                   <div className="view-controls">
                     {/* Both choices in view, with words (#67). */}
-                    <fieldset className="native-sort-choice">
-                      <legend>Sort by</legend>
+                    <div
+                      className="segment native-sort-choice"
+                      role="group"
+                      aria-label="Sort by"
+                    >
                       {SORT_CHOICES.map(([value, label]) => (
-                        <label key={value}>
-                          <input
-                            type="radio"
-                            name="native-sort"
-                            value={value}
-                            checked={sort === value}
-                            onChange={() => setSort(value)}
-                          />
+                        <button
+                          className={sort === value ? "selected" : ""}
+                          type="button"
+                          key={value}
+                          aria-pressed={sort === value}
+                          onClick={() => setSort(value)}
+                        >
                           {label}
-                        </label>
+                        </button>
                       ))}
-                    </fieldset>
+                    </div>
                     <span
                       className="segment native-view-segment"
                       aria-label="Choose record view"

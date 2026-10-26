@@ -155,6 +155,7 @@ export const fr: Record<MessageKey, Message> = {
     many: "{count} de dossiers",
     other: "{count} dossiers",
   },
+  "sidebar.fileCount": { one: "{count} fichier", other: "{count} fichiers" },
 
   // Text size (Settings > Preferences)
   "textSize.title": "Taille du texte",
@@ -177,11 +178,12 @@ export const fr: Record<MessageKey, Message> = {
   "rename.title.folder": "Renommer le dossier",
   "rename.label.folder": "Nom du dossier",
   "rename.label.document": "Nom du fichier",
-  "rename.help.folder": "Le dossier et son contenu restent au même endroit.",
+  "rename.help.folder":
+    "Saisissez le nom que vous souhaitez donner à ce dossier. Remarque : le dossier et son contenu resteront au même endroit.",
   "rename.help.document":
-    "Cela change le nom dans myCarlos et le nom proposé à l’exportation.",
+    "Saisissez le nom que vous souhaitez donner à ce fichier. Remarque : le type de fichier ne changera pas.",
   "rename.help.documentExtension":
-    "Cela change le nom dans myCarlos et le nom proposé à l’exportation. L’extension {extension} reste la même.",
+    "Saisissez le nom que vous souhaitez donner à ce fichier. Remarque : l’extension {extension} restera la même.",
   "rename.stemMissing": "Saisissez un nom avant {extension}.",
   "rename.gainsExtension":
     "Le nom de ce document n’a pas l’extension .pdf; il ne peut donc pas se terminer par .pdf.",

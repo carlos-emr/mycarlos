@@ -283,7 +283,7 @@ describe("taking a photo from the library", () => {
     const nameField = await screen.findByRole("textbox", { name: "File name" });
     expect(nameField).toHaveValue("Photo, 17 Oct 2026, 3.05 PM");
     expect(nameField).toHaveAccessibleDescription(
-      "This changes the name in myCarlos and the suggested export name. The .jpg extension stays the same.",
+      "Please type what you'd like to rename this file to. Note: the .jpg extension stays the same.",
     );
   });
 

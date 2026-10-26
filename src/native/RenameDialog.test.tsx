@@ -2,7 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RenameDialog } from "./RenameDialog";
 
-const HELP = "This changes the name in myCarlos and the suggested export name.";
+const HELP =
+  "Please type what you'd like to rename this file to. Note: this does not change the file type.";
+const HELP_WITH_EXTENSION =
+  "Please type what you'd like to rename this file to. Note: the";
 const UNSAFE =
   'Document names cannot contain < > : " | ? * / \\ or invisible control characters, or end with a dot.';
 const GAINS =
@@ -54,7 +57,7 @@ describe("RenameDialog", () => {
         "true",
       );
       expect(input).toHaveAccessibleDescription(
-        `${HELP} The ${extension} extension stays the same.`,
+        `${HELP_WITH_EXTENSION} ${extension} extension stays the same.`,
       );
     },
   );
@@ -130,7 +133,7 @@ describe("RenameDialog", () => {
       expect(shown).toBeVisible();
       expect(shown).toHaveAttribute("aria-hidden", "true");
       expect(input).toHaveAccessibleDescription(
-        `${HELP} The ${extension} extension stays the same.`,
+        `${HELP_WITH_EXTENSION} ${extension} extension stays the same.`,
       );
     } else {
       expect(screen.queryByText(/^\.\w+$/)).not.toBeInTheDocument();

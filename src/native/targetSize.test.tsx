@@ -279,10 +279,10 @@ describe("targets and text sizes in the app (#67)", () => {
       [
         within(
           screen.getByRole("navigation", { name: "Record library" }),
-        ).getByRole("button", { name: "FAKE Avery", current: "page" }),
+        ).getByRole("button", { name: /^FAKE Avery,/, current: "page" }),
         within(
           screen.getByRole("navigation", { name: "Record library" }),
-        ).getByRole("button", { name: "FAKE Blake", current: false }),
+        ).getByRole("button", { name: /^FAKE Blake,/, current: false }),
       ],
       [
         screen.getByRole("button", { name: "List view", pressed: true }),

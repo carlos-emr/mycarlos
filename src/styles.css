@@ -900,12 +900,10 @@ h1, h2, p { margin: 0; }
 /* #67: all choices in view, and words on every button. */
 .native-sort { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .native-sort .icon { width: 16px; height: 16px; }
-.native-sort-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: 0; padding: 0; border: 0; }
-.native-sort-choice legend { float: left; margin-right: 2px; padding: 0; color: var(--ink-soft); font-weight: 700; }
-.native-sort-choice label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--ink); font-weight: 600; cursor: pointer; }
-.native-sort-choice input { flex: none; width: 18px; height: 18px; margin: 0; }
-/* With words on List and Grid, the radios and the segment can need more than a
-   narrow window's width, so the segment moves to its own line, whole. */
+.native-sort-choice { flex: none; overflow: visible; }
+.native-sort-choice button { width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; color: var(--ink); font: inherit; font-weight: 600; }
+/* With words on List and Grid, the sort choices and view segment can need more
+   than a narrow window's width, so the segment moves to its own line, whole. */
 .native-vault-page .view-controls { flex-wrap: wrap; row-gap: 0; }
 .native-view-segment { flex: none; }
 .native-view-segment button { flex: none; grid-auto-flow: column; gap: 6px; width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; font: inherit; font-weight: 600; }
