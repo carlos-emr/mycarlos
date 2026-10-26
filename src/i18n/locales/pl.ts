@@ -169,6 +169,8 @@ export const pl: Record<MessageKey, Message> = {
     many: "{count} plików",
     other: "{count} pliku",
   },
+  "library.location.summary": "W {context}: {folders}, {files}.",
+  "library.location.files": "W {context}: {files}.",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Rozmiar tekstu",

@@ -158,6 +158,8 @@ export const ptBR: Record<MessageKey, Message> = {
     one: "{count} arquivo",
     other: "{count} arquivos",
   },
+  "library.location.summary": "Em {context}: {folders}, {files}.",
+  "library.location.files": "Em {context}: {files}.",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Tamanho do texto",

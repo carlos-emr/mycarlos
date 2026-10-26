@@ -151,6 +151,8 @@ export const en = {
   "sidebar.documents": { one: "{count} document", other: "{count} documents" },
   "sidebar.folderCount": { one: "{count} folder", other: "{count} folders" },
   "sidebar.fileCount": { one: "{count} file", other: "{count} files" },
+  "library.location.summary": "In {context}: {folders}, {files}.",
+  "library.location.files": "In {context}: {files}.",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Text size",

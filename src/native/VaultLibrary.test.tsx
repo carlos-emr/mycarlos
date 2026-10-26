@@ -590,7 +590,7 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
     // Whose folder it is, for a screen reader.
-    expect(letters).toHaveAccessibleName("FAKE Letters (FAKE Avery) 0");
+    expect(letters).toHaveAccessibleName("FAKE Letters (FAKE Avery), 0 files");
     const avery = within(library).getByRole("button", { name: /^FAKE Avery/ });
     const blake = within(library).getByRole("button", { name: /^FAKE Blake/ });
     expect(avery).toHaveAttribute("aria-current", "page");
@@ -611,6 +611,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "FAKE 2025 Letters",
     );
+    expect(
+      screen.getByRole("heading", { level: 1 }),
+    ).toHaveAccessibleDescription(/In FAKE Avery: .*files\./);
     expect(
       within(
         document.querySelector(".native-profile-row") as HTMLElement,

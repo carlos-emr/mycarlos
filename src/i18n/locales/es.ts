@@ -158,6 +158,8 @@ export const es: Record<MessageKey, Message> = {
     one: "{count} archivo",
     other: "{count} archivos",
   },
+  "library.location.summary": "En {context}: {folders}, {files}.",
+  "library.location.files": "En {context}: {files}.",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Tamaño del texto",

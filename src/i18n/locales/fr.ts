@@ -156,6 +156,8 @@ export const fr: Record<MessageKey, Message> = {
     other: "{count} dossiers",
   },
   "sidebar.fileCount": { one: "{count} fichier", other: "{count} fichiers" },
+  "library.location.summary": "Dans {context} : {folders}, {files}.",
+  "library.location.files": "Dans {context} : {files}.",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Taille du texte",

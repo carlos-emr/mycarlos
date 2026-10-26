@@ -1086,6 +1086,18 @@ export function VaultLibrary({
   const locationTitle = inShared
     ? rootLocationTitle
     : (currentFolder?.name ?? rootLocationTitle);
+  const locationAnnouncement = inShared
+    ? t("library.location.files", {
+        context: rootLocationTitle,
+        files: t("sidebar.fileCount", { count: visibleRecords.length }),
+      })
+    : t("library.location.summary", {
+        context: currentFolder
+          ? folderPath(folderById, currentFolder.parentId, rootLocationTitle)
+          : rootLocationTitle,
+        folders: t("sidebar.folderCount", { count: visibleFolders.length }),
+        files: t("sidebar.fileCount", { count: visibleRecords.length }),
+      });
   const searchLabel = inShared
     ? "Search Shared with me"
     : currentFolder
@@ -1327,10 +1339,21 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                    <h1
+                      ref={pageHeadingRef}
+                      tabIndex={-1}
+                      aria-describedby="location-announcement"
+                    >
                       {locationTitle}
                     </h1>
-                    <p>
+                    <p
+                      className="sr-only"
+                      id="location-announcement"
+                      aria-hidden="true"
+                    >
+                      {locationAnnouncement}
+                    </p>
+                    <p aria-hidden="true">
                       {inShared
                         ? `${visibleRecords.length} documents${normalizedQuery ? " found" : ""}`
                         : `${visibleFolders.length} folders · ${visibleRecords.length} documents ${normalizedQuery ? "found" : "in this location"}`}
@@ -1709,7 +1732,7 @@ export function VaultLibrary({
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
-                  onOpenFolder={setCurrentFolderId}
+                  onOpenFolder={(folderId) => openPerson(profileId, folderId)}
                   onOpenRecord={(recordId) => {
                     // The details dialog repeats the notice. One left over from
                     // an earlier operation would read as being about this record.
