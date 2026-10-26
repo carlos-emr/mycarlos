@@ -88,7 +88,7 @@ async function section(
   // A narrow window has a row of section tabs (#67) where the sidebar was.
   const tabs = page.getByRole("navigation", { name: "Section" });
   const sidebar = page.getByRole("button", {
-    name: new RegExp(`^${name}(?:\\s|$)`),
+    name: new RegExp(`^${name}(?:,|\\s|$)`),
   });
   await expect(tabs.or(sidebar).first()).toBeVisible();
   // On a phone the records tab is "Records": it holds the people and
