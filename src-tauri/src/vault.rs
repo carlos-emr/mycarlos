@@ -7714,13 +7714,23 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn should_import_original_and_history_when_windows_staging_exceeds_max_path() {
+        use std::os::windows::ffi::OsStrExt;
         let temp = tempfile::tempdir().unwrap();
         // The destination manifest fits MAX_PATH; the staging UUID + two
         // object UUIDs takes object publication past it. No verbatim prefix
         // is supplied by the caller, as with an ordinary selected vault.
         let root = temp.path().join("long-root-".repeat(16)).join("vault");
+        fs::create_dir_all(root.parent().unwrap()).unwrap();
+        let extended = fs::canonicalize(root.parent().unwrap()).unwrap().join("vault");
+        let setup = VaultStore::new(extended);
+        setup.create(PASSWORD, "FAKE Person", 1).unwrap();
+        setup.lock();
+        drop(setup);
+        assert!(root.as_os_str().encode_wide().count() < 260);
+        assert!(root.join("manifest-0.bin").as_os_str().encode_wide().count() < 260);
+        assert!(root.join("staging").join(Uuid::new_v4().to_string()).join(format!("{}.mcobj", Uuid::new_v4())).as_os_str().encode_wide().count() >= 260);
         let store = VaultStore::new(root.clone());
-        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        store.unlock(PASSWORD).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
         let bytes = b"%PDF-1.7\nFAKE Windows long path\n%%EOF";
         let id = store.import(profile, vec![], vec![source("FAKE.pdf", bytes)], 2).unwrap().imported[0];

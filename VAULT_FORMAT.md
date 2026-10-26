@@ -806,7 +806,7 @@ are further format-5 work; their absence must not be reported as complete #55.
 
 Document objects and history segments are synced before publication through
 `atomicwrites::move_atomic`: `MoveFileExW(MOVEFILE_WRITE_THROUGH)` on Windows,
-and an atomic rename followed by source/destination directory sync on Unix.
+and atomic publication followed by source/destination directory sync on Unix.
 The encrypted manifest is published afterwards through the existing atomic-write
 primitive. Restart tests cover a crash after either document object, history
 publication, and each manifest slot. These tests establish process-crash recovery;
