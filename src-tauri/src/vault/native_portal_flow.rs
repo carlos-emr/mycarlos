@@ -159,6 +159,61 @@ fn verify_original(store: &VaultStore, expected: &str) {
     crate::vault::history_events_for_test(store);
 }
 
+/// Read both independent payloads through their actual production read paths.
+/// Object identities come only from the unlocked authenticated index.
+fn inspect_delivery_payloads(store: &VaultStore) -> serde_json::Value {
+    let (records, history_objects, history_head) = {
+        let guard = store.session();
+        let open = guard.as_ref().unwrap();
+        let records = open
+            .manifest
+            .records
+            .iter()
+            .filter(|r| r.delivery.is_some())
+            .cloned()
+            .collect::<Vec<_>>();
+        let history_objects = open.manifest.history.segments.iter().map(|s| serde_json::json!({"objectId":s.id,"objectName":s.object_name,"firstSeq":s.first_seq,"entryCount":s.entry_count})).collect::<Vec<_>>();
+        (records, history_objects, open.manifest.history.head.clone())
+    };
+    assert!(
+        !records.is_empty(),
+        "actual saved deliveries are required for payload inspection"
+    );
+    let mut inspected = Vec::new();
+    for record in records {
+        let custody = record.delivery.as_ref().unwrap();
+        let original_ref = record
+            .original_pdf
+            .as_ref()
+            .expect("clinic custody must retain an independent original");
+        assert_ne!(record.object_name, original_ref.object_name);
+        assert_ne!(record.id, original_ref.id);
+        let mut working = Zeroizing::new(Vec::new());
+        store
+            .read_for_view(record.id, &mut *working)
+            .expect("working view payload must authenticate and read");
+        let mut original = Zeroizing::new(Vec::new());
+        store
+            .export(record.id, &mut *original)
+            .expect("retained original must authenticate and read");
+        let working_hash = crate::portal_delivery::sha256(&working);
+        let original_hash = crate::portal_delivery::sha256(&original);
+        assert_eq!(
+            original_hash, custody.manifest.document.sha256,
+            "retained original differs from the signed delivery hash"
+        );
+        inspected.push(serde_json::json!({
+            "recordId":record.id,"deliveryId":custody.outer.delivery_id,
+            "working":{"objectId":record.id,"objectName":record.object_name,"sha256":working_hash,"bytesRead":working.len()},
+            "original":{"objectId":original_ref.id,"objectName":original_ref.object_name,"sha256":original_hash,"bytesRead":original.len()},
+            "workingMatchesSignedOriginal":working_hash==custody.manifest.document.sha256,
+            "keptReceiptSha256":crate::portal_delivery::sha256(custody.receipt.as_bytes())
+        }));
+    }
+    let history_entries = crate::vault::history_events_for_test(store);
+    serde_json::json!({"records":inspected,"history":{"objects":history_objects,"head":history_head,"authenticatedEntryCount":history_entries.len()}})
+}
+
 #[test]
 #[ignore = "real HTTPS synthetic environment only; requires private config and actual native helper"]
 fn native_portal_real_https_flow() {
@@ -182,6 +237,7 @@ fn native_portal_real_https_flow() {
             "check",
             "check-drop-receipt-reply",
             "inspect",
+            "inspect-payloads",
             "verify"
         ]
         .contains(&phase.as_str()),
@@ -263,7 +319,7 @@ fn native_portal_real_https_flow() {
                     .as_deref()
                     .expect("expected original hash required for verification"),
             ),
-            "inspect" => {}
+            "inspect" | "inspect-payloads" => {}
             _ => unreachable!(),
         }
         Ok(())
@@ -288,7 +344,9 @@ fn native_portal_real_https_flow() {
         open.manifest.records.iter().filter_map(|r|r.delivery.as_ref().map(|c|serde_json::json!({"recordId":r.id,"deliveryId":c.outer.delivery_id,"keptReceiptSha256":crate::portal_delivery::sha256(c.receipt.as_bytes()),"originalSha256":c.manifest.document.sha256,"serviceDate":c.manifest.document.service_date,"receiptPending":c.receipt_outcome.is_none(),"receiptOutcome":c.receipt_outcome,"verified":super::delivery::verified_clinic(r,&open.manifest.portal_links).is_some()}))).collect::<Vec<_>>()
     };
     let loss = receipt_loss.into_inner();
-    let report = serde_json::json!({"scope":"actual native APIs and HTTPS; does not establish Windows/native UI behavior","phase":phase,"vaultReopened":true,"nativeErrorCode":error_code,"recovery":snapshot.recovery,"links":snapshot.portal_links,"records":records,"checkResult":check_result,"receiptTrace":if phase=="check" || phase=="check-drop-receipt-reply" {Some(&loss)}else{None}});
+    let payload_inspection =
+        (phase == "inspect-payloads").then(|| inspect_delivery_payloads(&reopened));
+    let report = serde_json::json!({"scope":"actual native APIs and HTTPS; does not establish Windows/native UI behavior","phase":phase,"vaultReopened":true,"nativeErrorCode":error_code,"recovery":snapshot.recovery,"links":snapshot.portal_links,"records":records,"checkResult":check_result,"receiptTrace":if phase=="check" || phase=="check-drop-receipt-reply" {Some(&loss)}else{None},"payloadInspection":payload_inspection});
     fs::write(&config.report, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     if phase == "check-drop-receipt-reply" {
         assert!(
