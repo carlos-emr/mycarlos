@@ -35,6 +35,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod delivery;
+#[cfg(all(test, feature = "portal-linking"))]
+mod native_portal_flow;
 mod original_pdf;
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
