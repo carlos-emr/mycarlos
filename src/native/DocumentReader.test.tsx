@@ -94,8 +94,14 @@ describe("the document reader", () => {
     expect(
       Math.abs(picture.getBoundingClientRect().width - available),
     ).toBeLessThanOrEqual(1);
-    // The page count beside the buttons, and said once the page is shown.
-    expect(screen.getAllByText("Page 1 of 2")).toHaveLength(2);
+    // One visible count beside the buttons; the completion is still announced.
+    const counts = screen.getAllByText("Page 1 of 2");
+    expect(
+      counts.filter((count) => {
+        const bounds = count.getBoundingClientRect();
+        return bounds.width > 1 && bounds.height > 1;
+      }),
+    ).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2");
     expect(viewPage).toHaveBeenCalledTimes(1);
     const [index, width, password] = viewPage.mock.calls[0];
@@ -180,9 +186,9 @@ describe("the document reader", () => {
     const { onClose } = renderReader(
       vi.fn().mockRejectedValue(refusal("pdf_view_failed")),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "FAKE pdf_view_failed",
-    );
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("FAKE pdf_view_failed");
+    expect(failure).toBeVisible();
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
     );
@@ -201,6 +207,10 @@ describe("the document reader", () => {
     );
     const { cancelView, unmount } = renderReader(viewPage);
     expect(await screen.findByText("Opening page 1…")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Opening page 1…");
+    expect(
+      screen.getByRole("status").getBoundingClientRect().height,
+    ).toBeGreaterThan(1);
     // Sizes and pages cannot be asked for while one is being drawn.
     for (const name of ["Larger", "Smaller", "Next page"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
@@ -271,9 +281,9 @@ describe("the document reader", () => {
     renderReader(viewPage);
     await screen.findByRole("img", { name: /^Page 1 of 2/ });
     await user.click(screen.getByRole("button", { name: "Next page" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "FAKE pdf_view_failed",
-    );
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("FAKE pdf_view_failed");
+    expect(failure).toBeVisible();
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.queryByText("Text on this page")).toBeNull();
   });
