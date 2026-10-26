@@ -804,6 +804,15 @@ are further format-5 work; their absence must not be reported as complete #55.
 
 #### Format-5 original-PDF custody source checkpoint
 
+Document objects and history segments are synced before publication through
+`atomicwrites::move_atomic`: `MoveFileExW(MOVEFILE_WRITE_THROUGH)` on Windows,
+and an atomic rename followed by source/destination directory sync on Unix.
+The encrypted manifest is published afterwards through the existing atomic-write
+primitive. Restart tests cover a crash after either document object, history
+publication, and each manifest slot. These tests establish process-crash recovery;
+Windows power-loss behavior still needs the actual supported filesystem/device
+validation before delivery is enabled.
+
 `originalPdf`, when present on a record, describes a separate MCVO1 object: its
 own UUID, object name, wrapped independent random key, plaintext size and SHA-256.
 The source implementation retains this for every accepted PDF, including unsigned,
@@ -823,6 +832,6 @@ continue using helper raw text, never readableText.
 
 A missing original does not remove the intact display. Its presence is exposed
 separately; backup/export refuse an unavailable or unauthentic original. This is
-a private source checkpoint: the new custody tests have not run, durable
+a private source checkpoint: focused original custody and process-restart tests pass on Linux; durable
 verification state/rechecks and missing/corrupt-source downgrade history still
 need implementation, and no full #55 or platform claim follows from these edits.

@@ -1890,10 +1890,20 @@ impl VaultStore {
             let objects = self.root.join("objects");
             for (_, record) in &staged {
                 for object in record.objects() {
-                    fs::rename(
-                        stage.join(object.object_name),
-                        objects.join(object.object_name),
+                    // atomicwrites uses MoveFileExW(MOVEFILE_WRITE_THROUGH)
+                    // on Windows and syncs both directories on Unix. The
+                    // receipt path must never outrun publication of an object.
+                    atomicwrites::move_atomic(
+                        &stage.join(object.object_name),
+                        &objects.join(object.object_name),
                     )?;
+                    let boundary = if object.id == record.id {
+                        "import.after-display-publication"
+                    } else {
+                        "import.after-original-publication"
+                    };
+                    terminate_at_test_boundary(boundary);
+                    fail_at_test_boundary(boundary)?;
                 }
             }
             // The manifest about to be committed references these objects. If
@@ -4026,7 +4036,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             return Err(VaultError::Corrupt);
         }
     }
-    validate_history(manifest, &mut object_names)
+    validate_history(manifest, &mut object_names, &mut object_ids)
 }
 
 /// The history's place in the manifest (#71): format 3 only; its data
@@ -4036,6 +4046,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
 fn validate_history<'a>(
     manifest: &'a Manifest,
     object_names: &mut HashSet<&'a str>,
+    object_ids: &mut HashSet<Uuid>,
 ) -> Result<(), VaultError> {
     let state = &manifest.history;
     if state.is_empty() {
@@ -5286,7 +5297,9 @@ fn write_history_segment(
     let mut segment_key = Zeroizing::new([0_u8; 32]);
     OsRng.fill_bytes(segment_key.as_mut());
     let wrapped_key = wrap_secret(&keys.object_wrap, &segment_key, &segment_key_aad(id))?;
-    let path = root.join("objects").join(&object_name);
+    // Publish only after sync_all in encrypt_object. Windows cannot fsync a
+    // directory through std, so use the same write-through move as documents.
+    let path = root.join("objects").join(format!("{}.mcobj", Uuid::new_v4()));
     let written = encrypt_object(
         Box::new(io::Cursor::new(plaintext)),
         &path,
@@ -5301,6 +5314,10 @@ fn write_history_segment(
     if let Err(error) = written {
         let _ = remove_owned_file(&path, Removable::UncommittedObject);
         return Err(error);
+    }
+    if let Err(error) = atomicwrites::move_atomic(&path, &root.join("objects").join(&object_name)) {
+        let _ = remove_owned_file(&path, Removable::UncommittedObject);
+        return Err(error.into());
     }
     Ok(HistorySegment {
         id,
@@ -7678,6 +7695,49 @@ mod tests {
     }
 
     #[test]
+    fn should_retain_both_pdf_objects_and_history_when_restarted_after_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let template = temp.path().join("template");
+        let store = VaultStore::new(template.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        store.lock();
+        for (boundary, committed) in [
+            ("original.after-chunk-write", false),
+            ("import.after-display-publication", false),
+            ("import.after-original-publication", false),
+            ("history.after-segment-write", false),
+            ("manifest.after-first-write", true),
+            ("manifest.after-second-write", true),
+        ] {
+            let root = temp.path().join(boundary);
+            copy_directory(&template, &root);
+            run_termination_child(&root, "original-import", boundary);
+            let restarted = VaultStore::new(root.clone());
+            restarted.unlock(PASSWORD).unwrap();
+            let snapshot = restarted.snapshot().unwrap();
+            assert_eq!(snapshot.records.len(), usize::from(committed), "{boundary}");
+            assert_eq!(document_files(&root), 2 * usize::from(committed), "{boundary}");
+            assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
+            if committed {
+                let mut original = Vec::new();
+                restarted.export(snapshot.records[0].id, &mut original).unwrap();
+                assert_eq!(original, b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF");
+                restarted.verify_for_backup().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn should_refuse_object_id_collision_between_original_and_history() {
+        let (_temp, store, _id, _bytes) = original_pdf_fixture();
+        let guard = store.session();
+        let unlocked = guard.as_ref().unwrap();
+        let mut manifest = unlocked.manifest.clone();
+        manifest.records[0].original_pdf.as_mut().unwrap().id = manifest.history.segments[0].id;
+        assert!(matches!(validate_manifest_structure(&manifest, manifest.vault_id), Err(VaultError::Corrupt)));
+    }
+
+    #[test]
     fn original_pdf_raw_bytes_have_an_independent_encrypted_object_and_key() {
         use sha2::Digest;
         let (_temp, store, id, bytes) = original_pdf_fixture();
@@ -8111,12 +8171,17 @@ mod tests {
         unlock_with_boundaries_held(&store);
         let snapshot = store.snapshot().unwrap();
         match operation.as_str() {
-            "import" => {
+            "import" | "original-import" => {
+                let bytes: &[u8] = if operation == "original-import" {
+                    b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF"
+                } else {
+                    b"synthetic crash boundary record"
+                };
                 store
                     .import(
                         snapshot.profiles[0].id,
                         vec![],
-                        vec![source("crash-test.pdf", b"synthetic crash boundary record")],
+                        vec![source("crash-test.pdf", bytes)],
                         2,
                     )
                     .unwrap();
