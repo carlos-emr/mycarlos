@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useI18n } from "../i18n";
+import { vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
 interface Props {
@@ -66,6 +67,7 @@ export function PortalDocuments({
   const approvalMessage = (link: PortalLinkSummary) => {
     if (link.incomplete) return t("portal.incomplete");
     if (link.clinicApproved) return t("portal.approved");
+    if (link.approvalRequestLimitReached) return t("portal.approvalContact");
     if (link.approvalStatus === "expired") return t("portal.approvalExpired");
     if (link.approvalStatus === "cancelled")
       return t("portal.approvalCancelled");
@@ -90,10 +92,24 @@ export function PortalDocuments({
         if (shown.current)
           setNotice(
             [
-              t("portal.result", {
-                added: result.added,
-                refused: result.refused,
-              }),
+              t(
+                result.issues?.length
+                  ? "portal.partialResult"
+                  : "portal.result",
+                {
+                  added: result.added,
+                  refused: result.refused,
+                },
+              ),
+              ...(result.issues ?? []).map((issue) =>
+                t("portal.clinicIssue", {
+                  clinic: issue.clinicName,
+                  detail: vaultErrorMessage({
+                    code: issue.code,
+                    message: t("portal.errorIncomplete"),
+                  }),
+                }),
+              ),
               ...(result.receiptsPending > 0
                 ? [
                     t("portal.confirmationsPending", {

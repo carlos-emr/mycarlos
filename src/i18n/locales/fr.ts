@@ -16,6 +16,9 @@ export const fr: Record<MessageKey, Message> = {
     "Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.",
   "portal.confirmationsPending":
     "Documents enregistrés en attente de confirmation de réception : {count}. Vérifiez à nouveau pour terminer la confirmation. Vos copies enregistrées restent dans le coffre.",
+  "portal.partialResult":
+    "Certaines vérifications auprès des cliniques nécessitent votre attention. Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
+  "portal.clinicIssue": "{clinic} : {detail}",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documents de la clinique",
   "portal.intro":

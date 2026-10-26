@@ -609,3 +609,44 @@ pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredL
     };
     (x, link, attempt)
 }
+
+#[cfg(feature = "portal-linking")]
+use crate::{portal_link::StoredLink, vault::VaultError};
+#[cfg(feature = "portal-linking")]
+pub(crate) trait ApprovalExchange {
+    fn get(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<crate::portal_approval::Attempt>, VaultError>;
+    fn post(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<crate::portal_approval::Attempt, VaultError>;
+}
+#[cfg(feature = "portal-linking")]
+pub(crate) struct ApprovalHttp;
+#[cfg(feature = "portal-linking")]
+impl ApprovalExchange for ApprovalHttp {
+    fn get(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<crate::portal_approval::Attempt>, VaultError> {
+        crate::portal_approval::refresh(link, attempt, cancelled)
+    }
+    fn post(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<crate::portal_approval::Attempt, VaultError> {
+        crate::portal_approval::publish(link, attempt, anchor, cancelled)
+    }
+}

@@ -275,6 +275,59 @@ describe("native clinic document controls", () => {
       expect.stringContaining("Picked up"),
     );
   });
+  it("shows clinic-specific partial guidance while preserving successful progress from other links", async () => {
+    const { bridge, props } = fixture();
+    vi.mocked(bridge.checkDocuments!).mockResolvedValue({
+      added: 2,
+      refused: 0,
+      receiptsPending: 0,
+      issues: [
+        {
+          linkId: "other-link",
+          clinicName: "FAKE Other Clinic",
+          code: "approval_expired",
+        },
+      ],
+    });
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Check for new documents" }));
+    await waitFor(() =>
+      expect(props.setNotice).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Some clinic checks need attention. New documents saved: 2.",
+        ),
+      ),
+    );
+    expect(props.setNotice).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "FAKE Other Clinic: This approval request expired.",
+      ),
+    );
+  });
+  it("keeps contact guidance and hides restart when the native request archive is full", () => {
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [
+          {
+            ...link,
+            approvalStatus: "expired",
+            approvalCanRestart: false,
+            approvalRequestLimitReached: true,
+          },
+        ],
+      },
+    });
+    expect(
+      screen.getByText(
+        "Clinic approval needs to be checked. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Start a new approval request" }),
+    ).not.toBeInTheDocument();
+  });
   it("renders the linking and fingerprint labels in every supported language", () => {
     fixture();
     for (const locale of LOCALES) {

@@ -17,6 +17,9 @@ export const ptBR: Record<MessageKey, Message> = {
     "Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.",
   "portal.confirmationsPending":
     "Documentos salvos aguardando confirmação de retirada: {count}. Verifique novamente para concluir a confirmação. Suas cópias salvas permanecem no cofre.",
+  "portal.partialResult":
+    "Algumas verificações das clínicas precisam de atenção. Novos documentos salvos: {added}. Documentos que não puderam ser verificados: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos da clínica",
   "portal.intro":

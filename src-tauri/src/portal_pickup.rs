@@ -7,15 +7,93 @@ pub struct CheckResult {
     pub added: usize,
     pub refused: usize,
     pub receipts_pending: usize,
+    pub issues: Vec<CheckIssue>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckIssue {
+    pub link_id: uuid::Uuid,
+    pub clinic_name: String,
+    pub code: String,
+}
+
+#[cfg(feature = "portal-linking")]
+pub(crate) fn is_per_link_failure(error: &crate::vault::VaultError) -> bool {
+    use crate::{portal_link::LinkError, vault::VaultError};
+    match error {
+        VaultError::Portal(LinkError::Cancelled | LinkError::Disabled | LinkError::Unavailable) => {
+            false
+        }
+        VaultError::Portal(_)
+        | VaultError::ApprovalTerminal(_, _)
+        | VaultError::ApprovalRequestMissing
+        | VaultError::ApprovalNeedsClinic
+        | VaultError::NotFound
+        | VaultError::Invalid => true,
+        _ => false,
+    }
+}
+#[cfg(feature = "portal-linking")]
+fn add_issue(
+    result: &mut CheckResult,
+    link: &crate::portal_link::StoredLink,
+    error: crate::vault::VaultError,
+) {
+    let code = match &error {
+        crate::vault::VaultError::Invalid | crate::vault::VaultError::NotFound => {
+            "portal_link_incomplete"
+        }
+        _ => crate::PublicText::from(error).code,
+    };
+    if result
+        .issues
+        .iter()
+        .any(|i| i.link_id == link.id && i.code == code)
+    {
+        return;
+    }
+    result.issues.push(CheckIssue {
+        link_id: link.id,
+        clinic_name: link
+            .clinic
+            .as_ref()
+            .map(|c| c.clinic_name.clone())
+            .unwrap_or_default(),
+        code: code.into(),
+    });
+}
 #[cfg(feature = "portal-linking")]
 pub(crate) fn check(
     store: &crate::vault::VaultStore,
     session: u64,
 ) -> Result<CheckResult, crate::vault::VaultError> {
+    check_using(
+        store,
+        session,
+        &crate::portal_approval::ApprovalHttp,
+        crate::portal_client::api,
+    )
+}
+#[cfg(feature = "portal-linking")]
+pub(crate) fn check_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
     use crate::{
-        portal_client,
         portal_delivery::{Outer, ReceiptOutcome},
         portal_link::{LinkError, StoredLink},
         vault::VaultError,
@@ -26,7 +104,7 @@ pub(crate) fn check(
         let anchor = store.delivery_anchor(link, session)?;
         let body = serde_json::to_vec(&serde_json::json!({"receipt":c.receipt}))
             .map_err(|_| VaultError::Storage)?;
-        let response = portal_client::api(
+        let response = exchange(
             link,
             "POST",
             &format!("/api/mycarlos/deliveries/{}/receipt", c.outer.delivery_id),
@@ -85,104 +163,126 @@ pub(crate) fn check(
         Ok(n)
     };
     let mut result = CheckResult::default();
-    for link in store.delivery_links(session)? {
-        let link = store.refresh_staff_approval(&link, session)?;
-        // Restart and lost-reply retries happen before listing. Terminal portal
-        // copies disappear from the list, so list-only retry would lose them.
-        for c in store.pending_receipts(&link, session)? {
-            send(&link, &c)?;
-        }
-        let mut after = 0;
-        let mut through = None;
-        let mut seen = std::collections::HashSet::new();
-        for page_number in 0..100 {
-            if cancelled() {
-                return Err(VaultError::Cancelled);
+    for original in store.delivery_links(session)? {
+        let outcome = (|| -> Result<(), VaultError> {
+            // Known durable custody is independent of advisory approval refresh.
+            // Retry it first, including for a link whose new request was refused.
+            for c in store.pending_receipts(&original, session)? {
+                send(&original, &c)?;
             }
-            let suffix = match through {
-                None => "/api/mycarlos/deliveries?limit=50".to_owned(),
-                Some(t) => format!("/api/mycarlos/deliveries?after={after}&through={t}&limit=50"),
-            };
-            let anchor = store.delivery_anchor(&link, session)?;
-            let response = portal_client::api(
-                &link,
-                "GET",
-                &suffix,
-                Vec::new(),
-                Some(&anchor),
-                524288,
-                &cancelled,
-            )
-            .map_err(VaultError::Portal)?;
-            if response.status != 200 {
-                return Err(VaultError::Portal(LinkError::Network));
+            let (link, warning) =
+                store.refresh_staff_approval_for_check(&original, session, approval)?;
+            if let Some(error) = warning {
+                add_issue(&mut result, &link, error);
             }
-            let page: Page = serde_json::from_slice(&response.body)
-                .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
-            let high = cursor(&page.through)?;
-            if !page.anchor_recorded
-                || page.deliveries.len() > 100
-                || through.is_some_and(|t| t != high)
-                || high < after
-            {
-                return Err(VaultError::Portal(LinkError::InvalidResponse));
-            }
-            through = Some(high);
-            for outer in page.deliveries {
-                outer
-                    .validate()
-                    .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
-                if !seen.insert(outer.delivery_id.clone()) {
-                    return Err(VaultError::Portal(LinkError::InvalidResponse));
+            let mut after = 0;
+            let mut through = None;
+            let mut seen = std::collections::HashSet::new();
+            for page_number in 0..100 {
+                if cancelled() {
+                    return Err(VaultError::Cancelled);
                 }
-                let response = portal_client::api(
+                let suffix = match through {
+                    None => "/api/mycarlos/deliveries?limit=50".to_owned(),
+                    Some(t) => {
+                        format!("/api/mycarlos/deliveries?after={after}&through={t}&limit=50")
+                    }
+                };
+                let anchor = store.delivery_anchor(&link, session)?;
+                let response = exchange(
                     &link,
                     "GET",
-                    &format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
+                    &suffix,
                     Vec::new(),
-                    None,
-                    outer.size as usize,
+                    Some(&anchor),
+                    524288,
                     &cancelled,
                 )
                 .map_err(VaultError::Portal)?;
                 if response.status != 200 {
-                    #[derive(Deserialize)]
-                    #[serde(deny_unknown_fields)]
-                    struct Missing {
-                        code: String,
-                    }
-                    if response.status == 404
-                        && serde_json::from_slice::<Missing>(&response.body)
-                            .ok()
-                            .is_some_and(|v| v.code == "delivery_not_found")
-                    {
-                        continue;
-                    }
                     return Err(VaultError::Portal(LinkError::Network));
                 }
-                match store.receive_delivery(&outer, &response.body, &link, session) {
-                    Ok((_, added)) => {
-                        result.added += usize::from(added);
-                        for c in store.pending_receipts(&link, session)? {
-                            send(&link, &c)?;
-                        }
-                    }
-                    Err(VaultError::PickupRefused) => result.refused += 1,
-                    Err(error) => return Err(error),
+                let page: Page = serde_json::from_slice(&response.body)
+                    .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
+                let high = cursor(&page.through)?;
+                if !page.anchor_recorded
+                    || page.deliveries.len() > 100
+                    || through.is_some_and(|t| t != high)
+                    || high < after
+                {
+                    return Err(VaultError::Portal(LinkError::InvalidResponse));
                 }
-            }
-            match page.next_cursor {
-                None => break,
-                Some(next) => {
-                    let next = cursor(&next)?;
-                    if next <= after || next > high || page_number == 99 {
+                through = Some(high);
+                for outer in page.deliveries {
+                    outer
+                        .validate()
+                        .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
+                    if !seen.insert(outer.delivery_id.clone()) {
                         return Err(VaultError::Portal(LinkError::InvalidResponse));
                     }
-                    after = next;
+                    let response = exchange(
+                        &link,
+                        "GET",
+                        &format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
+                        Vec::new(),
+                        None,
+                        outer.size as usize,
+                        &cancelled,
+                    )
+                    .map_err(VaultError::Portal)?;
+                    if response.status != 200 {
+                        #[derive(Deserialize)]
+                        #[serde(deny_unknown_fields)]
+                        struct Missing {
+                            code: String,
+                        }
+                        if response.status == 404
+                            && serde_json::from_slice::<Missing>(&response.body)
+                                .ok()
+                                .is_some_and(|v| v.code == "delivery_not_found")
+                        {
+                            continue;
+                        }
+                        return Err(VaultError::Portal(LinkError::Network));
+                    }
+                    match store.receive_delivery(&outer, &response.body, &link, session) {
+                        Ok((_, added)) => {
+                            result.added += usize::from(added);
+                            for c in store.pending_receipts(&link, session)? {
+                                send(&link, &c)?;
+                            }
+                        }
+                        Err(VaultError::PickupRefused) => result.refused += 1,
+                        Err(error) => return Err(error),
+                    }
+                }
+                match page.next_cursor {
+                    None => break,
+                    Some(next) => {
+                        let next = cursor(&next)?;
+                        if next <= after || next > high || page_number == 99 {
+                            return Err(VaultError::Portal(LinkError::InvalidResponse));
+                        }
+                        after = next;
+                    }
                 }
             }
+            Ok(())
+        })();
+        if let Err(error) = outcome {
+            if !is_per_link_failure(&error) {
+                return Err(error);
+            }
+            add_issue(&mut result, &original, error);
         }
-        result.receipts_pending += store.pending_receipts(&link, session)?.len();
+        // Approval reconciliation may have updated the link. Re-read its
+        // current immutable identity/state before validating kept custody.
+        let current = store
+            .delivery_links(session)?
+            .into_iter()
+            .find(|l| l.id == original.id)
+            .ok_or(VaultError::NotFound)?;
+        result.receipts_pending += store.pending_receipts(&current, session)?.len();
     }
     Ok(result)
 }

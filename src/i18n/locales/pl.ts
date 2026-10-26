@@ -18,6 +18,9 @@ export const pl: Record<MessageKey, Message> = {
     "Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.",
   "portal.confirmationsPending":
     "Zapisane dokumenty oczekujące na potwierdzenie odbioru: {count}. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.",
+  "portal.partialResult":
+    "Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Dokumenty z przychodni",
   "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",

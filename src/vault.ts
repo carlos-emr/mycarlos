@@ -109,6 +109,7 @@ export interface PortalLinkSummary {
     | "no_accepted_approver"
     | null;
   approvalCanRestart?: boolean;
+  approvalRequestLimitReached?: boolean;
 }
 
 export interface PortalLinkInput {
@@ -269,6 +270,7 @@ export interface VaultBridge {
     added: number;
     refused: number;
     receiptsPending: number;
+    issues?: { linkId: string; clinicName: string; code: string }[];
   }>;
   requestDeviceApproval?(linkId: string): Promise<void>;
   restartDeviceApproval?(linkId: string): Promise<void>;

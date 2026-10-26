@@ -903,3 +903,16 @@ restart and preserves terminal guidance after reopening the vault. Upgrade
 coverage includes formats 1–6. Production-boundary tests exercise the real
 vault/proof parser with scripted synthetic HTTP replies; those tests do not
 claim live network or Windows end-to-end completion.
+
+Approval reconciliation commits each independently verified response before the
+next HTTP exchange. Once current acceptance is durable, unavailable archive
+endpoints do not block that link. An archived network/parser failure leaves the
+old request intact and is surfaced without discarding earlier committed proof
+or terminal state. Explicit restarts still refuse unresolved reconciliation.
+
+Mailbox checks retry each link's existing durable receipts before approval
+refresh. Per-clinic portal/approval failures are returned as typed, content-free
+issues while independent links continue. Global lock, cancellation, corruption,
+recovery or storage failures still stop the operation. Saved documents with an
+unconfirmed receipt remain pending and preserve the exact compact bytes for the
+next check; pending count and clinic guidance are shown together with progress.

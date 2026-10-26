@@ -238,6 +238,7 @@ pub struct LinkSummary {
     pub approval_status: Option<crate::portal_approval::ApprovalState>,
     pub approval_reason: Option<crate::portal_approval::ApprovalReason>,
     pub approval_can_restart: bool,
+    pub approval_request_limit_reached: bool,
 }
 
 impl StoredLink {
@@ -323,7 +324,13 @@ impl StoredLink {
             } else {
                 self.approval.as_ref().and_then(|a| a.reason)
             },
-            approval_can_restart: !accepted
+            approval_request_limit_reached: !accepted
+                && self.approval_history.len() + usize::from(self.approval.is_some())
+                    >= crate::portal_approval::MAX_APPROVAL_REQUESTS,
+            approval_can_restart: self.approval_history.len()
+                + usize::from(self.approval.is_some())
+                < crate::portal_approval::MAX_APPROVAL_REQUESTS
+                && !accepted
                 && self.approval.as_ref().is_some_and(|a| {
                     a.state() != crate::portal_approval::ApprovalState::Refused
                         && (matches!(

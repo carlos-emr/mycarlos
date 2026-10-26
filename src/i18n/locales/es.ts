@@ -16,6 +16,9 @@ export const es: Record<MessageKey, Message> = {
     "No se encontró su solicitud de aprobación guardada en el portal. Vuelva a enviar la solicitud guardada.",
   "portal.confirmationsPending":
     "Documentos guardados pendientes de confirmación de recepción: {count}. Compruebe de nuevo para completar la confirmación. Sus copias guardadas permanecen en la bóveda.",
+  "portal.partialResult":
+    "Algunas comprobaciones de clínicas requieren atención. Documentos nuevos guardados: {added}. Documentos que no se pudieron verificar: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos de la clínica",
   "portal.intro":

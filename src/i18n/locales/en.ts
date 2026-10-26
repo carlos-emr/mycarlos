@@ -18,6 +18,9 @@ export const en = {
     "Your saved approval request was not found on the portal. Send the saved request again.",
   "portal.confirmationsPending":
     "Saved documents awaiting pickup confirmation: {count}. Check again to finish confirmation. Your saved copies stay in the vault.",
+  "portal.partialResult":
+    "Some clinic checks need attention. New documents saved: {added}. Documents that could not be verified: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Clinic documents",
   "portal.intro":
