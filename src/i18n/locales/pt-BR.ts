@@ -508,12 +508,15 @@ export const ptBR: Record<MessageKey, Message> = {
   "library.noMatch.title": "Nenhum documento corresponde",
   "library.noMatch.help": "Tente outra pesquisa.",
   // Optional identity details and explicit shared-document suggestions (#97).
-  "personDetails.fullName":
-    "Nome completo, como nos documentos da clínica (opcional)",
-  "personDetails.birthDate": "Data de nascimento (opcional)",
+  "personDetails.fullName": "Nome completo, como nos documentos da clínica",
+  "personDetails.birthDate": "Data de nascimento",
+  "personDetails.birthDateUnknown": "Não sei a data de nascimento desta pessoa",
   "personDetails.help":
     "Guardados neste cofre criptografado para sugerir a quem um documento compartilhado pertence. Esses dados não verificam a origem de um documento.",
   "personDetails.nameTooLong": "Este nome completo é muito longo. Encurte-o.",
+  "personDetails.fullNameRequired": "Digite o nome completo da pessoa.",
+  "personDetails.birthDateRequired":
+    "Digite a data de nascimento ou indique que não a conhece.",
   "personDetails.invalidDate":
     "Digite uma data de nascimento válida: ano, mês e dia.",
   "personDetails.futureDate": "A data de nascimento não pode estar no futuro.",

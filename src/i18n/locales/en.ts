@@ -490,11 +490,15 @@ export const en = {
   "library.noMatch.title": "No matching records",
   "library.noMatch.help": "Try another search.",
   // Optional identity details and explicit shared-document suggestions (#97).
-  "personDetails.fullName": "Full name, as on clinic documents (optional)",
-  "personDetails.birthDate": "Birth date (optional)",
+  "personDetails.fullName": "Full name, as on clinic documents",
+  "personDetails.birthDate": "Date of birth",
+  "personDetails.birthDateUnknown": "I don't know this person's date of birth",
   "personDetails.help":
     "Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.",
   "personDetails.nameTooLong": "This full name is too long. Shorten it.",
+  "personDetails.fullNameRequired": "Enter the person's full name.",
+  "personDetails.birthDateRequired":
+    "Enter a date of birth or choose that it is unknown.",
   "personDetails.invalidDate":
     "Enter a valid birth date as year, month and day.",
   "personDetails.futureDate": "A birth date cannot be in the future.",

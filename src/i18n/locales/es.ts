@@ -510,12 +510,18 @@ export const es: Record<MessageKey, Message> = {
   "library.noMatch.help": "Pruebe otra búsqueda.",
   // Optional identity details and explicit shared-document suggestions (#97).
   "personDetails.fullName":
-    "Nombre completo, como en los documentos de la clínica (opcional)",
-  "personDetails.birthDate": "Fecha de nacimiento (opcional)",
+    "Nombre completo, como en los documentos de la clínica",
+  "personDetails.birthDate": "Fecha de nacimiento",
+  "personDetails.birthDateUnknown":
+    "No conozco la fecha de nacimiento de esta persona",
   "personDetails.help":
     "Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.",
   "personDetails.nameTooLong":
     "Este nombre completo es demasiado largo. Acórtelo.",
+  "personDetails.fullNameRequired":
+    "Introduzca el nombre completo de la persona.",
+  "personDetails.birthDateRequired":
+    "Introduzca la fecha de nacimiento o indique que la desconoce.",
   "personDetails.invalidDate":
     "Introduzca una fecha de nacimiento válida: año, mes y día.",
   "personDetails.futureDate": "La fecha de nacimiento no puede ser futura.",

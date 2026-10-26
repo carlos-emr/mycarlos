@@ -529,12 +529,15 @@ export const pl: Record<MessageKey, Message> = {
   "library.noMatch.title": "Brak pasujących dokumentów",
   "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
   // Optional identity details and explicit shared-document suggestions (#97).
-  "personDetails.fullName":
-    "Imię i nazwisko, jak na dokumentach z przychodni (opcjonalnie)",
-  "personDetails.birthDate": "Data urodzenia (opcjonalnie)",
+  "personDetails.fullName": "Imię i nazwisko, jak na dokumentach z przychodni",
+  "personDetails.birthDate": "Data urodzenia",
+  "personDetails.birthDateUnknown": "Nie znam daty urodzenia tej osoby",
   "personDetails.help":
     "Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.",
   "personDetails.nameTooLong": "Imię i nazwisko są zbyt długie. Skróć je.",
+  "personDetails.fullNameRequired": "Wpisz imię i nazwisko tej osoby.",
+  "personDetails.birthDateRequired":
+    "Wpisz datę urodzenia lub zaznacz, że jej nie znasz.",
   "personDetails.invalidDate":
     "Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.",
   "personDetails.futureDate": "Data urodzenia nie może być w przyszłości.",

@@ -247,10 +247,10 @@ describe("shared PDF suggestions use explicit Move", () => {
       { target: { value: "FAKE Riley" } },
     );
     fireEvent.change(
-      screen.getByLabelText("Full name, as on clinic documents (optional)"),
+      screen.getByLabelText("Full name, as on clinic documents"),
       { target: { value: " FAKE Riley Example " } },
     );
-    fireEvent.change(screen.getByLabelText("Birth date (optional)"), {
+    fireEvent.change(screen.getByLabelText("Date of birth"), {
       target: { value: "2012-06-02" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
