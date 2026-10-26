@@ -554,6 +554,10 @@ export const en = {
   "library.select": "Select {name}",
   "library.empty.title": "This location is empty",
   "library.empty.help": "Add a folder or import a document here.",
+  "library.search.results":
+    "Search results. Folders: {folders}. Documents: {documents}.",
+  "library.search.cleared":
+    "Search cleared. Folders in this location: {folders}. Documents: {documents}.",
   "library.noMatch.title": "No matching records",
   "library.noMatch.help": "Try another search.",
   // Optional identity details and explicit shared-document suggestions (#97).
