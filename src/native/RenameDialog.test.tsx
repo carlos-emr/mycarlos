@@ -276,14 +276,14 @@ describe("RenameDialog", () => {
       [`COM${cp(0xb9)}`, `COM${cp(0xb9)}`],
       [`lpt${cp(0xb3)}`, `lpt${cp(0xb3)}`],
       ["CON.backup", "CON"],
-    ].map(([typed, word]) => ["Results.pdf", typed, word]),
-    ["Visit notes", "AUX .txt", "AUX"],
-    ["Visit notes", "AUX   .txt", "AUX"],
+    ].map(([typed, word]) => ["Results.pdf", typed, word, ".pdf"]),
+    ["Visit notes", "AUX .txt", "AUX", ""],
+    ["Visit notes", "AUX   .txt", "AUX", ""],
     // Trimmed as the vault trims, U+0085 included.
-    ["Results.pdf", "\u0085CON", "CON"],
+    ["Results.pdf", "\u0085CON", "CON", ".pdf"],
   ])(
     "refuses %j renamed to %j when saved, naming %j",
-    (stored, typed, word) => {
+    (stored, typed, word, extension) => {
       const { input, onSave, save, type, submit } = open(stored);
       type(typed);
       // Not while typing: "Con" is on the way to "Consult notes".
@@ -302,7 +302,9 @@ describe("RenameDialog", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(input).not.toHaveAttribute("aria-invalid");
       expect(input).toHaveAccessibleDescription(
-        `${HELP_WITH_EXTENSION} .pdf extension stays the same.`,
+        extension
+          ? `${HELP_WITH_EXTENSION} ${extension} extension stays the same.`
+          : HELP,
       );
     },
   );
