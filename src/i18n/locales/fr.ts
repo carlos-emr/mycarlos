@@ -453,12 +453,22 @@ export const fr: Record<MessageKey, Message> = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "L’apparence de myCarlos sur cet ordinateur",
+  "language.title": "Langue",
+  "language.help":
+    "Ce choix est mémorisé sur cet appareil. Vos documents restent dans leur langue d’origine.",
+  "language.system": "Par défaut du système",
+  "language.error.unreadable":
+    "La langue enregistrée n’a pas pu être lue. La langue de votre appareil est utilisée pour cette session.",
+  "language.error.notRemembered":
+    "La langue a changé pour cette session, mais ce choix n’a pas pu être mémorisé sur cet appareil.",
+
   "appearance.title": "Apparence",
   "appearance.help":
-    "{system} suit l’apparence claire ou sombre de votre appareil. Le contraste élevé suit automatiquement votre appareil.",
+    "{system} suit l’apparence claire ou sombre de votre appareil. Le contraste élevé utilise un fond noir et du texte clair. Les couleurs de contraste de votre appareil restent prioritaires.",
   "appearance.system": "Système",
   "appearance.light": "Clair",
   "appearance.dark": "Sombre",
+  "appearance.highContrast": "Contraste élevé",
   "appearance.error.unreadable":
     "L’apparence enregistrée n’a pas pu être lue. L’option {system} est utilisée pendant cette session.",
   "appearance.error.notRemembered":

@@ -130,6 +130,9 @@ export interface UnlockedPdf {
 export interface ImportOutcome {
   imported: string[];
   skippedDuplicates: string[];
+  /** Native-only analysis diagnostics. No authenticated clinic links exist
+   * yet; this is never a Verified claim or a durable trust decision. */
+  unverifiedSignatures?: { recordId: string; reason: unknown }[];
 }
 
 /** What adding the waiting files to Shared with me did (#61). */
@@ -462,7 +465,10 @@ export interface ViewedPage {
   width: number;
   height: number;
   image: string;
+  /** Legacy extraction, unchanged for consumers that require its exact output. */
   text: string;
+  /** Reader-only extraction retaining supported PDF line-position boundaries. */
+  readableText?: string;
 }
 
 /** True when the native side refused with `code`. */

@@ -466,12 +466,22 @@ export const pl: Record<MessageKey, Message> = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "Wygląd myCarlos na tym komputerze",
+  "language.title": "Język",
+  "language.help":
+    "Wybór jest zapamiętywany na tym urządzeniu. Dokumenty pozostają w oryginalnym języku.",
+  "language.system": "Język systemu",
+  "language.error.unreadable":
+    "Nie udało się odczytać zapisanego języka. W tej sesji używany jest język urządzenia.",
+  "language.error.notRemembered":
+    "Język został zmieniony na tę sesję, ale nie udało się go zapamiętać na tym urządzeniu.",
+
   "appearance.title": "Wygląd",
   "appearance.help":
-    "Opcja „{system}” dopasowuje się do jasnego lub ciemnego wyglądu urządzenia. Wysoki kontrast włącza się automatycznie zgodnie z urządzeniem.",
+    "Opcja „{system}” dopasowuje się do jasnego lub ciemnego wyglądu urządzenia. Wysoki kontrast używa czarnego tła i jasnego tekstu. Kolory kontrastu ustawione na urządzeniu zawsze mają pierwszeństwo.",
   "appearance.system": "Systemowy",
   "appearance.light": "Jasny",
   "appearance.dark": "Ciemny",
+  "appearance.highContrast": "Wysoki kontrast",
   "appearance.error.unreadable":
     "Nie udało się odczytać zapisanego wyglądu. W tej sesji używana jest opcja „{system}”.",
   "appearance.error.notRemembered":
