@@ -24,7 +24,9 @@
     "tauri": "tauri",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
-    "test:windows-navigation": "playwright test --config playwright.windows.config.ts"
+    "test:windows-navigation": "playwright test --config playwright.windows.config.ts",
+    "i18n:generate": "node scripts/generate-fluent-bindings.mjs",
+    "i18n:check": "node scripts/generate-fluent-bindings.mjs --check"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
