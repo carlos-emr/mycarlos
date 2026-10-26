@@ -41,6 +41,7 @@ const snapshot: VaultSnapshot = {
 
 function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
   const bridge = {
+    platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
     snapshot: vi.fn().mockResolvedValue(shown),

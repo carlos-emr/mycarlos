@@ -9872,7 +9872,7 @@ mod tests {
             .len();
         assert_eq!(
             fs::read_dir(root.join("objects")).unwrap().count(),
-            1 + history_objects
+            2 + history_objects // Working PDF and independently encrypted original.
         );
         let history = history_events_for_test(&store);
         assert_eq!(history.len(), history_before + 1);

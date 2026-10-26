@@ -36,6 +36,7 @@ describe("shared PDF suggestions use explicit Move", () => {
 
   function renderLibrary(extra: Partial<VaultBridge>, shown = vault) {
     const bridge = {
+      platform: vi.fn().mockResolvedValue("windows"),
       isPhoto: vi.fn().mockResolvedValue(false),
       isLockedPdf: vi.fn().mockResolvedValue(false),
       snapshot: vi.fn().mockResolvedValue(shown),
