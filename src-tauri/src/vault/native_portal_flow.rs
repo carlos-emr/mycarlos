@@ -162,7 +162,7 @@ fn native_portal_real_https_flow() {
     let records = {
         let guard = reopened.session();
         let open = guard.as_ref().unwrap();
-        open.manifest.records.iter().filter_map(|r|r.delivery.as_ref().map(|c|serde_json::json!({"recordId":r.id,"originalSha256":c.manifest.document.sha256,"receiptPending":c.receipt_outcome.is_none(),"receiptOutcome":c.receipt_outcome,"verified":super::delivery::verified_clinic(r,&open.manifest.portal_links).is_some()}))).collect::<Vec<_>>()
+        open.manifest.records.iter().filter_map(|r|r.delivery.as_ref().map(|c|serde_json::json!({"recordId":r.id,"deliveryId":c.outer.delivery_id,"keptReceiptSha256":crate::portal_delivery::sha256(c.receipt.as_bytes()),"originalSha256":c.manifest.document.sha256,"receiptPending":c.receipt_outcome.is_none(),"receiptOutcome":c.receipt_outcome,"verified":super::delivery::verified_clinic(r,&open.manifest.portal_links).is_some()}))).collect::<Vec<_>>()
     };
     let report = serde_json::json!({"scope":"actual native APIs and HTTPS; does not establish Windows/native UI behavior","phase":phase,"vaultReopened":true,"nativeErrorCode":error_code,"recovery":snapshot.recovery,"links":snapshot.portal_links,"records":records,"checkResult":check_result});
     fs::write(&config.report, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
