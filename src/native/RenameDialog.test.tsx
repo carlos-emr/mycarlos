@@ -301,7 +301,9 @@ describe("RenameDialog", () => {
       type(`${typed}x`);
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(input).not.toHaveAttribute("aria-invalid");
-      expect(input).toHaveAccessibleDescription(expect.stringContaining(HELP));
+      expect(input).toHaveAccessibleDescription(
+        `${HELP_WITH_EXTENSION} .pdf extension stays the same.`,
+      );
     },
   );
 

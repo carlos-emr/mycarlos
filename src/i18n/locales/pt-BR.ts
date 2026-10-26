@@ -156,6 +156,7 @@ export const ptBR: Record<MessageKey, Message> = {
   },
   "sidebar.fileCount": {
     one: "{count} arquivo",
+    many: "{count} de arquivos",
     other: "{count} arquivos",
   },
   "library.location.summary": "Em {context}: {folders}, {files}.",

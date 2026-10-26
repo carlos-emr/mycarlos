@@ -2940,7 +2940,9 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: "Save encrypted backup…" }),
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: "Lock now" }));
+    await user.click(
+      within(screen.getByRole("main")).getByRole("button", { name: "Lock now" }),
+    );
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -7214,7 +7216,11 @@ describe("the app's notices in the language in use (#46)", () => {
     ).toBeVisible();
     expect(screen.queryByText(/Automatic locking set/)).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await user.click(
+      within(screen.getByRole("main")).getByRole("button", {
+        name: pl("security.lockNow"),
+      }),
+    );
     expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
     expect(screen.queryByText("Vault locked.")).toBeNull();
   });

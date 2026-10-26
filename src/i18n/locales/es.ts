@@ -156,6 +156,7 @@ export const es: Record<MessageKey, Message> = {
   },
   "sidebar.fileCount": {
     one: "{count} archivo",
+    many: "{count} de archivos",
     other: "{count} archivos",
   },
   "library.location.summary": "En {context}: {folders}, {files}.",

@@ -613,7 +613,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     );
     expect(
       screen.getByRole("heading", { level: 1 }),
-    ).toHaveAccessibleDescription(/In FAKE Avery: .*files\./);
+    ).toHaveAccessibleDescription(
+      "In FAKE Avery / FAKE Letters: 1 folder, 0 files.",
+    );
     expect(
       within(
         document.querySelector(".native-profile-row") as HTMLElement,

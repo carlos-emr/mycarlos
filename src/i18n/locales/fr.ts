@@ -155,7 +155,11 @@ export const fr: Record<MessageKey, Message> = {
     many: "{count} de dossiers",
     other: "{count} dossiers",
   },
-  "sidebar.fileCount": { one: "{count} fichier", other: "{count} fichiers" },
+  "sidebar.fileCount": {
+    one: "{count} fichier",
+    many: "{count} de fichiers",
+    other: "{count} fichiers",
+  },
   "library.location.summary": "Dans {context} : {folders}, {files}.",
   "library.location.files": "Dans {context} : {files}.",
 
