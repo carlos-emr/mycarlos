@@ -53,6 +53,19 @@ has been suppressed or marked acceptable.
   already use, as `webview2-com` is on Windows: the camera dialog needs WebKitGTK's media-stream
   setting turned on and its permission requests answered (`src-tauri/src/camera_permission.rs`).
   It adds no package to the Rust lockfile.
+- RustCrypto `cms` (=0.2.3), `x509-cert` (=0.2.5), `p256` (=0.13.2), `ecdsa` (=0.16.9) and
+  `der` (=0.7.10) are new direct dependencies, pinned exactly. They are pure Rust and all
+  Apache-2.0 OR MIT. They check the signature on PDFs CARLOS signed for a patient
+  (`src-tauri/src/signed_pdf.rs`, #55): the CMS SignedData, its certificate and the
+  ECDSA P-256 signature, which is what "Verified" rests on. Writing a DER and ECDSA
+  parser here instead would add custom security-sensitive code.
+  - They are one generation: everything sits on `der` 0.7, `spki` 0.7 and `const-oid`
+    0.9, and `sha2`, `digest` and `zeroize` were already locked.
+  - `cms` 0.3 is still a release candidate. Move to it, with `x509-cert` 0.3 and `p256`
+    0.14, once it is stable.
+  - They add 22 packages to the Rust lockfile alongside the current PDF dependencies. Two of them, `tls_codec` and
+    `tls_codec_derive`, are only locked: they serve `x509-cert`'s optional SCT feature, which
+    nothing enables, so they are never built.
 
 ## Added for password-protected PDFs (#54)
 
@@ -242,3 +255,32 @@ backport regressions. Windows installation and the GUI subsystem check passed.
 This run predates restoration of mobile live reload and is historical evidence.
 The restoration triggers fresh checks, including both mobile development builds.
 Device testing and release review remain separate gates.
+
+## Current signed-PDF digest and import analysis (#101)
+
+The pinned RustCrypto versions remain unchanged. CMS signed attributes are decoded as
+strict DER `Any`/`SET OF` values, preserving their exact encoded bytes, so the agreed UUID
+OID `2.25.132515939282652475535231260060469025505` does not pass through const-oid 0.9's
+`u32` arc conversion. OID values must be minimally encoded and terminated; duplicate OIDs,
+multiple values and a manifest digest other than one 32-byte OCTET STRING fail closed.
+ECDSA verifies the original signed-attribute values under the SET tag; no attribute is
+substituted or dropped. The digest is SHA-256 of the exact extracted manifest bytes.
+
+The existing confined PDF helper has a bounded two-stage protocol. A conservative range
+preflight supplies no manifest and uses no PDF password. Main authenticates CMS and a
+trusted pin before the second stage can parse full PDF structure and decrypt/extract the
+matching AF/Data + EmbeddedFiles attachment. Existing lopdf is reused only in that helper.
+Input is capped at 100 MiB, output at 128 KiB, the manifest at 16 KiB and decompressed
+object streams at 16 MiB; existing helper time/memory/confinement limits still apply.
+
+The import pipeline captures its already authenticated object-verification read within
+the same input cap. It preserves the original object and returns optional ephemeral
+unverified diagnostics, without raw manifest/name/date-of-birth/key data. No authenticated
+clinic links exist in the app yet: production supplies no pins and cannot grant Verified.
+FAKE fixture pins are test inputs only. No new network access or vault format is introduced.
+
+The embedded v1 producer contract permits explicit null for clinic/recipient IDs and
+unknown descriptive metadata (CARLOS `DocumentManifest` Javadoc, lines 35–54). The Rust
+reader accepts those null values but still requires every member; unknown members, missing
+members and wrong value types fail closed. Neither an absent clinic claim nor an absent
+recipient can become Verified. This changes no outer portal delivery schema or vault format.
