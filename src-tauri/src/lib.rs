@@ -5500,14 +5500,14 @@ mod audit_history_ipc_tests {
             "tauri://localhost"
         };
         for (view, url) in [(&other, local), (&main, "https://example.invalid")] {
-            let denied = tauri::test::get_ipc_response(view, request(url))
-                .err()
-                .expect("ungranted IPC must fail");
+            let Err(denied) = tauri::test::get_ipc_response(view, request(url)) else {
+                panic!("ungranted IPC must fail");
+            };
             assert!(denied.as_str().unwrap().contains("not allowed"), "{denied}");
         }
-        let locked = tauri::test::get_ipc_response(&main, request(local))
-            .err()
-            .expect("IPC must fail");
+        let Err(locked) = tauri::test::get_ipc_response(&main, request(local)) else {
+            panic!("IPC must fail");
+        };
         assert_eq!(locked["code"], "locked");
         store
             .create("river-azimuth-cobalt-sparrow-934", "FAKE Avery", 1)
@@ -5551,9 +5551,9 @@ mod audit_history_ipc_tests {
         for file in std::fs::read_dir(root.join("objects")).unwrap() {
             std::fs::write(file.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
         }
-        let failure = tauri::test::get_ipc_response(&main, request(local))
-            .err()
-            .expect("IPC must fail");
+        let Err(failure) = tauri::test::get_ipc_response(&main, request(local)) else {
+            panic!("IPC must fail");
+        };
         assert_eq!(failure["code"], "history_unverified");
         assert_eq!(failure["messageKey"], "interface.history.error.unverified");
         assert!(!failure
@@ -5561,11 +5561,9 @@ mod audit_history_ipc_tests {
             .contains(&temp.path().to_string_lossy().to_string()));
         assert!(!failure.to_string().contains("FAKE Avery"));
         store.lock();
-        assert_eq!(
-            tauri::test::get_ipc_response(&main, request(local))
-                .err()
-                .expect("IPC must fail")["code"],
-            "locked"
-        );
+        let Err(locked) = tauri::test::get_ipc_response(&main, request(local)) else {
+            panic!("IPC must fail");
+        };
+        assert_eq!(locked["code"], "locked");
     }
 }
