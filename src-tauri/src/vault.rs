@@ -13962,23 +13962,46 @@ mod tests {
     /// These tests create fresh synthetic vaults; never open a developer vault.
     #[test]
     fn audit_history_is_verified_read_only_and_requires_an_unlocked_session() {
-        fn files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        #[derive(Debug, PartialEq, Eq)]
+        struct SavedEntry {
+            path: PathBuf,
+            directory: bool,
+            length: u64,
+            modified: std::time::SystemTime,
+            contents: Option<Vec<u8>>,
+        }
+        fn files(root: &Path, coordination_lock: &Path) -> Vec<SavedEntry> {
             let mut result = Vec::new();
             for child in fs::read_dir(root).unwrap() {
                 let path = child.unwrap().path();
-                if path.is_dir() {
-                    result.extend(files(&path));
-                } else {
-                    result.push((path.clone(), fs::read(path).unwrap()));
+                let metadata = fs::metadata(&path).unwrap();
+                if metadata.is_dir() {
+                    result.extend(files(&path, coordination_lock));
                 }
+                // Windows enforces the store's byte-range lock on this one
+                // protocol file. Keep its metadata/existence in the snapshot;
+                // every vault/data file still has its complete bytes checked.
+                let contents = if metadata.is_file() && path != coordination_lock {
+                    Some(fs::read(&path).unwrap())
+                } else {
+                    None
+                };
+                result.push(SavedEntry {
+                    path,
+                    directory: metadata.is_dir(),
+                    length: metadata.len(),
+                    modified: metadata.modified().unwrap(),
+                    contents,
+                });
             }
-            result.sort_by(|a, b| a.0.cmp(&b.0));
+            result.sort_by(|a, b| a.path.cmp(&b.path));
             result
         }
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("FAKE-vault"));
         assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
         store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        let coordination_lock = sibling_path(&store.root, ".lock").unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
         store
             .import(
@@ -13989,10 +14012,10 @@ mod tests {
             )
             .unwrap();
         let expected = history_events(&store);
-        let before = files(temp.path());
+        let before = files(temp.path(), &coordination_lock);
         assert_eq!(store.history_entries().unwrap(), expected);
         assert_eq!(
-            files(temp.path()),
+            files(temp.path(), &coordination_lock),
             before,
             "reading must not append, rewrite or export"
         );
@@ -14006,9 +14029,9 @@ mod tests {
             store.snapshot().unwrap().recovery,
             Some(RecoveryReason::LostObjects)
         );
-        let before = files(temp.path());
+        let before = files(temp.path(), &coordination_lock);
         assert_eq!(store.history_entries().unwrap(), history_events(&store));
-        assert_eq!(files(temp.path()), before);
+        assert_eq!(files(temp.path(), &coordination_lock), before);
         store.lock();
         assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
     }
