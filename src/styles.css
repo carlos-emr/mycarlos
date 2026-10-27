@@ -854,6 +854,11 @@ h1, h2, p { margin: 0; }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
 .native-breadcrumb { margin: 0; padding: 3px 7px; border: 0; background: transparent; color: var(--teal-dark); font: inherit; font-weight: 700; }
 .native-breadcrumb:hover { text-decoration: underline; }
+/* A person's folder label can contain 120 characters, including one long word. */
+.native-person-location :is(.native-profile-row, .main-head, .head-actions) { flex-wrap: wrap; min-width: 0; }
+.native-person-location :is(.main-head > div, .native-top-level-narrow, .native-breadcrumb, .native-top-level-narrow .button, .native-person-rename) { min-width: 0; max-width: 100%; }
+.native-person-location :is(h1, .native-breadcrumb, .native-top-level-narrow .button, .native-person-rename) { overflow-wrap: anywhere; }
+.native-profile-rename-dialog .dialog-head h2 { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .native-sort select, .native-move-actions select, .native-dialog-actions select, .native-setting-form select {
   min-height: 35px;
   padding: 6px 28px 6px 9px;

@@ -251,6 +251,7 @@ export interface VaultBridge {
     replace: boolean,
   ): Promise<boolean>;
   createProfile(displayName: string): Promise<string>;
+  renameProfile(profileId: string, displayName: string): Promise<void>;
   createFolder(
     profileId: string,
     parentId: string | null,
@@ -549,6 +550,10 @@ export function createVaultBridge(): VaultBridge {
       }),
     createProfile: (displayName) =>
       invoke<string>("vault_create_profile", { request: { displayName } }),
+    renameProfile: (profileId, displayName) =>
+      invoke<void>("vault_rename_profile", {
+        request: { profileId, displayName },
+      }),
     createFolder: (profileId, parentId, name) =>
       invoke<string>("vault_create_folder", {
         request: { profileId, parentId, name },
