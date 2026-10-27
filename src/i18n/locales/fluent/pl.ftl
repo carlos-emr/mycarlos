@@ -1100,7 +1100,7 @@ rename-tooLong = Ta nazwa jest zbyt długa. Proszę ją skrócić, aby zapisać.
 
 rename-unsafe = Nazwy dokumentów nie mogą zawierać znaków { $characters } ani niewidocznych znaków sterujących ani kończyć się kropką.
 
-reset-plainly = Odłożenie sejfu usuwa z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym komputerze, zaszyfrowane. Ten sejf nadal można otworzyć jego pierwotnym hasłem głównym lub pasującym kluczem odzyskiwania; dane dostępu do nowego sejfu go nie otwierają. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.
+reset-plainly = Odłożenie sejfu usuwa z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym komputerze, zaszyfrowane. Ten sejf nadal można otworzyć jego pierwotnym hasłem głównym lub pasującym kluczem odzyskiwania. Utworzenie nowego sejfu nie zmienia tych danych dostępu. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.
 
 reset-submit = Odłóż sejf
 
@@ -1368,7 +1368,7 @@ unlock-autoLock =
 
 unlock-forgot-summary = Nie pamiętasz hasła głównego?
 
-unlock-noKey-body = Bez niego jedynym sposobem powrotu jest odłożenie tego sejfu i rozpoczęcie od nowa. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany, ale nikt nie może go otworzyć bez jego hasła głównego.
+unlock-noKey-body = Bez niego jedynym sposobem powrotu jest odłożenie tego sejfu i rozpoczęcie od nowa. Odłożony sejf pozostaje na tym urządzeniu, zaszyfrowany. Do jego otwarcia potrzebne jest jego pierwotne hasło główne lub pasujący klucz odzyskiwania.
 
 unlock-noKey-heading = Nie masz klucza odzyskiwania?
 

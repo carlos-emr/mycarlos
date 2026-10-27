@@ -7580,7 +7580,7 @@ mod tests {
         store
             .confirm_recovery_key(&typed_back(&new_groups), 5)
             .unwrap();
-        // A newly created vault has different credentials. Neither its
+        // This new vault uses different credentials. Neither its
         // passphrase nor its recovery key opens the encrypted vault kept aside.
         assert!(matches!(
             aside.unlock(new_password),
@@ -7603,6 +7603,27 @@ mod tests {
         // A second reset sets the second vault aside beside the first.
         store.reset().unwrap();
         assert_eq!(set_aside_folders(&root).len(), 2);
+
+        // Reuse is allowed: the same passphrase value can open both the
+        // new vault and the retained old one. Creation does not rewrite the
+        // old vault's headers or replace its matching recovery key.
+        let old_headers: Vec<_> = HEADER_SLOTS
+            .iter()
+            .map(|slot| fs::read(folders[0].join(slot)).unwrap())
+            .collect();
+        store
+            .create(PASSPHRASE_REPLACEMENT, "FAKE reused passphrase", 6)
+            .unwrap();
+        for (slot, bytes) in HEADER_SLOTS.iter().zip(&old_headers) {
+            assert_eq!(&fs::read(folders[0].join(slot)).unwrap(), bytes);
+        }
+        store.lock();
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
+        assert!(aside.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        aside.lock();
     }
 
     #[test]

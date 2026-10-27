@@ -563,6 +563,9 @@ describe("ResetConfirmation", () => {
       "its original passphrase or matching recovery key",
     );
     expect(plainly).toHaveHumanTextContent(
+      "Starting a new vault does not change those credentials",
+    );
+    expect(plainly).not.toHaveHumanTextContent(
       "credentials for a new vault do not open it",
     );
     // The sentence comes first, so it is read before the box.

@@ -14,12 +14,18 @@ export function matchLocale(tag: string): Locale | null {
   if (exact) return exact;
   const primary = wanted.split("-")[0];
   if (primary === "zh") {
-    const subtags = wanted.split("-");
-    if (subtags.includes("hant")) return "zh-TW";
-    if (subtags.includes("hans")) return "zh-CN";
-    return subtags.some((tag) => ["tw", "hk", "mo"].includes(tag))
-      ? "zh-TW"
-      : "zh-CN";
+    // Script and region belong to the core tag. Extension/private-use payload
+    // can contain the same words without requesting that script or region.
+    try {
+      const locale = new Intl.Locale(wanted);
+      if (locale.script === "Hant") return "zh-TW";
+      if (locale.script === "Hans") return "zh-CN";
+      return ["TW", "HK", "MO"].includes(locale.region ?? "")
+        ? "zh-TW"
+        : "zh-CN";
+    } catch {
+      return null;
+    }
   }
   return (
     LOCALES.find((locale) => locale.toLowerCase().split("-")[0] === primary) ??

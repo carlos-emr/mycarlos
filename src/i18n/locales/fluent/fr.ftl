@@ -1076,7 +1076,7 @@ rename-tooLong = Ce nom est trop long. Raccourcissez-le pour l’enregistrer.
 
 rename-unsafe = Le nom d’un document ne peut pas contenir { $characters } ni de caractères de contrôle invisibles, ni se terminer par un point.
 
-reset-plainly = Mettre le coffre-fort de côté retire de myCarlos sur cet ordinateur tous vos documents, dossiers et profils de patients. Ils restent sur cet ordinateur, chiffrés. Ce coffre-fort peut toujours être ouvert avec sa phrase secrète d’origine ou sa clé de récupération correspondante ; les identifiants d’un nouveau coffre-fort ne l’ouvrent pas. Pour confirmer, saisissez exactement les mots ci-dessous.
+reset-plainly = Mettre le coffre-fort de côté retire de myCarlos sur cet ordinateur tous vos documents, dossiers et profils de patients. Ils restent sur cet ordinateur, chiffrés. Ce coffre-fort peut toujours être ouvert avec sa phrase secrète d’origine ou sa clé de récupération correspondante. Créer un nouveau coffre-fort ne change pas ces identifiants. Pour confirmer, saisissez exactement les mots ci-dessous.
 
 reset-submit = Mettre le coffre-fort de côté
 
@@ -1337,7 +1337,7 @@ unlock-autoLock =
 
 unlock-forgot-summary = Vous avez oublié votre phrase secrète ?
 
-unlock-noKey-body = Sans clé, la seule façon de revenir est de mettre ce coffre-fort de côté et de recommencer. Le coffre-fort mis de côté reste sur cet appareil, chiffré, mais personne ne peut l’ouvrir sans sa phrase secrète.
+unlock-noKey-body = Sans clé, la seule façon de revenir est de mettre ce coffre-fort de côté et de recommencer. Le coffre-fort mis de côté reste sur cet appareil, chiffré. Sa phrase secrète d’origine ou sa clé de récupération correspondante est nécessaire pour l’ouvrir.
 
 unlock-noKey-heading = Pas de clé de récupération ?
 

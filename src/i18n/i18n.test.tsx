@@ -363,10 +363,26 @@ describe("Chinese script negotiation", () => {
     ["zh-Hans", "zh-CN"],
     ["zh-Hant", "zh-TW"],
     ["zh-Hans-TW", "zh-CN"],
+    ["zh-Hans-HK", "zh-CN"],
     ["zh-Hant-CN", "zh-TW"],
     ["zh-HK", "zh-TW"],
     ["zh-MO", "zh-TW"],
     ["zh-SG", "zh-CN"],
+    ["zh-Hans-x-hant", "zh-CN"],
+    ["zh-CN-x-tw", "zh-CN"],
+    ["zh-Hans-u-ca-chinese-x-hant", "zh-CN"],
+    ["zh-Hant-x-hans", "zh-TW"],
+    ["zh-Hant-CN-u-ca-chinese-x-hans", "zh-TW"],
+    ["zh-SG-u-rg-twzzzz", "zh-CN"],
+    ["zh-u-rg-twzzzz", "zh-CN"],
+    ["zh-u-ca-chinese-x-tw", "zh-CN"],
+    ["zh-x-tw", "zh-CN"],
+    ["zh-TW-x-cn", "zh-TW"],
+    ["zh-HK-u-nu-hanidec", "zh-TW"],
+    ["zh-MO-x-hans", "zh-TW"],
+    ["zh-CN-u-co-hant", "zh-CN"],
+    ["zh-TW-u-co-hans", "zh-TW"],
+    [" zh_hans_TW_x_HANT ", "zh-CN"],
   ] as const)("maps %s to %s", (tag, expected) =>
     expect(matchLocale(tag)).toBe(expected),
   );
@@ -377,6 +393,14 @@ describe("Chinese script negotiation", () => {
     expect(getLocale()).toBe("zh-CN");
     expect(resolveLocale(["zh-Hant"])).toBe("zh-TW");
     expect(getLocale()).toBe("zh-CN");
+  });
+  it("rejects malformed Chinese tags and uses the next supported system language", () => {
+    expect(matchLocale("zh--CN")).toBeNull();
+    expect(resolveLocale(["zh--CN", "fr-CA"])).toBe("fr");
+    expect(resolveLocale(["zh--CN"])).toBe("en");
+    setLocaleOverride("zh-TW");
+    expect(resolveLocale(["zh-Hans-x-hant"])).toBe("zh-CN");
+    expect(getLocale()).toBe("zh-TW");
   });
   it("reports missing formatting arguments instead of exposing unresolved variables", () => {
     expect(translate("en", "passphrase.rules")).toBe(

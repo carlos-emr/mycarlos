@@ -1076,7 +1076,7 @@ rename-tooLong = Este nombre es demasiado largo. Acórtelo para guardarlo.
 
 rename-unsafe = Los nombres de documento no pueden contener { $characters } ni caracteres de control invisibles, ni terminar en punto.
 
-reset-plainly = Al apartar la bóveda se quitan de myCarlos en este equipo todos sus documentos, carpetas y perfiles de pacientes. Se quedan en este equipo, cifrados. Esa bóveda sigue abriéndose con su frase de contraseña original o la clave de recuperación correspondiente; las credenciales de una bóveda nueva no la abren. Para confirmarlo, escriba exactamente las palabras de abajo.
+reset-plainly = Al apartar la bóveda se quitan de myCarlos en este equipo todos sus documentos, carpetas y perfiles de pacientes. Se quedan en este equipo, cifrados. Esa bóveda sigue abriéndose con su frase de contraseña original o la clave de recuperación correspondiente. Crear una bóveda nueva no cambia esas credenciales. Para confirmarlo, escriba exactamente las palabras de abajo.
 
 reset-submit = Apartar la bóveda
 
@@ -1337,7 +1337,7 @@ unlock-autoLock =
 
 unlock-forgot-summary = ¿Olvidó su frase de contraseña?
 
-unlock-noKey-body = Sin ella, la única forma de volver a entrar es apartar esta bóveda y empezar de nuevo. La bóveda apartada se queda en este dispositivo, cifrada, pero nadie puede abrirla sin su frase de contraseña.
+unlock-noKey-body = Sin ella, la única forma de volver a entrar es apartar esta bóveda y empezar de nuevo. La bóveda apartada se queda en este dispositivo, cifrada. Para abrirla se necesita su frase de contraseña original o la clave de recuperación correspondiente.
 
 unlock-noKey-heading = ¿No tiene una clave de recuperación?
 

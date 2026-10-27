@@ -1052,7 +1052,7 @@ rename-tooLong = This name is too long. Shorten it to save.
 
 rename-unsafe = Document names cannot contain { $characters } or invisible control characters, or end with a dot.
 
-reset-plainly = Setting the vault aside takes all your documents, folders and patient profiles out of myCarlos on this computer. They stay on this computer, encrypted. That vault can still be opened with its original passphrase or matching recovery key; credentials for a new vault do not open it. To be sure, type the words below exactly.
+reset-plainly = Setting the vault aside takes all your documents, folders and patient profiles out of myCarlos on this computer. They stay on this computer, encrypted. That vault can still be opened with its original passphrase or matching recovery key. Starting a new vault does not change those credentials. To be sure, type the words below exactly.
 
 reset-submit = Set vault aside
 
@@ -1306,7 +1306,7 @@ unlock-autoLock =
 
 unlock-forgot-summary = Forgot your passphrase?
 
-unlock-noKey-body = Without one, the only way back in is to set this vault aside and start again. The vault set aside stays on this device, encrypted, but nobody can open it without its passphrase.
+unlock-noKey-body = Without one, the only way back in is to set this vault aside and start again. The vault set aside stays on this device, encrypted. Its original passphrase or matching recovery key is needed to open it.
 
 unlock-noKey-heading = No recovery key?
 

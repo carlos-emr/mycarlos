@@ -1076,7 +1076,7 @@ rename-tooLong = Este nome é longo demais. Encurte-o para salvar.
 
 rename-unsafe = Nomes de documentos não podem conter { $characters } nem caracteres de controle invisíveis, nem terminar com ponto.
 
-reset-plainly = Deixar o cofre de lado tira do myCarlos neste computador todos os seus documentos, pastas e perfis de paciente. Eles ficam neste computador, criptografados. Esse cofre ainda pode ser aberto com sua frase secreta original ou a chave de recuperação correspondente; as credenciais de um novo cofre não o abrem. Para confirmar, digite exatamente as palavras abaixo.
+reset-plainly = Deixar o cofre de lado tira do myCarlos neste computador todos os seus documentos, pastas e perfis de paciente. Eles ficam neste computador, criptografados. Esse cofre ainda pode ser aberto com sua frase secreta original ou a chave de recuperação correspondente. Criar um novo cofre não muda essas credenciais. Para confirmar, digite exatamente as palavras abaixo.
 
 reset-submit = Deixar o cofre de lado
 
@@ -1337,7 +1337,7 @@ unlock-autoLock =
 
 unlock-forgot-summary = Esqueceu sua frase secreta?
 
-unlock-noKey-body = Sem ela, a única forma de voltar a entrar é deixar este cofre de lado e começar de novo. O cofre deixado de lado fica neste dispositivo, criptografado, mas ninguém pode abri-lo sem a frase secreta dele.
+unlock-noKey-body = Sem ela, a única forma de voltar a entrar é deixar este cofre de lado e começar de novo. O cofre deixado de lado fica neste dispositivo, criptografado. Para abri-lo, é necessária a frase secreta original dele ou a chave de recuperação correspondente.
 
 unlock-noKey-heading = Não tem uma chave de recuperação?
 
