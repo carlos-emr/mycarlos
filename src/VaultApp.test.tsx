@@ -7701,19 +7701,97 @@ describe("clinic connection operations", () => {
     expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
   });
 
-  it("adds a clinic result that arrives during a transfer after the transfer's own outcome", async () => {
+  it.each([
+    [
+      "picker",
+      "No files selected. Nothing changed. Device linked. Its approval status is shown in Security, under Clinic documents.",
+    ],
+    [
+      "transfer",
+      "1 file(s) encrypted and imported. Device linked. Its approval status is shown in Security, under Clinic documents.",
+    ],
+  ] as const)(
+    "adds a clinic result that arrives during an import's %s after the import's own result",
+    async (stage, expected) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let pick!: (value: string | null) => void;
+      let finishImport!: (value: ImportOutcome) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockImplementation(async () => current),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi.fn(),
+        requestDeviceApproval: vi.fn(),
+        ...(stage === "picker"
+          ? {
+              pickImportFiles: vi.fn().mockReturnValue(
+                new Promise<string | null>((resolve) => {
+                  pick = resolve;
+                }),
+              ),
+            }
+          : {
+              importPickedFiles: vi.fn().mockReturnValue(
+                new Promise<ImportOutcome>((resolve) => {
+                  finishImport = resolve;
+                }),
+              ),
+            }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => {
+        fireEvent.submit(form);
+      });
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() =>
+        expect(
+          stage === "picker"
+            ? bridge.pickImportFiles
+            : bridge.importPickedFiles,
+        ).toHaveBeenCalled(),
+      );
+      current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+      // The clinic view is gone and the import holds the line: the result
+      // waits. The compact control shows the clinic work has ended.
+      await act(async () =>
+        pending.finish({ link: connectedLink, approvalError: null }),
+      );
+      expect(
+        await screen.findByRole("button", { name: "Check for new documents" }),
+      ).toBeVisible();
+      expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+      await act(async () =>
+        stage === "picker"
+          ? pick(null)
+          : finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+      );
+      await waitFor(() => expect(screen.getByText(expected)).toBeVisible());
+    },
+  );
+
+  it("forgets a held clinic result when the vault locks", async () => {
     let current = clinicSnapshot;
     const pending = pendingConnection();
-    let finishImport!: (value: ImportOutcome) => void;
+    let pick!: (value: string | null) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn().mockImplementation(async () => current),
+      unlock: vi.fn().mockImplementation(async () => current),
       connectPortal: vi.fn().mockReturnValue(pending.promise),
       checkDocuments: vi.fn(),
       requestDeviceApproval: vi.fn(),
-      importPickedFiles: vi.fn().mockReturnValue(
-        new Promise<ImportOutcome>((resolve) => {
-          finishImport = resolve;
+      pickImportFiles: vi.fn().mockReturnValue(
+        new Promise<string | null>((resolve) => {
+          pick = resolve;
         }),
       ),
     });
@@ -7728,23 +7806,29 @@ describe("clinic connection operations", () => {
     await user.click(
       screen.getByRole("button", { name: "Choose files to import" }),
     );
-    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     current = { ...clinicSnapshot, portalLinks: [connectedLink] };
-    // The clinic view is gone and a transfer holds the line: the result waits.
     await act(async () =>
       pending.finish({ link: connectedLink, approvalError: null }),
     );
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    // The picker settles in the ended session.
+    await act(async () => pick(null));
+    await user.type(
+      screen.getByLabelText("Passphrase", { exact: true }),
+      "FAKE clinic lock passphrase",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
     expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
-    await act(async () =>
-      finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          "1 file(s) encrypted and imported. Device linked. Its approval status is shown under Clinic documents.",
-        ),
-      ).toBeVisible(),
-    );
   });
 
   it("drops old-session completion without unlocking or clearing a new session's clinic work", async () => {
@@ -7808,6 +7892,8 @@ describe("clinic connection operations", () => {
       first.finish({ link: connectedLink, approvalError: null }),
     );
     expect(screen.queryByText("FAKE First Clinic")).not.toBeInTheDocument();
+    // Nothing of the old session's result reaches the new session's line.
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Connect and request approval" }),
     ).toBeDisabled();

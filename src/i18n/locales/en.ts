@@ -10,9 +10,9 @@ export const en = {
     "This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.",
   "portal.connecting": "Connecting and requesting clinic approval…",
   "portal.connected":
-    "Device linked. Its approval status is shown under Clinic documents.",
+    "Device linked. Its approval status is shown in Security, under Clinic documents.",
   "portal.linkedApprovalIssue":
-    "Device linked, but the approval request could not be confirmed. Its status under Clinic documents says what to do next.",
+    "Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.",
   "portal.retryApproval": "Retry saved approval request",
   "portal.errorBusy":
     "Another clinic operation is running. Wait for it to finish, then try again.",

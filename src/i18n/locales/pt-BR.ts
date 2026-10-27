@@ -9,9 +9,9 @@ export const ptBR: Record<MessageKey, Message> = {
     "Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.",
   "portal.connecting": "Conectando e solicitando a aprovação da clínica…",
   "portal.connected":
-    "Dispositivo vinculado. O status de aprovação aparece em Documentos da clínica.",
+    "Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.",
   "portal.linkedApprovalIssue":
-    "Dispositivo vinculado, mas não foi possível confirmar a solicitação de aprovação. O status dele em Documentos da clínica indica o que fazer em seguida.",
+    "Dispositivo vinculado, mas não foi possível confirmar a solicitação de aprovação. O status do dispositivo, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.",
   "portal.retryApproval": "Tentar novamente a solicitação de aprovação salva",
   "portal.errorBusy":
     "Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.",

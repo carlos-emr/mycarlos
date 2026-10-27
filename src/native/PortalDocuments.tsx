@@ -108,36 +108,34 @@ export function PortalDocuments({
       try {
         const result = await bridge.checkDocuments!();
         await refresh();
-        if (shown.current)
-          setNotice(
-            [
-              t(
-                result.issues?.length
-                  ? "portal.partialResult"
-                  : "portal.result",
-                {
-                  added: result.added,
-                  refused: result.refused,
-                },
-              ),
-              ...(result.issues ?? []).map((issue) =>
-                t("portal.clinicIssue", {
-                  clinic: issue.clinicName,
-                  detail: vaultErrorMessage({
-                    code: issue.code,
-                    message: t("portal.errorIncomplete"),
-                  }),
+        // Reported after leaving this view too, as for connecting.
+        setNotice(
+          [
+            t(
+              result.issues?.length ? "portal.partialResult" : "portal.result",
+              {
+                added: result.added,
+                refused: result.refused,
+              },
+            ),
+            ...(result.issues ?? []).map((issue) =>
+              t("portal.clinicIssue", {
+                clinic: issue.clinicName,
+                detail: vaultErrorMessage({
+                  code: issue.code,
+                  message: t("portal.errorIncomplete"),
                 }),
-              ),
-              ...(result.receiptsPending > 0
-                ? [
-                    t("portal.confirmationsPending", {
-                      count: result.receiptsPending,
-                    }),
-                  ]
-                : []),
-            ].join(" "),
-          );
+              }),
+            ),
+            ...(result.receiptsPending > 0
+              ? [
+                  t("portal.confirmationsPending", {
+                    count: result.receiptsPending,
+                  }),
+                ]
+              : []),
+          ].join(" "),
+        );
       } catch (error) {
         await refresh();
         throw error;
@@ -186,9 +184,11 @@ export function PortalDocuments({
         // Reported even after the patient has left this view: the link exists
         // whether or not anyone is looking, and the line must not keep an
         // older error beside it. The setter drops it for a finished session.
+        // A partial result gives the reason first, then where to look: the
+        // reason's "try again" means the saved request, not a new link.
         setNotice(
           result.approvalError
-            ? `${t("portal.linkedApprovalIssue")} ${vaultErrorMessage(result.approvalError)}`
+            ? `${vaultErrorMessage(result.approvalError)} ${t("portal.linkedApprovalIssue")}`
             : t("portal.connected"),
         );
       } catch (error) {

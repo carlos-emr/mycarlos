@@ -117,7 +117,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(props.setNotice).toHaveBeenCalledWith(
-        "Device linked. Its approval status is shown under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Clinic documents.",
       ),
     );
     expect(bridge.connectPortal).toHaveBeenCalledOnce();
@@ -182,7 +182,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(props.setNotice).toHaveBeenCalledWith(
-        "Device linked, but the approval request could not be confirmed. Its status under Clinic documents says what to do next. The portal request could not be completed. Check your connection and device clock, then try again.",
+        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.",
       ),
     );
     await userEvent
@@ -249,7 +249,7 @@ describe("native clinic document controls", () => {
     // wherever they are, and an older error on the line is replaced.
     expect(props.setNotice).toHaveBeenCalledOnce();
     expect(props.setNotice).toHaveBeenCalledWith(
-      "Device linked. Its approval status is shown under Clinic documents.",
+      "Device linked. Its approval status is shown in Security, under Clinic documents.",
     );
   });
 

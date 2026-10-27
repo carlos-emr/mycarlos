@@ -146,9 +146,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     session: number;
     promise: Promise<void>;
   } | null>(null);
-  // A clinic result that arrives while a transfer runs, shown after the
-  // transfer's own outcome rather than in its place.
-  const portalNoticeRef = useRef<string | null>(null);
+  // A clinic result that arrives while a library operation runs, shown after
+  // that operation's own result rather than in its place.
+  const portalNoticeRef = useRef<{ session: number; message: string } | null>(
+    null,
+  );
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
   // An automatic or background lock owed while a transfer runs, or before the
@@ -630,14 +632,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setNotice(message);
   };
 
-  // Clinic work runs beside library operations. While one of them runs a
-  // transfer, the line belongs to the transfer's outcome: a clinic result
-  // waits and is added after it (see `run`), so neither is lost. Nothing is
+  // Clinic work runs beside library operations. While one of them runs, a
+  // picker or transfer included, the line belongs to its result: a clinic
+  // result waits and is added after it (see `run`), so neither is lost.
+  // Clinic work clears the line when it starts, so anything on it when a
+  // result arrives was written by other work since, and is kept. Nothing is
   // said for a session that has ended or is locking.
   const showPortalNotice = (startedIn: number, message: string) => {
     if (sessionRef.current !== startedIn || lockingRef.current) return;
-    if (transferHold.active) portalNoticeRef.current = message || null;
-    else setNotice(message);
+    if (transferHold.running) {
+      portalNoticeRef.current = message
+        ? { session: startedIn, message }
+        : null;
+      return;
+    }
+    setNotice((shown) => (message && shown ? `${shown} ${message}` : message));
   };
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
@@ -733,11 +742,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         const idle = transferHold.operationEnded();
         if (idle && lockHeldRef.current) requestLock(true);
         else if (idle && portalNoticeRef.current) {
-          // The transfer has reported: add the clinic result kept meanwhile.
+          // The operation has reported: add the clinic result kept meanwhile.
           const held = portalNoticeRef.current;
           portalNoticeRef.current = null;
-          if (sessionRef.current === startedIn && !lockingRef.current)
-            setNotice((shown) => (shown ? `${shown} ${held}` : held));
+          if (held.session === sessionRef.current && !lockingRef.current)
+            setNotice((shown) =>
+              shown ? `${shown} ${held.message}` : held.message,
+            );
         }
       }
     }
