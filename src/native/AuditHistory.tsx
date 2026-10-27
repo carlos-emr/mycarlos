@@ -80,7 +80,7 @@ function previousSession(value: string | null): string | null {
     { date: formatTimestamp(Number(match[1])) },
   );
   return match[3]
-    ? `${known} ${translateNow("interface.history.laterSessionNotRecorded")}`
+    ? `${known}. ${translateNow("interface.history.laterSessionNotRecorded")}`
     : known;
 }
 

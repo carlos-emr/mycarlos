@@ -388,6 +388,7 @@ describe("durable vault UI", () => {
         screen.queryByRole("navigation", { name: "Record library" }),
       ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+      expect(screen.getByText("Locking", { exact: true })).toBeVisible();
       if (kind === "pending") await act(async () => finishHistory(rows));
       expect(document.body).not.toHaveTextContent("FAKE pending lock secret");
       await act(async () => finishLock());
@@ -424,6 +425,7 @@ describe("durable vault UI", () => {
       screen.queryByRole("navigation", { name: "Record library" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+    expect(screen.getByText("Locking", { exact: true })).toBeVisible();
     await act(async () =>
       failLock({
         code: "storage",
