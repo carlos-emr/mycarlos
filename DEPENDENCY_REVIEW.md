@@ -44,6 +44,31 @@ has been suppressed or marked acceptable.
   serve component and end-to-end accessibility checks respectively.
 - SBOM generators, the formatter, compiler, and build tools retain their specific
   development/CI roles.
+- Project Fluent formats the same seven checked-in catalogues in the renderer
+  and Rust native boundary: exact pins `@fluent/bundle` 0.19.1 (Apache-2.0) and
+  `fluent-bundle` 0.16.0 (Apache-2.0 OR MIT). Exact pin `@fluent/syntax` 0.19.0
+  (Apache-2.0) is used only by development catalogue validation and tests.
+  Catalogue text is bundled and never fetched at runtime. The existing build
+  and check commands validate all seven resources, generated TypeScript/Rust
+  bindings, rich slots and emergency copy, and run negative validator tests.
+  Relative to the #119 parent, existing package versions, npm integrity values
+  and Rust checksums stay unchanged; two npm and nine Rust packages are added.
+  The Rust additions are:
+
+  | Package | Version | License offered |
+  | --- | --- | --- |
+  | fluent-bundle | 0.16.0 | Apache-2.0 OR MIT |
+  | fluent-langneg | 0.13.1 | Apache-2.0 OR MIT |
+  | fluent-syntax | 0.12.0 | Apache-2.0 OR MIT |
+  | intl-memoizer | 0.5.3 | Apache-2.0 OR MIT |
+  | intl_pluralrules | 7.0.2 | Apache-2.0 OR MIT |
+  | self_cell | 1.3.0 | Apache-2.0 OR GPL-2.0-only |
+  | type-map | 0.5.1 | MIT OR Apache-2.0 |
+  | unic-langid | 0.9.6 | MIT OR Apache-2.0 |
+  | unic-langid-impl | 0.9.6 | MIT OR Apache-2.0 |
+
+  `self_cell` can be used under its Apache-2.0 option. OpenCC was an offline
+  translation preparation aid only; it is absent from both application graphs.
 - `unicode-normalization` (0.1.25, the unicode-rs project, pure Rust) is now a
   direct dependency: passphrases are normalized to NFC before key derivation so
   the same visible passphrase derives the same key whichever composition form a
@@ -104,6 +129,7 @@ input, and it runs only in the separate PDF helper (`src-tauri/src/pdf_view.rs`)
 as `lopdf` does.
 
 **Where there is unsafe code:**
+
 - `hayro` and `hayro-interpret` forbid unsafe code in their own crates.
 - `hayro-syntax`, the PDF parser underneath them, does not.
   - It has an unsafe lifetime extension of its own (`page.rs`).

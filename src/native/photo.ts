@@ -1,23 +1,25 @@
 import { t as translateNow, formatDate, getLocale } from "../i18n";
+import { formatPhotoName } from "../i18n/core";
 // Taking a photo with the camera (CameraDialog) and showing one (PhotoViewer).
 
 /** A new photo gets a localized name once. Existing document names are user
  * data and never change when the language changes. Colons are invalid in
  * Windows file names, so the formatted clock uses dots. */
 export function photoName(now: Date): string {
-  const date = new Intl.DateTimeFormat(
-    getLocale() === "en" ? "en-GB" : getLocale(),
-    {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    },
-  ).format(now);
+  const date = formatDate(now, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
   const time = formatDate(now, { hour: "numeric", minute: "2-digit" }).replace(
     /:/g,
     ".",
   );
-  return translateNow("interface.photo.name", { date, time });
+  // Intl may supply directional presentation marks for some computer locales.
+  // These generated date/time fields are filename metadata, not user input.
+  const filenameText = (value: string) =>
+    value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+  return formatPhotoName(getLocale(), filenameText(date), filenameText(time));
 }
 
 /** The JPEG suffix of a photo name, with its stored case, after a nonempty name. */

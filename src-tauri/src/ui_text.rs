@@ -1,10 +1,19 @@
-//! App-owned native copy comes from the same catalogues as the renderer.
-//! The renderer chooses only one validated locale, never confirmation text.
+//! Shared, fallible native Fluent formatting. Native consent never uses renderer text.
+use crate::ui_text_ids::MessageId;
+use fluent_bundle::{FluentArgs, FluentBundle, FluentResource, FluentValue};
 use serde::Deserialize;
-use serde_json::Value;
-use std::sync::OnceLock;
+use std::cell::RefCell;
+use std::collections::{hash_map::Entry, HashMap};
+use unicode_normalization::UnicodeNormalization;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UiTextError {
+    InvalidCatalogue,
+    MissingMessage,
+    Formatting,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq)]
 pub(crate) enum UiLocale {
     #[default]
     #[serde(rename = "en")]
@@ -17,209 +26,329 @@ pub(crate) enum UiLocale {
     Pl,
     #[serde(rename = "pt-BR")]
     PtBr,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "zh-TW")]
+    ZhTw,
 }
 
 impl UiLocale {
-    fn catalogue(self) -> &'static Value {
-        static EN: OnceLock<Value> = OnceLock::new();
-        static FR: OnceLock<Value> = OnceLock::new();
-        static ES: OnceLock<Value> = OnceLock::new();
-        static PL: OnceLock<Value> = OnceLock::new();
-        static PT: OnceLock<Value> = OnceLock::new();
-        let (slot, text) = match self {
-            Self::En => (
-                &EN,
-                include_str!("../../src/i18n/locales/interface-en.json"),
-            ),
-            Self::Fr => (
-                &FR,
-                include_str!("../../src/i18n/locales/interface-fr.json"),
-            ),
-            Self::Es => (
-                &ES,
-                include_str!("../../src/i18n/locales/interface-es.json"),
-            ),
-            Self::Pl => (
-                &PL,
-                include_str!("../../src/i18n/locales/interface-pl.json"),
-            ),
-            Self::PtBr => (
-                &PT,
-                include_str!("../../src/i18n/locales/interface-pt-BR.json"),
-            ),
-        };
-        slot.get_or_init(|| serde_json::from_str(text).expect("bundled interface catalogue"))
-    }
+    #[cfg(test)]
+    const ALL: [Self; 7] = [
+        Self::En,
+        Self::Fr,
+        Self::Es,
+        Self::Pl,
+        Self::PtBr,
+        Self::ZhCn,
+        Self::ZhTw,
+    ];
 
-    pub(crate) fn text(self, key: &str) -> &'static str {
-        self.catalogue()[key]
-            .as_str()
-            .expect("bundled native text key")
-    }
-
-    /// Replace only the template's own placeholders in one pass. A path or
-    /// label containing braces must never introduce another substitution.
-    pub(crate) fn render(self, key: &str, values: &[(&str, &str)]) -> String {
-        interpolate(self.text(key), values)
-    }
-
-    /// Nonnegative native counts follow the same grouping convention as Intl
-    /// for the five shipped locales, without accepting renderer-supplied counts.
-    fn number(self, count: usize) -> String {
-        let digits = count.to_string();
-        if matches!(self, Self::Es | Self::Pl) && digits.len() <= 4 {
-            return digits;
+    fn tag(self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::Fr => "fr",
+            Self::Es => "es",
+            Self::Pl => "pl",
+            Self::PtBr => "pt-BR",
+            Self::ZhCn => "zh-CN",
+            Self::ZhTw => "zh-TW",
         }
-        let separator = match self {
-            Self::En => ",",
-            Self::Fr => "\u{202f}",
-            Self::Pl => "\u{a0}",
-            Self::Es | Self::PtBr => ".",
-        };
-        let mut result = String::new();
-        for (index, digit) in digits.chars().enumerate() {
-            if index > 0 && (digits.len() - index).is_multiple_of(3) {
-                result.push_str(separator);
+    }
+
+    fn source(self) -> &'static str {
+        match self {
+            Self::En => include_str!("../../src/i18n/locales/fluent/en.ftl"),
+            Self::Fr => include_str!("../../src/i18n/locales/fluent/fr.ftl"),
+            Self::Es => include_str!("../../src/i18n/locales/fluent/es.ftl"),
+            Self::Pl => include_str!("../../src/i18n/locales/fluent/pl.ftl"),
+            Self::PtBr => include_str!("../../src/i18n/locales/fluent/pt-BR.ftl"),
+            Self::ZhCn => include_str!("../../src/i18n/locales/fluent/zh-CN.ftl"),
+            Self::ZhTw => include_str!("../../src/i18n/locales/fluent/zh-TW.ftl"),
+        }
+    }
+
+    fn with_bundle<T>(
+        self,
+        operation: impl FnOnce(&mut Bundle) -> Result<T, UiTextError>,
+    ) -> Result<T, UiTextError> {
+        BUNDLES.with(|bundles| {
+            let mut bundles = bundles
+                .try_borrow_mut()
+                .map_err(|_| UiTextError::Formatting)?;
+            let bundle = match bundles.entry(self) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => entry.insert(bundle_from_source(self, self.source())?),
+            };
+            operation(bundle)
+        })
+    }
+
+    pub(crate) fn text(self, id: MessageId) -> Result<String, UiTextError> {
+        self.render(id, &[])
+    }
+
+    pub(crate) fn text_key(self, key: &str) -> Result<String, UiTextError> {
+        self.text(MessageId::from_legacy_key(key).ok_or(UiTextError::MissingMessage)?)
+    }
+
+    pub(crate) fn render(
+        self,
+        id: MessageId,
+        values: &[(&str, &str)],
+    ) -> Result<String, UiTextError> {
+        self.format_strings(id, values, true)
+    }
+
+    /// Recovery-key/label/date machine-value lines must contain the exact input bytes.
+    pub(crate) fn render_raw(
+        self,
+        id: MessageId,
+        values: &[(&str, &str)],
+    ) -> Result<String, UiTextError> {
+        self.format_strings(id, values, false)
+    }
+
+    fn format_strings(
+        self,
+        id: MessageId,
+        values: &[(&str, &str)],
+        isolating: bool,
+    ) -> Result<String, UiTextError> {
+        self.with_bundle(|bundle| {
+            bundle.set_use_isolating(isolating);
+            let message = bundle
+                .get_message(id.as_str())
+                .ok_or(UiTextError::MissingMessage)?;
+            let pattern = message.value().ok_or(UiTextError::MissingMessage)?;
+            let mut args = FluentArgs::new();
+            for (name, value) in values {
+                args.set(*name, *value);
             }
-            result.push(digit);
-        }
-        result
+            let mut errors = Vec::new();
+            let text = bundle
+                .format_pattern(pattern, Some(&args), &mut errors)
+                .into_owned();
+            if errors.is_empty() {
+                Ok(text)
+            } else {
+                Err(UiTextError::Formatting)
+            }
+        })
     }
 
-    /// The typed guard is native-owned too. Only canonical NFC/NFD
-    /// equivalence is accepted: no case folding, compatibility normalization
-    /// or whitespace relaxation. Bound work before normalization.
-    pub(crate) fn reset_phrase_matches(self, typed: &str) -> bool {
-        use unicode_normalization::UnicodeNormalization;
-        let phrase = self.text("native.reset.phrase");
+    pub(crate) fn documents(self, count: usize) -> Result<String, UiTextError> {
+        self.with_bundle(|bundle| {
+            bundle.set_use_isolating(true);
+            let message = bundle
+                .get_message(MessageId::InterfaceCountDocuments.as_str())
+                .ok_or(UiTextError::MissingMessage)?;
+            let pattern = message.value().ok_or(UiTextError::MissingMessage)?;
+            let mut args = FluentArgs::new();
+            args.set("count", count as f64);
+            let mut errors = Vec::new();
+            let text = bundle
+                .format_pattern(pattern, Some(&args), &mut errors)
+                .into_owned();
+            if errors.is_empty() {
+                Ok(text)
+            } else {
+                Err(UiTextError::Formatting)
+            }
+        })
+    }
+
+    pub(crate) fn reset_phrase_matches(self, typed: &str) -> Result<bool, UiTextError> {
+        let phrase = self.text(MessageId::NativeResetPhrase)?;
         let max_bytes: usize = phrase.nfd().map(char::len_utf8).sum();
-        typed.len() <= max_bytes && typed.nfc().eq(phrase.nfc())
-    }
-
-    pub(crate) fn documents(self, count: usize) -> String {
-        let category = match self {
-            Self::Pl if count == 1 => "one",
-            Self::Pl if (2..=4).contains(&(count % 10)) && !(12..=14).contains(&(count % 100)) => {
-                "few"
-            }
-            Self::Pl => "many",
-            Self::Fr | Self::PtBr if count <= 1 => "one",
-            Self::Fr | Self::Es | Self::PtBr if count > 0 && count.is_multiple_of(1_000_000) => {
-                "many"
-            }
-            _ if count == 1 => "one",
-            _ => "other",
-        };
-        let forms = &self.catalogue()["interface.count.documents"];
-        let template = forms
-            .get(category)
-            .or_else(|| forms.get("other"))
-            .and_then(Value::as_str)
-            .expect("bundled document plural");
-        interpolate(template, &[("count", &self.number(count))])
+        Ok(typed.len() <= max_bytes && typed.nfc().eq(phrase.nfc()))
     }
 }
 
-fn interpolate(template: &str, values: &[(&str, &str)]) -> String {
-    let mut result = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(open) = rest.find('{') {
-        result.push_str(&rest[..open]);
-        let tail = &rest[open + 1..];
-        let Some(close) = tail.find('}') else {
-            result.push_str(&rest[open..]);
-            return result;
-        };
-        match values.iter().find(|(name, _)| *name == &tail[..close]) {
-            Some((_, value)) => result.push_str(value),
-            None => result.push_str(&rest[open..open + close + 2]),
+type Bundle = FluentBundle<FluentResource>;
+fn bundle_from_source(locale: UiLocale, source: &str) -> Result<Bundle, UiTextError> {
+    let language = locale
+        .tag()
+        .parse()
+        .map_err(|_| UiTextError::InvalidCatalogue)?;
+    let resource =
+        FluentResource::try_new(source.to_owned()).map_err(|_| UiTextError::InvalidCatalogue)?;
+    let mut bundle = Bundle::new(vec![language]);
+    bundle
+        .add_resource(resource)
+        .map_err(|_| UiTextError::InvalidCatalogue)?;
+    // Fluent selects plural forms from the numeric value; rendering keeps the
+    // established native count grouping used by the installed interface.
+    match locale {
+        UiLocale::En | UiLocale::ZhCn | UiLocale::ZhTw => {
+            bundle.set_formatter(Some(|value, _| grouped_integer(value, ",", false)))
         }
-        rest = &tail[close + 1..];
+        UiLocale::Fr => {
+            bundle.set_formatter(Some(|value, _| grouped_integer(value, "\u{202f}", false)))
+        }
+        UiLocale::Pl => {
+            bundle.set_formatter(Some(|value, _| grouped_integer(value, "\u{a0}", true)))
+        }
+        UiLocale::Es => bundle.set_formatter(Some(|value, _| grouped_integer(value, ".", true))),
+        UiLocale::PtBr => bundle.set_formatter(Some(|value, _| grouped_integer(value, ".", false))),
     }
-    result.push_str(rest);
-    result
+    for id in MessageId::ALL {
+        if bundle
+            .get_message(id.as_str())
+            .and_then(|m| m.value())
+            .is_none()
+        {
+            return Err(UiTextError::MissingMessage);
+        }
+    }
+    Ok(bundle)
+}
+thread_local! { static BUNDLES: RefCell<HashMap<UiLocale, Bundle>> = RefCell::new(HashMap::new()); }
+
+fn grouped_integer(
+    value: &FluentValue<'_>,
+    separator: &str,
+    skip_four_digits: bool,
+) -> Option<String> {
+    let FluentValue::Number(number) = value else {
+        return None;
+    };
+    if !number.value.is_finite() || number.value < 0.0 || number.value.fract() != 0.0 {
+        return None;
+    }
+    let digits = format!("{:.0}", number.value);
+    if skip_four_digits && digits.len() <= 4 {
+        return Some(digits);
+    }
+    let mut result = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            result.push_str(separator);
+        }
+        result.push(digit);
+    }
+    Some(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn native_localization_locale_is_validated_and_user_values_are_never_reparsed() {
-        for tag in ["en", "fr", "es", "pl", "pt-BR"] {
-            assert!(serde_json::from_value::<UiLocale>(Value::String(tag.to_owned())).is_ok());
-        }
-        for value in [
-            Value::String("de".to_owned()),
-            Value::String("{kept}".to_owned()),
-            Value::Bool(true),
-            Value::Null,
-        ] {
-            assert!(serde_json::from_value::<UiLocale>(value).is_err());
-        }
-        let path = "/FAKE/{kept}/é";
-        for locale in [
-            UiLocale::En,
-            UiLocale::Fr,
-            UiLocale::Es,
-            UiLocale::Pl,
-            UiLocale::PtBr,
-        ] {
-            let text = locale.render("native.setAside.desktop", &[("folder", path)]);
-            assert!(text.contains(path));
-            assert!(!text.contains("{folder}"));
-            let kit = locale.render(
-                "native.kit.text",
-                &[
-                    ("key", "FAKE-KEY"),
-                    ("label", "FAKE"),
-                    ("date", "2026-10-23"),
-                ],
-            );
-            assert!(kit.contains("FAKE-KEY") && kit.contains("2026-10-23") && kit.ends_with('\n'));
-            assert!(!kit.contains("{key}") && !kit.contains("{label}") && !kit.contains("{date}"));
-        }
+    fn visible(text: String) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
     }
-    #[test]
-    fn native_localization_restoration_counts_use_polish_plurals_and_locale_grouping() {
-        assert_eq!(UiLocale::Pl.documents(1), "1 dokument");
-        assert_eq!(UiLocale::Pl.documents(2), "2 dokumenty");
-        assert_eq!(UiLocale::Pl.documents(5), "5 dokumentów");
-        assert_eq!(UiLocale::Pl.documents(12), "12 dokumentów");
-        assert_eq!(UiLocale::Pl.documents(22), "22 dokumenty");
-        assert_eq!(UiLocale::En.number(12345), "12,345");
-        assert_eq!(UiLocale::Fr.number(12345), "12\u{202f}345");
-        assert_eq!(UiLocale::Pl.number(12345), "12\u{a0}345");
-        assert_eq!(UiLocale::Es.number(12345), "12.345");
-        assert_eq!(UiLocale::PtBr.number(12345), "12.345");
-    }
-}
 
-#[cfg(test)]
-mod reset_tests {
-    use super::*;
-    use unicode_normalization::UnicodeNormalization;
     #[test]
-    fn native_localization_reset_guard_accepts_only_its_own_language_and_canonical_accents() {
-        let locales = [
-            UiLocale::En,
-            UiLocale::Fr,
-            UiLocale::Es,
-            UiLocale::Pl,
-            UiLocale::PtBr,
-        ];
-        for (index, locale) in locales.iter().copied().enumerate() {
-            let phrase = locale.text("native.reset.phrase");
-            assert!(locale.reset_phrase_matches(phrase));
-            assert!(locale.reset_phrase_matches(&phrase.nfd().collect::<String>()));
-            assert!(!locale.reset_phrase_matches(&phrase.to_lowercase()));
-            assert!(!locale.reset_phrase_matches(&format!(" {phrase}")));
-            assert!(!locale.reset_phrase_matches(&format!("{phrase} ")));
-            assert!(!locale.reset_phrase_matches("FAKE"));
-            assert!(!locale.reset_phrase_matches(
-                locales[(index + 1) % locales.len()].text("native.reset.phrase")
-            ));
+    fn all_seven_resources_parse_and_format_untrusted_arguments_as_text() {
+        for locale in UiLocale::ALL {
+            bundle_from_source(locale, locale.source()).unwrap();
+            let value = "/FAKE/{kept}/<tag>/مرحبا";
+            let text = locale
+                .render(MessageId::NativeSetAsideDesktop, &[("folder", value)])
+                .unwrap();
+            assert!(text.contains(value));
+            assert!(text.contains('\u{2068}'));
         }
-        assert!(UiLocale::default().reset_phrase_matches("RESET MYCARLOS VAULT"));
-        assert!(!UiLocale::En.reset_phrase_matches("ＲＥＳＥＴ ＭＹＣＡＲＬＯＳ ＶＡＵＬＴ"));
+    }
+    #[test]
+    fn every_native_message_formats_in_each_locale_without_resolver_errors() {
+        let values = [
+            ("key", "FAKE-KEY"),
+            ("label", "BEAD"),
+            ("date", "2026-10-27"),
+            ("documents", "FAKE documents"),
+            ("kept", "FAKE kept"),
+            ("removal", "FAKE removal"),
+            ("folder", "/FAKE/{folder}/אבג"),
+        ];
+        for locale in UiLocale::ALL {
+            for id in MessageId::ALL {
+                if id.as_str().starts_with("native-") {
+                    let result = locale.render(*id, &values);
+                    assert!(result.is_ok(), "{locale:?}/{id:?}: {result:?}");
+                    assert!(!result.unwrap().trim().is_empty());
+                }
+            }
+        }
+    }
+    #[test]
+    fn malformed_duplicate_missing_and_incomplete_arguments_fail_recoverably() {
+        assert!(matches!(
+            bundle_from_source(UiLocale::En, "broken = {"),
+            Err(UiTextError::InvalidCatalogue)
+        ));
+        assert!(matches!(
+            bundle_from_source(UiLocale::En, "only = One"),
+            Err(UiTextError::MissingMessage)
+        ));
+        assert!(matches!(
+            bundle_from_source(
+                UiLocale::En,
+                &(UiLocale::En.source().to_owned() + "\nnative-cancel = Again\n")
+            ),
+            Err(UiTextError::InvalidCatalogue)
+        ));
+        assert_eq!(
+            UiLocale::En.render(MessageId::NativeSetAsideDesktop, &[]),
+            Err(UiTextError::Formatting)
+        );
+        assert_eq!(
+            UiLocale::En.text_key("missing.key"),
+            Err(UiTextError::MissingMessage)
+        );
+    }
+    #[test]
+    fn plural_selection_and_installed_native_count_grouping_are_retained() {
+        for (n, expected) in [
+            (1, "1 dokument"),
+            (2, "2 dokumenty"),
+            (5, "5 dokumentów"),
+            (12, "12 dokumentów"),
+            (22, "22 dokumenty"),
+        ] {
+            assert_eq!(visible(UiLocale::Pl.documents(n).unwrap()), expected);
+        }
+        for (locale, expected) in [
+            (UiLocale::En, "12,345 documents"),
+            (UiLocale::Fr, "12\u{202f}345 documents"),
+            (UiLocale::Pl, "12\u{a0}345 dokumentów"),
+        ] {
+            assert_eq!(visible(locale.documents(12345).unwrap()), expected);
+        }
+        assert!(visible(UiLocale::ZhCn.documents(12345).unwrap()).contains("12,345"));
+        assert!(visible(UiLocale::ZhTw.documents(12345).unwrap()).contains("12,345"));
+    }
+    #[test]
+    fn reset_guards_accept_only_exact_locale_phrase_and_canonical_equivalence() {
+        for locale in UiLocale::ALL {
+            let phrase = locale.text(MessageId::NativeResetPhrase).unwrap();
+            assert!(locale.reset_phrase_matches(&phrase).unwrap());
+            assert!(locale
+                .reset_phrase_matches(&phrase.nfd().collect::<String>())
+                .unwrap());
+            assert!(!locale.reset_phrase_matches(&phrase.to_lowercase()).unwrap());
+            assert!(!locale.reset_phrase_matches(&format!(" {phrase}")).unwrap());
+            assert!(!locale.reset_phrase_matches(&format!("{phrase} ")).unwrap());
+            assert!(!locale.reset_phrase_matches("FAKE").unwrap());
+        }
+        assert!(!UiLocale::En
+            .reset_phrase_matches("ＲＥＳＥＴ ＭＹＣＡＲＬＯＳ ＶＡＵＬＴ")
+            .unwrap());
+    }
+    #[test]
+    fn raw_recovery_output_preserves_tokens_without_bidi_marks_or_interpolation() {
+        let key = "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23";
+        let label = "FAKE{key}";
+        for locale in UiLocale::ALL {
+            let text = locale
+                .render_raw(
+                    MessageId::NativeKitText,
+                    &[("key", key), ("label", label), ("date", "2026-10-27")],
+                )
+                .unwrap();
+            assert!(text.contains(key));
+            assert!(text.contains(label));
+            assert!(!text.chars().any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            assert_eq!(text.matches(key).count(), 1);
+        }
     }
 }

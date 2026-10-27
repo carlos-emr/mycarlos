@@ -1,11 +1,6 @@
-import { CATALOGUES, type MessageKey } from "./locales";
-import {
-  DEFAULT_LOCALE,
-  LOCALES,
-  type Locale,
-  type Message,
-  type PluralForms,
-} from "./types";
+import { fluentBundle, formattingFailure } from "./catalogues";
+import { type MessageKey, fluentId } from "./locales/fluent/keys";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "./types";
 
 export type Params = Record<string, string | number>;
 
@@ -18,6 +13,14 @@ export function matchLocale(tag: string): Locale | null {
   const exact = LOCALES.find((locale) => locale.toLowerCase() === wanted);
   if (exact) return exact;
   const primary = wanted.split("-")[0];
+  if (primary === "zh") {
+    const subtags = wanted.split("-");
+    if (subtags.includes("hant")) return "zh-TW";
+    if (subtags.includes("hans")) return "zh-CN";
+    return subtags.some((tag) => ["tw", "hk", "mo"].includes(tag))
+      ? "zh-TW"
+      : "zh-CN";
+  }
   return (
     LOCALES.find((locale) => locale.toLowerCase().split("-")[0] === primary) ??
     null
@@ -135,47 +138,61 @@ export function initLocale(): Locale {
 
 // --- translating ----------------------------------------------------------
 
-function pluralForm(message: PluralForms, locale: Locale, count: number) {
-  const category = new Intl.PluralRules(locale).select(count);
-  return message[category] ?? message.other;
-}
-
-/** Fills {name} placeholders in a single pass, so a value that itself contains
- * braces is never read as another placeholder. The result is plain text for a
- * React text node: nothing here builds HTML. A placeholder with no value is
- * left as written. */
-export function interpolate(
-  template: string,
-  params: Params,
-  locale: Locale,
-): string {
-  return template.replace(/\{(\w+)\}/g, (whole, name: string) => {
-    if (!Object.prototype.hasOwnProperty.call(params, name)) return whole;
-    const value = params[name];
-    return typeof value === "number"
-      ? formatNumber(value, locale)
-      : String(value);
-  });
-}
-
-/** The text for a key in a language. A missing key or form falls back to
- * English, and a key unknown even there shows the key itself, so a gap is
- * visible rather than blank. A message with plural forms needs `count`. */
+/** Human-facing text isolates inserted values. Missing messages or arguments
+ * show a recoverable formatting failure without logging the arguments. */
 export function translate(
   locale: Locale,
   key: MessageKey,
   params: Params = {},
 ): string {
-  const message: Message | undefined =
-    CATALOGUES[locale]?.[key] ?? CATALOGUES[DEFAULT_LOCALE][key];
-  if (message === undefined) return key;
-  if (typeof message === "string") return interpolate(message, params, locale);
-  const count = params.count;
-  const form =
-    typeof count === "number"
-      ? pluralForm(message, locale, count)
-      : message.other;
-  return interpolate(form, params, locale);
+  return formatMessage(locale, key, params, true);
+}
+
+/** Only the printed kit metadata bypasses bidi isolation, so copied labels
+ * and dates contain no invisible formatter characters. Recovery bytes are
+ * rendered directly, outside translated messages. */
+export function translatePrintedKit(
+  locale: Locale,
+  key: "kit.labelPrinted" | "kit.printed",
+  params: Params,
+): string {
+  return formatMessage(locale, key, params, false);
+}
+
+/** A generated filename is stored data, not a human sentence. Do not add bidi
+ * delimiters to it or turn a formatter fault into a saved document name. */
+export function formatPhotoName(
+  locale: Locale,
+  date: string,
+  time: string,
+): string {
+  const value = formatMessage(
+    locale,
+    "interface.photo.name",
+    { date, time },
+    false,
+  );
+  if (value === formattingFailure(locale)) throw new Error(value);
+  return value;
+}
+
+function formatMessage(
+  locale: Locale,
+  key: MessageKey,
+  params: Params,
+  useIsolating: boolean,
+): string {
+  try {
+    const bundle = fluentBundle(locale, useIsolating);
+    const message = bundle.getMessage(fluentId(key));
+    if (!message?.value) return formattingFailure(locale);
+    const errors: Error[] = [];
+    const formatted = bundle.formatPattern(message.value, params, errors);
+    return errors.length ? formattingFailure(locale) : formatted;
+  } catch {
+    // A bundled resource/format fault remains visible and recoverable. Never log arguments.
+    return formattingFailure(locale);
+  }
 }
 
 /** Text in the language now in use. */
@@ -196,7 +213,7 @@ export function formatNumber(
 export function formatDate(
   value: Date | number,
   options: Intl.DateTimeFormatOptions = { dateStyle: "medium" },
-  locale: Locale = getLocale(),
+  locale?: string,
 ): string {
   return new Intl.DateTimeFormat(locale, options).format(value);
 }

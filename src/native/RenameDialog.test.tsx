@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RenameDialog } from "./RenameDialog";
@@ -28,12 +29,12 @@ function open(
     />,
   );
   const input = screen.getByLabelText<HTMLInputElement>(
-    kind === "folder" ? "Folder name" : "File name",
+    humanText(kind === "folder" ? "Folder name" : "File name"),
   );
   return {
     input,
     onSave,
-    save: screen.getByRole("button", { name: "Save name" }),
+    save: screen.getByRole("button", { name: humanText("Save name") }),
     type: (value: string) => fireEvent.change(input, { target: { value } }),
     submit: () => fireEvent.submit(input.closest("form")!),
   };
@@ -49,11 +50,10 @@ describe("RenameDialog", () => {
     (stored, stem, extension) => {
       const { input } = open(stored, "document", true);
       expect(input).toHaveValue(stem);
-      expect(screen.getByText(extension, { exact: true })).toHaveAttribute(
-        "aria-hidden",
-        "true",
-      );
-      expect(input).toHaveAccessibleDescription(
+      expect(
+        screen.getByText(humanText(extension), { exact: true }),
+      ).toHaveAttribute("aria-hidden", "true");
+      expect(input).toHaveHumanAccessibleDescription(
         `${HELP} The ${extension} extension stays the same.`,
       );
     },
@@ -103,7 +103,7 @@ describe("RenameDialog", () => {
       true,
     );
     type("字".repeat(79));
-    expect(screen.getByRole("alert")).toHaveTextContent(TOO_LONG);
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(TOO_LONG);
     expect(save).toBeDisabled();
     submit();
     expect(onSave).not.toHaveBeenCalled();
@@ -126,15 +126,15 @@ describe("RenameDialog", () => {
     expect(input).toHaveValue(value);
     if (extension) {
       // Shown beside the field but not announced: the help text names it.
-      const shown = screen.getByText(extension, { exact: true });
+      const shown = screen.getByText(humanText(extension), { exact: true });
       expect(shown).toBeVisible();
       expect(shown).toHaveAttribute("aria-hidden", "true");
-      expect(input).toHaveAccessibleDescription(
+      expect(input).toHaveHumanAccessibleDescription(
         `${HELP} The ${extension} extension stays the same.`,
       );
     } else {
-      expect(screen.queryByText(/^\.\w+$/)).not.toBeInTheDocument();
-      expect(input).toHaveAccessibleDescription(HELP);
+      expect(screen.queryByText(humanText(/^\.\w+$/))).not.toBeInTheDocument();
+      expect(input).toHaveHumanAccessibleDescription(HELP);
     }
   });
 
@@ -250,7 +250,7 @@ describe("RenameDialog", () => {
   ])("refuses %j, typed %j: %j", (stored, typed, alert) => {
     const { onSave, save, type, submit } = open(stored);
     type(typed);
-    if (alert) expect(screen.getByRole("alert")).toHaveTextContent(alert);
+    if (alert) expect(screen.getByRole("alert")).toHaveHumanTextContent(alert);
     else expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(save).toBeDisabled();
     submit();
@@ -287,18 +287,20 @@ describe("RenameDialog", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(save).toBeEnabled();
       submit();
-      expect(screen.getByRole("alert")).toHaveTextContent(reserved(word));
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(reserved(word));
       expect(onSave).not.toHaveBeenCalled();
       // Returning to the field says why it was refused.
       expect(input).toHaveAttribute("aria-invalid", "true");
-      expect(input).toHaveAccessibleDescription(
+      expect(input).toHaveHumanAccessibleDescription(
         expect.stringContaining(reserved(word)),
       );
       // Editing the name clears it.
       type(`${typed}x`);
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(input).not.toHaveAttribute("aria-invalid");
-      expect(input).toHaveAccessibleDescription(expect.stringContaining(HELP));
+      expect(input).toHaveHumanAccessibleDescription(
+        expect.stringContaining(HELP),
+      );
     },
   );
 
@@ -309,12 +311,12 @@ describe("RenameDialog", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     submit();
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent(reserved("CON"));
+    expect(alert).toHaveHumanTextContent(reserved("CON"));
     expect(onSave).not.toHaveBeenCalled();
     // Saving again says so again, for screen readers too.
     submit();
     expect(screen.getByRole("alert")).not.toBe(alert);
-    expect(screen.getByRole("alert")).toHaveTextContent(reserved("CON"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(reserved("CON"));
   });
 
   it.each([
@@ -323,7 +325,7 @@ describe("RenameDialog", () => {
     ["X. ", UNSAFE],
   ])("refuses to save an unedited %j: %j", (stored, alert) => {
     const { onSave, save, submit } = open(stored);
-    expect(screen.getByRole("alert")).toHaveTextContent(alert);
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(alert);
     expect(save).toBeDisabled();
     submit();
     expect(onSave).not.toHaveBeenCalled();
@@ -341,7 +343,7 @@ describe("RenameDialog", () => {
     expect(save).toBeEnabled();
 
     type("a".repeat(121));
-    expect(screen.getByRole("alert")).toHaveTextContent(TOO_LONG);
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(TOO_LONG);
     expect(save).toBeDisabled();
     submit();
     expect(onSave).not.toHaveBeenCalled();
@@ -355,7 +357,9 @@ describe("RenameDialog", () => {
   ])("renames folder %j to %j", (stored, typed) => {
     const { input, onSave, type, submit } = open(stored, "folder");
     expect(input).toHaveValue(stored);
-    expect(screen.queryByText(".pdf", { exact: true })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(humanText(".pdf"), { exact: true }),
+    ).not.toBeInTheDocument();
     type(typed);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     submit();

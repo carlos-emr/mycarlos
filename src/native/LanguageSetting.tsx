@@ -14,6 +14,8 @@ const LANGUAGES: ReadonlyArray<[Locale, string]> = [
   ["es", "Español"],
   ["pl", "Polski"],
   ["pt-BR", "Português (Brasil)"],
+  ["zh-CN", "简体中文"],
+  ["zh-TW", "繁體中文"],
 ];
 
 export function LanguageSetting({ compact = false }: { compact?: boolean }) {

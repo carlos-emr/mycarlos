@@ -1,7 +1,9 @@
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
 mod ui_text;
+mod ui_text_ids;
 use ui_text::UiLocale;
+use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod history;
@@ -67,31 +69,70 @@ struct RuntimeInfo {
     message: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct PublicError {
     code: &'static str,
-    message: &'static str,
     message_key: &'static str,
     /// The document a failure is about, for the renderer to name: a name is
     /// never put in an error.
-    #[serde(skip_serializing_if = "Option::is_none")]
     record_id: Option<Uuid>,
     /// A sentence the renderer adds after the message, where it depends on
     /// how the failure came about rather than on what it was.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
-    #[serde(skip_serializing_if = "Option::is_none")]
     retry_after_ms: Option<u64>,
+}
+
+// Keep the established IPC fields and omission rules; only user-facing text is formatted.
+impl Serialize for PublicError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            code: &'a str,
+            message: String,
+            message_key: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            record_id: Option<Uuid>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            note: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            note_key: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            retry_after_ms: Option<u64>,
+        }
+        let text = |key| {
+            UiLocale::En
+                .text_key(key)
+                .unwrap_or_else(|_| ui_text_ids::FORMATTING_FAILURE_EN.to_owned())
+        };
+        Wire {
+            code: self.code,
+            message: text(self.message_key),
+            message_key: self.message_key,
+            record_id: self.record_id,
+            note: self.note_key.map(text),
+            note_key: self.note_key,
+            retry_after_ms: self.retry_after_ms,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl From<ui_text::UiTextError> for PublicError {
+    fn from(_: ui_text::UiTextError) -> Self {
+        Self {
+            code: "invalid",
+            message_key: "language.error.formatting",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+        }
+    }
 }
 
 /// What an error says, whatever it is about.
 struct PublicText {
     code: &'static str,
-    message: &'static str,
     message_key: &'static str,
 }
 
@@ -114,35 +155,24 @@ impl PublicError {
     /// for it to check, and the older backups are to be kept. Where it was
     /// being saved adds what may be left there, whatever the failure.
     fn of_backup(self, destination: BackupDestination) -> Self {
-        let (message, message_key) = match self.code {
-            "unreadable" => ("myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.", "native.error.01"),
-            "no_space" => ("There is not enough space where you chose to save it. No backup was saved. Keep your older backups.", "native.error.02"),
-            "storage" => ("The backup could not be saved there. No backup was saved. Keep your older backups.", "native.error.03"),
-            "cancelled" => ("The backup stopped because the vault locked. No backup was saved. Keep your older backups.", "native.error.04"),
-            _ => (self.message, self.message_key),
+        let message_key = match self.code {
+            "unreadable" => "native.error.01",
+            "no_space" => "native.error.02",
+            "storage" => "native.error.03",
+            "cancelled" => "native.error.04",
+            _ => self.message_key,
         };
         // An Android document provider's document. Nothing is written to it
         // before it is open, so until then it is whole or empty (the provider
         // may empty it as it opens, even if the open then fails); once
         // opened, it may be empty or incomplete.
-        let note = match destination {
-            BackupDestination::Path => None,
-            BackupDestination::ProviderUntouched => Some(
-                "An empty file (0 bytes) may be left where you chose to save: you can delete it. Keep any backup that is not empty.",
-            ),
-            BackupDestination::ProviderEmptied => Some(
-                "The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups.",
-            ),
-        };
         let note_key = match destination {
             BackupDestination::Path => None,
             BackupDestination::ProviderUntouched => Some("native.backup.noteUntouched"),
             BackupDestination::ProviderEmptied => Some("native.backup.noteEmptied"),
         };
         Self {
-            message,
             message_key,
-            note,
             note_key,
             ..self
         }
@@ -153,10 +183,8 @@ impl PublicError {
     fn wait(left_ms: u64) -> Self {
         Self {
             code: "too_many_attempts",
-            message: "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
-                message_key: "native.error.05",
+            message_key: "native.error.05",
             record_id: None,
-            note: None,
             note_key: None,
             retry_after_ms: Some(left_ms),
         }
@@ -165,10 +193,8 @@ impl PublicError {
     fn partial_export() -> Self {
         Self {
             code: "partial_export",
-            message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
-                message_key: "native.error.06",
+            message_key: "native.error.06",
             record_id: None,
-            note: None,
             note_key: None,
             retry_after_ms: None,
         }
@@ -178,13 +204,12 @@ impl PublicError {
     /// the credentials its vault had when it was saved, which need not be
     /// the ones the vault has now.
     fn of_restore(self) -> Self {
-        let (message, message_key) = match self.code {
-            "wrong_recovery_key" => ("That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved, if it had one (not a key set up or replaced since), or with the passphrase it was made with.", "native.error.07"),
-            "wrong_passphrase" => ("That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved, if it had one.", "native.error.08"),
+        let message_key = match self.code {
+            "wrong_recovery_key" => "native.error.07",
+            "wrong_passphrase" => "native.error.08",
             _ => return self,
         };
         Self {
-            message,
             message_key,
             ..self
         }
@@ -197,10 +222,8 @@ impl PublicError {
     fn photo_not_received(code: &'static str) -> Self {
         Self {
             code,
-            message: "The photo did not reach the vault, so it was not saved. Choose Use photo to try again.",
-                message_key: "native.error.09",
+            message_key: "native.error.09",
             record_id: None,
-            note: None,
             note_key: None,
             retry_after_ms: None,
         }
@@ -209,10 +232,8 @@ impl PublicError {
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
-            message: "Nothing was hidden. The vault cannot be changed right now; the notice above the documents says why.",
-                message_key: "native.error.10",
+            message_key: "native.error.10",
             record_id: None,
-            note: None,
             note_key: None,
             retry_after_ms: None,
         }
@@ -222,195 +243,161 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            VaultError::Localization => Self {
+                code: "invalid",
+                message_key: "language.error.formatting",
+            },
             VaultError::Busy => Self {
                 code: "busy",
-                message: "A passphrase check or speed test is running. Wait for it to finish, then try again.",
                 message_key: "native.error.11",
             },
             VaultError::AlreadyExists => Self {
                 code: "already_exists",
-                message: "A vault already exists on this device.",
                 message_key: "native.error.12",
             },
             VaultError::Missing => Self {
                 code: "missing",
-                message: "No vault exists on this device.",
                 message_key: "native.error.13",
             },
             VaultError::Locked => Self {
                 code: "locked",
-                message: "Unlock the vault to continue.",
                 message_key: "native.error.14",
             },
             VaultError::InUse => Self {
                 code: "in_use",
-                message: "This vault is open in another myCarlos window. Lock or close that window, then try again.",
                 message_key: "native.error.15",
             },
             VaultError::WrongPassphrase => Self {
                 code: "wrong_passphrase",
-                message: "That passphrase didn't open myCarlos. Check Caps Lock and try again.",
                 message_key: "native.error.16",
             },
             VaultError::Corrupt => Self {
                 code: "corrupt",
-                message: "The vault is damaged or incomplete. No data was changed.",
                 message_key: "native.error.17",
             },
             VaultError::NotFound => Self {
                 code: "not_found",
-                message: "That item is no longer available.",
                 message_key: "native.error.18",
             },
             VaultError::Invalid => Self {
                 code: "invalid",
-                message: "Something you typed wasn't accepted. Check it and try again.",
                 message_key: "native.error.19",
             },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
-                message: "Choose a less predictable passphrase that is not based on common passwords, names, or myCarlos.",
                 message_key: "native.error.20",
             },
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
-                message: "Choose no more than 100 files in one import.",
                 message_key: "native.error.21",
             },
             VaultError::NotPdf => Self {
                 code: "not_pdf",
-                message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
                 message_key: "native.error.22",
             },
             // The reader asks for the document's password on this code (#64).
             VaultError::PdfLocked => Self {
                 code: "pdf_locked",
-                message: "This document is locked with a password. Enter the document password from your patient portal.",
                 message_key: "native.error.23",
             },
             VaultError::PdfNotLocked => Self {
                 code: "pdf_not_locked",
-                message: "This document is not locked with a password, so it opens as it is.",
                 message_key: "native.error.24",
             },
             VaultError::PdfAlreadyUnlocked => Self {
                 code: "pdf_already_unlocked",
-                message: "An unlocked copy of this document is already here, so nothing was added.",
                 message_key: "native.error.25",
             },
             VaultError::PdfWrongPassword => Self {
                 code: "pdf_wrong_password",
-                message: "That password did not open the document. Check the document password in your patient portal, then try again.",
                 message_key: "native.error.26",
             },
             VaultError::PdfUnlockFailed => Self {
                 code: "pdf_unlock_failed",
-                message: "myCarlos could not open this locked document. It may be damaged, or locked in a way myCarlos cannot open. The document is unchanged.",
                 message_key: "native.error.27",
             },
             VaultError::PdfUnlockUnavailable => Self {
                 code: "pdf_unlock_unavailable",
-                message: "myCarlos cannot open password-protected documents on this device yet. The document is unchanged.",
                 message_key: "native.error.28",
             },
             VaultError::PdfUnlockNoSandbox => Self {
                 code: "pdf_unlock_no_sandbox",
-                message: "myCarlos cannot open locked documents safely on this system, so this one was not opened. The document is unchanged.",
                 message_key: "native.error.29",
             },
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
-                message: "This locked document is larger than 100 MB, so myCarlos cannot open it. The document is unchanged.",
                 message_key: "native.error.30",
             },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
-                message: "myCarlos could not show this document. It may be damaged, or use features myCarlos cannot show yet. Save a copy to read it in another app.",
                 message_key: "native.error.31",
             },
             VaultError::PdfViewUnavailable => Self {
                 code: "pdf_view_unavailable",
-                message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
                 message_key: "native.error.32",
             },
             VaultError::PdfViewNoSandbox => Self {
                 code: "pdf_view_no_sandbox",
-                message: "myCarlos cannot show documents safely on this system. Save a copy to read it in another app.",
                 message_key: "native.error.33",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
-                message: "There is not enough storage to complete this operation.",
                 message_key: "native.error.34",
             },
             VaultError::Storage => Self {
                 code: "storage",
-                message: "myCarlos couldn't read or write its files on this computer. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.",
                 message_key: "native.error.35",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",
-                message: "The operation stopped because the vault was locked.",
                 message_key: "native.error.36",
             },
             VaultError::UnsupportedStorage => Self {
                 code: "unsupported_storage",
-                message: "myCarlos cannot keep a vault safely on this device's storage, because it does not confirm when files are durably written (for example, a network home folder). Use myCarlos on a device with local storage.",
                 message_key: "native.error.37",
             },
             VaultError::RemovalChanged => Self {
                 code: "removal_changed",
-                message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
                 message_key: "native.error.38",
             },
             VaultError::Unreadable => Self {
                 code: "unreadable",
-                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not set the vault aside. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
                 message_key: "native.error.39",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
-                message: "The vault is in read-only recovery mode. Export important records and free storage before retrying.",
                 message_key: "native.error.40",
             },
             VaultError::RecoveryKeyTypo => Self {
                 code: "recovery_key_typo",
-                message: "That doesn't match the recovery key. Check each group of characters and try again.",
                 message_key: "native.error.41",
             },
             VaultError::BackupChanged => Self {
                 code: "backup_changed",
-                message: "The backup file, or the vault on this device, changed after you chose to restore. Nothing on this device was changed. Choose the backup file again.",
                 message_key: "native.error.42",
             },
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
-                message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
                 message_key: "native.error.43",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
-                message: "That recovery key does not open this vault. If you replaced your recovery key, use the newest one.",
                 message_key: "native.error.44",
             },
             VaultError::BackupNotOpened => Self {
                 code: "backup_not_opened",
-                message: "myCarlos could not open that file. If it is in a cloud or shared folder, copy it to a folder on this device and choose it there. Nothing on this device was changed.",
                 message_key: "native.error.45",
             },
             VaultError::DamagedDocument(_) => Self {
                 code: "damaged_document",
-                message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
                 message_key: "native.error.46",
             },
             VaultError::NotPhoto => Self {
                 code: "not_a_photo",
-                message: "This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.",
                 message_key: "native.error.47",
             },
             VaultError::RestoreUnfinished => Self {
                 code: "restore_unfinished",
-                message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
                 message_key: "native.error.48",
             },
         }
@@ -423,17 +410,11 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
-        let PublicText {
-            code,
-            message,
-            message_key,
-        } = PublicText::from(error);
+        let PublicText { code, message_key } = PublicText::from(error);
         Self {
             code,
-            message,
             message_key,
             record_id,
-            note: None,
             note_key: None,
             retry_after_ms: None,
         }
@@ -1303,9 +1284,7 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
             code: "speed_test_failed",
             message_key: "native.error.speedTest",
             note_key: None,
-            message: "The speed test stopped before it finished. Nothing was changed. Try again.",
             record_id: None,
-            note: None,
             retry_after_ms: None,
         })??;
     let RuntimeInfo {
@@ -1590,24 +1569,17 @@ fn confirmed_natively<R: tauri::Runtime>(
     message: impl Into<String>,
     keep: &str,
     go_ahead: &str,
-    locale: UiLocale,
+    cancel: &str,
 ) -> bool {
     // The dialog reports these words as answers of its own, not as the
     // button that was given them.
-    if !native_labels_safe(keep, go_ahead, locale.text("native.cancel")) {
+    if !native_labels_safe(keep, go_ahead, cancel) {
         return false;
     }
     let message = message.into();
     #[cfg(target_os = "macos")]
     {
-        return native_confirmation_macos::confirm(
-            app,
-            title,
-            &message,
-            keep,
-            go_ahead,
-            locale.text("native.cancel"),
-        );
+        return native_confirmation_macos::confirm(app, title, &message, keep, go_ahead, cancel);
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1619,7 +1591,7 @@ fn confirmed_natively<R: tauri::Runtime>(
             .buttons(MessageDialogButtons::YesNoCancelCustom(
                 keep.to_owned(),
                 go_ahead.to_owned(),
-                locale.text("native.cancel").to_owned(),
+                cancel.to_owned(),
             ));
         #[cfg(desktop)]
         let dialog = match app.get_webview_window(MAIN_WINDOW) {
@@ -1674,16 +1646,14 @@ async fn vault_recovery_key_confirm(
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<VaultSnapshot>> {
     let locale = locale.unwrap_or_default();
+    let title = locale.text(MessageId::NativeRecoveryTitle)?;
+    let warning = locale.text(MessageId::NativeRecoveryWarning)?;
+    let keep = locale.text(MessageId::NativeRecoveryKeep)?;
+    let replace = locale.text(MessageId::NativeRecoveryReplace)?;
+    let cancel = locale.text(MessageId::NativeCancel)?;
     run_blocking(store.inner(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
-            confirmed_natively(
-                &app,
-                locale.text("native.recovery.title"),
-                locale.text("native.recovery.warning"),
-                locale.text("native.recovery.keep"),
-                locale.text("native.recovery.replace"),
-                locale,
-            )
+            confirmed_natively(&app, &title, warning, &keep, &replace, &cancel)
         })
     })
     .await
@@ -2049,12 +2019,13 @@ async fn vault_restore_pick(
         _ => Ok(()),
     })
     .await?;
+    let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
         let picker = app.dialog().file();
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
-        let picker = picker.add_filter(locale.text("native.filter.backups"), &["mycarlosbackup"]);
+        let picker = picker.add_filter(&_backup_filter, &["mycarlosbackup"]);
         picker.blocking_pick_file()
     })
     .await
@@ -2117,25 +2088,28 @@ async fn vault_restore_inspect(
 /// from the renderer.
 #[cfg(test)]
 fn restore_warning(preview: &RestorePreview) -> Option<String> {
-    restore_warning_in(preview, UiLocale::En)
+    restore_warning_in(preview, UiLocale::En).unwrap()
 }
 
-fn restore_warning_in(preview: &RestorePreview, locale: UiLocale) -> Option<String> {
-    let documents = locale.documents(preview.document_count);
+fn restore_warning_in(
+    preview: &RestorePreview,
+    locale: UiLocale,
+) -> Result<Option<String>, ui_text::UiTextError> {
+    let documents = locale.documents(preview.document_count)?;
     let key = match preview.replaces {
-        RestoreReplaces::Nothing => return None,
-        RestoreReplaces::OtherVault => "native.restore.other",
-        RestoreReplaces::Unreadable => "native.restore.unreadable",
-        RestoreReplaces::SameVault if preview.differs_from_this_device => "native.restore.changed",
-        RestoreReplaces::SameVault => "native.restore.same",
+        RestoreReplaces::Nothing => return Ok(None),
+        RestoreReplaces::OtherVault => MessageId::NativeRestoreOther,
+        RestoreReplaces::Unreadable => MessageId::NativeRestoreUnreadable,
+        RestoreReplaces::SameVault if preview.differs_from_this_device => {
+            MessageId::NativeRestoreChanged
+        }
+        RestoreReplaces::SameVault => MessageId::NativeRestoreSame,
     };
-    Some(locale.render(
+    let kept = locale.text(MessageId::NativeSetAsideKept)?;
+    Ok(Some(locale.render(
         key,
-        &[
-            ("documents", &documents),
-            ("kept", locale.text("native.setAside.kept")),
-        ],
-    ))
+        &[("documents", &documents), ("kept", &kept)],
+    )?))
 }
 
 /// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
@@ -2171,21 +2145,18 @@ async fn vault_restore(
         .await
         .map_err(PublicError::of_restore)?
     };
-    if let Some(warning) = restore_warning_in(&preview, locale) {
+    if let Some(warning) = restore_warning_in(&preview, locale)? {
         // The renderer must have asked for a replacement too.
         if !request.replace {
             return Err(PublicError::from(VaultError::AlreadyExists));
         }
+        let title = locale.text(MessageId::NativeRestoreTitle)?;
+        let keep = locale.text(MessageId::NativeVaultKeep)?;
+        let replace = locale.text(MessageId::NativeRestoreReplace)?;
+        let cancel = locale.text(MessageId::NativeCancel)?;
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            confirmed_natively(
-                &dialog_app,
-                locale.text("native.restore.title"),
-                warning,
-                locale.text("native.vault.keep"),
-                locale.text("native.restore.replace"),
-                locale,
-            )
+            confirmed_natively(&dialog_app, &title, warning, &keep, &replace, &cancel)
         })
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -2305,10 +2276,11 @@ async fn vault_import_pick(
     })
     .await?;
     let _open = ActivityHold::new(store.idle());
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter(locale.text("native.filter.pdf"), &["pdf"])
+            .add_filter(&pdf_filter, &["pdf"])
             .blocking_pick_files()
     })
     .await
@@ -2888,22 +2860,25 @@ const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypte
 /// or uninstalling it, which removes every vault.
 #[cfg(test)]
 fn set_aside_vault_warning(folder: &std::path::Path) -> String {
-    set_aside_vault_warning_in(folder, UiLocale::En)
+    set_aside_vault_warning_in(folder, UiLocale::En).unwrap()
 }
 
-fn set_aside_vault_warning_in(folder: &std::path::Path, locale: UiLocale) -> String {
+fn set_aside_vault_warning_in(
+    folder: &std::path::Path,
+    locale: UiLocale,
+) -> Result<String, ui_text::UiTextError> {
     let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
-        locale.text("native.setAside.mobile").to_owned()
+        locale.text(MessageId::NativeSetAsideMobile)?
     } else {
         locale.render(
-            "native.setAside.desktop",
+            MessageId::NativeSetAsideDesktop,
             &[("folder", &folder.display().to_string())],
-        )
+        )?
     };
     locale.render(
-        "native.setAside.warning",
+        MessageId::NativeSetAsideWarning,
         &[
-            ("kept", locale.text("native.setAside.kept")),
+            ("kept", &locale.text(MessageId::NativeSetAsideKept)?),
             ("removal", &removal),
         ],
     )
@@ -2919,23 +2894,20 @@ async fn vault_reset(
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
     let locale = locale.unwrap_or_default();
-    if !locale.reset_phrase_matches(&request.confirmation) {
+    if !locale.reset_phrase_matches(&request.confirmation)? {
         return Err(PublicError::from(VaultError::Invalid));
     }
     let warning = set_aside_vault_warning_in(
         &store.set_aside_folder().ok_or(VaultError::Storage)?,
         locale,
-    );
+    )?;
+    let title = locale.text(MessageId::NativeSetAsideTitle)?;
+    let keep = locale.text(MessageId::NativeVaultKeep)?;
+    let confirm = locale.text(MessageId::NativeSetAsideConfirm)?;
+    let cancel = locale.text(MessageId::NativeCancel)?;
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-        confirmed_natively(
-            &dialog_app,
-            locale.text("native.setAside.title"),
-            warning,
-            locale.text("native.vault.keep"),
-            locale.text("native.setAside.confirm"),
-            locale,
-        )
+        confirmed_natively(&dialog_app, &title, warning, &keep, &confirm, &cancel)
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -3192,8 +3164,14 @@ pub fn run() {
 }
 
 #[cfg(test)]
+fn public_error_text(error: &PublicError) -> String {
+    UiLocale::En.text_key(error.message_key).unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
     use proptest::prelude::*;
 
     #[test]
@@ -3415,12 +3393,12 @@ mod tests {
     fn a_backup_that_could_not_read_the_vault_asks_nothing_to_be_checked() {
         let backup = PublicError::from(VaultError::Unreadable).of_backup(BackupDestination::Path);
         assert_eq!(backup.code, "unreadable");
-        assert!(backup.message.contains("no backup was saved"));
-        assert!(!backup.message.contains("typed"));
+        assert!(public_error_text(&backup).contains("no backup was saved"));
+        assert!(!public_error_text(&backup).contains("typed"));
         let other = PublicError::from(VaultError::Corrupt).of_backup(BackupDestination::Path);
         assert_eq!(
-            other.message,
-            PublicError::from(VaultError::Corrupt).message
+            other.message_key,
+            PublicError::from(VaultError::Corrupt).message_key
         );
     }
 
@@ -3443,27 +3421,32 @@ mod tests {
                 let failed = PublicError::from(failure()).of_backup(destination);
                 assert_eq!(failed.code, plain.code);
                 if plain.code != "corrupt" {
-                    assert!(failed
-                        .message
+                    assert!(public_error_text(&failed)
                         .to_lowercase()
                         .contains("no backup was saved"));
-                    assert!(failed.message.contains("Keep your older backups."));
+                    assert!(public_error_text(&failed).contains("Keep your older backups."));
                 }
                 // Whatever the failure, what may be left where it was saved
                 // is said: a document not yet opened is whole or empty, and
                 // only an empty one goes; one opened may be emptied.
                 assert_eq!(
-                    failed
-                        .note
-                        .is_some_and(|note| note.contains("Keep any backup that is not empty.")),
+                    failed.note_key.is_some_and(|key| {
+                        UiLocale::En
+                            .text_key(key)
+                            .unwrap()
+                            .contains("Keep any backup that is not empty.")
+                    }),
                     destination == BackupDestination::ProviderUntouched,
                     "{} {destination:?}",
                     plain.code
                 );
                 assert_eq!(
-                    failed.note.is_some_and(
-                        |note| note.contains("Delete that one, not your other backups")
-                    ),
+                    failed.note_key.is_some_and(|key| {
+                        UiLocale::En
+                            .text_key(key)
+                            .unwrap()
+                            .contains("Delete that one, not your other backups")
+                    }),
                     destination == BackupDestination::ProviderEmptied,
                     "{} {destination:?}",
                     plain.code
@@ -3527,7 +3510,7 @@ mod tests {
             .is_some_and(|ms| ms > 0 && ms <= 5_000));
         let value = serde_json::to_value(&waited).unwrap();
         assert!(value["retryAfterMs"].is_u64());
-        assert!(waited.message.contains("To slow down anyone guessing"));
+        assert!(public_error_text(&waited).contains("To slow down anyone guessing"));
         // Another secret is not held up by this one's count.
         assert!(
             tauri::async_runtime::block_on(tried(&throttle, Attempt::Backup, async { Ok(()) }))
@@ -3644,21 +3627,21 @@ mod tests {
     fn public_errors_do_not_expose_internal_details() {
         let error = PublicError::from(VaultError::Storage);
         assert_eq!(error.code, "storage");
-        assert!(!error.message.contains('/'));
+        assert!(!public_error_text(&error).contains('/'));
 
         let in_use = PublicError::from(VaultError::InUse);
         assert_eq!(in_use.code, "in_use");
-        assert!(in_use.message.contains("Lock or close"));
-        assert!(!in_use.message.contains('/'));
+        assert!(public_error_text(&in_use).contains("Lock or close"));
+        assert!(!public_error_text(&in_use).contains('/'));
 
         let weak = PublicError::from(VaultError::WeakPassphrase);
         assert_eq!(weak.code, "weak_passphrase");
-        assert!(weak.message.contains("less predictable"));
+        assert!(public_error_text(&weak).contains("less predictable"));
 
         let partial = PublicError::partial_export();
         assert_eq!(partial.code, "partial_export");
-        assert!(partial.message.contains("partial readable copy"));
-        assert!(partial.message.contains("Delete"));
+        assert!(public_error_text(&partial).contains("partial readable copy"));
+        assert!(public_error_text(&partial).contains("Delete"));
     }
 
     #[test]
@@ -3679,17 +3662,17 @@ mod tests {
         // a key or passphrase set since.
         let key = PublicError::from(VaultError::WrongRecoveryKey).of_restore();
         assert_eq!(key.code, "wrong_recovery_key");
-        assert!(key.message.contains("does not open this backup"));
-        assert!(key.message.contains("when it was saved"));
-        assert!(!key.message.contains("newest"));
+        assert!(public_error_text(&key).contains("does not open this backup"));
+        assert!(public_error_text(&key).contains("when it was saved"));
+        assert!(!public_error_text(&key).contains("newest"));
         let passphrase = PublicError::from(VaultError::WrongPassphrase).of_restore();
         assert_eq!(passphrase.code, "wrong_passphrase");
-        assert!(passphrase.message.contains("does not open this backup"));
+        assert!(public_error_text(&passphrase).contains("does not open this backup"));
         // Anything else is said as it is everywhere.
         let other = PublicError::from(VaultError::BackupUnreadable).of_restore();
         assert_eq!(
-            other.message,
-            PublicError::from(VaultError::BackupUnreadable).message
+            other.message_key,
+            PublicError::from(VaultError::BackupUnreadable).message_key
         );
     }
 
@@ -4639,6 +4622,50 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn native_localization_generated_photo_names_survive_store_reopen_exactly() {
+        for locale in [
+            UiLocale::En,
+            UiLocale::Fr,
+            UiLocale::Es,
+            UiLocale::Pl,
+            UiLocale::PtBr,
+            UiLocale::ZhCn,
+            UiLocale::ZhTw,
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let (store, profile) = unlocked_store(&temp);
+            let name = locale
+                .render_raw(
+                    MessageId::InterfacePhotoName,
+                    &[("date", "Oct 17, 2026"), ("time", "3.05 PM")],
+                )
+                .unwrap();
+            assert!(!name.chars().any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            let json = serde_json::to_vec(&serde_json::json!({
+                "profileId": profile, "folderIds": [], "name": name,
+            }))
+            .unwrap();
+            let target = photo_target(&json).unwrap();
+            assert_eq!(target.name.as_bytes(), name.as_bytes());
+            let outcome = save_photo(&store, target, Zeroizing::new(CANVAS.to_vec())).unwrap();
+            assert_eq!(outcome.imported.len(), 1);
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot
+                .records
+                .iter()
+                .find(|r| r.id == outcome.imported[0])
+                .unwrap();
+            assert_eq!(record.display_name.as_bytes(), name.as_bytes());
+            assert_eq!(
+                exported(&store, record.id),
+                *photo::clean_jpeg(CANVAS).unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn a_photo_that_is_not_a_jpeg_or_a_locked_vault_saves_nothing() {
         let temp = tempfile::tempdir().unwrap();
         let (store, profile) = unlocked_store(&temp);
@@ -5272,21 +5299,26 @@ mod native_localization_tests {
             UiLocale::Es,
             UiLocale::Pl,
             UiLocale::PtBr,
+            UiLocale::ZhCn,
+            UiLocale::ZhTw,
         ] {
             for (keep, action) in [
-                ("native.recovery.keep", "native.recovery.replace"),
-                ("native.vault.keep", "native.restore.replace"),
-                ("native.vault.keep", "native.setAside.confirm"),
+                (
+                    MessageId::NativeRecoveryKeep,
+                    MessageId::NativeRecoveryReplace,
+                ),
+                (MessageId::NativeVaultKeep, MessageId::NativeRestoreReplace),
+                (MessageId::NativeVaultKeep, MessageId::NativeSetAsideConfirm),
             ] {
                 let (keep, action, cancel) = (
-                    locale.text(keep),
-                    locale.text(action),
-                    locale.text("native.cancel"),
+                    locale.text(keep).unwrap(),
+                    locale.text(action).unwrap(),
+                    locale.text(MessageId::NativeCancel).unwrap(),
                 );
-                assert!(native_labels_safe(keep, action, cancel));
+                assert!(native_labels_safe(&keep, &action, &cancel));
                 assert!(agreed_natively(
                     &MessageDialogResult::Custom(action.to_owned()),
-                    action
+                    &action
                 ));
                 for refused in [
                     MessageDialogResult::Custom(keep.to_owned()),
@@ -5296,7 +5328,7 @@ mod native_localization_tests {
                     MessageDialogResult::No,
                     MessageDialogResult::Ok,
                 ] {
-                    assert!(!agreed_natively(&refused, action));
+                    assert!(!agreed_natively(&refused, &action));
                 }
             }
         }
@@ -5312,6 +5344,38 @@ mod native_localization_tests {
         ] {
             assert!(!native_labels_safe(keep, action, cancel));
         }
+    }
+
+    #[test]
+    fn native_localization_preserves_ipc_fields_and_optional_omission_contract() {
+        let base = serde_json::to_value(PublicError::from(VaultError::Storage)).unwrap();
+        assert_eq!(base["code"], "storage");
+        assert_eq!(base["messageKey"], "native.error.35");
+        assert!(base["message"].as_str().is_some_and(|s| !s.is_empty()));
+        assert_eq!(base.as_object().unwrap().len(), 3);
+        for field in ["note", "noteKey", "recordId", "retryAfterMs"] {
+            assert!(base.get(field).is_none());
+        }
+        let note = serde_json::to_value(
+            PublicError::from(VaultError::Storage).of_backup(BackupDestination::ProviderEmptied),
+        )
+        .unwrap();
+        assert_eq!(note["code"], "storage");
+        assert_eq!(note["messageKey"], "native.error.03");
+        assert_eq!(note["noteKey"], "native.backup.noteEmptied");
+        assert!(note["note"].is_string());
+        let waited = serde_json::to_value(PublicError::wait(0)).unwrap();
+        assert_eq!(waited["code"], "too_many_attempts");
+        assert_eq!(waited["retryAfterMs"], 0);
+        let damaged =
+            serde_json::to_value(PublicError::from(VaultError::DamagedDocument(Uuid::nil())))
+                .unwrap();
+        assert_eq!(damaged["recordId"], Uuid::nil().to_string());
+        let fault =
+            serde_json::to_value(PublicError::from(ui_text::UiTextError::Formatting)).unwrap();
+        assert_eq!(fault["code"], "invalid");
+        assert_eq!(fault["messageKey"], "language.error.formatting");
+        assert_eq!(fault["message"], ui_text_ids::FORMATTING_FAILURE_EN);
     }
 
     #[test]
@@ -5357,7 +5421,7 @@ mod native_localization_tests {
             VaultError::RestoreUnfinished,
         ] {
             let text = PublicText::from(error);
-            assert_eq!(UiLocale::En.text(text.message_key), text.message);
+            assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
         }
         for destination in [
             BackupDestination::Path,
@@ -5365,10 +5429,10 @@ mod native_localization_tests {
             BackupDestination::ProviderEmptied,
         ] {
             let error = PublicError::from(VaultError::Storage).of_backup(destination);
-            assert_eq!(UiLocale::En.text(error.message_key), error.message);
+            assert!(!public_error_text(&error).is_empty());
             assert_eq!(error.message_key, "native.error.03");
             if let Some(note_key) = error.note_key {
-                assert_eq!(UiLocale::En.text(note_key), error.note.unwrap());
+                assert!(!UiLocale::En.text_key(note_key).unwrap().is_empty());
             }
             let json = serde_json::to_value(error).unwrap();
             assert_eq!(json["messageKey"], "native.error.03");
@@ -5379,10 +5443,10 @@ mod native_localization_tests {
         }
         for error in [VaultError::WrongPassphrase, VaultError::WrongRecoveryKey] {
             let error = PublicError::from(error).of_restore();
-            assert_eq!(UiLocale::En.text(error.message_key), error.message);
+            assert!(!public_error_text(&error).is_empty());
         }
         let waited = PublicError::wait(1234);
-        assert_eq!(UiLocale::En.text(waited.message_key), waited.message);
+        assert!(!public_error_text(&waited).is_empty());
         assert_eq!(waited.retry_after_ms, Some(1234));
     }
 }

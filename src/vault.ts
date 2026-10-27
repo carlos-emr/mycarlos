@@ -1,7 +1,7 @@
 import {
   getLocale,
   t,
-  CATALOGUES,
+  hasMessageKey,
   formatDate,
   UiError,
   type MessageKey,
@@ -397,22 +397,19 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
     });
-  if (typeof error === "object" && error !== null && "message" in error) {
+  if (typeof error === "object" && error !== null) {
     const { message, messageKey, note, noteKey, retryAfterMs, damageRecord } =
       error as PublicError;
-    if (typeof message === "string") {
-      const knownKey = (key: unknown): key is MessageKey =>
-        typeof key === "string" &&
-        Object.prototype.hasOwnProperty.call(CATALOGUES.en, key);
+    const knownKey = (key: unknown): key is MessageKey => hasMessageKey(key);
+    const translatedMessage = knownKey(messageKey) ? t(messageKey) : undefined;
+    if (translatedMessage !== undefined || typeof message === "string") {
       const parts = [
         damageRecord
           ? damageText(damageRecord)
-          : knownKey(messageKey)
-            ? t(messageKey)
-            : message,
+          : (translatedMessage ?? message),
       ];
-      if (typeof note === "string")
-        parts.push(knownKey(noteKey) ? t(noteKey) : note);
+      if (knownKey(noteKey)) parts.push(t(noteKey));
+      else if (typeof note === "string") parts.push(note);
       if (typeof retryAfterMs === "number" && retryAfterMs > 0) {
         const seconds = Math.ceil(retryAfterMs / 1000);
         parts.push(t("error.retryIn", { count: seconds }));
@@ -468,8 +465,7 @@ export function namedDamage(
 export function vaultErrorNote(error: unknown): string | null {
   if (typeof error !== "object" || error === null) return null;
   const { note, noteKey } = error as PublicError;
-  return typeof noteKey === "string" &&
-    Object.prototype.hasOwnProperty.call(CATALOGUES.en, noteKey)
+  return hasMessageKey(noteKey)
     ? t(noteKey as MessageKey)
     : typeof note === "string"
       ? note
