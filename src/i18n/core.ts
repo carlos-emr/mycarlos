@@ -44,10 +44,19 @@ function systemLanguages(): readonly string[] {
 }
 
 // --- the current language -------------------------------------------------
-// Chosen by the patient (a later Settings control calls setLocaleOverride),
-// otherwise by the system. Kept in module state so any component can read it.
+// Chosen on this device, otherwise by the system. The transient setter is
+// also used by previews/tests; only rememberLocale writes the device choice.
 
-let override: Locale | null = null;
+export const LANGUAGE_STORAGE_KEY = "mycarlos.language.v1";
+export type LanguageError =
+  | ""
+  | "language.error.unreadable"
+  | "language.error.notRemembered";
+export interface LanguagePreference {
+  choice: Locale | null;
+  error: LanguageError;
+}
+let preference: LanguagePreference = { choice: null, error: "" };
 const listeners = new Set<() => void>();
 
 function applyToDocument(locale: Locale) {
@@ -58,32 +67,70 @@ function applyToDocument(locale: Locale) {
 }
 
 export function getLocale(): Locale {
-  return override ?? resolveLocale(systemLanguages());
+  return preference.choice ?? resolveLocale(systemLanguages());
 }
 
 /** Use this language whatever the system says, or null to follow the system
  * again. Anything that is not a shipped language is ignored. */
 export function setLocaleOverride(locale: Locale | null): void {
   if (locale !== null && !LOCALES.includes(locale)) return;
-  override = locale;
-  applyToDocument(getLocale());
-  listeners.forEach((listener) => listener());
+  updatePreference(locale, "");
 }
 
 export function getLocaleOverride(): Locale | null {
-  return override;
+  return preference.choice;
+}
+
+export function getLanguagePreference(): LanguagePreference {
+  return preference;
+}
+
+function publishLocale() {
+  applyToDocument(getLocale());
+  listeners.forEach((listener) => listener());
+}
+function updatePreference(choice: Locale | null, error: LanguageError) {
+  preference = { choice, error };
+  publishLocale();
+}
+
+/** A device preference, separate from every vault and document. A failed save
+ * keeps the chosen language usable for this session and reports that limit. */
+export function rememberLocale(locale: Locale | null): void {
+  if (locale !== null && !LOCALES.includes(locale)) return;
+  let error: LanguageError = "";
+  try {
+    if (locale === null) window.localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+    else window.localStorage.setItem(LANGUAGE_STORAGE_KEY, locale);
+  } catch {
+    error = "language.error.notRemembered";
+  }
+  updatePreference(locale, error);
 }
 
 export function subscribeLocale(listener: () => void): () => void {
+  if (!listeners.size && typeof window !== "undefined")
+    window.addEventListener("languagechange", publishLocale);
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size && typeof window !== "undefined")
+      window.removeEventListener("languagechange", publishLocale);
+  };
 }
 
 /** Sets the page's `lang` for the language now in use. Call once at start-up. */
 export function initLocale(): Locale {
-  const locale = getLocale();
-  applyToDocument(locale);
-  return locale;
+  let choice: Locale | null = null;
+  let error: LanguageError = "";
+  try {
+    const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored && LOCALES.includes(stored as Locale)) choice = stored as Locale;
+  } catch {
+    error = "language.error.unreadable";
+  }
+  updatePreference(choice, error);
+  return getLocale();
 }
 
 // --- translating ----------------------------------------------------------

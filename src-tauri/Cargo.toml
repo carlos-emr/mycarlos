@@ -18,6 +18,13 @@ argon2 = { version = "0.5", features = ["zeroize"] }
 atomicwrites = "0.4"
 base64 = "0.22"
 chacha20poly1305 = { version = "0.10", features = ["std"] }
+# CMS and X.509 parsing for the "Verified" check of signed PDFs (#55). This
+# format stack stays pinned on DER 0.7; see DEPENDENCY_REVIEW.md.
+cms = "=0.2.3"
+der = { version = "=0.7.10", features = ["alloc", "oid"] }
+# P-256 verification uses the current RustCrypto EC generation to avoid
+# RUSTSEC-2026-0387 through crypto-bigint; keep these versions aligned.
+ecdsa = { version = "=0.17.0", features = ["der"] }
 hkdf = "0.12"
 hmac = "0.12"
 libc = "0.2"
@@ -31,6 +38,7 @@ hayro = { version = "=0.8.0", default-features = false, features = ["embed-fonts
 # Writes the page picture as PNG; the parent decodes bounded RGBA8 output and encodes its pixels
 # again before display (already in the tree through hayro).
 image = { version = "0.25", default-features = false, features = ["png"] }
+p256 = { version = "=0.14.0", features = ["ecdsa", "pkcs8"] }
 percent-encoding = "2"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -42,6 +50,7 @@ tauri-plugin-fs = "2"
 unicode-normalization = "0.1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+x509-cert = "=0.2.5"
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
 

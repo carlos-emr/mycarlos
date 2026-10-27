@@ -273,3 +273,23 @@ also invalidate queued presentation. Genuine native input updates both inactivit
 only before the lock is owed; a stale or closed reader cannot keep the vault open. Native
 compilation and real iPhone lifecycle, navigation and accessibility validation remain
 required; browser tests are not proof of native behavior.
+
+### Signed-PDF import analysis draft (#101)
+
+The import pipeline now invokes a bounded signature analysis without changing stored
+original bytes or the unverified source label. Main checks cryptography and clinic pins
+before a password reaches the confined extraction stage. The current signed CMS digest
+binds exact manifest bytes, including encrypted attachments; helper structure reports
+alone grant no trust. Duplicate attributes, malformed OIDs, altered manifests, missing
+pins and helper failure remain unverified. No manifest patient names, birth dates,
+recipient IDs or raw keys are emitted in import diagnostics.
+
+Authenticated portal linking is absent. Production pins are empty; fixture keys are
+never a fallback and no production Verified claim is added. Trust persistence and key
+change/revocation rechecks remain #55 dependencies. No new network path or vault-format
+change is introduced by this checkpoint.
+
+Explicit v1 null metadata is accepted without inventing identity or service information.
+Member presence is still mandatory, and relaxing descriptive metadata does not relax
+signer, exact digest, clinic or recipient binding. A signed PDF with no clinic/recipient
+claim remains unbound under an explicit test pin and unverified without authenticated pins.

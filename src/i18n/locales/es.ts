@@ -453,12 +453,22 @@ export const es: Record<MessageKey, Message> = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "Cómo se ve myCarlos en este equipo",
+  "language.title": "Idioma",
+  "language.help":
+    "Se recuerda en este dispositivo. Sus documentos conservan su idioma original.",
+  "language.system": "Predeterminado del sistema",
+  "language.error.unreadable":
+    "No se pudo leer el idioma guardado. Se usa el idioma de su dispositivo durante esta sesión.",
+  "language.error.notRemembered":
+    "El idioma cambió para esta sesión, pero no se pudo recordar en este dispositivo.",
+
   "appearance.title": "Apariencia",
   "appearance.help":
-    "{system} sigue la apariencia clara u oscura de su dispositivo. El alto contraste sigue a su dispositivo automáticamente.",
+    "{system} sigue la apariencia clara u oscura de su dispositivo. El alto contraste usa un fondo negro y texto claro. Los colores de contraste de su dispositivo siempre tienen prioridad.",
   "appearance.system": "Sistema",
   "appearance.light": "Claro",
   "appearance.dark": "Oscuro",
+  "appearance.highContrast": "Alto contraste",
   "appearance.error.unreadable":
     "No se pudo leer la apariencia guardada. Se usa {system} durante esta sesión.",
   "appearance.error.notRemembered":
@@ -501,6 +511,10 @@ export const es: Record<MessageKey, Message> = {
   "library.select": "Seleccionar {name}",
   "library.empty.title": "Esta ubicación está vacía",
   "library.empty.help": "Añada una carpeta o importe un documento aquí.",
+  "library.search.results":
+    "Resultados de la búsqueda. Carpetas: {folders}. Documentos: {documents}.",
+  "library.search.cleared":
+    "Búsqueda borrada. Carpetas en esta ubicación: {folders}. Documentos: {documents}.",
   "library.noMatch.title": "Ningún documento coincide",
   "library.noMatch.help": "Pruebe otra búsqueda.",
 };

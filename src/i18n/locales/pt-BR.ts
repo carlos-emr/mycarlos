@@ -452,12 +452,22 @@ export const ptBR: Record<MessageKey, Message> = {
 
   // Settings > Preferences, and Appearance (#47)
   "preferences.subtitle": "Como o myCarlos aparece neste computador",
+  "language.title": "Idioma",
+  "language.help":
+    "Salvo neste dispositivo. Seus documentos mantêm o idioma original.",
+  "language.system": "Padrão do sistema",
+  "language.error.unreadable":
+    "Não foi possível ler o idioma salvo. O idioma do dispositivo será usado nesta sessão.",
+  "language.error.notRemembered":
+    "Idioma alterado nesta sessão, mas não foi possível salvá-lo neste dispositivo.",
+
   "appearance.title": "Aparência",
   "appearance.help":
-    "{system} segue a aparência clara ou escura do seu dispositivo. O alto contraste segue o seu dispositivo automaticamente.",
+    "{system} segue a aparência clara ou escura do seu dispositivo. O alto contraste usa fundo preto e texto claro. As cores de contraste do seu dispositivo sempre têm prioridade.",
   "appearance.system": "Sistema",
   "appearance.light": "Claro",
   "appearance.dark": "Escuro",
+  "appearance.highContrast": "Alto contraste",
   "appearance.error.unreadable":
     "Não foi possível ler a aparência salva. Usando {system} nesta sessão.",
   "appearance.error.notRemembered":
@@ -500,6 +510,10 @@ export const ptBR: Record<MessageKey, Message> = {
   "library.select": "Selecionar {name}",
   "library.empty.title": "Este local está vazio",
   "library.empty.help": "Adicione uma pasta ou importe um documento aqui.",
+  "library.search.results":
+    "Resultados da busca. Pastas: {folders}. Documentos: {documents}.",
+  "library.search.cleared":
+    "Busca limpa. Pastas neste local: {folders}. Documentos: {documents}.",
   "library.noMatch.title": "Nenhum documento corresponde",
   "library.noMatch.help": "Tente outra pesquisa.",
 };
