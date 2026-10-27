@@ -369,8 +369,12 @@
   "interface.history.place": "Onde",
   "interface.history.previousSession": "Sessão anterior",
   "interface.history.appVersion": "Versão do myCarlos",
-  "interface.history.rootFolder": "Meus registros",
-  "interface.history.moreFolders": "mais {count} pastas",
+  "interface.history.rootFolder": "Nível principal (local não registrado)",
+  "interface.history.moreFolders": {
+    "one": "mais {count} pasta",
+    "many": "mais {count} pastas",
+    "other": "mais {count} pastas"
+  },
   "interface.history.sessionNotRecorded": "A sessão anterior não foi registrada.",
   "interface.history.sessionLockedByPerson": "Bloqueado por você em {date}",
   "interface.history.sessionLockedAutomatically": "Bloqueado automaticamente em {date}",
@@ -397,5 +401,13 @@
   "interface.history.event.folderRenamed": "Pasta renomeada",
   "interface.history.event.folderMoved": "Pasta movida",
   "interface.history.event.setAside": "Cofre colocado de lado",
-  "interface.history.error.unverified": "Não foi possível ler e verificar o histórico. Nenhum evento foi exibido."
+  "interface.history.error.unverified": "Não foi possível ler e verificar o histórico. Nenhum evento foi exibido.",
+  "interface.history.personRootFolder": "Nível principal de uma pessoa",
+  "interface.history.sessionLockedByApp": "Bloqueado pelo aplicativo em {date}",
+  "interface.history.laterSessionNotRecorded": "Pelo menos uma sessão posterior não foi registrada.",
+  "interface.history.how.camera": "Adicionado com a câmera",
+  "interface.history.how.replaced": "Restaurado substituindo um cofre existente",
+  "interface.history.how.importedShared": "Adicionado a Compartilhado comigo",
+  "interface.history.how.movedFromShared": "Movido de Compartilhado comigo",
+  "interface.history.scopeNote": "Algumas entradas não identificam a pessoa nem distinguem pastas com o mesmo nome. Os rótulos das pastas são os nomes registrados, não caminhos completos. Os locais salvos podem estar abreviados."
 }

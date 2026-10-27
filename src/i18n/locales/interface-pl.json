@@ -386,8 +386,13 @@
   "interface.history.place": "Miejsce",
   "interface.history.previousSession": "Poprzednia sesja",
   "interface.history.appVersion": "Wersja myCarlos",
-  "interface.history.rootFolder": "Moje dokumenty",
-  "interface.history.moreFolders": "jeszcze {count} folderów",
+  "interface.history.rootFolder": "Poziom główny (nie zapisano lokalizacji)",
+  "interface.history.moreFolders": {
+    "one": "jeszcze {count} folder",
+    "few": "jeszcze {count} foldery",
+    "many": "jeszcze {count} folderów",
+    "other": "jeszcze {count} foldera"
+  },
   "interface.history.sessionNotRecorded": "Poprzednia sesja nie została zapisana.",
   "interface.history.sessionLockedByPerson": "Zablokowano ręcznie: {date}",
   "interface.history.sessionLockedAutomatically": "Zablokowano automatycznie: {date}",
@@ -414,5 +419,13 @@
   "interface.history.event.folderRenamed": "Zmieniono nazwę folderu",
   "interface.history.event.folderMoved": "Przeniesiono folder",
   "interface.history.event.setAside": "Odłożono sejf",
-  "interface.history.error.unverified": "Nie udało się odczytać ani zweryfikować historii. Nie wyświetlono żadnych zdarzeń."
+  "interface.history.error.unverified": "Nie udało się odczytać ani zweryfikować historii. Nie wyświetlono żadnych zdarzeń.",
+  "interface.history.personRootFolder": "Poziom główny dokumentów osoby",
+  "interface.history.sessionLockedByApp": "Zablokowano przez aplikację: {date}",
+  "interface.history.laterSessionNotRecorded": "Co najmniej jedna późniejsza sesja nie została zapisana.",
+  "interface.history.how.camera": "Dodano za pomocą aparatu",
+  "interface.history.how.replaced": "Przywrócono, zastępując istniejący sejf",
+  "interface.history.how.importedShared": "Dodano do Udostępnione mi",
+  "interface.history.how.movedFromShared": "Przeniesiono z Udostępnione mi",
+  "interface.history.scopeNote": "Niektóre wpisy nie wskazują osoby ani nie rozróżniają folderów o tej samej nazwie. Etykiety folderów to zapisane nazwy, a nie pełne ścieżki. Zapisane lokalizacje mogą być skrócone."
 }

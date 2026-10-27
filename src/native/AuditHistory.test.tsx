@@ -98,7 +98,7 @@ describe("AuditHistory verified native results", () => {
     );
     for (const text of [
       "FAKE previous.pdf",
-      "My records",
+      "Top level (location not recorded)",
       "FAKE Folder, 2 more folders",
       "Imported from a chosen file",
       "FAKE /exports/copy.pdf",
@@ -156,14 +156,17 @@ describe("AuditHistory verified native results", () => {
     expect(shown.onLock).not.toHaveBeenCalled();
   });
 
-  it("locks the current session when native reports it already locked", async () => {
-    const shown = props(bridge(vi.fn().mockRejectedValue({ code: "locked" })));
-    render(<AuditHistory {...shown} />);
-    await vi.waitFor(() => expect(shown.onLock).toHaveBeenCalledOnce());
-    expect(screen.queryByRole("list")).not.toBeInTheDocument();
-  });
+  it.each(["locked", "cancelled"])(
+    "confirms the current native session after %s without claiming it already locked",
+    async (code) => {
+      const shown = props(bridge(vi.fn().mockRejectedValue({ code })));
+      render(<AuditHistory {...shown} />);
+      await vi.waitFor(() => expect(shown.onLock).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    },
+  );
 
-  it.each(["success", "locked", "unverified"])(
+  it.each(["success", "locked", "cancelled", "unverified"])(
     "ignores late %s after unmount",
     async (outcome) => {
       const request = pending<AuditHistoryEntry[]>();
@@ -174,7 +177,7 @@ describe("AuditHistory verified native results", () => {
         if (outcome === "success") request.resolve([entry()]);
         else
           request.reject(
-            outcome === "locked" ? { code: "locked" } : unverified,
+            outcome === "unverified" ? unverified : { code: outcome },
           );
       });
       expect(shown.onLock).not.toHaveBeenCalled();
@@ -205,18 +208,76 @@ describe("AuditHistory verified native results", () => {
     },
   );
 
-  it("ignores a previous bridge's late locked rejection after switching sessions", async () => {
-    const old = pending<AuditHistoryEntry[]>();
-    const shown = props(bridge(vi.fn().mockReturnValue(old.promise)));
-    const view = render(<AuditHistory {...shown} />);
-    const current = props(
-      bridge(vi.fn().mockResolvedValue([entry({ name: "FAKE Blake" })])),
-    );
-    view.rerender(<AuditHistory {...current} />);
-    await screen.findByText("FAKE Blake");
-    await act(async () => old.reject({ code: "locked" }));
-    expect(current.onLock).not.toHaveBeenCalled();
-    expect(shown.onLock).not.toHaveBeenCalled();
-    expect(screen.getByText("FAKE Blake")).toBeVisible();
-  });
+  it.each(["locked", "cancelled"])(
+    "ignores a previous bridge's late %s rejection after switching sessions",
+    async (code) => {
+      const old = pending<AuditHistoryEntry[]>();
+      const shown = props(bridge(vi.fn().mockReturnValue(old.promise)));
+      const view = render(<AuditHistory {...shown} />);
+      const current = props(
+        bridge(vi.fn().mockResolvedValue([entry({ name: "FAKE Blake" })])),
+      );
+      view.rerender(<AuditHistory {...current} />);
+      await screen.findByText("FAKE Blake");
+      await act(async () => old.reject({ code }));
+      expect(current.onLock).not.toHaveBeenCalled();
+      expect(shown.onLock).not.toHaveBeenCalled();
+      expect(screen.getByText("FAKE Blake")).toBeVisible();
+    },
+  );
+});
+
+describe("AuditHistory recorded semantics", () => {
+  it.each(["en", "fr", "es", "pl", "pt-BR"] as const)(
+    "keeps app/end/unknown-session facts and emitted methods in %s",
+    async (locale) => {
+      setLocaleOverride(locale);
+      const rows = [
+        entry({
+          event: "unlocked",
+          previousSession: "lockedAt:1768478400000:app;notRecorded",
+        }),
+        entry({ seq: 1, event: "imported", how: "camera" }),
+        entry({ seq: 2, event: "imported", how: "shared" }),
+        entry({ seq: 3, event: "moved", how: "shared", from: [], to: [] }),
+        entry({ seq: 4, event: "backupRestored", how: "replaced" }),
+        entry({ seq: 5, event: "moved", from: ["FAKE Folder"], fromTotal: 2 }),
+      ];
+      render(
+        <AuditHistory {...props(bridge(vi.fn().mockResolvedValue(rows)))} />,
+      );
+      await screen.findByText(
+        translate(locale, "interface.history.how.camera"),
+      );
+      for (const key of [
+        "interface.history.how.importedShared",
+        "interface.history.how.movedFromShared",
+        "interface.history.how.replaced",
+        "interface.history.personRootFolder",
+        "interface.history.scopeNote",
+      ] as const)
+        expect(screen.getByText(translate(locale, key))).toBeVisible();
+      const session = screen.getByText((text) =>
+        text.includes(
+          translate(locale, "interface.history.laterSessionNotRecorded"),
+        ),
+      );
+      expect(session).toHaveTextContent(
+        translate(locale, "interface.history.sessionLockedByApp", {
+          date: formatDate(1768478400000, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }),
+        }),
+      );
+      expect(
+        screen.getByText(
+          `FAKE Folder, ${translate(locale, "interface.history.moreFolders", { count: 1 })}`,
+        ),
+      ).toBeVisible();
+      expect(
+        screen.queryByText("camera", { exact: true }),
+      ).not.toBeInTheDocument();
+    },
+  );
 });

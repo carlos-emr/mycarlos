@@ -56,9 +56,15 @@ with where it was saved (a file path, or a document provider's address on Androi
 backups were saved, and where. It also records when the passphrase was changed (never the
 passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
 (its names then). It keeps the names as they were at each moment, so a document
-renamed or hidden can still be read off the history. The history is never shown in the app, and
-the app never changes or removes an entry. It is in every backup. The app tells the patient this
-in Security, under "What myCarlos keeps". There is no way to save the history outside the vault:
+renamed or hidden can still be read off the history. Security now offers a verified read-only
+view while the vault is unlocked. Native code checks every encrypted segment and the whole
+manifest-pinned chain before sending display names, folder labels, times, methods, session notes
+and saved locations over local main-window IPC. Record/profile/folder identifiers, chain hashes,
+wrapped keys and object paths stay native. Folder labels do not establish complete paths or
+unrecorded historical person attribution; saved locations can be shortened. Locking conceals
+the view while native confirmation is pending and late results cannot restore it. The app never
+changes or removes an entry. It is in every backup. The app tells the patient this in Security,
+under "What myCarlos keeps". There is no separate history-file export outside the vault:
 Ben chose (19 October) to keep it on the device only, tamper-evident.
 
 **Nothing erases a vault either** (#71's third part). Starting again ("Set vault aside", under

@@ -282,6 +282,13 @@ export function VaultLibrary({
     section === "hidden" || section === "security"
       ? (hiddenProfileId ?? profileId)
       : locationProfileId;
+  // Conceal immediately while the app confirms the native lock. A cancelled
+  // history read can be the first sign that the native idle backstop ran.
+  // The parent only claims the vault is locked after native confirmation.
+  const lockAndConceal = async () => {
+    if (onRequestLock) onRequestLock();
+    else await onLock();
+  };
   const openSecurity = () => {
     // A persistent navigation button keeps focus when it opens Security.
     setReturnFocusToHidden(false);
@@ -1301,7 +1308,7 @@ export function VaultLibrary({
             <button
               className="unlock-pill native-lock-button"
               type="button"
-              onClick={() => void onLock()}
+              onClick={() => void lockAndConceal()}
             >
               <Icon name="lock-open" />
               {translateNow("interface.VaultLibrary.unlockedLockNow")}
@@ -2006,7 +2013,7 @@ export function VaultLibrary({
               <AuditHistory
                 bridge={bridge}
                 onBack={backFromHistoryToSecurity}
-                onLock={onLock}
+                onLock={lockAndConceal}
               />
             )}
 
@@ -2019,7 +2026,7 @@ export function VaultLibrary({
                 notice={notice}
                 autoLockMinutes={autoLockMinutes}
                 onAutoLockMinutes={onAutoLockMinutes}
-                onLock={onLock}
+                onLock={lockAndConceal}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
                 hiddenCount={hiddenRecords.length}

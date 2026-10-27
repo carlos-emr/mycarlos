@@ -369,8 +369,12 @@
   "interface.history.place": "Emplacement",
   "interface.history.previousSession": "Session précédente",
   "interface.history.appVersion": "Version de myCarlos",
-  "interface.history.rootFolder": "Mes dossiers",
-  "interface.history.moreFolders": "{count} dossiers supplémentaires",
+  "interface.history.rootFolder": "Premier niveau (emplacement non enregistré)",
+  "interface.history.moreFolders": {
+    "one": "{count} dossier supplémentaire",
+    "many": "{count} dossiers supplémentaires",
+    "other": "{count} dossiers supplémentaires"
+  },
   "interface.history.sessionNotRecorded": "La session précédente n’a pas été enregistrée.",
   "interface.history.sessionLockedByPerson": "Verrouillé par vous le {date}",
   "interface.history.sessionLockedAutomatically": "Verrouillé automatiquement le {date}",
@@ -397,5 +401,13 @@
   "interface.history.event.folderRenamed": "Dossier renommé",
   "interface.history.event.folderMoved": "Dossier déplacé",
   "interface.history.event.setAside": "Coffre mis de côté",
-  "interface.history.error.unverified": "L’historique n’a pas pu être lu et vérifié. Aucun événement ne s’affiche."
+  "interface.history.error.unverified": "L’historique n’a pas pu être lu et vérifié. Aucun événement ne s’affiche.",
+  "interface.history.personRootFolder": "Premier niveau d’une personne",
+  "interface.history.sessionLockedByApp": "Verrouillé par l’application le {date}",
+  "interface.history.laterSessionNotRecorded": "Au moins une session ultérieure n’a pas été enregistrée.",
+  "interface.history.how.camera": "Ajouté avec l’appareil photo",
+  "interface.history.how.replaced": "Restauré en remplaçant un coffre existant",
+  "interface.history.how.importedShared": "Ajouté à Partagé avec moi",
+  "interface.history.how.movedFromShared": "Déplacé depuis Partagé avec moi",
+  "interface.history.scopeNote": "Certaines entrées n’identifient pas la personne ou ne distinguent pas les dossiers portant le même nom. Les libellés des dossiers sont les noms enregistrés, pas des chemins complets. Les emplacements de sauvegarde peuvent être abrégés."
 }

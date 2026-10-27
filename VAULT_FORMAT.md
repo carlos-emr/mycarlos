@@ -542,10 +542,20 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 "differs from the backup" leaves the history and the format out of the comparison, since every
 unlock, and every backup saved, adds to the history.
 
-**Never shown, and kept on the device.** No command returns the history to the app's screens, and
-nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
-recorded automatically and tamper-evident on the device only, with no auditor export. A backup
-carries it only as part of the encrypted vault.
+**Verified read-only view, kept on the device.** While the vault is unlocked, the Security
+screen can request the complete history. Native code authenticates every encrypted segment
+and verifies the whole chain against the manifest before returning any display rows over IPC.
+Those rows include recorded names, folder labels, times, methods, session notes and saved
+locations (including file paths or provider addresses). Native record/profile/folder identifiers,
+chain hashes, wrapped keys and object paths are not returned. Some entries lack person context;
+folder labels are not complete paths and saved locations can be shortened. A lock request
+cancels the read; the renderer conceals content while confirming the lock and ignores late
+responses from an earlier view or session.
+
+The view never edits entries or saves a separate history file: Ben chose (#71, 19 October) a
+history recorded automatically and tamper-evident on the device, with no auditor export. A backup
+carries it only as part of the encrypted vault. The view does not overcome rollback of a complete
+vault or an inaccurate device clock; those limits and the outside-anchor follow-up remain.
 
 ## Backup and restore behavior
 

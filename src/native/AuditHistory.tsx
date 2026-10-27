@@ -9,6 +9,7 @@ import {
 } from "../i18n";
 import {
   isLockedError,
+  isCancelledError,
   vaultErrorMessage,
   type AuditHistoryEntry,
   type VaultBridge,
@@ -41,6 +42,8 @@ const howLabels: Record<string, MessageKey> = {
   recoveryKey: "interface.history.how.recoveryKey",
   patient: "interface.history.how.patient",
   damaged: "interface.history.how.damaged",
+  camera: "interface.history.how.camera",
+  replaced: "interface.history.how.replaced",
 };
 
 const formatTimestamp = (timestamp: number) =>
@@ -49,11 +52,10 @@ const formatTimestamp = (timestamp: number) =>
 function folderPath(
   folders: string[] | null,
   total: number | null,
+  rootLabel: MessageKey = "interface.history.rootFolder",
 ): string | null {
   if (folders === null) return null;
-  const names = folders.length
-    ? folders.join(", ")
-    : translateNow("interface.history.rootFolder");
+  const names = folders.length ? folders.join(", ") : translateNow(rootLabel);
   const more = total === null ? 0 : total - folders.length;
   return more > 0
     ? `${names}, ${translateNow("interface.history.moreFolders", { count: more })}`
@@ -62,16 +64,24 @@ function folderPath(
 
 function previousSession(value: string | null): string | null {
   if (!value) return null;
-  if (value.includes("notRecorded"))
+  if (value === "notRecorded")
     return translateNow("interface.history.sessionNotRecorded");
-  const match = /^lockedAt:(\d+):(app|nativeDeadline|manual|idle)$/.exec(value);
+  const match =
+    /^lockedAt:(\d+):(app|nativeDeadline|manual|idle)(;notRecorded)?$/.exec(
+      value,
+    );
   if (!match) return value;
-  return translateNow(
-    match[2] === "app" || match[2] === "manual"
-      ? "interface.history.sessionLockedByPerson"
-      : "interface.history.sessionLockedAutomatically",
+  const known = translateNow(
+    match[2] === "app"
+      ? "interface.history.sessionLockedByApp"
+      : match[2] === "manual"
+        ? "interface.history.sessionLockedByPerson"
+        : "interface.history.sessionLockedAutomatically",
     { date: formatTimestamp(Number(match[1])) },
   );
+  return match[3]
+    ? `${known} ${translateNow("interface.history.laterSessionNotRecorded")}`
+    : known;
 }
 
 function details(entry: AuditHistoryEntry): [MessageKey, string][] {
@@ -79,14 +89,32 @@ function details(entry: AuditHistoryEntry): [MessageKey, string][] {
   if (entry.name) rows.push(["interface.history.name", entry.name]);
   if (entry.oldName)
     rows.push(["interface.history.previousName", entry.oldName]);
-  const from = folderPath(entry.from, entry.fromTotal);
+  const movedFromShared = entry.event === "moved" && entry.how === "shared";
+  const from = folderPath(
+    entry.from,
+    entry.fromTotal,
+    movedFromShared
+      ? "interface.LibrarySidebar.sharedWithMe"
+      : "interface.history.rootFolder",
+  );
   if (from) rows.push(["interface.history.from", from]);
-  const to = folderPath(entry.to, entry.toTotal);
+  const to = folderPath(
+    entry.to,
+    entry.toTotal,
+    movedFromShared
+      ? "interface.history.personRootFolder"
+      : "interface.history.rootFolder",
+  );
   if (to) rows.push(["interface.history.to", to]);
   if (entry.how) {
-    const key = Object.hasOwn(howLabels, entry.how)
-      ? howLabels[entry.how]
-      : undefined;
+    const key =
+      entry.how === "shared"
+        ? movedFromShared
+          ? "interface.history.how.movedFromShared"
+          : "interface.history.how.importedShared"
+        : Object.hasOwn(howLabels, entry.how)
+          ? howLabels[entry.how]
+          : undefined;
     rows.push(["interface.history.how", key ? translateNow(key) : entry.how]);
   }
   if (entry.place) rows.push(["interface.history.place", entry.place]);
@@ -131,7 +159,7 @@ export function AuditHistory({
       },
       (cause: unknown) => {
         if (!current) return;
-        if (isLockedError(cause)) {
+        if (isLockedError(cause) || isCancelledError(cause)) {
           void onLockRef.current();
           return;
         }
@@ -159,6 +187,9 @@ export function AuditHistory({
             {translateNow("interface.history.title")}
           </h1>
           <p>{translateNow("interface.history.intro")}</p>
+          <p className="purpose-note">
+            {translateNow("interface.history.scopeNote")}
+          </p>
         </div>
       </div>
       {error ? (

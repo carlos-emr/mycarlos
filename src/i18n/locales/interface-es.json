@@ -369,8 +369,12 @@
   "interface.history.place": "Dónde",
   "interface.history.previousSession": "Sesión anterior",
   "interface.history.appVersion": "Versión de myCarlos",
-  "interface.history.rootFolder": "Mis registros",
-  "interface.history.moreFolders": "{count} carpetas más",
+  "interface.history.rootFolder": "Nivel superior (ubicación no registrada)",
+  "interface.history.moreFolders": {
+    "one": "{count} carpeta más",
+    "many": "{count} carpetas más",
+    "other": "{count} carpetas más"
+  },
   "interface.history.sessionNotRecorded": "La sesión anterior no quedó registrada.",
   "interface.history.sessionLockedByPerson": "Bloqueada por usted el {date}",
   "interface.history.sessionLockedAutomatically": "Bloqueada automáticamente el {date}",
@@ -397,5 +401,13 @@
   "interface.history.event.folderRenamed": "Carpeta renombrada",
   "interface.history.event.folderMoved": "Carpeta movida",
   "interface.history.event.setAside": "Bóveda apartada",
-  "interface.history.error.unverified": "No se pudo leer ni verificar el historial. No se muestra ningún evento."
+  "interface.history.error.unverified": "No se pudo leer ni verificar el historial. No se muestra ningún evento.",
+  "interface.history.personRootFolder": "Nivel superior de una persona",
+  "interface.history.sessionLockedByApp": "Bloqueada por la aplicación el {date}",
+  "interface.history.laterSessionNotRecorded": "No se registró al menos una sesión posterior.",
+  "interface.history.how.camera": "Añadido con la cámara",
+  "interface.history.how.replaced": "Restaurado reemplazando una bóveda existente",
+  "interface.history.how.importedShared": "Añadido a Compartido conmigo",
+  "interface.history.how.movedFromShared": "Movido desde Compartido conmigo",
+  "interface.history.scopeNote": "Algunas entradas no identifican a la persona ni distinguen carpetas con el mismo nombre. Las etiquetas de las carpetas son los nombres registrados, no rutas completas. Las ubicaciones guardadas pueden estar abreviadas."
 }
