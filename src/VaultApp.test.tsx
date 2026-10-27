@@ -21,6 +21,7 @@ import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
   ImportOutcome,
+  ReceivedAcceptOutcome,
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
@@ -1357,10 +1358,12 @@ describe("durable vault UI", () => {
 
   function receiveGate<T>() {
     let resolve: (value: T) => void = () => undefined;
-    const promise = new Promise<T>((done) => {
+    let reject: (reason: unknown) => void = () => undefined;
+    const promise = new Promise<T>((done, fail) => {
       resolve = done;
+      reject = fail;
     });
-    return { promise, resolve };
+    return { promise, resolve, reject };
   }
 
   const notifyArrival = () =>
@@ -1557,6 +1560,148 @@ describe("durable vault UI", () => {
     expect(
       screen.queryByRole("button", { name: "Shared with me, 1 new" }),
     ).toBeNull();
+  });
+
+  it.each(["accept", "snapshot", "snapshot failure"])(
+    "holds a late shared %s outcome through a failed concealed lock until authorized unlock (#53)",
+    async (delayed) => {
+      const user = userEvent.setup();
+      const shared = sharedVault(["Jamie"], [], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+        lock: vi
+          .fn()
+          .mockRejectedValueOnce({ code: "storage" })
+          .mockResolvedValue(undefined),
+      });
+      shared.vault.recoveryKeySetAtMs = 1;
+      render(<VaultApp bridge={shared.bridge} />);
+      await screen.findByRole("heading", { name: "My records" });
+      const acceptGate = receiveGate<ReceivedAcceptOutcome>();
+      const snapshotGate = receiveGate<VaultSnapshot>();
+      let finished!: ReceivedAcceptOutcome;
+      const accept = vi
+        .mocked(shared.bridge.acceptReceived)
+        .getMockImplementation()!;
+      vi.mocked(shared.bridge.acceptReceived).mockImplementationOnce(
+        async () => {
+          finished = {
+            ...(await accept()),
+            skippedDuplicates: ["FAKE_Existing_duplicate.pdf"],
+          };
+          return delayed === "accept" ? acceptGate.promise : finished;
+        },
+      );
+      if (delayed !== "accept")
+        vi.mocked(shared.bridge.snapshot).mockImplementationOnce(
+          () => snapshotGate.promise,
+        );
+      const visibility = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockReturnValue("visible");
+      onTestFinished(() => visibility.mockRestore());
+      shared.arrive("FAKE_Saved.pdf");
+      shared.arrive("FAKE_Private_result.jpg");
+      notifyArrival();
+      await waitFor(() =>
+        expect(shared.bridge.acceptReceived).toHaveBeenCalledOnce(),
+      );
+      if (delayed !== "accept")
+        await waitFor(() =>
+          expect(shared.bridge.snapshot).toHaveBeenCalledTimes(2),
+        );
+      visibility.mockReturnValue("hidden");
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Its content is hidden",
+      );
+      visibility.mockReturnValue("visible");
+      await act(async () => {
+        if (delayed === "accept") acceptGate.resolve(finished);
+        else if (delayed === "snapshot failure")
+          snapshotGate.reject({ code: "locked" });
+        else snapshotGate.resolve(structuredClone(shared.vault));
+      });
+      const alert = screen.getByRole("alert");
+      expect(alert).not.toHaveTextContent("FAKE_Private_result.jpg");
+      expect(alert).not.toHaveTextContent("FAKE_Existing_duplicate.pdf");
+      expect(
+        screen.queryByText("A shared file was added to Shared with me."),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Shared with me, 1 new/ }),
+      ).toBeNull();
+      expect(shared.bridge.acceptReceived).toHaveBeenCalledOnce();
+      act(() =>
+        fireEvent.click(
+          screen.getByRole("button", { name: "Try locking again" }),
+        ),
+      );
+      await screen.findByRole("heading", { name: "Unlock your vault" });
+      expect(screen.queryByText(/FAKE_Private_result/)).toBeNull();
+      await unlockWith(user);
+      const result = await screen.findByText(
+        /FAKE_Private_result.jpg is not a PDF document/,
+      );
+      expect(result).toHaveTextContent(
+        "FAKE_Existing_duplicate.pdf was already in Shared with me.",
+      );
+      expect(result).toHaveTextContent(
+        "A shared file was added to Shared with me.",
+      );
+      expect(
+        screen.getAllByText(/FAKE_Private_result.jpg is not a PDF document/),
+      ).toHaveLength(1);
+      expect(shared.bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(shared.vault.records.map((record) => record.displayName)).toEqual([
+        "FAKE_Saved.pdf",
+      ]);
+      expect(
+        screen.queryByRole("button", { name: "Shared with me, 1 new" }),
+      ).toBeNull();
+    },
+  );
+
+  it("does not carry a concealed share outcome into a replacement bridge (#53)", async () => {
+    const user = userEvent.setup();
+    const shared = sharedVault(["FAKE Old"], [], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+      lock: vi.fn().mockRejectedValue({ code: "storage" }),
+    });
+    shared.vault.recoveryKeySetAtMs = 1;
+    const view = render(<VaultApp bridge={shared.bridge} />);
+    await screen.findByRole("heading", { name: "My records" });
+    const gate = receiveGate<ReceivedAcceptOutcome>();
+    const accept = vi
+      .mocked(shared.bridge.acceptReceived)
+      .getMockImplementation()!;
+    let finished!: ReceivedAcceptOutcome;
+    vi.mocked(shared.bridge.acceptReceived).mockImplementationOnce(async () => {
+      finished = await accept();
+      return gate.promise;
+    });
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    onTestFinished(() => visibility.mockRestore());
+    shared.arrive("FAKE_Old_private.jpg");
+    notifyArrival();
+    await waitFor(() =>
+      expect(shared.bridge.acceptReceived).toHaveBeenCalledOnce(),
+    );
+    visibility.mockReturnValue("hidden");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    await screen.findByRole("alert");
+    await act(async () => gate.resolve(finished));
+    visibility.mockReturnValue("visible");
+    const next = sharedVault(["FAKE New"], []);
+    next.vault.recoveryKeySetAtMs = 1;
+    view.rerender(<VaultApp bridge={next.bridge} />);
+    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await unlockWith(user);
+    await screen.findByRole("heading", { name: "My records" });
+    await passAnnounceDelay();
+    expect(screen.queryByText(/FAKE_Old_private/)).toBeNull();
+    expect(next.bridge.acceptReceived).not.toHaveBeenCalled();
   });
 
   it("shows in Shared with me why nothing can be moved while changes are paused (#61)", async () => {

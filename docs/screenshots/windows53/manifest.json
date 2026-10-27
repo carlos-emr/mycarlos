@@ -129,5 +129,7 @@
     "after-failure-retry.png": "c11ae325763216b82120e4a4e3f92cd0d10fc295e1f126bc153f64ebb1e1ae4c"
   },
   "personally_inspected": true,
-  "native_runtime_executed": false
+  "native_runtime_executed": false,
+  "after_ref": "e772ca7512c61089437601be1befd6da487b059a",
+  "retained_proof_note": "The original seven images remain exact historical e772 production proof; they do not execute the later concealment fix. New affected states and current source/bundle bindings are in concealment-manifest.json."
 }

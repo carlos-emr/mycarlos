@@ -15,7 +15,7 @@ import {
   type VaultStatus,
   type BoxKey,
 } from "./vault";
-import { receiveNoticeText } from "./native/receivedNotice";
+import { receiveNoticeText, sharedAddedText } from "./native/receivedNotice";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
 import { ComfortSetup } from "./native/ComfortSetup";
@@ -87,6 +87,8 @@ export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
 
 function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice] = useState("");
   // Locked, show only the waiting count. Unlocked, import into Shared with me.
@@ -186,6 +188,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // The outcome of a transfer the vault locked on. It is shown after the next
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<string | null>(null);
+  // A late share may finish while a failed lock keeps the window concealed.
+  // Retain its explanation/accounting for an authorized unlock of this bridge.
+  const pendingSharedOutcomeRef = useRef<{
+    generation: number;
+    message: string;
+  } | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   // Read by `lock`, which keeps its identity, for the reason it gives.
   const autoLockMinutesRef = useRef(autoLockMinutes);
@@ -244,6 +252,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // not a transfer's outcome, nor how a key setup ended.
   const forgetReplacedVault = () => {
     pendingOutcomeRef.current = null;
+    pendingSharedOutcomeRef.current = null;
     rememberUnfinishedRecoveryKey(null);
     rememberOldBackupsGuide(null);
   };
@@ -251,6 +260,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Taken as a vault opens: what happened while it was locked, and how a
   // recovery key setup that a lock or closing ended actually ended.
   const takeHeldOutcome = (opened: VaultSnapshot) => {
+    const shared = pendingSharedOutcomeRef.current;
+    pendingSharedOutcomeRef.current = null;
     const unfinished = takeUnfinishedRecoveryKey();
     // A key whose kit may have been exposed was replaced as the lock fell:
     // Security shows the steps for its older backups, as after a
@@ -262,6 +273,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       rememberOldBackupsGuide({ step: "save" });
     const outcome = [
       pendingOutcomeRef.current,
+      shared?.generation === receiveGeneration.current ? shared.message : null,
       unfinished &&
         unfinishedRecoveryKeyMessage(
           unfinished,
@@ -758,18 +770,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     )
       return;
     const current = () =>
-      generation === receiveGeneration.current && inSession();
+      generation === receiveGeneration.current &&
+      inSession() &&
+      statusRef.current === "unlocked";
     accepting.current = generation;
     try {
       const outcome = await bridge.acceptReceived();
       if (!current()) return;
       setReceived([]);
-      if (outcome.imported.length) {
-        const next = await bridge.snapshot();
-        if (!current()) return;
-        setSnapshot(next);
-        setSharedNew((count) => count + outcome.imported.length);
-      }
       const said = [
         ...outcome.notPdf.map(
           (name) =>
@@ -779,6 +787,45 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           (name) => `${name} was already in Shared with me.`,
         ),
       ];
+      const deferIfPrivate = () => {
+        if (
+          !concealedRef.current &&
+          !lockingRef.current &&
+          document.visibilityState === "visible"
+        )
+          return false;
+        const message = [sharedAddedText(outcome.imported.length), ...said]
+          .filter(Boolean)
+          .join(" ");
+        if (message) {
+          const held = pendingSharedOutcomeRef.current;
+          pendingSharedOutcomeRef.current = {
+            generation,
+            message: [
+              held?.generation === generation ? held.message : null,
+              message,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          };
+        }
+        return true;
+      };
+      if (deferIfPrivate()) return;
+      if (outcome.imported.length) {
+        let next: VaultSnapshot;
+        try {
+          next = await bridge.snapshot();
+        } catch {
+          // Acceptance already finished. A lock may make the snapshot unavailable;
+          // keep its completed private outcome rather than lose it with the refresh.
+          if (current()) deferIfPrivate();
+          return;
+        }
+        if (!current() || deferIfPrivate()) return;
+        setSnapshot(next);
+        setSharedNew((count) => count + outcome.imported.length);
+      }
       if (said.length) setSessionNotice(said.join(" "));
     } catch {
       // They keep waiting: the next ask tries again.
@@ -843,6 +890,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               setSnapshot(await bridge.create(passphrase, profile));
               // Nothing from a vault that is gone.
               pendingOutcomeRef.current = null;
+              pendingSharedOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
               rememberOldBackupsGuide(null);
               // The passphrase was just typed, so it authorizes the recovery key
@@ -947,6 +995,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           run(async () => {
             if (await bridge.reset(confirmation)) {
               pendingOutcomeRef.current = null;
+              pendingSharedOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
               rememberOldBackupsGuide(null);
               // Starting again starts with the comfort settings, as a fresh

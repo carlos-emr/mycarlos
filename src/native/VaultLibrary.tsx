@@ -1,4 +1,5 @@
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
+import { sharedAddedText } from "./receivedNotice";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import { useI18n } from "../i18n";
@@ -653,12 +654,7 @@ export function VaultLibrary({
   const sharedSeen = useRef(0);
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
-    if (added > 0)
-      setSharedAnnouncement(
-        added === 1
-          ? "A shared file was added to Shared with me."
-          : `${added} shared files were added to Shared with me.`,
-      );
+    if (added > 0) setSharedAnnouncement(sharedAddedText(added));
     sharedSeen.current = sharedNew;
   }, [sharedNew]);
   // Seen as soon as Shared with me is open.

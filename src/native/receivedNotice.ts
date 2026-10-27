@@ -1,5 +1,13 @@
 import type { ReceiveNotice } from "../vault";
 
+/** The existing shared-file announcement, also used for an outcome held until unlock. */
+export function sharedAddedText(count: number): string {
+  if (count <= 0) return "";
+  return count === 1
+    ? "A shared file was added to Shared with me."
+    : `${count} shared files were added to Shared with me.`;
+}
+
 /** What to tell the patient about shared items that could not be received,
  * or "" when everything shared was received. */
 export function receiveNoticeText({
