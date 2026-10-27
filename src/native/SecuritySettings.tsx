@@ -233,12 +233,19 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>
-              {t("security.autoLock.title")}{" "}
+            <div className="native-auto-lock-heading">
+              <h2>{t("security.autoLock.title")}</h2>
               <span className="state-pill">
                 {t("security.autoLock.minutes", { count: autoLockMinutes })}
               </span>
-            </h2>
+              <button
+                className="button"
+                type="button"
+                onClick={() => void onLock()}
+              >
+                {t("security.lockNow")}
+              </button>
+            </div>
             <p>{t("security.autoLock.body")}</p>
           </div>
           <div>
@@ -246,13 +253,6 @@ export function SecuritySettings({
               minutes={autoLockMinutes}
               onMinutes={onAutoLockMinutes}
             />
-            <button
-              className="button"
-              type="button"
-              onClick={() => void onLock()}
-            >
-              {t("security.lockNow")}
-            </button>
           </div>
         </section>
         <section className="setting-row">
