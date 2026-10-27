@@ -3102,6 +3102,13 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
+// Keep one generated context for every runtime. On macOS the macro also
+// embeds the application Info.plist, whose process-wide symbol must be unique.
+// Tests use this same production configuration and capability authority.
+fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -3247,7 +3254,7 @@ pub fn run() {
             vault_hide_unavailable_records,
             vault_reset
         ])
-        .build(tauri::generate_context!())
+        .build(production_context())
         .expect("error while building myCarlos")
         .run(|_app, _event| {
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
@@ -5479,7 +5486,7 @@ mod audit_history_ipc_tests {
         let app = tauri::test::mock_builder()
             .manage(Arc::clone(&store))
             .invoke_handler(tauri::generate_handler![vault_history])
-            .build(tauri::generate_context!())
+            .build(production_context())
             .unwrap();
         let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
