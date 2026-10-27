@@ -34,6 +34,9 @@ pub fn init<R: Runtime, F: FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sy
     Builder::new().callback(f).build()
 }
 
+/// On Windows, call on the IPC window's creating thread (normally the runtime thread).
+/// Other-thread or failed window destruction retains the target and single-instance reservation
+/// for a later owner-thread retry. Successful repeated cleanup is harmless.
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
     platform_impl::destroy(manager)
 }

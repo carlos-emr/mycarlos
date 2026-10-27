@@ -38,7 +38,8 @@ See [the dependency review](../../../DEPENDENCY_REVIEW.md).
 ## tauri-plugin-single-instance 2.4.0 (Windows only)
 
 The exact compatible upstream release is pinned; Tauri remains upstream 2.11.5.
-The local patch changes only Windows transport and adds its pure framing module.
+The local patch changes Windows transport, adds pure framing/lifecycle modules,
+and documents the Windows teardown contract on the public function.
 Linux and macOS plugin sources are retained unmodified and the application only
 depends on this crate on Windows. `tauri-plugin-single-instance.patch` is the
 complete delta from the checksum-pinned archive, including the codec tests.
@@ -60,10 +61,16 @@ was lost; the sender does not retry automatically. Older receivers returning `1`
 for an unknown protocol cannot falsely acknowledge this handoff. The callback
 must only enqueue work, without file/provider I/O or a synchronous UI wait.
 
-Window userdata ownership is retained until successful creation, callbacks hold
-their own app/callback references, and nested callbacks are refused rather than
-aliasing an active `FnMut`. Owned mutex handles close on setup errors and after
-the IPC window on exit. These changes require independent native-source review
+Window userdata stays in a Rust-owned `Box` throughout creation and is moved into
+managed state on success. `WM_CREATE` clears/checks LastError around the ambiguous
+userdata write and rejects creation on failure. Native window callbacks only
+borrow the allocation; the Box drops after confirmed `DestroyWindow` success.
+Callbacks hold their own app/callback references, and nested callbacks are refused
+rather than aliasing an active `FnMut`. Windows public teardown rejects other
+threads, retains the HWND/userdata/reservation after failed destruction, and
+allows an owner-thread retry. No state lock crosses native destruction callbacks;
+nested/repeated teardown cannot close resources twice. Owned mutex handles close
+on setup errors and after successful IPC window destruction. These changes require independent native-source review
 and real Windows lifecycle tests; pure host tests do not establish OS delivery.
 
 Run the actual codec's host tests with:
@@ -71,6 +78,8 @@ Run the actual codec's host tests with:
 ```sh
 rustc --edition=2021 --test security-tests/windows53-wire.rs -o /tmp/mycarlos-windows53-wire
 /tmp/mycarlos-windows53-wire
+rustc --edition=2021 --test security-tests/windows53-lifecycle.rs -o /tmp/mycarlos-windows53-lifecycle
+/tmp/mycarlos-windows53-lifecycle
 ```
 
 This is the transport proposal stage for #53. The plugin is not registered yet;

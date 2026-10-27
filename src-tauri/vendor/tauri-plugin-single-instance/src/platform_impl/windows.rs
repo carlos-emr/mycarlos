@@ -16,11 +16,14 @@ use tauri::{
     AppHandle, Manager, RunEvent, Runtime,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM},
+    Foundation::{
+        CloseHandle, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT,
+        WPARAM,
+    },
     System::{
         DataExchange::COPYDATASTRUCT,
         LibraryLoader::GetModuleHandleW,
-        Threading::{CreateMutexW, ReleaseMutex},
+        Threading::{CreateMutexW, GetCurrentThreadId, ReleaseMutex},
     },
     UI::WindowsAndMessaging::{
         self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW, IsWindow,
@@ -31,12 +34,17 @@ use windows_sys::Win32::{
     },
 };
 
+#[path = "windows_lifecycle.rs"]
+mod lifecycle;
 #[path = "windows_wire.rs"]
 mod wire;
 
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
 struct MutexHandle(Mutex<Option<isize>>);
-struct TargetWindowHandle(Mutex<Option<isize>>);
+struct TargetWindowHandle<R: Runtime> {
+    lifecycle: Mutex<lifecycle::Target>,
+    userdata: Mutex<Option<Box<UserData<R>>>>,
+}
 
 // Only a newly created mutex is wrapped: a secondary instance never owns it.
 impl MutexHandle {
@@ -64,7 +72,6 @@ impl Drop for MutexHandle {
 struct UserData<R: Runtime> {
     app: AppHandle<R>,
     callback: Arc<Mutex<Box<SingleInstanceCallback<R>>>>,
-    owned_by_window: bool,
 }
 
 impl<R: Runtime> UserData<R> {
@@ -103,22 +110,22 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
                 std::process::exit(if result.is_ok() { 0 } else { 2 });
             }
             let mutex = MutexHandle(Mutex::new(Some(hmutex as _)));
-            let mut userdata = Box::new(UserData {
+            let userdata = Box::new(UserData {
                 app: app.clone(),
                 callback: Arc::new(Mutex::new(callback)),
-                owned_by_window: false,
             });
-            // Hold the Box until creation succeeds. A failed creation's WM_DESTROY cannot
-            // free it too: this function still owns it until the explicit transfer below.
-            let hwnd = create_event_target_window::<R>(
-                &class_name,
-                &window_name,
-                &mut *userdata as *mut _,
-            )?;
-            userdata.owned_by_window = true;
-            let _ = Box::into_raw(userdata);
+            // Native creation borrows the allocation; Rust owns it on every error path.
+            // Move the same Box into managed state only after creation succeeds.
+            let (hwnd, userdata) = lifecycle::create_with_userdata(userdata, |data| {
+                create_event_target_window::<R>(&class_name, &window_name, data as *mut _)
+            })?;
             app.manage(mutex);
-            app.manage(TargetWindowHandle(Mutex::new(Some(hwnd as _))));
+            app.manage(TargetWindowHandle {
+                lifecycle: Mutex::new(lifecycle::Target::new(hwnd as _, unsafe {
+                    GetCurrentThreadId()
+                })),
+                userdata: Mutex::new(Some(userdata)),
+            });
             Ok(())
         })
         .on_event(|app, event| {
@@ -177,20 +184,39 @@ fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
 }
 
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
-    if let Some(target) = manager.try_state::<TargetWindowHandle>() {
-        let hwnd = target
-            .0
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .take();
-        if let Some(hwnd) = hwnd {
-            unsafe { DestroyWindow(hwnd as _) };
-        }
-    }
-    // Close once after destroying the window, without removing live managed state.
-    if let Some(mutex) = manager.try_state::<MutexHandle>() {
-        mutex.close();
-    }
+    let Some(target) = manager.try_state::<TargetWindowHandle<R>>() else {
+        return;
+    };
+    lifecycle::destroy(
+        &target.lifecycle,
+        unsafe { GetCurrentThreadId() },
+        |hwnd| {
+            let expected = target
+                .userdata
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .as_deref()
+                .map(|data| data as *const UserData<R> as isize);
+            // Do not destroy another window if the original HWND was destroyed and reused.
+            if expected != Some(unsafe { GetWindowLongPtrW(hwnd as _, GWLP_USERDATA) }) {
+                return false;
+            }
+            unsafe { DestroyWindow(hwnd as _) != 0 }
+        },
+        || {
+            // DestroyWindow has returned successfully, including all native callbacks.
+            // The callback procedure owns clones before it calls application code.
+            let userdata = target
+                .userdata
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take();
+            drop(userdata);
+            if let Some(mutex) = manager.try_state::<MutexHandle>() {
+                mutex.close();
+            }
+        },
+    );
 }
 
 unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
@@ -203,8 +229,15 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
         WM_CREATE => {
             let create_struct = &*(lparam as *const CREATESTRUCTW);
             let userdata = create_struct.lpCreateParams as *const UserData<R>;
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _);
-            0
+            if lifecycle::install_userdata(
+                || SetLastError(0),
+                || SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _),
+                || GetLastError(),
+            ) {
+                0
+            } else {
+                -1
+            }
         }
         WM_COPYDATA => {
             if lparam == 0 {
@@ -238,13 +271,8 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
             wire::ACK as LRESULT
         }
         WM_DESTROY => {
-            let userdata = UserData::<R>::from_hwnd_raw(hwnd);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            if let Some(data) = userdata.as_ref() {
-                if data.owned_by_window {
-                    drop(Box::from_raw(userdata));
-                }
-            }
+            // Keep the borrowed pointer valid through every native destruction callback.
+            // Rust releases its Box only after DestroyWindow confirms the window is gone.
             0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),

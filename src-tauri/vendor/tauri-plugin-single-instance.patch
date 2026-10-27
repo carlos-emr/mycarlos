@@ -1,6 +1,18 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -34,6 +34,9 @@
+     Builder::new().callback(f).build()
+ }
+ 
++/// On Windows, call on the IPC window's creating thread (normally the runtime thread).
++/// Other-thread or failed window destruction retains the target and single-instance reservation
++/// for a later owner-thread retry. Successful repeated cleanup is harmless.
+ pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
+     platform_impl::destroy(manager)
+ }
 --- a/src/platform_impl/windows.rs
 +++ b/src/platform_impl/windows.rs
-@@ -6,7 +6,11 @@
+@@ -6,48 +6,77 @@
  use crate::semver_compat::semver_compat_string;
  
  use crate::SingleInstanceCallback;
@@ -13,8 +25,18 @@
  use tauri::{
      plugin::{self, TauriPlugin},
      AppHandle, Manager, RunEvent, Runtime,
-@@ -19,35 +23,53 @@
-         Threading::{CreateMutexW, ReleaseMutex},
+ };
+ use windows_sys::Win32::{
+-    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM},
++    Foundation::{
++        CloseHandle, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT,
++        WPARAM,
++    },
+     System::{
+         DataExchange::COPYDATASTRUCT,
+         LibraryLoader::GetModuleHandleW,
+-        Threading::{CreateMutexW, ReleaseMutex},
++        Threading::{CreateMutexW, GetCurrentThreadId, ReleaseMutex},
      },
      UI::WindowsAndMessaging::{
 -        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW,
@@ -34,12 +56,17 @@
 -struct MutexHandle(isize);
 -
 -struct TargetWindowHandle(isize);
++#[path = "windows_lifecycle.rs"]
++mod lifecycle;
 +#[path = "windows_wire.rs"]
 +mod wire;
 +
 +const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
 +struct MutexHandle(Mutex<Option<isize>>);
-+struct TargetWindowHandle(Mutex<Option<isize>>);
++struct TargetWindowHandle<R: Runtime> {
++    lifecycle: Mutex<lifecycle::Target>,
++    userdata: Mutex<Option<Box<UserData<R>>>>,
++}
 +
 +// Only a newly created mutex is wrapped: a secondary instance never owns it.
 +impl MutexHandle {
@@ -68,7 +95,6 @@
      app: AppHandle<R>,
 -    callback: Box<SingleInstanceCallback<R>>,
 +    callback: Arc<Mutex<Box<SingleInstanceCallback<R>>>>,
-+    owned_by_window: bool,
  }
  
  impl<R: Runtime> UserData<R> {
@@ -85,7 +111,7 @@
      }
  }
  
-@@ -61,51 +83,42 @@
+@@ -61,51 +90,42 @@
                  id.push('_');
                  id.push_str(semver_compat_string(&app.package_info().version).as_str());
              }
@@ -148,26 +174,26 @@
 +                std::process::exit(if result.is_ok() { 0 } else { 2 });
 +            }
 +            let mutex = MutexHandle(Mutex::new(Some(hmutex as _)));
-+            let mut userdata = Box::new(UserData {
++            let userdata = Box::new(UserData {
 +                app: app.clone(),
 +                callback: Arc::new(Mutex::new(callback)),
-+                owned_by_window: false,
 +            });
-+            // Hold the Box until creation succeeds. A failed creation's WM_DESTROY cannot
-+            // free it too: this function still owns it until the explicit transfer below.
-+            let hwnd = create_event_target_window::<R>(
-+                &class_name,
-+                &window_name,
-+                &mut *userdata as *mut _,
-+            )?;
-+            userdata.owned_by_window = true;
-+            let _ = Box::into_raw(userdata);
++            // Native creation borrows the allocation; Rust owns it on every error path.
++            // Move the same Box into managed state only after creation succeeds.
++            let (hwnd, userdata) = lifecycle::create_with_userdata(userdata, |data| {
++                create_event_target_window::<R>(&class_name, &window_name, data as *mut _)
++            })?;
 +            app.manage(mutex);
-+            app.manage(TargetWindowHandle(Mutex::new(Some(hwnd as _))));
++            app.manage(TargetWindowHandle {
++                lifecycle: Mutex::new(lifecycle::Target::new(hwnd as _, unsafe {
++                    GetCurrentThreadId()
++                })),
++                userdata: Mutex::new(Some(userdata)),
++            });
              Ok(())
          })
          .on_event(|app, event| {
-@@ -116,15 +129,67 @@
+@@ -116,16 +136,87 @@
          .build()
  }
  
@@ -227,27 +253,61 @@
 -    }
 -    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
 -        unsafe { DestroyWindow(hwnd.0 as _) };
-+    if let Some(target) = manager.try_state::<TargetWindowHandle>() {
-+        let hwnd = target
-+            .0
-+            .lock()
-+            .unwrap_or_else(|error| error.into_inner())
-+            .take();
-+        if let Some(hwnd) = hwnd {
-+            unsafe { DestroyWindow(hwnd as _) };
-+        }
-+    }
-+    // Close once after destroying the window, without removing live managed state.
-+    if let Some(mutex) = manager.try_state::<MutexHandle>() {
-+        mutex.close();
-     }
+-    }
++    let Some(target) = manager.try_state::<TargetWindowHandle<R>>() else {
++        return;
++    };
++    lifecycle::destroy(
++        &target.lifecycle,
++        unsafe { GetCurrentThreadId() },
++        |hwnd| {
++            let expected = target
++                .userdata
++                .lock()
++                .unwrap_or_else(|error| error.into_inner())
++                .as_deref()
++                .map(|data| data as *const UserData<R> as isize);
++            // Do not destroy another window if the original HWND was destroyed and reused.
++            if expected != Some(unsafe { GetWindowLongPtrW(hwnd as _, GWLP_USERDATA) }) {
++                return false;
++            }
++            unsafe { DestroyWindow(hwnd as _) != 0 }
++        },
++        || {
++            // DestroyWindow has returned successfully, including all native callbacks.
++            // The callback procedure owns clones before it calls application code.
++            let userdata = target
++                .userdata
++                .lock()
++                .unwrap_or_else(|error| error.into_inner())
++                .take();
++            drop(userdata);
++            if let Some(mutex) = manager.try_state::<MutexHandle>() {
++                mutex.close();
++            }
++        },
++    );
  }
  
-@@ -141,25 +206,45 @@
-             SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _);
-             0
-         }
+ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
+@@ -138,28 +229,50 @@
+         WM_CREATE => {
+             let create_struct = &*(lparam as *const CREATESTRUCTW);
+             let userdata = create_struct.lpCreateParams as *const UserData<R>;
+-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _);
+-            0
+-        }
 -
++            if lifecycle::install_userdata(
++                || SetLastError(0),
++                || SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _),
++                || GetLastError(),
++            ) {
++                0
++            } else {
++                -1
++            }
++        }
          WM_COPYDATA => {
 -            let cds_ptr = lparam as *const COPYDATASTRUCT;
 -            if (*cds_ptr).dwData == WMCOPYDATA_SINGLE_INSTANCE_DATA {
@@ -294,18 +354,14 @@
 +            wire::ACK as LRESULT
 +        }
          WM_DESTROY => {
-             let userdata = UserData::<R>::from_hwnd_raw(hwnd);
+-            let userdata = UserData::<R>::from_hwnd_raw(hwnd);
 -            drop(Box::from_raw(userdata));
-+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-+            if let Some(data) = userdata.as_ref() {
-+                if data.owned_by_window {
-+                    drop(Box::from_raw(userdata));
-+                }
-+            }
++            // Keep the borrowed pointer valid through every native destruction callback.
++            // Rust releases its Box only after DestroyWindow confirms the window is gone.
              0
          }
          _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-@@ -170,7 +255,7 @@
+@@ -170,7 +283,7 @@
      class_name: &[u16],
      window_name: &[u16],
      userdata: *const UserData<R>,
@@ -314,7 +370,7 @@
      unsafe {
          let class = WNDCLASSEXW {
              cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-@@ -186,21 +271,14 @@
+@@ -186,21 +299,14 @@
              lpszClassName: class_name.as_ptr(),
              hIconSm: std::ptr::null_mut(),
          };
@@ -343,7 +399,7 @@
              class_name.as_ptr(),
              window_name.as_ptr(),
              WS_OVERLAPPED,
-@@ -213,15 +291,14 @@
+@@ -213,15 +319,14 @@
              GetModuleHandleW(std::ptr::null()),
              userdata as _,
          );
@@ -367,7 +423,7 @@
      }
  }
  
-@@ -236,19 +313,16 @@
+@@ -236,19 +341,16 @@
  unsafe fn SetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
      w32wm::SetWindowLongW(hwnd, index, value as _) as _
  }
@@ -535,5 +591,280 @@
 +        let invalid = OsString::from_wide(&[0xd800]);
 +        assert!(encode(OsStr::new("cwd"), [OsString::from("app"), invalid.clone()]).is_none());
 +        assert!(encode(&invalid, [OsString::from("app")]).is_none());
++    }
++}
+--- /dev/null
++++ b/src/platform_impl/windows_lifecycle.rs
+@@ -0,0 +1,272 @@
++// Copyright 2019-2023 Tauri Programme within The Commons Conservancy
++// SPDX-License-Identifier: Apache-2.0
++// SPDX-License-Identifier: MIT
++
++//! Windows resource transitions, with injected OS calls for host failure tests.
++
++use std::sync::Mutex;
++
++pub(super) struct Target {
++    window: Option<isize>,
++    owner_thread: u32,
++    destroying: bool,
++}
++
++impl Target {
++    pub(super) fn new(window: isize, owner_thread: u32) -> Self {
++        Self {
++            window: Some(window),
++            owner_thread,
++            destroying: false,
++        }
++    }
++}
++
++/// Refuse other threads and nested teardown; release resources only after confirmed destruction.
++/// No state lock is held while Windows calls the window procedure.
++pub(super) fn destroy(
++    target: &Mutex<Target>,
++    current_thread: u32,
++    destroy_window: impl FnOnce(isize) -> bool,
++    release: impl FnOnce(),
++) -> bool {
++    let window = {
++        let mut state = target.lock().unwrap_or_else(|error| error.into_inner());
++        if state.owner_thread != current_thread || state.destroying {
++            return false;
++        }
++        let Some(window) = state.window else {
++            return true;
++        };
++        state.destroying = true;
++        window
++    };
++    let destroyed = destroy_window(window);
++    {
++        let mut state = target.lock().unwrap_or_else(|error| error.into_inner());
++        if destroyed {
++            state.window = None;
++        }
++        state.destroying = false;
++    }
++    if destroyed {
++        release();
++    }
++    destroyed
++}
++
++/// GWLP_USERDATA's old value is normally zero: clear LastError before the ambiguous write.
++pub(super) fn install_userdata(
++    clear_error: impl FnOnce(),
++    set_pointer: impl FnOnce() -> isize,
++    last_error: impl FnOnce() -> u32,
++) -> bool {
++    clear_error();
++    set_pointer() != 0 || last_error() == 0
++}
++
++/// The Rust Box remains the sole owner throughout native creation callbacks and errors.
++/// On success its allocation stays stable when moved into the managed target.
++pub(super) fn create_with_userdata<T, H, E>(
++    mut data: Box<T>,
++    create: impl FnOnce(&mut T) -> Result<H, E>,
++) -> Result<(H, Box<T>), E> {
++    let window = create(&mut data)?;
++    Ok((window, data))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{
++        cell::{Cell, RefCell},
++        rc::Rc,
++    };
++
++    struct Data(Rc<Cell<usize>>);
++    impl Drop for Data {
++        fn drop(&mut self) {
++            self.0.set(self.0.get() + 1);
++        }
++    }
++
++    #[test]
++    fn wrong_thread_keeps_target_userdata_and_reservation_for_owner_retry() {
++        let target = Mutex::new(Target::new(42, 7));
++        let calls = Cell::new(0);
++        let closes = Cell::new(0);
++        let drops = Rc::new(Cell::new(0));
++        let data = RefCell::new(Some(Box::new(Data(drops.clone()))));
++        assert!(!destroy(
++            &target,
++            9,
++            |_| {
++                calls.set(calls.get() + 1);
++                true
++            },
++            || {
++                data.borrow_mut().take();
++                closes.set(closes.get() + 1);
++            }
++        ));
++        assert_eq!((calls.get(), closes.get(), drops.get()), (0, 0, 0));
++        assert_eq!(target.lock().unwrap().window, Some(42));
++        assert!(destroy(
++            &target,
++            7,
++            |hwnd| {
++                assert_eq!(hwnd, 42);
++                calls.set(calls.get() + 1);
++                true
++            },
++            || {
++                data.borrow_mut().take();
++                closes.set(closes.get() + 1);
++            }
++        ));
++        assert_eq!((calls.get(), closes.get(), drops.get()), (1, 1, 1));
++    }
++
++    #[test]
++    fn failed_destroy_retains_every_resource_then_success_and_repeated_cleanup_close_once() {
++        let target = Mutex::new(Target::new(42, 7));
++        let calls = Cell::new(0);
++        let closes = Cell::new(0);
++        let drops = Rc::new(Cell::new(0));
++        let data = RefCell::new(Some(Box::new(Data(drops.clone()))));
++        assert!(!destroy(
++            &target,
++            7,
++            |_| {
++                calls.set(calls.get() + 1);
++                false
++            },
++            || {
++                data.borrow_mut().take();
++                closes.set(closes.get() + 1);
++            }
++        ));
++        assert_eq!((calls.get(), closes.get(), drops.get()), (1, 0, 0));
++        assert_eq!(target.lock().unwrap().window, Some(42));
++        for _ in 0..2 {
++            assert!(destroy(
++                &target,
++                7,
++                |_| {
++                    calls.set(calls.get() + 1);
++                    true
++                },
++                || {
++                    data.borrow_mut().take();
++                    closes.set(closes.get() + 1);
++                }
++            ));
++        }
++        assert_eq!((calls.get(), closes.get(), drops.get()), (2, 1, 1));
++        assert!(target.lock().unwrap().window.is_none());
++    }
++
++    #[test]
++    fn inline_window_callback_teardown_is_refused_without_locking_or_early_release() {
++        let target = Mutex::new(Target::new(42, 7));
++        let closes = Cell::new(0);
++        assert!(destroy(
++            &target,
++            7,
++            |_| {
++                assert!(!destroy(
++                    &target,
++                    7,
++                    |_| panic!("nested OS destruction"),
++                    || panic!("early release")
++                ));
++                assert_eq!(closes.get(), 0);
++                true
++            },
++            || closes.set(closes.get() + 1)
++        ));
++        assert_eq!(closes.get(), 1);
++    }
++
++    #[test]
++    fn userdata_install_clears_stale_error_and_disambiguates_zero_result() {
++        let error = Cell::new(123);
++        let calls = RefCell::new(Vec::new());
++        assert!(install_userdata(
++            || {
++                calls.borrow_mut().push("clear");
++                error.set(0);
++            },
++            || {
++                calls.borrow_mut().push("set");
++                assert_eq!(error.get(), 0);
++                0
++            },
++            || {
++                calls.borrow_mut().push("get");
++                error.get()
++            },
++        ));
++        assert_eq!(*calls.borrow(), ["clear", "set", "get"]);
++        assert!(!install_userdata(
++            || error.set(0),
++            || {
++                error.set(5);
++                0
++            },
++            || error.get()
++        ));
++        assert!(install_userdata(
++            || {},
++            || 99,
++            || panic!("nonzero return is success")
++        ));
++    }
++
++    #[test]
++    fn failed_userdata_installation_drops_creation_owner_once_without_transfer() {
++        let drops = Rc::new(Cell::new(0));
++        let result = create_with_userdata(Box::new(Data(drops.clone())), |_| {
++            assert_eq!(drops.get(), 0, "still owned during WM_CREATE");
++            if install_userdata(|| {}, || 0, || 5) {
++                Ok(42)
++            } else {
++                Err("WM_CREATE -1")
++            }
++        });
++        assert!(result.is_err());
++        assert_eq!(drops.get(), 1);
++    }
++
++    #[test]
++    fn later_creation_failure_and_success_each_retain_one_box_owner() {
++        let failed_drops = Rc::new(Cell::new(0));
++        let result: Result<(isize, _), ()> =
++            create_with_userdata(Box::new(Data(failed_drops.clone())), |_| Err(()));
++        assert!(result.is_err());
++        assert_eq!(failed_drops.get(), 1);
++        let drops = Rc::new(Cell::new(0));
++        let (hwnd, data) = create_with_userdata(Box::new(Data(drops.clone())), |data| {
++            assert_eq!(drops.get(), 0);
++            assert!(install_userdata(|| {}, || 0, || 0));
++            Ok::<_, ()>((42, data as *mut Data))
++        })
++        .unwrap();
++        assert_eq!(
++            hwnd.1, &*data as *const Data as *mut Data,
++            "Box move preserves installed address"
++        );
++        assert_eq!(drops.get(), 0);
++        let target = Mutex::new(Target::new(hwnd.0, 7));
++        assert!(destroy(
++            &target,
++            7,
++            |_| {
++                assert_eq!(drops.get(), 0);
++                true
++            },
++            || drop(data)
++        ));
++        assert_eq!(drops.get(), 1);
 +    }
 +}
