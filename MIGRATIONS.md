@@ -1,6 +1,6 @@
 # myCarlos vault migration protocol
 
-- **Status:** protocol defined; no migration is needed while only format v1 exists
+- **Status:** protocol defined; manifest formats 2 and 3 (#71) use the manifest-additions rule below, not the staged copy
 - **Data restriction:** synthetic fixtures only until independent review and physical-device testing
 - **Applies to:** both header slots, both encrypted manifest slots, and encrypted object envelopes
 
@@ -35,6 +35,36 @@ unknown ones), and a vault moves to the new format at its next header write. Bui
 change are outside this guarantee while the two slots hold different formats; `VAULT_FORMAT.md`
 ("Header formats") says what they do. Manifest and object
 format changes still require the full protocol.
+
+## Manifest additions (formats 1 → 2 → 3)
+
+Manifest format 2 (#71) adds an optional field to records (`hidden`) and pads the manifest; format 3
+(#71's second part) adds the history, whose segments are new objects beside the documents'. Neither
+rewrites a document's object. Like a header-only change, it relies on the two-slot commit instead of the
+staged-copy sequence below, with one more rule, because an older build ignores fields it does not
+know and, opening a manifest it can read, removes as orphans the objects it does not see named:
+
+1. **The upgrade is a commit of its own.** It writes the unchanged state at format 3, with no
+   history, into both slots (two consecutive generations) before anything only format 3 can hold
+   is written: a history, or for a format 1 vault a hidden document. A format 1 vault goes
+   straight to format 3. A crash between those two writes leaves one format 3 slot whose state
+   equals the other, older slot's, so an older build that opens the older slot loses nothing.
+   Once both slots are format 3, an older build refuses both and never reaches its cleanup.
+2. **When:** at the first writable unlock, after repair and cleanup; for a vault opened in
+   lost-objects recovery mode, just before its damaged documents are hidden. An upgrade that
+   cannot write leaves the session read-only, and the next unlock tries again.
+3. **Readers** accept formats 1 to 3; rule 1 still refuses anything else, a format 1 manifest
+   carrying a hidden document, and a format 1 or 2 manifest carrying a history.
+4. **Tests:** for format 1 and for format 2, the vault opens and is upgraded with its state
+   unchanged and its history starting there; termination after each upgrade write leaves both
+   slots holding that state, with no history; an upgrade that cannot write leaves the vault
+   read-only and whole; a newer format is refused.
+
+**Why the history is a format of its own.** Format 2 can be released before the history is. A
+build that knows only format 2 reads unknown fields as absent: given a format 2 manifest with a
+history, it would open it, write it back without the history at its next change, and move the
+segments to `quarantine/` as orphans, losing the record with no error. Given format 3, it refuses
+the vault. The cost is one more upgrade, through the same commit.
 
 ## Transaction layout
 

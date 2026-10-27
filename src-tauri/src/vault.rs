@@ -1,3 +1,4 @@
+use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
@@ -32,7 +33,19 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
-const VAULT_FORMAT: u32 = 1;
+/// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
+/// size class; format 3 adds the history. Formats 1 and 2 are still read; an
+/// unlock that can write upgrades one at once, in a commit of its own, before
+/// anything only the newer format can hold is written. An older build refuses
+/// a newer manifest.
+const VAULT_FORMAT: u32 = 3;
+const MANIFEST_FORMAT_V1: u32 = 1;
+/// The first format that can hold hidden documents.
+const MANIFEST_FORMAT_HIDDEN: u32 = 2;
+/// The first format that can hold a history.
+const MANIFEST_FORMAT_HISTORY: u32 = 3;
+/// The smallest size class a format 2 manifest's plaintext is padded to.
+const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
 /// are still read; every header written now is format 2, so a vault moves to
 /// format 2 at its next header write. An older build refuses a format 2 header.
@@ -47,6 +60,8 @@ const CROCKFORD_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const OBJECT_MAGIC: &[u8; 5] = b"MCVO1";
 const CHUNK_SIZE: usize = 1024 * 1024;
 pub(crate) const MAX_IMPORT_FILES: usize = 100;
+/// Where every document so far comes from: the patient added it, and nothing has checked it.
+pub(crate) const MANUAL_IMPORT_LABEL: &str = "Manual import — unverified";
 pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
@@ -112,7 +127,7 @@ const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 // The sanitizer caps record names at this many bytes and manifest validation
 // caps them at this many characters. A name never has more characters than
 // bytes, so every sanitized name passes validation when it is read back.
-const MAX_RECORD_NAME_LEN: usize = 240;
+pub(crate) const MAX_RECORD_NAME_LEN: usize = 240;
 const ARGON_MEMORY_KIB: u32 = 64 * 1024;
 const ARGON_ITERATIONS: u32 = 3;
 const ARGON_LANES: u32 = 4;
@@ -124,9 +139,17 @@ const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 #[cfg(test)]
 const TEST_TERMINATION_EXIT_CODE: i32 = 86;
 
+/// Set while a test child unlocks, so that the boundary its environment
+/// names is reached in the operation under test, not in the unlock's own
+/// history commit (#71), which has its own matrix.
+#[cfg(test)]
+static ENV_BOUNDARIES_HELD: AtomicBool = AtomicBool::new(false);
+
 #[cfg(test)]
 fn terminate_at_test_boundary(boundary: &str) {
-    if std::env::var("MYCARLOS_TEST_TERMINATE_AT").as_deref() == Ok(boundary) {
+    if !ENV_BOUNDARIES_HELD.load(Ordering::Acquire)
+        && std::env::var("MYCARLOS_TEST_TERMINATE_AT").as_deref() == Ok(boundary)
+    {
         std::process::exit(TEST_TERMINATION_EXIT_CODE);
     }
 }
@@ -171,7 +194,8 @@ thread_local! {
 #[cfg(test)]
 fn fail_at_test_boundary(boundary: &str) -> Result<(), VaultError> {
     if FAIL_AT_TEST_BOUNDARY.get().contains(&boundary)
-        || std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref() == Ok(boundary)
+        || (!ENV_BOUNDARIES_HELD.load(Ordering::Acquire)
+            && std::env::var("MYCARLOS_TEST_FAIL_AT").as_deref() == Ok(boundary))
     {
         Err(VaultError::NoSpace)
     } else {
@@ -226,6 +250,30 @@ pub enum VaultError {
     WeakPassphrase,
     #[error("too many files were selected for one import")]
     ImportBatchLimit,
+    #[error("a file to import is not a PDF")]
+    NotPdf,
+    #[error("the document is locked with a password")]
+    PdfLocked,
+    #[error("the document is not locked with a password")]
+    PdfNotLocked,
+    #[error("an unlocked copy of the document is already stored")]
+    PdfAlreadyUnlocked,
+    #[error("the password did not open the locked document")]
+    PdfWrongPassword,
+    #[error("the locked document could not be opened")]
+    PdfUnlockFailed,
+    #[error("locked documents cannot be opened on this device")]
+    PdfUnlockUnavailable,
+    #[error("locked documents cannot be opened safely on this system")]
+    PdfUnlockNoSandbox,
+    #[error("the locked document is too large to open")]
+    PdfTooLarge,
+    #[error("the document could not be shown")]
+    PdfViewFailed,
+    #[error("documents cannot be shown on this device yet")]
+    PdfViewUnavailable,
+    #[error("documents cannot be shown safely on this system")]
+    PdfViewNoSandbox,
     #[error("there is not enough space to complete the operation")]
     NoSpace,
     #[error("the storage operation could not be completed")]
@@ -254,6 +302,8 @@ pub enum VaultError {
     DamagedDocument(Uuid),
     #[error("the restore was verified, but could not yet take the vault's place")]
     RestoreUnfinished,
+    #[error("the file is not a JPEG photo within the size limits")]
+    NotPhoto,
 }
 
 impl From<io::Error> for VaultError {
@@ -357,6 +407,41 @@ struct StoredRecord {
     object_name: String,
     fingerprint: String,
     wrapped_object_key: WrappedSecret,
+    /// Set while the document is hidden (#71). Format 2 only. A hidden
+    /// document keeps its encrypted file; nothing is ever deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hidden: Option<Hidden>,
+}
+
+/// When, and why, a document was hidden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hidden {
+    pub at_ms: u64,
+    pub reason: HiddenReason,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HiddenReason {
+    /// The patient hid it.
+    Patient,
+    /// Its encrypted file was missing, and the patient hid it so that the
+    /// vault could take changes again. The file is not required to exist;
+    /// if it comes back, the document can be restored.
+    Damaged,
+}
+
+/// Whether the vault needs a record's encrypted file to be there. Only a
+/// document hidden as damaged does not.
+fn object_required(record: &StoredRecord) -> bool {
+    !matches!(
+        record.hidden,
+        Some(Hidden {
+            reason: HiddenReason::Damaged,
+            ..
+        })
+    )
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -368,6 +453,40 @@ struct Manifest {
     profiles: Vec<PatientProfile>,
     folders: Vec<VaultFolder>,
     records: Vec<StoredRecord>,
+    /// The history (#71): where its segments are, and the end of its chain.
+    /// Format 3 only.
+    #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
+    history: HistoryState,
+}
+
+/// Where the history's entries are, and what pins its chain: how many there
+/// are and the hash of the last. Its segments are objects beside the
+/// documents', encrypted the same way under keys of their own.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryState {
+    count: u64,
+    head: String,
+    segments: Vec<HistorySegment>,
+}
+
+impl HistoryState {
+    fn is_empty(&self) -> bool {
+        self.count == 0 && self.head.is_empty() && self.segments.is_empty()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistorySegment {
+    id: Uuid,
+    object_name: String,
+    wrapped_key: WrappedSecret,
+    /// The sequence number of its first entry.
+    first_seq: u64,
+    /// Its entries; none for a filler segment, which only pads the number of
+    /// segments to a power of two.
+    entry_count: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -383,6 +502,8 @@ pub struct VaultRecord {
     pub imported_at_ms: u64,
     /// False when the encrypted object was missing at unlock and cannot be exported.
     pub available: bool,
+    /// Set while the document is hidden (#71).
+    pub hidden: Option<Hidden>,
 }
 
 #[derive(Clone, Serialize)]
@@ -397,6 +518,10 @@ pub struct VaultSnapshot {
     pub recovery_key_set_at_ms: Option<u64>,
     /// Its short label, which its kit shows (not secret), if it has one.
     pub recovery_key_label: Option<String>,
+    /// The reserved profile that files shared to myCarlos wait in (#61), shown
+    /// as the "Shared with me" folder, never as a person. Listed in `profiles`
+    /// once the first file has arrived.
+    pub shared_profile_id: Uuid,
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
@@ -404,7 +529,7 @@ pub struct VaultSnapshot {
 #[serde(rename_all = "camelCase")]
 pub enum RecoveryReason {
     /// Some records' ciphertext is missing. Their intact neighbours can be
-    /// exported, and `remove_unavailable_records` makes the vault writable
+    /// exported, and `hide_unavailable_records` (#71: hiding them as damaged) makes the vault writable
     /// again once the user gives them up (or restores them from a backup).
     LostObjects,
     /// A manifest or header slot exists but could not be read, or a document's
@@ -518,6 +643,26 @@ impl<W: Write> Write for CancellableWriter<W> {
 pub struct ImportOutcome {
     pub imported: Vec<Uuid>,
     pub skipped_duplicates: Vec<String>,
+    /// Ephemeral diagnostics only: never a durable trust decision or a claim
+    /// of verification without an authenticated clinic link.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unverified_signatures: Vec<ImportVerification>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportVerification {
+    pub record_id: Uuid,
+    pub reason: crate::signed_pdf_helper::Failure,
+}
+
+/// What a move out of "Shared with me" did (#61).
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveOutcome {
+    pub moved: Vec<Uuid>,
+    /// Files the person already had, which stay in Shared with me.
+    pub already_there: Vec<String>,
 }
 
 /// A recovery key shown to the patient and not yet confirmed, with the key
@@ -543,6 +688,9 @@ struct UnlockedVault {
     recovery: Option<RecoveryReason>,
     // Records whose object was missing at unlock. Only populated in recovery mode.
     unavailable: HashSet<Uuid>,
+    // Whether the history holds this session's start (#71): its unlock, or
+    // the vault's creation.
+    start_recorded: bool,
     // Keep the OS lock until the session (and any operation using it) ends.
     storage_lock: Arc<File>,
 }
@@ -563,6 +711,14 @@ pub struct VaultStore {
     kdf_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
+    /// How the last session of this run of the app ended, for the next
+    /// unlock's history entry (#71). Kept in memory only: nothing is written
+    /// when the vault locks, so a lock never waits on, or fails over, a write.
+    /// Taken under the session lock, after it.
+    last_session: Mutex<Option<String>>,
+    /// The folder this run of the app last set a vault aside in, for the
+    /// next vault created (#71's third part). In memory only.
+    last_set_aside: Mutex<Option<String>>,
 }
 
 impl VaultStore {
@@ -573,7 +729,49 @@ impl VaultStore {
             kdf_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
+            last_session: Mutex::new(None),
+            last_set_aside: Mutex::new(None),
         }
+    }
+
+    fn forget_last_session(&self) {
+        *self
+            .last_session
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+
+    /// Notes how the session in `guard`, ending now, ended.
+    fn note_session_end(&self, guard: &Option<UnlockedVault>, by: &str) {
+        if let Some(unlocked) = guard {
+            let mut last = self
+                .last_session
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            // A session whose start the history holds, and that wrote all it
+            // did, ends with a note of its own. One that could not keeps the
+            // note waiting from before it, so that the next recorded unlock
+            // still says how that earlier session ended, and adds that a
+            // session went unrecorded after it.
+            let note = if unlocked.start_recorded && unlocked.recovery.is_none() {
+                format!("lockedAt:{}:{by}", crate::now_ms())
+            } else {
+                match last.take() {
+                    Some(kept) if kept.ends_with("notRecorded") => kept,
+                    Some(kept) => format!("{kept};notRecorded"),
+                    None => "notRecorded".to_owned(),
+                }
+            };
+            *last = Some(note);
+        }
+    }
+
+    /// The folder vaults are set aside in (#71), for the native dialog that
+    /// confirms a reset to name. Never sent to the screen.
+    pub fn set_aside_folder(&self) -> Option<PathBuf> {
+        vault_home(&self.root)
+            .ok()
+            .map(|home| home.join(SET_ASIDE_DIR))
     }
 
     /// The session's idle deadline, which the app's native timer checks.
@@ -665,7 +863,7 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<(), VaultError> {
         let _work = self.start_kdf_work()?;
-        validate_name(initial_profile)?;
+        validate_person_name(initial_profile)?;
         validate_new_passphrase(passphrase, &[initial_profile])?;
         let mut guard = self.session();
         if guard.is_some() {
@@ -711,7 +909,21 @@ impl VaultStore {
                 }],
                 folders: Vec::new(),
                 records: Vec::new(),
+                history: HistoryState::default(),
             };
+            // The history's first entry (#71), in the stage like the rest. A
+            // vault made after this run set one aside names where it went.
+            let mut created = HistoryEntry::new(HistoryEvent::Created, now_ms);
+            if let Some(folder) = self
+                .last_set_aside
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+            {
+                created = created.with_place(&folder);
+            }
+            manifest.history =
+                prepare_history(&stage, &master_key, &manifest, vec![created])?.state;
             write_valid_manifest_at(&stage, &master_key, &manifest)?;
             manifest.generation = manifest
                 .generation
@@ -721,6 +933,10 @@ impl VaultStore {
             sync_parent(&stage);
             fs::rename(&stage, &self.root)?;
             sync_parent(parent);
+            *self
+                .last_set_aside
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
             self.open_session(
                 &mut guard,
                 UnlockedVault {
@@ -732,12 +948,13 @@ impl VaultStore {
                     manifest,
                     recovery: None,
                     unavailable: HashSet::new(),
+                    start_recorded: true,
                 },
             );
             Ok(())
         })();
         if result.is_err() {
-            let _ = fs::remove_dir_all(&stage);
+            let _ = remove_owned_dir_all(&stage, Removable::CreateStage);
         }
         result
     }
@@ -763,7 +980,45 @@ impl VaultStore {
             master_key,
             wrapping_key,
             header_unreadable,
-        )
+        )?;
+        self.record_unlock(&mut guard, "passphrase");
+        Ok(())
+    }
+
+    /// Records the unlock that just opened the session in `guard` (#71),
+    /// with how the session before it ended, as far as this run of the app
+    /// knows. It can never keep the vault shut: if it cannot be written, the
+    /// session is read-only, and a read-only session records nothing.
+    ///
+    /// The note of how the session before ended is used up only once it is
+    /// in the history; otherwise it waits for the next unlock that is.
+    fn record_unlock(&self, guard: &mut Option<UnlockedVault>, how: &str) {
+        self.record_unlock_with(guard, how, Vec::new());
+    }
+
+    /// As `record_unlock`, with entries for what the unlock itself changed.
+    fn record_unlock_with(
+        &self,
+        guard: &mut Option<UnlockedVault>,
+        how: &str,
+        changed: Vec<HistoryEntry>,
+    ) {
+        let mut last = self
+            .last_session
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(unlocked) = guard.as_mut() else {
+            return;
+        };
+        let mut entry = HistoryEntry::new(HistoryEvent::Unlocked, crate::now_ms());
+        entry.how = Some(how.to_owned());
+        entry.previous_session = Some(last.clone().unwrap_or_else(|| "notRecorded".to_owned()));
+        let mut entries = vec![entry];
+        entries.extend(changed);
+        if record_in_session(&self.root, unlocked, entries) {
+            unlocked.start_recorded = true;
+            *last = None;
+        }
     }
 
     /// The rest of an unlock, once a header and its keys are authenticated:
@@ -816,6 +1071,7 @@ impl VaultStore {
                     manifest,
                     recovery,
                     unavailable,
+                    start_recorded: false,
                 },
             );
             return Ok(());
@@ -852,14 +1108,26 @@ impl VaultStore {
             // superseded. Its removal is best effort where the slots are written;
             // retry here so a failure then does not leave a key wrapped under an
             // earlier passphrase on disk for good.
-            let _ = fs::remove_file(self.root.join(LEGACY_HEADER));
+            let _ = remove_owned_file(self.root.join(LEGACY_HEADER), Removable::LegacyHeader);
         }
         if ensure_objects_dir(&self.root).is_err() {
             recovery = Some(RecoveryReason::WriteFailed);
         }
         remove_staging(&self.root);
         remove_abandoned_atomic_writes(&self.root);
-        remove_orphan_objects(&self.root, &manifest);
+        quarantine_orphan_objects(&self.root, &manifest);
+        // A format 1 or 2 vault becomes format 3 here, in a commit of its
+        // own (#71).
+        let mut manifest = manifest;
+        if recovery.is_none() {
+            match upgrade_manifest(&self.root, &master_key, &mut manifest) {
+                Ok(true) => {}
+                Ok(false) | Err(VaultError::NoSpace | VaultError::Storage) => {
+                    recovery = Some(RecoveryReason::WriteFailed);
+                }
+                Err(error) => return Err(error),
+            }
+        }
         self.open_session(
             guard,
             UnlockedVault {
@@ -871,6 +1139,7 @@ impl VaultStore {
                 manifest,
                 recovery,
                 unavailable,
+                start_recorded: false,
             },
         );
         Ok(())
@@ -884,13 +1153,13 @@ impl VaultStore {
     }
 
     pub fn lock(&self) {
-        self.lock_if(|| true);
+        self.lock_if(|| true, "app");
     }
 
     /// Locks the vault if it has been idle past its deadline at `now`. Returns
     /// whether it locked.
     pub fn lock_if_idle(&self, now: Instant) -> bool {
-        self.idle.is_due(now) && self.lock_if(|| self.idle.is_due(now))
+        self.idle.is_due(now) && self.lock_if(|| self.idle.is_due(now), "nativeDeadline")
     }
 
     /// Cancels any transfer, then clears the session if `due` still holds once
@@ -899,7 +1168,7 @@ impl VaultStore {
     /// transfer holds the session lock until it stops; in the rare race where
     /// a new session starts, or activity arrives, while it waits, it can stop
     /// a transfer without locking.
-    fn lock_if(&self, due: impl Fn() -> bool) -> bool {
+    fn lock_if(&self, due: impl Fn() -> bool, by: &str) -> bool {
         self.cancel_io.store(true, Ordering::Release);
         let locked = {
             let mut guard = self.session();
@@ -907,6 +1176,7 @@ impl VaultStore {
             // the two and be left unlocked with no deadline.
             let due = due();
             if due {
+                self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
             }
@@ -931,10 +1201,13 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        Ok(Self::snapshot_of(guard.as_ref().ok_or(VaultError::Locked)?))
+        Ok(Self::snapshot_of(
+            &self.root,
+            guard.as_ref().ok_or(VaultError::Locked)?,
+        ))
     }
 
-    fn snapshot_of(unlocked: &UnlockedVault) -> VaultSnapshot {
+    fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
         VaultSnapshot {
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
@@ -951,22 +1224,35 @@ impl VaultStore {
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
-                    available: !unlocked.unavailable.contains(&record.id),
+                    // A document hidden as damaged is not looked for at unlock:
+                    // its file may have come back since.
+                    available: if object_required(record) {
+                        !unlocked.unavailable.contains(&record.id)
+                    } else {
+                        object_is_present(root, record)
+                    },
+                    hidden: record.hidden,
                 })
                 .collect(),
             recovery: unlocked.recovery,
             recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
             recovery_key_label: unlocked.recovery_key_id.map(recovery_key_label),
+            shared_profile_id: shared_profile_id(unlocked.manifest.vault_id),
         }
     }
 
     pub fn create_profile(&self, display_name: &str, now_ms: u64) -> Result<Uuid, VaultError> {
-        validate_name(display_name)?;
-        self.mutate_manifest(|manifest| {
+        validate_person_name(display_name)?;
+        self.mutate_recorded(|manifest, entries| {
             let id = Uuid::new_v4();
+            let display_name = display_name.trim().to_owned();
+            let mut entry = HistoryEntry::new(HistoryEvent::ProfileCreated, now_ms);
+            entry.profile_id = Some(id);
+            entry.name = Some(display_name.clone());
+            entries.push(entry);
             manifest.profiles.push(PatientProfile {
                 id,
-                display_name: display_name.trim().to_owned(),
+                display_name,
                 created_at_ms: now_ms,
             });
             Ok(id)
@@ -981,8 +1267,12 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<Uuid, VaultError> {
         validate_name(name)?;
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             require_profile(manifest, profile_id)?;
+            // Shared with me is one fixed folder: it holds no folders.
+            if profile_id == shared_profile_id(manifest.vault_id) {
+                return Err(VaultError::Invalid);
+            }
             if let Some(parent) = parent_id {
                 let folder = manifest
                     .folders
@@ -995,6 +1285,12 @@ impl VaultStore {
                 ensure_depth(manifest, Some(parent), 1)?;
             }
             let id = Uuid::new_v4();
+            let mut entry = HistoryEntry::new(HistoryEvent::FolderCreated, now_ms);
+            entry.profile_id = Some(profile_id);
+            entry.folder_id = Some(id);
+            entry.name = Some(name.trim().to_owned());
+            entry.to = Some(folders_at_the_time(manifest, parent_id.as_slice()));
+            entries.push(entry);
             manifest.folders.push(VaultFolder {
                 id,
                 profile_id,
@@ -1013,7 +1309,7 @@ impl VaultStore {
         name: &str,
     ) -> Result<(), VaultError> {
         validate_name(name)?;
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let current = manifest
                 .folders
                 .iter()
@@ -1036,13 +1332,35 @@ impl VaultStore {
                 }
                 ensure_depth(manifest, Some(parent), subtree_depth(manifest, folder_id)?)?;
             }
+            // One entry for a new name and one for a new place, each only when
+            // it changed; both name the folder as it is afterwards.
+            let name = name.trim();
+            let at_ms = crate::now_ms();
+            let folder_entry = |event| {
+                let mut entry = HistoryEntry::new(event, at_ms);
+                entry.profile_id = Some(current.profile_id);
+                entry.folder_id = Some(folder_id);
+                entry.name = Some(name.to_owned());
+                entry
+            };
+            if current.name != name {
+                let mut entry = folder_entry(HistoryEvent::FolderRenamed);
+                entry.old_name = Some(current.name.clone());
+                entries.push(entry);
+            }
+            if current.parent_id != parent_id {
+                entries.push(folder_entry(HistoryEvent::FolderMoved).with_move(
+                    folders_at_the_time(manifest, current.parent_id.as_slice()),
+                    folders_at_the_time(manifest, parent_id.as_slice()),
+                ));
+            }
             let folder = manifest
                 .folders
                 .iter_mut()
                 .find(|folder| folder.id == folder_id)
                 .ok_or(VaultError::NotFound)?;
             folder.parent_id = parent_id;
-            folder.name = name.trim().to_owned();
+            folder.name = name.to_owned();
             Ok(())
         })
     }
@@ -1054,7 +1372,7 @@ impl VaultStore {
         if !valid_record_name(name) || sanitize_basename(name) != name {
             return Err(VaultError::Invalid);
         }
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let record = manifest
                 .records
                 .iter_mut()
@@ -1072,7 +1390,13 @@ impl VaultStore {
             {
                 return Err(VaultError::Invalid);
             }
-            record.display_name = name.to_owned();
+            if record.display_name != name {
+                let mut entry = HistoryEntry::new(HistoryEvent::Renamed, crate::now_ms());
+                entry.record_id = Some(record_id);
+                entry.old_name = Some(std::mem::replace(&mut record.display_name, name.to_owned()));
+                entry.name = Some(name.to_owned());
+                entries.push(entry);
+            }
             Ok(())
         })
     }
@@ -1092,7 +1416,7 @@ impl VaultStore {
         {
             return Err(VaultError::Invalid);
         }
-        self.mutate_manifest(|manifest| {
+        self.mutate_recorded(|manifest, entries| {
             let unique_record_ids: HashSet<Uuid> = record_ids.into_iter().collect();
             // Folder validity depends only on the owning profile, so check each
             // profile once rather than once per record. Record ids are unique
@@ -1112,6 +1436,17 @@ impl VaultStore {
             for profile_id in profile_ids {
                 validate_folder_ids(manifest, profile_id, &assignments)?;
             }
+            // One entry for each document whose folders change.
+            let at_ms = crate::now_ms();
+            let to = folders_at_the_time(manifest, &assignments);
+            for record in &manifest.records {
+                if unique_record_ids.contains(&record.id) && record.folder_ids != assignments {
+                    entries.push(record_entry(HistoryEvent::Moved, at_ms, record).with_move(
+                        folders_at_the_time(manifest, &record.folder_ids),
+                        to.clone(),
+                    ));
+                }
+            }
             for record in &mut manifest.records {
                 if unique_record_ids.contains(&record.id) {
                     record.folder_ids = assignments.clone();
@@ -1128,6 +1463,20 @@ impl VaultStore {
         sources: Vec<ImportSource>,
         now_ms: u64,
     ) -> Result<ImportOutcome, VaultError> {
+        self.import_from(profile_id, folder_ids, sources, now_ms, "picked")
+    }
+
+    /// `import`, saying in the history where the documents came from (#71):
+    /// "picked" from the device's files, "camera" for a photo taken in
+    /// myCarlos, or "shared" from another app.
+    pub fn import_from(
+        &self,
+        profile_id: Uuid,
+        folder_ids: Vec<Uuid>,
+        sources: Vec<ImportSource>,
+        now_ms: u64,
+        how: &str,
+    ) -> Result<ImportOutcome, VaultError> {
         if sources.is_empty() {
             return Ok(ImportOutcome::default());
         }
@@ -1137,8 +1486,22 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        require_profile(&unlocked.manifest, profile_id)?;
-        validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        // The shared profile is made with the first file shared to myCarlos,
+        // and holds no folders (#61).
+        let shared = shared_profile_id(unlocked.manifest.vault_id);
+        let adds_shared = profile_id == shared
+            && !unlocked
+                .manifest
+                .profiles
+                .iter()
+                .any(|profile| profile.id == shared);
+        if profile_id == shared && !folder_ids.is_empty() {
+            return Err(VaultError::Invalid);
+        }
+        if !adds_shared {
+            require_profile(&unlocked.manifest, profile_id)?;
+            validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        }
         let folder_ids = unique(folder_ids);
 
         let job_id = Uuid::new_v4();
@@ -1155,6 +1518,7 @@ impl VaultStore {
         let mut batch_fingerprints = HashSet::new();
         let mut staged = Vec::new();
         let mut skipped_duplicates = Vec::new();
+        let mut unverified_signatures = Vec::new();
 
         let result = (|| {
             for source in sources {
@@ -1181,19 +1545,25 @@ impl VaultStore {
                 if existing.contains(&fingerprint)
                     || !batch_fingerprints.insert(fingerprint.clone())
                 {
-                    fs::remove_file(&object_path)?;
+                    remove_owned_file(&object_path, Removable::UncommittedObject)?;
                     skipped_duplicates.push(sanitize_basename(&source.display_name));
                     continue;
                 }
+                let mut signature_probe = crate::signed_pdf_helper::ImportProbe::new();
                 verify_object(
                     &object_path,
-                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                    CancellableWriter::new(&mut signature_probe, Arc::clone(&self.cancel_io))
                         .with_progress(&self.idle),
                     unlocked.manifest.vault_id,
                     record_id,
                     &object_key,
                     encrypted.plaintext_size,
                 )?;
+                if let Some(reason) =
+                    signature_probe.finish(&|| self.cancel_io.load(Ordering::Acquire))
+                {
+                    unverified_signatures.push(ImportVerification { record_id, reason });
+                }
                 let wrapped_object_key =
                     wrap_secret(&keys.object_wrap, &object_key, record_id.as_bytes())?;
                 staged.push((
@@ -1203,13 +1573,14 @@ impl VaultStore {
                         profile_id,
                         folder_ids: folder_ids.clone(),
                         display_name: sanitize_basename(&source.display_name),
-                        source_label: "Manual import — unverified".to_owned(),
+                        source_label: MANUAL_IMPORT_LABEL.to_owned(),
                         media_type: "application/octet-stream".to_owned(),
                         plaintext_size: encrypted.plaintext_size,
                         imported_at_ms: now_ms,
                         object_name,
                         fingerprint,
                         wrapped_object_key,
+                        hidden: None,
                     },
                 ));
             }
@@ -1223,6 +1594,7 @@ impl VaultStore {
                 return Ok(ImportOutcome {
                     imported: Vec::new(),
                     skipped_duplicates,
+                    unverified_signatures: Vec::new(),
                 });
             }
             terminate_at_test_boundary("import.after-staging");
@@ -1242,30 +1614,190 @@ impl VaultStore {
             }
             terminate_at_test_boundary("import.after-object-rename");
             let mut next = unlocked.manifest.clone();
+            if adds_shared {
+                next.profiles.push(PatientProfile {
+                    id: shared,
+                    display_name: SHARED_PROFILE_NAME.to_owned(),
+                    created_at_ms: now_ms,
+                });
+            }
             next.records
                 .extend(staged.iter().map(|(_, record)| record.clone()));
-            let redundant = commit_manifest_redundant(
+            let entries = staged
+                .iter()
+                .map(|(_, record)| {
+                    let mut entry = record_entry(HistoryEvent::Imported, now_ms, record);
+                    entry.how = Some(how.to_owned());
+                    if record.profile_id == shared {
+                        entry.profile_id = Some(shared);
+                    }
+                    entry
+                })
+                .collect();
+            let redundant = commit_with_history(
                 &self.root,
                 &unlocked.master_key,
                 &mut unlocked.manifest,
                 next,
-                || Ok(()),
+                entries,
             )?;
             unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
             Ok(ImportOutcome {
                 imported: staged.iter().map(|(_, record)| record.id).collect(),
                 skipped_duplicates,
+                unverified_signatures,
             })
         })();
         if result.is_err() {
             let objects = self.root.join("objects");
             for (_, record) in &staged {
-                let _ = fs::remove_file(objects.join(&record.object_name));
+                let _ = remove_owned_file(
+                    objects.join(&record.object_name),
+                    Removable::UncommittedObject,
+                );
             }
             sync_parent(&objects);
         }
-        let _ = fs::remove_dir_all(&stage);
+        let _ = remove_owned_dir_all(&stage, Removable::ImportStaging);
         result
+    }
+
+    /// The "Shared with me" profile's id for the open vault (#61).
+    pub fn shared_profile(&self) -> Result<Uuid, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        Ok(shared_profile_id(unlocked.manifest.vault_id))
+    }
+
+    /// Moves files to another person, into the folders chosen. A file's
+    /// duplicate fingerprint is keyed with its person, so each
+    /// is read once to key it again; nothing is encrypted again, since a
+    /// file's encryption is bound to the vault and the file, not the person.
+    /// A file the person already has stays with its source and is named in
+    /// the outcome.
+    pub fn move_to_profile(
+        &self,
+        record_ids: Vec<Uuid>,
+        profile_id: Uuid,
+        folder_ids: Vec<Uuid>,
+    ) -> Result<MoveOutcome, VaultError> {
+        validate_import_count(record_ids.len())?;
+        let record_ids = unique(record_ids);
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let vault_id = unlocked.manifest.vault_id;
+        let shared = shared_profile_id(vault_id);
+        if profile_id == shared {
+            return Err(VaultError::Invalid);
+        }
+        require_profile(&unlocked.manifest, profile_id)?;
+        validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
+        let folder_ids = unique(folder_ids);
+        let keys = derive_keys(vault_id, &unlocked.master_key)?;
+        let existing: HashSet<&str> = unlocked
+            .manifest
+            .records
+            .iter()
+            .filter(|record| record.profile_id == profile_id)
+            .map(|record| record.fingerprint.as_str())
+            .collect();
+        let mut batch = HashSet::new();
+        let mut moved = HashMap::new();
+        let mut already_there = Vec::new();
+        for record_id in &record_ids {
+            let record = unlocked
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == *record_id)
+                .ok_or(VaultError::NotFound)?;
+            // Folder changes within the same person use assign_folders;
+            // this operation changes the person and their keyed fingerprint.
+            if record.profile_id == profile_id {
+                return Err(VaultError::Invalid);
+            }
+            if unlocked.unavailable.contains(&record.id) {
+                return Err(VaultError::Corrupt);
+            }
+            let object_key = unwrap_secret(
+                &keys.object_wrap,
+                &record.wrapped_object_key,
+                record.id.as_bytes(),
+            )?;
+            let mut mac = <HmacSha256 as Mac>::new_from_slice(&keys.fingerprint)
+                .map_err(|_| VaultError::Storage)?;
+            mac.update(profile_id.as_bytes());
+            verify_object(
+                &self.root.join("objects").join(&record.object_name),
+                CancellableWriter::new(MacWriter(&mut mac), Arc::clone(&self.cancel_io))
+                    .with_progress(&self.idle),
+                vault_id,
+                record.id,
+                &object_key,
+                record.plaintext_size,
+            )?;
+            let fingerprint: [u8; 32] = mac.finalize().into_bytes().into();
+            let fingerprint = BASE64.encode(fingerprint);
+            if existing.contains(fingerprint.as_str()) || !batch.insert(fingerprint.clone()) {
+                already_there.push(record.display_name.clone());
+            } else {
+                moved.insert(record.id, fingerprint);
+            }
+        }
+        if self.cancel_io.load(Ordering::Acquire) {
+            return Err(VaultError::Cancelled);
+        }
+        if moved.is_empty() {
+            return Ok(MoveOutcome {
+                moved: Vec::new(),
+                already_there,
+            });
+        }
+        let at_ms = crate::now_ms();
+        let to = folders_at_the_time(&unlocked.manifest, &folder_ids);
+        let entries = unlocked
+            .manifest
+            .records
+            .iter()
+            .filter(|record| moved.contains_key(&record.id))
+            .map(|record| {
+                let mut entry = record_entry(HistoryEvent::Moved, at_ms, record).with_move(
+                    folders_at_the_time(&unlocked.manifest, &record.folder_ids),
+                    to.clone(),
+                );
+                entry.profile_id = Some(profile_id);
+                if record.profile_id == shared {
+                    entry.how = Some("shared".to_owned());
+                }
+                entry
+            })
+            .collect();
+        let mut next = unlocked.manifest.clone();
+        for record in &mut next.records {
+            if let Some(fingerprint) = moved.get(&record.id) {
+                record.profile_id = profile_id;
+                record.folder_ids = folder_ids.clone();
+                record.fingerprint = fingerprint.clone();
+            }
+        }
+        let redundant = commit_with_history(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            entries,
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        Ok(MoveOutcome {
+            moved: record_ids
+                .into_iter()
+                .filter(|id| moved.contains_key(id))
+                .collect(),
+            already_there,
+        })
     }
 
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
@@ -1341,7 +1873,7 @@ impl VaultStore {
         let entry = journal_export(&self.root, id, &stage).ok();
         if let Err(error) = create_stage_dir(&stage) {
             if let Some(entry) = &entry {
-                let _ = fs::remove_file(entry);
+                let _ = remove_owned_file(entry, Removable::ExportStage);
             }
             return Err(error);
         }
@@ -1366,59 +1898,123 @@ impl VaultStore {
             });
         terminate_at_test_boundary("export.after-rename");
         finish_export(&stage, entry.as_deref());
+        if result.is_ok() {
+            self.record_copy_saved(record_id, &destination.to_string_lossy());
+        }
         result
     }
 
-    pub fn delete_record(&self, record_id: Uuid) -> Result<(), VaultError> {
+    /// Records a readable copy saved outside the vault, and where (#71). For
+    /// a copy saved through a document provider, which `export_atomic` does
+    /// not see.
+    pub fn record_copy_saved(&self, record_id: Uuid, place: &str) {
+        let mut guard = self.session();
+        let Some(unlocked) = guard.as_mut() else {
+            return;
+        };
+        let Some(record) = unlocked
+            .manifest
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+        else {
+            return;
+        };
+        let entry =
+            record_entry(HistoryEvent::CopySaved, crate::now_ms(), record).with_place(place);
+        record_in_session(&self.root, unlocked, vec![entry]);
+    }
+
+    /// Records a backup saved, and where (#71). For a backup saved through a
+    /// document provider, which `backup_atomic` does not see.
+    pub fn record_backup_saved(&self, place: &str) {
+        let mut guard = self.session();
+        if let Some(unlocked) = guard.as_mut() {
+            let entry =
+                HistoryEntry::new(HistoryEvent::BackupSaved, crate::now_ms()).with_place(place);
+            record_in_session(&self.root, unlocked, vec![entry]);
+        }
+    }
+
+    /// Hides a document (#71). It leaves every view but the Hidden list, and
+    /// keeps its encrypted file: nothing is ever deleted. Hiding a hidden
+    /// document changes nothing.
+    pub fn hide_record(&self, record_id: Uuid, now_ms: u64) -> Result<(), VaultError> {
+        self.set_hidden(
+            record_id,
+            Some(Hidden {
+                at_ms: now_ms,
+                reason: HiddenReason::Patient,
+            }),
+        )
+    }
+
+    /// Puts a hidden document back where it was. One hidden as damaged comes
+    /// back only once its file is there again, or the vault would lose the
+    /// changes it took since.
+    pub fn unhide_record(&self, record_id: Uuid) -> Result<(), VaultError> {
+        self.set_hidden(record_id, None)
+    }
+
+    fn set_hidden(&self, record_id: Uuid, hidden: Option<Hidden>) -> Result<(), VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        let mut next = unlocked.manifest.clone();
-        let index = next
+        let record = unlocked
+            .manifest
             .records
             .iter()
-            .position(|record| record.id == record_id)
+            .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
-        let object_name = next.records.remove(index).object_name;
-
-        // The ciphertext is unlinked between the two manifest writes. Once the
-        // first is durable, the newest manifest records the deletion and the
-        // older one cannot decrypt a ciphertext that was removed. Unlock repairs
-        // slot redundancy before it considers orphan cleanup, so an unlink that
-        // fails here is retried there.
-        let objects = self.root.join("objects");
-        let redundant = commit_manifest_redundant(
+        if record.hidden.is_some() == hidden.is_some() {
+            return Ok(());
+        }
+        if hidden.is_none() && !object_required(record) && !object_is_present(&self.root, record) {
+            return Err(VaultError::Invalid);
+        }
+        let entry = match hidden.as_ref() {
+            Some(hidden) => {
+                let mut entry = record_entry(HistoryEvent::Hidden, hidden.at_ms, record);
+                entry.how = Some("patient".to_owned());
+                entry
+            }
+            None => record_entry(HistoryEvent::Restored, crate::now_ms(), record),
+        };
+        let mut next = unlocked.manifest.clone();
+        for record in &mut next.records {
+            if record.id == record_id {
+                record.hidden = hidden;
+            }
+        }
+        let redundant = commit_with_history(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || {
-                match fs::remove_file(objects.join(&object_name)) {
-                    Ok(()) => sync_parent(&objects),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    // The second manifest commit still performs cryptographic erasure.
-                    Err(_) => {}
-                }
-                terminate_at_test_boundary("delete.after-object-unlink");
-                fail_at_test_boundary("delete.after-object-unlink")
-            },
+            vec![entry],
         )?;
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(())
     }
 
-    /// Drops the records shown as damaged whose ciphertext is still missing,
-    /// and returns their ids. The vault is then complete again and leaves recovery mode. Files
-    /// that have come back since unlock, from a backup restore, are kept.
+    /// Hides, as damaged, the records shown as damaged whose ciphertext is
+    /// still missing, and returns their ids (#71: before, they were dropped).
+    /// The vault no longer needs their files, so it is complete again and
+    /// leaves recovery mode. Files that have come back since unlock, from a
+    /// backup restore, keep their documents in view.
     ///
     /// Only for the lost-objects reason: with an unreadable slot the commit
     /// could replace a newer state, and after a write failure it would fail.
     ///
     /// `confirmed` is the set of documents the patient was shown as damaged
     /// when they agreed. If the session's set differs, nothing is removed.
-    pub fn remove_unavailable_records(&self, confirmed: &[Uuid]) -> Result<Vec<Uuid>, VaultError> {
+    pub fn hide_unavailable_records(
+        &self,
+        confirmed: &[Uuid],
+        now_ms: u64,
+    ) -> Result<Vec<Uuid>, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         match unlocked.recovery {
@@ -1432,7 +2028,10 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .filter(|record| object_presence(&self.root, record) == ObjectPresence::Unknown)
+            .filter(|record| {
+                object_required(record)
+                    && object_presence(&self.root, record) == ObjectPresence::Unknown
+            })
             .map(|record| record.id)
             .collect();
         if !unknown.is_empty() {
@@ -1448,7 +2047,8 @@ impl VaultStore {
             .records
             .iter()
             .filter(|record| {
-                !unlocked.unavailable.contains(&record.id)
+                object_required(record)
+                    && !unlocked.unavailable.contains(&record.id)
                     && object_presence(&self.root, record) == ObjectPresence::Missing
             })
             .map(|record| record.id)
@@ -1462,26 +2062,42 @@ impl VaultStore {
         if confirmed != unlocked.unavailable {
             return Err(VaultError::RemovalChanged);
         }
+        // Hidden documents are format 2 only, and their entries format 3: a
+        // vault opened in this recovery mode is upgraded first, in a commit
+        // of its own (#71). The history's segments need `objects/`, which a
+        // vault that lost every document may have lost too.
+        if ensure_objects_dir(&self.root).is_err()
+            || !upgrade_manifest(&self.root, &unlocked.master_key, &mut unlocked.manifest)?
+        {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            return Err(VaultError::RecoveryMode);
+        }
         let mut next = unlocked.manifest.clone();
         let mut removed = Vec::new();
-        // Of those, only an object that is really gone is given up. One that
-        // came back is kept.
+        let mut entries = Vec::new();
+        // Of those, only a document whose object is really gone is hidden.
+        // One whose file came back stays in view.
         let shown = &unlocked.unavailable;
-        next.records.retain(|record| {
-            if !shown.contains(&record.id)
-                || object_presence(&self.root, record) != ObjectPresence::Missing
+        for record in &mut next.records {
+            if shown.contains(&record.id)
+                && object_presence(&self.root, record) == ObjectPresence::Missing
             {
-                return true;
+                record.hidden = Some(Hidden {
+                    at_ms: now_ms,
+                    reason: HiddenReason::Damaged,
+                });
+                removed.push(record.id);
+                let mut entry = record_entry(HistoryEvent::Hidden, now_ms, record);
+                entry.how = Some("damaged".to_owned());
+                entries.push(entry);
             }
-            removed.push(record.id);
-            false
-        });
-        let redundant = commit_manifest_redundant(
+        }
+        let redundant = commit_with_history(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || Ok(()),
+            entries,
         )?;
         unlocked.unavailable.clear();
         // The session becomes writable without passing through the writable
@@ -1506,10 +2122,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        let profile_names = unlocked
-            .manifest
-            .profiles
-            .iter()
+        let profile_names = people(&unlocked.manifest)
             .map(|profile| profile.display_name.as_str())
             .collect::<Vec<_>>();
         validate_new_passphrase(replacement, &profile_names)?;
@@ -1549,6 +2162,9 @@ impl VaultStore {
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
+        let mut entry = HistoryEntry::new(HistoryEvent::PassphraseChanged, crate::now_ms());
+        entry.how = Some("passphrase".to_owned());
+        record_in_session(&self.root, unlocked, vec![entry]);
         Ok(())
     }
 
@@ -1784,10 +2400,15 @@ impl VaultStore {
         if written == HeaderPairWrite::FirstOnly {
             unlocked.recovery = Some(RecoveryReason::WriteFailed);
         }
+        record_in_session(
+            &self.root,
+            unlocked,
+            vec![HistoryEntry::new(HistoryEvent::RecoveryKeySet, now_ms)],
+        );
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
-        Ok(Self::snapshot_of(unlocked))
+        Ok(Self::snapshot_of(&self.root, unlocked))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -1835,14 +2456,12 @@ impl VaultStore {
                     manifest: selected.manifest,
                     recovery,
                     unavailable: selected.unavailable,
+                    start_recorded: false,
                 },
             );
             return Ok(false);
         }
-        let profile_names = selected
-            .manifest
-            .profiles
-            .iter()
+        let profile_names = people(&selected.manifest)
             .map(|profile| profile.display_name.as_str())
             .collect::<Vec<_>>();
         validate_new_passphrase(new_passphrase, &profile_names)?;
@@ -1880,6 +2499,7 @@ impl VaultStore {
                         manifest: selected.manifest,
                         recovery: Some(RecoveryReason::WriteFailed),
                         unavailable: selected.unavailable,
+                        start_recorded: false,
                     },
                 );
                 return Ok(false);
@@ -1899,9 +2519,18 @@ impl VaultStore {
             wrapping_key,
             false,
         )?;
+        // Opened with the recovery key, which replaced the passphrase: both
+        // in one commit, the unlock first, as it begins the session.
+        let mut changed = HistoryEntry::new(HistoryEvent::PassphraseChanged, crate::now_ms());
+        changed.how = Some("recoveryKey".to_owned());
+        self.record_unlock_with(&mut guard, "recoveryKey", vec![changed]);
         Ok(true)
     }
 
+    /// Sets the vault aside (#71's third part): moves it, whole and still
+    /// encrypted, into `set-aside/` in one rename, so that the passphrase or
+    /// recovery key it had still opens it. Nothing is erased. An open,
+    /// writable vault records it in its history first.
     pub fn reset(&self) -> Result<(), VaultError> {
         self.cancel_io.store(true, Ordering::Release);
         let mut guard = self.session();
@@ -1912,8 +2541,18 @@ impl VaultStore {
             Some(unlocked) => Arc::clone(&unlocked.storage_lock),
             None => acquire_storage_lock(&self.root)?,
         };
+        let target = set_aside_path(&self.root)?;
+        if let Some(unlocked) = guard.as_mut() {
+            // Best effort: the patient asked for this, and it goes ahead
+            // whether or not it can be recorded.
+            let entry = HistoryEntry::new(HistoryEvent::SetAside, crate::now_ms())
+                .with_place(&set_aside_name(&target));
+            record_in_session(&self.root, unlocked, vec![entry]);
+        }
         *guard = None;
         self.idle.disarm();
+        // How that vault's last session ended is nothing to the next one's.
+        self.forget_last_session();
         let resumed = finish_pending_resets(&self.root)?;
         if !self.root.exists() {
             return if resumed {
@@ -1922,13 +2561,13 @@ impl VaultStore {
                 Err(VaultError::Missing)
             };
         }
-        let retired = reset_path(&self.root)?;
-        fs::rename(&self.root, &retired)?;
-        if let Some(parent) = self.root.parent() {
-            sync_parent(parent);
-        }
-        terminate_at_test_boundary("reset.after-rename");
-        finish_pending_resets(&self.root)?;
+        fail_at_test_boundary("reset.before-set-aside")?;
+        set_aside_to(&self.root, &target)?;
+        terminate_at_test_boundary("reset.after-set-aside");
+        *self
+            .last_set_aside
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(set_aside_name(&target));
         Ok(())
     }
 
@@ -1941,7 +2580,9 @@ impl VaultStore {
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
         for record in &unlocked.manifest.records {
-            self.verify_for_backup_object(unlocked, &parts.keys, record)?;
+            if self.backs_up_object(record) {
+                self.verify_for_backup_object(unlocked, &parts.keys, record)?;
+            }
         }
         Ok(())
     }
@@ -1970,6 +2611,9 @@ impl VaultStore {
             &mut parts.manifest_data.as_slice(),
         )?;
         for record in &manifest.records {
+            if !self.backs_up_object(record) {
+                continue;
+            }
             // A restore refuses the whole backup over one object that does not
             // authenticate, so a damaged one is found now, while the vault
             // and its other documents are still here, not when it is needed.
@@ -1979,12 +2623,37 @@ impl VaultStore {
             let length = object.metadata()?.len();
             backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
         }
+        // The history's segments (#71). One that is gone or damaged is left
+        // out rather than failing the backup: a restore takes segments as
+        // optional, and a check of the history shows the gap.
+        for segment in &manifest.history.segments {
+            match read_history_segment(&self.root, &parts.keys, manifest.vault_id, segment) {
+                Ok(_) => {}
+                Err(VaultError::Corrupt) => continue,
+                Err(error) => return Err(error),
+            }
+            let path = self.root.join("objects").join(&segment.object_name);
+            let mut object = open_regular_read(&path)?;
+            let length = object.metadata()?.len();
+            backup.entry(
+                BACKUP_KIND_OBJECT,
+                &segment.object_name,
+                length,
+                &mut object,
+            )?;
+        }
         backup.finish(
             &unlocked.master_key,
             manifest.vault_id,
             manifest.generation,
             now_ms,
         )
+    }
+
+    /// Whether a backup carries a record's object: every one the vault needs,
+    /// and a document hidden as damaged only if its file came back (#71).
+    fn backs_up_object(&self, record: &StoredRecord) -> bool {
+        object_required(record) || object_is_present(&self.root, record)
     }
 
     /// Every check that refuses a backup before its documents are read, and
@@ -2071,6 +2740,7 @@ impl VaultStore {
         );
         outcome?;
         written.map_err(io::Error::from)?;
+        self.record_backup_saved(&destination.to_string_lossy());
         Ok(())
     }
 
@@ -2154,9 +2824,14 @@ impl VaultStore {
             });
             // Redundancy repair moves the generation on without changing
             // anything else, so the generation is left out of the comparison.
+            // So are the history and the format (#71): every unlock adds to
+            // the history, a backup saved too, and an unlock can upgrade the
+            // format. None of that is a change restoring would lose.
             let same_content = live_manifest.as_ref().is_some_and(|live| {
                 let mut live = live.clone();
                 live.generation = manifest.generation;
+                live.format_version = manifest.format_version;
+                live.history = manifest.history.clone();
                 live == *manifest
             });
             // Which of the two is the later one is not told: a generation
@@ -2260,10 +2935,26 @@ impl VaultStore {
         let staged = (|| {
             create_private_dir(&stage.join("objects"))?;
             create_private_dir(&stage.join("staging"))?;
+            let segments = &manifest.history.segments;
             let mut wanted: HashMap<&str, u64> = manifest
                 .records
                 .iter()
                 .map(|record| (record.object_name.as_str(), record.plaintext_size))
+                .chain(segments.iter().map(|segment| {
+                    (
+                        segment.object_name.as_str(),
+                        history::SEGMENT_PLAINTEXT_BYTES as u64,
+                    )
+                }))
+                .collect();
+            // A document hidden as damaged may come without its file, and a
+            // history segment that was gone or damaged is left out (#71).
+            let optional: HashSet<&str> = manifest
+                .records
+                .iter()
+                .filter(|record| !object_required(record))
+                .map(|record| record.object_name.as_str())
+                .chain(segments.iter().map(|segment| segment.object_name.as_str()))
                 .collect();
             while let Some((kind, name, length)) = reader.next_entry()? {
                 // Only the manifest's objects, each once, and no larger than
@@ -2283,7 +2974,7 @@ impl VaultStore {
                 reader.copy_entry(kind, &name, length, &mut file)?;
                 file.sync_all()?;
             }
-            if !wanted.is_empty() {
+            if wanted.keys().any(|name| !optional.contains(name)) {
                 return Err(VaultError::BackupUnreadable);
             }
             reader.finish(&master_key, header.vault_id, manifest.generation)?;
@@ -2306,6 +2997,9 @@ impl VaultStore {
             }
             let keys = derive_keys(header.vault_id, &master_key)?;
             for record in &manifest.records {
+                if !object_required(record) && !object_is_present(&stage, record) {
+                    continue;
+                }
                 let object_key = unwrap_secret(
                     &keys.object_wrap,
                     &record.wrapped_object_key,
@@ -2324,14 +3018,42 @@ impl VaultStore {
                     _ => VaultError::BackupUnreadable,
                 })?;
             }
+            for segment in segments {
+                if fs::symlink_metadata(stage.join("objects").join(&segment.object_name)).is_err() {
+                    continue;
+                }
+                read_history_segment(&stage, &keys, header.vault_id, segment)
+                    .map_err(|_| VaultError::BackupUnreadable)?;
+            }
+            // The restore goes in the restored vault's history (#71), written
+            // here, where the keys are, before the vault is put in place. A
+            // backup an earlier build made becomes format 3 and starts its
+            // history here; nothing else reads the stage meanwhile.
+            let mut restored = manifest.clone();
+            restored.format_version = VAULT_FORMAT;
+            let mut entry = HistoryEntry::new(HistoryEvent::BackupRestored, crate::now_ms());
+            // The vault it replaces is set aside when it goes in place.
+            if self.root.exists() {
+                entry.how = Some("replaced".to_owned());
+            }
+            let prepared = prepare_history(&stage, &master_key, &restored, vec![entry])?;
+            restored.history = prepared.state;
+            for _ in 0..2 {
+                restored.generation = restored
+                    .generation
+                    .checked_add(1)
+                    .ok_or(VaultError::Storage)?;
+                write_valid_manifest_at(&stage, &master_key, &restored)?;
+            }
+            remove_objects(&stage, &prepared.superseded, Removable::SupersededSegment);
             sync_dir(&stage)?;
             Ok(())
         })();
         if let Err(error) = staged {
-            if remove_key_envelopes(&stage).is_ok() {
+            if remove_key_envelopes(&stage, Removable::RestoreStage).is_ok() {
                 sync_parent(&stage);
             }
-            let _ = fs::remove_dir_all(&stage);
+            let _ = remove_owned_dir_all(&stage, Removable::RestoreStage);
             sync_parent(home);
             return Err(error);
         }
@@ -2339,10 +3061,10 @@ impl VaultStore {
         // discarding it: the verified copy takes a fixed name first.
         let ready = restore_ready_path(&self.root)?;
         let discard = |directory: &Path| {
-            if remove_key_envelopes(directory).is_ok() {
+            if remove_key_envelopes(directory, Removable::RestoreStage).is_ok() {
                 sync_parent(directory);
             }
-            let _ = fs::remove_dir_all(directory);
+            let _ = remove_owned_dir_all(directory, Removable::RestoreStage);
             sync_parent(home);
         };
         if let Err(error) = fs::rename(&stage, &ready) {
@@ -2370,7 +3092,7 @@ impl VaultStore {
                     // Its header goes first: without one, nothing puts it in
                     // place, however much of the rest a removal leaves.
                     let removed = fail_at_test_boundary("restore.before-envelope-removal")
-                        .and_then(|()| remove_key_envelopes(&ready));
+                        .and_then(|()| remove_key_envelopes(&ready, Removable::RestoreStage));
                     sync_parent(&ready);
                     let header_gone = HEADER_SLOTS.iter().all(|slot| {
                         fs::symlink_metadata(ready.join(slot))
@@ -2382,15 +3104,15 @@ impl VaultStore {
                         // start puts it in place: that is what to report.
                         return Err(VaultError::RestoreUnfinished);
                     }
-                    let _ = fs::remove_dir_all(&ready);
+                    let _ = remove_owned_dir_all(&ready, Removable::RestoreStage);
                     sync_parent(home);
                 }
             }
             return Err(error);
         }
-        // The restore is in place. Erasing the vault it retired is retried at
-        // every start, so a failure here does not make the restore one.
-        let _ = erase_retired_vault(&self.root);
+        // The restore is in place, and the vault it replaced set aside. How
+        // that vault's last session ended is nothing to the restored one.
+        self.forget_last_session();
         drop(session);
         Ok(())
     }
@@ -2400,9 +3122,21 @@ impl VaultStore {
         read_latest_header(&self.root)
     }
 
+    /// A change to the manifest that records nothing: tests only, to set up
+    /// a state. Every change the app makes is recorded (`mutate_recorded`).
+    #[cfg(test)]
     fn mutate_manifest<T>(
         &self,
         mutation: impl FnOnce(&mut Manifest) -> Result<T, VaultError>,
+    ) -> Result<T, VaultError> {
+        self.mutate_recorded(|manifest, _| mutation(manifest))
+    }
+
+    /// As `mutate_manifest`, with the history entries the mutation adds for
+    /// what it changed, in the same commit (#71).
+    fn mutate_recorded<T>(
+        &self,
+        mutation: impl FnOnce(&mut Manifest, &mut Vec<HistoryEntry>) -> Result<T, VaultError>,
     ) -> Result<T, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
@@ -2410,13 +3144,14 @@ impl VaultStore {
             return Err(VaultError::RecoveryMode);
         }
         let mut next = unlocked.manifest.clone();
-        let result = mutation(&mut next)?;
-        let redundant = commit_manifest_redundant(
+        let mut entries = Vec::new();
+        let result = mutation(&mut next, &mut entries)?;
+        let redundant = commit_with_history(
             &self.root,
             &unlocked.master_key,
             &mut unlocked.manifest,
             next,
-            || Ok(()),
+            entries,
         )?;
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(result)
@@ -2447,6 +3182,13 @@ struct ObjectContext {
     vault_id: Uuid,
     record_id: Uuid,
     profile_id: Uuid,
+}
+
+impl ObjectContext {
+    /// A history segment belongs to no profile (#71); a document always does.
+    fn is_history_segment(&self) -> bool {
+        self.profile_id.is_nil()
+    }
 }
 
 /// A word of a profile name long enough that its presence in a passphrase is
@@ -2563,7 +3305,7 @@ fn file_extension(name: &str) -> &str {
     }
 }
 
-fn sanitize_basename(value: &str) -> String {
+pub(crate) fn sanitize_basename(value: &str) -> String {
     let raw = value.rsplit(['/', '\\']).next().unwrap_or("Imported file");
     let mut cleaned = String::new();
     for character in raw.chars().filter(|character| {
@@ -2697,6 +3439,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest, vault_id: Uuid) -> Result
     if manifest
         .records
         .iter()
+        .filter(|record| object_required(record))
         .all(|record| object_is_present(root, record))
     {
         Ok(())
@@ -2752,7 +3495,7 @@ fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
-    if manifest.format_version != VAULT_FORMAT
+    if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
         || manifest.vault_id != vault_id
         || manifest.generation == 0
         || manifest.profiles.is_empty()
@@ -2808,12 +3551,14 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !record_ids.insert(record.id)
             || !profile_ids.contains(&record.profile_id)
             || !valid_record_name(&record.display_name)
-            || record.source_label != "Manual import — unverified"
+            || record.source_label != MANUAL_IMPORT_LABEL
             || record.media_type != "application/octet-stream"
             || !valid_object_name(&record.object_name)
             || !object_names.insert(record.object_name.as_str())
             || !valid_fingerprint(&record.fingerprint)
             || !valid_wrapped_secret(&record.wrapped_object_key)
+            // Format 1 has no hidden documents.
+            || (record.hidden.is_some() && manifest.format_version < MANIFEST_FORMAT_HIDDEN)
         {
             return Err(VaultError::Corrupt);
         }
@@ -2827,6 +3572,56 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    validate_history(manifest, &mut object_names)
+}
+
+/// The history's place in the manifest (#71): format 3 only; its data
+/// segments in order, each starting where the one before ended, with their
+/// entries adding up to `count`; then the filler segments that make the
+/// number of segments a power of two; and every segment's object its own.
+fn validate_history<'a>(
+    manifest: &'a Manifest,
+    object_names: &mut HashSet<&'a str>,
+) -> Result<(), VaultError> {
+    let state = &manifest.history;
+    if state.is_empty() {
+        return Ok(());
+    }
+    let data = state
+        .segments
+        .iter()
+        .take_while(|segment| segment.entry_count > 0)
+        .count();
+    let mut next_seq = 0_u64;
+    let mut ids = HashSet::new();
+    for (index, segment) in state.segments.iter().enumerate() {
+        let filler = index >= data;
+        if segment.id.is_nil()
+            || !ids.insert(segment.id)
+            || !valid_object_name(&segment.object_name)
+            || !object_names.insert(segment.object_name.as_str())
+            || !valid_wrapped_secret(&segment.wrapped_key)
+            || (filler && (segment.entry_count != 0 || segment.first_seq != 0))
+            || (!filler && segment.first_seq != next_seq)
+        {
+            return Err(VaultError::Corrupt);
+        }
+        next_seq = next_seq
+            .checked_add(segment.entry_count)
+            .ok_or(VaultError::Corrupt)?;
+    }
+    if manifest.format_version < MANIFEST_FORMAT_HISTORY
+        || state.count == 0
+        || next_seq != state.count
+        || state.segments.len() != history::padded_segment_count(data)
+        || state.head.len() != 64
+        || !state
+            .head
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(VaultError::Corrupt);
     }
     Ok(())
 }
@@ -3814,7 +4609,7 @@ fn write_header_pair(
     if atomic_json(&header_path(root, second.generation), second).is_err() {
         return Ok(HeaderPairWrite::FirstOnly);
     }
-    let _ = fs::remove_file(root.join(LEGACY_HEADER));
+    let _ = remove_owned_file(root.join(LEGACY_HEADER), Removable::LegacyHeader);
     Ok(HeaderPairWrite::Both)
 }
 
@@ -3851,7 +4646,7 @@ fn repair_header_redundancy(
     )?;
     atomic_json(&header_path(root, first_generation), &first)?;
     atomic_json(&header_path(root, second.generation), &second)?;
-    let _ = fs::remove_file(root.join(LEGACY_HEADER));
+    let _ = remove_owned_file(root.join(LEGACY_HEADER), Removable::LegacyHeader);
     Ok(())
 }
 
@@ -3876,11 +4671,21 @@ fn write_valid_manifest_at(
     if !manifest
         .records
         .iter()
+        .filter(|record| object_required(record))
         .all(|record| object_is_present(root, record))
     {
         return Err(VaultError::Corrupt);
     }
     write_manifest_at(root, master_key, manifest)
+}
+
+/// The padded size of a manifest's plaintext: the next power of two, at least
+/// `MANIFEST_SIZE_CLASS_MIN`.
+fn manifest_size_class(length: usize) -> usize {
+    length
+        .max(MANIFEST_SIZE_CLASS_MIN)
+        .checked_next_power_of_two()
+        .unwrap_or(usize::MAX)
 }
 
 fn write_manifest_at(
@@ -3889,9 +4694,22 @@ fn write_manifest_at(
     manifest: &Manifest,
 ) -> Result<(), VaultError> {
     let keys = derive_keys(manifest.vault_id, master_key)?;
-    let plaintext = Zeroizing::new(serde_json::to_vec(manifest).map_err(|_| VaultError::Storage)?);
-    if plaintext.len() > MAX_MANIFEST_BYTES.saturating_sub(40) {
+    let mut plaintext =
+        Zeroizing::new(serde_json::to_vec(manifest).map_err(|_| VaultError::Storage)?);
+    let limit = MAX_MANIFEST_BYTES.saturating_sub(40);
+    if plaintext.len() > limit {
         return Err(VaultError::Storage);
+    }
+    if manifest.format_version >= MANIFEST_FORMAT_HIDDEN {
+        // Padded with spaces, which JSON ignores, to a size class (#71): the
+        // file's size then tells only roughly how much the vault holds. Copied
+        // into a buffer of that size, so that growing it leaves no unwiped
+        // copy behind.
+        let class = manifest_size_class(plaintext.len()).min(limit);
+        let mut padded = Zeroizing::new(Vec::with_capacity(class));
+        padded.extend_from_slice(&plaintext);
+        padded.resize(class, b' ');
+        plaintext = padded;
     }
     let mut nonce = [0_u8; 24];
     OsRng.fill_bytes(&mut nonce);
@@ -3914,10 +4732,12 @@ fn write_manifest_at(
 /// Commits `next` as two consecutive generations, one per slot.
 ///
 /// Once the first write is durable the mutation is committed and `current`
-/// reflects it. `between` runs at that point, before the redundant write: a
-/// deletion unlinks its ciphertext there. Returns whether the redundant write
-/// also succeeded; when it did not, or when `between` failed, the caller's
-/// session must enter write-failed recovery, since unlock repairs the slot redundancy.
+/// reflects it. `between` runs at that point, before the redundant write.
+/// Documents are never deleted (#71); only the history unlinks there, and
+/// only a superseded segment of its own (`commit_with_history`).
+/// Returns whether the redundant write also succeeded; when it did not, or
+/// when `between` failed, the caller's session must enter write-failed
+/// recovery, since unlock repairs the slot redundancy.
 fn commit_manifest_redundant(
     root: &Path,
     master_key: &[u8; 32],
@@ -3945,6 +4765,329 @@ fn commit_manifest_redundant(
     *current = next;
     terminate_at_test_boundary("manifest.after-second-write");
     Ok(true)
+}
+
+/// Moves a format 1 or 2 manifest to format 3 (#71) in a commit of its own,
+/// so that both slots hold format 3 before anything only format 3 can hold
+/// (a history; for format 1, a hidden document) is written: a crash between
+/// the two writes leaves a format 3 slot that holds nothing an older build,
+/// opening the other slot, could lose. The state is the one already
+/// authenticated and is not changed, so whether its files are all there is
+/// not checked again (a vault with lost documents is upgraded before they
+/// are hidden). Returns whether both slots were written; nothing is written
+/// for a format 3 manifest.
+fn upgrade_manifest(
+    root: &Path,
+    master_key: &[u8; 32],
+    current: &mut Manifest,
+) -> Result<bool, VaultError> {
+    if current.format_version >= VAULT_FORMAT {
+        return Ok(true);
+    }
+    let mut next = current.clone();
+    next.format_version = VAULT_FORMAT;
+    validate_manifest_structure(&next, next.vault_id).map_err(|_| VaultError::Invalid)?;
+    next.generation = current
+        .generation
+        .checked_add(1)
+        .ok_or(VaultError::Storage)?;
+    let second_generation = next.generation.checked_add(1).ok_or(VaultError::Storage)?;
+    fail_at_test_boundary("upgrade.before-first-write")?;
+    write_manifest_at(root, master_key, &next)?;
+    *current = next.clone();
+    terminate_at_test_boundary("upgrade.after-first-write");
+    if fail_at_test_boundary("upgrade.after-first-write").is_err() {
+        return Ok(false);
+    }
+    next.generation = second_generation;
+    if write_manifest_at(root, master_key, &next).is_err() {
+        return Ok(false);
+    }
+    *current = next;
+    terminate_at_test_boundary("upgrade.after-second-write");
+    Ok(true)
+}
+
+/// A history segment's key is wrapped with this before its id: it can then
+/// be unwrapped only for the segment it was made for, never for a document.
+const SEGMENT_KEY_DOMAIN: &[u8] = b"mycarlos-history-segment-v1:";
+
+fn segment_key_aad(segment_id: Uuid) -> Vec<u8> {
+    [SEGMENT_KEY_DOMAIN, segment_id.as_bytes()].concat()
+}
+
+/// Encrypts one history segment into a new object, in the envelope a
+/// document has, under a random key of its own (#71). Its id stands where a
+/// document's would in each chunk's associated data. On disk it looks like a
+/// document of 64 KiB.
+fn write_history_segment(
+    root: &Path,
+    keys: &DerivedKeys,
+    vault_id: Uuid,
+    entries: &[HistoryEntry],
+) -> Result<HistorySegment, VaultError> {
+    let plaintext = history::pack(entries).ok_or(VaultError::Invalid)?;
+    let id = Uuid::new_v4();
+    let object_name = format!("{}.mcobj", Uuid::new_v4());
+    let mut segment_key = Zeroizing::new([0_u8; 32]);
+    OsRng.fill_bytes(segment_key.as_mut());
+    let wrapped_key = wrap_secret(&keys.object_wrap, &segment_key, &segment_key_aad(id))?;
+    let path = root.join("objects").join(&object_name);
+    let written = encrypt_object(
+        Box::new(io::Cursor::new(plaintext)),
+        &path,
+        ObjectContext {
+            vault_id,
+            record_id: id,
+            profile_id: Uuid::nil(),
+        },
+        &segment_key,
+        &keys.fingerprint,
+    );
+    if let Err(error) = written {
+        let _ = remove_owned_file(&path, Removable::UncommittedObject);
+        return Err(error);
+    }
+    Ok(HistorySegment {
+        id,
+        object_name,
+        wrapped_key,
+        first_seq: entries.first().map_or(0, |entry| entry.seq),
+        entry_count: entries.len() as u64,
+    })
+}
+
+/// The entries in one segment. `Corrupt` when its object is gone or does not
+/// authenticate, or holds other entries than the manifest says.
+fn read_history_segment(
+    root: &Path,
+    keys: &DerivedKeys,
+    vault_id: Uuid,
+    segment: &HistorySegment,
+) -> Result<Vec<HistoryEntry>, VaultError> {
+    let segment_key = unwrap_secret(
+        &keys.object_wrap,
+        &segment.wrapped_key,
+        &segment_key_aad(segment.id),
+    )?;
+    let mut plaintext = Zeroizing::new(Vec::with_capacity(history::SEGMENT_PLAINTEXT_BYTES));
+    verify_object(
+        &root.join("objects").join(&segment.object_name),
+        &mut *plaintext,
+        vault_id,
+        segment.id,
+        &segment_key,
+        history::SEGMENT_PLAINTEXT_BYTES as u64,
+    )?;
+    let entries = history::unpack(&plaintext).ok_or(VaultError::Corrupt)?;
+    if entries.len() as u64 != segment.entry_count
+        || entries
+            .first()
+            .is_some_and(|entry| entry.seq != segment.first_seq)
+    {
+        return Err(VaultError::Corrupt);
+    }
+    Ok(entries)
+}
+
+/// What appending to the history writes besides the manifest.
+struct PreparedHistory {
+    /// The next manifest's history.
+    state: HistoryState,
+    /// Objects written for it: removed again if the commit fails before its
+    /// first write.
+    written: Vec<String>,
+    /// Segments the new state no longer names: removed between the two
+    /// manifest writes.
+    superseded: Vec<String>,
+}
+
+/// Chains `entries` onto the manifest's history and writes the segments that
+/// hold them (#71): the last segment rewritten with the new entries after
+/// its own, new segments when it is full, and filler segments up to the next
+/// power of two. A last segment that is gone or damaged is kept as it is,
+/// and the new entries start a segment of their own: the chain still goes on
+/// from the head the manifest pins, and a check shows the gap. A history not
+/// started yet, in a vault an earlier build made, starts with an entry
+/// saying so.
+fn prepare_history(
+    root: &Path,
+    master_key: &[u8; 32],
+    current: &Manifest,
+    mut entries: Vec<HistoryEntry>,
+) -> Result<PreparedHistory, VaultError> {
+    let vault_id = current.vault_id;
+    let keys = derive_keys(vault_id, master_key)?;
+    let state = &current.history;
+    if state.count == 0
+        && entries
+            .first()
+            .is_some_and(|entry| entry.event != HistoryEvent::Created)
+    {
+        let at_ms = entries[0].at_ms;
+        entries.insert(0, HistoryEntry::new(HistoryEvent::HistoryStarted, at_ms));
+    }
+    let added = entries.len() as u64;
+    let head = if state.count == 0 {
+        history::genesis(vault_id)
+    } else {
+        state.head.clone()
+    };
+    let head = history::chain(&mut entries, state.count, head);
+    let (mut data, mut fillers): (Vec<HistorySegment>, Vec<HistorySegment>) = state
+        .segments
+        .iter()
+        .cloned()
+        .partition(|segment| segment.entry_count > 0);
+    let mut superseded = Vec::new();
+    if let Some(last) = data.last() {
+        match read_history_segment(root, &keys, vault_id, last) {
+            Ok(mut kept) => {
+                kept.append(&mut entries);
+                entries = kept;
+                superseded.push(last.object_name.clone());
+                data.pop();
+            }
+            Err(VaultError::Corrupt) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut written = Vec::new();
+    let write = || -> Result<(), VaultError> {
+        for segment in history::into_segments(entries) {
+            let segment = write_history_segment(root, &keys, vault_id, &segment)?;
+            written.push(segment.object_name.clone());
+            data.push(segment);
+        }
+        let wanted = history::padded_segment_count(data.len()) - data.len();
+        while fillers.len() > wanted {
+            if let Some(filler) = fillers.pop() {
+                superseded.push(filler.object_name);
+            }
+        }
+        while fillers.len() < wanted {
+            let filler = write_history_segment(root, &keys, vault_id, &[])?;
+            written.push(filler.object_name.clone());
+            fillers.push(filler);
+        }
+        // The manifest about to be committed names them: their directory
+        // entries must be durable first, as an import's are.
+        fail_at_test_boundary("history.objects-sync")?;
+        sync_dir(&root.join("objects"))
+    };
+    if let Err(error) = write() {
+        remove_objects(root, &written, Removable::UncommittedObject);
+        return Err(error);
+    }
+    terminate_at_test_boundary("history.after-segment-write");
+    data.extend(fillers);
+    Ok(PreparedHistory {
+        state: HistoryState {
+            count: state.count + added,
+            head,
+            segments: data,
+        },
+        written,
+        superseded,
+    })
+}
+
+fn remove_objects(root: &Path, names: &[String], kind: Removable) {
+    if names.is_empty() {
+        return;
+    }
+    let objects = root.join("objects");
+    for name in names {
+        let _ = remove_owned_file(objects.join(name), kind);
+    }
+    let _ = sync_dir(&objects);
+}
+
+/// Commits `next` with `entries` appended to the history, in the same commit
+/// (#71): a change is never committed without its entries, nor entries
+/// without their change. Superseded segments are unlinked between the two
+/// manifest writes; one a failure leaves is quarantined at the next unlock.
+/// Returns as `commit_manifest_redundant` does.
+fn commit_with_history(
+    root: &Path,
+    master_key: &[u8; 32],
+    current: &mut Manifest,
+    mut next: Manifest,
+    entries: Vec<HistoryEntry>,
+) -> Result<bool, VaultError> {
+    if entries.is_empty() {
+        return commit_manifest_redundant(root, master_key, current, next, || Ok(()));
+    }
+    // A writable session's manifest is upgraded at unlock.
+    if next.format_version < MANIFEST_FORMAT_HISTORY {
+        return Err(VaultError::Invalid);
+    }
+    let prepared = prepare_history(root, master_key, current, entries)?;
+    next.history = prepared.state;
+    let superseded = prepared.superseded;
+    let committed = commit_manifest_redundant(root, master_key, current, next, || {
+        remove_objects(root, &superseded, Removable::SupersededSegment);
+        Ok(())
+    });
+    if committed.is_err() {
+        remove_objects(root, &prepared.written, Removable::UncommittedObject);
+    }
+    committed
+}
+
+/// Appends events that already happened, such as a readable copy saved, in
+/// a commit of their own (#71), and says whether they are in the history. A
+/// read-only session records nothing. A write that fails leaves the session
+/// read-only, so that nothing more happens unrecorded; what was done stays
+/// done.
+fn record_in_session(
+    root: &Path,
+    unlocked: &mut UnlockedVault,
+    entries: Vec<HistoryEntry>,
+) -> bool {
+    if unlocked.recovery.is_some() {
+        return false;
+    }
+    let next = unlocked.manifest.clone();
+    match commit_with_history(
+        root,
+        &unlocked.master_key,
+        &mut unlocked.manifest,
+        next,
+        entries,
+    ) {
+        // Committed once the first write is durable, even if the second
+        // was not.
+        Ok(redundant) => {
+            if !redundant {
+                unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            }
+            true
+        }
+        Err(_) => {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+            false
+        }
+    }
+}
+
+/// The folders `ids` name, as they are named now, for a move's entry.
+fn folders_at_the_time(manifest: &Manifest, ids: &[Uuid]) -> Vec<history::FolderAtTheTime> {
+    ids.iter()
+        .filter_map(|id| manifest.folders.iter().find(|folder| folder.id == *id))
+        .map(|folder| history::FolderAtTheTime {
+            id: folder.id,
+            name: folder.name.clone(),
+        })
+        .collect()
+}
+
+/// An entry about one document, with its name now.
+fn record_entry(event: HistoryEvent, at_ms: u64, record: &StoredRecord) -> HistoryEntry {
+    let mut entry = HistoryEntry::new(event, at_ms);
+    entry.record_id = Some(record.id);
+    entry.name = Some(record.display_name.clone());
+    entry
 }
 
 fn repair_manifest_redundancy(
@@ -3985,7 +5128,7 @@ enum SlotReading {
     /// it and no orphan cleanup may run.
     Unreadable,
     Authentic {
-        manifest: Manifest,
+        manifest: Box<Manifest>,
         /// Records whose object is missing, is not a regular file, or could
         /// not be looked up.
         missing: HashSet<Uuid>,
@@ -4000,7 +5143,7 @@ impl SlotReading {
         match self {
             Self::Authentic {
                 manifest, missing, ..
-            } => Some((manifest, missing)),
+            } => Some((manifest.as_ref(), missing)),
             _ => None,
         }
     }
@@ -4046,7 +5189,11 @@ fn read_manifest_slot_reading(
     };
     let mut missing = HashSet::new();
     let mut unknown = HashSet::new();
-    for record in &manifest.records {
+    for record in manifest
+        .records
+        .iter()
+        .filter(|record| object_required(record))
+    {
         match object_presence(root, record) {
             ObjectPresence::Present => {}
             ObjectPresence::Missing => {
@@ -4059,7 +5206,7 @@ fn read_manifest_slot_reading(
         }
     }
     SlotReading::Authentic {
-        manifest,
+        manifest: Box::new(manifest),
         missing,
         unknown,
     }
@@ -4153,7 +5300,8 @@ fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultEr
         .filter(|(manifest, _, _)| manifest.generation > selected.generation)
         .find(|(manifest, missing, unknown)| {
             manifest.records.iter().any(|record| {
-                !kept.contains(record.object_name.as_str())
+                object_required(record)
+                    && !kept.contains(record.object_name.as_str())
                     && (!missing.contains(&record.id) || unknown.contains(&record.id))
             })
         });
@@ -4318,8 +5466,13 @@ fn encrypt_object(
         writer.write_all(&(ciphertext.len() as u32).to_be_bytes())?;
         writer.write_all(&[u8::from(final_chunk)])?;
         writer.write_all(&ciphertext)?;
-        terminate_at_test_boundary("object.after-chunk-write");
-        fail_at_test_boundary("object.after-chunk-write")?;
+        let boundary = if context.is_history_segment() {
+            "history.after-chunk-write"
+        } else {
+            "object.after-chunk-write"
+        };
+        terminate_at_test_boundary(boundary);
+        fail_at_test_boundary(boundary)?;
         if final_chunk {
             break;
         }
@@ -4496,14 +5649,14 @@ fn reset_path(root: &Path) -> Result<PathBuf, VaultError> {
     sibling_path(root, ".reset-pending")
 }
 
-fn remove_key_envelopes(directory: &Path) -> Result<(), VaultError> {
+fn remove_key_envelopes(directory: &Path, kind: Removable) -> Result<(), VaultError> {
     // An interrupted header write leaves a wrapped key in its temporary directory.
     remove_abandoned_atomic_writes(directory);
     // Every envelope wraps the same key, so one that cannot be removed must not
     // keep the others on disk. Try them all and report the first failure.
     let mut failure = None;
     for header in [HEADER_SLOTS[0], HEADER_SLOTS[1], LEGACY_HEADER] {
-        match fs::remove_file(directory.join(header)) {
+        match remove_owned_file(directory.join(header), kind) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
@@ -4565,7 +5718,7 @@ fn journal_export(root: &Path, id: Uuid, stage: &Path) -> Result<PathBuf, VaultE
         .write_all(&encode_path(stage))
         .and_then(|()| file.sync_all());
     if let Err(error) = written {
-        let _ = fs::remove_file(&entry);
+        let _ = remove_owned_file(&entry, Removable::ExportStage);
         return Err(error.into());
     }
     sync_parent(&journal);
@@ -4587,7 +5740,7 @@ fn create_stage_dir(stage: &Path) -> Result<(), VaultError> {
 /// export succeeded or not. The entry is kept if the folder could not be
 /// removed, so the next start tries again.
 fn finish_export(stage: &Path, entry: Option<&Path>) {
-    match fs::remove_dir_all(stage) {
+    match remove_owned_dir_all(stage, Removable::ExportStage) {
         Ok(()) => {
             if let Some(parent) = stage.parent() {
                 sync_parent(parent);
@@ -4597,7 +5750,7 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
         Err(_) => return,
     }
     if let Some(entry) = entry {
-        if fs::remove_file(entry).is_ok() {
+        if remove_owned_file(entry, Removable::ExportStage).is_ok() {
             if let Some(journal) = entry.parent() {
                 sync_parent(journal);
             }
@@ -4637,7 +5790,7 @@ fn remove_abandoned_exports(home: &Path) {
             Ok(bytes) => bytes,
             // Not a regular file, or too long to be one of ours.
             Err(error) if error.kind() == io::ErrorKind::InvalidData => {
-                let _ = fs::remove_file(&entry_path);
+                let _ = remove_owned_file(&entry_path, Removable::ExportStage);
                 continue;
             }
             // Perhaps held open for a moment by a scanner; try at a later start.
@@ -4647,14 +5800,14 @@ fn remove_abandoned_exports(home: &Path) {
             decode_path(&bytes).filter(|stage| stage.is_absolute() && is_export_stage_name(stage));
         let Some(stage) = stage else {
             // Not an entry this app wrote: drop it, and touch nothing it names.
-            let _ = fs::remove_file(&entry_path);
+            let _ = remove_owned_file(&entry_path, Removable::ExportStage);
             continue;
         };
         let done = match fs::symlink_metadata(&stage) {
             // A link or junction is never followed. Other reparse points, such
             // as OneDrive's on a synced folder, are still real folders.
             Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-                fs::remove_dir_all(&stage).is_ok()
+                remove_owned_dir_all(&stage, Removable::ExportStage).is_ok()
             }
             // Something else has that name; it is not ours to remove.
             Ok(_) => false,
@@ -4664,7 +5817,7 @@ fn remove_abandoned_exports(home: &Path) {
             Err(_) => false,
         };
         if done {
-            let _ = fs::remove_file(&entry_path);
+            let _ = remove_owned_file(&entry_path, Removable::ExportStage);
         }
     }
     sync_parent(&journal);
@@ -4732,67 +5885,101 @@ fn remove_abandoned_create_stages(parent: &Path) {
         if !is_stage || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
         }
-        if remove_key_envelopes(&path).is_ok() {
+        if remove_key_envelopes(&path, Removable::CreateStage).is_ok() {
             sync_parent(&path);
         }
-        if fs::remove_dir_all(&path).is_ok() {
+        if remove_owned_dir_all(&path, Removable::CreateStage).is_ok() {
             sync_parent(parent);
         }
     }
 }
 
-// The caller holds the stable sibling lock. A retired directory is itself the durable reset
-// intent, so partial deletion and process death can be retried without the passphrase.
+// The caller holds the stable sibling lock.
 fn finish_pending_resets(root: &Path) -> Result<bool, VaultError> {
     let parent = root.parent().ok_or(VaultError::Storage)?;
     remove_abandoned_create_stages(parent);
     remove_abandoned_restore_stages(parent);
     remove_abandoned_exports(parent);
     let mut resumed = false;
-    // A verified restore whose vault was already retired goes in place before
-    // anything is erased: if the erasing then fails, the patient still has a
-    // vault.
+    // A verified restore whose vault was already set aside goes in place.
     if !root.exists() && activate_restore(root)? {
         resumed = true;
     }
-    resumed |= erase_retired_vault(root)?;
+    resumed |= set_aside_retired_vault(root)?;
     // A restore that was verified but not yet in place takes the live vault's
-    // place now; the vault it retires is erased as a reset's is.
+    // place now, and sets it aside.
     if activate_restore(root)? {
-        erase_retired_vault(root)?;
         resumed = true;
     }
     Ok(resumed)
 }
 
-fn erase_retired_vault(root: &Path) -> Result<bool, VaultError> {
-    let parent = root.parent().ok_or(VaultError::Storage)?;
-    let pending = reset_path(root)?;
-    let mut resumed = false;
-    for entry in fs::read_dir(parent)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path != pending {
-            continue;
-        }
-        let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err(VaultError::Storage);
-        }
-        #[cfg(windows)]
-        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err(VaultError::Storage);
-        }
-        fail_at_test_boundary("reset.before-cleanup")?;
-        // Erase key envelopes first. Keep the retired directory until all deletion succeeds.
-        remove_key_envelopes(&path)?;
-        sync_parent(&path);
-        terminate_at_test_boundary("reset.after-key-removal");
-        fs::remove_dir_all(&path)?;
-        sync_parent(parent);
-        resumed = true;
+/// Where vaults are set aside (#71's third part), beside the live vault in
+/// its home. The app never removes anything from it.
+const SET_ASIDE_DIR: &str = "set-aside";
+
+/// A new folder to set a vault aside in:
+/// `set-aside/<UTC yyyymmddThhmmssZ>-<random id>`, which tells only when.
+fn set_aside_path(root: &Path) -> Result<PathBuf, VaultError> {
+    let folder = vault_home(root)?.join(SET_ASIDE_DIR);
+    match fs::symlink_metadata(&folder) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => create_private_dir(&folder)?,
+        Ok(_) if is_real_dir(&folder) => {}
+        // A file, a link or a reparse point where the folder should be.
+        _ => return Err(VaultError::Storage),
     }
-    Ok(resumed)
+    let ms = crate::now_ms();
+    let (year, month, day) = utc_date(ms);
+    let seconds = (ms / 1000) % 86_400;
+    Ok(folder.join(format!(
+        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z-{}",
+        seconds / 3600,
+        seconds / 60 % 60,
+        seconds % 60,
+        Uuid::new_v4()
+    )))
+}
+
+/// The name a set-aside vault has under the vault home: `set-aside/<name>`.
+fn set_aside_name(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    format!("{SET_ASIDE_DIR}/{name}")
+}
+
+/// Moves a whole vault folder to `target` in `set-aside/`, in one rename on
+/// the same disk. Its headers go with it: nothing is erased.
+fn set_aside_to(from: &Path, target: &Path) -> Result<(), VaultError> {
+    fs::rename(from, target)?;
+    if let Some(folder) = target.parent() {
+        sync_parent(folder);
+    }
+    if let Some(parent) = from.parent() {
+        sync_parent(parent);
+    }
+    Ok(())
+}
+
+/// A vault an older build retired for erasing (`vault-v1.reset-pending`),
+/// perhaps partly erased already, is set aside as it is, not erased.
+fn set_aside_retired_vault(root: &Path) -> Result<bool, VaultError> {
+    let pending = reset_path(root)?;
+    let metadata = match fs::symlink_metadata(&pending) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        result => result?,
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(VaultError::Storage);
+    }
+    #[cfg(windows)]
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(VaultError::Storage);
+    }
+    fail_at_test_boundary("reset.before-set-aside")?;
+    set_aside_to(&pending, &set_aside_path(root)?)?;
+    Ok(true)
 }
 
 pub(crate) fn read_bounded_regular_file(path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
@@ -4875,6 +6062,49 @@ pub(crate) fn atomic_bytes(path: &Path, data: &[u8]) -> Result<(), VaultError> {
         .write_with_options(|file| file.write_all(data), options)
         .map_err(io::Error::from)?;
     Ok(())
+}
+
+/// What may ever be removed from storage (#71). Nothing that a committed
+/// manifest references, no hidden document and no quarantined object is
+/// among them. `std::fs` removal is disallowed crate-wide (clippy.toml), so
+/// every removal goes through `remove_owned_file` or `remove_owned_dir_all`
+/// and names one of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Removable {
+    /// A vault being created, which failed or which a killed process left.
+    CreateStage,
+    /// Ciphertext an import or a history append wrote that no manifest has
+    /// committed: a duplicate, or a batch or append that failed before its
+    /// commit.
+    UncommittedObject,
+    /// A history segment the committed manifest no longer names: the last
+    /// segment, rewritten with new entries after its own, or a filler no
+    /// longer needed (#71). Never a document's object.
+    SupersededSegment,
+    /// An import's staging folder.
+    ImportStaging,
+    /// A readable copy's staging folder, or its journal entry.
+    ExportStage,
+    /// `header.json`, superseded by the two header slots.
+    LegacyHeader,
+    /// A restore's stage, or a verified copy being discarded.
+    RestoreStage,
+    /// What the atomic replacement primitive left behind.
+    AtomicWriteLeftover,
+}
+
+/// The one place a file is removed (#71); `kind` says what it is.
+#[allow(clippy::disallowed_methods)]
+fn remove_owned_file(path: impl AsRef<Path>, kind: Removable) -> io::Result<()> {
+    let _ = kind;
+    fs::remove_file(path)
+}
+
+/// The one place a folder is removed (#71); `kind` says what it is.
+#[allow(clippy::disallowed_methods)]
+fn remove_owned_dir_all(path: impl AsRef<Path>, kind: Removable) -> io::Result<()> {
+    let _ = kind;
+    fs::remove_dir_all(path)
 }
 
 fn create_private_dir(path: &Path) -> Result<(), VaultError> {
@@ -4971,7 +6201,7 @@ fn remove_staging(root: &Path) {
     }
     if let Ok(entries) = fs::read_dir(&staging) {
         for entry in entries.flatten() {
-            let _ = fs::remove_dir_all(entry.path());
+            let _ = remove_owned_dir_all(entry.path(), Removable::ImportStaging);
         }
     }
 }
@@ -4993,7 +6223,7 @@ fn remove_abandoned_atomic_writes(directory: &Path) {
         // `DirEntry::file_type` does not follow links, so a link is never entered.
         if is_temporary
             && entry.file_type().is_ok_and(|kind| kind.is_dir())
-            && fs::remove_dir_all(entry.path()).is_ok()
+            && remove_owned_dir_all(entry.path(), Removable::AtomicWriteLeftover).is_ok()
         {
             sync_parent(directory);
         }
@@ -5012,27 +6242,107 @@ fn ensure_objects_dir(root: &Path) -> Result<(), VaultError> {
     }
 }
 
-fn remove_orphan_objects(root: &Path, manifest: &Manifest) {
+/// Moves aside, never deletes, each object that the opened manifest does not
+/// reference (#71): ciphertext a crash left between writing it and its
+/// commit, or one that a mistake in collecting references would otherwise
+/// lose. It goes to `quarantine/` beside `objects/`, still encrypted, where
+/// the app leaves it. A name already there is left where it is.
+fn quarantine_orphan_objects(root: &Path, manifest: &Manifest) {
     let referenced: HashSet<&str> = manifest
         .records
         .iter()
         .map(|record| record.object_name.as_str())
+        .chain(
+            manifest
+                .history
+                .segments
+                .iter()
+                .map(|segment| segment.object_name.as_str()),
+        )
         .collect();
     let objects = root.join("objects");
     if !is_real_dir(&objects) {
         return;
     }
-    if let Ok(entries) = fs::read_dir(objects) {
+    let quarantine = root.join("quarantine");
+    let mut moved = false;
+    if let Ok(entries) = fs::read_dir(&objects) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_referenced = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| referenced.contains(name));
-            if path.is_file() && !is_referenced {
-                let _ = fs::remove_file(path);
+            let name = entry.file_name();
+            let is_referenced = name.to_str().is_some_and(|name| referenced.contains(name));
+            if !path.is_file() || is_referenced {
+                continue;
+            }
+            if !is_real_dir(&quarantine) && create_private_dir(&quarantine).is_err() {
+                return;
+            }
+            let target = quarantine.join(&name);
+            if fs::symlink_metadata(&target).is_err() && fs::rename(&path, &target).is_ok() {
+                moved = true;
             }
         }
+    }
+    if moved {
+        sync_parent(&objects);
+        let _ = sync_dir(&quarantine);
+    }
+}
+
+/// Hashed with the vault id into the "Shared with me" profile's id.
+const SHARED_PROFILE_LABEL: &[u8] = b"mycarlos:shared-with-me:v1:";
+/// The name the "Shared with me" profile is stored with. The app shows it as
+/// a folder, never as a person.
+pub const SHARED_PROFILE_NAME: &str = "Shared with me";
+
+/// Files shared to myCarlos from another app wait in one reserved profile
+/// until the patient moves each to a person (#61). Its id is derived from the
+/// vault id, so the manifest needs no field of its own for it (VAULT_FORMAT):
+/// a UUID of version 8, RFC 9562's custom version, with the RFC 4122 variant.
+/// Every other profile has a random version 4 id, which can never equal it.
+pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
+    use sha2::Digest as _;
+    let digest = Sha256::new()
+        .chain_update(SHARED_PROFILE_LABEL)
+        .chain_update(vault_id.as_bytes())
+        .finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
+}
+
+/// A person's name: a valid name, and not the shared folder's, which would read
+/// as the folder (#61).
+fn validate_person_name(name: &str) -> Result<(), VaultError> {
+    validate_name(name)?;
+    if name.trim().to_lowercase() == SHARED_PROFILE_NAME.to_lowercase() {
+        return Err(VaultError::Invalid);
+    }
+    Ok(())
+}
+
+/// The people a vault keeps records for: every profile but the shared one.
+fn people(manifest: &Manifest) -> impl Iterator<Item = &PatientProfile> {
+    let shared = shared_profile_id(manifest.vault_id);
+    manifest
+        .profiles
+        .iter()
+        .filter(move |profile| profile.id != shared)
+}
+
+/// Feeds what is written to it into a fingerprint MAC.
+struct MacWriter<'a>(&'a mut HmacSha256);
+
+impl Write for MacWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -5533,9 +6843,8 @@ fn restore_ready_path(root: &Path) -> Result<PathBuf, VaultError> {
 }
 
 /// Puts a verified restore in place of the live vault. Each step is one
-/// rename, and every start repeats whatever is left: the live vault is
-/// retired as a reset retires it (its key envelopes are erased next), then
-/// the verified copy takes its place.
+/// rename, and every start repeats whatever is left: the live vault is set
+/// aside, as a reset sets it aside, then the verified copy takes its place.
 fn activate_restore(root: &Path) -> Result<bool, VaultError> {
     let ready = restore_ready_path(root)?;
     if !is_real_dir(&ready) {
@@ -5545,21 +6854,15 @@ fn activate_restore(root: &Path) -> Result<bool, VaultError> {
     // A verified copy has a header. Without one this is what is left of a
     // copy that was being discarded, and no vault is given up for it.
     if !HEADER_SLOTS.iter().any(|slot| ready.join(slot).is_file()) {
-        let _ = fs::remove_dir_all(&ready);
+        let _ = remove_owned_dir_all(&ready, Removable::RestoreStage);
         sync_parent(parent);
         return Ok(false);
     }
     let mut retired_here = None;
     if root.exists() {
-        let retired = reset_path(root)?;
-        // Pending resets finish before this runs, so a retired vault still
-        // here means that could not be done; keep both and report it.
-        if retired.exists() {
-            return Err(VaultError::Storage);
-        }
+        let retired = set_aside_path(root)?;
         fail_at_test_boundary("restore.before-retire")?;
-        fs::rename(root, &retired)?;
-        sync_parent(parent);
+        set_aside_to(root, &retired)?;
         terminate_at_test_boundary("restore.after-retire");
         retired_here = Some(retired);
     }
@@ -5598,16 +6901,60 @@ fn remove_abandoned_restore_stages(parent: &Path) {
             continue;
         }
         let path = entry.path();
-        if remove_key_envelopes(&path).is_ok() {
+        if remove_key_envelopes(&path, Removable::RestoreStage).is_ok() {
             sync_parent(&path);
         }
-        if fs::remove_dir_all(&path).is_ok() {
+        if remove_owned_dir_all(&path, Removable::RestoreStage).is_ok() {
             sync_parent(parent);
         }
     }
 }
 
+// A native command test can damage its document without damaging history segments.
 #[cfg(test)]
+pub(crate) fn record_object_path_for_test(store: &VaultStore, record_id: Uuid) -> PathBuf {
+    let guard = store.session();
+    let record = guard
+        .as_ref()
+        .unwrap()
+        .manifest
+        .records
+        .iter()
+        .find(|record| record.id == record_id)
+        .unwrap();
+    store.root.join("objects").join(&record.object_name)
+}
+
+// Shared by native command and vault tests; no production history-read command.
+#[cfg(test)]
+pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
+    let guard = store.session();
+    let unlocked = guard.as_ref().unwrap();
+    let manifest = &unlocked.manifest;
+    let keys = derive_keys(manifest.vault_id, &unlocked.master_key).unwrap();
+    let entries: Vec<HistoryEntry> = manifest
+        .history
+        .segments
+        .iter()
+        .flat_map(|segment| {
+            read_history_segment(&store.root, &keys, manifest.vault_id, segment).unwrap()
+        })
+        .collect();
+    assert_eq!(
+        history::verify(
+            manifest.vault_id,
+            &entries,
+            manifest.history.count,
+            &manifest.history.head
+        ),
+        Ok(())
+    );
+    entries
+}
+
+#[cfg(test)]
+// Tests remove files on purpose, to simulate damage and loss (#71).
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
@@ -5629,7 +6976,7 @@ mod tests {
             .as_ref()
             .map(|unlocked| unlocked.unavailable.iter().copied().collect())
             .unwrap_or_default();
-        store.remove_unavailable_records(&shown)
+        store.hide_unavailable_records(&shown, 3)
     }
 
     /// Whether two metadata describe the same inode (or, on Windows, the same
@@ -5660,6 +7007,63 @@ mod tests {
             display_name: name.to_owned(),
             reader: Box::new(Cursor::new(data.to_vec())),
         }
+    }
+
+    #[test]
+    #[ignore = "requires the real built helper; set MYCARLOS_TEST_SIGNED_HELPER_EXE and run explicitly"]
+    fn signed_import_analysis_preserves_original_bytes_and_never_invents_a_clinic_link() {
+        assert!(
+            std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE").is_some(),
+            "run the documented real-helper import check, not the unit-test executable"
+        );
+        let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
+        ))
+        .unwrap();
+        let document = &fixture["documents"][0];
+        let original = BASE64
+            .decode(document["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE Signed.pdf", &original)],
+                2,
+            )
+            .unwrap();
+        assert_eq!(imported.imported.len(), 1);
+        assert_eq!(imported.unverified_signatures.len(), 1);
+        assert!(matches!(
+            imported.unverified_signatures[0].reason,
+            crate::signed_pdf_helper::Failure::Refused(crate::signed_pdf::Refusal::UnknownSigner)
+        ));
+        assert_eq!(
+            imported.unverified_signatures[0].record_id,
+            imported.imported[0]
+        );
+        let mut exported = Vec::new();
+        store.export(imported.imported[0], &mut exported).unwrap();
+        assert_eq!(exported, original);
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records[0].source_label, MANUAL_IMPORT_LABEL);
+        let report = serde_json::to_string(&imported).unwrap();
+        assert!(!report.contains("recipient_id"));
+        assert!(!report.contains("birth_date"));
+        assert!(!report.contains("signer_kid"));
+        let unsigned = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE Unsigned.pdf", b"%PDF-1.7\nFAKE unsigned")],
+                3,
+            )
+            .unwrap();
+        assert!(unsigned.unverified_signatures.is_empty());
     }
 
     fn valid_manifest_fixture(root: &Path) -> (Uuid, Manifest) {
@@ -5724,6 +7128,7 @@ mod tests {
                     object_name: first_object,
                     fingerprint: BASE64.encode([0x33_u8; 32]),
                     wrapped_object_key: wrapped.clone(),
+                    hidden: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -5737,8 +7142,10 @@ mod tests {
                     object_name: second_object,
                     fingerprint: BASE64.encode([0x44_u8; 32]),
                     wrapped_object_key: wrapped,
+                    hidden: None,
                 },
             ],
+            history: HistoryState::default(),
         };
         (vault_id, manifest)
     }
@@ -5793,6 +7200,30 @@ mod tests {
         files
     }
 
+    /// Unlocks with the environment's boundary held, so that it is reached
+    /// in the operation that follows, not in the unlock's history commit.
+    fn unlock_with_boundaries_held(store: &VaultStore) {
+        ENV_BOUNDARIES_HELD.store(true, Ordering::Release);
+        let unlocked = store.unlock(PASSWORD);
+        ENV_BOUNDARIES_HELD.store(false, Ordering::Release);
+        unlocked.unwrap();
+    }
+
+    /// The size every history segment's object has (#71): a 64 KiB plaintext
+    /// in one chunk.
+    const SEGMENT_OBJECT_LEN: u64 =
+        (OBJECT_MAGIC.len() + 4 + 16 + 4 + 1 + history::SEGMENT_PLAINTEXT_BYTES + 16) as u64;
+
+    /// The files in `objects/` that are documents' ciphertext, not history
+    /// segments, told apart by size: every segment's object is the same
+    /// size, and no test document is that large.
+    fn document_files(root: &Path) -> usize {
+        fs::read_dir(root.join("objects"))
+            .unwrap()
+            .filter(|entry| entry.as_ref().unwrap().metadata().unwrap().len() != SEGMENT_OBJECT_LEN)
+            .count()
+    }
+
     fn run_termination_child(root: &Path, operation: &str, boundary: &str) {
         let status = Command::new(std::env::current_exe().unwrap())
             .args(["--ignored", "--exact", "vault::tests::termination_child"])
@@ -5841,7 +7272,11 @@ mod tests {
         };
         let operation = std::env::var("MYCARLOS_TEST_OPERATION").unwrap();
         let store = VaultStore::new(PathBuf::from(root));
-        store.unlock(PASSWORD).unwrap();
+        if operation == "unlock" {
+            let _ = store.unlock(PASSWORD);
+            panic!("configured termination boundary was not reached");
+        }
+        unlock_with_boundaries_held(&store);
         let snapshot = store.snapshot().unwrap();
         match operation.as_str() {
             "import" => {
@@ -5854,7 +7289,7 @@ mod tests {
                     )
                     .unwrap();
             }
-            "delete" => store.delete_record(snapshot.records[0].id).unwrap(),
+            "hide" => store.hide_record(snapshot.records[0].id, 3).unwrap(),
             "reset" => store.reset().unwrap(),
             "export" => {
                 let destination = std::env::var("MYCARLOS_TEST_EXPORT_TO").unwrap();
@@ -5895,7 +7330,11 @@ mod tests {
             assert_eq!(store.snapshot().unwrap().recovery, None);
             return;
         }
-        store.unlock(PASSWORD).unwrap();
+        if operation == "unlock-degraded" {
+            store.unlock(PASSWORD).unwrap();
+        } else {
+            unlock_with_boundaries_held(&store);
+        }
         let snapshot = store.snapshot().unwrap();
         if operation == "unlock-degraded" {
             assert!(snapshot.recovery.is_some());
@@ -5917,7 +7356,7 @@ mod tests {
                     2,
                 )
                 .map(|_| ()),
-            "delete" => store.delete_record(snapshot.records[0].id),
+            "hide" => store.hide_record(snapshot.records[0].id, 3),
             "passphrase" => store.change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT),
             "recovery-key" => {
                 let key = store.begin_recovery_key(PASSWORD).unwrap();
@@ -5942,7 +7381,7 @@ mod tests {
             assert!(matches!(outcome, Err(VaultError::NoSpace)));
             if operation == "import" {
                 let root = PathBuf::from(std::env::var("MYCARLOS_TEST_ROOT").unwrap());
-                assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+                assert_eq!(document_files(&root), 0);
             }
         }
     }
@@ -6049,49 +7488,169 @@ mod tests {
         assert_eq!(second.status().unwrap(), VaultStatus::Absent);
     }
 
-    #[test]
-    fn interrupted_reset_is_finished_before_startup_or_creation() {
-        for boundary in ["reset.after-rename", "reset.after-key-removal"] {
-            for create_directly in [false, true] {
-                let temp = tempfile::tempdir().unwrap();
-                let root = temp.path().join("vault");
-                let store = VaultStore::new(root.clone());
-                store.create(PASSWORD, "Jamie", 1).unwrap();
-                let profile = store.snapshot().unwrap().profiles[0].id;
-                store
-                    .import(profile, vec![], vec![source("old.pdf", b"old record")], 2)
-                    .unwrap();
-                store.lock();
-                run_termination_child(&root, "reset", boundary);
-                let retired = reset_path(&root).unwrap();
-                assert!(!root.exists());
-                assert!(retired.exists());
-                let restarted = VaultStore::new(root);
-                if create_directly {
-                    restarted.create(PASSWORD, "New profile", 3).unwrap();
-                    assert!(restarted.snapshot().unwrap().records.is_empty());
-                } else {
-                    assert_eq!(restarted.status().unwrap(), VaultStatus::Absent);
-                }
-                assert!(!retired.exists());
-            }
+    /// The folders in `set-aside/` beside `root`.
+    fn set_aside_folders(root: &Path) -> Vec<PathBuf> {
+        let folder = root.parent().unwrap().join(SET_ASIDE_DIR);
+        if !folder.exists() {
+            return Vec::new();
         }
+        // Folders only: a test that opens one in place leaves its lock file.
+        let mut folders: Vec<PathBuf> = fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_dir())
+            .collect();
+        folders.sort();
+        folders
     }
 
     #[test]
-    fn failed_reset_cleanup_blocks_access_and_can_be_retried() {
+    fn a_reset_sets_the_vault_aside_whole_and_its_keys_still_open_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(profile, vec![], vec![source("old.pdf", b"old record")], 2)
+            .unwrap();
+        let key = set_up_recovery_key(&store, 3);
+        // Every document's ciphertext and both headers, which must all go
+        // with it, byte for byte.
+        let mut kept: Vec<PathBuf> = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .map(|record| Path::new("objects").join(&record.object_name))
+            .collect();
+        kept.extend(HEADER_SLOTS.iter().map(PathBuf::from));
+        let before: Vec<Vec<u8>> = kept
+            .iter()
+            .map(|path| fs::read(root.join(path)).unwrap())
+            .collect();
+        store.reset().unwrap();
+        assert_eq!(store.status().unwrap(), VaultStatus::Absent);
+
+        // One folder, named for when, holding the vault.
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        let name = folders[0].file_name().unwrap().to_str().unwrap().to_owned();
+        let (stamp, id) = name.split_once("Z-").unwrap();
+        assert!(stamp.len() == 15 && stamp.as_bytes()[8] == b'T', "{name}");
+        assert!(Uuid::parse_str(id).is_ok(), "{name}");
+        for (path, bytes) in kept.iter().zip(&before) {
+            assert_eq!(
+                &fs::read(folders[0].join(path)).unwrap(),
+                bytes,
+                "{}",
+                path.display()
+            );
+        }
+
+        // Its passphrase and its recovery key still open it, with every
+        // document and the history saying where it went.
+        let aside = VaultStore::new(folders[0].clone());
+        aside.unlock(PASSWORD).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        let entries = history_events(&aside);
+        let set_aside = &entries[entries.len() - 2];
+        assert_eq!(set_aside.event, HistoryEvent::SetAside);
+        assert_eq!(
+            set_aside.place.as_deref(),
+            Some(format!("set-aside/{name}").as_str())
+        );
+        aside.lock();
+        assert!(aside.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        aside.lock();
+
+        // The next vault made in this run names where the last one went.
+        store.create(PASSWORD, "New profile", 4).unwrap();
+        let created = history_events(&store).remove(0);
+        assert_eq!(created.event, HistoryEvent::Created);
+        assert_eq!(
+            created.place.as_deref(),
+            Some(format!("set-aside/{name}").as_str())
+        );
+        // A second reset sets the second vault aside beside the first.
+        store.reset().unwrap();
+        assert_eq!(set_aside_folders(&root).len(), 2);
+    }
+
+    #[test]
+    fn a_reset_from_the_unlock_screen_sets_the_vault_aside_too() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
         store.lock();
+        // Locked, it cannot be written to: nothing is recorded in it.
+        store.reset().unwrap();
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        let aside = VaultStore::new(folders[0].clone());
+        aside.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            events_of(&history_events(&aside)),
+            [HistoryEvent::Created, HistoryEvent::Unlocked]
+        );
+    }
+
+    #[test]
+    fn an_interrupted_reset_leaves_the_vault_whole_in_place_or_set_aside() {
+        for create_directly in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
+            let store = VaultStore::new(root.clone());
+            store.create(PASSWORD, "Jamie", 1).unwrap();
+            store.lock();
+            run_termination_child(&root, "reset", "reset.after-set-aside");
+            assert!(!root.exists());
+            assert_eq!(set_aside_folders(&root).len(), 1);
+            let restarted = VaultStore::new(root.clone());
+            if create_directly {
+                restarted.create(PASSWORD, "New profile", 3).unwrap();
+                assert!(restarted.snapshot().unwrap().records.is_empty());
+            } else {
+                assert_eq!(restarted.status().unwrap(), VaultStatus::Absent);
+            }
+            assert_eq!(set_aside_folders(&root).len(), 1);
+        }
+        // A reset that cannot move the vault leaves it where it was.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        {
+            let _fail = FailAt::new("reset.before-set-aside");
+            assert!(matches!(store.reset(), Err(VaultError::NoSpace)));
+        }
+        assert!(set_aside_folders(&root).is_empty());
+        store.unlock(PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn a_vault_an_older_build_retired_is_set_aside_not_erased() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // What an older build left on its way to erasing a vault.
         let retired = reset_path(&root).unwrap();
         fs::rename(&root, &retired).unwrap();
-        run_failure_child(&root, "reset-recovery", "reset.before-cleanup");
+        // While it cannot be moved, nothing goes ahead.
+        run_failure_child(&root, "reset-recovery", "reset.before-set-aside");
         assert!(retired.join("header-0.json").exists());
-        store.reset().unwrap();
-        assert!(!retired.exists());
         assert_eq!(store.status().unwrap(), VaultStatus::Absent);
+        assert!(!retired.exists());
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        VaultStore::new(folders[0].clone())
+            .unlock(PASSWORD)
+            .unwrap();
     }
 
     #[test]
@@ -6932,7 +8491,7 @@ mod tests {
             Err(VaultError::Locked)
         ));
         assert!(matches!(
-            store.delete_record(unknown),
+            store.hide_record(unknown, 3),
             Err(VaultError::Locked)
         ));
         assert!(matches!(
@@ -7014,6 +8573,350 @@ mod tests {
     }
 
     #[test]
+    fn the_shared_profile_id_is_fixed_per_vault_and_never_a_random_one() {
+        let vault = Uuid::new_v4();
+        let shared = shared_profile_id(vault);
+        assert_eq!(shared, shared_profile_id(vault));
+        assert_ne!(shared, shared_profile_id(Uuid::new_v4()));
+        assert_eq!(shared.get_version_num(), 8);
+        assert_eq!(shared.get_variant(), uuid::Variant::RFC4122);
+        // Every other profile has a random version 4 id, which differs from
+        // it in the version bits alone.
+        for _ in 0..10_000 {
+            let id = Uuid::new_v4();
+            assert_eq!(id.get_version_num(), 4);
+            assert_ne!(id, shared);
+        }
+    }
+
+    #[test]
+    fn shared_files_go_to_one_shared_profile_made_with_the_first() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let shared = store.shared_profile().unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.shared_profile_id, shared);
+        assert!(!snapshot.profiles.iter().any(|profile| profile.id == shared));
+
+        let first = store
+            .import(shared, vec![], vec![source("a.pdf", b"one")], 2)
+            .unwrap();
+        assert_eq!(first.imported.len(), 1);
+        store
+            .import(shared, vec![], vec![source("b.pdf", b"two")], 3)
+            .unwrap();
+        let profiles = store.snapshot().unwrap().profiles;
+        assert_eq!(profiles.len(), 2);
+        let made = profiles
+            .iter()
+            .find(|profile| profile.id == shared)
+            .unwrap();
+        assert_eq!(made.display_name, SHARED_PROFILE_NAME);
+        assert_eq!(made.created_at_ms, 2);
+
+        // One fixed folder: nothing nests in it.
+        assert!(matches!(
+            store.create_folder(shared, None, "Labs", 4),
+            Err(VaultError::Invalid)
+        ));
+        let jamie = profiles
+            .iter()
+            .find(|profile| profile.id != shared)
+            .unwrap()
+            .id;
+        let folder = store.create_folder(jamie, None, "Labs", 5).unwrap();
+        assert!(matches!(
+            store.import(shared, vec![folder], vec![source("c.pdf", b"three")], 6),
+            Err(VaultError::Invalid)
+        ));
+
+        // No person may be called it.
+        assert!(matches!(
+            store.create_profile(" shared WITH me ", 6),
+            Err(VaultError::Invalid)
+        ));
+        // Its name is not a word a passphrase may not hold.
+        store
+            .change_passphrase(PASSWORD, "Shared-lantern-orbit-cascade-572")
+            .unwrap();
+        // A vault with it still opens.
+        store.lock();
+        store.unlock("Shared-lantern-orbit-cascade-572").unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.profiles.len(), 2);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .filter(|record| record.profile_id == shared)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn a_shared_file_moves_to_a_person_keyed_as_if_imported_there() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let morgan = store.create_profile("Morgan", 2).unwrap();
+        let labs = store.create_folder(jamie, None, "Labs", 3).unwrap();
+        let shared = store.shared_profile().unwrap();
+        let added = store
+            .import(
+                shared,
+                vec![],
+                vec![source("a.pdf", b"one"), source("b.pdf", b"two")],
+                4,
+            )
+            .unwrap()
+            .imported;
+
+        // Shared intake retains the same hide/restore guarantees as a person's files.
+        let object = {
+            let guard = store.session();
+            let record = guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == added[0])
+                .unwrap();
+            temp.path().join("vault/objects").join(&record.object_name)
+        };
+        let ciphertext = fs::read(&object).unwrap();
+        store.hide_record(added[0], 5).unwrap();
+        let hidden = store
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .find(|record| record.id == added[0])
+            .unwrap();
+        assert_eq!(hidden.profile_id, shared);
+        assert!(hidden.hidden.is_some());
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        store.unhide_record(added[0]).unwrap();
+
+        let outcome = store
+            .move_to_profile(added.clone(), jamie, vec![labs])
+            .unwrap();
+        assert_eq!(outcome.moved, added);
+        assert!(outcome.already_there.is_empty());
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        let snapshot = store.snapshot().unwrap();
+        for id in &added {
+            let record = snapshot.records.iter().find(|r| r.id == *id).unwrap();
+            assert_eq!(record.profile_id, jamie);
+            assert_eq!(record.folder_ids, vec![labs]);
+        }
+        // Keyed as if imported to Jamie: the same file again is a duplicate.
+        assert_eq!(
+            store
+                .import(jamie, vec![], vec![source("again.pdf", b"one")], 5)
+                .unwrap()
+                .skipped_duplicates,
+            vec!["again.pdf"]
+        );
+        // Its content is unchanged.
+        let mut exported = Vec::new();
+        store.export(added[0], &mut exported).unwrap();
+        assert_eq!(exported, b"one");
+
+        // A file Jamie already has stays in Shared with me; Morgan can have it.
+        let again = store
+            .import(shared, vec![], vec![source("c.pdf", b"one")], 6)
+            .unwrap()
+            .imported;
+        let outcome = store.move_to_profile(again.clone(), jamie, vec![]).unwrap();
+        assert!(outcome.moved.is_empty());
+        assert_eq!(outcome.already_there, vec!["c.pdf"]);
+        let record = |id: Uuid| {
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .into_iter()
+                .find(|r| r.id == id)
+                .unwrap()
+        };
+        assert_eq!(record(again[0]).profile_id, shared);
+        assert_eq!(
+            store
+                .move_to_profile(again.clone(), morgan, vec![])
+                .unwrap()
+                .moved,
+            again
+        );
+
+        // Never into Shared with me or the same person, and into the target
+        // person's own folders only.
+        assert!(matches!(
+            store.move_to_profile(vec![added[0]], jamie, vec![]),
+            Err(VaultError::Invalid)
+        ));
+        let last = store
+            .import(shared, vec![], vec![source("d.pdf", b"four")], 7)
+            .unwrap()
+            .imported;
+        assert!(matches!(
+            store.move_to_profile(last.clone(), shared, vec![]),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store
+            .move_to_profile(last.clone(), morgan, vec![labs])
+            .is_err());
+        assert_eq!(record(last[0]).profile_id, shared);
+
+        // What was moved is still valid when the vault opens again.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(record(added[1]).profile_id, jamie);
+        assert_eq!(record(again[0]).profile_id, morgan);
+    }
+
+    #[test]
+    fn a_filed_document_moves_between_people_without_changing_its_object() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let morgan = store.create_profile("Morgan", 2).unwrap();
+        let old_folder = store.create_folder(jamie, None, "Old folder", 3).unwrap();
+        let labs = store.create_folder(morgan, None, "Labs", 4).unwrap();
+        // Treat document content as opaque, including any embedded signatures.
+        let original = b"%PDF-1.7\nFAKE original document\n\x00\xff\r\n%%EOF";
+        let id = store
+            .import(
+                jamie,
+                vec![old_folder],
+                vec![source("original.pdf", original)],
+                5,
+            )
+            .unwrap()
+            .imported[0];
+        let before = store.session().as_ref().unwrap().manifest.records[0].clone();
+        let history_before = history_events_for_test(&store).len();
+        let object = root.join("objects").join(&before.object_name);
+        let ciphertext = fs::read(&object).unwrap();
+
+        let outcome = store.move_to_profile(vec![id], morgan, vec![labs]).unwrap();
+        assert_eq!(outcome.moved, vec![id]);
+        assert!(outcome.already_there.is_empty());
+        let after = store.session().as_ref().unwrap().manifest.records[0].clone();
+        assert_ne!(after.fingerprint, before.fingerprint);
+        let mut expected = before.clone();
+        expected.profile_id = morgan;
+        expected.folder_ids = vec![labs];
+        expected.fingerprint = after.fingerprint.clone();
+        assert!(after == expected); // Includes identity, object name/key and all source metadata.
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        let history_objects = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .len();
+        assert_eq!(
+            fs::read_dir(root.join("objects")).unwrap().count(),
+            1 + history_objects
+        );
+        let history = history_events_for_test(&store);
+        assert_eq!(history.len(), history_before + 1);
+        let moved = history.last().unwrap();
+        assert_eq!(moved.event, HistoryEvent::Moved);
+        assert_eq!(moved.record_id, Some(id));
+        assert_eq!(moved.profile_id, Some(morgan));
+        assert_eq!(moved.how, None);
+        let from = moved.from.as_ref().unwrap();
+        let to = moved.to.as_ref().unwrap();
+        assert_eq!(from.len(), 1);
+        assert_eq!(to.len(), 1);
+        assert_eq!(
+            (from[0].id, from[0].name.as_str()),
+            (old_folder, "Old folder")
+        );
+        assert_eq!((to[0].id, to[0].name.as_str()), (labs, "Labs"));
+        assert_eq!(
+            store
+                .import(morgan, vec![], vec![source("again.pdf", original)], 6)
+                .unwrap()
+                .skipped_duplicates,
+            vec!["again.pdf"]
+        );
+
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let reopened = store.snapshot().unwrap().records.remove(0);
+        assert_eq!(reopened.id, id);
+        assert_eq!(reopened.profile_id, morgan);
+        assert_eq!(reopened.folder_ids, vec![labs]);
+        let mut exported = Vec::new();
+        store.export(id, &mut exported).unwrap();
+        assert_eq!(exported, original);
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        // Moving back is valid and recomputes the original per-person fingerprint.
+        store
+            .move_to_profile(vec![id], jamie, vec![old_folder])
+            .unwrap();
+        assert!(store.session().as_ref().unwrap().manifest.records[0] == before);
+    }
+
+    #[test]
+    fn a_filed_document_stays_at_source_on_duplicate_invalid_target_or_unreadable_batch() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let morgan = store.create_profile("Morgan", 2).unwrap();
+        let labs = store.create_folder(jamie, None, "Labs", 3).unwrap();
+        let ids = store
+            .import(
+                jamie,
+                vec![labs],
+                vec![source("same.pdf", b"same"), source("other.pdf", b"other")],
+                4,
+            )
+            .unwrap()
+            .imported;
+        store
+            .import(morgan, vec![], vec![source("existing.pdf", b"same")], 5)
+            .unwrap();
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let outcome = store.move_to_profile(vec![ids[0]], morgan, vec![]).unwrap();
+        assert!(outcome.moved.is_empty());
+        assert_eq!(outcome.already_there, vec!["same.pdf"]);
+        assert!(store.session().as_ref().unwrap().manifest == before);
+        for (target, folders) in [
+            (morgan, vec![labs]), // Folder belongs to source, not destination.
+            (store.shared_profile().unwrap(), vec![]),
+            (Uuid::new_v4(), vec![]),
+            (jamie, vec![]), // Same-person folder changes use assign_folders.
+        ] {
+            assert!(store.move_to_profile(ids.clone(), target, folders).is_err());
+            assert!(store.session().as_ref().unwrap().manifest == before);
+        }
+        assert!(store
+            .move_to_profile(vec![ids[1], Uuid::new_v4()], morgan, vec![])
+            .is_err());
+        assert!(store.session().as_ref().unwrap().manifest == before);
+        // A later unreadable object cannot leave earlier batch items moved.
+        let missing = before.records.iter().find(|r| r.id == ids[0]).unwrap();
+        fs::remove_file(root.join("objects").join(&missing.object_name)).unwrap();
+        assert!(store
+            .move_to_profile(vec![ids[1], ids[0]], morgan, vec![])
+            .is_err());
+        assert!(store.session().as_ref().unwrap().manifest == before);
+    }
+
+    #[test]
     fn an_import_of_only_duplicates_commits_no_manifest() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
@@ -7036,7 +8939,7 @@ mod tests {
             generation
         );
         assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 1);
+        assert_eq!(document_files(&root), 1);
     }
 
     #[test]
@@ -7061,7 +8964,7 @@ mod tests {
 
         assert!(matches!(result, Err(VaultError::Storage)));
         assert!(store.snapshot().unwrap().records.is_empty());
-        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+        assert_eq!(document_files(&root), 0);
         assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
     }
 
@@ -7427,7 +9330,7 @@ mod tests {
         assert!(matches!(import.join().unwrap(), Err(VaultError::Cancelled)));
         lock.join().unwrap();
         assert_eq!(store.status().unwrap(), VaultStatus::Locked);
-        assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+        assert_eq!(document_files(&root), 0);
         assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
     }
 
@@ -8008,10 +9911,7 @@ mod tests {
                 usize::from(committed)
             );
             assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-            assert_eq!(
-                fs::read_dir(root.join("objects")).unwrap().count(),
-                usize::from(committed)
-            );
+            assert_eq!(document_files(&root), usize::from(committed));
         }
     }
 
@@ -8040,10 +9940,7 @@ mod tests {
                 usize::from(committed)
             );
             assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
-            assert_eq!(
-                fs::read_dir(root.join("objects")).unwrap().count(),
-                usize::from(committed)
-            );
+            assert_eq!(document_files(&root), usize::from(committed));
         }
     }
 
@@ -9465,7 +11362,7 @@ mod tests {
     }
 
     #[test]
-    fn a_restore_goes_in_place_before_the_vault_it_retired_is_erased() {
+    fn a_restore_cut_short_finishes_and_the_vault_it_replaced_stays_set_aside() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("home").join("vault");
         let (_, backup, _) = backed_up_vault(&root);
@@ -9473,17 +11370,24 @@ mod tests {
         fs::write(&file, &backup).unwrap();
         run_restore_termination_child(&root, &file, "restore.after-retire");
         assert!(!root.exists());
+        assert_eq!(set_aside_folders(&root).len(), 1);
 
-        // The erasing fails at the next start. The restored vault must be in
-        // place all the same, or the patient would have none.
+        // The next start puts the restored vault in place; the one it
+        // replaced stays set aside, and still opens.
         let restarted = VaultStore::new(root.clone());
-        {
-            let _failing = FailAt::new("reset.before-cleanup");
-            assert!(restarted.status().is_err());
-        }
-        assert!(root.exists());
         assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
         restarted.unlock(PASSWORD).unwrap();
+        let entries = history_events(&restarted);
+        let restore = &entries[entries.len() - 2];
+        assert_eq!(
+            (restore.event, restore.how.as_deref()),
+            (HistoryEvent::BackupRestored, Some("replaced"))
+        );
+        let folders = set_aside_folders(&root);
+        assert_eq!(folders.len(), 1);
+        VaultStore::new(folders[0].clone())
+            .unlock(PASSWORD)
+            .unwrap();
         assert!(!reset_path(&root).unwrap().exists());
     }
 
@@ -9943,7 +11847,7 @@ mod tests {
         store.lock();
         fs::create_dir(&abandoned).unwrap();
         fs::copy(root.join(HEADER_SLOTS[0]), abandoned.join("tmpfile.tmp")).unwrap();
-        remove_key_envelopes(&root).unwrap();
+        remove_key_envelopes(&root, Removable::RestoreStage).unwrap();
         assert!(!abandoned.exists());
     }
 
@@ -9958,7 +11862,7 @@ mod tests {
         fs::remove_file(root.join(HEADER_SLOTS[0])).unwrap();
         fs::create_dir(root.join(HEADER_SLOTS[0])).unwrap();
 
-        assert!(remove_key_envelopes(&root).is_err());
+        assert!(remove_key_envelopes(&root, Removable::RestoreStage).is_err());
         assert!(!root.join(HEADER_SLOTS[1]).exists());
     }
 
@@ -10098,8 +12002,24 @@ mod tests {
         assert_eq!(removed, vec![imported[1]]);
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.recovery, None);
-        assert_eq!(snapshot.records.len(), 1);
-        assert!(snapshot.records[0].available);
+        // The lost one is hidden as damaged, not dropped (#71).
+        let visible: Vec<_> = snapshot
+            .records
+            .iter()
+            .filter(|record| record.hidden.is_none())
+            .collect();
+        assert_eq!(visible.len(), 1);
+        assert!(visible[0].available);
+        let lost = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == imported[1])
+            .unwrap();
+        assert_eq!(
+            lost.hidden.map(|hidden| hidden.reason),
+            Some(HiddenReason::Damaged)
+        );
+        assert!(!lost.available);
         store.create_profile("Morgan", 3).unwrap();
         store.lock();
         store.unlock(PASSWORD).unwrap();
@@ -10128,9 +12048,17 @@ mod tests {
         assert_eq!(removed, vec![imported[0]]);
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.recovery, None);
-        assert_eq!(snapshot.records.len(), 1);
-        assert_eq!(snapshot.records[0].id, imported[1]);
-        assert_eq!(damaged(&snapshot), 0);
+        // The one still lost is hidden, as damaged; the one that came back
+        // stays in view (#71).
+        let visible: Vec<_> = snapshot
+            .records
+            .iter()
+            .filter(|record| record.hidden.is_none())
+            .collect();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, imported[1]);
+        assert!(visible[0].available);
+        assert_eq!(damaged(&snapshot), 1);
         let mut exported = Vec::new();
         store.export(imported[1], &mut exported).unwrap();
         assert_eq!(exported, b"b");
@@ -10306,7 +12234,7 @@ mod tests {
         store.export(kept, &mut exported).unwrap();
         assert_eq!(exported, b"synthetic kept record");
         assert!(matches!(
-            store.delete_record(lost),
+            store.hide_record(lost, 3),
             Err(VaultError::RecoveryMode)
         ));
         // Recovery mode must leave storage exactly as it was found.
@@ -10630,8 +12558,10 @@ mod tests {
                         nonce: String::new(),
                         ciphertext: String::new(),
                     },
+                    hidden: None,
                 })
                 .collect(),
+            history: HistoryState::default(),
         }
     }
 
@@ -10643,7 +12573,7 @@ mod tests {
             .map(|record| record.id)
             .collect();
         SlotReading::Authentic {
-            manifest,
+            manifest: Box::new(manifest),
             missing,
             unknown: HashSet::new(),
         }
@@ -10657,7 +12587,7 @@ mod tests {
         };
         let slots = [
             SlotReading::Authentic {
-                manifest,
+                manifest: Box::new(manifest),
                 unknown: missing.clone(),
                 missing,
             },
@@ -10682,7 +12612,7 @@ mod tests {
             .collect();
         let slots = [
             SlotReading::Authentic {
-                manifest: newer,
+                manifest: Box::new(newer),
                 missing: unknown.clone(),
                 unknown: unknown.clone(),
             },
@@ -10730,7 +12660,16 @@ mod tests {
         let mut expected = vec![ids[0], ids[1]];
         expected.sort();
         assert_eq!(removed, expected);
-        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 3);
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .filter(|record| record.hidden.is_none())
+                .count(),
+            1
+        );
         assert!(objects[2].is_file());
     }
 
@@ -10779,7 +12718,7 @@ mod tests {
         // A screen that showed nothing, or more than the vault does.
         for stale in [vec![], vec![ids[0], ids[1]], vec![ids[1]]] {
             assert!(matches!(
-                store.remove_unavailable_records(&stale),
+                store.hide_unavailable_records(&stale, 3),
                 Err(VaultError::RemovalChanged)
             ));
         }
@@ -10788,7 +12727,7 @@ mod tests {
         assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
 
         assert_eq!(
-            store.remove_unavailable_records(&[ids[0]]).unwrap(),
+            store.hide_unavailable_records(&[ids[0]], 3).unwrap(),
             vec![ids[0]]
         );
         assert_eq!(store.snapshot().unwrap().recovery, None);
@@ -11717,7 +13656,7 @@ mod tests {
     }
 
     #[test]
-    fn deletion_abrupt_termination_matrix_finishes_cryptographic_erasure() {
+    fn hiding_abrupt_termination_matrix_keeps_the_document_and_its_file() {
         let temp = tempfile::tempdir().unwrap();
         let template = temp.path().join("template-vault");
         let template_store = VaultStore::new(template.clone());
@@ -11733,24 +13672,23 @@ mod tests {
             .unwrap();
         template_store.lock();
 
-        for boundary in [
-            "manifest.after-first-write",
-            "delete.after-object-unlink",
-            "manifest.after-second-write",
-        ] {
+        // Hiding writes no file but the manifest, and removes none (#71).
+        for boundary in ["manifest.after-first-write", "manifest.after-second-write"] {
             let root = temp.path().join(boundary);
             copy_directory(&template, &root);
-            run_termination_child(&root, "delete", boundary);
+            run_termination_child(&root, "hide", boundary);
 
             let restarted = VaultStore::new(root.clone());
             restarted.unlock(PASSWORD).unwrap();
-            assert!(restarted.snapshot().unwrap().records.is_empty());
-            assert_eq!(fs::read_dir(root.join("objects")).unwrap().count(), 0);
+            let records = restarted.snapshot().unwrap().records;
+            assert_eq!(records.len(), 1);
+            assert!(records[0].hidden.is_some());
+            assert_eq!(document_files(&root), 1);
         }
     }
 
     #[test]
-    fn injected_no_space_deletion_failures_recover_without_half_visible_records() {
+    fn injected_no_space_hiding_failures_recover_without_half_hidden_records() {
         let temp = tempfile::tempdir().unwrap();
         let template = temp.path().join("template-vault");
         let template_store = VaultStore::new(template.clone());
@@ -11766,27 +13704,26 @@ mod tests {
             .unwrap();
         template_store.lock();
 
-        for (boundary, deleted) in [
+        for (boundary, hidden) in [
             ("manifest.before-first-write", false),
             ("manifest.after-first-write", true),
-            ("delete.after-object-unlink", true),
         ] {
             let root = temp.path().join(boundary);
             copy_directory(&template, &root);
-            run_failure_child(&root, "delete", boundary);
+            run_failure_child(&root, "hide", boundary);
 
             let restarted = VaultStore::new(root.clone());
             restarted.unlock(PASSWORD).unwrap();
-            assert_eq!(restarted.snapshot().unwrap().records.is_empty(), deleted);
-            assert_eq!(
-                fs::read_dir(root.join("objects")).unwrap().count(),
-                usize::from(!deleted)
-            );
+            let records = restarted.snapshot().unwrap().records;
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].hidden.is_some(), hidden);
+            // The file stays either way (#71).
+            assert_eq!(document_files(&root), 1);
         }
     }
 
     #[test]
-    fn deleting_a_record_removes_its_key_from_both_manifest_slots() {
+    fn hiding_a_record_keeps_it_its_key_and_its_file_in_both_slots() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let store = VaultStore::new(root.clone());
@@ -11808,9 +13745,22 @@ mod tests {
                 .clone()
         };
 
-        store.delete_record(record).unwrap();
-        assert!(store.snapshot().unwrap().records.is_empty());
-        assert!(!root.join("objects").join(object_name).exists());
+        let bytes = fs::read(root.join("objects").join(&object_name)).unwrap();
+        store.hide_record(record, 7).unwrap();
+        let hidden = store.snapshot().unwrap().records;
+        assert_eq!(hidden.len(), 1);
+        assert_eq!(
+            hidden[0].hidden,
+            Some(Hidden {
+                at_ms: 7,
+                reason: HiddenReason::Patient
+            })
+        );
+        // Nothing is ever deleted (#71): the file is there, byte for byte.
+        assert_eq!(
+            fs::read(root.join("objects").join(&object_name)).unwrap(),
+            bytes
+        );
 
         let (master_key, vault_id, latest_generation) = {
             let guard = store.unlocked.lock().unwrap();
@@ -11826,12 +13776,515 @@ mod tests {
             b"synthetic corruption",
         )
         .unwrap();
+        // Both slots hold the document, its key and its hidden mark.
         let fallback = read_latest_manifest(&root, &master_key, vault_id).unwrap();
-        assert!(fallback.records.is_empty());
+        assert_eq!(fallback.records.len(), 1);
+        assert!(fallback.records[0].hidden.is_some());
+
+        // Restored, it is in view again, with the same file.
+        store.unhide_record(record).unwrap();
+        assert!(store.snapshot().unwrap().records[0].hidden.is_none());
+    }
+
+    /// A vault as an earlier build left it: both manifest slots `format`,
+    /// with no history; a format 1 one unpadded, a format 2 one with its
+    /// first document hidden. Returns its master key and id, for reading the
+    /// slots back without an unlock, which would upgrade it.
+    fn old_format_vault(
+        root: &Path,
+        names: &[&str],
+        format: u32,
+    ) -> (VaultStore, Vec<Uuid>, [u8; 32], Uuid) {
+        let (store, imported, _) = vault_with_records(root, names);
+        store.unlock(PASSWORD).unwrap();
+        let (master_key, mut manifest) = {
+            let guard = store.unlocked.lock().unwrap();
+            let unlocked = guard.as_ref().unwrap();
+            (*unlocked.master_key, unlocked.manifest.clone())
+        };
+        store.lock();
+        manifest.format_version = format;
+        if format == MANIFEST_FORMAT_HIDDEN {
+            manifest.records[0].hidden = Some(Hidden {
+                at_ms: 5,
+                reason: HiddenReason::Patient,
+            });
+        }
+        // An earlier build kept no history: its segments go, as if never
+        // written.
+        for segment in std::mem::take(&mut manifest.history).segments {
+            fs::remove_file(root.join("objects").join(segment.object_name)).unwrap();
+        }
+        for _ in 0..2 {
+            manifest.generation += 1;
+            write_manifest_at(root, &master_key, &manifest).unwrap();
+        }
+        let vault_id = manifest.vault_id;
+        (store, imported, master_key, vault_id)
+    }
+
+    /// Both slots, decrypted: (format, generation, the state without them or
+    /// the history, which every writable unlock adds to).
+    fn slots(root: &Path, master_key: &[u8; 32], vault_id: Uuid) -> Vec<(u32, u64, Manifest)> {
+        let keys = derive_keys(vault_id, master_key).unwrap();
+        (0..2)
+            .map(|slot| {
+                let data = fs::read(manifest_path(root, slot)).unwrap();
+                let mut manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
+                let (format, generation) = (manifest.format_version, manifest.generation);
+                manifest.format_version = 0;
+                manifest.generation = 0;
+                manifest.history = HistoryState::default();
+                (format, generation, manifest)
+            })
+            .collect()
+    }
+
+    /// The events in the session's history, from its segments.
+    #[test]
+    fn a_photo_from_the_camera_is_recorded_as_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Patient", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let source = |name: &str| ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(std::io::Cursor::new(
+                format!("%PDF-1.7 {name}").into_bytes(),
+            )),
+        };
+        store
+            .import_from(profile, vec![], vec![source("FAKE photo.jpg")], 2, "camera")
+            .unwrap();
+        store
+            .import(profile, vec![], vec![source("FAKE scan.pdf")], 3)
+            .unwrap();
+        let hows: Vec<_> = history_events(&store)
+            .into_iter()
+            .filter(|entry| entry.event == HistoryEvent::Imported)
+            .map(|entry| (entry.name, entry.how))
+            .collect();
+        assert_eq!(
+            hows,
+            vec![
+                (Some("FAKE photo.jpg".to_owned()), Some("camera".to_owned())),
+                (Some("FAKE scan.pdf".to_owned()), Some("picked".to_owned())),
+            ]
+        );
+    }
+
+    fn history_events(store: &VaultStore) -> Vec<HistoryEntry> {
+        super::history_events_for_test(store)
+    }
+
+    fn events_of(entries: &[HistoryEntry]) -> Vec<HistoryEvent> {
+        entries.iter().map(|entry| entry.event).collect()
     }
 
     #[test]
-    fn deleting_a_missing_record_does_not_change_the_manifest() {
+    fn an_older_vault_opens_and_is_upgraded_in_a_commit_of_its_own() {
+        let temp = tempfile::tempdir().unwrap();
+        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+            let root = temp.path().join(format!("format-{from}"));
+            let (store, imported, master_key, vault_id) =
+                old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            let before = slots(&root, &master_key, vault_id);
+            assert!(before.iter().all(|(format, _, _)| *format == from));
+            store.unlock(PASSWORD).unwrap();
+            let snapshot = store.snapshot().unwrap();
+            assert_eq!(snapshot.recovery, None);
+            assert_eq!(snapshot.records.len(), imported.len());
+            // Both slots are format 3 and hold the same state: nothing but
+            // the format, the generation and the history changed.
+            let both = slots(&root, &master_key, vault_id);
+            assert!(both.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
+            assert!(both[0].2 == before[0].2 && both[1].2 == before[0].2);
+            // Padded to a size class (#71).
+            for slot in 0..2 {
+                let length = fs::metadata(manifest_path(&root, slot)).unwrap().len() as usize;
+                let plaintext = length - 40;
+                assert!(plaintext.is_power_of_two() && plaintext >= MANIFEST_SIZE_CLASS_MIN);
+            }
+            // Its history starts at this unlock, and says so.
+            let entries = history_events(&store);
+            assert_eq!(
+                events_of(&entries),
+                [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+            );
+            // Hiding now writes format 3 data on top.
+            store.hide_record(imported[1], 9).unwrap();
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let records = store.snapshot().unwrap().records;
+            assert!(records
+                .iter()
+                .find(|record| record.id == imported[1])
+                .unwrap()
+                .hidden
+                .is_some());
+        }
+    }
+
+    #[test]
+    fn a_crash_between_the_upgrade_writes_leaves_nothing_an_older_build_could_lose() {
+        let temp = tempfile::tempdir().unwrap();
+        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+            let template = temp.path().join(format!("template-{from}"));
+            let (_store, imported, master_key, vault_id) =
+                old_format_vault(&template, &["a.pdf", "b.pdf"], from);
+            let before = slots(&template, &master_key, vault_id);
+            assert!(before.iter().all(|(format, _, _)| *format == from));
+
+            for boundary in ["upgrade.after-first-write", "upgrade.after-second-write"] {
+                let root = temp.path().join(format!("{from}-{boundary}"));
+                copy_directory(&template, &root);
+                run_termination_child(&root, "unlock", boundary);
+                let after = slots(&root, &master_key, vault_id);
+                // Whatever the slots hold now, it is the state from before the
+                // upgrade, with no history: an older build that opens the
+                // older slot, and drops as orphans the objects only the other
+                // slot names, loses nothing.
+                assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
+                let keys = derive_keys(vault_id, &master_key).unwrap();
+                for slot in 0..2 {
+                    let data = fs::read(manifest_path(&root, slot)).unwrap();
+                    let manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
+                    assert!(manifest.history.is_empty(), "{from} {boundary}");
+                }
+                let formats: Vec<u32> = after.iter().map(|(format, _, _)| *format).collect();
+                if boundary == "upgrade.after-first-write" {
+                    assert!(formats.contains(&from) && formats.contains(&VAULT_FORMAT));
+                } else {
+                    assert_eq!(formats, [VAULT_FORMAT, VAULT_FORMAT]);
+                }
+                // This build opens it, finishes the upgrade, and has
+                // everything, with a history from here on.
+                let restarted = VaultStore::new(root.clone());
+                restarted.unlock(PASSWORD).unwrap();
+                let snapshot = restarted.snapshot().unwrap();
+                assert_eq!(snapshot.recovery, None);
+                assert_eq!(snapshot.records.len(), imported.len());
+                assert_eq!(
+                    events_of(&history_events(&restarted)),
+                    [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+                );
+                restarted.lock();
+                assert!(slots(&root, &master_key, vault_id)
+                    .iter()
+                    .all(|(format, _, state)| *format == VAULT_FORMAT && *state == before[0].2));
+            }
+        }
+    }
+
+    #[test]
+    fn an_upgrade_that_cannot_write_leaves_the_vault_read_only_and_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        for (from, boundary) in [
+            (MANIFEST_FORMAT_V1, "upgrade.before-first-write"),
+            (MANIFEST_FORMAT_V1, "upgrade.after-first-write"),
+            (MANIFEST_FORMAT_HIDDEN, "upgrade.before-first-write"),
+            (MANIFEST_FORMAT_HIDDEN, "upgrade.after-first-write"),
+        ] {
+            let root = temp.path().join(format!("{from}-{boundary}"));
+            let (store, imported, _, _) = old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            {
+                let _fail = FailAt::new(boundary);
+                store.unlock(PASSWORD).unwrap();
+            }
+            let snapshot = store.snapshot().unwrap();
+            assert_eq!(
+                snapshot.recovery,
+                Some(RecoveryReason::WriteFailed),
+                "{boundary}"
+            );
+            assert!(matches!(
+                store.hide_record(imported[1], 3),
+                Err(VaultError::RecoveryMode)
+            ));
+            store.lock();
+            // The next unlock upgrades it.
+            store.unlock(PASSWORD).unwrap();
+            assert_eq!(store.snapshot().unwrap().recovery, None, "{boundary}");
+            store.hide_record(imported[1], 3).unwrap();
+        }
+    }
+
+    #[test]
+    fn format_1_cannot_carry_a_hidden_document_and_a_newer_format_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let (vault_id, mut manifest) = valid_manifest_fixture(temp.path());
+        manifest.format_version = MANIFEST_FORMAT_V1;
+        assert!(validate_manifest_structure(&manifest, vault_id).is_ok());
+        manifest.records[0].hidden = Some(Hidden {
+            at_ms: 1,
+            reason: HiddenReason::Patient,
+        });
+        assert!(matches!(
+            validate_manifest_structure(&manifest, vault_id),
+            Err(VaultError::Corrupt)
+        ));
+        manifest.format_version = VAULT_FORMAT;
+        assert!(validate_manifest_structure(&manifest, vault_id).is_ok());
+        manifest.format_version = VAULT_FORMAT + 1;
+        assert!(matches!(
+            validate_manifest_structure(&manifest, vault_id),
+            Err(VaultError::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn a_patient_hidden_missing_file_remains_confirmable_without_other_damaged_hidden_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let ids = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("later-missing.pdf", b"original bytes"),
+                    source("already-damaged.pdf", b"other bytes"),
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
+        let originals = store.session().as_ref().unwrap().manifest.records.clone();
+        let objects: Vec<_> = originals
+            .iter()
+            .map(|r| root.join("objects").join(&r.object_name))
+            .collect();
+        let ciphertext = fs::read(&objects[0]).unwrap();
+        // A previous recovery already stopped requiring the second file.
+        fs::remove_file(&objects[1]).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.hide_unavailable_records(&[ids[1]], 3).unwrap(),
+            vec![ids[1]]
+        );
+        store.hide_record(ids[0], 4).unwrap();
+        fs::remove_file(&objects[0]).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
+        let first = snapshot.records.iter().find(|r| r.id == ids[0]).unwrap();
+        assert!(!first.available);
+        assert_eq!(first.hidden.unwrap().reason, HiddenReason::Patient);
+        assert_eq!(
+            store.session().as_ref().unwrap().unavailable,
+            HashSet::from([ids[0]])
+        );
+        // Exactly the patient-hidden blocker is confirmed; the already damaged
+        // hidden file must not be rediscovered as a new required blocker.
+        assert_eq!(
+            store.hide_unavailable_records(&[ids[0]], 5).unwrap(),
+            vec![ids[0]]
+        );
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        let after = store.session().as_ref().unwrap().manifest.records.clone();
+        assert_eq!(after.len(), originals.len());
+        for (record, original) in after.iter().zip(&originals) {
+            let mut expected = original.clone();
+            expected.hidden = record.hidden;
+            assert!(*record == expected); // Identity, owner, metadata, object and key retained.
+            assert_eq!(record.hidden.unwrap().reason, HiddenReason::Damaged);
+        }
+        // Restoring the original ciphertext recovers the original document.
+        fs::write(&objects[0], &ciphertext).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        store.unhide_record(ids[0]).unwrap();
+        let mut plaintext = Vec::new();
+        store.export(ids[0], &mut plaintext).unwrap();
+        assert_eq!(plaintext, b"original bytes");
+        assert_eq!(fs::read(&objects[0]).unwrap(), ciphertext);
+        assert_eq!(store.snapshot().unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn a_document_hidden_as_damaged_comes_back_only_with_its_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, imported, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        let kept = temp.path().join("a.mcobj");
+        fs::copy(&objects[0], &kept).unwrap();
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(remove_shown(&store).unwrap(), vec![imported[0]]);
+        assert!(matches!(
+            store.unhide_record(imported[0]),
+            Err(VaultError::Invalid)
+        ));
+        // A vault that no longer needs the file opens writable without it.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        // The file came back: the document can be restored, and read.
+        fs::copy(&kept, &objects[0]).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert!(
+            snapshot
+                .records
+                .iter()
+                .find(|r| r.id == imported[0])
+                .unwrap()
+                .available
+        );
+        store.unhide_record(imported[0]).unwrap();
+        let mut exported = Vec::new();
+        store.export(imported[0], &mut exported).unwrap();
+        assert_eq!(exported, b"a.pdf");
+    }
+
+    #[test]
+    fn a_backup_carries_a_document_hidden_as_damaged_without_its_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, imported, objects) = vault_with_records(&root, &["a.pdf", "b.pdf"]);
+        fs::remove_file(&objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        remove_shown(&store).unwrap();
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 5).unwrap();
+        store.lock();
+
+        let other = temp.path().join("other-home").join("vault");
+        let restored = VaultStore::new(other.clone());
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        let snapshot = restored.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        let lost = snapshot
+            .records
+            .iter()
+            .find(|r| r.id == imported[0])
+            .unwrap();
+        assert_eq!(lost.hidden.map(|h| h.reason), Some(HiddenReason::Damaged));
+        assert!(!lost.available);
+        let mut exported = Vec::new();
+        restored.export(imported[1], &mut exported).unwrap();
+        assert_eq!(exported, b"b.pdf");
+    }
+
+    #[test]
+    fn an_object_no_manifest_names_is_quarantined_not_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, _, objects) = vault_with_records(&root, &["a.pdf"]);
+        let orphan = root
+            .join("objects")
+            .join(format!("{}.mcobj", Uuid::new_v4()));
+        fs::write(&orphan, b"synthetic orphan ciphertext").unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert!(!orphan.exists());
+        let quarantined = root.join("quarantine").join(orphan.file_name().unwrap());
+        assert_eq!(
+            fs::read(&quarantined).unwrap(),
+            b"synthetic orphan ciphertext"
+        );
+        assert!(objects[0].is_file());
+        // A backup does not carry it; a later unlock leaves it be.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(quarantined.is_file());
+    }
+
+    /// #71: whatever a session does, no document's encrypted file is ever
+    /// removed or changed. A scripted session runs every command that touches
+    /// documents, and every object a record ever named is checked byte for
+    /// byte at the end.
+    #[test]
+    fn no_command_removes_or_changes_a_documents_encrypted_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store
+            .create_folder(profile, None, "FAKE Letters", 2)
+            .unwrap();
+        let imported = store
+            .import(
+                profile,
+                vec![],
+                vec![
+                    source("one.pdf", b"synthetic one"),
+                    source("two.pdf", b"synthetic two"),
+                    source("three.pdf", b"synthetic three"),
+                ],
+                3,
+            )
+            .unwrap()
+            .imported;
+        // A duplicate is not added, and nothing it names is touched.
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("again.pdf", b"synthetic one")],
+                4,
+            )
+            .unwrap();
+        let ever_named = |store: &VaultStore| -> HashMap<String, Vec<u8>> {
+            let guard = store.unlocked.lock().unwrap();
+            guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .map(|record| {
+                    let path = root.join("objects").join(&record.object_name);
+                    (
+                        record.object_name.clone(),
+                        fs::read(path).unwrap_or_default(),
+                    )
+                })
+                .collect()
+        };
+        let before = ever_named(&store);
+        assert_eq!(before.len(), 3);
+
+        store.rename_record(imported[0], "renamed.pdf").unwrap();
+        store.assign_folders(imported[1], vec![folder]).unwrap();
+        store
+            .assign_folders_batch(imported.clone(), vec![])
+            .unwrap();
+        store.hide_record(imported[2], 5).unwrap();
+        store.unhide_record(imported[2]).unwrap();
+        store.hide_record(imported[1], 6).unwrap();
+        store
+            .export_atomic(imported[0], &temp.path().join("copy.pdf"))
+            .unwrap();
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 7).unwrap();
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        store.lock();
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+
+        let after = ever_named(&store);
+        assert_eq!(after, before);
+        assert!(after.values().all(|bytes| !bytes.is_empty()));
+        // And nothing else was quarantined along the way.
+        assert!(!root.join("quarantine").exists());
+    }
+
+    #[test]
+    fn hiding_a_missing_record_does_not_change_the_manifest() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         store.create(PASSWORD, "Jamie", 1).unwrap();
@@ -11841,7 +14294,7 @@ mod tests {
         };
 
         assert!(matches!(
-            store.delete_record(Uuid::new_v4()),
+            store.hide_record(Uuid::new_v4(), 3),
             Err(VaultError::NotFound)
         ));
         let after = {
@@ -12071,14 +14524,15 @@ mod tests {
 
     #[test]
     fn unlock_restores_a_missing_objects_directory() {
-        // Backup and sync tools commonly drop empty directories.
+        // Backup and sync tools commonly drop empty directories. With a
+        // history (#71) it is never empty, but it can still be lost whole.
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("vault");
         let store = VaultStore::new(root.clone());
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let profile = store.snapshot().unwrap().profiles[0].id;
         store.lock();
-        fs::remove_dir(root.join("objects")).unwrap();
+        fs::remove_dir_all(root.join("objects")).unwrap();
 
         store.unlock(PASSWORD).unwrap();
         let outcome = store
@@ -12793,6 +15247,677 @@ mod tests {
                 &[0x44_u8; 32],
                 u64::from(expected_size),
             ).is_err());
+        }
+    }
+
+    // ------------------------------------------------------------ history (#71)
+
+    /// Every file under `root`, read whole.
+    fn every_file(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut files = Vec::new();
+        let mut folders = vec![root.to_path_buf()];
+        while let Some(folder) = folders.pop() {
+            for entry in fs::read_dir(&folder).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else {
+                    files.push((path.clone(), fs::read(&path).unwrap()));
+                }
+            }
+        }
+        files
+    }
+
+    #[test]
+    fn profile_folder_and_passphrase_changes_go_in_the_history() {
+        use HistoryEvent::*;
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let key = set_up_recovery_key(&store, 2);
+        let sam = store.create_profile("  Sam ", 3).unwrap();
+        let heart = store.create_folder(sam, None, "Heart", 4).unwrap();
+        let echo = store.create_folder(sam, Some(heart), "Echo", 5).unwrap();
+        // A new name and a new place: one entry each.
+        store.update_folder(echo, None, " Echoes ").unwrap();
+        // Changing nothing records nothing.
+        store.update_folder(echo, None, "Echoes").unwrap();
+        store
+            .change_passphrase(PASSWORD, PASSPHRASE_REPLACEMENT)
+            .unwrap();
+        let all = history_events(&store);
+        let entries = &all[all.len() - 6..];
+        assert_eq!(
+            events_of(entries),
+            [
+                ProfileCreated,
+                FolderCreated,
+                FolderCreated,
+                FolderRenamed,
+                FolderMoved,
+                PassphraseChanged
+            ]
+        );
+        let folder_at = |id, name: &str| history::FolderAtTheTime {
+            id,
+            name: name.to_owned(),
+        };
+        let profile = &entries[0];
+        assert_eq!(
+            (profile.profile_id, profile.name.as_deref(), profile.at_ms),
+            (Some(sam), Some("Sam"), 3)
+        );
+        assert_eq!((profile.folder_id, profile.record_id), (None, None));
+        let made = |entry: &HistoryEntry| {
+            (
+                entry.profile_id,
+                entry.folder_id,
+                entry.name.clone(),
+                entry.to.clone(),
+            )
+        };
+        assert_eq!(
+            made(&entries[1]),
+            (
+                Some(sam),
+                Some(heart),
+                Some("Heart".to_owned()),
+                Some(vec![])
+            )
+        );
+        assert_eq!(
+            made(&entries[2]),
+            (
+                Some(sam),
+                Some(echo),
+                Some("Echo".to_owned()),
+                Some(vec![folder_at(heart, "Heart")])
+            )
+        );
+        assert_eq!(entries[1].from, None);
+        let renamed = &entries[3];
+        assert_eq!(
+            (
+                renamed.folder_id,
+                renamed.old_name.as_deref(),
+                renamed.name.as_deref()
+            ),
+            (Some(echo), Some("Echo"), Some("Echoes"))
+        );
+        let moved = &entries[4];
+        assert_eq!(
+            (moved.folder_id, moved.name.as_deref()),
+            (Some(echo), Some("Echoes"))
+        );
+        assert_eq!(moved.from, Some(vec![folder_at(heart, "Heart")]));
+        assert_eq!(moved.to, Some(vec![]));
+        assert_eq!(entries[5].how.as_deref(), Some("passphrase"));
+        // Nothing about either passphrase goes in.
+        for entry in entries {
+            let text = String::from_utf8(entry.canonical()).unwrap();
+            assert!(!text.contains(PASSWORD) && !text.contains(PASSPHRASE_REPLACEMENT));
+        }
+
+        // A forgotten passphrase replaced with the recovery key: the unlock
+        // and the change, in one commit, the unlock first.
+        store.lock();
+        assert!(store
+            .recover(&key, "lantern-orbit-willow-cascade-572")
+            .unwrap());
+        let entries = history_events(&store);
+        let last = &entries[entries.len() - 2..];
+        assert_eq!(events_of(last), [Unlocked, PassphraseChanged]);
+        assert_eq!(last[0].how.as_deref(), Some("recoveryKey"));
+        assert_eq!(last[1].how.as_deref(), Some("recoveryKey"));
+        let text = String::from_utf8(last[1].canonical()).unwrap();
+        assert!(!text.contains("lantern-orbit-willow-cascade-572") && !text.contains(&key));
+    }
+
+    #[test]
+    fn shared_intake_and_person_move_commit_their_history_without_rewriting_the_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let jamie = store.snapshot().unwrap().profiles[0].id;
+        let shared = store.shared_profile().unwrap();
+        let id = store
+            .import_from(
+                shared,
+                vec![],
+                vec![source("shared.pdf", b"unchanged")],
+                2,
+                "shared",
+            )
+            .unwrap()
+            .imported[0];
+        let imported = history_events(&store).pop().unwrap();
+        assert_eq!(imported.event, HistoryEvent::Imported);
+        assert_eq!(imported.how.as_deref(), Some("shared"));
+        assert_eq!(imported.profile_id, Some(shared));
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let record = before.records.iter().find(|r| r.id == id).unwrap();
+        let object = root.join("objects").join(&record.object_name);
+        let ciphertext = fs::read(&object).unwrap();
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
+            {
+                let _fail = FailAt::new(boundary);
+                assert!(matches!(
+                    store.move_to_profile(vec![id], jamie, vec![]),
+                    Err(VaultError::NoSpace)
+                ));
+            }
+            assert!(
+                store.session().as_ref().unwrap().manifest == before,
+                "{boundary}"
+            );
+            assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        }
+        store.move_to_profile(vec![id], jamie, vec![]).unwrap();
+        let entries = history_events(&store); // Verifies the pinned chain as well.
+        let moved = entries.last().unwrap();
+        assert_eq!(moved.event, HistoryEvent::Moved);
+        assert_eq!(moved.record_id, Some(id));
+        assert_eq!(moved.profile_id, Some(jamie));
+        assert_eq!(moved.how.as_deref(), Some("shared"));
+        // A person changed even when neither location has a folder.
+        assert_eq!(moved.from, Some(vec![]));
+        assert_eq!(moved.to, Some(vec![]));
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        let duplicate = store
+            .import_from(
+                shared,
+                vec![],
+                vec![source("duplicate.pdf", b"unchanged")],
+                3,
+                "shared",
+            )
+            .unwrap()
+            .imported[0];
+        let before_duplicate = store.session().as_ref().unwrap().manifest.clone();
+        assert!(store
+            .move_to_profile(vec![duplicate], jamie, vec![])
+            .unwrap()
+            .moved
+            .is_empty());
+        assert!(store.session().as_ref().unwrap().manifest == before_duplicate);
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .profile_id,
+            jamie
+        );
+        assert_eq!(fs::read(&object).unwrap(), ciphertext);
+        history_events(&store);
+    }
+
+    #[test]
+    fn every_event_goes_in_the_history_with_what_it_was_about() {
+        use HistoryEvent::*;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store.create_folder(profile, None, "Heart", 2).unwrap();
+        let record = store
+            .import(profile, vec![], vec![source("scan.pdf", b"fake")], 3)
+            .unwrap()
+            .imported[0];
+        store.rename_record(record, "Echo report.pdf").unwrap();
+        store.assign_folders(record, vec![folder]).unwrap();
+        // Changing nothing records nothing.
+        store.rename_record(record, "Echo report.pdf").unwrap();
+        store.assign_folders(record, vec![folder]).unwrap();
+        store.hide_record(record, 4).unwrap();
+        store.unhide_record(record).unwrap();
+        // Copies go outside the vault's home.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let out = elsewhere.path();
+        store.export_atomic(record, &out.join("copy.pdf")).unwrap();
+        store.backup_atomic(&out.join("backup.mcbak"), 5).unwrap();
+        set_up_recovery_key(&store, 6);
+
+        let entries = history_events(&store);
+        assert_eq!(
+            events_of(&entries),
+            [
+                Created,
+                FolderCreated,
+                Imported,
+                Renamed,
+                Moved,
+                Hidden,
+                Restored,
+                CopySaved,
+                BackupSaved,
+                RecoveryKeySet
+            ]
+        );
+        assert!(entries
+            .iter()
+            .all(|entry| entry.app == env!("CARGO_PKG_VERSION")));
+        // The folder's own entry is checked in the next test; the rest are
+        // about the document.
+        let entries = &entries[1..];
+        let about = |index: usize| (entries[index].record_id, entries[index].name.as_deref());
+        assert_eq!(about(1), (Some(record), Some("scan.pdf")));
+        assert_eq!(entries[1].how.as_deref(), Some("picked"));
+        assert_eq!(entries[2].old_name.as_deref(), Some("scan.pdf"));
+        assert_eq!(about(2), (Some(record), Some("Echo report.pdf")));
+        assert_eq!(entries[3].from, Some(vec![]));
+        assert_eq!(
+            entries[3].to,
+            Some(vec![history::FolderAtTheTime {
+                id: folder,
+                name: "Heart".to_owned()
+            }])
+        );
+        assert_eq!(
+            (entries[4].at_ms, entries[4].how.as_deref()),
+            (4, Some("patient"))
+        );
+        assert_eq!(about(5), (Some(record), Some("Echo report.pdf")));
+        assert!(entries[6].place.as_deref().unwrap().ends_with("copy.pdf"));
+        assert!(entries[7]
+            .place
+            .as_deref()
+            .unwrap()
+            .ends_with("backup.mcbak"));
+        assert_eq!(entries[8].at_ms, 6);
+
+        // The next unlock says how the session before it ended: asked for,
+        // at the native deadline, or not known to this run of the app.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let unlocked = history_events(&store).pop().unwrap();
+        assert_eq!(
+            (unlocked.event, unlocked.how.as_deref()),
+            (Unlocked, Some("passphrase"))
+        );
+        let previous = unlocked.previous_session.unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app"),
+            "{previous}"
+        );
+        assert!(store.lock_if_idle(idle_past(Instant::now())));
+        store.unlock(PASSWORD).unwrap();
+        let previous = history_events(&store)
+            .pop()
+            .unwrap()
+            .previous_session
+            .unwrap();
+        assert!(previous.ends_with(":nativeDeadline"), "{previous}");
+        drop(store);
+        let restarted = VaultStore::new(root.clone());
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            history_events(&restarted)
+                .pop()
+                .unwrap()
+                .previous_session
+                .as_deref(),
+            Some("notRecorded")
+        );
+        // Its segments are its own objects, never taken for orphans.
+        assert!(!root.join("quarantine").exists());
+    }
+
+    #[test]
+    fn a_read_only_session_records_nothing_and_the_next_unlock_says_so() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, _, objects) = vault_with_records(&root, &["a.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        let before = history_events(&store).len();
+        store.lock();
+        let aside = temp.path().join("aside");
+        fs::rename(&objects[0], &aside).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+        assert_eq!(history_events(&store).len(), before);
+        store.lock();
+        fs::rename(&aside, &objects[0]).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        let entries = history_events(&store);
+        assert_eq!(entries.len(), before + 1);
+        // How the last recorded session ended, then that one was not.
+        let previous = entries.last().unwrap().previous_session.clone().unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app;notRecorded"),
+            "{previous}"
+        );
+    }
+
+    #[test]
+    fn a_lock_note_waits_for_an_unlock_that_is_recorded() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // The unlock's entry cannot be written: the session opens read-only,
+        // and the note of how the session before ended is kept.
+        {
+            let _fail = FailAt::new("history.objects-sync");
+            store.unlock(PASSWORD).unwrap();
+        }
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::WriteFailed)
+        );
+        assert_eq!(events_of(&history_events(&store)), [HistoryEvent::Created]);
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let previous = history_events(&store)
+            .pop()
+            .unwrap()
+            .previous_session
+            .unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app;notRecorded"),
+            "{previous}"
+        );
+        // Used up once recorded: the next lock starts a note of its own.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let previous = history_events(&store)
+            .pop()
+            .unwrap()
+            .previous_session
+            .unwrap();
+        assert!(
+            previous.starts_with("lockedAt:") && previous.ends_with(":app"),
+            "{previous}"
+        );
+    }
+
+    #[test]
+    fn segments_close_by_size_all_look_alike_and_come_in_powers_of_two() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let long = "n".repeat(MAX_RECORD_NAME_LEN);
+        let mut shapes = Vec::new();
+        for round in 0..3_u64 {
+            // A batch of long entries in one commit, as a large import makes.
+            {
+                let mut guard = store.session();
+                let unlocked = guard.as_mut().unwrap();
+                let entries = (0..150)
+                    .map(|at| {
+                        let mut entry = HistoryEntry::new(HistoryEvent::Renamed, round * 1000 + at);
+                        entry.name = Some(long.clone());
+                        entry.old_name = Some(long.clone());
+                        entry
+                    })
+                    .collect();
+                let next = unlocked.manifest.clone();
+                assert!(commit_with_history(
+                    &root,
+                    &unlocked.master_key,
+                    &mut unlocked.manifest,
+                    next,
+                    entries
+                )
+                .unwrap());
+            }
+            let state = store.session().as_ref().unwrap().manifest.history.clone();
+            let data = state.segments.iter().filter(|s| s.entry_count > 0).count();
+            assert_eq!(state.segments.len(), data.next_power_of_two());
+            assert!(state.segments[data..]
+                .iter()
+                .all(|filler| filler.entry_count == 0));
+            shapes.push((data, state.segments.len()));
+            // Every object on disk is a segment the manifest names, all the
+            // same size: a superseded one is gone, a filler looks like data.
+            let on_disk: HashSet<String> = fs::read_dir(root.join("objects"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+            let named: HashSet<String> = state
+                .segments
+                .iter()
+                .map(|segment| segment.object_name.clone())
+                .collect();
+            assert_eq!(on_disk, named);
+            for name in on_disk {
+                assert_eq!(
+                    fs::metadata(root.join("objects").join(name)).unwrap().len(),
+                    SEGMENT_OBJECT_LEN
+                );
+            }
+        }
+        assert_eq!(shapes, [(2, 2), (3, 4), (5, 8)]);
+        assert_eq!(history_events(&store).len(), 1 + 450);
+    }
+
+    #[test]
+    fn a_locked_vault_holds_no_name_from_its_history_in_the_clear() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store
+            .create_folder(profile, None, "FAKE-Echidna-Folder", 2)
+            .unwrap();
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE-Quokka-Report.pdf", b"x")],
+                3,
+            )
+            .unwrap()
+            .imported[0];
+        store
+            .rename_record(record, "FAKE-Wombat-Letter.pdf")
+            .unwrap();
+        store.assign_folders(record, vec![folder]).unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let out = elsewhere.path().join("FAKE-Platypus-Place");
+        fs::create_dir(&out).unwrap();
+        store.export_atomic(record, &out.join("copy.pdf")).unwrap();
+        store.lock();
+        for (path, bytes) in every_file(&root) {
+            for needle in ["Quokka", "Wombat", "Echidna", "Platypus", "Jamie"] {
+                assert!(
+                    !bytes
+                        .windows(needle.len())
+                        .any(|window| window == needle.as_bytes()),
+                    "{needle} in {}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_crash_in_an_unlocks_history_commit_leaves_a_whole_vault_and_chain() {
+        let temp = tempfile::tempdir().unwrap();
+        let template = temp.path().join("template");
+        let (store, _, _) = vault_with_records(&template, &["a.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        let before = history_events(&store).len();
+        store.lock();
+        for (boundary, committed) in [
+            ("history.after-chunk-write", false),
+            ("history.after-segment-write", false),
+            ("manifest.after-first-write", true),
+            ("manifest.after-second-write", true),
+        ] {
+            let root = temp.path().join(boundary);
+            copy_directory(&template, &root);
+            run_termination_child(&root, "unlock", boundary);
+            let restarted = VaultStore::new(root.clone());
+            restarted.unlock(PASSWORD).unwrap();
+            assert_eq!(restarted.snapshot().unwrap().recovery, None, "{boundary}");
+            assert_eq!(restarted.snapshot().unwrap().records.len(), 1);
+            // The chain checks; the interrupted unlock is in it only once
+            // its commit was durable.
+            let entries = history_events(&restarted);
+            assert_eq!(
+                entries.len(),
+                before + usize::from(committed) + 1,
+                "{boundary}"
+            );
+            assert_eq!(document_files(&root), 1);
+        }
+    }
+
+    #[test]
+    fn a_failed_history_write_commits_neither_the_change_nor_its_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let segments =
+            |store: &VaultStore| store.session().as_ref().unwrap().manifest.history.clone();
+        let before = segments(&store);
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
+            {
+                let _fail = FailAt::new(boundary);
+                assert!(matches!(
+                    store.import(profile, vec![], vec![source("a.pdf", b"a")], 2),
+                    Err(VaultError::NoSpace)
+                ));
+            }
+            assert!(store.snapshot().unwrap().records.is_empty(), "{boundary}");
+            assert!(segments(&store) == before, "{boundary}");
+            // Nothing it wrote is left: neither the document nor a segment.
+            let on_disk = fs::read_dir(root.join("objects")).unwrap().count();
+            assert_eq!(on_disk, before.segments.len(), "{boundary}");
+        }
+        store
+            .import(profile, vec![], vec![source("a.pdf", b"a")], 2)
+            .unwrap();
+        assert_eq!(
+            events_of(&history_events(&store)),
+            [HistoryEvent::Created, HistoryEvent::Imported]
+        );
+    }
+
+    #[test]
+    fn a_restore_goes_in_the_restored_vaults_history_and_an_unlock_is_no_change() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home-a").join("vault");
+        let (store, backup, _) = backed_up_vault(&root);
+        // Opened since the backup: only the history moved on, which is not
+        // a change restoring would lose.
+        store.unlock(PASSWORD).unwrap();
+        store.lock();
+        let preview = store
+            .inspect_backup(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        assert_eq!(preview.replaces, RestoreReplaces::SameVault);
+        assert!(!preview.differs_from_this_device);
+        // A real change still counts.
+        store.unlock(PASSWORD).unwrap();
+        let record = store.snapshot().unwrap().records[0].id;
+        store.rename_record(record, "renamed.pdf").unwrap();
+        store.lock();
+        let preview = store
+            .inspect_backup(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        assert!(preview.differs_from_this_device);
+
+        // Restored elsewhere: the backup's history, then the restore.
+        let fresh = VaultStore::new(temp.path().join("home-b").join("vault"));
+        fresh
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        fresh.unlock(PASSWORD).unwrap();
+        let entries = history_events(&fresh);
+        assert_eq!(entries[0].event, HistoryEvent::Created);
+        assert_eq!(
+            events_of(&entries[entries.len() - 2..]),
+            [HistoryEvent::BackupRestored, HistoryEvent::Unlocked]
+        );
+        // A device with no vault: none was replaced.
+        assert_eq!(entries[entries.len() - 2].how, None);
+    }
+
+    #[test]
+    fn a_damaged_last_segment_is_kept_and_the_history_goes_on_in_a_new_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let first = store.session().as_ref().unwrap().manifest.history.segments[0].clone();
+        store.lock();
+        let path = root.join("objects").join(&first.object_name);
+        let mut bytes = fs::read(&path).unwrap();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 1;
+        fs::write(&path, bytes).unwrap();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().recovery, None);
+        let state = store.session().as_ref().unwrap().manifest.history.clone();
+        // The damaged one is still named, and kept; the unlock is in a new one.
+        assert!(state.segments[0] == first);
+        assert!(path.exists());
+        assert_eq!(state.count, 2);
+        assert_eq!(state.segments[1].first_seq, 1);
+        assert_eq!(state.segments[1].entry_count, 1);
+    }
+
+    #[test]
+    fn the_history_test_vectors_match_vault_format_md() {
+        let vault_id = Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap();
+        let genesis = history::genesis(vault_id);
+        let mut entries = vec![HistoryEntry::new(HistoryEvent::Created, 1_767_225_600_000)];
+        entries[0].app = "0.1.0".to_owned();
+        let mut renamed = HistoryEntry::new(HistoryEvent::Renamed, 1_767_225_660_000);
+        renamed.app = "0.1.0".to_owned();
+        renamed.record_id = Some(Uuid::parse_str("10000000-0000-4000-8000-000000000001").unwrap());
+        renamed.name = Some("Écho \"cardiaque\".pdf".to_owned());
+        renamed.old_name = Some("scan.pdf".to_owned());
+        entries.push(renamed);
+        let head = history::chain(&mut entries, 0, genesis.clone());
+        let canonical: Vec<String> = entries
+            .iter()
+            .map(|entry| String::from_utf8(entry.canonical()).unwrap())
+            .collect();
+        let documented = include_str!("../../VAULT_FORMAT.md");
+        for value in [
+            &genesis,
+            &canonical[0],
+            &entries[0].hash(),
+            &canonical[1],
+            &head,
+        ] {
+            assert!(documented.contains(value.as_str()), "{value}");
         }
     }
 }

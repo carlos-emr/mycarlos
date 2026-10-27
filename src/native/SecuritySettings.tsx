@@ -1,6 +1,7 @@
 import { SecretInput } from "./SecretInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
+import { useI18n, withElements, type MessageKey, type Params } from "../i18n";
 import {
   MAX_PASSPHRASE_BYTES,
   isLockedError,
@@ -9,12 +10,13 @@ import {
   type SpeedTestReport,
 } from "../vault";
 import { AutoLockSetting } from "./AutoLockSetting";
-import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 import {
-  MIN_PASSPHRASE_CHARS,
-  ResetConfirmation,
-  tooShortPassphrase,
-} from "./VaultAuth";
+  NAME_INPUT_MAX_LENGTH,
+  SHARED_NAME_TAKEN,
+  nameIsShared,
+  nameTooLong,
+} from "./recordPresentation";
+import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
@@ -28,7 +30,6 @@ interface SecuritySettingsProps {
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string) => Promise<boolean>;
-  onReset: (confirmation: string) => Promise<void>;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -55,10 +56,33 @@ export function speedTestLine(report: SpeedTestReport): string {
   ].join(" ");
 }
 
-/** The size of a saved backup, which tells it from an empty or partial one,
- * as the platform's file app counts it. */
-const savedSize = (bytes: number | null, in1024s: boolean) =>
-  bytes === null ? "" : ` (${formatFileSize(bytes, in1024s)})`;
+/** Which file the new backup is: by name when the platform said, otherwise by
+ * when it was saved. Its size, as the platform's file app counts it, tells it
+ * from an empty or partial one. */
+function newBackupText(
+  t: (key: MessageKey, params?: Params) => string,
+  guide: Extract<OldBackupsGuide, { step: "delete" }>,
+  in1024s: boolean,
+): string {
+  const size =
+    guide.bytes === null ? null : formatFileSize(guide.bytes, in1024s);
+  if (guide.keep) {
+    return size === null
+      ? t("security.oldBackups.named", { name: guide.keep })
+      : t("security.oldBackups.namedWithSize", { name: guide.keep, size });
+  }
+  const saved = new Date(guide.savedAtMs);
+  const date = printedDate(saved);
+  // In the system's format, like printedDate: they match the language while it
+  // follows the system.
+  const time = saved.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return size === null
+    ? t("security.oldBackups.justSaved", { date, time })
+    : t("security.oldBackups.justSavedWithSize", { date, time, size });
+}
 
 export function SecuritySettings({
   busy,
@@ -69,7 +93,6 @@ export function SecuritySettings({
   onLock,
   onChangePassphrase,
   onCreateProfile,
-  onReset,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -79,6 +102,7 @@ export function SecuritySettings({
   onSaveBackup,
   onSpeedTest,
 }: SecuritySettingsProps) {
+  const { t } = useI18n();
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
     result: string;
@@ -155,14 +179,15 @@ export function SecuritySettings({
     <main className="library-main purpose-screen">
       <div className="main-head">
         <div>
-          <h1>Security</h1>
-          <p>Your encrypted vault and access settings</p>
+          <h1>{t("security.title")}</h1>
+          <p>{t("security.subtitle")}</p>
         </div>
       </div>
       <div className="purpose-note warning">
         <Icon name="info" />
         <span>
-          <strong>Development build.</strong> Use synthetic files only.
+          <strong>{t("security.devBuild.title")}</strong>{" "}
+          {t("security.devBuild.body")}
         </span>
       </div>
       <p className="status-line" role="status" aria-live="polite">
@@ -172,26 +197,49 @@ export function SecuritySettings({
         <section className="setting-row">
           <div>
             <h2>
-              Encryption <span className="state-pill">On — always</span>
+              {t("security.encryption.title")}{" "}
+              <span className="state-pill">
+                {t("security.encryption.state")}
+              </span>
             </h2>
+            <p>{t("security.encryption.body")}</p>
+          </div>
+        </section>
+        {/* #71: the privacy notice says what is kept. */}
+        <section className="setting-row" aria-labelledby="what-is-kept">
+          <div>
+            <h2 id="what-is-kept">What myCarlos keeps</h2>
             <p>
-              Files, names, folders, and record details are encrypted on this
-              device.
+              myCarlos never deletes a document. Hiding one takes it out of
+              view: it stays in the encrypted vault, listed under Hidden, and
+              can be restored. Readable copies you save outside myCarlos are
+              yours to keep or delete.
+            </p>
+            <p>
+              myCarlos also keeps a history: when the vault was opened; when its
+              passphrase or recovery key was set or changed, and when a backup
+              was saved or restored; when each patient profile was added and
+              each folder made, renamed or moved; and when each document was
+              added, renamed, moved, hidden, restored or saved outside myCarlos,
+              and where. It is encrypted with everything else. myCarlos does not
+              show it, and never changes or removes it.
+            </p>
+            <p>
+              Starting again, or restoring a backup over this vault, sets the
+              vault aside: it stays on this device, encrypted. myCarlos never
+              deletes a vault.
             </p>
           </div>
         </section>
         <section className="setting-row native-setting-form">
           <div>
             <h2>
-              Lock automatically{" "}
+              {t("security.autoLock.title")}{" "}
               <span className="state-pill">
-                {autoLockMinutes} minute{autoLockMinutes === 1 ? "" : "s"}
+                {t("security.autoLock.minutes", { count: autoLockMinutes })}
               </span>
             </h2>
-            <p>
-              The vault locks after the selected period without keyboard,
-              pointer, or touch activity. Choose from 1 to 15 minutes.
-            </p>
+            <p>{t("security.autoLock.body")}</p>
           </div>
           <div>
             <AutoLockSetting
@@ -203,33 +251,31 @@ export function SecuritySettings({
               type="button"
               onClick={() => void onLock()}
             >
-              Lock now
+              {t("security.lockNow")}
             </button>
           </div>
         </section>
         <section className="setting-row">
           <div>
             <h2>
-              Recovery key{" "}
+              {t("security.recoveryKey.title")}{" "}
               <span className="state-pill">
                 {recoveryKeySetAtMs
-                  ? `Set up ${printedDate(new Date(recoveryKeySetAtMs))}`
-                  : "Not set up"}
+                  ? t("security.recoveryKey.setUpOn", {
+                      date: printedDate(new Date(recoveryKeySetAtMs)),
+                    })
+                  : t("security.recoveryKey.notSetUp")}
               </span>
             </h2>
-            <p>
-              Opens your vault if you forget your passphrase. Only you have it:
-              nobody at your clinic or at myCarlos can open your vault for you.
-              Replacing it stops the old one working.
-            </p>
+            <p>{t("security.recoveryKey.body")}</p>
             {recoveryKeySetAtMs && recoveryKeyLabel && (
               <p>
-                Your current key has the label{" "}
-                <KeyLabel label={recoveryKeyLabel} />. A kit or note with this
-                label is the one that works; one with another label does not
-                open this vault. Kits and notes made before labels were shown
-                have none: one without a label may still be this key, set up on{" "}
-                {printedDate(new Date(recoveryKeySetAtMs))}.
+                {withElements(
+                  t("security.recoveryKey.current", {
+                    date: printedDate(new Date(recoveryKeySetAtMs)),
+                  }),
+                  { label: <KeyLabel label={recoveryKeyLabel} /> },
+                )}
               </p>
             )}
           </div>
@@ -241,46 +287,32 @@ export function SecuritySettings({
               onClick={onSetUpRecoveryKey}
             >
               {recoveryKeySetAtMs
-                ? "Replace recovery key"
-                : "Set up recovery key"}
+                ? t("security.recoveryKey.replace")
+                : t("security.recoveryKey.setUp")}
             </button>
           </div>
         </section>
         <section className="setting-row">
           <div>
-            <h2>Encrypted backup</h2>
-            <p>
-              One file holding your whole vault, still encrypted. Keep it
-              somewhere other than this device, such as a USB drive. It opens
-              with the passphrase or recovery key you have when you save it, and
-              keeps opening with them even after you change them here. To
-              restore one, lock the vault and choose Restore from a backup.
-            </p>
+            <h2>{t("security.backup.title")}</h2>
+            <p>{t("security.backup.body")}</p>
             {oldBackupsGuide && (
               <section
                 className="old-backups-guide"
                 aria-labelledby="old-backups-title"
               >
-                <h3 id="old-backups-title">Your older backups</h3>
-                <p>
-                  The kit for an earlier recovery key may have been lost or
-                  seen, and it still opens backups saved before that key was
-                  replaced.
-                </p>
+                <h3 id="old-backups-title">{t("security.oldBackups.title")}</h3>
+                <p>{t("security.oldBackups.intro")}</p>
                 {oldBackupsGuide.step === "save" ? (
                   <>
                     <ol>
                       <li>
                         {readOnly
-                          ? "Once the vault accepts changes again, save a new backup: choose Save encrypted backup."
-                          : "Save a new backup now: choose Save encrypted backup."}{" "}
-                        Keep it, or a copy of it, somewhere other than this
-                        device, such as a USB stick or a cloud drive.
+                          ? t("security.oldBackups.saveWhenWritable")
+                          : t("security.oldBackups.saveNow")}{" "}
+                        {t("security.oldBackups.keepCopy")}
                       </li>
-                      <li>
-                        Then delete the older backups. Once the new one is
-                        saved, this says how.
-                      </li>
+                      <li>{t("security.oldBackups.thenDelete")}</li>
                     </ol>
                     <button
                       className="button"
@@ -288,36 +320,18 @@ export function SecuritySettings({
                       disabled={busy}
                       onClick={onOldBackupsGuideDone}
                     >
-                      I have no older backups
+                      {t("security.oldBackups.none")}
                     </button>
                   </>
                 ) : (
                   <>
                     <ol>
                       <li>
-                        {oldBackupsGuide.keep ? (
-                          <>
-                            Your new backup is &ldquo;{oldBackupsGuide.keep}
-                            &rdquo;
-                            {savedSize(oldBackupsGuide.bytes, sizesIn1024s)}.
-                          </>
-                        ) : (
-                          `Your new backup is the one you just saved, on ${printedDate(new Date(oldBackupsGuide.savedAtMs))} at about ${new Date(oldBackupsGuide.savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${savedSize(oldBackupsGuide.bytes, sizesIn1024s)}: your files app shows when each file was saved, and its size.`
-                        )}{" "}
-                        Keep it, or a copy of it, somewhere other than this
-                        device, such as a USB stick or a cloud drive.
+                        {newBackupText(t, oldBackupsGuide, sizesIn1024s)}{" "}
+                        {t("security.oldBackups.keepCopy")}
                       </li>
-                      <li>
-                        Delete the older backups: files whose names start with
-                        &ldquo;myCarlos backup&rdquo;, and any you renamed,
-                        other than the new one and its copies. They are wherever
-                        you saved them: a folder, a USB stick, or on a phone the
-                        Files app or a cloud drive.
-                      </li>
-                      <li>
-                        If you saved it in place of an older backup, that file
-                        is now your new backup: keep it.
-                      </li>
+                      <li>{t("security.oldBackups.deleteOlder")}</li>
+                      <li>{t("security.oldBackups.inPlace")}</li>
                     </ol>
                     <button
                       className="button"
@@ -325,7 +339,7 @@ export function SecuritySettings({
                       disabled={busy}
                       onClick={onOldBackupsGuideDone}
                     >
-                      Done with older backups
+                      {t("security.oldBackups.done")}
                     </button>
                   </>
                 )}
@@ -339,34 +353,23 @@ export function SecuritySettings({
               disabled={busy || readOnly}
               onClick={() => void onSaveBackup()}
             >
-              Save encrypted backup…
+              {t("security.backup.save")}
             </button>
           </div>
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>Change passphrase</h2>
+            <h2>{t("security.passphrase.title")}</h2>
             <p>
-              Use at least {MIN_PASSPHRASE_CHARS} characters and avoid common
-              names or predictable phrases. Your recovery key, if you have one,
-              keeps working; without one, forgetting the new passphrase means
-              erasing the vault.
+              {t("security.passphrase.rules", { min: MIN_PASSPHRASE_CHARS })}
             </p>
-            <p>
-              Changing your passphrase keeps out someone who only knows the old
-              one. If they may also have a copy of your vault, such as a backup
-              of this device or a saved backup file, a new passphrase is not
-              enough: the old one still opens that copy, and with that copy they
-              could open a newer one they got later. Shutting them out takes a
-              new vault, and care not to lose documents on the way. Ask for help
-              before you erase anything.
-            </p>
+            <p>{t("security.passphrase.copies")}</p>
           </div>
           <form onSubmit={submitPassphrase}>
             <label>
-              Current passphrase
+              {t("security.passphrase.current")}
               <SecretInput
-                aria-label="Current passphrase"
+                aria-label={t("security.passphrase.current")}
                 required
                 type="password"
                 autoComplete="current-password"
@@ -375,9 +378,9 @@ export function SecuritySettings({
               />
             </label>
             <label>
-              New passphrase
+              {t("passphrase.new.label")}
               <SecretInput
-                aria-label="New passphrase"
+                aria-label={t("passphrase.new.label")}
                 required
                 type="password"
                 autoComplete="new-password"
@@ -386,9 +389,9 @@ export function SecuritySettings({
               />
             </label>
             <label>
-              Confirm new passphrase
+              {t("passphrase.confirmNew.label")}
               <SecretInput
-                aria-label="Confirm new passphrase"
+                aria-label={t("passphrase.confirmNew.label")}
                 required
                 type="password"
                 autoComplete="new-password"
@@ -399,29 +402,27 @@ export function SecuritySettings({
               />
             </label>
             {currentPassphraseTooLong && (
-              <p role="alert">
-                The current passphrase is longer than any vault passphrase.
-                Check what you typed.
-              </p>
+              <p role="alert">{t("security.passphrase.currentTooLong")}</p>
             )}
             {newPassphraseConfirmation &&
               newPassphrase !== newPassphraseConfirmation && (
-                <p role="alert">New passphrases do not match.</p>
+                <p role="alert">{t("security.passphrase.mismatch")}</p>
               )}
             {newPassphraseTooLong && (
-              <p role="alert">The new passphrase is too long. Shorten it.</p>
+              <p role="alert">{t("security.passphrase.newTooLong")}</p>
             )}
             {newPassphraseTooShort && newPassphraseConfirmation && (
               <p role="alert">
-                The new passphrase is too short. Use at least{" "}
-                {MIN_PASSPHRASE_CHARS} characters.
+                {t("security.passphrase.newTooShort", {
+                  min: MIN_PASSPHRASE_CHARS,
+                })}
               </p>
             )}
             <button
               className="button"
               disabled={busy || readOnly || passphraseFormInvalid}
             >
-              Change passphrase
+              {t("security.passphrase.submit")}
             </button>
           </form>
         </section>
@@ -429,14 +430,8 @@ export function SecuritySettings({
             command, before a release to patients. */}
         <section className="setting-row native-setting-form">
           <div>
-            <h2>Speed test, for testers</h2>
-            <p>
-              Measures how long this device takes to check a passphrase. It uses
-              a made-up passphrase, not yours, and changes nothing. It takes a
-              few seconds, longer on an older phone. Close other apps first, and
-              stay on this screen until it is done. Send the result with the
-              device's make and model.
-            </p>
+            <h2>{t("security.speed.title")}</h2>
+            <p>{t("security.speed.body")}</p>
           </div>
           <div>
             <button
@@ -445,32 +440,32 @@ export function SecuritySettings({
               disabled={busy || speedTest.running}
               onClick={() => void runSpeedTest()}
             >
-              Run speed test
+              {t("security.speed.run")}
             </button>
             <p className="native-dialog-status" role="status">
-              {speedTest.running ? "Measuring…" : speedTest.result}
+              {/* The result stays in English: testers copy it into the
+                  benchmark record. */}
+              {speedTest.running
+                ? t("security.speed.measuring")
+                : speedTest.result}
             </p>
             {speedTest.failed && <p role="alert">{speedTest.failed}</p>}
           </div>
         </section>
         <section className="setting-row">
           <div>
-            <h2>Readable copies and screenshots</h2>
-            <p>
-              Exports and screenshots leave vault protection. Deleting a record
-              from myCarlos cannot erase those copies or the clinic's source
-              medical record.
-            </p>
+            <h2>{t("security.copies.title")}</h2>
+            <p>{t("security.copies.body")}</p>
           </div>
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>Patient profiles</h2>
-            <p>Keep each person’s filing cabinet separate inside this vault.</p>
+            <h2>{t("security.profiles.title")}</h2>
+            <p>{t("security.profiles.body")}</p>
           </div>
           <form onSubmit={submitProfile}>
             <label>
-              New profile name
+              {t("security.profiles.label")}
               <input
                 required
                 maxLength={NAME_INPUT_MAX_LENGTH}
@@ -479,7 +474,10 @@ export function SecuritySettings({
               />
             </label>
             {nameTooLong(profileName) && (
-              <p role="alert">This name is too long. Shorten it.</p>
+              <p role="alert">{t("create.profile.tooLong")}</p>
+            )}
+            {nameIsShared(profileName) && (
+              <p role="alert">{SHARED_NAME_TAKEN}</p>
             )}
             <button
               className="button"
@@ -487,29 +485,13 @@ export function SecuritySettings({
                 busy ||
                 readOnly ||
                 !profileName.trim() ||
-                nameTooLong(profileName)
+                nameTooLong(profileName) ||
+                nameIsShared(profileName)
               }
             >
-              Add profile
+              {t("security.profiles.add")}
             </button>
           </form>
-        </section>
-        <section className="setting-row native-danger-setting">
-          <div>
-            <h2>Erase entire vault</h2>
-            <p>
-              Permanently deletes every encrypted document, profile, and folder.
-              This cannot be undone.
-            </p>
-          </div>
-          <details>
-            <summary>Show reset controls</summary>
-            <ResetConfirmation
-              busy={busy}
-              actionLabel="Erase entire vault"
-              onReset={onReset}
-            />
-          </details>
         </section>
       </div>
     </main>

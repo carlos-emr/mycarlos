@@ -6,7 +6,9 @@ export type DragItem =
 
 interface VaultDragDropOptions {
   disabled: boolean;
-  onMove: (item: DragItem, folderId: string | null) => void;
+  /** `profileId` is the person whose top-level folder or folder it was
+   * dropped on, from the sidebar's tree; elsewhere, the open person's. */
+  onMove: (item: DragItem, folderId: string | null, profileId?: string) => void;
 }
 
 export function useVaultDragDrop({ disabled, onMove }: VaultDragDropOptions) {
@@ -32,7 +34,11 @@ export function useVaultDragDrop({ disabled, onMove }: VaultDragDropOptions) {
     setDropTarget(zone);
   };
 
-  const dropInto = (event: ReactDragEvent, folderId: string | null) => {
+  const dropInto = (
+    event: ReactDragEvent,
+    folderId: string | null,
+    profileId?: string,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
     // Only a drag this hook started can move anything. The transferred data
@@ -42,7 +48,7 @@ export function useVaultDragDrop({ disabled, onMove }: VaultDragDropOptions) {
     setDropTarget(null);
     setDragItem(null);
     if (disabled || !item) return;
-    onMove(item, folderId);
+    onMove(item, folderId, profileId);
   };
 
   const dragEnd = () => {

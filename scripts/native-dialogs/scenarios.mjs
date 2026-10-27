@@ -1,5 +1,8 @@
 // Executed inside the installed app by WebKitWebDriver or Playwright.
 // Native actions and file fingerprints are supplied by the host test driver.
+const CANVAS_PHOTO =
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAIABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAcJ/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/EABQBAQAAAAAAAAAAAAAAAAAAAAX/xAAbEQACAQUAAAAAAAAAAAAAAAAAB0RFgoPCw//aAAwDAQACEQMRAD8Ak7QsBTpp+XmHLaXZuf/Z";
+
 export async function runDialogScenarios({ backupPath }) {
   const state = (window.__nativeDialogTest = {
     results: [],
@@ -78,8 +81,10 @@ export async function runDialogScenarios({ backupPath }) {
       passphrase: password,
       initialProfileName: "FAKE Native dialog test",
     });
-  const eraseTitle = "Erase the entire myCarlos vault?";
-  const erase = { confirmation: "RESET MYCARLOS VAULT" };
+  // Starting again sets the vault aside (#71), and is offered only on the
+  // unlock screen, so the vault is locked when it is asked.
+  const setAsideTitle = "Set this myCarlos vault aside and start again?";
+  const setAside = { confirmation: "RESET MYCARLOS VAULT" };
   const cases = [
     ["enter", ""],
     ["space", ""],
@@ -88,39 +93,70 @@ export async function runDialogScenarios({ backupPath }) {
     ["button", "Cancel"],
     ["button", "KEEP"],
   ];
+  // A photo saved through the real IPC, as the camera window sends it (#73):
+  // one body, the target's length (4 bytes, big-endian), the target as JSON,
+  // then the JPEG. A FAKE canvas JPEG, the Rust tests' canvas-photo.jpg.
+  const savePhoto = async () => {
+    const jpeg = Uint8Array.from(atob(CANVAS_PHOTO), (c) => c.charCodeAt(0));
+    const profileId = (await call("vault_snapshot")).profiles[0].id;
+    const target = new TextEncoder().encode(
+      JSON.stringify({
+        profileId,
+        folderIds: [],
+        name: "Photo, 1 Jan 2026, 9.00 AM.jpg",
+      }),
+    );
+    const request = new Uint8Array(4 + target.length + jpeg.length);
+    new DataView(request.buffer).setUint32(0, target.length);
+    request.set(target, 4);
+    request.set(jpeg, 4 + target.length);
+    let saved;
+    try {
+      saved = await window.__TAURI_INTERNALS__.invoke(
+        "vault_save_photo",
+        request,
+      );
+    } catch (error) {
+      // The code alone says which part did not arrive; nothing else is shown.
+      throw new Error(`Photo not saved: ${error?.code ?? "unknown"}`);
+    }
+    assert(saved.imported.length === 1, "Photo not saved: nothing imported");
+  };
   try {
     assert(
       (await call("vault_status")) === "absent",
       "Refusing to test an existing vault",
     );
     await create();
+    await savePhoto();
+    await call("vault_lock");
     for (const [action, value] of cases) {
       const before = await fingerprint();
       assert(
         (await dialog(
           "vault_reset",
-          erase,
-          eraseTitle,
+          setAside,
+          setAsideTitle,
           action,
           value === "KEEP" ? "Keep this vault" : value,
         )) === false,
-        `Erase was authorized by ${action}`,
+        `Setting the vault aside was authorized by ${action}`,
       );
-      await unchanged(before, `erase ${action}`);
+      await unchanged(before, `set aside ${action}`);
     }
     assert(
       (await dialog(
         "vault_reset",
-        erase,
-        eraseTitle,
+        setAside,
+        setAsideTitle,
         "button",
-        "Erase vault",
+        "Set it aside",
       )) === true,
-      "Explicit erase did not succeed",
+      "Explicitly setting the vault aside did not succeed",
     );
     assert(
       (await call("vault_status")) === "absent",
-      "Erased vault still exists",
+      "The vault set aside is still in use",
     );
     await create();
     const groups = (key) => ({
@@ -228,10 +264,10 @@ export async function runDialogScenarios({ backupPath }) {
     assert(
       (await dialog(
         "vault_reset",
-        erase,
-        eraseTitle,
+        setAside,
+        setAsideTitle,
         "button",
-        "Erase vault",
+        "Set it aside",
       )) === true,
       "Final test vault cleanup failed",
     );

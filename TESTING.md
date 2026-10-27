@@ -6,7 +6,7 @@ iOS Simulator. Only a real iPhone or iPad needs a build of your own, on a Mac.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
-> forgotten one can be replaced only with the vault's recovery key, or else erased with the vault
+> forgotten one can be replaced only with the vault's recovery key, or else the vault set aside
 > (see [Start over](#start-over)).
 
 **Help improve this guide.** So far these builds have only been tried on Windows, so the steps for
@@ -108,104 +108,156 @@ install over it; each build may be signed with a different debug key. Uninstalli
 
 ### iPhone or iPad (build it on a Mac)
 
-This is the one install in this guide that builds myCarlos from source. You need a Mac that can
-run the current Xcode, with about 40 GB of free storage; the iPhone or iPad and its cable; and an
-Apple ID (a free one is enough). The first time takes an hour or more, mostly downloads. These
-steps have not been tried on a real device yet: if one fails, [report it](#report-what-you-find)
-with the last lines of output.
+This install builds an evaluation app on a Mac with full Xcode and the iOS platform, then signs
+it for your connected phone with your Apple Account (a free Personal Team can be used). These
+steps have not been tried on a real device here. Use only FAKE files and a throwaway test vault;
+if a step fails, [report it](#report-what-you-find) with the source commit and last lines of output.
+
+The default checkout below is **main at `315604a32202eae9168582bb66609841c2d8ead6`**.
+It has no iPhone PDF reader: **Read** on a phone reports that documents cannot be shown yet.
+The optional draft reader trial below uses a separate, exact source commit.
 
 **Once, on the Mac:**
 
-1. Install **Xcode** from the App Store and open it. Agree to the licence, and when it asks which
-   platforms to add, include **iOS**.
-2. In Terminal, install Homebrew, Node, CocoaPods and Rust:
+1. Install full **Xcode**, open it, accept its licence and add the **iOS** platform. Follow
+   [Tauri's iOS prerequisites](https://v2.tauri.app/start/prerequisites/#ios). Command Line Tools
+   alone are not enough. Check that `xcode-select -p` ends in `Xcode.app/Contents/Developer`;
+   otherwise run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+2. Use **Node 22.14.0**, matching this source's CI, from the
+   [versioned Node download](https://nodejs.org/download/release/v22.14.0/), and install
+   [rustup](https://rustup.rs/) and CocoaPods as described in the prerequisites. Then run:
 
    ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   brew install node cocoapods
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   node --version
+   rustup toolchain install 1.98.0 --profile minimal --component clippy --component rustfmt
+   pod --version
+   xcodebuild -version
    ```
 
-   If Homebrew ends with **Next steps** (adding `brew` to your PATH), run those before the second
-   line; take Rust's default install. Then open a new Terminal window and check that
-   `xcode-select -p` ends in `Xcode.app/Contents/Developer`. If it doesn't, run
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
-3. In Xcode, choose **Xcode → Settings → Accounts**, press **+** and sign in with your Apple ID.
-   Select the team marked **(Personal Team)**, press **Manage Certificates…**, then
-   **+ → Apple Development**.
-4. Get the code:
+   Node should report `v22.14.0`; `rust-toolchain.toml` pins Rust **1.98.0**.
+   `npm ci` below installs the locked Tauri CLI **2.11.4**; do not install a global CLI or update
+   the lockfiles. This repository does not pin Xcode or CocoaPods versions. Include their versions,
+   the Mac's macOS version, and the phone's model and iOS version in your test report.
+3. In **Xcode → Settings → Accounts**, sign in with your Apple Account, select your
+   **Personal Team**, and use **Manage Certificates… → + → Apple Development**.
+4. Get a fresh checkout of the default main source:
 
    ```bash
-   git clone https://github.com/carlos-emr/mycarlos.git ~/mycarlos
+   git clone --no-checkout https://github.com/carlos-emr/mycarlos.git ~/mycarlos
    cd ~/mycarlos
-   npm ci
-   rustup target add aarch64-apple-ios
+   git fetch origin main
+   git switch --detach 315604a32202eae9168582bb66609841c2d8ead6
+   git rev-parse HEAD
    ```
 
-**Each time you install** (from `~/mycarlos`):
-
-5. Set the signing team. The variable lasts only for that Terminal window. The first time, also
-   create the iPhone project with `npm run tauri ios init`.
+   Confirm that `git rev-parse HEAD` prints the full commit above, then install dependencies:
 
    ```bash
-   export APPLE_DEVELOPMENT_TEAM=$(security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p')
-   echo "$APPLE_DEVELOPMENT_TEAM"   # a 10-character team ID; if empty, redo step 3
+   npm ci
+   rustup target add --toolchain 1.98.0 aarch64-apple-ios
    ```
 
-6. Plug in the phone, tap **Trust** and enter its passcode. The first time, Xcode may take a few
-   minutes preparing it (**Window → Devices and Simulators**), and on iOS 16 or later you must turn
-   on **Settings → Privacy & Security → Developer Mode** (the phone restarts). If that switch is
-   missing, open the Devices window in Xcode with the phone connected, then look again.
+   The `aarch64-apple-ios` target is for a real phone; the downloadable CI app targets the
+   Simulator and cannot be installed on the phone. For the optional reader trial, use its
+   separate checkout below instead of this step.
+
+**Each time you install** (from the selected checkout):
+
+5. Set `APPLE_DEVELOPMENT_TEAM` to the 10-character team ID for the certificate you just created
+   (under **Subject Name → Organizational Unit** in Keychain Access). Replace the placeholder
+   below; use the same team you selected in Xcode. The variable lasts for this Terminal window.
+   On the fresh checkout, initialize the iOS project once:
+
+   ```bash
+   export APPLE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+   npm run tauri ios init
+   ```
+
+6. Connect the unlocked phone with a data cable, tap **Trust** and enter its passcode. Let Xcode
+   prepare it in **Window → Devices and Simulators**. On iOS 16 or later, enable
+   **Settings → Privacy & Security → Developer Mode** and complete the restart. If the switch is
+   missing, open Xcode's Devices window with the phone connected and check again.
 7. Build and install, with the phone unlocked:
 
    ```bash
    npm run tauri ios run
    ```
 
-   Pick the phone if it lists devices, and allow the keychain prompt (**Always Allow**). The first
-   time, the app installs but won't open until step 8; then run this step again.
-8. On the phone: **Settings → General → VPN & Device Management → Developer App → Apple
-   Development: (your Apple ID) → Trust**.
+   Choose the connected phone if prompted. This uses the bundled frontend, without a development
+   server ([Tauri command reference](https://v2.tauri.app/reference/cli/#ios-run)). Allow the
+   signing keychain prompt. The first install may need step 8 before it can open; then repeat
+   this step.
+8. On the phone, trust your developer under **Settings → General → VPN & Device Management**.
 
-**Sample files:** The repository includes five FAKE PDFs in `~/mycarlos/dev-data`. To regenerate
-them, run this in Terminal:
+**Optional iPhone PDF reader trial — draft #105:**
+
+Use the published [draft #105](https://github.com/carlos-emr/mycarlos/pull/105) at
+**`098c576986b17c39edc1a8b7dd0f98d118db709b`**. It is unmerged; installing main does not enable
+this reader. Instead of step 4, use a separate checkout:
 
 ```bash
-cd ~/mycarlos
-npm run dev:data
+git clone --no-checkout https://github.com/carlos-emr/mycarlos.git ~/mycarlos-iphone-trial
+cd ~/mycarlos-iphone-trial
+git fetch origin codex/agent2-ios-pdf-reader-20261022
+git switch --detach 098c576986b17c39edc1a8b7dd0f98d118db709b
+git rev-parse HEAD
 ```
 
-AirDrop the five `FAKE_*.pdf` files to the phone, save them to Files, then follow
-[What to try](#what-to-try). `FAKE_MANIFEST.json` describes the samples; it is not a PDF to import.
+Confirm that the printed commit is exactly the trial pin above, then run `npm ci` and
+`rustup target add --toolchain 1.98.0 aarch64-apple-ios` here and continue steps 5–8 from this
+checkout. To keep a separate main app installed alongside it, choose a distinct local bundle
+identifier before `ios init`, as described in the troubleshooting table.
+
+[This pin's automatic checks](https://github.com/carlos-emr/mycarlos/actions/runs/40524215876)
+were still pending when recorded on 27 October 2026. Earlier head [7586137](https://github.com/carlos-emr/mycarlos/commit/758613727b9c0ea5557414413cb401e24b7f6114)
+passed iOS Simulator compilation; that result is not a current-pin build or a device test.
+Record the checks for the exact source you install.
+
+This trial uses a separate native WebKit PDF view; it does not establish the desktop helper's
+isolation guarantees. Native rendering, close/background/lock behavior, VoiceOver and repeated-read
+memory checks still need a real iPhone. A successful Simulator compile or browser test is not
+that proof. Import/export through Files, including **On My iPhone** and **iCloud Drive**, also
+remain unverified ([issue #5](https://github.com/carlos-emr/mycarlos/issues/5)); the reader does
+not resolve the save picker's security-scoped file and temporary-directory behavior.
+
+**Sample files:** Five FAKE PDFs are included in the selected checkout's `dev-data/`. To regenerate
+these synthetic files, run `npm run dev:data` there. AirDrop only `FAKE_*.pdf` to the phone and save
+them to Files; `FAKE_MANIFEST.json` describes the samples and is not a PDF. Then follow
+[What to try](#what-to-try), recording actual results and any platform limitations.
 
 Good to know:
 
-- **Free Apple ID:** the app stops opening after 7 days, and at most 3 such apps fit on the phone.
-  Repeat steps 5 to 7 to renew it; the vault is kept. A paid developer account makes it a year.
-- **Updating:** `git pull && npm ci`, then steps 5 to 7.
-- **Removing:** delete the app on the phone; its vault goes with it.
-- **Desktop only for now:** unlocking password-protected PDFs and the built-in PDF reader.
-- **Camera:** enabled on computers, Android and iPhone. Camera permissions and capture still need
-  testing on real phones.
+- **Free Personal Team:** Apple limits this to three installed apps per device and profiles that
+  expire after seven days. Rebuild and reinstall using the same team and bundle identifier to
+  renew the profile ([Apple's account guide](https://developer.apple.com/help/account/basics/about-your-developer-account)).
+  Vault preservation during renewal has not been checked on a real phone here.
+- **Updating a pinned checkout:** do not use `git pull` to change the source implicitly. Select
+  another reviewed full commit in a fresh checkout, record it, run `npm ci`, and repeat the
+  signing/install steps. Keep existing checkouts and vaults.
+- **Removing:** deleting the app removes its vault. Do not uninstall it as a signing or reader fix.
+- **Desktop only in main:** unlocking password-protected PDFs and the built-in PDF reader. The
+  draft trial does not provide the desktop password-unlock controls on iPhone.
+- **Camera:** enabled in the source on computers, Android and iPhone; real-phone permission and
+  capture checks remain unperformed here.
 
 **If something goes wrong:**
 
 | You see | Do this |
 | --- | --- |
-| `xcodebuild` "requires Xcode, but active developer directory … is a command line tools instance" | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
-| "iOS … is not installed" | Xcode → Settings → Components: install the iOS platform |
-| "can't find crate for `core`" or "target may not be installed" | In `~/mycarlos`: `rustup target add aarch64-apple-ios` |
-| `pod: command not found` | `brew install cocoapods`, then open a new Terminal |
-| "No signing certificate" or "requires a development team" | Repeat step 3, then step 5 in the same Terminal window |
-| "Failed to register bundle identifier" or "identifier not available" | Set your own `"identifier"` in `src-tauri/tauri.conf.json` (e.g. `ca.carlos.mycarlos.yourname`), rerun `npm run tauri ios init`, don't commit it. It installs as a separate app |
-| "Developer Mode disabled" or "the device is locked" | Step 6 (Developer Mode); unlock the phone and run step 7 again |
-| "Unable to launch … invalid code signature or its profile has not been explicitly trusted" | Step 8, then step 7 again |
-| "maximum number of apps for free development profiles" | Delete another app you installed from Xcode, then step 7 again |
-| The app stopped opening after a week | The free 7-day profile ran out: steps 5 to 7 |
-| The phone isn't listed | Use a data cable (not charge-only), unlock the phone, tap **Trust**; check **Window → Devices and Simulators** |
-| The build stops with "No space left on device" | Free storage; `rm -rf ~/mycarlos/src-tauri/target` clears old builds |
+| `xcodebuild` requires Xcode but the active developer directory is Command Line Tools | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
+| An iOS platform is missing | Install it in Xcode's Settings, then retry |
+| The device target is not installed | In the selected checkout: `rustup target add --toolchain 1.98.0 aarch64-apple-ios` |
+| `pod: command not found` | Complete the CocoaPods prerequisite, then open a new Terminal |
+| No signing certificate or development team | Recheck steps 3 and 5, using the selected team's certificate |
+| The bundle identifier is unavailable | Choose a unique local `identifier` in `src-tauri/tauri.conf.json` before initializing. Do not commit it. A different identifier installs a separate app with a separate vault |
+| Developer Mode is disabled or the phone is locked | Complete step 6 and unlock the phone |
+| A signature or profile is not trusted | Trust the developer in step 8 and repeat step 7 |
+| A free development limit is reached | Check the account's limits in Xcode; preserve existing apps and vaults |
+| The phone is not listed | Check the data cable, unlock and Trust, then check Xcode's Devices window |
+| The build runs out of storage | Report the failing command and free storage; preserve existing checkouts and test evidence |
 
-Anything else: [report it](#report-what-you-find) with the last lines of output.
+Anything else: [report it](#report-what-you-find) with the source commit, tool versions and last
+lines of output. Never include a private signing key, passphrase or recovery key.
 
 ## What to try
 
@@ -246,7 +298,10 @@ On every platform:
    the two Bloodwork files are identical.
 5. Create a folder with **New folder**, open a document and use **Move to** to put it in the
    folder, then rename the document (**Rename document** in its details) and the folder
-   (**Rename folder**).
+   (**Rename folder**). With two people in the vault, open a filed document's details,
+   choose the other person's records or one of their folders under **Move to**, then press
+   **Move**. Check it appears there and its saved copy is unchanged. If that person already
+   has the same file, the document stays with its original person and the notice says so.
 6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
 7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
@@ -266,7 +321,40 @@ On every platform:
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
     it is locked when you come back.
-12. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
+12. On a computer with a camera (Windows, macOS or Linux), choose **Take a photo** next to
+    **New**. The first time, the window explains why myCarlos uses the camera; choose **Use the
+    camera**. On a Mac, macOS then asks whether myCarlos may use the camera, with the same reason;
+    Windows and Linux ask nothing more. The camera's light comes on. Point it at a FAKE document,
+    choose **Take photo**: the light goes off and the photo shows. Try **Retake**, then **Use
+    photo**. The photo's details open, named like `Photo, 17 Oct 2026, 3.05 PM.jpg`, in the folder
+    that was open. Choose **View photo**, try **Zoom in** and **Zoom out**, then **Close**. Rename
+    the photo without `.jpg`: **View photo** still shows it. Save a copy and open it in another
+    app: its details there show no place, camera or date taken.
+    Then turn the camera off for apps in the computer's privacy settings and try again: the window
+    says where to turn it back on, and the rest of the app keeps working. Also check that the
+    light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
+    is on, or let the vault lock.
+    **On a phone** (Android, or a real iPhone: the iOS Simulator has no camera), **Take a photo**
+    is next to **New** too. The first time, the window says the phone asks once; choose **Use the
+    camera**, and the phone asks whether myCarlos may use the camera (an iPhone with the reason
+    "myCarlos uses the camera to save photos of your health documents…"). Allow it. The vault
+    stays unlocked while the phone asks, the back camera's view shows, and the steps above work
+    the same. Then check:
+    - **No copy anywhere:** after saving a photo, nothing new is in the phone's Photos or Gallery
+      app, or in its Files app.
+    - **Refused:** in the phone's Settings, turn the camera off for myCarlos (Android: Apps →
+      myCarlos → Permissions → Camera; iPhone: myCarlos → Camera) and choose **Take a photo**:
+      the window says where to turn it back on, and the rest of the app keeps working. Turn it
+      on and choose **Try again**. On Android, also choose **Don't allow** twice when asked:
+      Android then stops asking, and the window still says where to allow it.
+    - **Leaving:** with the camera on, go to the home screen and come back: the camera indicator
+      went off and the vault is locked. Do the same while the phone's question is showing: the
+      vault is locked when you come back.
+    - **The indicator:** the camera dot (green on both phones) goes off when you take the photo,
+      choose **Cancel**, or the vault locks.
+    - **TalkBack or VoiceOver:** the shutter is read as "Take photo", and after a photo the focus
+      is on **Use photo**. At the largest text size, every button can be reached.
+13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
     say "Vault content is hidden. myCarlos will lock as soon as the transfer finishes." and the
@@ -279,6 +367,15 @@ On every platform:
     does. If you stay away longer than that, the vault may instead lock as you return and leave the
     document out; after you unlock, the app says "The transfer did not finish." Either way nothing
     from the vault is shown meanwhile.
+13. **Shared with me.** With myCarlos closed, open a FAKE PDF with it (on Windows, right-click the
+    file, then **Open with** → myCarlos; on a Mac, the same from Finder). The lock screen says one
+    shared file is waiting, without its name. Unlock: the sidebar shows **Shared with me** with
+    "1 new", and the app says the file was added. With one person in the vault it sits among
+    their folders; with several, above them, outside everyone's records. Open it: the "new" goes,
+    and the file is listed with its size. Open the file's details and choose a place under **Move
+    to**: it moves there, and Shared with me is empty. Open a file that is not a PDF the same way
+    (a FAKE `.txt` renamed `.pdf` will do): after unlocking, the app names it and says it was not
+    added. Sharing from another app on a phone comes with the phone issues (#50 to #53).
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
@@ -300,6 +397,14 @@ Developers can find a fuller checklist, including large files and interrupted tr
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to
 someone listening to it. These checks need a person. Each screen reader below is free, and all
 but NVDA are built in.
+
+Two browser tests go part of the way first, in Chromium with a synthetic vault:
+`tests/keyboard-walk.spec.ts` uses only the keyboard through first setup, unlocking, the library,
+Settings and the lock warning (every control reached in order, focus shown, no traps, Escape
+closes dialogs), and
+`tests/screen-reader-smoke.spec.ts` checks that controls have names, headings go in order and the
+key events are read out. Problems they find are listed with `test.fail` and an issue number. They
+are not a screen reader: the steps below still apply.
 
 | Platform | Screen reader | Turn it on and off | Move / activate |
 | --- | --- | --- | --- |
@@ -336,7 +441,7 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    encrypted and imported…") is read out without focus moving. Errors are read as soon as they
    appear. Renaming a document from its details reads out "Document renamed to…" once you are
    back in the details.
-6. **Dialogs.** Opening a document's details, **Rename**, **Permanently delete**,
+6. **Dialogs.** Opening a document's details, **Rename**, **Hide**,
    **Save a copy** or the recovery key setup moves focus into the dialog and reads its title. Each
    group of the recovery key is read a character at a time ("Group 6: Y Z 0 1"). The recovery key
    setup of a new vault is the exception: there, Escape asks "Discard this recovery key?" first,
@@ -350,7 +455,11 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
    that the key does not work.
 7. **Locking.** After **Lock now**, focus is in the **Passphrase** field, not on something left
    over from the library, and the reader says "Vault locked." with the field. Check the same
-   after an automatic lock.
+   after an automatic lock, where the reader gives the reason instead: "Locked after 1 minute
+   without use." With the delay at 1 minute, after 30 seconds without touching anything the
+   reader reads "myCarlos will lock in 30 seconds to keep your records private." and the focus
+   is on **Keep open**; pressing it, or any key, keeps the vault open for another minute. Check
+   the warning again at 400% text size: **Keep open** can be reached and pressed.
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
@@ -393,11 +502,17 @@ what you expected it to read.
 
 ## Start over
 
-To remove everything while unlocked, open **Security**, choose **Show reset controls**, type
-`RESET MYCARLOS VAULT`, choose **Erase entire vault**, and confirm **Erase vault** in the dialog
-that follows. If you forgot the passphrase, choose **Forgot your passphrase?** on the unlock
-screen, type `RESET MYCARLOS VAULT`, choose **Erase vault**, and confirm **Erase vault** in the
-dialog, whose buttons are **Keep this vault**, **Erase vault** and **Cancel**.
+To start again with an empty vault, lock myCarlos, choose **Forgot your passphrase?** on the unlock
+screen, type `RESET MYCARLOS VAULT`, choose **Set vault aside**, and confirm **Set it aside** in the
+dialog, whose buttons are **Keep this vault**, **Set it aside** and **Cancel**. **Security** has no
+way to start again (#71, decided 19 October); check that it shows none.
+
+Nothing is erased (#71): the old vault moves, whole and encrypted, into a `set-aside` folder in the
+vault's folder (below), and myCarlos never deletes it. To remove a test vault for good, close
+myCarlos and delete that folder, or the whole vault folder, by hand. On Android and iPhone the
+folder is private to the app: only clearing myCarlos's data in the phone's settings, or
+uninstalling it, removes a vault set aside, and that removes every vault on the phone, the one in
+use too. This limit is accepted (decided 19 October).
 
 ### The "are you sure?" dialogs (please try on Windows, on a Mac and on Linux)
 
@@ -413,7 +528,7 @@ please also try these steps on each target computer, especially macOS and with a
 3. Open it again and press Space. Nothing should change.
 4. Open it again and press Escape. Nothing should change.
 5. Open it again and close it with its X, if it has one. Nothing should change.
-6. Each time, nothing should change. Erase and restore should report cancellation. For recovery-key
+6. Each time, nothing should change. Setting aside and restore should report cancellation. For recovery-key
    replacement, setup should stay open and say the current key still works.
 7. On a Mac, turn on **Keyboard navigation** in System Settings, then do steps 1 to 4 again, and
    say which button has the ring around it.
@@ -427,8 +542,8 @@ please also try these steps on each target computer, especially macOS and with a
 On a phone: note the order of the buttons, then tap outside the dialog, and press Back on
 Android. Nothing should change.
 
-Uninstalling also removes the vault on Android and iOS. On desktop the vault stays until erased;
-it lives in:
+Uninstalling also removes the vault on Android and iOS. On desktop the vault, and every vault set
+aside, stays until you delete the folder by hand; it lives in:
 
 - Windows: `%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`
 - macOS: `~/Library/Application Support/ca.carlos.mycarlos/vault-home`
@@ -547,3 +662,144 @@ If initial Enter or Space leaves a Linux dialog open, it records that behavior a
 with Escape; no destructive operation may occur. These checks cover the tested Windows
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
+
+## Password-protected PDFs
+
+Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
+locks them (password `FAKE-portal-2026`). This is still a synthetic-data evaluation, not approval for PHI.
+
+1. On Windows, macOS or Linux, share or open `text-aes256.pdf` with myCarlos, or add it with
+   **Import**. It is stored as it came, in Shared with me or where it was added.
+2. Open its details. They say "Locked with a password", with an **Unlock…** button. A PDF with no
+   password shows neither.
+3. **Unlock…** asks for "the document password from your patient portal". A wrong password asks
+   again and says so; the field is emptied after every try. **Cancel** changes nothing.
+4. The right password adds a copy beside it, with its name and in the same place. The details then
+   show the copy, which has no Unlock, and say where the original is: it is kept, renamed
+   "<name> (locked original).pdf". Saved with **Save a copy**, the copy opens with no password and
+   the original still asks for one.
+5. Unlock the original again: myCarlos says an unlocked copy is already there, and adds nothing.
+6. The password is never shown again, never kept and never written to a log. Check that the app's
+   data folder holds no unlocked copy outside the vault.
+7. While the password is being checked, lock the vault or close myCarlos. Nothing is added, and the
+   original keeps its name.
+8. On a phone, a locked PDF's details say "Locked with a password. myCarlos cannot open it on this
+   device yet", with no Unlock.
+
+The Rust tests unlock every fixture and compare page text and content with the originals. They also
+start the real executable as the helper exactly as myCarlos does on each desktop system: sandboxed,
+and on Windows in its AppContainer and job object. It still unlocks a document and draws a page.
+
+The helper's sandbox (#63) is tested in child processes, in CI on Linux, macOS and Windows:
+- **Escape attempts.** A child sandboxed as the helper is tries to read a file it could read before,
+  write one, connect to a port the test listens on, and start a program. On Linux and macOS it also
+  tries to bind a socket and make a pipe, and then to read and connect again after closing stdin,
+  which would free a descriptor. Every attempt must fail. A control child, started without the
+  sandbox, must succeed at each, so the test cannot pass by doing nothing.
+- **On Linux,** the same child with seccomp alone (no Landlock, no descriptor limit) must fail at
+  each too, and cannot exec another program. A child with Landlock alone must be refused the file
+  (and, from Landlock 4, the connection) when the kernel has Landlock; the test says so when it
+  does not.
+- **Memory.** myCarlos is not dumpable, and as an ordinary user (as CI runs) a sandboxed helper
+  cannot read its memory. On Windows, a helper in its AppContainer cannot open myCarlos to read it,
+  and a helper started outside one reads nothing. A sandboxed helper that grows past its memory limit
+  is stopped well before its time limit: on Linux by its data limit, on Windows by its job, and on
+  macOS, which refuses a data limit, by myCarlos reading its footprint.
+
+On Windows the tests let AppContainers read and run the test programs first (`icacls`, as in
+[WINDOWS.md](WINDOWS.md)), as the installer does for myCarlos.
+
+## Reading a document inside myCarlos
+
+Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-pdf/`.
+
+1. Open a document's details and choose **Read**. The first page shows with "Page 1 of N". The page's
+   text is under **Text on this page**.
+2. **Next page** and **Previous page** move through the document. **Larger**, **Smaller** and
+   **Fit width** change the size; a larger page scrolls inside the reader.
+3. A document stored with its own password (imported with **Import** while still locked) asks for
+   "the document password from your patient portal". A wrong one asks again. The password is used
+   for the pages that follow and is gone when the reader closes.
+4. Lock the vault, or let it lock, while a document is open: the reader closes with the library.
+5. With a screen reader, each page picture is named "Page N of M"; read the page with **Text on this
+   page**. A scanned page may have no text. That is a limitation of this first version.
+6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+
+The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
+the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
+**Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
+
+## Appearance and Windows high contrast
+
+Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
+including on a phone. The separate browser demonstration follows the device automatically;
+it has no Preferences screen. This is still a synthetic-data evaluation, not approval for PHI.
+
+1. With no appearance saved, check that **System** follows the device's light/dark choice.
+   Change the device choice while myCarlos is open, on both a locked screen and the library.
+   The app should update without restarting.
+2. Choose **Light**, then **Dark**. Close and reopen the app after each: the choice should be
+   remembered, including before unlocking. Explicit Light/Dark should stay put when the device
+   changes. Choose **System** again to resume following the device.
+3. On Windows and macOS, check that the native window follows each choice where the platform
+   supports it. A failed or slow native command must not block the app. A failed save of the
+   preference should say it cannot be remembered, while the current appearance still works.
+4. On Windows, turn on a contrast theme in **Settings → Accessibility → Contrast themes**.
+   Try both a light and dark contrast palette, including with Light or Dark selected in the app.
+   There is no extra high-contrast switch. Tab through Preferences and the library: focus outlines,
+   selected buttons/checkmarks, document icons, warnings and disabled controls must be visible.
+   Check with Narrator's scan mode too; static text should not enter the Tab sequence.
+5. Check light/dark text, warning chips, selected records, bulk controls, input boundaries and
+   keyboard focus against their actual backgrounds. Automated axe checks do not cover every state
+   or replace native screen-reader and contrast-theme testing.
+6. Try the phone layout and the smallest desktop window at 400% text size. Appearance must not
+   remove Text size controls, move auto-lock out of Security, or change reduced-motion behavior.
+7. In the browser demonstration, compare the synthetic paper preview across light/dark: the paper
+   and its content remain unchanged while the surrounding app changes. Native documents still use
+   **Save a copy**; no PDF viewer is added. A recovery kit printed from either appearance must have
+   black text on white paper. Do not include passwords or recovery keys in screenshots or traces.
+
+`tests/appearance.spec.ts` exercises the real native UI with a synthetic IPC bridge in Chromium,
+including phone layout, live system changes, contrast checks and forced-colours emulation. This
+is separate from actual Windows/macOS native appearance testing and the text-size checks on
+real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
+old screenshots and successful CI do not establish Ben's UI approval.
+
+## Signed-PDF checker draft (#101)
+
+The current CARLOS #5135 fixture is copied without regeneration from commit
+`1f30d9bef74c4a5206244db21a367e94f24188df`; its SHA-256 is
+`f26a292a7ba9ca52e5251b65fb46345c959d784fc3190435ca6b67a024b47169`. All keys and patients
+are FAKE. The fixture includes 12 cases, including the encrypted email copy, missing/null
+recipient, tampering, extra update, incomplete ranges, wrong kid, RSA and two signatures.
+
+Focused native tests exercise CMS/current manifest digest and complete helper extraction;
+`tests/pdf_helper.rs` also starts the real confined executable for both plaintext and
+encrypted attachment reports. Import tests check preserved original bytes and honest
+unverified diagnostics. The password is passed for extraction only after signature/pin
+authentication. An unverified or malformed document still imports with its existing
+unverified source label; helper refusal never creates a Verified result.
+
+This is not completion of #55: authenticated portal linking, key replacement/revocation,
+durable trust metadata and rechecking stored documents remain separate work. The app has
+no authenticated clinic pins, so real production imports cannot become Verified yet.
+
+For the explicit real-helper import check, first build/run the signature helper integration
+case (`cargo test --manifest-path src-tauri/Cargo.toml --test pdf_helper
+the_confined_signature_helper_reports`). Then set
+`MYCARLOS_TEST_SIGNED_HELPER_EXE` to that build's absolute app-executable path and run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib signed_import_analysis --
+--ignored --test-threads=1`. It requires the exact `unknown_signer` refusal from the real
+helper path, alongside byte preservation. The executable override exists only in unit-test
+builds, never production; a generic helper failure cannot satisfy this test.
+
+Nullable v1 tests cover explicit null, missing members, wrong types, size bounds and the
+clinic/recipient binding policy. An optional ignored private-producer test reads only a
+FAKE captured PDF and its public certificate from metadata named by
+`MYCARLOS_TEST_PRIVATE_INTEROP_INPUT`; with the real helper configured as above, run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib
+private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
+--test-threads=1`. It requires signed-but-unbound under an explicit FAKE test pin and
+`unknown_signer` with no pins. Private captures, metadata and certificates are not committed
+or published, and the public fixture is not regenerated. This opt-in check is separate from
+the public fixture tests and does not establish a production authenticated clinic link.

@@ -49,6 +49,133 @@ has been suppressed or marked acceptable.
   the same visible passphrase derives the same key whichever composition form a
   keyboard produces. It adds one package to the Rust lockfile (485 → 486); its
   only dependency, `tinyvec`, was already locked.
+- `webkit2gtk` (=2.0.2) is now a direct Linux-only dependency, pinned to the version Tauri and Wry
+  already use, as `webview2-com` is on Windows: the camera dialog needs WebKitGTK's media-stream
+  setting turned on and its permission requests answered (`src-tauri/src/camera_permission.rs`).
+  It adds no package to the Rust lockfile.
+- RustCrypto `cms` (=0.2.3), `x509-cert` (=0.2.5), `p256` (=0.14.0), `ecdsa` (=0.17.0) and
+  `der` (=0.7.10) are direct dependencies, pinned exactly. They are pure Rust and all
+  Apache-2.0 OR MIT. They check the signature on PDFs CARLOS signed for a patient
+  (`src-tauri/src/signed_pdf.rs`, #55): the CMS SignedData, its certificate and the
+  ECDSA P-256 signature, which is what "Verified" rests on. Writing a DER and ECDSA
+  parser here instead would add custom security-sensitive code.
+  - The CMS/X.509 format stack stays on `der` 0.7, `spki` 0.7 and `const-oid` 0.9.
+    P-256 verification moves to `p256` 0.14 / `ecdsa` 0.17 / `elliptic-curve` 0.14,
+    whose `crypto-bigint` 0.7.10 satisfies RUSTSEC-2026-0387 (fixed in 0.7.6+).
+    The compatible 0.7.6 release is yanked; Cargo selects non-yanked 0.7.10.
+  - The previous `p256` 0.13 / `elliptic-curve` 0.13 line requires `crypto-bigint` 0.5,
+    so it cannot use the fixed 0.7 line through a lockfile-only update. No patched 0.5
+    release is listed by RustSec.
+  - `cms` 0.3 is still a pre-release; revisit the CMS/X.509 format stack separately when
+    it is stable. That upgrade is not needed to remove the vulnerable EC dependency.
+  - They add 22 packages to the Rust lockfile alongside the current PDF dependencies. Two of them, `tls_codec` and
+    `tls_codec_derive`, are only locked: they serve `x509-cert`'s optional SCT feature, which
+    nothing enables, so they are never built.
+
+## Added for password-protected PDFs (#54)
+
+`lopdf` 0.45.0 (MIT) opens a PDF that a sender locked with a password, so that
+an unlocked copy can be stored beside the locked original. It is pinned exactly (`=0.45.0`) because it
+parses untrusted input: each update is a reviewed change. Default features are
+off, so neither `rayon` threads nor `chrono` come with it.
+
+It runs only in the separate helper process (`src-tauri/src/pdf_unlock.rs`),
+never next to the vault keys. Choosing it over `pdf` (whose writing is still
+experimental), `qpdf` (a C++ build for each phone platform) and
+`pdfium-render` (a native PDFium for each platform) is explained in the #23
+design.
+
+The lockfile grows from 486 to 515 packages. They are `lopdf`, `nom`,
+`encoding_rs`, `stringprep`, `weezl`, `rangemap`, `simdutf8` and their Unicode
+tables, plus newer RustCrypto releases (`aes`, `cbc`, `ecb`, `md-5`, `sha2`,
+`digest`, `cipher`, `rand` and their support crates) beside the versions the
+vault already uses. The vault's own encryption is unchanged.
+
+Every new package is MIT, Apache-2.0 or BSD-3-Clause (the WHATWG data in
+`encoding_rs`), all compatible with AGPL-3.0-or-later. CI's dependency job
+(`cargo audit`, the SBOM and the graph check) covers them; the graph check
+passes locally.
+
+## Added for the document reader (#48)
+
+`hayro` 0.8.0 draws a page of a PDF as a picture, so that myCarlos can show
+stored documents. It is pinned exactly (`=0.8.0`) because it parses untrusted
+input, and it runs only in the separate PDF helper (`src-tauri/src/pdf_view.rs`),
+as `lopdf` does.
+
+**Where there is unsafe code:**
+- `hayro` and `hayro-interpret` forbid unsafe code in their own crates.
+- `hayro-syntax`, the PDF parser underneath them, does not.
+  - It has an unsafe lifetime extension of its own (`page.rs`).
+  - `hayro-interpret` always turns on its `unsafe` feature, so turning off
+    `hayro`'s default features cannot avoid it. That feature brings in `flate2`
+    with the `zlib-rs` backend, `memchr`, and the SIMD paths of the JBIG2,
+    JPEG 2000 and JPEG decoders.
+  - `pic-scale`, `moxcms`, `zune-jpeg` and `fearless_simd` use unsafe code
+    internally too.
+- Turning off `hayro`'s own `simd` feature removes only `pic-scale`'s SIMD
+  paths.
+- Feature unification also moves the app's whole `flate2` to `zlib-rs`. Before
+  this, its only other user, `png` (for the app's own trusted icons), used
+  `miniz_oxide`.
+
+This is why the reader parses PDFs only in the helper, never beside the vault
+keys. The helper's real sandbox is #63. `image` 0.25 (already present through
+`hayro`) writes the page picture as PNG, with only the `png` feature. Before display,
+the parent also uses this existing codec to decode and re-encode only RGBA8 page
+pixels: at most 4096 pixels per side, 64 MiB of decoded pixel storage and a 64 MiB
+decoder allocation limit, checked before decoding. Only the newly encoded picture
+is sent to the webview; PDF parsing and the helper's sandbox policy are unchanged.
+
+pdf.js was not chosen. Product decisions forbid rendering an untrusted PDF in
+the privileged webview, and running it in a second webview would need CSP and
+capability changes. A native PDFium or MuPDF build would add a C or C++ parser
+for each platform.
+
+The lockfile grows from 515 to 550 packages: `hayro` and its `hayro-*` parts
+(fonts, CMaps, CCITT, JBIG2, JPEG 2000), the Linebender drawing crates
+(`vello_cpu`, `vello_common`, `kurbo`, `peniko`, `color`, `fearless_simd`),
+font readers (`skrifa`, `read-fonts`, `font-types`), image decoders
+(`zune-jpeg`, `moxcms`, `pic-scale`, `pxfm`) and `zlib-rs`.
+
+Every new package is Apache-2.0, MIT, BSD-3-Clause, Zlib or Unlicense, all
+compatible with AGPL-3.0-or-later. The graph check passes locally; CI's
+`cargo audit` and SBOM jobs cover the rest.
+
+## Added for the PDF helper's sandbox (#63)
+
+Two crates, Linux only, each pinned exactly because the sandbox depends on
+what they do: each update is a reviewed change. Both are used only by the
+helper's `confine` module (`src-tauri/src/pdf_unlock.rs`), before it reads a
+document.
+
+- **`landlock` 0.4.7** (MIT OR Apache-2.0, Rust 1.71). From the Landlock
+  project, whose lead also maintains Landlock in the Linux kernel. It builds a
+  Landlock ruleset that handles every file and network access right and the
+  signal and abstract-socket scopes, with no rule allowing any of them, and
+  applies it to the helper. Best-effort: a kernel without Landlock, or with an
+  older Landlock, enforces what it has. Its unsafe code is the three Landlock
+  system calls and `prctl`. It brings `enumflags2` and `enumflags2_derive`
+  0.7.12 (MIT OR Apache-2.0); `libc` and `thiserror` were already locked.
+- **`seccompiler` 0.5.0** (Apache-2.0 OR BSD-3-Clause). From rust-vmm, and
+  used by Firecracker and Cloud Hypervisor. It compiles the helper's seccomp
+  allowlist to a BPF program for x86_64 or aarch64 and installs it. Required:
+  without it the helper reads nothing. Its unsafe code is the `prctl` and
+  `seccomp` system calls. Its optional `json` feature (`serde`) is off; `libc`
+  was already locked.
+
+Hand-written BPF or `libseccomp` were not chosen: the first is easy to get
+wrong (argument widths, the architecture check), and the second is a C library
+to build and ship. `extrasafe` and `birdcage` wrap the same two kernel features
+with more policy than the helper needs.
+
+On Windows the AppContainer uses the `windows` crate already in the tree, with
+its `Win32_Security_Isolation` feature turned on. macOS calls `sandbox_init`
+from the system library; nothing is added.
+
+The lockfile grows from 550 to 554 packages: `landlock`, `seccompiler`,
+`enumflags2` and `enumflags2_derive`. All are MIT, Apache-2.0 or BSD-3-Clause,
+compatible with AGPL-3.0-or-later.
 
 ## Native remediation
 
@@ -133,3 +260,32 @@ backport regressions. Windows installation and the GUI subsystem check passed.
 This run predates restoration of mobile live reload and is historical evidence.
 The restoration triggers fresh checks, including both mobile development builds.
 Device testing and release review remain separate gates.
+
+## Current signed-PDF digest and import analysis (#101)
+
+The pinned RustCrypto versions remain unchanged. CMS signed attributes are decoded as
+strict DER `Any`/`SET OF` values, preserving their exact encoded bytes, so the agreed UUID
+OID `2.25.132515939282652475535231260060469025505` does not pass through const-oid 0.9's
+`u32` arc conversion. OID values must be minimally encoded and terminated; duplicate OIDs,
+multiple values and a manifest digest other than one 32-byte OCTET STRING fail closed.
+ECDSA verifies the original signed-attribute values under the SET tag; no attribute is
+substituted or dropped. The digest is SHA-256 of the exact extracted manifest bytes.
+
+The existing confined PDF helper has a bounded two-stage protocol. A conservative range
+preflight supplies no manifest and uses no PDF password. Main authenticates CMS and a
+trusted pin before the second stage can parse full PDF structure and decrypt/extract the
+matching AF/Data + EmbeddedFiles attachment. Existing lopdf is reused only in that helper.
+Input is capped at 100 MiB, output at 128 KiB, the manifest at 16 KiB and decompressed
+object streams at 16 MiB; existing helper time/memory/confinement limits still apply.
+
+The import pipeline captures its already authenticated object-verification read within
+the same input cap. It preserves the original object and returns optional ephemeral
+unverified diagnostics, without raw manifest/name/date-of-birth/key data. No authenticated
+clinic links exist in the app yet: production supplies no pins and cannot grant Verified.
+FAKE fixture pins are test inputs only. No new network access or vault format is introduced.
+
+The embedded v1 producer contract permits explicit null for clinic/recipient IDs and
+unknown descriptive metadata (CARLOS `DocumentManifest` Javadoc, lines 35–54). The Rust
+reader accepts those null values but still requires every member; unknown members, missing
+members and wrong value types fail closed. Neither an absent clinic claim nor an absent
+recipient can become Verified. This changes no outer portal delivery schema or vault format.

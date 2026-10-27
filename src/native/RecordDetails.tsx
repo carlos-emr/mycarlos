@@ -1,8 +1,14 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
+import {
+  MoveTargetSelect,
+  moveTargetValue,
+  parseMoveTarget,
+  type MoveTarget,
+} from "./MoveTargetSelect";
 
 interface RecordDetailsProps {
   record: VaultRecord;
@@ -18,8 +24,20 @@ interface RecordDetailsProps {
   onClose: () => void;
   onRename: () => void;
   onMove: (folderId: string | null) => Promise<void>;
-  onDelete: () => void;
+  /** People and their folders that this document can move to. */
+  moveTargets?: MoveTarget[];
+  onMoveTo?: (profileId: string, folderId: string | null) => void;
+  /** Takes the document out of view (#71); it is never deleted. */
+  onHide: () => void;
   onExport: () => void;
+  /** Opens the document in myCarlos's reader. */
+  onRead?: () => void;
+  /** Shows the document as a photo; given only when its file is one. */
+  onViewPhoto?: () => void;
+  /** The document is a PDF that may be locked with a password (#54). */
+  locked?: boolean;
+  /** Asks for its password; given only where myCarlos can unlock it. */
+  onUnlock?: () => void;
 }
 export function RecordDetails({
   record,
@@ -31,12 +49,51 @@ export function RecordDetails({
   onClose,
   onRename,
   onMove,
-  onDelete,
+  moveTargets,
+  onMoveTo,
+  onHide,
   onExport,
+  onRead,
+  onViewPhoto,
+  locked = false,
+  onUnlock,
 }: RecordDetailsProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
+  // Choosing in the list only picks a destination; Move moves (#67). In
+  // Chromium every arrow key on a closed list changes its value, which moved
+  // the document at once.
+  const currentFolderId = record.folderIds[0] ?? "";
+  const inShared =
+    moveTargets &&
+    !moveTargets.some((target) => target.profileId === record.profileId);
+  const current = moveTargets
+    ? inShared
+      ? ""
+      : moveTargetValue(record.profileId, currentFolderId || null)
+    : currentFolderId;
+  // A choice made for this document where it is now; a move or another
+  // document starts again from where the document is.
+  const placement = `${record.id}:${record.profileId}:${currentFolderId}`;
+  const [choice, setChoice] = useState({ placement, value: current });
+  const destination = choice.placement === placement ? choice.value : current;
+  const move = () => {
+    refocusMoveTo.current = true;
+    if (!moveTargets) return void onMove(destination || null);
+    const { profileId, folderId } = parseMoveTarget(destination);
+    onMoveTo?.(profileId, folderId);
+  };
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
+  // Pressing Move disables it while the move runs, and it stays disabled
+  // after (the document is where the list says), so focus would fall out of
+  // the dialog. It goes back to "Move to" once the move has finished.
+  const moveToRef = useRef<HTMLSelectElement | null>(null);
+  const refocusMoveTo = useRef(false);
+  useEffect(() => {
+    if (busy || !refocusMoveTo.current) return;
+    refocusMoveTo.current = false;
+    moveToRef.current?.focus();
+  }, [busy, placement]);
   const kind = recordKind(record.displayName);
   const folderNameById = new Map(
     folders.map((folder) => [folder.id, folder.name]),
@@ -59,12 +116,12 @@ export function RecordDetails({
           </div>
           <button
             ref={closeRef}
-            className="dialog-close"
+            className="dialog-close native-dialog-close"
             type="button"
             aria-label="Close document details"
             onClick={onClose}
           >
-            ×
+            Close
           </button>
         </header>
         <div
@@ -128,11 +185,43 @@ export function RecordDetails({
               {record.folderIds
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
-                .join(", ") || "My records"}
+                .join(", ") || (moveTargets ? "Shared with me" : "My records")}
             </dd>
           </div>
         </dl>
+        {locked && (
+          <p className="native-locked-note">
+            <Icon name="lock-open" />
+            <span>
+              {onUnlock
+                ? "Locked with a password. Unlock adds a copy that opens without it, and keeps this one."
+                : "Locked with a password. myCarlos cannot open it on this device yet."}
+            </span>
+          </p>
+        )}
         <div className="native-record-rename">
+          {onUnlock && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={onUnlock}
+            >
+              <Icon name="lock-open" />
+              <span>Unlock…</span>
+            </button>
+          )}
+          {onViewPhoto && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onViewPhoto}
+            >
+              <Icon name="image" />
+              <span>View photo</span>
+            </button>
+          )}
           <button
             className="button"
             type="button"
@@ -146,31 +235,66 @@ export function RecordDetails({
           {notice}
         </p>
         <footer className="dialog-actions native-dialog-actions">
-          <label>
-            Move to
-            <select
-              disabled={busy || readOnly}
-              value={record.folderIds[0] ?? ""}
-              onChange={(event) => void onMove(event.target.value || null)}
+          <div className="native-dialog-move">
+            <label>
+              Move to
+              {moveTargets ? (
+                <MoveTargetSelect
+                  ref={moveToRef}
+                  label="Move to"
+                  targets={moveTargets}
+                  value={destination}
+                  current={inShared ? "Shared with me" : undefined}
+                  disabled={busy || readOnly}
+                  onChange={(value) => setChoice({ placement, value })}
+                />
+              ) : (
+                <select
+                  ref={moveToRef}
+                  disabled={busy || readOnly}
+                  value={destination}
+                  onChange={(event) =>
+                    setChoice({ placement, value: event.target.value })
+                  }
+                >
+                  <option value="">My records</option>
+                  {folders.map((folder) => (
+                    <option value={folder.id} key={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly || destination === current}
+              onClick={move}
             >
-              <option value="">My records</option>
-              {folders.map((folder) => (
-                <option value={folder.id} key={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              Move
+            </button>
+          </div>
           <button
-            className="button danger"
+            className="button"
             type="button"
             disabled={busy || readOnly}
-            onClick={onDelete}
+            onClick={onHide}
           >
-            Permanently delete
+            Hide
           </button>
+          {onRead && (
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy || !record.available}
+              onClick={onRead}
+            >
+              Read
+            </button>
+          )}
           <button
-            className="button primary"
+            className={onRead ? "button" : "button primary"}
             type="button"
             disabled={busy || !record.available}
             onClick={onExport}

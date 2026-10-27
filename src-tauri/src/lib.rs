@@ -1,10 +1,35 @@
+#[cfg(any(target_os = "linux", windows))]
+mod camera_permission;
+mod history;
 mod idle;
+mod pdf_unlock;
+mod pdf_view;
+mod photo;
+mod received;
+#[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
+mod signed_pdf;
+mod signed_pdf_helper;
 mod throttle;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
 
+/// For `main`: the first argument that starts this executable as the PDF unlock helper, and
+/// the helper itself (see `pdf_unlock`).
+pub use pdf_unlock::{
+    helper_main as pdf_helper_main, protect_process_memory, HELPER_ARG as PDF_HELPER_ARG,
+};
+
+/// For tests/pdf_helper.rs only (see `pdf_unlock::unlock_with_helper_at` and `ask_helper_at`).
+#[doc(hidden)]
+#[cfg(desktop)]
+pub use pdf_unlock::{
+    ask_helper_at as pdf_ask_helper_at, unlock_with_helper_at as pdf_unlock_with_helper_at,
+};
+
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use idle::{IdleDeadline, Opening};
+use received::{ReceivedFiles, ReceivedSource};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use std::io;
@@ -27,7 +52,7 @@ use vault::{
     ImportSource, PassphraseRules, RestoreCredential, RestorePreview, RestoreReplaces, VaultError,
     VaultSnapshot, VaultStatus, VaultStore,
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -142,10 +167,24 @@ impl PublicError {
         Self { message, ..self }
     }
 
+    /// The photo did not reach the vault as the camera window sent it. The
+    /// code says which part was wrong, for a report: "photo_body" (the
+    /// request's bytes or framing) or "photo_target" (whose records, folders,
+    /// name).
+    fn photo_not_received(code: &'static str) -> Self {
+        Self {
+            code,
+            message: "The photo did not reach the vault, so it was not saved. Choose Use photo to try again.",
+            record_id: None,
+            note: None,
+            retry_after_ms: None,
+        }
+    }
+
     fn removal_not_possible() -> Self {
         Self {
             code: "recovery_mode",
-            message: "Nothing was removed. The vault cannot be changed right now; the notice above the documents says why.",
+            message: "Nothing was hidden. The vault cannot be changed right now; the notice above the documents says why.",
             record_id: None,
             note: None,
             retry_after_ms: None,
@@ -200,6 +239,55 @@ impl From<VaultError> for PublicText {
                 code: "import_batch_limit",
                 message: "Choose no more than 100 files in one import.",
             },
+            VaultError::NotPdf => Self {
+                code: "not_pdf",
+                message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
+            },
+            // The reader asks for the document's password on this code (#64).
+            VaultError::PdfLocked => Self {
+                code: "pdf_locked",
+                message: "This document is locked with a password. Enter the document password from your patient portal.",
+            },
+            VaultError::PdfNotLocked => Self {
+                code: "pdf_not_locked",
+                message: "This document is not locked with a password, so it opens as it is.",
+            },
+            VaultError::PdfAlreadyUnlocked => Self {
+                code: "pdf_already_unlocked",
+                message: "An unlocked copy of this document is already here, so nothing was added.",
+            },
+            VaultError::PdfWrongPassword => Self {
+                code: "pdf_wrong_password",
+                message: "That password did not open the document. Check the document password in your patient portal, then try again.",
+            },
+            VaultError::PdfUnlockFailed => Self {
+                code: "pdf_unlock_failed",
+                message: "myCarlos could not open this locked document. It may be damaged, or locked in a way myCarlos cannot open. The document is unchanged.",
+            },
+            VaultError::PdfUnlockUnavailable => Self {
+                code: "pdf_unlock_unavailable",
+                message: "myCarlos cannot open password-protected documents on this device yet. The document is unchanged.",
+            },
+            VaultError::PdfUnlockNoSandbox => Self {
+                code: "pdf_unlock_no_sandbox",
+                message: "myCarlos cannot open locked documents safely on this system, so this one was not opened. The document is unchanged.",
+            },
+            VaultError::PdfTooLarge => Self {
+                code: "pdf_too_large",
+                message: "This locked document is larger than 100 MB, so myCarlos cannot open it. The document is unchanged.",
+            },
+            VaultError::PdfViewFailed => Self {
+                code: "pdf_view_failed",
+                message: "myCarlos could not show this document. It may be damaged, or use features myCarlos cannot show yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewUnavailable => Self {
+                code: "pdf_view_unavailable",
+                message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
+            },
+            VaultError::PdfViewNoSandbox => Self {
+                code: "pdf_view_no_sandbox",
+                message: "myCarlos cannot show documents safely on this system. Save a copy to read it in another app.",
+            },
             VaultError::NoSpace => Self {
                 code: "no_space",
                 message: "There is not enough storage to complete this operation.",
@@ -222,7 +310,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::Unreadable => Self {
                 code: "unreadable",
-                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not erase the vault. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+                message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not set the vault aside. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
@@ -251,6 +339,10 @@ impl From<VaultError> for PublicText {
             VaultError::DamagedDocument(_) => Self {
                 code: "damaged_document",
                 message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
+            },
+            VaultError::NotPhoto => Self {
+                code: "not_a_photo",
+                message: "This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.",
             },
             VaultError::RestoreUnfinished => Self {
                 code: "restore_unfinished",
@@ -306,7 +398,7 @@ impl Drop for CreateVaultRequest {
 }
 
 #[derive(Deserialize)]
-struct RemoveUnavailableRequest {
+struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
 }
 
@@ -472,6 +564,401 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase")]
 struct ExportRequest {
     record_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PhotoRequest {
+    record_id: Uuid,
+}
+
+/// Whose records a photo goes in, which folders, and its name: the start of a
+/// photo request's body (see `split_photo_request`), as JSON
+/// `{"profileId", "folderIds", "name"}`. Custom headers do not reach the app
+/// on Windows (WebView2), so nothing rides in them.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PhotoTarget {
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+    name: String,
+}
+
+/// The most a photo request's target may take, before the JPEG.
+const MAX_PHOTO_TARGET_BYTES: usize = 4096;
+
+fn photo_target(json: &[u8]) -> Result<PhotoTarget, VaultError> {
+    let target: PhotoTarget = serde_json::from_slice(json).map_err(|_| VaultError::Invalid)?;
+    vault::validate_folder_assignment_count(target.folder_ids.len())?;
+    let name = &target.name;
+    // A photo's name ends in ".jpg", which says what an exported copy is.
+    let stem = name
+        .len()
+        .checked_sub(4)
+        .filter(|end| {
+            name.get(*end..)
+                .is_some_and(|tail| tail.eq_ignore_ascii_case(".jpg"))
+        })
+        .map(|end| &name[..end]);
+    if stem.is_none_or(|stem| stem.trim().is_empty()) || name.trim() != name {
+        return Err(VaultError::Invalid);
+    }
+    Ok(target)
+}
+
+/// A photo request is one body, which Tauri carries the same way on every
+/// platform (`photo_bytes`): the target's length (4 bytes, big-endian), the
+/// target, then the JPEG. Each part is bounded; the JPEG is copied into
+/// memory that is overwritten, and so is the whole request.
+fn split_photo_request(request: &[u8]) -> Result<(PhotoTarget, Zeroizing<Vec<u8>>), PublicError> {
+    let framing = || PublicError::photo_not_received("photo_body");
+    let length: [u8; 4] = request
+        .get(..4)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(framing)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if length > MAX_PHOTO_TARGET_BYTES {
+        return Err(framing());
+    }
+    let target = request.get(4..4 + length).ok_or_else(framing)?;
+    let target =
+        photo_target(target).map_err(|_| PublicError::photo_not_received("photo_target"))?;
+    let jpeg = &request[4 + length..];
+    if jpeg.len() > photo::MAX_PHOTO_BYTES {
+        return Err(VaultError::NotPhoto.into());
+    }
+    Ok((target, Zeroizing::new(jpeg.to_vec())))
+}
+
+/// A photo request's bytes, however the IPC brought them, copied into memory
+/// that is overwritten. The camera window sends them as the request's raw
+/// body. When Tauri uses its postMessage channel instead, as it always does on
+/// Android and does on Windows once its custom protocol has failed in a
+/// session, the same bytes arrive as a JSON array of numbers.
+fn photo_request(
+    body: &tauri::ipc::InvokeBody,
+) -> Result<(PhotoTarget, Zeroizing<Vec<u8>>), PublicError> {
+    let request = photo_bytes_within(body, 4 + MAX_PHOTO_TARGET_BYTES + photo::MAX_PHOTO_BYTES)?;
+    split_photo_request(&request)
+}
+
+fn photo_bytes_within(
+    body: &tauri::ipc::InvokeBody,
+    limit: usize,
+) -> Result<Zeroizing<Vec<u8>>, PublicError> {
+    match body {
+        tauri::ipc::InvokeBody::Raw(bytes) => {
+            if bytes.len() > limit {
+                return Err(VaultError::NotPhoto.into());
+            }
+            Ok(Zeroizing::new(bytes.clone()))
+        }
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(values)) => {
+            // Counted before anything is copied.
+            if values.len() > limit {
+                return Err(VaultError::NotPhoto.into());
+            }
+            let mut bytes = Zeroizing::new(Vec::with_capacity(values.len()));
+            for value in values {
+                let byte = value
+                    .as_u64()
+                    .and_then(|number| u8::try_from(number).ok())
+                    .ok_or_else(|| PublicError::photo_not_received("photo_body"))?;
+                bytes.push(byte);
+            }
+            Ok(bytes)
+        }
+        tauri::ipc::InvokeBody::Json(_) => Err(PublicError::photo_not_received("photo_body")),
+    }
+}
+
+/// Cleans the photo (photo.rs) and encrypts it as one import: the same
+/// encryption, verification, duplicate check and folder rules as a file the
+/// patient picked, and the same source label and media type, so that the
+/// vault's format is unchanged. The photo's bytes are overwritten once the
+/// import has read them.
+fn save_photo(
+    store: &VaultStore,
+    target: PhotoTarget,
+    photo: Zeroizing<Vec<u8>>,
+) -> Result<vault::ImportOutcome, VaultError> {
+    let cleaned = photo::clean_jpeg(&photo).map_err(|_| VaultError::NotPhoto)?;
+    drop(photo);
+    // The history says it came from the camera (#71).
+    store.import_from(
+        target.profile_id,
+        target.folder_ids,
+        vec![ImportSource {
+            display_name: target.name,
+            reader: Box::new(std::io::Cursor::new(cleaned)),
+        }],
+        now_ms(),
+        "camera",
+    )
+}
+
+/// A record's file, decrypted for the photo view: at most a photo's size, and
+/// no more than its first chunk when it does not start as a JPEG, so that
+/// checking another kind of document is cheap. Overwritten when dropped,
+/// including the smaller buffers it outgrows.
+#[derive(Default)]
+struct PhotoBuffer {
+    bytes: Zeroizing<Vec<u8>>,
+    refused: bool,
+}
+
+impl std::io::Write for PhotoBuffer {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let needed = self.bytes.len() + data.len();
+        if needed > photo::MAX_PHOTO_BYTES {
+            self.refused = true;
+            return Err(std::io::Error::other("larger than a photo"));
+        }
+        if needed > self.bytes.capacity() {
+            let capacity = needed
+                .max(2 * self.bytes.capacity())
+                .min(photo::MAX_PHOTO_BYTES);
+            let mut larger = Zeroizing::new(Vec::with_capacity(capacity));
+            larger.extend_from_slice(&self.bytes);
+            self.bytes = larger;
+        }
+        self.bytes.extend_from_slice(data);
+        // FF D8 FF, as far as the bytes so far go.
+        let seen = self.bytes.len().min(photo::JPEG_START.len());
+        if self.bytes[..seen] != photo::JPEG_START[..seen] {
+            self.refused = true;
+            return Err(std::io::Error::other("not a JPEG"));
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The first bytes of a record's file, and no more: once it has them, it stops
+/// the export, so only the first chunk is decrypted.
+#[derive(Default)]
+struct FileStart {
+    bytes: [u8; photo::JPEG_START.len()],
+    seen: usize,
+}
+
+impl FileStart {
+    fn complete(&self) -> bool {
+        self.seen == self.bytes.len()
+    }
+}
+
+impl std::io::Write for FileStart {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let take = data.len().min(self.bytes.len() - self.seen);
+        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
+        self.seen += take;
+        if self.complete() {
+            Err(std::io::Error::other("the first bytes are read"))
+        } else {
+            Ok(data.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
+/// called. A document's details ask this before offering View photo, so the
+/// photo itself stays here until the patient asks to see it; `view_photo` then
+/// checks the whole file.
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    let mut start = FileStart::default();
+    let exported = store.export(record_id, &mut start);
+    if start.complete() {
+        return Ok(start.bytes == photo::JPEG_START);
+    }
+    // Shorter than three bytes, or not read at all.
+    exported.map(|()| false)
+}
+
+/// A photo's name must still describe its JPEG bytes. Ordinary PDF renames
+/// retain the vault's existing metadata-only checks.
+fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<(), VaultError> {
+    let old_name = store
+        .snapshot()?
+        .records
+        .into_iter()
+        .find(|record| record.id == record_id)
+        .ok_or(VaultError::NotFound)?
+        .display_name;
+    // A failed probe establishes no format. Keep the existing metadata-only
+    // rename policy for an unreadable/unknown file, rather than requiring a
+    // readable object just to edit its name.
+    if !old_name.trim().to_ascii_lowercase().ends_with(".pdf")
+        && is_photo(store, record_id).unwrap_or(false)
+    {
+        let valid_jpeg_name = name
+            .trim()
+            .rsplit_once('.')
+            .is_some_and(|(stem, extension)| {
+                !stem.trim().is_empty()
+                    && (extension.eq_ignore_ascii_case("jpg")
+                        || extension.eq_ignore_ascii_case("jpeg"))
+            });
+        if !valid_jpeg_name {
+            return Err(VaultError::Invalid);
+        }
+    }
+    store.rename_record(record_id, name)
+}
+
+/// The photo a record holds, as a `data:image/jpeg` URL for the photo view
+/// (the CSP allows `data:` images). The file's own bytes decide: it must start
+/// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
+/// checks as a photo being saved, which also drop any metadata from what is
+/// shown. The record is unchanged.
+fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
+    let mut buffer = PhotoBuffer::default();
+    let exported = store.export(record_id, &mut buffer);
+    if buffer.refused {
+        return Err(VaultError::NotPhoto);
+    }
+    exported?;
+    let cleaned = photo::clean_jpeg(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        BASE64.encode(&*cleaned)
+    ))
+}
+
+/// Whether a stored PDF may be locked with a password (#54), asked when its
+/// details open. This is `pdf_unlock`'s names-only scan, which parses no object,
+/// fed by the export: it stops at the first `/Encrypt`. A match is only a hint;
+/// the helper decides when the patient unlocks it.
+fn is_locked_pdf(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    let mut scan = pdf_unlock::LockScan::default();
+    let exported = store.export(record_id, &mut scan);
+    if scan.found() {
+        return Ok(true);
+    }
+    exported?;
+    Ok(scan.finish())
+}
+
+/// The name a locked original keeps once it is unlocked (#54, Ben's D66): its
+/// own, with " (locked original)" before the extension, which a rename may not
+/// change. The unlocked copy takes the name as it was. A name too long for the
+/// words is shortened before them.
+fn locked_original_name(name: &str) -> String {
+    const WORDS: &str = " (locked original)";
+    let extension = name
+        .char_indices()
+        .rev()
+        .nth(3)
+        .map(|(at, _)| at)
+        .filter(|&at| name[at..].eq_ignore_ascii_case(".pdf"))
+        .unwrap_or(name.len());
+    let (stem, extension) = name.split_at(extension);
+    let room = vault::MAX_RECORD_NAME_LEN - WORDS.chars().count() - extension.chars().count();
+    let stem: String = stem.chars().take(room).collect();
+    format!("{}{WORDS}{extension}", stem.trim_end())
+}
+
+/// What unlocking a PDF did: the unlocked copy, and the original's new name.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockedPdf {
+    record_id: Uuid,
+    original_name: String,
+}
+
+/// Unlocks a stored PDF with the password the patient typed (#54). The
+/// document is opened by the PDF helper (`unlock`, `pdf_unlock::unlock_in_helper`
+/// outside tests), never beside the vault keys. The unlocked copy is stored
+/// beside the original, in the same records and folders, with its name; the
+/// locked original is kept (Ben's D66), renamed. The password is not kept.
+fn unlock_pdf(
+    store: &VaultStore,
+    record_id: Uuid,
+    password: &str,
+    unlock: impl FnOnce(&[u8], &str) -> pdf_unlock::Outcome,
+) -> Result<UnlockedPdf, VaultError> {
+    use pdf_unlock::{Outcome, Refusal};
+    let record = store
+        .snapshot()?
+        .records
+        .into_iter()
+        .find(|record| record.id == record_id)
+        .ok_or(VaultError::NotFound)?;
+    let mut locked = LimitedBuffer::new(pdf_unlock::MAX_LOCKED_PDF_BYTES);
+    let exported = store.export(record_id, &mut locked);
+    if locked.over {
+        return Err(VaultError::PdfTooLarge);
+    }
+    exported?;
+    let unlocked = match unlock(&locked.bytes, password) {
+        Outcome::Unlocked(unlocked) => unlocked,
+        Outcome::Refused(Refusal::NotEncrypted) => return Err(VaultError::PdfNotLocked),
+        Outcome::Refused(Refusal::WrongPassword) => return Err(VaultError::PdfWrongPassword),
+        Outcome::Refused(Refusal::TooLarge) => return Err(VaultError::PdfTooLarge),
+        Outcome::Unavailable => return Err(VaultError::PdfUnlockUnavailable),
+        Outcome::NoSandbox => return Err(VaultError::PdfUnlockNoSandbox),
+        Outcome::Refused(Refusal::Damaged | Refusal::Unsupported | Refusal::NoSuchPage)
+        | Outcome::Failed => return Err(VaultError::PdfUnlockFailed),
+    };
+    drop(locked);
+    let outcome = store.import(
+        record.profile_id,
+        record.folder_ids,
+        vec![ImportSource {
+            display_name: record.display_name.clone(),
+            reader: Box::new(std::io::Cursor::new(unlocked)),
+        }],
+        now_ms(),
+    )?;
+    let Some(&copy) = outcome.imported.first() else {
+        return Err(VaultError::PdfAlreadyUnlocked);
+    };
+    let original_name = locked_original_name(&record.display_name);
+    store.rename_record(record_id, &original_name)?;
+    Ok(UnlockedPdf {
+        record_id: copy,
+        original_name,
+    })
+}
+
+/// A record's file, up to a limit: past it, the export stops and `over` says so.
+/// Wiped when dropped.
+struct LimitedBuffer {
+    bytes: zeroize::Zeroizing<Vec<u8>>,
+    limit: usize,
+    over: bool,
+}
+
+impl LimitedBuffer {
+    fn new(limit: usize) -> Self {
+        Self {
+            bytes: zeroize::Zeroizing::new(Vec::new()),
+            limit,
+            over: false,
+        }
+    }
+}
+
+impl std::io::Write for LimitedBuffer {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if self.bytes.len() + data.len() > self.limit {
+            self.over = true;
+            return Err(std::io::Error::other("the file is over the limit"));
+        }
+        self.bytes.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Finishes an import or export whose picker already closed. The paths the
@@ -649,7 +1136,7 @@ impl PendingPicks {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeleteRecordRequest {
+struct RecordIdRequest {
     record_id: Uuid,
 }
 
@@ -837,8 +1324,12 @@ async fn vault_lock(
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
+    // A page still being drawn stops with the lock.
+    pdf_view::cancel_views();
     run_blocking(store.inner(), |store| {
         store.lock();
+        // Again once locked: a request that came in meanwhile stops too.
+        pdf_view::cancel_views();
         Ok(())
     })
     .await
@@ -860,6 +1351,7 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
+        pdf_view::cancel_views();
         picks.clear();
     }
     locked
@@ -1402,6 +1894,7 @@ async fn vault_backup_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let output = app
             .fs()
             .open(destination, options)
@@ -1414,7 +1907,9 @@ async fn vault_backup_picked(
                 bytes: counted,
             }),
             now_ms(),
-        )
+        )?;
+        store.record_backup_saved(&place);
+        Ok(())
     })
     .await
     .map(|()| SavedBackup {
@@ -1517,23 +2012,23 @@ fn restore_warning(preview: &RestorePreview) -> Option<String> {
     match preview.replaces {
         RestoreReplaces::Nothing => None,
         RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is not the vault this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device is not the vault this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::Unreadable => Some(format!(
-            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring permanently erases the vault on this device, and everything in it, and puts the backup ({documents}) in its place. This cannot be undone."
+            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring permanently replaces it: anything in the vault that is not in the backup is lost, and the passphrase and recovery key become the ones the backup was made with. This cannot be undone."
+            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring sets it aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. {SET_ASIDE_KEPT}"
         )),
         RestoreReplaces::SameVault => Some(format!(
-            "Restoring replaces the vault on this device with the backup, which holds the same {documents}. This cannot be undone."
+            "Restoring sets the vault on this device aside and puts the backup in its place, which holds the same {documents}. {SET_ASIDE_KEPT}"
         )),
     }
 }
 
-/// Restores the chosen backup. Replacing a vault erases it, so, as for a
-/// reset, a trusted native dialog confirms that first, and says what would be
-/// lost; the renderer's own agreement is not enough. Returns false if the
+/// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
+/// for a reset, a trusted native dialog confirms that first, and says what
+/// would change; the renderer's own agreement is not enough. Returns false if the
 /// patient cancelled there.
 #[tauri::command]
 async fn vault_restore(
@@ -1648,7 +2143,7 @@ async fn vault_rename_record(
     request: RenameRecordRequest,
 ) -> CommandResult<()> {
     run_blocking(store.inner(), move |store| {
-        store.rename_record(request.record_id, &request.name)
+        rename_document(store, request.record_id, &request.name)
     })
     .await
 }
@@ -1743,14 +2238,43 @@ fn open_import_source(
     path: tauri_plugin_fs::FilePath,
 ) -> Result<ImportSource, VaultError> {
     let display_name = import_display_name(&path);
+    Ok(ImportSource {
+        display_name,
+        reader: require_pdf(open_source_reader(app, path)?)?,
+    })
+}
+
+/// A received file, opened the way a picked one is. Its name was cleaned when it arrived.
+fn open_received_source(
+    app: &tauri::AppHandle,
+    file: received::ReceivedFile,
+) -> Result<ImportSource, VaultError> {
+    Ok(ImportSource {
+        reader: require_pdf(open_received_reader(app, &file)?)?,
+        display_name: file.name,
+    })
+}
+
+fn open_received_reader(
+    app: &tauri::AppHandle,
+    file: &received::ReceivedFile,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    let path = match &file.source {
+        ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path.clone()),
+        ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url.clone()),
+    };
+    open_source_reader(app, path)
+}
+
+fn open_source_reader(
+    app: &tauri::AppHandle,
+    path: tauri_plugin_fs::FilePath,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
     #[cfg(desktop)]
     {
         if let Ok(local_path) = path.clone().into_path() {
             let file = vault::open_regular_read(&local_path).map_err(import_source_error)?;
-            return Ok(ImportSource {
-                display_name,
-                reader: Box::new(file),
-            });
+            return Ok(Box::new(file));
         }
     }
     let mut options = OpenOptions::new();
@@ -1759,9 +2283,20 @@ fn open_import_source(
         .fs()
         .open(path, options)
         .map_err(|_| VaultError::Storage)?;
-    Ok(ImportSource {
-        display_name,
-        reader: Box::new(file),
+    Ok(Box::new(file))
+}
+
+/// Refuses a file that does not start the way a PDF does. The start is read while the file is
+/// opened, so a refused file stops the import before anything is staged.
+fn require_pdf(
+    reader: Box<dyn std::io::Read + Send>,
+) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    received::require_pdf_header(reader).map_err(|error| {
+        if received::is_not_pdf(&error) {
+            VaultError::NotPdf
+        } else {
+            VaultError::from(error)
+        }
     })
 }
 
@@ -1776,6 +2311,261 @@ fn import_source_error(error: io::Error) -> VaultError {
         io::ErrorKind::InvalidData => VaultError::Invalid,
         _ => VaultError::Storage,
     }
+}
+
+/// What the renderer may see of the files received from other apps.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedState {
+    files: Vec<received::ReceivedSummary>,
+    notice: received::ReceiveNotice,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MoveToPersonRequest {
+    record_ids: Vec<Uuid>,
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+}
+
+/// What adding the waiting files to Shared with me did (#61).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedAcceptOutcome {
+    imported: Vec<Uuid>,
+    skipped_duplicates: Vec<String>,
+    /// Files that are not PDF documents: not added, and forgotten.
+    not_pdf: Vec<String>,
+}
+
+/// The files waiting for the patient, and what could not be taken since the last call. The
+/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
+/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// there.
+#[tauri::command]
+fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
+    ReceivedState {
+        files: received.list(),
+        notice: received.take_notice(),
+    }
+}
+
+/// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
+/// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
+/// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
+#[tauri::command]
+async fn received_accept(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+) -> CommandResult<ReceivedAcceptOutcome> {
+    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    if ids.is_empty() {
+        return Ok(ReceivedAcceptOutcome {
+            imported: Vec::new(),
+            skipped_duplicates: Vec::new(),
+            not_pdf: Vec::new(),
+        });
+    }
+    let taken = received
+        .take(&ids)
+        .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
+    let files = taken.clone();
+    let result = run_blocking(store.inner(), move |store| {
+        let shared = store.shared_profile()?;
+        let mut sources = Vec::with_capacity(files.len());
+        let mut not_pdf = Vec::new();
+        {
+            let _opening = Opening::new(store.idle());
+            for (_, file) in files {
+                let name = file.name.clone();
+                match open_received_source(&app, file) {
+                    Ok(source) => sources.push(source),
+                    Err(VaultError::NotPdf) => not_pdf.push(name),
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        let outcome = store.import_from(shared, Vec::new(), sources, now_ms(), "shared")?;
+        Ok(ReceivedAcceptOutcome {
+            imported: outcome.imported,
+            skipped_duplicates: outcome.skipped_duplicates,
+            not_pdf,
+        })
+    })
+    .await;
+    match result {
+        Ok(outcome) => {
+            received.finish(&taken);
+            Ok(outcome)
+        }
+        Err(error) => {
+            received.restore(taken);
+            Err(error)
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewPageRequest {
+    record_id: Uuid,
+    page: u32,
+    width: u32,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for ViewPageRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// One page of a stored document, drawn by the PDF helper, and its text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewedPage {
+    page_count: u32,
+    width: u32,
+    height: u32,
+    /// A `data:` URL of the PNG picture: the page's CSP allows only those for pictures.
+    image: String,
+    text: String,
+    readable_text: String,
+}
+
+impl ViewedPage {
+    fn from_rendered(
+        shown: pdf_view::Page,
+        ticket: &pdf_view::ViewTicket,
+    ) -> Result<Self, VaultError> {
+        use base64::Engine;
+        let page = Self {
+            page_count: shown.page_count,
+            width: shown.width,
+            height: shown.height,
+            image: format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(&shown.png)
+            ),
+            text: shown.text,
+            readable_text: shown.readable_text,
+        };
+        // Encoding a large page takes time too. A lock or close during it discards the result.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(page)
+    }
+}
+
+/// Shows one page of a stored document. The record is decrypted into memory only and handed to
+/// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
+#[tauri::command]
+async fn vault_view_page(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: ViewPageRequest,
+) -> CommandResult<ViewedPage> {
+    use pdf_unlock::Refusal;
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let (record_id, page, width) = (request.record_id, request.page, request.width);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    // Taken now: a newer page request, a lock or the reader closing stops this one.
+    let ticket = pdf_view::ViewTicket::new();
+    let result = run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        // Already replaced by a newer request: nothing to decrypt.
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        // Sized up front, so the document is never copied by a growing buffer.
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.export(record_id, &mut *document)?;
+        match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
+            pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            pdf_view::Outcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            pdf_view::Outcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            pdf_view::Outcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            pdf_view::Outcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            pdf_view::Outcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
+            pdf_view::Outcome::Cancelled => Err(VaultError::Cancelled),
+            pdf_view::Outcome::Refused(_) | pdf_view::Outcome::Failed => {
+                Err(VaultError::PdfViewFailed)
+            }
+        }
+    })
+    .await;
+    // A lock can also happen after the blocking task finishes, before this command resumes.
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
+}
+
+/// Stops any page being drawn: the reader closed.
+#[tauri::command]
+fn vault_view_cancel() {
+    pdf_view::cancel_views();
+}
+
+/// Moves files to another person, into the folders chosen. A file the
+/// person already has stays where it is and is named in the outcome.
+#[tauri::command]
+async fn vault_move_to_person(
+    store: State<'_, Arc<VaultStore>>,
+    request: MoveToPersonRequest,
+) -> CommandResult<vault::MoveOutcome> {
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    run_blocking(store.inner(), move |store| {
+        store.move_to_profile(request.record_ids, request.profile_id, request.folder_ids)
+    })
+    .await
+}
+
+/// Files another app opened with myCarlos, on the Mac, iPhone and Android.
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
+    let Some(received) = app.try_state::<Arc<ReceivedFiles>>() else {
+        return;
+    };
+    #[cfg(target_os = "android")]
+    let own_authority = format!("{}.fileprovider", app.config().identifier);
+    #[cfg(target_os = "android")]
+    let platform = received::OpenedPlatform::Android {
+        own_authority: &own_authority,
+    };
+    #[cfg(not(target_os = "android"))]
+    let platform = received::OpenedPlatform::Apple;
+    let sources = urls
+        .iter()
+        .filter_map(|url| received::accept_opened_url(url, platform))
+        .collect();
+    received.receive(urls.len(), sources);
 }
 
 /// Opens the save picker with the record's name. Returns the id of the chosen
@@ -1836,24 +2626,30 @@ async fn vault_export_picked(
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
+        let place = destination.to_string();
         let mut output = app
             .fs()
             .open(destination, options)
             .map_err(|_| VaultError::Storage)?;
         drop(opening);
-        Ok(store.export(record_id, &mut output))
+        let exported = store.export(record_id, &mut output);
+        if exported.is_ok() {
+            store.record_copy_saved(record_id, &place);
+        }
+        Ok(exported)
     })
     .await?
     .map_err(|_| PublicError::partial_export())
 }
 
+/// Hides the documents shown as damaged (#71: they used to be removed).
 #[tauri::command]
-async fn vault_remove_unavailable_records(
+async fn vault_hide_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
-    request: RemoveUnavailableRequest,
+    request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     run_blocking(store.inner(), move |store| {
-        store.remove_unavailable_records(&request.confirmed)
+        store.hide_unavailable_records(&request.confirmed, now_ms())
     })
     .await
     .map_err(|error| match error.code {
@@ -1862,18 +2658,129 @@ async fn vault_remove_unavailable_records(
     })
 }
 
+/// Saves a photo taken with the camera dialog. The request's body is its
+/// target and the JPEG (see `photo_request`).
 #[tauri::command]
-async fn vault_delete_record(
+async fn vault_save_photo(
     store: State<'_, Arc<VaultStore>>,
-    request: DeleteRecordRequest,
-) -> CommandResult<()> {
+    request: tauri::ipc::Request<'_>,
+) -> CommandResult<vault::ImportOutcome> {
+    // The IPC layer's own copy is freed when the call ends, but not
+    // overwritten (THREAT_MODEL.md); these are.
+    let (target, photo) = photo_request(request.body())?;
+    run_blocking(store.inner(), move |store| save_photo(store, target, photo)).await
+}
+
+#[tauri::command]
+async fn vault_is_photo(
+    store: State<'_, Arc<VaultStore>>,
+    request: PhotoRequest,
+) -> CommandResult<bool> {
     run_blocking(store.inner(), move |store| {
-        store.delete_record(request.record_id)
+        is_photo(store, request.record_id)
     })
     .await
 }
 
-const ERASE_VAULT_WARNING: &str = "This permanently erases every encrypted document, profile, and folder in this vault. This cannot be undone.";
+#[tauri::command]
+async fn vault_view_photo(
+    store: State<'_, Arc<VaultStore>>,
+    request: PhotoRequest,
+) -> CommandResult<String> {
+    run_blocking(store.inner(), move |store| {
+        view_photo(store, request.record_id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_is_locked_pdf(
+    store: State<'_, Arc<VaultStore>>,
+    request: PhotoRequest,
+) -> CommandResult<bool> {
+    run_blocking(store.inner(), move |store| {
+        is_locked_pdf(store, request.record_id)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockPdfRequest {
+    record_id: Uuid,
+    password: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for UnlockPdfRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
+/// Unlocks a stored PDF with the password the patient typed (#54); see
+/// `unlock_pdf`. The password is used once and wiped.
+#[tauri::command]
+async fn vault_unlock_pdf(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: UnlockPdfRequest,
+) -> CommandResult<UnlockedPdf> {
+    let record_id = request.record_id;
+    let password = zeroize::Zeroizing::new(std::mem::take(&mut request.password));
+    drop(request);
+    run_blocking(store.inner(), move |store| {
+        // The helper's time counts as activity: the vault does not lock under it.
+        let _opening = Opening::new(store.idle());
+        unlock_pdf(store, record_id, &password, pdf_unlock::unlock_in_helper)
+    })
+    .await
+}
+
+/// Hides a document (#71). There is no command that deletes one.
+#[tauri::command]
+async fn vault_hide_record(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.hide_record(request.record_id, now_ms())
+    })
+    .await
+}
+
+/// Puts a hidden document back (#71).
+#[tauri::command]
+async fn vault_unhide_record(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.unhide_record(request.record_id)
+    })
+    .await
+}
+
+/// What a vault set aside (#71) keeps, said wherever one is set aside.
+const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
+
+/// What starting again does (#71), who can still open the vault set aside,
+/// and how to remove it on this platform: on a computer, by deleting its
+/// folder, named here (the dialog is native, never the screen); on a phone,
+/// where the folder is private to the app, only by clearing the app's data
+/// or uninstalling it, which removes every vault.
+fn set_aside_vault_warning(folder: &std::path::Path) -> String {
+    let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
+        "On this phone, vaults set aside stay in myCarlos's private storage, and myCarlos cannot remove them: the only way is to clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone.".to_owned()
+    } else {
+        format!(
+            "To remove a vault set aside, and free its space, close myCarlos and delete its folder in {}.",
+            folder.display()
+        )
+    };
+    format!(
+        "This sets the whole vault aside and starts again with an empty one. {SET_ASIDE_KEPT} myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. {removal}"
+    )
+}
 
 #[tauri::command]
 async fn vault_reset(
@@ -1886,14 +2793,15 @@ async fn vault_reset(
     if request.confirmation != "RESET MYCARLOS VAULT" {
         return Err(PublicError::from(VaultError::Invalid));
     }
+    let warning = set_aside_vault_warning(&store.set_aside_folder().ok_or(VaultError::Storage)?);
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
         confirmed_natively(
             &dialog_app,
-            "Erase the entire myCarlos vault?",
-            ERASE_VAULT_WARNING,
+            "Set this myCarlos vault aside and start again?",
+            warning,
             "Keep this vault",
-            "Erase vault",
+            "Set it aside",
         )
     })
     .await
@@ -2048,6 +2956,10 @@ pub fn run() {
                     _webview.navigate(url)?;
                 }
             }
+            // The camera dialog's request is answered here, not by a webview
+            // prompt (camera_permission.rs).
+            #[cfg(any(target_os = "linux", windows))]
+            camera_permission::install(&_webview, app.config().clone())?;
             // `vault-home` holds the vault and only what the vault manages beside
             // it (lock file, pending reset, create stage, export journal). Back
             // up or restore the whole directory. Machine-local data, because the
@@ -2070,6 +2982,14 @@ pub fn run() {
                     .join("attempts.json"),
             ))));
             app.manage(Arc::new(PendingPicks::default()));
+            app.manage(Arc::new(ReceivedFiles::default()));
+            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
+            // second launch while the app is open is not forwarded yet (#53).
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                let (offered, sources) = received::accept_command_line(std::env::args_os());
+                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
+            }
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             std::thread::Builder::new()
@@ -2111,20 +3031,55 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            received_list,
+            received_accept,
+            vault_move_to_person,
+            vault_view_page,
+            vault_view_cancel,
             vault_export_pick,
             vault_export_picked,
-            vault_delete_record,
-            vault_remove_unavailable_records,
+            vault_save_photo,
+            vault_is_photo,
+            vault_view_photo,
+            vault_is_locked_pdf,
+            vault_unlock_pdf,
+            vault_hide_record,
+            vault_unhide_record,
+            vault_hide_unavailable_records,
             vault_reset
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running myCarlos");
+        .build(tauri::generate_context!())
+        .expect("error while building myCarlos")
+        .run(|_app, _event| {
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                receive_opened(_app, &urls);
+            }
+        });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn does_not_return_a_page_for_a_cancelled_view_ticket() {
+        let ticket = pdf_view::ViewTicket::new();
+        pdf_view::cancel_views();
+        let shown = pdf_view::Page {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            png: vec![],
+            text: "FAKE page text".into(),
+            readable_text: "FAKE page text".into(),
+        };
+        assert!(matches!(
+            ViewedPage::from_rendered(shown, &ticket),
+            Err(VaultError::Cancelled)
+        ));
+    }
     const APP_SCHEME: Origin = ("tauri", "localhost");
     const HOST_NAME: Origin = ("http", "tauri.localhost");
     const SECURE_HOST_NAME: Origin = ("https", "tauri.localhost");
@@ -2700,7 +3655,40 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["default.json", "zoom.json"]);
+        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+    }
+
+    #[test]
+    fn the_desktop_window_follows_the_chosen_appearance() {
+        // System, Light or Dark (src/native/nativeAppearance.ts) sets the
+        // window's own theme, on a computer and for nothing else: the page
+        // follows the choice on every platform without it.
+        let appearance: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/appearance.json")).unwrap();
+        assert_eq!(appearance["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            appearance["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            appearance["permissions"],
+            serde_json::json!(["core:window:allow-set-theme"])
+        );
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_pdf_is_refused_and_named() {
+        let text = std::io::Cursor::new(b"FAKE plain text".to_vec());
+        assert!(matches!(
+            require_pdf(Box::new(text)),
+            Err(VaultError::NotPdf)
+        ));
+        let pdf = std::io::Cursor::new(b"%PDF-1.7 FAKE".to_vec());
+        let mut kept = Vec::new();
+        std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
+        assert_eq!(kept, b"%PDF-1.7 FAKE");
+        let json = serde_json::to_value(PublicError::from(VaultError::NotPdf)).unwrap();
+        assert_eq!(json["code"], "not_pdf");
     }
 
     /// A vault with a recovery key being set up, and that key's groups as
@@ -3032,11 +4020,11 @@ mod tests {
     #[test]
     fn only_the_button_that_goes_ahead_counts_as_agreement() {
         let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
-        assert!(agreed_natively(&custom("Erase vault"), "Erase vault"));
+        assert!(agreed_natively(&custom("Set it aside"), "Set it aside"));
         for answer in [
             custom("Keep this vault"),
             custom(NATIVE_CANCEL),
-            custom("erase vault"),
+            custom("set it aside"),
             custom(""),
             // What the dialog reports when it is closed, or could not be
             // shown, and what another layout's buttons would report.
@@ -3045,7 +4033,7 @@ mod tests {
             MessageDialogResult::Yes,
             MessageDialogResult::No,
         ] {
-            assert!(!agreed_natively(&answer, "Erase vault"), "{answer:?}");
+            assert!(!agreed_natively(&answer, "Set it aside"), "{answer:?}");
         }
     }
 
@@ -3064,12 +4052,35 @@ mod tests {
                 && other.contains("3 documents")
         );
         let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
-        assert!(unreadable.contains("cannot tell") && unreadable.contains("permanently erases"));
+        assert!(
+            unreadable.contains("cannot tell")
+                && unreadable.contains("sets the vault on this device aside")
+        );
         let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
         assert!(changed.contains("may not be the same as") && changed.contains("passphrase"));
         assert!(changed.contains("could not be read"));
         let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
         assert!(same.contains("the same 3 documents"));
+        // Nothing is erased (#71): every warning says the vault is kept.
+        for warning in [&other, &unreadable, &changed, &same] {
+            assert!(warning.contains(SET_ASIDE_KEPT), "{warning}");
+            assert!(
+                !warning.contains("erase") && !warning.contains("cannot be undone"),
+                "{warning}"
+            );
+        }
+        // Starting again names who can still open the vault set aside, and
+        // how to remove it here: its folder on a computer.
+        let folder =
+            std::path::Path::new("/home/FAKE/.local/share/ca.carlos.mycarlos/vault-home/set-aside");
+        let warning = set_aside_vault_warning(folder);
+        assert!(warning.contains(SET_ASIDE_KEPT));
+        assert!(!warning.contains("erase"));
+        assert!(warning.contains("someone else may know your passphrase, they can still open it"));
+        assert!(warning.ends_with(&format!(
+            "close myCarlos and delete its folder in {}.",
+            folder.display()
+        )));
     }
 
     #[test]
@@ -3271,9 +4282,13 @@ mod tests {
             let _ = serde_json::from_slice::<AssignFoldersRequest>(&payload);
             let _ = serde_json::from_slice::<AssignFoldersBatchRequest>(&payload);
             let _ = serde_json::from_slice::<ImportRequest>(&payload);
+            let _ = serde_json::from_slice::<MoveToPersonRequest>(&payload);
+            let _ = serde_json::from_slice::<ViewPageRequest>(&payload);
             let _ = serde_json::from_slice::<ExportRequest>(&payload);
-            let _ = serde_json::from_slice::<DeleteRecordRequest>(&payload);
-            let _ = serde_json::from_slice::<RemoveUnavailableRequest>(&payload);
+            let _ = serde_json::from_slice::<PhotoRequest>(&payload);
+            let _ = serde_json::from_slice::<UnlockPdfRequest>(&payload);
+            let _ = serde_json::from_slice::<RecordIdRequest>(&payload);
+            let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
     }
@@ -3301,5 +4316,813 @@ mod navigation_startup_tests {
         let mut startup = NavigationStartup::default();
         assert_eq!(startup.arm(), None);
         assert!(startup.permit(&Url::parse("http://tauri.localhost/").unwrap(), true));
+    }
+}
+
+#[cfg(test)]
+mod photo_command_tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
+    /// What Chromium's canvas encodes (photo.rs tests, testdata/README.md).
+    const CANVAS: &[u8] = include_bytes!("../testdata/canvas-photo.jpg");
+
+    /// The canvas JPEG with an Exif block holding a FAKE GPS position after its
+    /// JFIF header, as a phone camera's file would have.
+    fn tagged() -> Vec<u8> {
+        let payload = b"Exif\0\0MM\0\x2a\0\0\0\x08FAKE GPSLatitude 43/1 39/1 12/1 N";
+        let length = u16::try_from(payload.len() + 2).unwrap().to_be_bytes();
+        [
+            &CANVAS[..20],
+            &[0xff, 0xe1, length[0], length[1]][..],
+            payload,
+            &CANVAS[20..],
+        ]
+        .concat()
+    }
+
+    fn target(profile: &str, folders: &str, name: &str) -> Vec<u8> {
+        format!(r#"{{"profileId":{profile},"folderIds":{folders},"name":{name}}}"#).into_bytes()
+    }
+
+    /// A photo request as the camera window frames it.
+    fn framed(target: &[u8], jpeg: &[u8]) -> Vec<u8> {
+        let length = u32::try_from(target.len()).unwrap().to_be_bytes();
+        [&length[..], target, jpeg].concat()
+    }
+
+    fn unlocked_store(temp: &tempfile::TempDir) -> (VaultStore, Uuid) {
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        (store, profile)
+    }
+
+    fn exported(store: &VaultStore, record: Uuid) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        store.export(record, &mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn the_target_says_where_a_photo_goes_and_its_name() {
+        let profile = Uuid::new_v4();
+        let folder = Uuid::new_v4();
+        let id = format!("\"{profile}\"");
+        let target_of = |folders: &str, name: &str| photo_target(&target(&id, folders, name));
+        assert_eq!(
+            target_of(
+                &format!("[\"{folder}\"]"),
+                "\"Photo, 17 Oct 2026, 3.05 PM.jpg\""
+            )
+            .unwrap(),
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: vec![folder],
+                name: "Photo, 17 Oct 2026, 3.05 PM.jpg".to_owned(),
+            }
+        );
+        // No folder: My records. Any name in UTF-8.
+        let my_records = target_of("[]", "\"Zdjęcie.JPG\"").unwrap();
+        assert!(my_records.folder_ids.is_empty());
+        assert_eq!(my_records.name, "Zdjęcie.JPG");
+
+        let many = format!(
+            "[{}]",
+            vec![format!("\"{folder}\""); vault::MAX_FOLDER_ASSIGNMENTS + 1].join(",")
+        );
+        for (case, json) in [
+            ("no profile", target("\"\"", "[]", "\"Photo.jpg\"")),
+            (
+                "a profile that is not an id",
+                target("\"FAKE\"", "[]", "\"Photo.jpg\""),
+            ),
+            (
+                "a folder that is not an id",
+                target(&id, "[\"FAKE\"]", "\"Photo.jpg\""),
+            ),
+            (
+                "more folders than a document can be in",
+                target(&id, &many, "\"Photo.jpg\""),
+            ),
+            ("no .jpg", target(&id, "[]", "\"Photo.png\"")),
+            ("only .jpg", target(&id, "[]", "\".jpg\"")),
+            ("only spaces before .jpg", target(&id, "[]", "\"  .jpg\"")),
+            ("a space at the start", target(&id, "[]", "\" Photo.jpg\"")),
+            ("text after .jpg", target(&id, "[]", "\"Photo.jpg \"")),
+            (
+                "a field it does not know",
+                format!(r#"{{"profileId":{id},"folderIds":[],"name":"Photo.jpg","x":1}}"#)
+                    .into_bytes(),
+            ),
+            (
+                "a field missing",
+                format!(r#"{{"profileId":{id},"name":"Photo.jpg"}}"#).into_bytes(),
+            ),
+            (
+                "not UTF-8",
+                [&target(&id, "[]", "\"Photo")[..], b"\xff.jpg\"}"].concat(),
+            ),
+            ("not JSON", b"FAKE".to_vec()),
+        ] {
+            assert!(
+                matches!(photo_target(&json), Err(VaultError::Invalid)),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_photo_request_is_its_target_then_the_jpeg() {
+        let profile = Uuid::new_v4();
+        let json = target(&format!("\"{profile}\""), "[]", "\"Photo.jpg\"");
+        let (got, jpeg) = split_photo_request(&framed(&json, CANVAS)).ok().unwrap();
+        assert_eq!(got.profile_id, profile);
+        assert_eq!(*jpeg, CANVAS);
+        let code = |request: &[u8]| split_photo_request(request).err().unwrap().code;
+        // Too short for its length, a length over the bound, a length past
+        // the end: the framing is wrong.
+        assert_eq!(code(&[0, 0, 1]), "photo_body");
+        let over = u32::try_from(MAX_PHOTO_TARGET_BYTES + 1)
+            .unwrap()
+            .to_be_bytes();
+        assert_eq!(code(&[&over[..], &json].concat()), "photo_body");
+        assert_eq!(code(&[0, 0, 1, 0, b'{']), "photo_body");
+        // The target itself is wrong.
+        assert_eq!(code(&framed(b"FAKE", CANVAS)), "photo_target");
+        // The JPEG over its own limit.
+        let large = vec![0_u8; photo::MAX_PHOTO_BYTES + 1];
+        assert_eq!(code(&framed(&json, &large)), "not_a_photo");
+    }
+
+    #[test]
+    fn a_saved_photo_is_cleaned_and_stored_as_an_import_in_the_open_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let folder = store.create_folder(profile, None, "FAKE Cards", 2).unwrap();
+        let photo = Zeroizing::new(tagged());
+        let outcome = save_photo(
+            &store,
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: vec![folder],
+                name: "Photo, 17 Oct 2026, 3.05 PM.jpg".to_owned(),
+            },
+            photo,
+        )
+        .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let snapshot = store.snapshot().unwrap();
+        let record = &snapshot.records[0];
+        assert_eq!(record.id, outcome.imported[0]);
+        assert_eq!(record.display_name, "Photo, 17 Oct 2026, 3.05 PM.jpg");
+        assert_eq!(record.folder_ids, [folder]);
+        // The vault's format is unchanged: a photo is an import like any other.
+        assert_eq!(record.source_label, "Manual import — unverified");
+        assert_eq!(record.media_type, "application/octet-stream");
+        let stored = exported(&store, record.id);
+        assert_eq!(stored, *photo::clean_jpeg(CANVAS).unwrap());
+        assert_eq!(record.plaintext_size, stored.len() as u64);
+        assert!(!stored.windows(4).any(|window| window == b"Exif"));
+        assert!(!stored.windows(4).any(|window| window == b"FAKE"));
+
+        // The same photo again is a duplicate, as an import would be.
+        let again = save_photo(
+            &store,
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: Vec::new(),
+                name: "Photo, 17 Oct 2026, 3.06 PM.jpg".to_owned(),
+            },
+            Zeroizing::new(CANVAS.to_vec()),
+        )
+        .unwrap();
+        assert!(again.imported.is_empty());
+        assert_eq!(
+            again.skipped_duplicates,
+            ["Photo, 17 Oct 2026, 3.06 PM.jpg"]
+        );
+    }
+
+    #[test]
+    fn a_photo_that_is_not_a_jpeg_or_a_locked_vault_saves_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let target = || PhotoTarget {
+            profile_id: profile,
+            folder_ids: Vec::new(),
+            name: "Photo.jpg".to_owned(),
+        };
+        for bytes in [
+            b"%PDF-1.7 FAKE".to_vec(),
+            CANVAS[..CANVAS.len() - 2].to_vec(),
+            Vec::new(),
+        ] {
+            assert!(matches!(
+                save_photo(&store, target(), Zeroizing::new(bytes)),
+                Err(VaultError::NotPhoto)
+            ));
+        }
+        assert!(store.snapshot().unwrap().records.is_empty());
+        store.lock();
+        assert!(matches!(
+            save_photo(&store, target(), Zeroizing::new(CANVAS.to_vec())),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn renaming_a_photo_keeps_its_jpeg_type_and_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let outcome = save_photo(
+            &store,
+            PhotoTarget {
+                profile_id: profile,
+                folder_ids: Vec::new(),
+                name: "Photo.jpg".to_owned(),
+            },
+            Zeroizing::new(CANVAS.to_vec()),
+        )
+        .unwrap();
+        let id = outcome.imported[0];
+        let before = exported(&store, id);
+        for name in [
+            "Holiday.png",
+            "Holiday.pdf",
+            "Holiday",
+            ".jpg",
+            "../Holiday.jpg",
+            "Holiday\\scan.jpg",
+        ] {
+            assert!(
+                matches!(rename_document(&store, id, name), Err(VaultError::Invalid)),
+                "{name:?}"
+            );
+            assert_eq!(store.export_name(id).unwrap(), "Photo.jpg");
+        }
+        for name in ["Holiday.jpg", "Holiday.JPG", "Holiday.jpeg", "Holiday.JPEG"] {
+            rename_document(&store, id, name).unwrap();
+            assert_eq!(store.export_name(id).unwrap(), name);
+            assert_eq!(exported(&store, id), before);
+        }
+    }
+
+    #[test]
+    fn photo_rename_checks_bytes_without_changing_other_document_rules() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let ids = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![
+                    ImportSource {
+                        display_name: "Legacy photo.png".to_owned(),
+                        reader: Box::new(Cursor::new(CANVAS.to_vec())),
+                    },
+                    ImportSource {
+                        display_name: "Other.jpg".to_owned(),
+                        reader: Box::new(Cursor::new(b"ordinary non-JPEG file")),
+                    },
+                    ImportSource {
+                        display_name: "Letter.pdf".to_owned(),
+                        reader: Box::new(Cursor::new(b"%PDF-1.7 FAKE")),
+                    },
+                ],
+                2,
+            )
+            .unwrap()
+            .imported;
+        assert!(matches!(
+            rename_document(&store, ids[0], "New.png"),
+            Err(VaultError::Invalid)
+        ));
+        rename_document(&store, ids[0], "Repaired.jpg").unwrap();
+        assert_eq!(exported(&store, ids[0]), CANVAS);
+        rename_document(&store, ids[1], "Other.png").unwrap();
+        rename_document(&store, ids[2], "Renamed.pdf").unwrap();
+        assert!(matches!(
+            rename_document(&store, ids[2], "Renamed.png"),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn an_unknown_unreadable_file_keeps_its_metadata_only_rename_policy() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let id = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: "Other.txt".to_owned(),
+                    reader: Box::new(Cursor::new(b"ordinary non-JPEG file")),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        // Only the document stops authenticating; its history remains intact.
+        // Existing metadata-only renames do not decrypt its contents.
+        let path = vault::record_object_path_for_test(&store, id);
+        let mut bytes = std::fs::read(&path).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        std::fs::write(path, bytes).unwrap();
+        assert!(is_photo(&store, id).is_err());
+        store.rename_record(id, "Other.before").unwrap();
+        rename_document(&store, id, "Other.png").unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().records[0].display_name,
+            "Other.png"
+        );
+    }
+
+    #[test]
+    fn the_photo_view_goes_by_the_bytes_and_drops_their_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let sources = vec![
+            // A JPEG renamed with no extension is still a photo.
+            ImportSource {
+                display_name: "FAKE insurance card".to_owned(),
+                reader: Box::new(Cursor::new(tagged())),
+            },
+            ImportSource {
+                display_name: "FAKE results.jpg".to_owned(),
+                reader: Box::new(Cursor::new(b"%PDF-1.7 FAKE results".to_vec())),
+            },
+            ImportSource {
+                display_name: "FAKE cut off.jpg".to_owned(),
+                reader: Box::new(Cursor::new(CANVAS[..CANVAS.len() - 2].to_vec())),
+            },
+        ];
+        let ids = store
+            .import(profile, Vec::new(), sources, 2)
+            .unwrap()
+            .imported;
+
+        let url = view_photo(&store, ids[0]).unwrap();
+        let shown = BASE64
+            .decode(url.strip_prefix("data:image/jpeg;base64,").unwrap())
+            .unwrap();
+        assert_eq!(shown, *photo::clean_jpeg(CANVAS).unwrap());
+        // What is stored is not changed by viewing it.
+        assert_eq!(exported(&store, ids[0]), tagged());
+
+        for id in &ids[1..] {
+            assert!(matches!(view_photo(&store, *id), Err(VaultError::NotPhoto)));
+        }
+        assert!(matches!(
+            view_photo(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(
+            view_photo(&store, ids[0]),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn the_details_check_reads_only_a_files_first_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let files: [(&str, Vec<u8>); 5] = [
+            ("FAKE insurance card", tagged()),
+            ("FAKE results.jpg", b"%PDF-1.7 FAKE results".to_vec()),
+            ("FAKE two bytes", vec![0xff, 0xd8]),
+            ("FAKE empty", Vec::new()),
+            ("FAKE cut off", CANVAS[..CANVAS.len() - 2].to_vec()),
+        ];
+        let sources = files
+            .iter()
+            .map(|(name, bytes)| ImportSource {
+                display_name: (*name).to_owned(),
+                reader: Box::new(Cursor::new(bytes.clone())),
+            })
+            .collect();
+        let ids = store
+            .import(profile, Vec::new(), sources, 2)
+            .unwrap()
+            .imported;
+        let checked: Vec<bool> = ids
+            .iter()
+            .map(|id| is_photo(&store, *id).unwrap())
+            .collect();
+        // A JPEG with no extension is a photo; a PDF named ".jpg" is not.
+        assert_eq!(checked, [true, false, false, false, true]);
+        // The check goes by the first bytes only: the view checks the rest.
+        assert!(matches!(
+            view_photo(&store, ids[4]),
+            Err(VaultError::NotPhoto)
+        ));
+        assert!(matches!(
+            is_photo(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
+
+        // It stops the export once it has three bytes.
+        let mut start = FileStart::default();
+        assert_eq!(start.write(&[0xff]).unwrap(), 1);
+        assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
+        assert!(start.complete());
+        assert_eq!(start.bytes, photo::JPEG_START);
+    }
+
+    #[test]
+    fn the_photo_buffer_stops_at_the_first_bytes_that_are_not_a_jpeg_or_past_the_cap() {
+        let mut pdf = PhotoBuffer::default();
+        assert!(pdf.write(b"%PDF-1.7").is_err());
+        assert!(pdf.refused);
+        // One byte at a time, as far as the bytes go.
+        let mut jpeg = PhotoBuffer::default();
+        for byte in &CANVAS[..3] {
+            assert_eq!(jpeg.write(&[*byte]).unwrap(), 1);
+        }
+        let mut wrong_third = PhotoBuffer::default();
+        assert!(wrong_third.write(&[0xff, 0xd8]).is_ok());
+        assert!(wrong_third.write(&[0x00]).is_err());
+        assert!(wrong_third.refused);
+
+        let mut large = PhotoBuffer::default();
+        let chunk = vec![0_u8; 1024 * 1024];
+        large.write_all(&CANVAS[..3]).unwrap();
+        while large.bytes.len() + chunk.len() <= photo::MAX_PHOTO_BYTES {
+            large.write_all(&chunk).unwrap();
+        }
+        assert!(!large.refused);
+        let room = photo::MAX_PHOTO_BYTES - large.bytes.len();
+        large.write_all(&chunk[..room]).unwrap();
+        assert_eq!(large.bytes.len(), photo::MAX_PHOTO_BYTES);
+        assert!(large.write(&[0]).is_err());
+        assert!(large.refused);
+    }
+
+    #[test]
+    fn a_photo_arrives_as_raw_bytes_or_as_postmessage_numbers() {
+        use tauri::ipc::InvokeBody;
+        let jpeg = vec![0xff_u8, 0xd8, 0xff, 0x00, 0x10];
+        // The custom protocol: the raw body.
+        assert_eq!(
+            *photo_bytes_within(&InvokeBody::Raw(jpeg.clone()), 8)
+                .ok()
+                .unwrap(),
+            jpeg
+        );
+        // postMessage (Android always, Windows after a fallback): numbers.
+        let numbers = InvokeBody::Json(serde_json::json!([255, 216, 255, 0, 16]));
+        assert_eq!(*photo_bytes_within(&numbers, 8).ok().unwrap(), jpeg);
+        // Over the limit either way: refused before anything is copied.
+        for body in [
+            InvokeBody::Raw(vec![0; 9]),
+            InvokeBody::Json(serde_json::json!([0, 0, 0, 0, 0, 0, 0, 0, 0])),
+        ] {
+            assert_eq!(
+                photo_bytes_within(&body, 8).unwrap_err().code,
+                "not_a_photo"
+            );
+        }
+        // Anything else is not a photo's bytes.
+        for body in [
+            serde_json::json!([256]),
+            serde_json::json!([-1]),
+            serde_json::json!([1.5]),
+            serde_json::json!(["ff"]),
+            serde_json::json!({ "0": 255 }),
+            serde_json::json!(null),
+        ] {
+            assert_eq!(
+                photo_bytes_within(&InvokeBody::Json(body), 8)
+                    .unwrap_err()
+                    .code,
+                "photo_body"
+            );
+        }
+    }
+
+    #[test]
+    fn the_photo_commands_are_wired_as_the_renderer_calls_them() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        let save = body("async fn vault_save_photo(");
+        // The photo's bytes and its target come from the request as sent.
+        assert!(save.contains("photo_request(request.body())"));
+        assert!(!save.contains("headers()"));
+        assert!(save.contains("run_blocking("));
+        assert!(body("async fn vault_view_photo(").contains("run_blocking("));
+        assert!(body("async fn vault_is_photo(").contains("run_blocking("));
+        // The history says a saved photo came from the camera (#71).
+        let saved = body("fn save_photo(");
+        assert!(saved.contains("store.import_from("));
+        assert!(saved.contains("\"camera\""));
+    }
+}
+
+#[cfg(test)]
+mod locked_pdf_command_tests {
+    use super::*;
+    use pdf_unlock::{Outcome, Refusal};
+    use std::io::Cursor;
+
+    const PASSPHRASE: &str = "river-azimuth-cobalt-sparrow-934";
+    /// The FAKE documents' password (tests/fixtures/locked-pdf/README.md).
+    const DOCUMENT_PASSWORD: &str = "FAKE-portal-2026";
+
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/locked-pdf")
+                .join(name),
+        )
+        .unwrap()
+    }
+
+    /// The helper's work, done here: the test binary is not myCarlos, so it
+    /// cannot be started as the helper (tests/pdf_helper.rs starts the real one).
+    fn in_process(pdf: &[u8], password: &str) -> Outcome {
+        match pdf_unlock::unlock(pdf, password) {
+            Ok(unlocked) => Outcome::Unlocked(unlocked),
+            Err(refusal) => Outcome::Refused(refusal),
+        }
+    }
+
+    /// A vault with one person and a folder, holding `name` made of `bytes`.
+    fn stored(
+        temp: &tempfile::TempDir,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> (VaultStore, Uuid, Uuid, Uuid) {
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSPHRASE, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let folder = store
+            .create_folder(profile, None, "FAKE Letters", 2)
+            .unwrap();
+        let outcome = store
+            .import(
+                profile,
+                vec![folder],
+                vec![ImportSource {
+                    display_name: name.to_owned(),
+                    reader: Box::new(Cursor::new(bytes)),
+                }],
+                3,
+            )
+            .unwrap();
+        (store, profile, folder, outcome.imported[0])
+    }
+
+    fn exported(store: &VaultStore, record: Uuid) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        store.export(record, &mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn the_locked_original_keeps_its_extension_and_says_what_it_is() {
+        assert_eq!(
+            locked_original_name("FAKE Letter.pdf"),
+            "FAKE Letter (locked original).pdf"
+        );
+        assert_eq!(
+            locked_original_name("FAKE SCAN.PDF"),
+            "FAKE SCAN (locked original).PDF"
+        );
+        assert_eq!(
+            locked_original_name("FAKE Letter"),
+            "FAKE Letter (locked original)"
+        );
+        assert_eq!(
+            locked_original_name("Zdjęcie ąę.pdf"),
+            "Zdjęcie ąę (locked original).pdf"
+        );
+        // A name already as long as a name can be: the words still fit.
+        let long = format!("{}.pdf", "ł".repeat(vault::MAX_RECORD_NAME_LEN - 4));
+        let original = locked_original_name(&long);
+        assert_eq!(original.chars().count(), vault::MAX_RECORD_NAME_LEN);
+        assert!(original.ends_with("ł (locked original).pdf"));
+    }
+
+    #[test]
+    fn a_stored_pdf_is_found_locked_by_its_names_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile, _, locked) =
+            stored(&temp, "FAKE Letter.pdf", fixture("text-aes256.pdf"));
+        assert!(is_locked_pdf(&store, locked).unwrap());
+        let open = store
+            .import(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: "FAKE Open.pdf".to_owned(),
+                    reader: Box::new(Cursor::new(fixture("text-original.pdf"))),
+                }],
+                4,
+            )
+            .unwrap()
+            .imported[0];
+        assert!(!is_locked_pdf(&store, open).unwrap());
+        assert!(matches!(
+            is_locked_pdf(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn unlocking_adds_the_copy_and_keeps_the_original_renamed() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile, folder, locked) =
+            stored(&temp, "FAKE Letter.pdf", fixture("text-aes256.pdf"));
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        assert_eq!(unlocked.original_name, "FAKE Letter (locked original).pdf");
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 2);
+        let copy = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == unlocked.record_id)
+            .unwrap();
+        let original = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == locked)
+            .unwrap();
+        // The copy takes the name, in the same person's records and folder.
+        assert_eq!(copy.display_name, "FAKE Letter.pdf");
+        assert_eq!(
+            (copy.profile_id, &copy.folder_ids),
+            (profile, &vec![folder])
+        );
+        assert_eq!(original.display_name, "FAKE Letter (locked original).pdf");
+        assert_eq!(original.folder_ids, vec![folder]);
+        // The original is as it came; the copy opens without a password.
+        assert_eq!(exported(&store, locked), fixture("text-aes256.pdf"));
+        assert!(!is_locked_pdf(&store, unlocked.record_id).unwrap());
+        assert!(matches!(
+            pdf_unlock::unlock(&exported(&store, unlocked.record_id), ""),
+            Err(Refusal::NotEncrypted)
+        ));
+
+        // Unlocking the original again adds nothing, and keeps its name.
+        assert!(matches!(
+            unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process),
+            Err(VaultError::PdfAlreadyUnlocked)
+        ));
+        assert_eq!(store.snapshot().unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn a_wrong_password_or_a_failed_helper_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _, locked) = stored(&temp, "FAKE Letter.pdf", fixture("text-aes256.pdf"));
+        let unchanged = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            snapshot.records.len() == 1 && snapshot.records[0].display_name == "FAKE Letter.pdf"
+        };
+        assert!(matches!(
+            unlock_pdf(&store, locked, "FAKE-wrong", in_process),
+            Err(VaultError::PdfWrongPassword)
+        ));
+        assert!(unchanged(&store));
+        for (outcome, expected) in [
+            (Outcome::Refused(Refusal::NotEncrypted), "pdf_not_locked"),
+            (Outcome::Refused(Refusal::TooLarge), "pdf_too_large"),
+            (Outcome::Refused(Refusal::Damaged), "pdf_unlock_failed"),
+            (Outcome::Refused(Refusal::Unsupported), "pdf_unlock_failed"),
+            (Outcome::Failed, "pdf_unlock_failed"),
+            (Outcome::Unavailable, "pdf_unlock_unavailable"),
+            // Where the helper's sandbox cannot be set up (#63).
+            (Outcome::NoSandbox, "pdf_unlock_no_sandbox"),
+        ] {
+            let error = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, |_, _| outcome).unwrap_err();
+            assert_eq!(PublicError::from(error).code, expected);
+            assert!(unchanged(&store));
+        }
+        assert!(matches!(
+            unlock_pdf(&store, Uuid::new_v4(), DOCUMENT_PASSWORD, in_process),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn a_locked_file_in_shared_with_me_is_unlocked_there() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _, _) = stored(&temp, "FAKE Other.pdf", fixture("text-original.pdf"));
+        let shared = store.shared_profile().unwrap();
+        let locked = store
+            .import(
+                shared,
+                vec![],
+                vec![ImportSource {
+                    display_name: "FAKE Referral.pdf".to_owned(),
+                    reader: Box::new(Cursor::new(fixture("text-aes256.pdf"))),
+                }],
+                4,
+            )
+            .unwrap()
+            .imported[0];
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        let copy = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == unlocked.record_id)
+            .unwrap();
+        assert_eq!(copy.profile_id, shared);
+        assert!(copy.folder_ids.is_empty());
+    }
+
+    #[test]
+    fn unlocking_then_hiding_and_setting_aside_keeps_both_pdfs_and_their_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = fixture("text-aes256.pdf");
+        let (store, profile, folder, locked) = stored(&temp, "FAKE Letter.pdf", original.clone());
+        let before = vault::history_events_for_test(&store).len();
+        let unlocked = unlock_pdf(&store, locked, DOCUMENT_PASSWORD, in_process).unwrap();
+        let copy = unlocked.record_id;
+        assert_ne!(copy, locked);
+        assert_eq!(exported(&store, locked), original);
+        let copy_bytes = exported(&store, copy);
+        assert!(copy_bytes.starts_with(b"%PDF-"));
+        let events = vault::history_events_for_test(&store);
+        assert_eq!(events.len(), before + 2);
+        assert_eq!(events[before].event, history::HistoryEvent::Imported);
+        assert_eq!(events[before].record_id, Some(copy));
+        assert_eq!(events[before + 1].event, history::HistoryEvent::Renamed);
+        assert_eq!(events[before + 1].record_id, Some(locked));
+        store.hide_record(locked, 5).unwrap();
+        store.hide_record(copy, 6).unwrap();
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .all(|r| r.hidden.is_some()));
+        store.unhide_record(copy).unwrap();
+        let aside = store.set_aside_folder().unwrap();
+        store.reset().unwrap();
+        assert_eq!(store.status().unwrap(), vault::VaultStatus::Absent);
+        let folders: Vec<_> = std::fs::read_dir(aside)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_dir())
+            .collect();
+        assert_eq!(folders.len(), 1);
+        let recovered = VaultStore::new(folders[0].clone());
+        recovered.unlock(PASSPHRASE).unwrap();
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 2);
+        let kept = snapshot.records.iter().find(|r| r.id == locked).unwrap();
+        assert_eq!(kept.display_name, "FAKE Letter (locked original).pdf");
+        assert!(kept.hidden.is_some());
+        let readable = snapshot.records.iter().find(|r| r.id == copy).unwrap();
+        assert!(readable.hidden.is_none());
+        assert_eq!(
+            (readable.profile_id, readable.folder_ids.clone()),
+            (profile, vec![folder])
+        );
+        assert_eq!(exported(&recovered, locked), original);
+        assert_eq!(exported(&recovered, copy), copy_bytes);
+        let events = vault::history_events_for_test(&recovered); // Also verifies its pinned chain.
+        assert!(events
+            .iter()
+            .any(|entry| entry.event == history::HistoryEvent::SetAside));
+        for entry in events {
+            let json = String::from_utf8(entry.canonical()).unwrap();
+            assert!(!json.contains(DOCUMENT_PASSWORD) && !json.contains(PASSPHRASE));
+        }
+    }
+
+    #[test]
+    fn a_file_over_the_limit_is_not_read_whole() {
+        let mut buffer = LimitedBuffer::new(4);
+        assert!(std::io::Write::write_all(&mut buffer, b"%PDF").is_ok());
+        assert!(std::io::Write::write_all(&mut buffer, b"-").is_err());
+        assert!(buffer.over);
+        assert_eq!(&buffer.bytes[..], b"%PDF");
+    }
+
+    #[test]
+    fn the_unlock_commands_run_off_the_main_thread_and_wipe_the_password() {
+        let source = include_str!("lib.rs");
+        let body = |name: &str| {
+            let start = source.find(name).unwrap();
+            &source[start..start + source[start..].find("\n}\n").unwrap()]
+        };
+        let unlock = body("async fn vault_unlock_pdf(");
+        assert!(unlock.contains("run_blocking("));
+        assert!(unlock.contains("pdf_unlock::unlock_in_helper"));
+        assert!(unlock.contains("Opening::new(store.idle())"));
+        assert!(unlock.contains("Zeroizing::new(std::mem::take(&mut request.password))"));
+        assert!(body("async fn vault_is_locked_pdf(").contains("run_blocking("));
+        assert!(body("impl Drop for UnlockPdfRequest").contains("self.password.zeroize()"));
     }
 }

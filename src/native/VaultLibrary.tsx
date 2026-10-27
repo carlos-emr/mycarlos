@@ -1,9 +1,12 @@
-import { LibrarySidebar } from "./LibrarySidebar";
+import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
+import { useI18n } from "../i18n";
 import {
+  isWrongPdfPassword,
   localDateText,
   namedDamage,
+  type BoxKey,
   type SavedBackup,
   type VaultBridge,
   type VaultFolder,
@@ -11,6 +14,8 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { RenameDialog, type RenameTarget } from "./RenameDialog";
+import { HiddenDocuments } from "./HiddenDocuments";
+import { UnlockPdfDialog } from "./UnlockPdfDialog";
 import {
   RecoveryKeySetup,
   type OpeningRecoverySetup,
@@ -19,6 +24,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
+import { DocumentReader } from "./DocumentReader";
+import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
+import { CameraDialog } from "./CameraDialog";
+import { PhotoViewer } from "./PhotoViewer";
+import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
   NAME_INPUT_MAX_LENGTH,
@@ -26,6 +36,7 @@ import {
   searchKey,
 } from "./recordPresentation";
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
+import { folderPath, folderSubtree, recordPath } from "./folderTree";
 import { ANNOUNCE_DELAY_MS } from "./announce";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 import {
@@ -37,29 +48,33 @@ import {
   type OldBackupsGuide,
 } from "./oldBackups";
 
-type NativeSection = "records" | "security" | "preferences";
+type NativeSection =
+  | "records"
+  | "shared"
+  | "hidden"
+  | "security"
+  | "preferences";
+/** The phone's tabs. Records holds the people and Shared with me, as the
+ * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
+const PHONE_TABS: ReadonlyArray<[NativeSection, string]> = [
+  ["records", "Records"],
+  ["hidden", "Hidden"],
+  ["security", "Security"],
+  ["preferences", "Preferences"],
+];
+
+/** The people a vault keeps records for: every profile but Shared with me's
+ * (#61). */
+const peopleOf = (snapshot: VaultSnapshot) =>
+  snapshot.profiles.filter(
+    (profile) => profile.id !== snapshot.sharedProfileId,
+  );
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
-
-/** The ids of a folder and of every folder beneath it. */
-function folderSubtree(folders: VaultFolder[], rootId: string): Set<string> {
-  const subtree = new Set([rootId]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const folder of folders) {
-      if (
-        folder.parentId &&
-        subtree.has(folder.parentId) &&
-        !subtree.has(folder.id)
-      ) {
-        subtree.add(folder.id);
-        grew = true;
-      }
-    }
-  }
-  return subtree;
-}
+const SORT_CHOICES: ReadonlyArray<[NativeSort, string]> = [
+  ["newest", "Newest first"],
+  ["name", "Name A–Z"],
+];
 
 export function VaultLibrary({
   bridge,
@@ -78,7 +93,13 @@ export function VaultLibrary({
   onUnfinishedRecoveryKey,
   canPrint = false,
   keyboardHints = true,
+  computer = true,
   sizesIn1024s = false,
+  covered = false,
+  cameraPlatform = null,
+  cameraAsking,
+  sharedNew = 0,
+  onSharedSeen,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -86,7 +107,7 @@ export function VaultLibrary({
   notice: string;
   setNotice: (value: string) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
-  run: (operation: () => Promise<void>, boxes?: string[]) => Promise<void>;
+  run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -108,11 +129,33 @@ export function VaultLibrary({
   /** Whether to show keyboard-only instructions (Tab, Escape): false on
    * phones and tablets. */
   keyboardHints?: boolean;
+  /** On a computer, not a phone: shared files come by being opened with
+   * myCarlos there, not from another app's Share. */
+  computer?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
+  /** A dialog of the app's own is over the library (the warning before the
+   * automatic lock, #68): the library and any dialog in it are inert. */
+  covered?: boolean;
+  /** The platform the camera dialog runs on (a computer, or since D97 a
+   * phone), or null where photos cannot be taken. */
+  cameraPlatform?: string | null;
+  /** On a phone: holds the lock on a hidden app while the system asks
+   * whether myCarlos may use the camera (see CameraDialog). */
+  cameraAsking?: <T>(question: Promise<T>) => Promise<T>;
+  /** Files added to Shared with me since the vault was unlocked, until the
+   * patient opens it (#61). */
+  sharedNew?: number;
+  /** The patient opened Shared with me: its new files have been seen. */
+  onSharedSeen?: () => void;
 }) {
-  const [profileId, setProfileId] = useState(snapshot.profiles[0]?.id ?? "");
+  const { t } = useI18n();
+  const [profileId, setProfileId] = useState(
+    () => peopleOf(snapshot)[0]?.id ?? "",
+  );
   const [section, setSection] = useState<NativeSection>("records");
+  // Keep Hidden scoped to the location it was opened from, including Shared.
+  const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
   // The steps for older backups after a key whose kit may have been lost or
   // seen was replaced: kept across locks, until the patient says done.
   const [oldBackupsGuide, setOldBackupsGuideState] =
@@ -132,12 +175,34 @@ export function VaultLibrary({
   }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Only a change made in the search box requests an announcement. Folder
+  // and person changes also clear the query, but must not announce that reset.
+  const [searchRequest, setSearchRequest] = useState<{
+    query: string;
+    location: string;
+  } | null>(null);
+  const [searchAnnouncement, setSearchAnnouncement] = useState("");
+  const announcedSearchRef = useRef(searchRequest);
   const [view, setView] = useState<NativeView>("list");
   const [sort, setSort] = useState<NativeSort>("newest");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [moveFolderId, setMoveFolderId] = useState("");
+  // Where the selected documents in Shared with me go: "<person>|<folder>".
+  const [sharedTarget, setSharedTarget] = useState("");
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  const activeRecordIdRef = useRef(activeRecordId);
+  activeRecordIdRef.current = activeRecordId;
+  // The document open in the reader, if any.
+  const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  // The open document, when its file is a photo, and the photo while it is
+  // shown: it is fetched for the photo view and dropped when that closes.
+  const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
+  const [shownPhoto, setShownPhoto] = useState<{
+    recordId: string;
+    url: string;
+  } | null>(null);
   // The result of a dialog's action (a rename, a recovery key), given once the
   // dialog has closed (see the effect below), and the document whose details
   // it was started from, if any.
@@ -147,10 +212,10 @@ export function VaultLibrary({
   } | null>(null);
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
-    action: "delete" | "export";
+    action: "export";
     recordId: string;
   } | null>(null);
-  const [confirmRemoveDamaged, setConfirmRemoveDamaged] = useState(false);
+  const [confirmHideDamaged, setConfirmHideDamaged] = useState(false);
   // Setting up a recovery key. A vault just created starts with its key, which
   // must be set up before the library can be used. A vault unlocked without
   // one is offered a key, which can be left for later: the setup opens on the
@@ -174,70 +239,295 @@ export function VaultLibrary({
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
   const [folderDestinationId, setFolderDestinationId] = useState("");
+  // Shared with me is a reserved profile, shown as a folder (#61): with one
+  // person, inside their records; with several, outside everyone's.
+  const people = useMemo(() => peopleOf(snapshot), [snapshot]);
+  const sharedProfileId = snapshot.sharedProfileId;
+  // Everything the people hold, for the sidebar's tree: not Shared with me's.
+  const peopleFolders = useMemo(
+    () =>
+      snapshot.folders.filter((folder) => folder.profileId !== sharedProfileId),
+    [snapshot.folders, sharedProfileId],
+  );
+  const peopleRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (record) => record.profileId !== sharedProfileId && !record.hidden,
+      ),
+    [snapshot.records, sharedProfileId],
+  );
+  const inShared = section === "shared";
   const profile =
-    snapshot.profiles.find((candidate) => candidate.id === profileId) ??
-    snapshot.profiles[0];
+    people.find((candidate) => candidate.id === profileId) ?? people[0];
   const folders = useMemo(
     () => snapshot.folders.filter((folder) => folder.profileId === profileId),
     [snapshot.folders, profileId],
   );
+  // The documents where the patient is: a person's, or Shared with me's.
+  const locationProfileId = inShared ? sharedProfileId : profileId;
+  const hiddenLocationProfileId =
+    section === "hidden" ? (hiddenProfileId ?? profileId) : locationProfileId;
+  const openHidden = () => {
+    if (section === "hidden") return;
+    setHiddenProfileId(locationProfileId ?? profileId);
+    setSection("hidden");
+  };
   const records = useMemo(
-    () => snapshot.records.filter((record) => record.profileId === profileId),
-    [snapshot.records, profileId],
+    () =>
+      snapshot.records.filter(
+        (record) => record.profileId === locationProfileId && !record.hidden,
+      ),
+    [snapshot.records, locationProfileId],
+  );
+  const hiddenRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (record) =>
+          record.profileId === hiddenLocationProfileId && record.hidden,
+      ),
+    [snapshot.records, hiddenLocationProfileId],
+  );
+  // Where a document can go: each person's records and folders.
+  const moveTargets = useMemo(
+    () =>
+      people.map((person) => ({
+        profileId: person.id,
+        name: person.displayName,
+        folders: snapshot.folders
+          .filter((folder) => folder.profileId === person.id)
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      })),
+    [people, snapshot.folders],
   );
   const currentFolder =
     folders.find((folder) => folder.id === currentFolderId) ?? null;
+  const folderById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders],
+  );
   const folderNameById = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder.name])),
     [folders],
   );
   const normalizedQuery = searchKey(query.trim());
+  // A search covers the open folder and every folder beneath it; from the top
+  // level (null), the whole profile. Without one, only what is directly in
+  // the open folder is shown.
+  const searchScope = useMemo(
+    () =>
+      !inShared && normalizedQuery && currentFolderId
+        ? folderSubtree(folders, currentFolderId)
+        : null,
+    [currentFolderId, folders, inShared, normalizedQuery],
+  );
   const visibleFolders = useMemo(
     () =>
-      folders
-        .filter((folder) => folder.parentId === currentFolderId)
-        .filter(
-          (folder) =>
-            !normalizedQuery ||
-            searchKey(folder.name).includes(normalizedQuery),
+      (inShared ? [] : folders)
+        .filter((folder) =>
+          normalizedQuery
+            ? folder.id !== currentFolderId &&
+              (!searchScope || searchScope.has(folder.id)) &&
+              searchKey(folder.name).includes(normalizedQuery)
+            : folder.parentId === currentFolderId,
         )
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    [currentFolderId, folders, normalizedQuery],
+        .sort(
+          (left, right) =>
+            left.name.localeCompare(right.name) ||
+            folderPath(folderById, left.parentId).localeCompare(
+              folderPath(folderById, right.parentId),
+            ),
+        ),
+    [
+      currentFolderId,
+      folderById,
+      folders,
+      inShared,
+      normalizedQuery,
+      searchScope,
+    ],
   );
+  // One entry per document, however many folders it is filed in.
   const visibleRecords = useMemo(() => {
     const matching = records.filter((record) => {
-      const inFolder = currentFolderId
+      if (normalizedQuery)
+        return (
+          (!searchScope ||
+            record.folderIds.some((id) => searchScope.has(id))) &&
+          searchKey(record.displayName).includes(normalizedQuery)
+        );
+      return currentFolderId
         ? record.folderIds.includes(currentFolderId)
         : record.folderIds.length === 0;
-      return (
-        inFolder &&
-        (!normalizedQuery ||
-          searchKey(record.displayName).includes(normalizedQuery))
-      );
     });
     return matching.sort((left, right) =>
       sort === "name"
         ? left.displayName.localeCompare(right.displayName)
         : right.importedAtMs - left.importedAtMs,
     );
-  }, [currentFolderId, normalizedQuery, records, sort]);
+  }, [currentFolderId, normalizedQuery, records, searchScope, sort]);
   const selectedRecords = records.filter((record) =>
     selectedIds.includes(record.id),
   );
   const activeRecord =
     records.find((record) => record.id === activeRecordId) ?? null;
+  const readerRecord =
+    records.find((record) => record.id === readerRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+  const searchLocation = `${section}:${profileId}:${currentFolderId ?? ""}`;
+  const searchBlocked = Boolean(
+    covered ||
+      busy ||
+      activeRecord ||
+      readerRecordId ||
+      shownPhoto ||
+      renameTarget ||
+      cameraOpen ||
+      confirmHideDamaged ||
+      recoverySetup ||
+      (section !== "records" && !inShared),
+  );
+  useEffect(() => {
+    // Empty the existing live region while typing so even another search
+    // with the same result count produces a fresh, atomic announcement.
+    setSearchAnnouncement("");
+    if (!searchRequest) return;
+    if (
+      searchBlocked ||
+      searchRequest.location !== searchLocation ||
+      searchRequest.query !== query
+    ) {
+      setSearchRequest(null);
+      return;
+    }
+    // Once clearing has been announced, later imports must not repeat it.
+    if (!normalizedQuery && announcedSearchRef.current === searchRequest)
+      return;
+    const timer = window.setTimeout(() => {
+      announcedSearchRef.current = searchRequest;
+      setSearchAnnouncement(
+        normalizedQuery && !visibleFolders.length && !visibleRecords.length
+          ? t("library.noMatch.title")
+          : t(
+              normalizedQuery
+                ? "library.search.results"
+                : "library.search.cleared",
+              {
+                folders: visibleFolders.length,
+                documents: visibleRecords.length,
+              },
+            ),
+      );
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [
+    query,
+    normalizedQuery,
+    searchRequest,
+    searchLocation,
+    searchBlocked,
+    visibleFolders.length,
+    visibleRecords.length,
+    t,
+  ]);
 
   useEffect(() => {
     if (profile && profile.id !== profileId) setProfileId(profile.id);
   }, [profile, profileId]);
 
+  // A document whose file is a JPEG can be viewed as a photo. The vault
+  // decides from the file's first bytes, whatever its name, so it is asked
+  // when the document's details open (it reads only those bytes); a PDF is
+  // not asked about. The photo itself is fetched only for the photo view.
+  const photoCandidate =
+    activeRecord?.available && !namedAsPdf(activeRecord.displayName)
+      ? activeRecord.id
+      : null;
   useEffect(() => {
-    setCurrentFolderId(null);
+    setPhotoRecordId(null);
+    setShownPhoto(null);
+    if (!photoCandidate) return;
+    let current = true;
+    bridge.isPhoto(photoCandidate).then(
+      (photo) => {
+        if (current && photo) setPhotoRecordId(photoCandidate);
+      },
+      // No longer readable: the details say what they can.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, photoCandidate]);
+  // A PDF that may be locked with a password can be unlocked from its details
+  // (#54). The vault scans the file's PDF names only, when the details open.
+  const lockedCandidate =
+    activeRecord?.available && namedAsPdf(activeRecord.displayName)
+      ? activeRecord.id
+      : null;
+  const [lockedPdfId, setLockedPdfId] = useState<string | null>(null);
+  useEffect(() => {
+    setLockedPdfId(null);
+    if (!lockedCandidate) return;
+    let current = true;
+    bridge.isLockedPdf(lockedCandidate).then(
+      (locked) => {
+        if (current && locked) setLockedPdfId(lockedCandidate);
+      },
+      // No longer readable: the details say what they can.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, lockedCandidate]);
+  // The password dialog stays open after a wrong password, and says so.
+  const [unlocking, setUnlocking] = useState<{
+    recordId: string;
+    name: string;
+    wrongTries: number;
+  } | null>(null);
+  const unlockPdf = (password: string) => {
+    if (!unlocking) return;
+    const { recordId, name } = unlocking;
+    void run(async () => {
+      try {
+        const unlocked = await bridge.unlockPdf(recordId, password);
+        setUnlocking(null);
+        await refresh();
+        // The details show the copy, which opens without the password.
+        setActiveRecordId(unlocked.recordId);
+        setNotice(
+          `${name} unlocked. The locked original is kept as ${unlocked.originalName}.`,
+        );
+      } catch (failure) {
+        if (isWrongPdfPassword(failure)) {
+          setUnlocking(
+            (current) =>
+              current && { ...current, wrongTries: current.wrongTries + 1 },
+          );
+          return;
+        }
+        setUnlocking(null);
+        throw failure;
+      }
+    });
+  };
+  const viewPhoto = (recordId: string) =>
+    run(async () => {
+      const url = await bridge.viewPhoto(recordId);
+      setShownPhoto({ recordId, url });
+    });
+
+  // A folder opened from another person's tree in the sidebar: the person
+  // changes first, and this effect then opens that folder, not their top.
+  const openingFolderRef = useRef<string | null>(null);
+  useEffect(() => {
+    setCurrentFolderId(openingFolderRef.current);
+    openingFolderRef.current = null;
     setSelectedIds([]);
     setQuery("");
     // Folder ids belong to one profile. A kept id would no longer match any
@@ -246,6 +536,16 @@ export function VaultLibrary({
     setFolderToMoveId("");
     setFolderDestinationId("");
   }, [profileId]);
+  /** Opens a person's top-level folder, or one of their folders. */
+  const openPerson = (person: string, folderId: string | null = null) => {
+    setSection("records");
+    if (person === profileId) {
+      setCurrentFolderId(folderId);
+      return;
+    }
+    openingFolderRef.current = folderId;
+    setProfileId(person);
+  };
 
   useEffect(() => {
     setSelectedIds([]);
@@ -282,8 +582,10 @@ export function VaultLibrary({
     if (
       !dialogResult ||
       renameTarget ||
+      cameraOpen ||
+      shownPhoto ||
       confirmation ||
-      confirmRemoveDamaged ||
+      confirmHideDamaged ||
       recoverySetup ||
       busy
     )
@@ -306,11 +608,13 @@ export function VaultLibrary({
     activeRecordId,
     busy,
     confirmation,
-    confirmRemoveDamaged,
+    confirmHideDamaged,
     notice,
     dialogResult,
     recoverySetup,
     renameTarget,
+    cameraOpen,
+    shownPhoto,
   ]);
 
   const renameFolder = (folder: VaultFolder) =>
@@ -343,6 +647,25 @@ export function VaultLibrary({
     });
   };
 
+  // A shared file an add refused as not a PDF, marked in the list.
+  // Said politely when files are added to Shared with me (#61).
+  const [sharedAnnouncement, setSharedAnnouncement] = useState("");
+  const sharedSeen = useRef(0);
+  useEffect(() => {
+    const added = sharedNew - sharedSeen.current;
+    if (added > 0)
+      setSharedAnnouncement(
+        added === 1
+          ? "A shared file was added to Shared with me."
+          : `${added} shared files were added to Shared with me.`,
+      );
+    sharedSeen.current = sharedNew;
+  }, [sharedNew]);
+  // Seen as soon as Shared with me is open.
+  useEffect(() => {
+    if (inShared && sharedNew > 0) onSharedSeen?.();
+  }, [inShared, onSharedSeen, sharedNew]);
+
   const importFiles = () =>
     run(async () => {
       const folderIds = currentFolderId ? [currentFolderId] : [];
@@ -367,6 +690,37 @@ export function VaultLibrary({
       setNotice(
         `${outcome.imported.length} file(s) encrypted and imported.${skipped}`,
       );
+    });
+
+  // Saved into the folder that is open, as an import is. The details of the
+  // new document open, so that it can be renamed at once.
+  const savePhoto = (jpeg: Uint8Array) =>
+    run(async () => {
+      const folderIds = currentFolderId ? [currentFolderId] : [];
+      const outcome = await bridge.savePhoto(
+        profileId,
+        folderIds,
+        photoName(new Date()),
+        jpeg,
+      );
+      const next = await refresh();
+      setCameraOpen(false);
+      const saved = next.records.find(
+        (record) => record.id === outcome.imported[0],
+      );
+      if (!saved) {
+        setNotice(
+          "This photo is already in the vault, so it was not saved again.",
+        );
+        return;
+      }
+      setActiveRecordId(saved.id);
+      // Cleared now, so that the result is a change even when it repeats.
+      setNotice("");
+      setDialogResult({
+        message: `Photo saved as ${saved.displayName}.`,
+        recordId: saved.id,
+      });
     });
 
   const toggleSelected = (id: string) =>
@@ -409,7 +763,22 @@ export function VaultLibrary({
     });
   };
 
-  const moveItem = (item: DragItem, folderId: string | null) => {
+  const moveItem = (
+    item: DragItem,
+    folderId: string | null,
+    toProfileId = profileId,
+  ) => {
+    if (item.kind === "records" && (inShared || toProfileId !== profileId)) {
+      moveToPerson(item.ids, toProfileId, folderId);
+      return;
+    }
+    // Folders stay with their person; documents can move between people.
+    if (toProfileId !== profileId) {
+      setNotice(
+        "Folders stay with their person. Move individual documents to another person instead.",
+      );
+      return;
+    }
     if (alreadyIn(item, folderId)) return;
     void run(async () => {
       if (item.kind === "records") {
@@ -507,19 +876,21 @@ export function VaultLibrary({
 
   // Every damaged document in the vault, not only those in view: removal
   // takes them all, so the confirmation names them all.
-  const damaged = snapshot.records.filter((record) => !record.available);
+  const damaged = snapshot.records.filter(
+    (record) => !record.available && record.hidden?.reason !== "damaged",
+  );
   const damagedIds = damaged.map((record) => record.id);
   const damagedCount = damagedIds.length;
   const profileName = (id: string) =>
     snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
     "";
-  const removeDamaged = () => {
-    setConfirmRemoveDamaged(false);
+  const hideDamaged = () => {
+    setConfirmHideDamaged(false);
     void run(async () => {
       let removed: string[];
       try {
         // The vault removes only what this screen showed as damaged.
-        removed = await bridge.removeUnavailableRecords(damagedIds);
+        removed = await bridge.hideUnavailableRecords(damagedIds);
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -533,8 +904,8 @@ export function VaultLibrary({
       const next = await refresh();
       const outcome =
         removed.length === 0
-          ? "Every file is back on this device. Nothing was removed."
-          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} removed.`;
+          ? "Every file is back on this device. Nothing was hidden."
+          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} hidden. ${removed.length === 1 ? "It is" : "They are"} listed under Hidden.`;
       // The removal can commit and still leave the vault read-only, when its
       // redundant write fails. The banner then says why; only claim the vault
       // is writable when it is.
@@ -546,14 +917,24 @@ export function VaultLibrary({
     });
   };
 
-  const deleteRecord = (record: VaultRecord) => {
-    setConfirmation(null);
+  // Nothing is ever deleted (#71): a document is hidden, and can be
+  // restored from Hidden. Taking it out of view needs no confirmation.
+  const hideRecord = (record: VaultRecord) => {
     void run(async () => {
-      await bridge.deleteRecord(record.id);
+      await bridge.hideRecord(record.id);
       setActiveRecordId(null);
       setSelectedIds((current) => current.filter((id) => id !== record.id));
       await refresh();
-      setNotice(`${record.displayName} was permanently deleted.`);
+      setNotice(
+        `${record.displayName} was hidden. It is listed under Hidden, where you can restore it.`,
+      );
+    });
+  };
+  const unhideRecord = (record: VaultRecord) => {
+    void run(async () => {
+      await bridge.unhideRecord(record.id);
+      await refresh();
+      setNotice(`${record.displayName} was restored to where it was.`);
     });
   };
 
@@ -562,7 +943,7 @@ export function VaultLibrary({
       await bridge.changePassphrase(current, replacement);
       await refresh();
       setNotice("Passphrase changed.");
-    }, ["the current passphrase", "the new passphrase"]);
+    }, ["box.currentPassphrase", "box.newPassphrase"]);
   const createProfile = async (name: string) => {
     let created = false;
     await run(async () => {
@@ -570,24 +951,56 @@ export function VaultLibrary({
       created = true;
       await refresh();
       setNotice(`${name} was added.`);
-    }, ["the profile name"]);
+    }, ["box.profileName"]);
     return created;
   };
-  const resetVault = (confirmation: string) =>
-    run(async () => {
-      let erased: boolean;
-      try {
-        erased = await bridge.reset(confirmation);
-      } catch (error) {
-        // A reset closes the native session before it erases anything, so a
-        // failed one leaves the vault locked. Show that instead of a library
-        // whose every action would be refused.
-        await onLock();
-        throw error;
-      }
-      if (erased) window.location.reload();
-      else setNotice("Vault erase cancelled. Nothing changed.");
-    }, ["the words you typed"]);
+  /** Moves documents to another person, into one of their folders or none.
+   * One the person already has stays where it is. */
+  const moveToPerson = (
+    ids: string[],
+    toProfileId: string,
+    folderId: string | null,
+  ) =>
+    void run(async () => {
+      const names = new Map(
+        records.map((record) => [record.id, record.displayName]),
+      );
+      const outcome = await bridge.moveToPerson(
+        ids,
+        toProfileId,
+        folderId ? [folderId] : [],
+      );
+      const folder = snapshot.folders.find(
+        (candidate) => candidate.id === folderId,
+      );
+      const theirs =
+        people.length > 1
+          ? `${profileName(toProfileId)}'s records`
+          : "My records";
+      const where = folder ? `${theirs}, folder ${folder.name}` : theirs;
+      const source = inShared
+        ? "Shared with me"
+        : `${profileName(profileId)}'s records`;
+      if (outcome.moved.includes(activeRecordId ?? "")) setActiveRecordId(null);
+      setSelectedIds((current) =>
+        current.filter((id) => !outcome.moved.includes(id)),
+      );
+      await refresh();
+      const said = [
+        outcome.moved.length === 1
+          ? `${names.get(outcome.moved[0]) ?? "The document"} moved to ${where}.`
+          : outcome.moved.length > 1
+            ? `${outcome.moved.length} documents moved to ${where}.`
+            : "",
+        ...outcome.alreadyThere.map(
+          (name) =>
+            `${name} was already in ${theirs}, so it stayed in ${source}.`,
+        ),
+      ];
+      setNotice(said.filter(Boolean).join(" "));
+      focusPageIfLost();
+    });
+
   const moveRecord = (recordId: string, folderId: string | null) =>
     run(async () => {
       await bridge.assignFolders(recordId, folderId ? [folderId] : []);
@@ -605,7 +1018,7 @@ export function VaultLibrary({
       await refresh();
       setShowFolderForm(false);
       setNotice(`${name} was created.`);
-    }, ["the folder name"]);
+    }, ["box.folderName"]);
   };
   const moveFolder = () =>
     run(async () => {
@@ -639,10 +1052,26 @@ export function VaultLibrary({
     return counts;
   }, [records]);
   const folderCount = (id: string) => folderCounts.get(id) ?? 0;
-  const locationTitle = currentFolder?.name ?? "My records";
+  const rootLocationTitle = inShared
+    ? "Shared with me"
+    : profile
+      ? personFolderName(profile, people)
+      : "My records";
+  const locationTitle = inShared
+    ? rootLocationTitle
+    : (currentFolder?.name ?? rootLocationTitle);
+  const searchLabel = inShared
+    ? "Search Shared with me"
+    : currentFolder
+      ? "Search this folder and its subfolders"
+      : `Search everything in ${rootLocationTitle}`;
 
   return (
-    <div className="evaluation-page native-vault-page">
+    <div className="evaluation-page native-vault-page" inert={covered}>
+      {/* Polite, but not a second status line: the library has one. */}
+      <p className="sr-only" aria-live="polite">
+        {sharedAnnouncement}
+      </p>
       <div className="evaluation-banner" role="note">
         <strong>Synthetic-data development build</strong>
         <span>
@@ -659,7 +1088,8 @@ export function VaultLibrary({
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
-                confirmRemoveDamaged ||
+                cameraOpen ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
@@ -678,98 +1108,183 @@ export function VaultLibrary({
             </button>
           </header>
 
-          <label
-            className="mobile-section-picker"
+          {/* On narrow windows, where the sidebar is hidden: a row of
+              tabs instead of a dropdown (#67). */}
+          <nav
+            className="mobile-section-picker native-section-tabs"
+            aria-label="Section"
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
-                confirmRemoveDamaged ||
+                cameraOpen ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
-            <span>Section</span>
-            <select
-              aria-label="Section"
-              value={section}
-              onChange={(event) =>
-                setSection(event.target.value as NativeSection)
-              }
-            >
-              <option value="records">My records</option>
-              <option value="security">Security</option>
-              <option value="preferences">Preferences</option>
-            </select>
-          </label>
+            {PHONE_TABS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-current={
+                  section === value || (value === "records" && inShared)
+                    ? "page"
+                    : undefined
+                }
+                onClick={() =>
+                  value === "hidden" ? openHidden() : setSection(value)
+                }
+              >
+                {value === "records" && sharedNew
+                  ? `${label} (${sharedNew} new)`
+                  : label}
+              </button>
+            ))}
+          </nav>
 
           <div
             className="app-body"
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
-                confirmRemoveDamaged ||
+                cameraOpen ||
+                confirmHideDamaged ||
                 recoverySetup,
             )}
           >
             <LibrarySidebar
-              profileName={profile?.displayName ?? "Private vault"}
+              profileName={
+                (!inShared &&
+                  !(
+                    section === "hidden" &&
+                    hiddenLocationProfileId === sharedProfileId
+                  ) &&
+                  profile?.displayName) ||
+                "Private vault"
+              }
+              people={people}
+              profileId={profileId}
               section={section}
               currentFolderId={currentFolderId}
-              folders={folders}
-              records={records}
+              folders={peopleFolders}
+              records={peopleRecords}
               disabled={busy || readOnly}
               drag={drag}
-              folderCount={folderCount}
-              onOpenFolder={(folderId) => {
-                setSection("records");
-                setCurrentFolderId(folderId);
+              hiddenCount={hiddenRecords.length}
+              hiddenFromShared={
+                section === "hidden" &&
+                hiddenLocationProfileId === sharedProfileId
+              }
+              onOpenPerson={openPerson}
+              onOpenFolder={(person, folderId) => openPerson(person, folderId)}
+              sharedNew={sharedNew}
+              vaultTotals={{
+                documents: snapshot.records.filter((record) => !record.hidden)
+                  .length,
+                folders: snapshot.folders.length,
               }}
+              onOpenShared={() => {
+                setSection("shared");
+                setCurrentFolderId(null);
+              }}
+              onOpenHidden={openHidden}
               onOpenSecurity={() => setSection("security")}
               onOpenPreferences={() => setSection("preferences")}
             />
 
-            {section === "records" && (
+            {(section === "records" || inShared) && (
               <main
                 className={dropClass(
                   "library-main",
                   `pane:${currentFolderId ?? "root"}`,
                 )}
-                onDragOver={(event) =>
-                  dragOver(event, `pane:${currentFolderId ?? "root"}`)
+                // Shared with me and recursive search results take no pane
+                // drops: dropping where a drag began must not move the file.
+                onDragOver={
+                  inShared || normalizedQuery
+                    ? undefined
+                    : (event) =>
+                        dragOver(event, `pane:${currentFolderId ?? "root"}`)
                 }
-                onDrop={(event) => dropInto(event, currentFolderId)}
+                onDrop={
+                  inShared || normalizedQuery
+                    ? undefined
+                    : (event) => dropInto(event, currentFolderId)
+                }
               >
+                <p
+                  className="sr-only"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  data-search-status
+                >
+                  {searchAnnouncement}
+                </p>
                 <div className="native-profile-row">
-                  <button
-                    className={dropClass(
-                      "breadcrumb native-breadcrumb",
-                      "breadcrumb:root",
-                    )}
-                    type="button"
-                    onDragOver={(event) => dragOver(event, "breadcrumb:root")}
-                    onDrop={(event) => dropInto(event, null)}
-                    onClick={() => setCurrentFolderId(null)}
-                  >
-                    My records
-                  </button>
-                  {currentFolder && (
+                  {/* Shared with me is no one's: no person's path above it. */}
+                  {inShared ? (
+                    <strong>Shared with me</strong>
+                  ) : (
                     <>
-                      <span aria-hidden="true">/</span>
-                      <strong>{currentFolder.name}</strong>
+                      <button
+                        className={dropClass(
+                          "breadcrumb native-breadcrumb",
+                          "breadcrumb:root",
+                        )}
+                        type="button"
+                        onDragOver={(event) =>
+                          dragOver(event, "breadcrumb:root")
+                        }
+                        onDrop={(event) => dropInto(event, null)}
+                        onClick={() => {
+                          setSection("records");
+                          setCurrentFolderId(null);
+                        }}
+                      >
+                        {profile ? personFolderName(profile, people) : ""}
+                      </button>
+                      {currentFolder && (
+                        <>
+                          <span aria-hidden="true">›</span>
+                          <strong>{currentFolder.name}</strong>
+                        </>
+                      )}
                     </>
                   )}
-                  <label className="native-profile-select">
-                    <span>Patient</span>
-                    <select
-                      value={profileId}
-                      onChange={(event) => setProfileId(event.target.value)}
+                  {/* On a phone, where the sidebar is hidden: the same
+                      top-level folders, the people and Shared with me. */}
+                  <nav
+                    className="native-top-level-narrow"
+                    aria-label="Record library"
+                  >
+                    {people.map((person) => (
+                      <button
+                        key={person.id}
+                        className="button"
+                        type="button"
+                        aria-current={
+                          !inShared && person.id === profileId
+                            ? "page"
+                            : undefined
+                        }
+                        onClick={() => openPerson(person.id)}
+                      >
+                        <Icon name="folder" />{" "}
+                        {personFolderName(person, people)}
+                      </button>
+                    ))}
+                    <button
+                      className="button"
+                      type="button"
+                      aria-current={inShared ? "page" : undefined}
+                      onClick={() => {
+                        setSection("shared");
+                        setCurrentFolderId(null);
+                      }}
                     >
-                      {snapshot.profiles.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <Icon name="letter" /> Shared with me
+                      {sharedNew > 0 && ` (${sharedNew} new)`}
+                    </button>
+                  </nav>
                 </div>
                 <div className="main-head">
                   <div>
@@ -777,44 +1292,80 @@ export function VaultLibrary({
                       {locationTitle}
                     </h1>
                     <p>
-                      {visibleFolders.length} folders · {visibleRecords.length}{" "}
-                      documents in this location
+                      {inShared
+                        ? `${visibleRecords.length} documents${normalizedQuery ? " found" : ""}`
+                        : `${visibleFolders.length} folders · ${visibleRecords.length} documents ${normalizedQuery ? "found" : "in this location"}`}
                     </p>
                   </div>
-                  <div className="head-actions">
-                    {currentFolder && (
+                  {/* Shared with me is one fixed folder: files arrive in it
+                      by themselves, and nothing else is made in it. */}
+                  {!inShared && (
+                    <div className="head-actions">
+                      {currentFolder && (
+                        <button
+                          className="button"
+                          type="button"
+                          disabled={busy || readOnly}
+                          onClick={() => renameFolder(currentFolder)}
+                        >
+                          Rename folder
+                        </button>
+                      )}
                       <button
                         className="button"
                         type="button"
-                        disabled={busy || readOnly}
-                        onClick={() => renameFolder(currentFolder)}
+                        disabled={readOnly}
+                        onClick={() => setShowFolderForm((current) => !current)}
                       >
-                        Rename folder
+                        <Icon name="folder-plus" />
+                        <span>New folder</span>
                       </button>
-                    )}
-                    <button
-                      className="button"
-                      type="button"
-                      disabled={readOnly}
-                      onClick={() => setShowFolderForm((current) => !current)}
-                    >
-                      <Icon name="folder-plus" />
-                      <span>New folder</span>
-                    </button>
-                    <button
-                      className="button primary"
-                      type="button"
-                      disabled={busy || readOnly || !profileId}
-                      onClick={() => void importFiles()}
-                      aria-label="Choose files to import"
-                    >
-                      <Icon name="plus" />
-                      <span>{busy ? "Working…" : "New"}</span>
-                    </button>
-                  </div>
+                      {cameraPlatform && (
+                        <button
+                          className="button"
+                          type="button"
+                          disabled={busy || readOnly || !profileId}
+                          onClick={() => {
+                            // The camera window shows the library's notice for
+                            // a save's result: the one before it, such as
+                            // "Vault unlocked.", is not about the photo.
+                            setNotice("");
+                            setCameraOpen(true);
+                          }}
+                        >
+                          <Icon name="camera" />
+                          <span>Take a photo</span>
+                        </button>
+                      )}
+                      <button
+                        className="button primary"
+                        type="button"
+                        disabled={busy || readOnly || !profileId}
+                        onClick={() => void importFiles()}
+                        aria-label="Choose files to import"
+                      >
+                        <Icon name="plus" />
+                        <span>{busy ? "Working…" : "New"}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {showFolderForm && (
+                {inShared && (
+                  <p className="purpose-note native-shared-intro">
+                    <Icon name="info" />
+                    <span>
+                      {computer
+                        ? "Files you open with myCarlos arrive here, encrypted."
+                        : "Files you share to myCarlos from another app arrive here, encrypted."}{" "}
+                      {people.length > 1
+                        ? "They are in no one's records until you move each one to the person it is for."
+                        : "Move them into your folders whenever you like."}
+                    </span>
+                  </p>
+                )}
+
+                {showFolderForm && !inShared && (
                   <form className="native-inline-form" onSubmit={submitFolder}>
                     <label>
                       Folder name
@@ -850,7 +1401,7 @@ export function VaultLibrary({
                   </form>
                 )}
 
-                {folders.length > 0 && (
+                {folders.length > 0 && !inShared && (
                   <details className="native-folder-move">
                     <summary>Move a folder with the keyboard</summary>
                     <div>
@@ -908,15 +1459,15 @@ export function VaultLibrary({
                       are missing from this device. Documents marked damaged
                       cannot be opened or copied; save copies of the others now.
                       To make changes again, restore the myCarlos data folder
-                      from a backup, or remove the damaged documents.
+                      from a backup, or hide the damaged documents.
                     </span>
                     <button
-                      className="button danger"
+                      className="button"
                       type="button"
                       disabled={busy}
-                      onClick={() => setConfirmRemoveDamaged(true)}
+                      onClick={() => setConfirmHideDamaged(true)}
                     >
-                      Remove damaged documents
+                      Hide damaged documents
                     </button>
                   </div>
                 )}
@@ -952,8 +1503,8 @@ export function VaultLibrary({
                     <Icon name="info" />
                     <span>
                       <strong>No recovery key yet.</strong> If you forget your
-                      passphrase without one, the only way back in is to erase
-                      the vault.
+                      passphrase without one, the only way back in is to set the
+                      vault aside and start again.
                     </span>
                     <button
                       className="button"
@@ -968,12 +1519,20 @@ export function VaultLibrary({
 
                 <label className="search">
                   <Icon name="search" />
-                  <span className="sr-only">Search this location</span>
+                  <span className="sr-only">{searchLabel}</span>
                   <input
                     type="search"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search this location"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setQuery(value);
+                      setSearchRequest(
+                        value.trim() || query.trim()
+                          ? { query: value, location: searchLocation }
+                          : null,
+                      );
+                    }}
+                    placeholder={searchLabel}
                   />
                 </label>
                 <div className="viewbar">
@@ -981,23 +1540,30 @@ export function VaultLibrary({
                     {currentFolder ? "Inside folder" : "Top level"}
                   </span>
                   <span className="native-drag-hint">
-                    Hold and drag a document or folder to move it
+                    Hold and drag a document or folder to move it, or open it
+                    and choose Move to.
                   </span>
                   <div className="view-controls">
-                    <label className="native-sort">
-                      <Icon name="sort" />
-                      <span className="sr-only">Sort records</span>
-                      <select
-                        value={sort}
-                        onChange={(event) =>
-                          setSort(event.target.value as NativeSort)
-                        }
-                      >
-                        <option value="newest">Newest first</option>
-                        <option value="name">Name A–Z</option>
-                      </select>
-                    </label>
-                    <span className="segment" aria-label="Choose record view">
+                    {/* Both choices in view, with words (#67). */}
+                    <fieldset className="native-sort-choice">
+                      <legend>Sort by</legend>
+                      {SORT_CHOICES.map(([value, label]) => (
+                        <label key={value}>
+                          <input
+                            type="radio"
+                            name="native-sort"
+                            value={value}
+                            checked={sort === value}
+                            onChange={() => setSort(value)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </fieldset>
+                    <span
+                      className="segment native-view-segment"
+                      aria-label="Choose record view"
+                    >
                       <button
                         className={view === "list" ? "selected" : ""}
                         type="button"
@@ -1005,7 +1571,7 @@ export function VaultLibrary({
                         aria-pressed={view === "list"}
                         onClick={() => setView("list")}
                       >
-                        <Icon name="list" />
+                        <Icon name="list" /> List
                       </button>
                       <button
                         className={view === "grid" ? "selected" : ""}
@@ -1014,7 +1580,7 @@ export function VaultLibrary({
                         aria-pressed={view === "grid"}
                         onClick={() => setView("grid")}
                       >
-                        <Icon name="grid" />
+                        <Icon name="grid" /> Grid
                       </button>
                     </span>
                   </div>
@@ -1025,24 +1591,39 @@ export function VaultLibrary({
                     <strong>{selectedIds.length} selected</strong>
                     <span>Move the selected documents.</span>
                     <div className="bulk-actions native-move-actions">
-                      <select
-                        aria-label="Move selected to"
-                        value={moveFolderId}
-                        onChange={(event) =>
-                          setMoveFolderId(event.target.value)
-                        }
-                      >
-                        <option value="">My records</option>
-                        {folders.map((folder) => (
-                          <option value={folder.id} key={folder.id}>
-                            {folder.name}
-                          </option>
-                        ))}
-                      </select>
+                      {inShared ? (
+                        <MoveTargetSelect
+                          label="Move selected to"
+                          targets={moveTargets}
+                          value={sharedTarget || `${profile?.id ?? ""}|`}
+                          onChange={setSharedTarget}
+                        />
+                      ) : (
+                        <select
+                          aria-label="Move selected to"
+                          value={moveFolderId}
+                          onChange={(event) =>
+                            setMoveFolderId(event.target.value)
+                          }
+                        >
+                          <option value="">My records</option>
+                          {folders.map((folder) => (
+                            <option value={folder.id} key={folder.id}>
+                              {folder.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
                         disabled={busy || readOnly}
-                        onClick={() => void moveSelected()}
+                        onClick={() => {
+                          if (!inShared) return void moveSelected();
+                          const { profileId: to, folderId } = parseMoveTarget(
+                            sharedTarget || `${profile?.id ?? ""}|`,
+                          );
+                          moveToPerson(selectedIds, to, folderId);
+                        }}
                       >
                         Move
                       </button>
@@ -1063,6 +1644,22 @@ export function VaultLibrary({
                   selectedIds={selectedIds}
                   disabled={busy || readOnly}
                   searching={Boolean(query)}
+                  folderLocation={
+                    normalizedQuery
+                      ? (folder) =>
+                          folderPath(
+                            folderById,
+                            folder.parentId,
+                            rootLocationTitle,
+                          )
+                      : undefined
+                  }
+                  recordLocation={
+                    normalizedQuery
+                      ? (record) =>
+                          recordPath(folderById, record, rootLocationTitle)
+                      : undefined
+                  }
                   unavailableLabel={
                     snapshot.recovery === "unreadableSlot"
                       ? "File unavailable"
@@ -1084,6 +1681,22 @@ export function VaultLibrary({
               </main>
             )}
 
+            {section === "hidden" && (
+              <HiddenDocuments
+                records={hiddenRecords}
+                rootName={
+                  hiddenLocationProfileId === sharedProfileId
+                    ? "Shared with me"
+                    : "My records"
+                }
+                folderNameById={folderNameById}
+                busy={busy}
+                readOnly={readOnly}
+                notice={notice}
+                onRestore={unhideRecord}
+              />
+            )}
+
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "security" && (
@@ -1096,7 +1709,6 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
-                onReset={resetVault}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
@@ -1189,63 +1801,127 @@ export function VaultLibrary({
               onClose={() => setRenameTarget(null)}
             />
           )}
-          {activeRecord && !renameTarget && !pendingAction && (
-            <RecordDetails
-              record={activeRecord}
-              folders={folders}
-              busy={busy}
-              readOnly={readOnly}
-              unreadable={snapshot.recovery === "unreadableSlot"}
+          {cameraOpen && cameraPlatform && (
+            <CameraDialog
+              platform={cameraPlatform}
+              whileAsking={cameraAsking}
               notice={notice}
-              onClose={() => setActiveRecordId(null)}
-              onRename={() =>
-                setRenameTarget({
-                  kind: "document",
-                  id: activeRecord.id,
-                  name: activeRecord.displayName,
-                })
-              }
-              onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
-              onDelete={() =>
-                setConfirmation({ action: "delete", recordId: activeRecord.id })
-              }
-              onExport={() =>
-                setConfirmation({ action: "export", recordId: activeRecord.id })
-              }
+              saving={busy}
+              onUse={savePhoto}
+              onClose={() => setCameraOpen(false)}
             />
           )}
-          {activeRecord && pendingAction === "delete" && (
-            <ConfirmDialog
-              title="Permanently delete this document?"
-              confirmLabel="Permanently delete"
-              danger
-              onConfirm={() => deleteRecord(activeRecord)}
-              onCancel={() => setConfirmation(null)}
-            >
-              <p>
-                <strong>{activeRecord.displayName}</strong> will be permanently
-                deleted from this vault. This cannot be undone here.
-              </p>
-              <p>
-                Readable exports and the clinic's source medical record are not
-                deleted.
-              </p>
-            </ConfirmDialog>
+          {activeRecord && shownPhoto?.recordId === activeRecord.id && (
+            <PhotoViewer
+              name={activeRecord.displayName}
+              url={shownPhoto.url}
+              onClose={() => setShownPhoto(null)}
+            />
           )}
-          {confirmRemoveDamaged && (
+          {activeRecord && unlocking?.recordId === activeRecord.id && (
+            <UnlockPdfDialog
+              name={unlocking.name}
+              wrongTries={unlocking.wrongTries}
+              busy={busy}
+              onUnlock={unlockPdf}
+              onCancel={() => setUnlocking(null)}
+            />
+          )}
+          {activeRecord &&
+            !renameTarget &&
+            !pendingAction &&
+            !shownPhoto &&
+            unlocking?.recordId !== activeRecord.id && (
+              <RecordDetails
+                record={activeRecord}
+                folders={folders}
+                moveTargets={
+                  inShared || people.length > 1 ? moveTargets : undefined
+                }
+                onMoveTo={(to, folderId) =>
+                  to === activeRecord.profileId
+                    ? void moveRecord(activeRecord.id, folderId)
+                    : moveToPerson([activeRecord.id], to, folderId)
+                }
+                busy={busy}
+                readOnly={readOnly}
+                unreadable={snapshot.recovery === "unreadableSlot"}
+                notice={notice}
+                onClose={() => setActiveRecordId(null)}
+                onRename={() =>
+                  void run(async () => {
+                    const photo =
+                      !namedAsPdf(activeRecord.displayName) &&
+                      (await bridge
+                        .isPhoto(activeRecord.id)
+                        .catch(() => false));
+                    if (activeRecordIdRef.current !== activeRecord.id) return;
+                    setRenameTarget({
+                      kind: "document",
+                      id: activeRecord.id,
+                      name: activeRecord.displayName,
+                      photo,
+                    });
+                  })
+                }
+                onMove={(folderId) => moveRecord(activeRecord.id, folderId)}
+                onHide={() => hideRecord(activeRecord)}
+                onExport={() =>
+                  setConfirmation({
+                    action: "export",
+                    recordId: activeRecord.id,
+                  })
+                }
+                onViewPhoto={
+                  photoRecordId === activeRecord.id
+                    ? () => void viewPhoto(activeRecord.id)
+                    : undefined
+                }
+                locked={lockedPdfId === activeRecord.id}
+                // Desktop only: phones cannot start the PDF helper yet.
+                onUnlock={
+                  lockedPdfId === activeRecord.id && computer
+                    ? () =>
+                        setUnlocking({
+                          recordId: activeRecord.id,
+                          name: activeRecord.displayName,
+                          wrongTries: 0,
+                        })
+                    : undefined
+                }
+                onRead={
+                  namedAsPdf(activeRecord.displayName)
+                    ? () => {
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
+              />
+            )}
+          {readerRecord && (
+            <DocumentReader
+              record={readerRecord}
+              viewPage={(page, width, password) =>
+                bridge.viewPage(readerRecord.id, page, width, password)
+              }
+              cancelView={() => void bridge.cancelView().catch(() => undefined)}
+              onClose={() => setReaderRecordId(null)}
+            />
+          )}
+          {confirmHideDamaged && (
             <ConfirmDialog
-              title={`Permanently remove ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Permanently remove"
-              danger
-              onConfirm={removeDamaged}
-              onCancel={() => setConfirmRemoveDamaged(false)}
+              title={`Hide ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
+              confirmLabel="Hide"
+              onConfirm={hideDamaged}
+              onCancel={() => setConfirmHideDamaged(false)}
               details={
                 // It scrolls when it is long, so it takes focus, to be
                 // scrolled with the keyboard. It is not read out with the
                 // dialog: the title counts the documents.
                 <ul
                   className="native-confirm-list"
-                  aria-label="Documents to remove"
+                  aria-label="Documents to hide"
                   tabIndex={0}
                 >
                   {damaged.map((record) => (
@@ -1259,10 +1935,10 @@ export function VaultLibrary({
               }
             >
               <p>
-                Their encrypted files are missing from this device, so their
-                content is already gone from here. Removing them also deletes
-                their names and details from the vault, permanently. This cannot
-                be undone.
+                Their encrypted files are missing from this device. Hiding them
+                lets the vault take changes again. They stay listed under
+                Hidden, with their names and details, and if a file comes back
+                its document can be restored.
               </p>
               <p>
                 First check that the files are not just out of reach: if the
@@ -1282,7 +1958,7 @@ export function VaultLibrary({
             >
               <p>
                 Saving creates a readable file outside the encrypted vault.
-                myCarlos cannot erase that copy later, and deleting this record
+                myCarlos cannot erase that copy later, and hiding this record
                 will not remove it.
               </p>
             </ConfirmDialog>

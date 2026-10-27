@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useI18n } from "../i18n";
 import type { PassphraseRules } from "../vault";
 
 // The vault counts a new passphrase's characters (Unicode code points) after
@@ -51,13 +52,16 @@ export function useNewPassphraseRules(
 }
 
 function Rule({ met, children }: { met: boolean; children: string }) {
+  const { t } = useI18n();
   return (
     <li data-met={met}>
       <span className="passphrase-rule-mark" aria-hidden="true">
         {met ? "✓" : "○"}
       </span>
       {children}
-      <span className="sr-only">{met ? ", done" : ", not yet"}</span>
+      <span className="sr-only">
+        {met ? t("checklist.done") : t("checklist.notYet")}
+      </span>
     </li>
   );
 }
@@ -73,6 +77,7 @@ export function PassphraseChecklist({
   passphrase: string;
   rules: PassphraseRules | null;
 }) {
+  const { t } = useI18n();
   // Said once when every rule is met (#69), not again for each pause in
   // typing while they stay met: only a rule known to fail, or too short a
   // passphrase, takes it back.
@@ -83,20 +88,19 @@ export function PassphraseChecklist({
   if (allMet && (!long || (rules !== null && !judged))) setAllMet(false);
   return (
     <div className="passphrase-checklist" id={id}>
-      <p>Your passphrase needs to be:</p>
+      <p>{t("checklist.heading")}</p>
       <ul>
         <Rule met={Boolean(passphrase) && !tooShortPassphrase(passphrase)}>
-          {`At least ${MIN_PASSPHRASE_CHARS} characters`}
+          {t("checklist.length", { min: MIN_PASSPHRASE_CHARS })}
         </Rule>
-        <Rule met={Boolean(rules?.hardToGuess)}>Not easy to guess</Rule>
-        <Rule met={Boolean(rules?.notAName)}>Not your name</Rule>
+        <Rule met={Boolean(rules?.hardToGuess)}>
+          {t("checklist.hardToGuess")}
+        </Rule>
+        <Rule met={Boolean(rules?.notAName)}>{t("checklist.notAName")}</Rule>
       </ul>
-      <p>
-        Spaces are allowed, so a few unrelated words make a good one. myCarlos
-        checks these rules on this computer.
-      </p>
+      <p>{t("checklist.spaces")}</p>
       <p className="sr-only" role="status">
-        {allMet ? "Your passphrase meets all the rules." : ""}
+        {allMet ? t("checklist.allMet") : ""}
       </p>
     </div>
   );

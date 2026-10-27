@@ -62,7 +62,8 @@ In a native build, additionally:
    total file size.
 5. Export over an existing synthetic file and confirm a deliberately corrupted record leaves the
    existing destination unchanged.
-6. Permanently delete one record, restart, unlock, and confirm it remains absent.
+6. Hide one record, restart, unlock, and confirm it is listed only under **Hidden**; then
+   **Restore** it and confirm it is back where it was. Nothing deletes a document (#71).
 7. Background the app during import/export and confirm the UI conceals immediately, the transfer
    completes, and the vault then reaches the locked state. Repeat, and on the hidden screen choose
    **Lock now and cancel the transfer**: confirm the native operation is cancelled at its next I/O
@@ -92,7 +93,7 @@ Record evidence for these questions rather than treating a successful build as a
 | Shared UI | Can one responsive React interface serve the target form factors? | Yes, at POC depth |
 | Native bridge | Can the UI call a narrow, typed Rust command? | Yes |
 | File chooser | Does the platform picker work consistently? | Implemented; real devices still required |
-| Accessibility | Is the experience usable with target assistive technology? | Automated WCAG A/AA checks pass across browser and durable-vault states; modal focus and keyboard folder movement are implemented; manual testing required |
+| Accessibility | Is the experience usable with target assistive technology? | Automated WCAG 2.0–2.2 A/AA checks pass across browser and durable-vault states; axe also runs at both kinds of 200% text size, where nothing is cut off at the app's own Text size, while at the reader's 200% default text some controls are known to be cut off (#84); modal focus and keyboard folder movement are implemented; manual testing required |
 | Secure vault | Can records be encrypted, recovered, backed up, and deleted safely? | Local encrypted import/export and live-vault deletion implemented; independent review, device restore, and backup tombstones remain |
 | Mobile APIs | Do biometrics, notifications, deep links, and background work meet requirements? | Not evaluated |
 | Operations | Can the app be signed, observed safely, updated, and supported? | No-egress/incident/support-bundle baseline and dependency SBOM CI recorded; signing, updating, ownership and drills remain |

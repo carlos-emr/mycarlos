@@ -31,6 +31,21 @@ fn extraction_rules_exclude_everything(rules: &str) -> bool {
         })
 }
 
+/// The camera dialog (D97) needs Android's camera permission declared, or
+/// Android refuses it without asking. The camera is not required, nor the
+/// autofocus the permission implies, so devices without them can install the
+/// app, and nothing asks for the microphone.
+fn declares_camera_only(manifest: &str) -> bool {
+    manifest.contains("<uses-permission android:name=\"android.permission.CAMERA\" />")
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
+        )
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />",
+        )
+        && !manifest.contains("android.permission.RECORD_AUDIO")
+}
+
 fn main() {
     if std::env::var("TARGET").is_ok_and(|target| target.contains("android")) {
         let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -53,6 +68,10 @@ fn main() {
                 && std::fs::read_to_string(&rules)
                     .is_ok_and(|rules| extraction_rules_exclude_everything(&rules)),
             "Android backup exclusions must be applied with `npm run android:secure` before every Android build"
+        );
+        assert!(
+            declares_camera_only(&contents),
+            "The camera must be declared (not required, and no microphone) with `npm run android:secure` before every Android build"
         );
     }
     // Without an app manifest Tauri allows every app command from any window and
@@ -91,10 +110,21 @@ fn main() {
             "vault_assign_folders_batch",
             "vault_import_pick",
             "vault_import_picked",
+            "received_list",
+            "received_accept",
+            "vault_move_to_person",
+            "vault_is_locked_pdf",
+            "vault_unlock_pdf",
+            "vault_view_page",
+            "vault_view_cancel",
             "vault_export_pick",
             "vault_export_picked",
-            "vault_delete_record",
-            "vault_remove_unavailable_records",
+            "vault_save_photo",
+            "vault_is_photo",
+            "vault_view_photo",
+            "vault_hide_record",
+            "vault_unhide_record",
+            "vault_hide_unavailable_records",
             "vault_reset",
         ]),
     ))

@@ -1,4 +1,5 @@
 import { useState, useRef, type FormEvent } from "react";
+import { useI18n } from "../i18n";
 import { useModalFocus } from "../useModalFocus";
 import { utf8Length, vaultErrorMessage } from "../vault";
 import {
@@ -7,6 +8,7 @@ import {
   nameTooLong,
 } from "./recordPresentation";
 import { reservedDeviceName } from "./reservedNames";
+import { photoExtension } from "./photo";
 
 // The vault stores document names in at most this many UTF-8 bytes.
 const MAX_DOCUMENT_NAME_BYTES = 240;
@@ -14,6 +16,10 @@ const MAX_DOCUMENT_NAME_BYTES = 240;
 // JavaScript's trim keeps U+0085 (next line), which the vault's trim removes,
 // so typed names are trimmed as the vault will trim them. (It also removes a
 // U+FEFF at either end, which the vault would refuse; the name sent is clean.)
+// Shown in the refusal as plain text; kept out of the messages, which carry
+// no markup characters.
+const UNSAFE_CHARACTERS = '< > : " | ? * / \\';
+
 const trimLikeVault = (value: string) =>
   value.replace(/^[\s\u0085]+|[\s\u0085]+$/g, "");
 
@@ -21,6 +27,8 @@ export type RenameTarget = {
   kind: "folder" | "document";
   id: string;
   name: string;
+  /** The native side identified this document's bytes as JPEG. */
+  photo?: boolean;
 };
 
 export function RenameDialog({
@@ -38,10 +46,18 @@ export function RenameDialog({
   // vault judges names trimmed, and an earlier build could store "X.pdf"
   // followed by a no-break space, so the extension is found the same way.
   const extension =
-    target.kind === "document" ? fileExtension(target.name.trim()) : "";
-  const originalStem = extension
-    ? target.name.trim().slice(0, -extension.length)
+    target.kind === "document"
+      ? target.photo
+        ? photoExtension(target.name.trim()) || ".jpg"
+        : fileExtension(target.name.trim())
+      : "";
+  const storedExtension = target.photo
+    ? photoExtension(target.name.trim())
+    : extension;
+  const originalStem = storedExtension
+    ? target.name.trim().slice(0, -storedExtension.length)
     : target.name;
+  const { t } = useI18n();
   const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -54,18 +70,26 @@ export function RenameDialog({
   // typed copy of it is dropped rather than doubled, unless the name was left
   // as it was or already ended with it twice, as in "Report.pdf.pdf".
   const endsWithExtension = (value: string) =>
-    value.toLowerCase().endsWith(extension.toLowerCase());
+    target.photo
+      ? /\.jpe?g$/i.test(value)
+      : value.toLowerCase().endsWith(extension.toLowerCase());
   let stem = trimLikeVault(name);
+  const typedExtension = target.photo
+    ? (/\.jpe?g$/i.exec(stem)?.[0] ?? "")
+    : extension;
   if (
     extension &&
     name !== originalStem &&
     !endsWithExtension(originalStem) &&
     endsWithExtension(stem)
   )
-    stem = trimLikeVault(stem.slice(0, stem.length - extension.length));
+    stem = trimLikeVault(stem.slice(0, stem.length - typedExtension.length));
   // An untouched name is saved exactly as it was: trimming only the stem would
   // otherwise change a name such as "Results .pdf" that nobody edited.
-  const fullName = name === originalStem ? target.name : stem + extension;
+  const fullName =
+    name === originalStem && (!target.photo || storedExtension)
+      ? target.name
+      : stem + extension;
   const tooLong =
     target.kind === "document"
       ? utf8Length(fullName) > MAX_DOCUMENT_NAME_BYTES
@@ -107,9 +131,7 @@ export function RenameDialog({
     if (saving || readOnly || invalid) return;
     if (reservedWord) {
       setRefusals((count) => count + 1);
-      setError(
-        `"${reservedWord}" cannot be used as a document name, because Windows keeps it for its own use. Choose another name.`,
-      );
+      setError(t("rename.reserved", { word: reservedWord }));
       return;
     }
     setSaving(true);
@@ -118,7 +140,7 @@ export function RenameDialog({
       await onSave(fullName);
       onClose();
     } catch (failure) {
-      setError(vaultErrorMessage(failure, ["the name"]));
+      setError(vaultErrorMessage(failure, ["box.name"]));
     } finally {
       setSaving(false);
     }
@@ -134,12 +156,18 @@ export function RenameDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
-          <h2 id="rename-title">Rename {target.kind}</h2>
+          <h2 id="rename-title">
+            {target.kind === "folder"
+              ? t("rename.title.folder")
+              : t("rename.title.document")}
+          </h2>
         </header>
         <form onSubmit={(event) => void save(event)}>
           <div className="native-rename-fields">
             <label htmlFor="rename-name">
-              {target.kind === "folder" ? "Folder name" : "File name"}
+              {target.kind === "folder"
+                ? t("rename.label.folder")
+                : t("rename.label.document")}
             </label>
             <div className="native-rename-input">
               <input
@@ -167,29 +195,19 @@ export function RenameDialog({
             </div>
             <p id="rename-help">
               {target.kind === "folder"
-                ? "The folder and its contents stay in the same location."
-                : `This changes the name in myCarlos and the suggested export name.${
-                    extension
-                      ? ` The ${extension} extension stays the same.`
-                      : ""
-                  }`}
+                ? t("rename.help.folder")
+                : extension
+                  ? t("rename.help.documentExtension", { extension })
+                  : t("rename.help.document")}
             </p>
             {extension && name.trim() && !stem && (
-              <p role="alert">Enter a name before {extension}.</p>
+              <p role="alert">{t("rename.stemMissing", { extension })}</p>
             )}
-            {gainsExtension && (
-              <p role="alert">
-                This document&apos;s name has no .pdf extension, so it cannot
-                end in .pdf.
-              </p>
-            )}
-            {tooLong && (
-              <p role="alert">This name is too long. Shorten it to save.</p>
-            )}
+            {gainsExtension && <p role="alert">{t("rename.gainsExtension")}</p>}
+            {tooLong && <p role="alert">{t("rename.tooLong")}</p>}
             {unsafeName && (
               <p role="alert">
-                Document names cannot contain &lt; &gt; : &quot; | ? * / \ or
-                invisible control characters, or end with a dot.
+                {t("rename.unsafe", { characters: UNSAFE_CHARACTERS })}
               </p>
             )}
             {error && (
@@ -205,13 +223,13 @@ export function RenameDialog({
               disabled={saving}
               onClick={close}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               className="button primary"
               disabled={saving || readOnly || invalid}
             >
-              {saving ? "Saving…" : "Save name"}
+              {saving ? t("rename.saving") : t("rename.save")}
             </button>
           </footer>
         </form>

@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 // The whole interface is zoomed with Ctrl (Cmd on a Mac) and plus, minus or
 // 0, or with Ctrl and the mouse wheel, as in a browser. The platform's own
 // handling of those keys forgets the level when the app closes, so the app
@@ -114,17 +116,20 @@ export function readTypedZoom(typed: string): TypedZoom {
   const percent = /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN;
   if (Number.isNaN(percent))
     return {
-      error: `Type a number from ${ZOOM_MIN_PERCENT} to ${ZOOM_MAX_PERCENT}.`,
+      error: t("textSize.notNumber", {
+        min: ZOOM_MIN_PERCENT,
+        max: ZOOM_MAX_PERCENT,
+      }),
     };
   if (percent < ZOOM_MIN_PERCENT)
     return {
       level: ZOOM_LEVELS[0],
-      note: `The smallest size is ${ZOOM_MIN_PERCENT}%.`,
+      note: t("textSize.smallest", { min: ZOOM_MIN_PERCENT }),
     };
   if (percent > ZOOM_MAX_PERCENT)
     return {
       level: ZOOM_LEVELS[ZOOM_LEVELS.length - 1],
-      note: `The largest size is ${ZOOM_MAX_PERCENT}%.`,
+      note: t("textSize.largest", { max: ZOOM_MAX_PERCENT }),
     };
   const level = normalizeZoom(percent / 100);
   return {
@@ -132,7 +137,7 @@ export function readTypedZoom(typed: string): TypedZoom {
     note:
       Math.round(level * 100) === percent
         ? ""
-        : `${text}% is between sizes, so it is ${zoomPercent(level)}.`,
+        : t("textSize.between", { typed: text, size: zoomPercent(level) }),
   };
 }
 

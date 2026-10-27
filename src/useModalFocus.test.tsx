@@ -125,6 +125,17 @@ function InitialFocusDialog({ disabled }: { disabled: boolean }) {
   );
 }
 
+function NamedDialog({ name, close }: { name: string; close: () => void }) {
+  const ref = useRef<HTMLElement>(null);
+  useModalFocus(true, ref, close);
+  return (
+    <section ref={ref} role="dialog" aria-modal="true" aria-label={name}>
+      <input aria-label={`${name} box`} />
+      <button>{`${name} button`}</button>
+    </section>
+  );
+}
+
 describe("modal keyboard focus", () => {
   it.each(["first", "last"] as const)(
     "keeps a button between radio members reachable with %s selected",
@@ -147,6 +158,38 @@ describe("modal keyboard focus", () => {
       expect(selected).toHaveFocus();
     },
   );
+
+  it("lets only the top dialog answer Escape and Tab, then gives the focus back below (#68)", async () => {
+    const closeBelow = vi.fn();
+    const closeTop = vi.fn();
+    const Stacked = ({ top }: { top: boolean }) => (
+      <>
+        <NamedDialog name="Below" close={closeBelow} />
+        {top && <NamedDialog name="Top" close={closeTop} />}
+      </>
+    );
+    const { rerender } = render(<Stacked top={false} />);
+    const belowBox = screen.getByRole("textbox", { name: "Below box" });
+    expect(belowBox).toHaveFocus();
+    await userEvent.keyboard("typed");
+
+    rerender(<Stacked top />);
+    expect(screen.getByRole("textbox", { name: "Top box" })).toHaveFocus();
+    // Tab stays in the top dialog: the one below does not pull it in.
+    await userEvent.keyboard("{Tab}");
+    expect(screen.getByRole("button", { name: "Top button" })).toHaveFocus();
+    await userEvent.keyboard("{Tab}");
+    expect(screen.getByRole("textbox", { name: "Top box" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(closeTop).toHaveBeenCalledOnce();
+    expect(closeBelow).not.toHaveBeenCalled();
+
+    rerender(<Stacked top={false} />);
+    expect(belowBox).toHaveFocus();
+    expect(belowBox).toHaveValue("typed");
+    await userEvent.keyboard("{Escape}");
+    expect(closeBelow).toHaveBeenCalledOnce();
+  });
 
   it("keeps an intervening button reachable when no radio is selected", async () => {
     const user = userEvent.setup();
