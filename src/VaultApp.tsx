@@ -89,42 +89,64 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [status, setStatus] = useState<VaultStatus | "loading">("loading");
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice] = useState("");
-  // Files shared from another app, waiting. Asked for at start, whenever the
-  // window comes back to the front (which is how a share arrives), and at
-  // unlock. Locked, only their count is shown; open, they go straight into
-  // Shared with me (#61, `acceptShared` below).
+  // Locked, show only the waiting count. Unlocked, import into Shared with me.
+  // Serialize every list+accept cycle: a second arrival during an import must
+  // request another pass, including when this window was already focused.
   const [received, setReceived] = useState<ReceivedFile[]>([]);
   const acceptSharedRef = useRef<() => Promise<void>>(async () => undefined);
-  const refreshReceived = useCallback(
-    (): Promise<void> =>
-      bridge.listReceived().then(
-        async ({ files, notice: missed }) => {
-          setReceived(files);
-          const text = receiveNoticeText(missed);
-          if (text) setNotice(text);
-          if (files.length) await acceptSharedRef.current();
-        },
-        // Nothing waiting can be shown; the next ask tries again.
-        () => undefined,
-      ),
-    [bridge],
-  );
-  // Files added to Shared with me since this unlock, until the patient opens
-  // it: shown as "2 new" and said once, politely (#61).
+  const receiveGeneration = useRef(0);
+  const refreshReceivedRef = useRef<() => Promise<void>>(async () => undefined);
+  const refreshReceived = useCallback(() => refreshReceivedRef.current(), []);
+  // Files added since unlock, until the patient opens Shared with me.
   const [sharedNew, setSharedNew] = useState(0);
   const clearSharedNew = useCallback(() => setSharedNew(0), []);
   useEffect(() => {
-    refreshReceived();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refreshReceived();
+    receiveGeneration.current += 1;
+    let disposed = false;
+    let dirty = false;
+    let running: Promise<void> | null = null;
+    const request = (): Promise<void> => {
+      dirty = true;
+      if (disposed || document.visibilityState !== "visible")
+        return Promise.resolve();
+      if (!running) {
+        running = (async () => {
+          while (dirty && !disposed && document.visibilityState === "visible") {
+            dirty = false;
+            try {
+              const { files, notice: missed } = await bridge.listReceived();
+              if (disposed) return;
+              setReceived(files);
+              const text = receiveNoticeText(missed);
+              if (text) setNotice(text);
+              if (files.length) await acceptSharedRef.current();
+            } catch {
+              // No automatic retry. A later arrival/focus/unlock asks again.
+            }
+          }
+        })().finally(() => {
+          running = null;
+        });
+      }
+      return running;
     };
-    window.addEventListener("focus", refreshReceived);
+    refreshReceivedRef.current = request;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void request();
+    };
+    window.addEventListener("mycarlos-received-changed", request);
+    window.addEventListener("focus", request);
     document.addEventListener("visibilitychange", onVisible);
+    void request();
     return () => {
-      window.removeEventListener("focus", refreshReceived);
+      disposed = true;
+      receiveGeneration.current += 1;
+      refreshReceivedRef.current = async () => undefined;
+      window.removeEventListener("mycarlos-received-changed", request);
+      window.removeEventListener("focus", request);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refreshReceived]);
+  }, [bridge]);
   // A message for the library that unlocking or creating the vault is about to
   // show. Its status line reads out only what changes once it is on screen, so
   // the message is written just after (see the effect below).
@@ -724,16 +746,28 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Waiting files go into Shared with me as soon as the vault is open (#61).
   // One that is not a PDF is not added and is named; anything else keeps them
   // all waiting for the next ask.
-  const accepting = useRef(false);
+  const accepting = useRef<number | null>(null);
   acceptSharedRef.current = async () => {
-    if (status !== "unlocked" || accepting.current) return;
-    accepting.current = true;
+    const generation = receiveGeneration.current;
+    if (
+      status !== "unlocked" ||
+      accepting.current === generation ||
+      document.visibilityState !== "visible" ||
+      concealedRef.current ||
+      lockingRef.current
+    )
+      return;
+    const current = () =>
+      generation === receiveGeneration.current && inSession();
+    accepting.current = generation;
     try {
       const outcome = await bridge.acceptReceived();
-      if (!inSession()) return;
+      if (!current()) return;
       setReceived([]);
       if (outcome.imported.length) {
-        await refresh();
+        const next = await bridge.snapshot();
+        if (!current()) return;
+        setSnapshot(next);
         setSharedNew((count) => count + outcome.imported.length);
       }
       const said = [
@@ -749,7 +783,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } catch {
       // They keep waiting: the next ask tries again.
     } finally {
-      accepting.current = false;
+      if (accepting.current === generation) accepting.current = null;
     }
   };
   useEffect(() => {

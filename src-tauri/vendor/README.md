@@ -82,11 +82,18 @@ rustc --edition=2021 --test security-tests/windows53-lifecycle.rs -o /tmp/mycarl
 /tmp/mycarlos-windows53-lifecycle
 ```
 
-This is the transport proposal stage for #53. The plugin is not registered yet;
-application queue startup, helper preflight, receive-change refresh and synthetic
-UI proof follow only after independent review of this bounded transport delta.
-It does not implement installer registrations, Windows 11 Share identity or mobile
-sharing, and is not evidence that all of #53 is complete.
+The Windows application registers the plugin first and keeps one pre-created
+receive queue for startup and forwarded arguments. The executable's PDF helper
+dispatch precedes Unicode GUI-argument preflight and single-instance setup.
+The callback queues work before its acknowledgement and schedules a fixed,
+payload-free DOM notification from outside the window procedure. The UI serializes
+and coalesces refreshes, including arrivals during an import; failure does not
+start an autonomous retry. Locked screens still show only a count. No renderer
+permission or CSP change accompanies the notification.
+
+This does not implement installer registrations, Windows 11 Share identity or
+mobile sharing. Synthetic browser and host tests are not evidence of Windows OS
+delivery or completion of all of #53; actual Windows lifecycle checks remain due.
 
 ## Audit and retirement
 

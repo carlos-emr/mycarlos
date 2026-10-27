@@ -2340,8 +2340,8 @@ struct ReceivedAcceptOutcome {
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
-/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
-/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// renderer asks at start, after an unlock, when notified of an arrival, and whenever the
+/// window comes back to the front. Names stay off the lock screen: the renderer shows a count
 /// there.
 #[tauri::command]
 fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
@@ -2904,9 +2904,43 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
+// Fixed, payload-free notification: paths, names and even counts stay out of this channel.
+#[cfg(windows)]
+const RECEIVED_CHANGED_SCRIPT: &str =
+    "window.dispatchEvent(new Event('mycarlos-received-changed'));";
+
+#[cfg(windows)]
+fn notify_received(app: &tauri::AppHandle) {
+    let app = app.clone();
+    // Wry can execute UI dispatch inline on the window thread. Post UI work
+    // from an async worker instead; never wait for JavaScript or open files in that callback.
+    let _notification = tauri::async_runtime::spawn(async move {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.eval(RECEIVED_CHANGED_SCRIPT);
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        // Missing/destroying windows leave the queue intact. Mount/focus/unlock also refresh.
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    // Queue before plugins or any webview exist. A callback during startup keeps its
+    // files in this same Arc, after initial argv and before ordinary vault setup.
+    let received = Arc::new(ReceivedFiles::default());
+    #[cfg(any(windows, target_os = "linux"))]
+    received.receive_command_line(std::env::args_os());
+    let builder = tauri::Builder::default().manage(Arc::clone(&received));
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(
+        move |app, args, _cwd| {
+            received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
+            notify_received(app);
+        },
+    ));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
@@ -2982,14 +3016,6 @@ pub fn run() {
                     .join("attempts.json"),
             ))));
             app.manage(Arc::new(PendingPicks::default()));
-            app.manage(Arc::new(ReceivedFiles::default()));
-            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
-            // second launch while the app is open is not forwarded yet (#53).
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                let (offered, sources) = received::accept_command_line(std::env::args_os());
-                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
-            }
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             std::thread::Builder::new()
