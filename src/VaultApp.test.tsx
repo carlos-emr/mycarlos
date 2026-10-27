@@ -327,6 +327,107 @@ function renameBridge() {
 }
 
 describe("durable vault UI", () => {
+  it.each(["success", "locked"])(
+    "discards a pending audit history %s after lock and a new unlock",
+    async (outcome) => {
+      let finish!: (rows: import("./vault").AuditHistoryEntry[]) => void;
+      let fail!: (cause: unknown) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        history: vi
+          .fn()
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve, reject) => {
+                finish = resolve;
+                fail = reject;
+              }),
+          )
+          .mockResolvedValue([]),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: "My records" });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText("Checking and reading the complete history…");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Unlocked · Lock now" }),
+      );
+      await screen.findByLabelText("Passphrase");
+      expect(
+        screen.queryByRole("heading", { name: "Audit history" }),
+      ).not.toBeInTheDocument();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Passphrase"), {
+          target: { value: "river-azimuth-cobalt-sparrow-934" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+      });
+      await screen.findByRole("heading", { name: "My records" });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText("There are no history events.");
+      await act(async () => {
+        if (outcome === "locked") fail({ code: "locked" });
+        else
+          finish([
+            {
+              seq: 0,
+              atMs: 1,
+              app: "FAKE",
+              event: "created",
+              name: "FAKE old session secret",
+              oldName: null,
+              from: null,
+              fromTotal: null,
+              to: null,
+              toTotal: null,
+              how: null,
+              place: null,
+              previousSession: null,
+            },
+          ]);
+      });
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.queryByText("FAKE old session secret"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("There are no history events.")).toBeVisible();
+    },
+  );
+
+  it("removes verified audit history plaintext from the document when the vault locks", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      history: vi.fn().mockResolvedValue([
+        {
+          seq: 0,
+          atMs: 1,
+          app: "FAKE",
+          event: "created",
+          name: "FAKE verified session secret",
+          oldName: null,
+          from: null,
+          fromTotal: null,
+          to: null,
+          toTotal: null,
+          how: null,
+          place: null,
+          previousSession: null,
+        },
+      ]),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "My records" });
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+    await screen.findByText("FAKE verified session secret");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlocked · Lock now" }),
+    );
+    await screen.findByLabelText("Passphrase");
+    expect(document.body).not.toHaveTextContent("FAKE verified session secret");
+  });
   beforeEach(() => {
     window.localStorage.clear();
     // Most tests here are not about the recovery key offer, which opens

@@ -45,6 +45,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     updateFolder: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
     snapshot: vi.fn().mockResolvedValue(shown),
+    history: vi.fn().mockResolvedValue([]),
     isLockedPdf: vi.fn().mockResolvedValue(false),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
@@ -745,4 +746,58 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       await page.viewport(1100, 760);
     }
   });
+});
+
+describe("Audit history keeps Security's Hidden location", () => {
+  it.each(["back", "persistent navigation"])(
+    "keeps Shared with me after returning by %s",
+    async (route) => {
+      const shared: VaultSnapshot = {
+        ...snapshot,
+        sharedProfileId: "shared",
+        profiles: [
+          ...snapshot.profiles,
+          { id: "shared", displayName: "Shared with me", createdAtMs: 2 },
+        ],
+        records: [
+          {
+            ...record("person-hidden", "FAKE person secret.pdf", []),
+            hidden: { atMs: 2, reason: "patient" },
+          },
+          {
+            ...record("shared-hidden", "FAKE shared secret.pdf", []),
+            profileId: "shared",
+            hidden: { atMs: 2, reason: "patient" },
+          },
+        ],
+      };
+      renderLibrary(shared);
+      openFolder(/^Shared with me/);
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      expect(
+        screen.getByRole("button", { name: /^Hidden 1 Shared with me/ }),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText("There are no history events.");
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: route === "back" ? /Back to Security/i : "Security",
+        }),
+      );
+      const hidden = screen.getByRole("button", {
+        name: /^Hidden 1 Shared with me/,
+      });
+      if (route === "back")
+        expect(
+          screen.getByRole("button", { name: "Audit history" }),
+        ).toHaveFocus();
+      fireEvent.click(hidden);
+      expect(
+        screen.getByRole("article", { name: "FAKE shared secret.pdf, hidden" }),
+      ).toBeVisible();
+      expect(
+        screen.queryByText("FAKE person secret.pdf"),
+      ).not.toBeInTheDocument();
+    },
+  );
 });

@@ -1215,6 +1215,10 @@ impl VaultStore {
     pub fn history_entries(&self) -> Result<Vec<HistoryEntry>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let cancelled = || self.cancel_io.load(Ordering::Acquire);
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
         let manifest = &unlocked.manifest;
         if manifest.history.is_empty() {
             return if manifest.format_version < MANIFEST_FORMAT_HISTORY {
@@ -1226,20 +1230,33 @@ impl VaultStore {
         let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
         let mut entries = Vec::new();
         for segment in &manifest.history.segments {
-            entries.extend(read_history_segment(
+            run_at_test_boundary("history-segment-read");
+            if cancelled() {
+                return Err(VaultError::Cancelled);
+            }
+            entries.extend(read_history_segment_cancellable(
                 &self.root,
                 &keys,
                 manifest.vault_id,
                 segment,
+                Arc::clone(&self.cancel_io),
             )?);
         }
-        history::verify(
+        history::verify_cancellable(
             manifest.vault_id,
             &entries,
             manifest.history.count,
             &manifest.history.head,
+            cancelled,
         )
-        .map_err(|_| VaultError::Corrupt)?;
+        .map_err(|error| match error {
+            history::ChainBreak::Cancelled => VaultError::Cancelled,
+            _ => VaultError::Corrupt,
+        })?;
+        run_at_test_boundary("history-verified");
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
         Ok(entries)
     }
 
@@ -4898,6 +4915,16 @@ fn read_history_segment(
     vault_id: Uuid,
     segment: &HistorySegment,
 ) -> Result<Vec<HistoryEntry>, VaultError> {
+    read_history_segment_cancellable(root, keys, vault_id, segment, Arc::default())
+}
+
+fn read_history_segment_cancellable(
+    root: &Path,
+    keys: &DerivedKeys,
+    vault_id: Uuid,
+    segment: &HistorySegment,
+    cancelled: Arc<AtomicBool>,
+) -> Result<Vec<HistoryEntry>, VaultError> {
     let segment_key = unwrap_secret(
         &keys.object_wrap,
         &segment.wrapped_key,
@@ -4906,7 +4933,7 @@ fn read_history_segment(
     let mut plaintext = Zeroizing::new(Vec::with_capacity(history::SEGMENT_PLAINTEXT_BYTES));
     verify_object(
         &root.join("objects").join(&segment.object_name),
-        &mut *plaintext,
+        CancellableWriter::new(&mut *plaintext, cancelled),
         vault_id,
         segment.id,
         &segment_key,
@@ -13930,6 +13957,169 @@ mod tests {
                 (Some("FAKE scan.pdf".to_owned()), Some("picked".to_owned())),
             ]
         );
+    }
+
+    /// These tests create fresh synthetic vaults; never open a developer vault.
+    #[test]
+    fn audit_history_is_verified_read_only_and_requires_an_unlocked_session() {
+        fn files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+            let mut result = Vec::new();
+            for child in fs::read_dir(root).unwrap() {
+                let path = child.unwrap().path();
+                if path.is_dir() {
+                    result.extend(files(&path));
+                } else {
+                    result.push((path.clone(), fs::read(path).unwrap()));
+                }
+            }
+            result.sort_by(|a, b| a.0.cmp(&b.0));
+            result
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("FAKE-vault"));
+        assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE history.pdf", b"%PDF-1.7 FAKE")],
+                2,
+            )
+            .unwrap();
+        let expected = history_events(&store);
+        let before = files(temp.path());
+        assert_eq!(store.history_entries().unwrap(), expected);
+        assert_eq!(
+            files(temp.path()),
+            before,
+            "reading must not append, rewrite or export"
+        );
+        // A missing document makes the real next unlock read-only. Its intact
+        // encrypted history is still readable, without repairing or appending.
+        let record = store.snapshot().unwrap().records[0].id;
+        fs::remove_file(record_object_path_for_test(&store, record)).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+        let before = files(temp.path());
+        assert_eq!(store.history_entries().unwrap(), history_events(&store));
+        assert_eq!(files(temp.path()), before);
+        store.lock();
+        assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn audit_history_rejects_damage_anywhere_including_padding_and_chain_end() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            let entries = (0..400)
+                .map(|index| {
+                    let mut entry = HistoryEntry::new(HistoryEvent::Imported, index + 2);
+                    entry.name = Some(format!("FAKE {index} {}", "x".repeat(220)));
+                    entry
+                })
+                .collect();
+            assert!(record_in_session(&root, unlocked, entries));
+        }
+        let expected = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        assert!(history.segments.len() >= 4);
+        assert_eq!(
+            history.segments.last().unwrap().entry_count,
+            0,
+            "exercise padding too"
+        );
+        for segment in &history.segments {
+            let path = root.join("objects").join(&segment.object_name);
+            let bytes = fs::read(&path).unwrap();
+            let mut damaged = bytes.clone();
+            *damaged.last_mut().unwrap() ^= 1;
+            fs::write(&path, damaged).unwrap();
+            assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+            fs::write(&path, &bytes).unwrap();
+            fs::remove_file(&path).unwrap();
+            assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+            fs::write(&path, bytes).unwrap();
+        }
+        for change_count in [true, false] {
+            {
+                let mut guard = store.session();
+                let state = &mut guard.as_mut().unwrap().manifest.history;
+                if change_count {
+                    state.count += 1;
+                } else {
+                    state.head = "0".repeat(64);
+                }
+            }
+            assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+            store.session().as_mut().unwrap().manifest.history = history.clone();
+        }
+        assert_eq!(store.history_entries().unwrap(), expected);
+    }
+
+    #[test]
+    fn audit_history_empty_is_only_allowed_for_a_legacy_format() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("FAKE-vault"));
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        store.session().as_mut().unwrap().manifest.history = HistoryState::default();
+        assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+        store.session().as_mut().unwrap().manifest.format_version = MANIFEST_FORMAT_HIDDEN;
+        assert!(store.history_entries().unwrap().is_empty());
+    }
+
+    #[test]
+    fn audit_history_stops_for_a_concurrent_lock_before_read_or_publication() {
+        for boundary in ["history-segment-read", "history-verified"] {
+            let temp = tempfile::tempdir().unwrap();
+            let store = Arc::new(VaultStore::new(temp.path().join("FAKE-vault")));
+            store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+            let (reached, wait) = mpsc::sync_channel(1);
+            let reading = {
+                let store = Arc::clone(&store);
+                std::thread::spawn(move || {
+                    let cancelled = Arc::clone(&store.cancel_io);
+                    AT_TEST_BOUNDARY.with(|slot| {
+                        *slot.borrow_mut() = Some((
+                            boundary,
+                            Box::new(move || {
+                                reached.send(()).unwrap();
+                                let deadline = Instant::now() + Duration::from_secs(5);
+                                while !cancelled.load(Ordering::Acquire) {
+                                    assert!(
+                                        Instant::now() < deadline,
+                                        "lock did not request cancellation"
+                                    );
+                                    std::thread::yield_now();
+                                }
+                            }),
+                        ))
+                    });
+                    store.history_entries()
+                })
+            };
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            let locking = {
+                let store = Arc::clone(&store);
+                std::thread::spawn(move || store.lock())
+            };
+            assert!(
+                matches!(reading.join().unwrap(), Err(VaultError::Cancelled)),
+                "{boundary}"
+            );
+            locking.join().unwrap();
+            assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
+        }
     }
 
     fn history_events(store: &VaultStore) -> Vec<HistoryEntry> {

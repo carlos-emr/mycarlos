@@ -286,7 +286,11 @@ export function VaultLibrary({
     // A persistent navigation button keeps focus when it opens Security.
     setReturnFocusToHidden(false);
     setReturnFocusToHistory(false);
-    if (section !== "security" && section !== "hidden") {
+    if (
+      section !== "security" &&
+      section !== "hidden" &&
+      section !== "history"
+    ) {
       setHiddenProfileId(locationProfileId ?? profileId);
     }
     setSection("security");

@@ -111,8 +111,15 @@ export function AuditHistory({
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const onLockRef = useRef(onLock);
   onLockRef.current = onLock;
-  const [entries, setEntries] = useState<AuditHistoryEntry[] | null>(null);
-  const [error, setError] = useState<UiText>("");
+  const [result, setResult] = useState<{
+    bridge: VaultBridge;
+    entries: AuditHistoryEntry[] | null;
+    error: UiText;
+  } | null>(null);
+  // A different native session must never display the previous request's rows
+  // or error, including the render before its effect starts.
+  const entries = result?.bridge === bridge ? result.entries : null;
+  const error = result?.bridge === bridge ? result.error : "";
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
@@ -120,7 +127,7 @@ export function AuditHistory({
     let current = true;
     void bridge.history().then(
       (verifiedEntries) => {
-        if (current) setEntries(verifiedEntries);
+        if (current) setResult({ bridge, entries: verifiedEntries, error: "" });
       },
       (cause: unknown) => {
         if (!current) return;
@@ -128,8 +135,11 @@ export function AuditHistory({
           void onLockRef.current();
           return;
         }
-        setEntries(null);
-        setError(deferredText(() => vaultErrorMessage(cause)));
+        setResult({
+          bridge,
+          entries: null,
+          error: deferredText(() => vaultErrorMessage(cause)),
+        });
       },
     );
     return () => {

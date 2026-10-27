@@ -231,11 +231,13 @@ pub fn chain(entries: &mut [HistoryEntry], mut next_seq: u64, mut head: String) 
 
 /// Where a chain first goes wrong.
 // The history stays on the device with no save step (Ben, 19 October), so
-// only the tests check the chain with this and `verify`; VAULT_FORMAT.md
+// Security checks the complete chain before showing events; VAULT_FORMAT.md
 // states the same rules for checking a copy without the app.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChainBreak {
+    /// The caller requested that verification stop.
+    Cancelled,
     /// The entry at this position does not follow the one before it: its
     /// number or its `prev` is not what the chain says.
     At(u64),
@@ -253,13 +255,30 @@ pub fn verify(
     count: u64,
     head: &str,
 ) -> Result<(), ChainBreak> {
+    verify_cancellable(vault_id, entries, count, head, || false)
+}
+
+/// The same complete-chain check, stopping between entries when a lock is requested.
+pub fn verify_cancellable(
+    vault_id: Uuid,
+    entries: &[HistoryEntry],
+    count: u64,
+    head: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<(), ChainBreak> {
     let mut expected = genesis(vault_id);
     for (index, entry) in entries.iter().enumerate() {
+        if cancelled() {
+            return Err(ChainBreak::Cancelled);
+        }
         let index = index as u64;
         if entry.seq != index || entry.prev != expected {
             return Err(ChainBreak::At(index));
         }
         expected = entry.hash();
+    }
+    if cancelled() {
+        return Err(ChainBreak::Cancelled);
     }
     if entries.len() as u64 != count || expected != head {
         return Err(ChainBreak::End);
@@ -369,6 +388,28 @@ mod tests {
             verify(Uuid::nil(), &entries, 3, &head),
             Err(ChainBreak::At(0))
         );
+    }
+
+    #[test]
+    fn verification_stops_after_progress_or_at_the_pinned_end_when_cancelled() {
+        let vault = Uuid::new_v4();
+        let mut entries = vec![
+            entry(HistoryEvent::Created, 1),
+            entry(HistoryEvent::Unlocked, 2),
+        ];
+        let head = chain(&mut entries, 0, genesis(vault));
+        for stop_at in [1, entries.len()] {
+            let calls = std::cell::Cell::new(0);
+            assert_eq!(
+                verify_cancellable(vault, &entries, entries.len() as u64, &head, || {
+                    let call = calls.get();
+                    calls.set(call + 1);
+                    call >= stop_at
+                }),
+                Err(ChainBreak::Cancelled)
+            );
+        }
+        assert_eq!(verify(vault, &entries, entries.len() as u64, &head), Ok(()));
     }
 
     #[test]

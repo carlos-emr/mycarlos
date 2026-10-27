@@ -5452,3 +5452,113 @@ mod native_localization_tests {
         assert_eq!(waited.retry_after_ms, Some(1234));
     }
 }
+
+#[cfg(test)]
+mod audit_history_ipc_tests {
+    use super::*;
+
+    fn request(url: &str) -> tauri::webview::InvokeRequest {
+        tauri::webview::InvokeRequest {
+            cmd: "vault_history".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: url.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::default(),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.into(),
+        }
+    }
+
+    /// Use the real generated production capability authority, not mock_context's
+    /// empty/permissive authority. Only the OS runtime is mocked; vault I/O is real.
+    #[test]
+    fn audit_history_rpc_uses_the_main_window_capability_and_redacts_native_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .invoke_handler(tauri::generate_handler![vault_history])
+            .build(tauri::generate_context!())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let other = tauri::WebviewWindowBuilder::new(&app, "FAKE-ungranted", Default::default())
+            .build()
+            .unwrap();
+        let local = if cfg!(any(windows, target_os = "android")) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        for (view, url) in [(&other, local), (&main, "https://example.invalid")] {
+            let denied = tauri::test::get_ipc_response(view, request(url))
+                .err()
+                .expect("ungranted IPC must fail");
+            assert!(denied.as_str().unwrap().contains("not allowed"), "{denied}");
+        }
+        let locked = tauri::test::get_ipc_response(&main, request(local))
+            .err()
+            .expect("IPC must fail");
+        assert_eq!(locked["code"], "locked");
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Avery", 1)
+            .unwrap();
+        store.create_profile("FAKE Blake", 2).unwrap();
+        let rows = tauri::test::get_ipc_response(&main, request(local))
+            .unwrap()
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(rows[0]["event"], "created");
+        assert!(rows[0]["name"].is_null());
+        assert_eq!(rows[1]["event"], "profileCreated");
+        assert_eq!(rows[1]["name"], "FAKE Blake");
+        let keys: std::collections::BTreeSet<_> = rows[0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "seq",
+                "atMs",
+                "app",
+                "event",
+                "name",
+                "oldName",
+                "from",
+                "fromTotal",
+                "to",
+                "toTotal",
+                "how",
+                "place",
+                "previousSession"
+            ]
+            .into_iter()
+            .collect()
+        );
+        // Corrupt every encrypted object in this disposable synthetic vault.
+        for file in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(file.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        let failure = tauri::test::get_ipc_response(&main, request(local))
+            .err()
+            .expect("IPC must fail");
+        assert_eq!(failure["code"], "history_unverified");
+        assert_eq!(failure["messageKey"], "interface.history.error.unverified");
+        assert!(!failure
+            .to_string()
+            .contains(&temp.path().to_string_lossy().to_string()));
+        assert!(!failure.to_string().contains("FAKE Avery"));
+        store.lock();
+        assert_eq!(
+            tauri::test::get_ipc_response(&main, request(local))
+                .err()
+                .expect("IPC must fail")["code"],
+            "locked"
+        );
+    }
+}
