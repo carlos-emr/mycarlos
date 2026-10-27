@@ -46,7 +46,7 @@ describe("device appearance", () => {
     },
   );
 
-  it.each(["light", "dark", "system"] as const)(
+  it.each(["light", "dark", "system", "high-contrast"] as const)(
     "remembers and restores %s before rendering",
     (mode) => {
       startAppearance().set(mode);
@@ -70,6 +70,10 @@ describe("device appearance", () => {
     appearance.set("dark");
     osDark(false);
     expect(document.documentElement.dataset.theme).toBe("dark");
+    appearance.set("high-contrast");
+    osDark(true);
+    osDark(false);
+    expect(document.documentElement.dataset.theme).toBe("high-contrast");
     appearance.set("system");
     expect(document.documentElement.dataset.theme).toBe("light");
   });

@@ -468,6 +468,7 @@ describe("the lock warning, Preferences and the photo viewer in each language", 
         tr("appearance.system"),
         tr("appearance.light"),
         tr("appearance.dark"),
+        tr("appearance.highContrast"),
       ]);
       expect(
         screen.getByText(
