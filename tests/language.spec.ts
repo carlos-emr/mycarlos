@@ -38,7 +38,7 @@ test("language choices persist, preserve High contrast and work from the keyboar
     ["es", "Español"],
     ["pl", "Polski"],
     ["pt-BR", "Português (Brasil)"],
-    ["zh-CN", "简体中文"],
+    ["zh-CN", "简体中文 (Mandarin)"],
     ["zh-TW", "繁體中文"],
   ] as const) {
     const choice = page.getByRole("radio", { name: autonym, exact: true });
