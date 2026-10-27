@@ -53,16 +53,21 @@ has been suppressed or marked acceptable.
   already use, as `webview2-com` is on Windows: the camera dialog needs WebKitGTK's media-stream
   setting turned on and its permission requests answered (`src-tauri/src/camera_permission.rs`).
   It adds no package to the Rust lockfile.
-- RustCrypto `cms` (=0.2.3), `x509-cert` (=0.2.5), `p256` (=0.13.2), `ecdsa` (=0.16.9) and
-  `der` (=0.7.10) are new direct dependencies, pinned exactly. They are pure Rust and all
+- RustCrypto `cms` (=0.2.3), `x509-cert` (=0.2.5), `p256` (=0.14.0), `ecdsa` (=0.17.0) and
+  `der` (=0.7.10) are direct dependencies, pinned exactly. They are pure Rust and all
   Apache-2.0 OR MIT. They check the signature on PDFs CARLOS signed for a patient
   (`src-tauri/src/signed_pdf.rs`, #55): the CMS SignedData, its certificate and the
   ECDSA P-256 signature, which is what "Verified" rests on. Writing a DER and ECDSA
   parser here instead would add custom security-sensitive code.
-  - They are one generation: everything sits on `der` 0.7, `spki` 0.7 and `const-oid`
-    0.9, and `sha2`, `digest` and `zeroize` were already locked.
-  - `cms` 0.3 is still a release candidate. Move to it, with `x509-cert` 0.3 and `p256`
-    0.14, once it is stable.
+  - The CMS/X.509 format stack stays on `der` 0.7, `spki` 0.7 and `const-oid` 0.9.
+    P-256 verification moves to `p256` 0.14 / `ecdsa` 0.17 / `elliptic-curve` 0.14,
+    whose `crypto-bigint` 0.7.10 satisfies RUSTSEC-2026-0387 (fixed in 0.7.6+).
+    The compatible 0.7.6 release is yanked; Cargo selects non-yanked 0.7.10.
+  - The previous `p256` 0.13 / `elliptic-curve` 0.13 line requires `crypto-bigint` 0.5,
+    so it cannot use the fixed 0.7 line through a lockfile-only update. No patched 0.5
+    release is listed by RustSec.
+  - `cms` 0.3 is still a pre-release; revisit the CMS/X.509 format stack separately when
+    it is stable. That upgrade is not needed to remove the vulnerable EC dependency.
   - They add 22 packages to the Rust lockfile alongside the current PDF dependencies. Two of them, `tls_codec` and
     `tls_codec_derive`, are only locked: they serve `x509-cert`'s optional SCT feature, which
     nothing enables, so they are never built.
