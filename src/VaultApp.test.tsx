@@ -21,6 +21,8 @@ import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
   ImportOutcome,
+  PortalApprovalCheck,
+  PortalLinkSummary,
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
@@ -7998,5 +8000,229 @@ describe("clinic connection operations", () => {
     expect(await screen.findByText("FAKE Second Clinic")).toBeVisible();
     expect(screen.queryByText("FAKE First Clinic")).not.toBeInTheDocument();
     expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+  });
+});
+
+describe("automatic clinic approval checks in the app (#131)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+  const pending: PortalLinkSummary = {
+    id: "fake-clinic-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos FAKE device",
+    profileId: null,
+    clinicName: "FAKE First Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "FAKE_FIRST_DEVICE",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: false,
+    approvalStatus: "pending",
+  };
+  const vaultWith = (link: PortalLinkSummary): VaultSnapshot => ({
+    ...snapshotWithRecord,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE First Patient", createdAtMs: 1 },
+    ],
+    recoveryKeySetAtMs: 5,
+    portalLinkingEnabled: true,
+    portalLinks: [link],
+  });
+  const found = (
+    link: PortalLinkSummary,
+    extra: Partial<PortalApprovalCheck> = {},
+  ): PortalApprovalCheck => ({
+    link,
+    expiresInMs: null,
+    issue: null,
+    ...extra,
+  });
+  const BUSY = /Another clinic operation is running/;
+  function fakeClock() {
+    vi.useFakeTimers({
+      toFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "Date",
+        "performance",
+      ],
+    });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+  }
+  const pass = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  const click = (element: HTMLElement) =>
+    act(async () => {
+      fireEvent.click(element);
+    });
+  async function openClinicView(bridge: VaultBridge) {
+    fakeClock();
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await pass(100);
+    await click(screen.getByRole("button", { name: "Security" }));
+  }
+  function clinicBridge(overrides: Partial<VaultBridge>) {
+    return nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(vaultWith(pending)),
+      unlock: vi.fn().mockResolvedValue(vaultWith(pending)),
+      connectPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+
+  it("checks quietly, is never activity, and lets the vault lock when left alone", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi
+        .fn()
+        .mockResolvedValue(found(pending, { expiresInMs: 4 * 60_000 })),
+    });
+    await openClinicView(bridge);
+    const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
+    const touches = vi.mocked(bridge.touch).mock.calls.length;
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledWith(pending.id);
+    expect(
+      screen.getByText("Time left for this request: about 4 minutes."),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Your clinic has the approval request. Waiting for clinic staff to approve this device.",
+      ),
+    ).toBeVisible();
+    // Quiet: nothing says clinic work is running, and nothing is disabled.
+    expect(
+      screen.queryByText("Clinic operation in progress…"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    ).toBeEnabled();
+    await pass(3 * 60_000);
+    expect(
+      vi.mocked(bridge.refreshDeviceApproval!).mock.calls.length,
+    ).toBeGreaterThanOrEqual(4);
+    // Not activity: no whole-vault read (which counts natively), no touch.
+    expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots);
+    expect(bridge.touch).toHaveBeenCalledTimes(touches);
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+    // Left alone, the vault locks on time, and the checks stop with it.
+    await pass(2 * 60_000 + 30_000);
+    expect(bridge.lock).toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    const atLock = vi.mocked(bridge.refreshDeviceApproval!).mock.calls.length;
+    await pass(10 * 60_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(atLock);
+  });
+
+  it("holds the patient's own retry for a check under way instead of refusing it, with records usable", async () => {
+    let finishCheck!: (value: PortalApprovalCheck) => void;
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi
+        .fn()
+        .mockReturnValueOnce(
+          new Promise<PortalApprovalCheck>((resolve) => {
+            finishCheck = resolve;
+          }),
+        )
+        .mockResolvedValue(found(pending)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    // Local records stay usable while the check waits on the portal.
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await click(screen.getByRole("button", { name: "Close document details" }));
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    );
+    expect(screen.getByText("Clinic operation in progress…")).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    await act(async () => finishCheck(found(pending)));
+    await pass(0);
+    expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+    expect(screen.queryByText(BUSY)).not.toBeInTheDocument();
+    // No check runs beside it, and none overlaps the next one.
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it("says nothing for a busy refusal, and keeps a check from before a lock out of the next session", async () => {
+    let finishOld!: (value: PortalApprovalCheck) => void;
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "portal_busy",
+          message:
+            "Another clinic operation is running. Wait for it to finish, then try again.",
+        })
+        .mockReturnValueOnce(
+          new Promise<PortalApprovalCheck>((resolve) => {
+            finishOld = resolve;
+          }),
+        )
+        .mockResolvedValue(found(pending)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(screen.queryByText(BUSY)).not.toBeInTheDocument();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    await pass(100);
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+        target: { value: "FAKE approval lock passphrase" },
+      });
+    });
+    await click(screen.getByRole("button", { name: "Unlock" }));
+    await pass(100);
+    await click(screen.getByRole("button", { name: "Security" }));
+    // The earlier session's check answers "approved" now: not shown.
+    await act(async () =>
+      finishOld(
+        found({ ...pending, approvalStatus: "accepted", clinicApproved: true }),
+      ),
+    );
+    await pass(0);
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    // This session's own checks begin as for any newly opened view.
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(3);
   });
 });

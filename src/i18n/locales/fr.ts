@@ -20,7 +20,7 @@ export const fr: Record<MessageKey, Message> = {
   "portal.dateNotRecorded": "Date non consignée",
   "portal.restartApproval": "Créer une nouvelle demande d’approbation",
   "portal.approvalExpired":
-    "Cette demande d’approbation a expiré. Vérifiez les mises à jour avant de créer une nouvelle demande.",
+    "Cette demande d’approbation a expiré. Pour en faire une autre pour ce même appareil, choisissez Créer une nouvelle demande d’approbation. Vos documents et le lien de cet appareil restent tels quels.",
   "portal.approvalCancelled":
     "Cette demande d’approbation a été annulée. Vérifiez les mises à jour avant de créer une nouvelle demande.",
   "portal.approvalRefused":
@@ -29,6 +29,27 @@ export const fr: Record<MessageKey, Message> = {
     "L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.",
   "portal.approvalMissing":
     "Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.",
+  "portal.awaitingClinic":
+    "Votre clinique a reçu la demande d’approbation. En attente de l’approbation de cet appareil par le personnel de la clinique.",
+  "portal.approvalStarted":
+    "Votre clinique a commencé à approuver cet appareil. En attente de la fin de l’approbation par la clinique.",
+  "portal.approvalTimeLeft": {
+    one: "Temps restant pour cette demande : environ {count} minute.",
+    many: "Temps restant pour cette demande : environ {count} de minutes.",
+    other: "Temps restant pour cette demande : environ {count} minutes.",
+  },
+  "portal.approvalTimeUp":
+    "Le délai de cette demande est écoulé. Vérification auprès de votre clinique…",
+  "portal.approvalUnreachable":
+    "myCarlos n’a pas pu joindre le portail de la clinique : l’état de cette demande n’est donc pas encore connu. myCarlos réessaiera.",
+  "portal.approvalWait":
+    "Le portail de la clinique a demandé à myCarlos de vérifier moins souvent. myCarlos réessaiera plus tard.",
+  "portal.autoChecking":
+    "Tant que cette page est ouverte, myCarlos vérifie automatiquement si votre clinique a répondu.",
+  "portal.autoCheckStopped":
+    "Les vérifications automatiques sont arrêtées. Pour vérifier de nouveau, choisissez {button}.",
+  "portal.errorRateLimited":
+    "Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.",
   "portal.confirmationsPending":
     "Documents enregistrés en attente de confirmation de réception : {count}. Vérifiez à nouveau pour terminer la confirmation. Vos copies enregistrées restent dans le coffre.",
   "portal.partialResult":

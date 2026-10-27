@@ -22,7 +22,7 @@ export const pl: Record<MessageKey, Message> = {
   "portal.dateNotRecorded": "Data nie została zapisana",
   "portal.restartApproval": "Rozpocznij nową prośbę o zatwierdzenie",
   "portal.approvalExpired":
-    "Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+    "Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego samego urządzenia, wybierz Rozpocznij nową prośbę o zatwierdzenie. Dokumenty i połączenie tego urządzenia pozostają bez zmian.",
   "portal.approvalCancelled":
     "Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
   "portal.approvalRefused":
@@ -31,6 +31,27 @@ export const pl: Record<MessageKey, Message> = {
     "Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
   "portal.approvalMissing":
     "Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.",
+  "portal.awaitingClinic":
+    "Przychodnia otrzymała prośbę o zatwierdzenie. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.",
+  "portal.approvalStarted":
+    "Przychodnia zaczęła zatwierdzać to urządzenie. Oczekiwanie, aż przychodnia to zakończy.",
+  "portal.approvalTimeLeft": {
+    one: "Pozostały czas na tę prośbę: około {count} minuty.",
+    few: "Pozostały czas na tę prośbę: około {count} minut.",
+    many: "Pozostały czas na tę prośbę: około {count} minut.",
+    other: "Pozostały czas na tę prośbę: około {count} minuty.",
+  },
+  "portal.approvalTimeUp": "Czas na tę prośbę minął. Sprawdzanie w przychodni…",
+  "portal.approvalUnreachable":
+    "myCarlos nie mógł połączyć się z portalem przychodni, więc stan tej prośby nie jest jeszcze znany. Spróbuje ponownie.",
+  "portal.approvalWait":
+    "Portal przychodni poprosił myCarlos o rzadsze sprawdzanie. myCarlos spróbuje ponownie później.",
+  "portal.autoChecking":
+    "Dopóki ta strona jest otwarta, myCarlos automatycznie sprawdza, czy przychodnia odpowiedziała.",
+  "portal.autoCheckStopped":
+    "Automatyczne sprawdzanie zostało zatrzymane. Aby sprawdzić ponownie, wybierz {button}.",
+  "portal.errorRateLimited":
+    "Portal przychodni poprosił myCarlos, aby odczekał przed ponowną próbą.",
   "portal.confirmationsPending":
     "Zapisane dokumenty oczekujące na potwierdzenie odbioru: {count}. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.",
   "portal.partialResult":

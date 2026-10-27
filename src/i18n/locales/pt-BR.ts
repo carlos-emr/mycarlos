@@ -20,7 +20,7 @@ export const ptBR: Record<MessageKey, Message> = {
   "portal.dateNotRecorded": "Data não registrada",
   "portal.restartApproval": "Iniciar outra solicitação de aprovação",
   "portal.approvalExpired":
-    "Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.",
+    "Esta solicitação de aprovação expirou. Para pedir de novo para este mesmo dispositivo, escolha Iniciar outra solicitação de aprovação. Seus documentos e a conexão deste dispositivo continuam como estão.",
   "portal.approvalCancelled":
     "Esta solicitação de aprovação foi cancelada. Verifique atualizações antes de iniciar outra solicitação.",
   "portal.approvalRefused":
@@ -29,6 +29,27 @@ export const ptBR: Record<MessageKey, Message> = {
     "A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.",
   "portal.approvalMissing":
     "Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.",
+  "portal.awaitingClinic":
+    "Sua clínica recebeu a solicitação de aprovação. Aguardando a equipe da clínica aprovar este dispositivo.",
+  "portal.approvalStarted":
+    "Sua clínica começou a aprovar este dispositivo. Aguardando a clínica concluir.",
+  "portal.approvalTimeLeft": {
+    one: "Tempo restante para esta solicitação: cerca de {count} minuto.",
+    many: "Tempo restante para esta solicitação: cerca de {count} de minutos.",
+    other: "Tempo restante para esta solicitação: cerca de {count} minutos.",
+  },
+  "portal.approvalTimeUp":
+    "O tempo desta solicitação acabou. Verificando com sua clínica…",
+  "portal.approvalUnreachable":
+    "O myCarlos não conseguiu acessar o portal da clínica, então o status desta solicitação ainda não é conhecido. Ele tentará novamente.",
+  "portal.approvalWait":
+    "O portal da clínica pediu ao myCarlos que verifique com menos frequência. Ele tentará novamente mais tarde.",
+  "portal.autoChecking":
+    "Enquanto esta página estiver aberta, o myCarlos verifica automaticamente se a sua clínica respondeu.",
+  "portal.autoCheckStopped":
+    "As verificações automáticas pararam. Para verificar novamente, escolha {button}.",
+  "portal.errorRateLimited":
+    "O portal da clínica pediu ao myCarlos que aguarde antes de tentar novamente.",
   "portal.confirmationsPending":
     "Documentos salvos aguardando confirmação de retirada: {count}. Verifique novamente para concluir a confirmação. Suas cópias salvas permanecem no cofre.",
   "portal.partialResult":

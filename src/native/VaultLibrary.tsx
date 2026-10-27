@@ -26,6 +26,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { PortalDocuments } from "./PortalDocuments";
+import type { PollApproval } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
@@ -89,6 +90,7 @@ export function VaultLibrary({
   run,
   portalBusy = false,
   runPortal = run,
+  pollApproval,
   setPortalNotice = setNotice,
   refresh,
   onLock,
@@ -117,6 +119,8 @@ export function VaultLibrary({
   run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
   portalBusy?: boolean;
   runPortal?: (operation: () => Promise<void>) => Promise<void>;
+  /** The clinic view's automatic approval status check (#131). */
+  pollApproval?: PollApproval;
   setPortalNotice?: (value: string) => void;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
@@ -1785,6 +1789,7 @@ export function VaultLibrary({
                     working={portalBusy}
                     readOnly={readOnly}
                     run={runPortal}
+                    poll={pollApproval}
                     refresh={refresh}
                     setNotice={setPortalNotice}
                   />

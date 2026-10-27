@@ -24,6 +24,7 @@ import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
+import type { ApprovalPoll, PollApproval } from "./native/useApprovalPolling";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import { CAMERA_PLATFORMS, isPhone } from "./native/photo";
 import {
@@ -151,6 +152,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const portalNoticeRef = useRef<{ session: number; message: string } | null>(
     null,
   );
+  // The automatic approval status check under way, if any (#131).
+  const portalPollRef = useRef<{
+    session: number;
+    promise: Promise<ApprovalPoll>;
+  } | null>(null);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
   // An automatic or background lock owed while a transfer runs, or before the
@@ -278,6 +284,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       sessionRef.current += 1;
       portalJobRef.current = null;
+      portalPollRef.current = null;
       portalNoticeRef.current = null;
       setPortalBusy(false);
       setSnapshot(null);
@@ -780,6 +787,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       session: startedIn,
       promise: Promise.resolve()
         .then(async () => {
+          // An automatic status check under way finishes first: the native
+          // side admits one clinic operation at a time, and the patient's own
+          // action must not be refused because of a check they did not ask
+          // for. It is a read with its own time limit.
+          const poll = portalPollRef.current;
+          if (poll?.session === startedIn) await poll.promise;
           if (sessionRef.current !== startedIn || lockingRef.current) return;
           await run(operation, undefined, true);
         })
@@ -793,6 +806,67 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     portalJobRef.current = job;
     setPortalBusy(true);
     return job.promise;
+  };
+
+  // The clinic view's automatic approval status check (#131). It is quiet:
+  // no "working" state and no message of its own (the view says what
+  // changed). It never waits behind other clinic work, or another check: it
+  // is skipped while one runs. The patient's own clinic action waits for a
+  // check under way instead (see `runPortal`). It belongs to this session: a
+  // reply after a lock, or in another session, is dropped. Nothing about it
+  // counts as activity that keeps the vault open: it does not read the whole
+  // vault again (a snapshot would count), but updates the one device it
+  // checked in the vault on screen.
+  const pollApproval: PollApproval = (linkId) => {
+    const startedIn = portalSession;
+    if (
+      !bridge.refreshDeviceApproval ||
+      sessionRef.current !== startedIn ||
+      lockingRef.current ||
+      concealedRef.current ||
+      portalJobRef.current ||
+      portalPollRef.current
+    )
+      return Promise.resolve(null);
+    const current = () =>
+      sessionRef.current === startedIn && !lockingRef.current;
+    const promise = bridge.refreshDeviceApproval(linkId).then(
+      (result): ApprovalPoll => {
+        if (!current()) return null;
+        setSnapshot((shown) => {
+          const links = shown?.portalLinks;
+          const before = links?.find((link) => link.id === result.link.id);
+          // Unchanged: the vault on screen stays the same object.
+          if (!shown || !links || !before) return shown;
+          if (JSON.stringify(before) === JSON.stringify(result.link))
+            return shown;
+          return {
+            ...shown,
+            portalLinks: links.map((link) =>
+              link.id === result.link.id ? result.link : link,
+            ),
+          };
+        });
+        return { check: result };
+      },
+      (error): ApprovalPoll => {
+        if (!current()) return null;
+        // The native idle deadline locked the vault, or a lock cut the check
+        // off: lock here too, as for any clinic operation.
+        if (isLockedError(error) || isCancelledError(error)) {
+          lockReasonRef.current ??= "idle";
+          requestLock(true);
+          return null;
+        }
+        return { error };
+      },
+    );
+    const entry = { session: startedIn, promise };
+    portalPollRef.current = entry;
+    void promise.finally(() => {
+      if (portalPollRef.current === entry) portalPollRef.current = null;
+    });
+    return promise;
   };
 
   // These are handed to the library, which unmounts on lock. A call that is
@@ -1090,6 +1164,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         run={run}
         portalBusy={portalBusy}
         runPortal={runPortal}
+        pollApproval={pollApproval}
         setPortalNotice={setPortalNotice}
         refresh={refresh}
         onLock={lockAsked}

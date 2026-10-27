@@ -21,7 +21,7 @@ export const en = {
   "portal.dateNotRecorded": "Date not recorded",
   "portal.restartApproval": "Start a new approval request",
   "portal.approvalExpired":
-    "This approval request expired. Check for updates before starting a new request.",
+    "This approval request expired. To ask again for this same device, choose Start a new approval request. Your documents and this device's link stay as they are.",
   "portal.approvalCancelled":
     "This approval request was cancelled. Check for updates before starting a new request.",
   "portal.approvalRefused":
@@ -30,6 +30,26 @@ export const en = {
     "Clinic approval needs to be checked. Contact your clinic for next steps.",
   "portal.approvalMissing":
     "Your saved approval request was not found on the portal. Send the saved request again.",
+  "portal.awaitingClinic":
+    "Your clinic has the approval request. Waiting for clinic staff to approve this device.",
+  "portal.approvalStarted":
+    "Your clinic has started approving this device. Waiting for the clinic to finish.",
+  "portal.approvalTimeLeft": {
+    one: "Time left for this request: about {count} minute.",
+    other: "Time left for this request: about {count} minutes.",
+  },
+  "portal.approvalTimeUp":
+    "The time for this request has run out. Checking with your clinic…",
+  "portal.approvalUnreachable":
+    "myCarlos could not reach the clinic portal, so this request's status is not known yet. It will try again.",
+  "portal.approvalWait":
+    "The clinic portal asked myCarlos to check less often. It will try again later.",
+  "portal.autoChecking":
+    "While this page is open, myCarlos checks for your clinic's answer automatically.",
+  "portal.autoCheckStopped":
+    "Automatic checks have stopped. To check again, choose {button}.",
+  "portal.errorRateLimited":
+    "The clinic portal asked myCarlos to wait before trying again.",
   "portal.confirmationsPending":
     "Saved documents awaiting pickup confirmation: {count}. Check again to finish confirmation. Your saved copies stay in the vault.",
   "portal.partialResult":

@@ -114,6 +114,21 @@ export interface PortalLinkSummary {
   approvalRequestLimitReached?: boolean;
 }
 
+/** What a read-only status check of a linked device's approval found (#131).
+ * It never sends, re-sends or starts a request. */
+export interface PortalApprovalCheck {
+  /** The device's saved state after the check. */
+  link: PortalLinkSummary;
+  /** For a request still open: the time the portal leaves it, by the
+   * portal's own clock when it replied, so a wrong clock on this device does
+   * not change it. Absent when the portal did not say what time it was. */
+  expiresInMs?: number | null;
+  /** Why the check could not finish: the portal could not be reached, it
+   * asked to wait, or it does not have the saved request. Nothing saved was
+   * changed because of it. */
+  issue?: PublicError | null;
+}
+
 export interface PortalLinkInput {
   portalBase: string;
   code: string;
@@ -282,6 +297,9 @@ export interface VaultBridge {
   }>;
   requestDeviceApproval?(linkId: string): Promise<void>;
   restartDeviceApproval?(linkId: string): Promise<void>;
+  /** Reads one linked device's approval status from its portal and saves the
+   * clinic's answer (#131). It only reads: no request is sent or started. */
+  refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -418,14 +436,15 @@ export interface VaultBridge {
   reset(confirmation: string): Promise<boolean>;
 }
 
-interface PublicError {
+export interface PublicError {
   code?: string;
   message?: string;
   /** The document a failure is about, if it is about one. */
   recordId?: string;
   /** A sentence to add after the message, about how the failure came about. */
   note?: string;
-  /** How long to wait before the next try, after several wrong ones. */
+  /** How long to wait before the next try: after several wrong ones, or
+   * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
 }
 
@@ -473,10 +492,17 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_link_device_exists: "portal.errorExists",
     portal_link_incomplete: "portal.errorIncomplete",
     portal_busy: "portal.errorBusy",
+    portal_rate_limited: "portal.errorRateLimited",
     pickup_refused: "portal.errorRefused",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
-    if (hasErrorCode(error, code)) return t(key);
+    if (hasErrorCode(error, code)) {
+      // The portal may say how long to wait (#131).
+      const wait = (error as PublicError).retryAfterMs;
+      return typeof wait === "number" && wait > 0
+        ? `${t(key)} ${t("error.retryIn", { count: Math.ceil(wait / 1000) })}`
+        : t(key);
+    }
   if (boxes?.length && hasErrorCode(error, "invalid"))
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
@@ -621,6 +647,8 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_restart_device_approval", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
+    refreshDeviceApproval: (linkId) =>
+      invoke<PortalApprovalCheck>("vault_refresh_device_approval", { linkId }),
     linkPortal: (request) =>
       invoke<PortalLinkSummary>("vault_portal_link", { request }),
     connectPortal: (request) => invoke("vault_portal_connect", { request }),
