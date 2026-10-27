@@ -1,0 +1,539 @@
+--- a/src/platform_impl/windows.rs
++++ b/src/platform_impl/windows.rs
+@@ -6,7 +6,11 @@
+ use crate::semver_compat::semver_compat_string;
+ 
+ use crate::SingleInstanceCallback;
+-use std::ffi::CStr;
++use std::{
++    io,
++    sync::{Arc, Mutex},
++    time::{Duration, Instant},
++};
+ use tauri::{
+     plugin::{self, TauriPlugin},
+     AppHandle, Manager, RunEvent, Runtime,
+@@ -19,35 +23,53 @@
+         Threading::{CreateMutexW, ReleaseMutex},
+     },
+     UI::WindowsAndMessaging::{
+-        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW,
+-        RegisterClassExW, SendMessageW, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
+-        WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY, WNDCLASSEXW, WS_EX_LAYERED,
+-        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
++        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW, IsWindow,
++        RegisterClassExW, SendMessageTimeoutW, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
++        SMTO_ABORTIFHUNG, SMTO_BLOCK, WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY,
++        WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
++        WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+     },
+ };
+ 
+-const WMCOPYDATA_SINGLE_INSTANCE_DATA: usize = 1542;
+-
+-struct MutexHandle(isize);
+-
+-struct TargetWindowHandle(isize);
++#[path = "windows_wire.rs"]
++mod wire;
++
++const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
++struct MutexHandle(Mutex<Option<isize>>);
++struct TargetWindowHandle(Mutex<Option<isize>>);
++
++// Only a newly created mutex is wrapped: a secondary instance never owns it.
++impl MutexHandle {
++    fn close(&self) {
++        let handle = self
++            .0
++            .lock()
++            .unwrap_or_else(|error| error.into_inner())
++            .take();
++        if let Some(handle) = handle {
++            unsafe {
++                ReleaseMutex(handle as _);
++                CloseHandle(handle as _);
++            }
++        }
++    }
++}
++
++impl Drop for MutexHandle {
++    fn drop(&mut self) {
++        self.close();
++    }
++}
+ 
+ struct UserData<R: Runtime> {
+     app: AppHandle<R>,
+-    callback: Box<SingleInstanceCallback<R>>,
++    callback: Arc<Mutex<Box<SingleInstanceCallback<R>>>>,
++    owned_by_window: bool,
+ }
+ 
+ impl<R: Runtime> UserData<R> {
+     unsafe fn from_hwnd_raw(hwnd: HWND) -> *mut Self {
+         GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self
+-    }
+-
+-    unsafe fn from_hwnd<'a>(hwnd: HWND) -> &'a mut Self {
+-        &mut *Self::from_hwnd_raw(hwnd)
+-    }
+-
+-    fn run_callback(&mut self, args: Vec<String>, cwd: String) {
+-        (self.callback)(&self.app, args, cwd)
+     }
+ }
+ 
+@@ -61,51 +83,42 @@
+                 id.push('_');
+                 id.push_str(semver_compat_string(&app.package_info().version).as_str());
+             }
+-
+             let class_name = encode_wide(format!("{id}-sic"));
+             let window_name = encode_wide(format!("{id}-siw"));
+             let mutex_name = encode_wide(format!("{id}-sim"));
+-
+             let hmutex =
+                 unsafe { CreateMutexW(std::ptr::null(), true.into(), mutex_name.as_ptr()) };
+-
+-            if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+-                unsafe {
+-                    let hwnd = FindWindowW(class_name.as_ptr(), window_name.as_ptr());
+-
+-                    if !hwnd.is_null() {
+-                        let cwd = std::env::current_dir().unwrap_or_default();
+-                        let cwd = cwd.to_str().unwrap_or_default();
+-
+-                        let args = std::env::args().collect::<Vec<String>>().join("|");
+-
+-                        let data = format!("{cwd}|{args}\0",);
+-
+-                        let bytes = data.as_bytes();
+-                        let cds = COPYDATASTRUCT {
+-                            dwData: WMCOPYDATA_SINGLE_INSTANCE_DATA,
+-                            cbData: bytes.len() as _,
+-                            lpData: bytes.as_ptr() as _,
+-                        };
+-
+-                        SendMessageW(hwnd, WM_COPYDATA, 0, &cds as *const _ as _);
+-
+-                        app.cleanup_before_exit();
+-                        std::process::exit(0);
+-                    }
++            let error = unsafe { GetLastError() };
++            if hmutex.is_null() {
++                return Err(io::Error::other("single-instance reservation failed").into());
++            }
++            if error == ERROR_ALREADY_EXISTS {
++                // Never fall through to GUI setup, even before the first IPC window exists.
++                unsafe { CloseHandle(hmutex) };
++                let result = forward(&class_name, &window_name);
++                if result.is_err() {
++                    eprintln!("single-instance handoff failed");
+                 }
+-            } else {
+-                app.manage(MutexHandle(hmutex as _));
+-
+-                let userdata = UserData {
+-                    app: app.clone(),
+-                    callback,
+-                };
+-                let userdata = Box::into_raw(Box::new(userdata));
+-                let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
+-                app.manage(TargetWindowHandle(hwnd as _));
+-            }
+-
++                app.cleanup_before_exit();
++                std::process::exit(if result.is_ok() { 0 } else { 2 });
++            }
++            let mutex = MutexHandle(Mutex::new(Some(hmutex as _)));
++            let mut userdata = Box::new(UserData {
++                app: app.clone(),
++                callback: Arc::new(Mutex::new(callback)),
++                owned_by_window: false,
++            });
++            // Hold the Box until creation succeeds. A failed creation's WM_DESTROY cannot
++            // free it too: this function still owns it until the explicit transfer below.
++            let hwnd = create_event_target_window::<R>(
++                &class_name,
++                &window_name,
++                &mut *userdata as *mut _,
++            )?;
++            userdata.owned_by_window = true;
++            let _ = Box::into_raw(userdata);
++            app.manage(mutex);
++            app.manage(TargetWindowHandle(Mutex::new(Some(hwnd as _))));
+             Ok(())
+         })
+         .on_event(|app, event| {
+@@ -116,15 +129,67 @@
+         .build()
+ }
+ 
++fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
++    let invalid = || io::Error::other("single-instance handoff failed");
++    let cwd = std::env::current_dir().map_err(|_| invalid())?;
++    let bytes = wire::encode(cwd.as_os_str(), std::env::args_os()).ok_or_else(invalid)?;
++    let started = Instant::now();
++    let hwnd = loop {
++        let hwnd = unsafe { FindWindowW(class_name.as_ptr(), window_name.as_ptr()) };
++        if !hwnd.is_null() {
++            break hwnd;
++        }
++        if started.elapsed() >= FORWARD_TIMEOUT {
++            return Err(invalid());
++        }
++        std::thread::sleep(Duration::from_millis(10));
++    };
++    let remaining = FORWARD_TIMEOUT
++        .checked_sub(started.elapsed())
++        .ok_or_else(invalid)?;
++    let timeout = remaining.as_millis().min(u32::MAX as u128) as u32;
++    if timeout == 0 {
++        return Err(invalid());
++    }
++    let cds = COPYDATASTRUCT {
++        dwData: wire::MESSAGE,
++        cbData: bytes.len() as u32,
++        lpData: bytes.as_ptr() as _,
++    };
++    let mut acknowledgement = 0;
++    let sent = unsafe {
++        SendMessageTimeoutW(
++            hwnd,
++            WM_COPYDATA,
++            0,
++            &cds as *const _ as _,
++            SMTO_ABORTIFHUNG | SMTO_BLOCK,
++            timeout,
++            &mut acknowledgement,
++        )
++    };
++    // A timeout can mean the callback ran but its ack was lost. Never report success,
++    // start a second GUI, or retry automatically in that case.
++    if !wire::acknowledged(sent != 0, acknowledgement) {
++        return Err(invalid());
++    }
++    Ok(())
++}
++
+ pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
+-    if let Some(hmutex) = manager.try_state::<MutexHandle>() {
+-        unsafe {
+-            ReleaseMutex(hmutex.0 as _);
+-            CloseHandle(hmutex.0 as _);
+-        }
+-    }
+-    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
+-        unsafe { DestroyWindow(hwnd.0 as _) };
++    if let Some(target) = manager.try_state::<TargetWindowHandle>() {
++        let hwnd = target
++            .0
++            .lock()
++            .unwrap_or_else(|error| error.into_inner())
++            .take();
++        if let Some(hwnd) = hwnd {
++            unsafe { DestroyWindow(hwnd as _) };
++        }
++    }
++    // Close once after destroying the window, without removing live managed state.
++    if let Some(mutex) = manager.try_state::<MutexHandle>() {
++        mutex.close();
+     }
+ }
+ 
+@@ -141,25 +206,45 @@
+             SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _);
+             0
+         }
+-
+         WM_COPYDATA => {
+-            let cds_ptr = lparam as *const COPYDATASTRUCT;
+-            if (*cds_ptr).dwData == WMCOPYDATA_SINGLE_INSTANCE_DATA {
+-                let userdata = UserData::<R>::from_hwnd(hwnd);
+-
+-                let data = CStr::from_ptr((*cds_ptr).lpData as _).to_string_lossy();
+-                let mut s = data.split('|');
+-                let cwd = s.next().unwrap();
+-                let args = s.map(|s| s.to_string()).collect();
+-
+-                userdata.run_callback(args, cwd.to_string());
+-            }
+-            1
+-        }
+-
++            if lparam == 0 {
++                return 0;
++            }
++            let cds = &*(lparam as *const COPYDATASTRUCT);
++            if cds.dwData != wire::MESSAGE
++                || cds.lpData.is_null()
++                || cds.cbData == 0
++                || cds.cbData as usize > wire::MAX_BYTES
++            {
++                return 0;
++            }
++            // Windows copies this allocation; read exactly its bounded length, without
++            // relying on a terminator or ever replacing malformed UTF-8.
++            let bytes = std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize);
++            let Some((cwd, args)) = wire::decode(bytes) else {
++                return 0;
++            };
++            let Some(userdata) = UserData::<R>::from_hwnd_raw(hwnd).as_ref() else {
++                return 0;
++            };
++            let app = userdata.app.clone();
++            let callback = Arc::clone(&userdata.callback);
++            // Own these before calling: the callback may destroy the IPC window.
++            // Nested sends fail instead of aliasing a running FnMut callback.
++            let Ok(mut callback) = callback.try_lock() else {
++                return 0;
++            };
++            callback(&app, args, cwd);
++            wire::ACK as LRESULT
++        }
+         WM_DESTROY => {
+             let userdata = UserData::<R>::from_hwnd_raw(hwnd);
+-            drop(Box::from_raw(userdata));
++            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
++            if let Some(data) = userdata.as_ref() {
++                if data.owned_by_window {
++                    drop(Box::from_raw(userdata));
++                }
++            }
+             0
+         }
+         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+@@ -170,7 +255,7 @@
+     class_name: &[u16],
+     window_name: &[u16],
+     userdata: *const UserData<R>,
+-) -> HWND {
++) -> io::Result<HWND> {
+     unsafe {
+         let class = WNDCLASSEXW {
+             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+@@ -186,21 +271,14 @@
+             lpszClassName: class_name.as_ptr(),
+             hIconSm: std::ptr::null_mut(),
+         };
+-
+-        RegisterClassExW(&class);
+-
++        if RegisterClassExW(&class) == 0 {
++            return Err(io::Error::other(
++                "single-instance window registration failed",
++            ));
++        }
+         let hwnd = CreateWindowExW(
+-            WS_EX_NOACTIVATE
+-            | WS_EX_TRANSPARENT
+-            | WS_EX_LAYERED
+-            // WS_EX_TOOLWINDOW prevents this window from ever showing up in the taskbar, which
+-            // we want to avoid. If you remove this style, this window won't show up in the
+-            // taskbar *initially*, but it can show up at some later point. This can sometimes
+-            // happen on its own after several hours have passed, although this has proven
+-            // difficult to reproduce. Alternatively, it can be manually triggered by killing
+-            // `explorer.exe` and then starting the process back up.
+-            // It is unclear why the bug is triggered by waiting for several hours.
+-            | WS_EX_TOOLWINDOW,
++            // The IPC window must never appear in the taskbar, including after Explorer restarts.
++            WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+             class_name.as_ptr(),
+             window_name.as_ptr(),
+             WS_OVERLAPPED,
+@@ -213,15 +291,14 @@
+             GetModuleHandleW(std::ptr::null()),
+             userdata as _,
+         );
+-        SetWindowLongPtrW(
+-            hwnd,
+-            GWL_STYLE,
+-            // The window technically has to be visible to receive WM_PAINT messages (which are used
+-            // for delivering events during resizes), but it isn't displayed to the user because of
+-            // the LAYERED style.
+-            (WS_VISIBLE | WS_POPUP) as isize,
+-        );
+-        hwnd
++        if hwnd.is_null() {
++            return Err(io::Error::other("single-instance window creation failed"));
++        }
++        SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_VISIBLE | WS_POPUP) as isize);
++        if IsWindow(hwnd) == 0 {
++            return Err(io::Error::other("single-instance window creation failed"));
++        }
++        Ok(hwnd)
+     }
+ }
+ 
+@@ -236,19 +313,16 @@
+ unsafe fn SetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
+     w32wm::SetWindowLongW(hwnd, index, value as _) as _
+ }
+-
+ #[cfg(target_pointer_width = "64")]
+ #[allow(non_snake_case)]
+ unsafe fn SetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
+     w32wm::SetWindowLongPtrW(hwnd, index, value)
+ }
+-
+ #[cfg(target_pointer_width = "32")]
+ #[allow(non_snake_case)]
+ unsafe fn GetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX) -> isize {
+     w32wm::GetWindowLongW(hwnd, index) as _
+ }
+-
+ #[cfg(target_pointer_width = "64")]
+ #[allow(non_snake_case)]
+ unsafe fn GetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX) -> isize {
+--- /dev/null
++++ b/src/platform_impl/windows_wire.rs
+@@ -0,0 +1,147 @@
++// Copyright 2019-2023 Tauri Programme within The Commons Conservancy
++// SPDX-License-Identifier: Apache-2.0
++// SPDX-License-Identifier: MIT
++
++//! The reviewed Windows-only transport. No lossy conversion or legacy pipe frames.
++//! This module uses only std so its actual codec can also be tested on a host.
++
++use std::ffi::{OsStr, OsString};
++
++pub(super) const MESSAGE: usize = 1544;
++// Older receivers return 1 even for an unknown message; that is not our ack.
++pub(super) const ACK: usize = 0x4d43_5301;
++// Above the UTF-8 expansion of a Windows command line plus its working directory.
++pub(super) const MAX_BYTES: usize = 256 * 1024;
++
++pub(super) fn acknowledged(delivered: bool, response: usize) -> bool {
++    delivered && response == ACK
++}
++
++pub(super) fn encode(cwd: &OsStr, args: impl IntoIterator<Item = OsString>) -> Option<Vec<u8>> {
++    let cwd = cwd.to_str()?;
++    if cwd.contains('\0') || cwd.len() > MAX_BYTES {
++        return None;
++    }
++    let mut data = cwd.as_bytes().to_vec();
++    let mut args = args.into_iter();
++    let program = args.next()?;
++    if program.is_empty() {
++        return None;
++    }
++    for arg in std::iter::once(program).chain(args) {
++        let arg = arg.to_str()?;
++        if arg.contains('\0') || data.len().checked_add(1 + arg.len())? > MAX_BYTES {
++            return None;
++        }
++        data.push(0);
++        data.extend_from_slice(arg.as_bytes());
++    }
++    Some(data)
++}
++
++pub(super) fn decode(data: &[u8]) -> Option<(String, Vec<String>)> {
++    if data.len() > MAX_BYTES {
++        return None;
++    }
++    let mut fields = std::str::from_utf8(data).ok()?.split('\0');
++    let cwd = fields.next()?.to_owned();
++    let program = fields.next()?;
++    if program.is_empty() {
++        return None;
++    }
++    let args = std::iter::once(program)
++        .chain(fields)
++        .map(str::to_owned)
++        .collect();
++    Some((cwd, args))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn timeout_or_a_legacy_receivers_unknown_message_response_is_not_success() {
++        assert!(acknowledged(true, ACK));
++        assert!(!acknowledged(false, ACK));
++        assert!(!acknowledged(true, 1));
++        assert!(!acknowledged(true, 0));
++    }
++
++    #[test]
++    fn round_trips_spaces_unicode_empty_arguments_and_pipe_without_splitting() {
++        let args = [
++            "C:\\Program Files\\myCarlos.exe",
++            "C:\\FAKE José 🩺\\结果.pdf",
++            "--hint=|C:\\other.pdf",
++            "",
++        ]
++        .map(OsString::from);
++        let data = encode(OsStr::new("C:\\FAKE çalışma"), args.clone()).unwrap();
++        let (cwd, decoded) = decode(&data).unwrap();
++        assert_eq!(cwd, "C:\\FAKE çalışma");
++        assert_eq!(decoded, args.map(|s| s.into_string().unwrap()));
++    }
++
++    #[test]
++    fn refuses_invalid_utf8_instead_of_selecting_a_replacement_character_path() {
++        assert!(decode(b"cwd\0app\0C:\\FAKE\xff.pdf").is_none());
++        // An actual replacement character is valid Unicode, not a lossy conversion.
++        let args = [OsString::from("app"), OsString::from("C:\\FAKE�.pdf")];
++        assert!(decode(&encode(OsStr::new(""), args).unwrap()).is_some());
++    }
++
++    #[test]
++    fn refuses_missing_program_and_embedded_nuls_on_the_sender() {
++        assert!(decode(b"").is_none());
++        assert!(decode(b"cwd").is_none());
++        assert!(decode(b"cwd\0").is_none());
++        assert!(encode(OsStr::new("cwd"), []).is_none());
++        assert!(encode(OsStr::new("cwd"), [OsString::new()]).is_none());
++        assert!(encode(OsStr::new("cwd\0suffix"), [OsString::from("app")]).is_none());
++        assert!(encode(
++            OsStr::new("cwd"),
++            [OsString::from("app"), OsString::from("a\0b")]
++        )
++        .is_none());
++    }
++
++    #[test]
++    fn bounds_both_sides_including_the_separator() {
++        let exact = "x".repeat(MAX_BYTES - 4);
++        let frame = encode(
++            OsStr::new(""),
++            [
++                OsString::from("app"),
++                OsString::from(&exact[..exact.len() - 1]),
++            ],
++        )
++        .unwrap();
++        assert_eq!(frame.len(), MAX_BYTES);
++        assert!(decode(&frame).is_some());
++        assert!(encode(
++            OsStr::new(""),
++            [OsString::from("app"), OsString::from(exact)]
++        )
++        .is_none());
++        assert!(decode(&vec![b'x'; MAX_BYTES + 1]).is_none());
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn refuses_non_unicode_os_arguments_and_cwd() {
++        use std::os::unix::ffi::OsStringExt;
++        let invalid = OsString::from_vec(vec![0xff]);
++        assert!(encode(OsStr::new("cwd"), [OsString::from("app"), invalid.clone()]).is_none());
++        assert!(encode(&invalid, [OsString::from("app")]).is_none());
++    }
++
++    #[cfg(windows)]
++    #[test]
++    fn refuses_unpaired_utf16_in_os_arguments_and_cwd() {
++        use std::os::windows::ffi::OsStringExt;
++        let invalid = OsString::from_wide(&[0xd800]);
++        assert!(encode(OsStr::new("cwd"), [OsString::from("app"), invalid.clone()]).is_none());
++        assert!(encode(&invalid, [OsString::from("app")]).is_none());
++    }
++}

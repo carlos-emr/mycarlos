@@ -15,8 +15,9 @@ def main():
     entries = json.loads((ROOT / "src-tauri/vendor/upstream.json").read_text())
     lock = (ROOT / "src-tauri/Cargo.lock").read_text()
     packages = tomllib.loads(lock)["package"]
-    if len(entries) != 1 or entries[0]["name"] != "glib":
-        raise ValueError("The reviewed glib dependency must be present exactly once")
+    reviewed = {"glib": "0.18.5", "tauri-plugin-single-instance": "2.4.0"}
+    if len(entries) != len(reviewed) or {e["name"]: e["version"] for e in entries} != reviewed:
+        raise ValueError("Each reviewed native dependency must be present exactly once")
     for entry in entries:
         name, version = entry["name"], entry["version"]
         candidates = [p for p in packages if p["name"] == name]
