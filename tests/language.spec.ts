@@ -1,11 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { translate } from "../src/i18n/core";
+import { translate } from "./support/fluent";
 import { expectOnlyFakedCommands, fakeVault } from "./support/a11y";
 
 async function preferences(page: Page) {
   await page
     .getByRole("button", {
-      name: /^(Preferences|Préférences|Preferencias|Preferencje|Preferências)$/,
+      name: /^(Preferences|Préférences|Preferencias|Preferencje|Preferências|偏好设置|偏好設定)$/,
     })
     .first()
     .click();
@@ -38,6 +38,8 @@ test("language choices persist, preserve High contrast and work from the keyboar
     ["es", "Español"],
     ["pl", "Polski"],
     ["pt-BR", "Português (Brasil)"],
+    ["zh-CN", "简体中文"],
+    ["zh-TW", "繁體中文"],
   ] as const) {
     const choice = page.getByRole("radio", { name: autonym, exact: true });
     await choice.check();
@@ -51,14 +53,12 @@ test("language choices persist, preserve High contrast and work from the keyboar
     ).toBeVisible();
   }
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-TW");
   expect(await page.evaluate(() => Reflect.get(window, "__initialLang"))).toBe(
-    "pt-BR",
+    "zh-TW",
   );
   await preferences(page);
-  await expect(
-    page.getByRole("radio", { name: "Português (Brasil)" }),
-  ).toBeChecked();
+  await expect(page.getByRole("radio", { name: "繁體中文" })).toBeChecked();
   await expect(
     page.locator('.appearance-choice input[value="high-contrast"]'),
   ).toBeChecked();
@@ -100,7 +100,7 @@ test("setup language translates the form without resetting drafts at 320px and e
   await page.goto("/");
   await expect(
     page.getByRole("group", { name: "Language" }).getByRole("radio"),
-  ).toHaveCount(6);
+  ).toHaveCount(8);
   await expect(page.getByRole("combobox", { name: "Language" })).toHaveCount(0);
   await page.getByRole("radio", { name: "English", exact: true }).focus();
   await page.keyboard.press("ArrowDown");

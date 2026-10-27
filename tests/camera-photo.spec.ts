@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { translate } from "./support/fluent";
 
 // Chromium's fake camera stands in for a real one. The headless shell
 // Playwright uses by default has no camera support at all (getUserMedia fails
@@ -74,74 +75,97 @@ async function fakeVault(page: Page, platform = "windows") {
   }, platform);
 }
 
-test("takes a photo with the camera, saves it and shows it", async ({
-  page,
-  context,
-}, testInfo) => {
-  await context.grantPermissions(["camera"]);
-  await fakeVault(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Take a photo" }).click();
-  const camera = page.getByRole("dialog", { name: "Take a photo" });
-  await expect(
-    camera.getByText(
-      "myCarlos uses the camera to save photos of your health documents. Photos stay locked in myCarlos.",
-    ),
-  ).toBeVisible();
-  await camera.getByRole("button", { name: "Use the camera" }).click();
-  const shutter = camera.getByRole("button", { name: "Take photo" });
-  await expect(shutter).toBeEnabled();
-  await expect(shutter).toBeFocused();
-  await expect(camera.getByLabel("Camera view")).toBeVisible();
-  expect(
-    (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
-  ).toEqual([]);
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("camera-live.png") });
+for (const [computerLocale, expectedName] of [
+  ["en-US", "Photo, Oct 17, 2026, 3.05 PM.jpg"],
+  ["en-GB", "Photo, 17 Oct 2026, 15.05.jpg"],
+] as const) {
+  test.describe(`computer locale ${computerLocale}`, () => {
+    test.use({ locale: computerLocale, timezoneId: "UTC" });
+    test("takes a photo with the camera, saves it and shows it", async ({
+      page,
+      context,
+    }, testInfo) => {
+      await context.grantPermissions(["camera"]);
+      // Fix Date without pausing media/timers. The stored name is a machine value:
+      // use the fixed computer locale and check its exact bytes.
+      await page.clock.setFixedTime(
+        await page.evaluate(() => new Date(2026, 9, 17, 15, 5).getTime()),
+      );
+      await fakeVault(page);
+      await page.goto("/");
+      await page.getByRole("button", { name: "Take a photo" }).click();
+      const camera = page.getByRole("dialog", { name: "Take a photo" });
+      await expect(
+        camera.getByText(
+          "myCarlos uses the camera to save photos of your health documents. Photos stay locked in myCarlos.",
+        ),
+      ).toBeVisible();
+      await camera.getByRole("button", { name: "Use the camera" }).click();
+      const shutter = camera.getByRole("button", { name: "Take photo" });
+      await expect(shutter).toBeEnabled();
+      await expect(shutter).toBeFocused();
+      await expect(camera.getByLabel("Camera view")).toBeVisible();
+      expect(
+        (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
+      ).toEqual([]);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("camera-live.png") });
 
-  await shutter.click();
-  await expect(
-    camera.getByRole("img", { name: "The photo you took" }),
-  ).toBeVisible();
-  await expect(camera.getByRole("button", { name: "Use photo" })).toBeFocused();
-  await page.screenshot({ path: testInfo.outputPath("camera-preview.png") });
-  await camera.getByRole("button", { name: "Use photo" }).click();
+      await shutter.click();
+      await expect(
+        camera.getByRole("img", { name: "The photo you took" }),
+      ).toBeVisible();
+      await expect(
+        camera.getByRole("button", { name: "Use photo" }),
+      ).toBeFocused();
+      await page.screenshot({
+        path: testInfo.outputPath("camera-preview.png"),
+      });
+      await camera.getByRole("button", { name: "Use photo" }).click();
 
-  const details = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
-  await expect(details).toBeVisible();
-  await expect(details.getByRole("status")).toHaveText(
-    /^Photo, \d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg was saved in myCarlos\.$/,
-  );
-  const saved = await page.evaluate(() => Reflect.get(window, "__savedPhoto"));
-  expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
-  expect(saved.target).toEqual({
-    profileId: "profile",
-    folderIds: [],
-    name: expect.stringMatching(/^Photo, .+\.jpg$/),
+      const details = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
+      await expect(details).toBeVisible();
+      const saved = await page.evaluate(() =>
+        Reflect.get(window, "__savedPhoto"),
+      );
+      expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
+      expect(saved.target).toEqual({
+        profileId: "profile",
+        folderIds: [],
+        name: expectedName,
+      });
+      expect(saved.target.name).not.toMatch(/[\u2066-\u2069]/u);
+      await expect(details).toHaveAccessibleName(expectedName);
+      await expect(details.getByRole("status")).toHaveText(
+        translate("en", "interface.notice.photoSaved", { name: expectedName }),
+      );
+      // Nothing rides in custom headers, which WebView2 does not pass on.
+      expect(saved.headers).toBeNull();
+
+      await details.getByRole("button", { name: "View photo" }).click();
+      const viewer = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
+      const photo = viewer.getByRole("img", {
+        name: translate("en", "photo.alt", { name: expectedName }),
+      });
+      await expect(photo).toBeVisible();
+      expect(
+        await photo.evaluate((image: HTMLImageElement) => image.naturalWidth),
+      ).toBeGreaterThan(0);
+      expect(
+        (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
+      ).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath("photo-view.png") });
+      await viewer.getByRole("button", { name: "Close" }).click();
+      await expect(
+        details.getByRole("button", { name: "View photo" }),
+      ).toBeVisible();
+    });
   });
-  // Nothing rides in custom headers, which WebView2 does not pass on.
-  expect(saved.headers).toBeNull();
-
-  await details.getByRole("button", { name: "View photo" }).click();
-  const viewer = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
-  const photo = viewer.getByRole("img", { name: /^Photo: Photo, / });
-  await expect(photo).toBeVisible();
-  expect(
-    await photo.evaluate((image: HTMLImageElement) => image.naturalWidth),
-  ).toBeGreaterThan(0);
-  expect(
-    (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
-  ).toEqual([]);
-  await page.screenshot({ path: testInfo.outputPath("photo-view.png") });
-  await viewer.getByRole("button", { name: "Close" }).click();
-  await expect(
-    details.getByRole("button", { name: "View photo" }),
-  ).toBeVisible();
-});
+}
 
 test("says how to allow the camera when it is refused", async ({
   page,
@@ -153,7 +177,12 @@ test("says how to allow the camera when it is refused", async ({
   const camera = page.getByRole("dialog", { name: "Take a photo" });
   await camera.getByRole("button", { name: "Use the camera" }).click();
   await expect(camera.getByRole("alert")).toHaveText(
-    "myCarlos can't use the camera. In Windows Settings, open Privacy & security, then Camera, and turn on camera access for desktop apps. Then choose Try again.",
+    translate("en", "interface.camera.denied", {
+      help: translate(
+        "en",
+        "interface.photo.inWindowsSettingsOpenPrivacySecurityThen",
+      ),
+    }),
   );
   await expect(camera.getByRole("button", { name: "Try again" })).toBeFocused();
   expect(
@@ -206,6 +235,11 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Take a photo" }).click();
   await expect(camera.getByRole("alert")).toHaveText(
-    "myCarlos can't use the camera. Open your phone's Settings, then Apps, then myCarlos, then Permissions, and allow Camera. Then choose Try again.",
+    translate("en", "interface.camera.denied", {
+      help: translate(
+        "en",
+        "interface.photo.openYourPhonesSettingsThenAppsThen",
+      ),
+    }),
   );
 });

@@ -1,3 +1,4 @@
+import { messagePattern, translate } from "./support/fluent";
 import { expect, test } from "@playwright/test";
 import {
   dialogByKeyboard,
@@ -137,7 +138,9 @@ test("the library works from the keyboard alone: open, move and search", async (
   await dialogByKeyboard(page, letter, "FAKE Letter.pdf");
   await dialogByKeyboard(
     page,
-    page.getByRole("button", { name: "Rename folder FAKE Results" }),
+    page.getByRole("button", {
+      name: translate("en", "library.folder.rename", { name: "FAKE Results" }),
+    }),
     /Rename/,
   );
 
@@ -190,12 +193,20 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expect(details).toBeHidden();
 
   // Open the folder, and move a document out with the selection bar.
-  await page.getByRole("button", { name: "Open FAKE Results" }).focus();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Results" }),
+    })
+    .focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "FAKE Results", level: 1 }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Select FAKE Bloodwork.pdf" }).focus();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.select", { name: "FAKE Bloodwork.pdf" }),
+    })
+    .focus();
   await page.keyboard.press("Space");
   const moveSelected = page.getByRole("combobox", { name: "Move selected to" });
   await expect(moveSelected).toBeVisible();
@@ -237,13 +248,15 @@ test("the library works from the keyboard alone: open, move and search", async (
 
   // Search, and Escape to clear it.
   const search = page.getByRole("searchbox", {
-    name: "Search everything in My records",
+    name: translate("en", "interface.search.all", { location: "My records" }),
   });
   await search.focus();
   await page.keyboard.type("Letters");
   await expect(page.getByRole("article")).toHaveCount(1);
   await expect(
-    page.getByRole("button", { name: "Open FAKE Letters" }),
+    page.getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Letters" }),
+    }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(search).toHaveValue("");
@@ -306,7 +319,11 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(details).toBeHidden();
   await after("closing details whose document moved away");
 
-  await page.getByRole("button", { name: "Select FAKE Scan.pdf" }).focus();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.select", { name: "FAKE Scan.pdf" }),
+    })
+    .focus();
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Move", exact: true }).focus();
   await page.keyboard.press("Enter");
@@ -324,7 +341,11 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(page.getByRole("button", { name: "Move folder" })).toBeEnabled();
   await after("Move folder");
 
-  await page.getByRole("button", { name: "Open FAKE Letters" }).focus();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Letters" }),
+    })
+    .focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "FAKE Letters", level: 1 }),
@@ -430,7 +451,7 @@ test("locking, by hand or automatically, leaves focus where unlocking starts", a
   await page.keyboard.type("FAKE passphrase for the fake");
   await page.keyboard.press("Enter");
   const search = page.getByRole("searchbox", {
-    name: "Search everything in My records",
+    name: translate("en", "interface.search.all", { location: "My records" }),
   });
   await expect(search).toBeVisible();
   await search.focus();
@@ -453,7 +474,7 @@ test("locking, by hand or automatically, leaves focus where unlocking starts", a
   await page.clock.runFor(5 * 60 * 1000 + 1000);
   await expect(passphrase).toBeFocused();
   await expect(passphrase).toHaveAccessibleDescription(
-    /Locked after 5 minutes without use\./,
+    messagePattern("en", "notice.lockedIdle", { count: 5 }),
   );
   await expectOnlyFakedCommands(page);
 });

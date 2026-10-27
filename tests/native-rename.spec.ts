@@ -1,3 +1,4 @@
+import { translate } from "./support/fluent";
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -73,7 +74,11 @@ test("renames native-library folders and documents with accessible dialogs", asy
   });
   await page.goto("/");
   await page
-    .getByRole("button", { name: "Rename folder FAKE Old folder" })
+    .getByRole("button", {
+      name: translate("en", "library.folder.rename", {
+        name: "FAKE Old folder",
+      }),
+    })
     .click();
   const folderDialog = page.getByRole("dialog", { name: "Rename folder" });
   await expect(folderDialog.getByLabel("Folder name")).toBeFocused();
@@ -88,16 +93,22 @@ test("renames native-library folders and documents with accessible dialogs", asy
   });
   await folderDialog.getByRole("button", { name: "Save name" }).click();
   await expect(
-    page.getByRole("article", { name: "FAKE Results folder" }),
+    page.getByRole("article", {
+      name: translate("en", "library.folder.label", { name: "FAKE Results" }),
+    }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Grid view" }).click();
   await page
-    .getByRole("button", { name: "Rename folder FAKE Results" })
+    .getByRole("button", {
+      name: translate("en", "library.folder.rename", { name: "FAKE Results" }),
+    })
     .click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   // The tile opens the document; its Select tick is the other button (#67).
   await page
-    .getByRole("article", { name: "FAKE Old.pdf document" })
+    .getByRole("article", {
+      name: translate("en", "library.document.label", { name: "FAKE Old.pdf" }),
+    })
     .getByRole("button", { name: /^FAKE Old\.pdf/ })
     .click();
   await page.getByRole("button", { name: "Rename document" }).click();
@@ -110,7 +121,11 @@ test("renames native-library folders and documents with accessible dialogs", asy
   ).toBeVisible();
   await page.getByRole("button", { name: "Close document details" }).click();
   await expect(
-    page.getByRole("article", { name: "FAKE Bloodwork.pdf document" }),
+    page.getByRole("article", {
+      name: translate("en", "library.document.label", {
+        name: "FAKE Bloodwork.pdf",
+      }),
+    }),
   ).toBeVisible();
   const libraryAccessibility = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])

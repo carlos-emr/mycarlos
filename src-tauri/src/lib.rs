@@ -4155,6 +4155,9 @@ mod tests {
 
     #[test]
     fn the_restore_confirmation_says_what_would_be_lost() {
+        // Only these human-copy assertions ignore Fluent's FSI/PDI. The
+        // production warning must still isolate its inserted values.
+        let human_copy = |text: String| text.replace(['\u{2068}', '\u{2069}'], "");
         let preview = |replaces, differs| RestorePreview {
             replaces,
             differs_from_this_device: differs,
@@ -4163,19 +4166,27 @@ mod tests {
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
         let other = restore_warning(&preview(RestoreReplaces::OtherVault, false)).unwrap();
+        assert!(other.contains(&format!(
+            "\u{2068}{}\u{2069}",
+            UiLocale::En.documents(3).unwrap()
+        )));
+        let other = human_copy(other);
         assert!(
             other.contains("is not the vault this backup was made from")
                 && other.contains("3 documents")
         );
-        let unreadable = restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap();
+        let unreadable =
+            human_copy(restore_warning(&preview(RestoreReplaces::Unreadable, false)).unwrap());
         assert!(
             unreadable.contains("cannot tell")
                 && unreadable.contains("sets the vault on this device aside")
         );
-        let changed = restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap();
+        let changed =
+            human_copy(restore_warning(&preview(RestoreReplaces::SameVault, true)).unwrap());
         assert!(changed.contains("may not be the same as") && changed.contains("passphrase"));
         assert!(changed.contains("could not be read"));
-        let same = restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap();
+        let same =
+            human_copy(restore_warning(&preview(RestoreReplaces::SameVault, false)).unwrap());
         assert!(same.contains("the same 3 documents"));
         // Nothing is erased (#71): every warning says the vault is kept.
         for warning in [&other, &unreadable, &changed, &same] {
@@ -4190,6 +4201,8 @@ mod tests {
         let folder =
             std::path::Path::new("/home/FAKE/.local/share/ca.carlos.mycarlos/vault-home/set-aside");
         let warning = set_aside_vault_warning(folder);
+        assert!(warning.contains(&format!("\u{2068}{}\u{2069}", folder.display())));
+        let warning = human_copy(warning);
         assert!(warning.contains(SET_ASIDE_KEPT));
         assert!(!warning.contains("erase"));
         assert!(warning.contains("someone else may know your passphrase, they can still open it"));

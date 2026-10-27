@@ -54,8 +54,19 @@ describe("photo names", () => {
         setLocaleOverride(locale);
         const name = photoName(taken);
         expect(name).not.toMatch(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/u);
-        expect(name).toContain(date);
-        expect(name).toContain(time);
+        const prefix = {
+          en: "Photo, ",
+          fr: "Photo, ",
+          es: "Foto, ",
+          pl: "Zdjęcie, ",
+          "pt-BR": "Foto, ",
+          "zh-CN": "相片，",
+          "zh-TW": "相片，",
+        }[locale];
+        const separator = locale.startsWith("zh-") ? "，" : ", ";
+        // Only the prefix/punctuation follows the UI language. The generated
+        // date/time parts and the complete raw filename remain exact.
+        expect(name).toBe(`${prefix}${date}${separator}${time}.jpg`);
         expect(new TextDecoder().decode(new TextEncoder().encode(name))).toBe(
           name,
         );
