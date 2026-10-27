@@ -7818,8 +7818,10 @@ describe("clinic connection operations", () => {
     expect(
       await screen.findByRole("heading", { name: "Unlock your vault" }),
     ).toBeVisible();
-    // The picker settles in the ended session.
+    // The picker settles in the ended session: nothing reaches the unlock
+    // screen.
     await act(async () => pick(null));
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
     await user.type(
       screen.getByLabelText("Passphrase", { exact: true }),
       "FAKE clinic lock passphrase",
@@ -7829,6 +7831,95 @@ describe("clinic connection operations", () => {
       await screen.findByRole("heading", { name: "My records" }),
     ).toBeVisible();
     expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+  });
+
+  it("replaces an earlier clinic error with the next result, and holds an error during a picker", async () => {
+    let current = clinicSnapshot;
+    const retry = pendingConnection();
+    let refuseLater!: (error: unknown) => void;
+    const later = new Promise<never>((_, reject) => {
+      refuseLater = reject;
+    });
+    let pick!: (value: string | null) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValueOnce({ code: "portal_link_code_rejected" })
+        .mockReturnValueOnce(retry.promise)
+        .mockReturnValueOnce(later),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      pickImportFiles: vi.fn().mockReturnValue(
+        new Promise<string | null>((resolve) => {
+          pick = resolve;
+        }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const rejected =
+      "The portal did not accept that code. Make a new linking code in your patient portal.";
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(await screen.findByText(rejected)).toBeVisible();
+    // A new attempt clears the line when it starts; its result is alone.
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGJ",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(rejected)).not.toBeInTheDocument();
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      retry.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(
+      await screen.findByText(
+        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+      ),
+    ).toBeVisible();
+    // An error that arrives while a picker is open waits for its result.
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
+    await act(async () => refuseLater({ code: "portal_busy" }));
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Another clinic operation is running/),
+    ).not.toBeInTheDocument();
+    await act(async () => pick(null));
+    expect(
+      await screen.findByText(
+        "No files selected. Nothing changed. Another clinic operation is running. Wait for it to finish, then try again.",
+      ),
+    ).toBeVisible();
   });
 
   it("drops old-session completion without unlocking or clearing a new session's clinic work", async () => {

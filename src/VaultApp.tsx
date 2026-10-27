@@ -638,15 +638,25 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Clinic work clears the line when it starts, so anything on it when a
   // result arrives was written by other work since, and is kept. Nothing is
   // said for a session that has ended or is locking.
+  const addNotice = (message: string) =>
+    setNotice((shown) => (shown ? `${shown} ${message}` : message));
   const showPortalNotice = (startedIn: number, message: string) => {
-    if (sessionRef.current !== startedIn || lockingRef.current) return;
+    // A hidden screen after a failed lock shows nothing new; only a lock,
+    // which ends this session, can leave it.
+    if (
+      sessionRef.current !== startedIn ||
+      lockingRef.current ||
+      concealedRef.current
+    )
+      return;
     if (transferHold.running) {
       portalNoticeRef.current = message
         ? { session: startedIn, message }
         : null;
       return;
     }
-    setNotice((shown) => (message && shown ? `${shown} ${message}` : message));
+    if (message) addNotice(message);
+    else setNotice("");
   };
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
@@ -745,10 +755,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           // The operation has reported: add the clinic result kept meanwhile.
           const held = portalNoticeRef.current;
           portalNoticeRef.current = null;
-          if (held.session === sessionRef.current && !lockingRef.current)
-            setNotice((shown) =>
-              shown ? `${shown} ${held.message}` : held.message,
-            );
+          if (
+            held.session === sessionRef.current &&
+            !lockingRef.current &&
+            !concealedRef.current
+          )
+            addNotice(held.message);
         }
       }
     }

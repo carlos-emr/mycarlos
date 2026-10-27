@@ -246,7 +246,7 @@ describe("native clinic document controls", () => {
     unmount();
     await act(async () => pending.finish({ link, approvalError: null }));
     // The link exists whether or not the view is open: the patient is told
-    // wherever they are, and an older error on the line is replaced.
+    // wherever they are. (The app clears the line when clinic work starts.)
     expect(props.setNotice).toHaveBeenCalledOnce();
     expect(props.setNotice).toHaveBeenCalledWith(
       "Device linked. Its approval status is shown in Security, under Clinic documents.",
