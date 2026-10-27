@@ -225,6 +225,7 @@ impl From<VaultError> for PublicText {
                     LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code." },
                     LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed." },
                     LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again." },
+                    LinkError::Busy => Self { code: "portal_busy", message: "Another clinic operation is running. Wait for it to finish, then try again." },
                     LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
                     LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
                 }
@@ -1521,6 +1522,45 @@ async fn vault_portal_link(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
     .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_portal_connect(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<PortalConnectResult> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        store.connect_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map(|(link, error)| PortalConnectResult {
+        link,
+        approval_error: error.map(PublicError::from),
+    })
+    .map_err(Into::into)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PortalConnectResult {
+    link: portal_link::LinkSummary,
+    approval_error: Option<PublicError>,
 }
 
 #[tauri::command]
@@ -3242,6 +3282,7 @@ pub fn run() {
             vault_set_auto_lock,
             vault_snapshot,
             vault_portal_link,
+            vault_portal_connect,
             vault_check_documents,
             vault_request_device_approval,
             vault_restart_device_approval,

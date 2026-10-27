@@ -38,6 +38,8 @@ pub enum LinkError {
     ClinicKeysMissing,
     #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     DeviceExists,
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    Busy,
     Cancelled,
 }
 

@@ -1,4 +1,10 @@
-import { render, screen, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  act,
+  fireEvent,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -39,6 +45,9 @@ function fixture(
     linkPortal: vi
       .fn()
       .mockRejectedValue({ code: "portal_link_code_rejected" }),
+    connectPortal: vi
+      .fn()
+      .mockRejectedValue({ code: "portal_link_code_rejected" }),
     checkDocuments: vi
       .fn()
       .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
@@ -67,7 +76,178 @@ function fixture(
   return { ...render(<PortalDocuments {...props} />), props, bridge, failures };
 }
 
+async function fillConnectForm() {
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByLabelText("Portal HTTPS address"),
+    "https://portal.example.test/patient",
+  );
+  await user.type(screen.getByLabelText("Linking code"), "01234567-89ABCDEFGH");
+  return screen
+    .getByRole("button", { name: "Connect and request approval" })
+    .closest("form")!;
+}
+
+type ConnectResult = Awaited<
+  ReturnType<NonNullable<VaultBridge["connectPortal"]>>
+>;
+function pendingConnect() {
+  let finish!: (value: ConnectResult) => void;
+  const promise = new Promise<ConnectResult>((resolve) => {
+    finish = resolve;
+  });
+  return { promise, finish };
+}
+
 describe("native clinic document controls", () => {
+  it("uses one explicit composite action and never separately relinks or grants approval", async () => {
+    const initial = { ...snapshot, portalLinks: [] };
+    const { bridge, props, rerender } = fixture({ snapshot: initial });
+    vi.mocked(bridge.connectPortal!).mockResolvedValue({
+      link,
+      approvalError: null,
+    });
+    vi.mocked(props.refresh).mockImplementation(async () => {
+      rerender(<PortalDocuments {...props} snapshot={snapshot} />);
+      return snapshot;
+    });
+    const form = await fillConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await waitFor(() =>
+      expect(props.setNotice).toHaveBeenCalledWith(
+        "Device linked. See its approval status below.",
+      ),
+    );
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    expect(bridge.linkPortal).not.toHaveBeenCalled();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Full device fingerprint")).toHaveValue(
+      fingerprint,
+    );
+  });
+
+  it("clears the code before HTTP completion and coalesces repeated form callbacks", async () => {
+    const { bridge } = fixture();
+    const pending = pendingConnect();
+    vi.mocked(bridge.connectPortal!).mockReturnValue(pending.promise);
+    const form = await fillConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText("Linking code")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Connecting and requesting clinic approval…"),
+    ).toBeVisible();
+    await act(async () => pending.finish({ link, approvalError: null }));
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    expect(bridge.linkPortal).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed link after approval failure and retries only its saved request", async () => {
+    const initial = { ...snapshot, portalLinks: [] };
+    const { bridge, props, rerender } = fixture({ snapshot: initial });
+    vi.mocked(bridge.connectPortal!).mockResolvedValue({
+      link,
+      approvalError: {
+        code: "portal_link_incomplete",
+        message: "FAKE lost reply",
+      },
+    });
+    vi.mocked(props.refresh).mockImplementation(async () => {
+      rerender(<PortalDocuments {...props} snapshot={snapshot} />);
+      return snapshot;
+    });
+    const submittedForm = await fillConnectForm();
+    await act(async () => {
+      fireEvent.submit(submittedForm);
+    });
+    await waitFor(() =>
+      expect(props.setNotice).toHaveBeenCalledWith(
+        "Device linked. Clinic approval has not been confirmed. Follow the status and next action shown for this device.",
+      ),
+    );
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      );
+    expect(bridge.requestDeviceApproval).toHaveBeenCalledWith(link.id);
+    expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    expect(bridge.linkPortal).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+  });
+
+  it("keeps initial link loss visibly incomplete without pretending that it can resume", async () => {
+    const initial = { ...snapshot, portalLinks: [] };
+    const incomplete = {
+      ...snapshot,
+      portalLinks: [
+        {
+          ...link,
+          incomplete: true,
+          clinicName: null,
+          approvalRequested: false,
+        },
+      ],
+    };
+    const { bridge, props, rerender } = fixture({ snapshot: initial });
+    vi.mocked(bridge.connectPortal!).mockRejectedValue({
+      code: "portal_link_incomplete",
+    });
+    vi.mocked(props.refresh).mockImplementation(async () => {
+      rerender(<PortalDocuments {...props} snapshot={incomplete} />);
+      return incomplete;
+    });
+    const submittedForm = await fillConnectForm();
+    await act(async () => {
+      fireEvent.submit(submittedForm);
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(translate("en", "portal.incomplete")),
+      ).toBeVisible(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Retry saved approval request" }),
+    ).not.toBeInTheDocument();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+  });
+
+  it("does not announce a completion after the clinic view unmounts", async () => {
+    const { bridge, props, unmount } = fixture();
+    const pending = pendingConnect();
+    vi.mocked(bridge.connectPortal!).mockReturnValue(pending.promise);
+    const submittedForm = await fillConnectForm();
+    await act(async () => {
+      fireEvent.submit(submittedForm);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    unmount();
+    await act(async () => pending.finish({ link, approvalError: null }));
+    expect(props.setNotice).not.toHaveBeenCalled();
+  });
+
   it("keeps all clinic controls hidden when native capability is off", async () => {
     const { container, bridge } = fixture({
       snapshot: { ...snapshot, portalLinkingEnabled: false },
@@ -161,9 +341,11 @@ describe("native clinic document controls", () => {
         "myCarlos on Windows",
       ),
     );
-    await user.click(screen.getByRole("button", { name: "Link to clinic" }));
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
     await waitFor(() =>
-      expect(bridge.linkPortal).toHaveBeenCalledWith({
+      expect(bridge.connectPortal).toHaveBeenCalledWith({
         portalBase: "https://portal.example.test/patient",
         code: "01234567-89ABCDEFGH",
         deviceName: "myCarlos on Windows",
@@ -187,7 +369,7 @@ describe("native clinic document controls", () => {
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Request clinic approval" }),
+      screen.getByRole("button", { name: "Retry saved approval request" }),
     ).toBeDisabled();
   });
   it("shows terminal states without implying approval is pending and makes restart a separate action", async () => {
@@ -210,7 +392,7 @@ describe("native clinic document controls", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Request clinic approval" }),
+      screen.getByRole("button", { name: "Retry saved approval request" }),
     ).toBeDisabled();
     await userEvent
       .setup()

@@ -5,6 +5,18 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  "portal.working": "Trwa operacja związana z przychodnią…",
+  "portal.connectConsent":
+    "Ta czynność łączy to urządzenie i wysyła prośbę o zatwierdzenie. Przychodnia musi zatwierdzić urządzenie, zanim będzie ono mogło odbierać dokumenty.",
+  "portal.connecting":
+    "Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…",
+  "portal.connected":
+    "Urządzenie zostało połączone. Poniżej sprawdzisz stan jego zatwierdzenia.",
+  "portal.linkedApprovalIssue":
+    "Urządzenie zostało połączone. Zatwierdzenie przez przychodnię nie zostało potwierdzone. Sprawdź stan i zalecane działanie dla tego urządzenia.",
+  "portal.retryApproval": "Ponów zapisaną prośbę o zatwierdzenie",
+  "portal.errorBusy":
+    "Trwa inna operacja związana z przychodnią. Poczekaj, aż się zakończy, i spróbuj ponownie.",
   "portal.serviceDateLabel": "Data świadczenia",
   "portal.serviceDate": "Data świadczenia: {date}",
   "portal.dateNotRecorded": "Data nie została zapisana",
@@ -34,12 +46,12 @@ export const pl: Record<MessageKey, Message> = {
   "portal.matchPerson": "Dopasuj dane z dokumentu",
   "portal.routing":
     "Dokumenty trafiają do osoby o zgodnym pełnym imieniu i nazwisku oraz dacie urodzenia. Pozostałe trafiają do Udostępnionych mi.",
-  "portal.link": "Połącz z przychodnią",
+  "portal.link": "Połącz i poproś o zatwierdzenie",
   "portal.check": "Sprawdź nowe dokumenty",
   "portal.result":
     "Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
   "portal.incomplete":
-    "Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.",
+    "Ta zapisana próba jest niekompletna. Sprawdź połączone urządzenia w portalu lub skontaktuj się z przychodnią przed ponownym łączeniem. Aplikacja nie może wznowić tej próby.",
   "portal.approved": "Przychodnia zatwierdziła to urządzenie.",
   "portal.notRequested":
     "Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.",

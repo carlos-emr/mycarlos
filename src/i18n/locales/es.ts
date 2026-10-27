@@ -3,6 +3,17 @@ import type { MessageKey } from "./en";
 
 /** Spanish, formal register ("usted"). */
 export const es: Record<MessageKey, Message> = {
+  "portal.working": "Operación con la clínica en curso…",
+  "portal.connectConsent":
+    "Esta acción vincula este dispositivo y envía una solicitud de aprobación. Su clínica debe aprobar el dispositivo antes de que pueda recibir documentos.",
+  "portal.connecting": "Conectando y solicitando la aprobación de la clínica…",
+  "portal.connected":
+    "Dispositivo vinculado. Consulte su estado de aprobación a continuación.",
+  "portal.linkedApprovalIssue":
+    "Dispositivo vinculado. La aprobación de la clínica no está confirmada. Siga el estado y la acción indicados para este dispositivo.",
+  "portal.retryApproval": "Reintentar la solicitud de aprobación guardada",
+  "portal.errorBusy":
+    "Hay otra operación con la clínica en curso. Espere a que termine y vuelva a intentarlo.",
   "portal.serviceDateLabel": "Fecha del servicio",
   "portal.serviceDate": "Fecha del servicio: {date}",
   "portal.dateNotRecorded": "Fecha no registrada",
@@ -33,12 +44,12 @@ export const es: Record<MessageKey, Message> = {
   "portal.matchPerson": "Usar los datos del documento",
   "portal.routing":
     "Los documentos se guardan bajo la persona cuyo nombre completo y fecha de nacimiento coincidan. Los demás van a Compartidos conmigo.",
-  "portal.link": "Vincular con la clínica",
+  "portal.link": "Conectar y solicitar aprobación",
   "portal.check": "Buscar documentos nuevos",
   "portal.result":
     "Documentos nuevos guardados: {added}. Documentos que no se pudieron verificar: {refused}.",
   "portal.incomplete":
-    "Vinculación incompleta. Revise los dispositivos vinculados en el portal antes de volver a intentarlo.",
+    "Este intento guardado está incompleto. Revise los dispositivos vinculados en el portal o contacte con su clínica antes de conectarse de nuevo. Esta aplicación no puede reanudar este intento.",
   "portal.approved": "La clínica aprobó este dispositivo.",
   "portal.notRequested":
     "Solicite la aprobación de la clínica para recibir documentos en este dispositivo.",

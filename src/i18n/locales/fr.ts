@@ -3,6 +3,18 @@ import type { MessageKey } from "./en";
 
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
+  "portal.working": "Opération avec la clinique en cours…",
+  "portal.connectConsent":
+    "Cette action associe cet appareil et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.",
+  "portal.connecting":
+    "Connexion et demande d’approbation à la clinique en cours…",
+  "portal.connected":
+    "Appareil associé. Consultez son état d’approbation ci-dessous.",
+  "portal.linkedApprovalIssue":
+    "Appareil associé. L’approbation de la clinique n’est pas confirmée. Suivez l’état et l’action indiqués pour cet appareil.",
+  "portal.retryApproval": "Réessayer la demande d’approbation enregistrée",
+  "portal.errorBusy":
+    "Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.",
   "portal.serviceDateLabel": "Date du service",
   "portal.serviceDate": "Date du service : {date}",
   "portal.dateNotRecorded": "Date non consignée",
@@ -33,12 +45,12 @@ export const fr: Record<MessageKey, Message> = {
   "portal.matchPerson": "Utiliser les renseignements du document",
   "portal.routing":
     "Les documents sont classés sous la personne dont le nom complet et la date de naissance correspondent. Les autres vont dans Partagés avec moi.",
-  "portal.link": "Associer à la clinique",
+  "portal.link": "Connecter et demander l’approbation",
   "portal.check": "Rechercher de nouveaux documents",
   "portal.result":
     "Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
   "portal.incomplete":
-    "Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.",
+    "Cette tentative enregistrée est incomplète. Vérifiez les appareils associés dans le portail ou contactez votre clinique avant de vous connecter à nouveau. Cette application ne peut pas reprendre cette tentative.",
   "portal.approved": "La clinique a approuvé cet appareil.",
   "portal.notRequested":
     "Demandez l’approbation de la clinique pour recevoir des documents sur cet appareil.",

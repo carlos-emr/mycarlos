@@ -820,6 +820,7 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: AtomicU64,
+    /// Shared admission for linking, approval requests and document checks.
     #[cfg(feature = "portal-linking")]
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
@@ -1406,6 +1407,8 @@ impl VaultStore {
         now_ms: u64,
         session: u64,
     ) -> Result<LinkSummary, VaultError> {
+        #[cfg(feature = "portal-linking")]
+        let _running = self.start_portal_work()?;
         self.link_portal_using(
             portal,
             code,
@@ -1414,6 +1417,41 @@ impl VaultStore {
             (now_ms, session),
             |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
         )
+    }
+
+    pub fn connect_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<(LinkSummary, Option<VaultError>), VaultError> {
+        #[cfg(not(feature = "portal-linking"))]
+        {
+            let _ = (portal, code, device_name, profile_id, now_ms, session);
+            Err(VaultError::Portal(portal_link::LinkError::Disabled))
+        }
+        #[cfg(feature = "portal-linking")]
+        {
+            self.connect_portal_using(
+                session,
+                || {
+                    self.link_portal_using(
+                        portal,
+                        code,
+                        device_name,
+                        profile_id,
+                        (now_ms, session),
+                        |request, device, cancelled| {
+                            crate::portal_client::link(request, device, cancelled)
+                        },
+                    )
+                },
+                &crate::portal_approval::ApprovalHttp,
+            )
+        }
     }
 
     fn link_portal_using(
@@ -7613,6 +7651,17 @@ mod tests {
         let store = VaultStore::new(root.clone());
         assert!(matches!(
             store.link_portal(
+                "https://fake.example",
+                "FAKE0001-FAKE7-Q2M4K",
+                "myCarlos",
+                None,
+                1,
+                store.portal_link_ticket()
+            ),
+            Err(VaultError::Portal(portal_link::LinkError::Disabled))
+        ));
+        assert!(matches!(
+            store.connect_portal(
                 "https://fake.example",
                 "FAKE0001-FAKE7-Q2M4K",
                 "myCarlos",

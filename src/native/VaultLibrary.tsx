@@ -87,6 +87,9 @@ export function VaultLibrary({
   notice,
   setNotice,
   run,
+  portalBusy = false,
+  runPortal = run,
+  setPortalNotice = setNotice,
   refresh,
   onLock,
   onRequestLock,
@@ -112,6 +115,9 @@ export function VaultLibrary({
   setNotice: (value: string) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
   run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
+  portalBusy?: boolean;
+  runPortal?: (operation: () => Promise<void>) => Promise<void>;
+  setPortalNotice?: (value: string) => void;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -1579,11 +1585,12 @@ export function VaultLibrary({
                   compact
                   bridge={bridge}
                   snapshot={snapshot}
-                  busy={busy}
+                  busy={busy || portalBusy}
+                  working={portalBusy}
                   readOnly={readOnly}
-                  run={run}
+                  run={runPortal}
                   refresh={refresh}
-                  setNotice={setNotice}
+                  setNotice={setPortalNotice}
                 />
                 <label className="search">
                   <Icon name="search" />
@@ -1774,11 +1781,12 @@ export function VaultLibrary({
                   <PortalDocuments
                     bridge={bridge}
                     snapshot={snapshot}
-                    busy={busy}
+                    busy={busy || portalBusy}
+                    working={portalBusy}
                     readOnly={readOnly}
-                    run={run}
+                    run={runPortal}
                     refresh={refresh}
-                    setNotice={setNotice}
+                    setNotice={setPortalNotice}
                   />
                 }
                 busy={busy}

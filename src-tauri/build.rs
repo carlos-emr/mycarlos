@@ -91,6 +91,7 @@ fn main() {
             "vault_set_auto_lock",
             "vault_snapshot",
             "vault_portal_link",
+            "vault_portal_connect",
             "vault_check_documents",
             "vault_request_device_approval",
             "vault_restart_device_approval",

@@ -4,6 +4,17 @@ import type { MessageKey } from "./en";
 /** Brazilian Portuguese, polite register: the "você" imperative ("use",
  * "escolha") without titles. */
 export const ptBR: Record<MessageKey, Message> = {
+  "portal.working": "Operação com a clínica em andamento…",
+  "portal.connectConsent":
+    "Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.",
+  "portal.connecting": "Conectando e solicitando a aprovação da clínica…",
+  "portal.connected":
+    "Dispositivo vinculado. Veja abaixo o status de aprovação.",
+  "portal.linkedApprovalIssue":
+    "Dispositivo vinculado. A aprovação da clínica não foi confirmada. Siga o status e a próxima ação indicados para este dispositivo.",
+  "portal.retryApproval": "Tentar novamente a solicitação de aprovação salva",
+  "portal.errorBusy":
+    "Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.",
   "portal.serviceDateLabel": "Data do atendimento",
   "portal.serviceDate": "Data do atendimento: {date}",
   "portal.dateNotRecorded": "Data não registrada",
@@ -34,12 +45,12 @@ export const ptBR: Record<MessageKey, Message> = {
   "portal.matchPerson": "Usar os dados do documento",
   "portal.routing":
     "Os documentos são salvos para a pessoa cujo nome completo e data de nascimento correspondam. Os demais vão para Compartilhados comigo.",
-  "portal.link": "Vincular à clínica",
+  "portal.link": "Conectar e solicitar aprovação",
   "portal.check": "Verificar novos documentos",
   "portal.result":
     "Novos documentos salvos: {added}. Documentos que não puderam ser verificados: {refused}.",
   "portal.incomplete":
-    "Vinculação incompleta. Confira os dispositivos vinculados no portal antes de tentar novamente.",
+    "Esta tentativa salva está incompleta. Confira os dispositivos vinculados no portal ou entre em contato com sua clínica antes de conectar novamente. Este aplicativo não pode retomar esta tentativa.",
   "portal.approved": "A clínica aprovou este dispositivo.",
   "portal.notRequested":
     "Solicite a aprovação da clínica para receber documentos neste dispositivo.",

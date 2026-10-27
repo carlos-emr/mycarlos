@@ -5,6 +5,16 @@ import type { Message } from "../types";
  * must use the same {placeholders} as the English text. Text goes into the page
  * as plain text, never as HTML. */
 export const en = {
+  "portal.working": "Clinic operation in progress…",
+  "portal.connectConsent":
+    "This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.",
+  "portal.connecting": "Connecting and requesting clinic approval…",
+  "portal.connected": "Device linked. See its approval status below.",
+  "portal.linkedApprovalIssue":
+    "Device linked. Clinic approval has not been confirmed. Follow the status and next action shown for this device.",
+  "portal.retryApproval": "Retry saved approval request",
+  "portal.errorBusy":
+    "Another clinic operation is running. Wait for it to finish, then try again.",
   "portal.serviceDateLabel": "Service date",
   "portal.serviceDate": "Service date: {date}",
   "portal.dateNotRecorded": "Date not recorded",
@@ -35,12 +45,12 @@ export const en = {
   "portal.matchPerson": "Match the document details",
   "portal.routing":
     "Documents go to a person with a matching full name and birth date. Other documents go to Shared with me.",
-  "portal.link": "Link to clinic",
+  "portal.link": "Connect and request approval",
   "portal.check": "Check for new documents",
   "portal.result":
     "New documents saved: {added}. Documents that could not be verified: {refused}.",
   "portal.incomplete":
-    "Link incomplete. Check Linked devices in the portal before trying again.",
+    "This saved attempt is incomplete. Check linked devices in the portal or contact your clinic before connecting again. This app cannot resume this attempt.",
   "portal.approved": "The clinic approved this device.",
   "portal.notRequested":
     "Request clinic approval to receive documents on this device.",
