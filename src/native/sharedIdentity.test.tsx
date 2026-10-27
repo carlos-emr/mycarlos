@@ -174,7 +174,7 @@ describe("shared PDF suggestions use explicit Move", () => {
       Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
       Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
     try {
-      for (const fontSize of ["16px", "24px"]) {
+      for (const fontSize of ["16px", "24px", "32px"]) {
         document.documentElement.style.fontSize = fontSize;
         for (const width of [760, 320]) {
           section.style.width = `${width}px`;
@@ -196,8 +196,55 @@ describe("shared PDF suggestions use explicit Move", () => {
           expect(section.scrollWidth).toBeLessThanOrEqual(
             section.clientWidth + 1,
           );
+          const unknown = section.querySelector<HTMLInputElement>(
+            'input[type="checkbox"]',
+          )!;
+          const choice = unknown.closest("label")!.getBoundingClientRect();
+          const control = unknown.getBoundingClientRect();
+          expect(choice.height).toBeGreaterThanOrEqual(44);
+          expect(control.left).toBeGreaterThanOrEqual(choice.left);
+          expect(control.right).toBeLessThanOrEqual(choice.right);
+          expect(control.right).toBeLessThanOrEqual(bounds.right);
         }
       }
+    } finally {
+      document.documentElement.style.fontSize = "";
+    }
+  });
+
+  it("keeps the unknown birth-date choice inside an enlarged edit form and toggles it by keyboard", async () => {
+    renderLibrary({ updateProfileDetails: vi.fn() });
+    fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit details for FAKE Mom" }),
+    );
+    const form = screen.getByRole("form", { name: "Details for FAKE Mom" });
+    const unknown = within(form).getByRole("checkbox", {
+      name: "I don't know this person's date of birth",
+    });
+    try {
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        for (const width of [760, 320]) {
+          form.style.width = `${width}px`;
+          form.style.maxWidth = "100%";
+          const bounds = form.getBoundingClientRect();
+          const choice = unknown.closest("label")!.getBoundingClientRect();
+          const control = unknown.getBoundingClientRect();
+          expect(choice.height).toBeGreaterThanOrEqual(44);
+          expect(control.left).toBeGreaterThanOrEqual(bounds.left);
+          expect(control.right).toBeLessThanOrEqual(bounds.right);
+          expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth + 1);
+        }
+      }
+      expect(unknown).toBeChecked();
+      unknown.focus();
+      await userEvent.keyboard(" ");
+      expect(unknown).not.toBeChecked();
+      expect(within(form).getByLabelText("Date of birth")).toBeEnabled();
+      await userEvent.keyboard(" ");
+      expect(unknown).toBeChecked();
+      expect(within(form).getByLabelText("Date of birth")).toBeDisabled();
     } finally {
       document.documentElement.style.fontSize = "";
     }
@@ -237,7 +284,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     }
   });
 
-  it("creates a profile with its optional details in one native call", async () => {
+  it("creates a profile with its required identity details in one native call", async () => {
     const createProfile = vi.fn().mockResolvedValue("p9");
     const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
     renderLibrary({ createProfile, updateProfileDetails });
@@ -258,6 +305,42 @@ describe("shared PDF suggestions use explicit Move", () => {
       expect(createProfile).toHaveBeenCalledWith("FAKE Riley", {
         fullName: "FAKE Riley Example",
         birthDate: "2012-06-02",
+      }),
+    );
+    expect(updateProfileDetails).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit unknown birth date and omits a previously entered date from creation", async () => {
+    const createProfile = vi.fn().mockResolvedValue("p9");
+    const updateProfileDetails = vi.fn();
+    renderLibrary({ createProfile, updateProfileDetails });
+    fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
+    const add = screen.getByRole("button", { name: "Add profile" });
+    fireEvent.change(screen.getByLabelText("New profile name"), {
+      target: { value: "FAKE Riley" },
+    });
+    expect(add).toBeDisabled();
+    fireEvent.change(
+      screen.getByLabelText("Full name, as on clinic documents"),
+      { target: { value: " FAKE Riley Example " } },
+    );
+    expect(add).toBeDisabled();
+    const date = screen.getByLabelText("Date of birth");
+    fireEvent.change(date, { target: { value: "2012-06-02" } });
+    const unknown = screen.getByRole("checkbox", {
+      name: "I don't know this person's date of birth",
+    });
+    fireEvent.click(unknown);
+    expect(date).toHaveValue("");
+    expect(date).toBeDisabled();
+    fireEvent.click(unknown);
+    expect(add).toBeDisabled();
+    expect(createProfile).not.toHaveBeenCalled();
+    fireEvent.click(unknown);
+    fireEvent.click(add);
+    await vi.waitFor(() =>
+      expect(createProfile).toHaveBeenCalledExactlyOnceWith("FAKE Riley", {
+        fullName: "FAKE Riley Example",
       }),
     );
     expect(updateProfileDetails).not.toHaveBeenCalled();

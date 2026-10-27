@@ -1121,6 +1121,9 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .native-profile-settings > form { width: 100%; min-width: 0; }
 .native-profile-settings label, .native-profile-settings input { min-width: 0; }
 .native-profile-settings input { width: 100%; }
+.native-profile-settings .native-person-date-unknown { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 44px; }
+.native-profile-settings .native-person-date-unknown input { width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; }
+.native-person-date-unknown span { overflow-wrap: anywhere; }
 .native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .native-backup-settings > div > .button { max-width: 100%; }
 .native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }

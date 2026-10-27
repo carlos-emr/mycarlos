@@ -43,7 +43,7 @@ describe("required profile identity details", () => {
       trimmedDetails({ fullName: " Mary Smith ", birthDate: "1958-03-12" }),
     ).toEqual({ fullName: "Mary Smith", birthDate: "1958-03-12" });
   });
-  it("edits explicit details, retains refused edits and permits clearing", async () => {
+  it("edits explicit details, retains refused edits and permits clearing the birth date", async () => {
     const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
     render(
       <PersonDetailsList

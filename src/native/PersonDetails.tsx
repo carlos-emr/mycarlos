@@ -71,7 +71,7 @@ export function PersonDetailsFields({
           onChange={(e) => onChange({ ...details, birthDate: e.target.value })}
         />
       </label>
-      <label>
+      <label className="native-person-date-unknown">
         <input
           type="checkbox"
           checked={birthDateUnknown}
@@ -80,7 +80,7 @@ export function PersonDetailsFields({
             if (e.target.checked) onChange({ ...details, birthDate: "" });
           }}
         />
-        {t("personDetails.birthDateUnknown")}
+        <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
       {problem && <p role="alert">{t(problem)}</p>}
