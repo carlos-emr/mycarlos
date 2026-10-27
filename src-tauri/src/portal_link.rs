@@ -40,6 +40,10 @@ pub enum LinkError {
     DeviceExists,
     #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     Busy,
+    /// The portal refused for too many requests (HTTP 429), with the seconds
+    /// it asked to wait, if it said (#131).
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    RateLimited(Option<u64>),
     Cancelled,
 }
 

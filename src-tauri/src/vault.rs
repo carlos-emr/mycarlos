@@ -1449,8 +1449,27 @@ impl VaultStore {
                         },
                     )
                 },
-                &crate::portal_approval::ApprovalHttp,
+                &crate::portal_approval::ApprovalHttp::default(),
             )
+        }
+    }
+
+    /// A read-only check of one linked device's approval status, for the
+    /// clinic view's automatic refresh (#131): it reads the portal and saves
+    /// the clinic's answer, and never sends or starts a request.
+    pub(crate) fn refresh_device_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<delivery::ApprovalCheck, VaultError> {
+        #[cfg(not(feature = "portal-linking"))]
+        {
+            let _ = (link_id, session);
+            Err(VaultError::Portal(portal_link::LinkError::Disabled))
+        }
+        #[cfg(feature = "portal-linking")]
+        {
+            self.poll_staff_approval(link_id, session)
         }
     }
 
@@ -7669,6 +7688,10 @@ mod tests {
                 1,
                 store.portal_link_ticket()
             ),
+            Err(VaultError::Portal(portal_link::LinkError::Disabled))
+        ));
+        assert!(matches!(
+            store.refresh_device_approval(Uuid::nil(), store.portal_link_ticket()),
             Err(VaultError::Portal(portal_link::LinkError::Disabled))
         ));
         assert!(!root.exists());

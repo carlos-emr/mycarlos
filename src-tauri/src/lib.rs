@@ -226,6 +226,7 @@ impl From<VaultError> for PublicText {
                     LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed." },
                     LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again." },
                     LinkError::Busy => Self { code: "portal_busy", message: "Another clinic operation is running. Wait for it to finish, then try again." },
+                    LinkError::RateLimited(_) => Self { code: "portal_rate_limited", message: "The clinic portal asked myCarlos to wait before trying again." },
                     LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
                     LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
                 }
@@ -393,13 +394,20 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
+        // How long the clinic portal asked to wait, if it said (#131).
+        let retry_after_ms = match error {
+            VaultError::Portal(portal_link::LinkError::RateLimited(Some(seconds))) => {
+                Some(seconds.saturating_mul(1000))
+            }
+            _ => None,
+        };
         let PublicText { code, message } = PublicText::from(error);
         Self {
             code,
             message,
             record_id,
             note: None,
-            retry_after_ms: None,
+            retry_after_ms,
         }
     }
 }
@@ -1561,6 +1569,45 @@ async fn vault_portal_connect(
 struct PortalConnectResult {
     link: portal_link::LinkSummary,
     approval_error: Option<PublicError>,
+}
+
+/// What a status check of a linked device's approval found (#131).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceApprovalCheck {
+    link: portal_link::LinkSummary,
+    expires_in_ms: Option<u64>,
+    issue: Option<PublicError>,
+}
+
+/// A read-only status check of one linked device's approval, for the clinic
+/// view's automatic refresh (#131). It never sends or starts a request. Like
+/// the other clinic commands it is not activity: a check, however often it
+/// runs, never keeps an unattended vault open.
+#[tauri::command]
+async fn vault_refresh_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<DeviceApprovalCheck> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Captured before queuing: a check queued in an older session must not
+    // read or save anything in a newer one.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.refresh_device_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map(|check| DeviceApprovalCheck {
+            link: check.link,
+            expires_in_ms: check.expires_in_ms,
+            issue: check.issue.map(PublicError::from),
+        })
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -3286,6 +3333,7 @@ pub fn run() {
             vault_check_documents,
             vault_request_device_approval,
             vault_restart_device_approval,
+            vault_refresh_device_approval,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -3645,6 +3693,28 @@ mod tests {
             "",
         ] {
             assert!(!is_plain_date(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
+        use portal_link::LinkError;
+        let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
+        assert_eq!(waited.code, "portal_rate_limited");
+        assert_eq!(waited.retry_after_ms, Some(30_000));
+        let value = serde_json::to_value(&waited).unwrap();
+        assert_eq!(value["retryAfterMs"], 30_000);
+        let unsaid = PublicError::from(VaultError::Portal(LinkError::RateLimited(None)));
+        assert_eq!(unsaid.code, "portal_rate_limited");
+        assert!(serde_json::to_value(&unsaid).unwrap()["retryAfterMs"].is_null());
+        for other in [
+            LinkError::Network,
+            LinkError::InvalidResponse,
+            LinkError::Busy,
+        ] {
+            let error = PublicError::from(VaultError::Portal(other));
+            assert_ne!(error.code, "portal_rate_limited");
+            assert_eq!(error.retry_after_ms, None);
         }
     }
 

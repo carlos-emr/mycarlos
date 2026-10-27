@@ -936,6 +936,22 @@ mod tests {
 
 #[cfg(feature = "portal-linking")]
 use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
+
+/// What a read-only status check of a linked device's approval found (#131).
+#[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+pub(crate) struct ApprovalCheck {
+    /// The device's saved state after the check, in the same session.
+    pub link: portal_link::LinkSummary,
+    /// For a request still open: what the portal leaves it, by the portal's
+    /// own clock when it replied (its `Date` header), so a wrong clock on
+    /// this device does not change it. Display only: it never decides a
+    /// state, and `None` when the portal gave no time.
+    pub expires_in_ms: Option<u64>,
+    /// Why the check could not finish (no connection, a portal asking to
+    /// wait, or a request it does not have). Nothing saved changed for it.
+    pub issue: Option<VaultError>,
+}
+
 #[cfg(feature = "portal-linking")]
 struct ApprovalReconciliation {
     saved: StoredLink,
@@ -974,7 +990,7 @@ impl VaultStore {
         session: u64,
     ) -> Result<(), VaultError> {
         let _running = self.start_portal_work()?;
-        self.request_staff_approval_using(link_id, session, false, &ApprovalHttp)
+        self.request_staff_approval_using(link_id, session, false, &ApprovalHttp::default())
     }
     pub(crate) fn restart_staff_approval(
         &self,
@@ -982,7 +998,65 @@ impl VaultStore {
         session: u64,
     ) -> Result<(), VaultError> {
         let _running = self.start_portal_work()?;
-        self.request_staff_approval_using(link_id, session, true, &ApprovalHttp)
+        self.request_staff_approval_using(link_id, session, true, &ApprovalHttp::default())
+    }
+    /// Reads one linked device's approval status for the clinic view's
+    /// automatic refresh (#131). It only reads the portal (GET) and saves what
+    /// the clinic answered, through the same strict parsing and acceptance
+    /// verification as every other read: it never sends, re-sends or starts a
+    /// request, so a poll cannot mint requests or wear down the request limit.
+    /// Same admission guard, session ticket and recovery-mode refusal as all
+    /// other clinic work.
+    pub(crate) fn poll_staff_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using(link_id, session, &ApprovalHttp::default())
+    }
+    fn poll_staff_approval_using(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+    ) -> Result<ApprovalCheck, VaultError> {
+        let _running = self.start_portal_work()?;
+        let find = || -> Result<StoredLink, VaultError> {
+            self.delivery_links(session)?
+                .into_iter()
+                .find(|l| l.id == link_id)
+                .ok_or(VaultError::NotFound)
+        };
+        let recovery = self.reconcile_approvals(&find()?, session, http)?;
+        // Publish only the persisted state, read again in the same session.
+        let current = find()?;
+        let link = current.summary();
+        let open = !link.clinic_approved
+            && matches!(
+                link.approval_status,
+                Some(
+                    crate::portal_approval::ApprovalState::Pending
+                        | crate::portal_approval::ApprovalState::ChallengeReady
+                )
+            );
+        let expires_in_ms = match (&current.approval, http.portal_time()) {
+            (Some(attempt), Some(portal_now)) if open && !recovery.missing => {
+                let left = attempt.expires_at.saturating_sub(portal_now);
+                // Requests last minutes: a day or more means a clock that
+                // cannot be read sensibly, so no time is shown.
+                (left < 86_400).then_some(left * 1000)
+            }
+            _ => None,
+        };
+        Ok(ApprovalCheck {
+            link,
+            expires_in_ms,
+            issue: if recovery.missing {
+                Some(VaultError::ApprovalRequestMissing)
+            } else {
+                recovery.deferred
+            },
+        })
     }
     fn approval_error(link: &StoredLink, missing: bool) -> Result<(), VaultError> {
         if crate::portal_approval::currently_approved(link) {
@@ -1181,8 +1255,14 @@ impl VaultStore {
             if prior.state() == crate::portal_approval::ApprovalState::Refused {
                 return Err(VaultError::ApprovalTerminal(prior.state(), prior.reason));
             }
+            // The portal's word that the request expired stands even while
+            // this device's clock says it has time left (#131).
             if prior.expires_at > now
-                && prior.state() != crate::portal_approval::ApprovalState::Cancelled
+                && !matches!(
+                    prior.state(),
+                    crate::portal_approval::ApprovalState::Cancelled
+                        | crate::portal_approval::ApprovalState::Expired
+                )
             {
                 return Err(VaultError::Invalid);
             }
@@ -1246,10 +1326,14 @@ mod approval_recovery_tests {
     const PASSWORD: &str = "meadow-planet-copper-window-743";
     enum Reply {
         Accepted,
+        /// Says "accepted" with a proof that is not this request's signed
+        /// acceptance (#131): it must never count as approval.
+        UnverifiedAccepted,
         Pending,
         Terminal(State, Reason),
         Missing,
         Network,
+        RateLimited(Option<u64>),
     }
     struct Script<'a> {
         gets: Mutex<VecDeque<Reply>>,
@@ -1257,6 +1341,10 @@ mod approval_recovery_tests {
         calls: Mutex<Vec<(&'static str, Uuid, String)>>,
         lock_on_get: Option<&'a VaultStore>,
         check_saved_on_post: Option<&'a VaultStore>,
+        /// The portal's clock its replies give (Unix seconds).
+        portal_time: Option<u64>,
+        /// Other clinic work tried while a status read is under way.
+        busy_on_get: Option<(&'a VaultStore, Uuid)>,
     }
     impl<'a> Script<'a> {
         fn new(gets: Vec<Reply>, posts: Vec<Reply>) -> Self {
@@ -1266,6 +1354,8 @@ mod approval_recovery_tests {
                 calls: Mutex::new(Vec::new()),
                 lock_on_get: None,
                 check_saved_on_post: None,
+                portal_time: None,
+                busy_on_get: None,
             }
         }
         fn response(
@@ -1280,8 +1370,18 @@ mod approval_recovery_tests {
             let body = match reply {
                 Reply::Missing => return Ok(None),
                 Reply::Network => return Err(VaultError::Portal(portal_link::LinkError::Network)),
+                Reply::RateLimited(wait) => {
+                    return Err(VaultError::Portal(portal_link::LinkError::RateLimited(
+                        wait,
+                    )))
+                }
                 Reply::Accepted => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":fixture["flows"]["first"]["challenge"]["compact"],"acceptance":fixture["flows"]["first"]["acceptance"]["compact"],"reason":null})
+                }
+                Reply::UnverifiedAccepted => {
+                    // The clinic-signed challenge offered as the acceptance.
+                    let challenge = &fixture["flows"]["first"]["challenge"]["compact"];
+                    serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":challenge,"acceptance":challenge,"reason":null})
                 }
                 Reply::Pending => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null})
@@ -1311,6 +1411,27 @@ mod approval_recovery_tests {
                 .push(("GET", attempt.request_id, attempt.intent.clone()));
             if let Some(store) = self.lock_on_get {
                 store.lock();
+            }
+            if let Some((store, link_id)) = self.busy_on_get {
+                let session = store.portal_link_ticket();
+                let busy =
+                    |error| matches!(error, VaultError::Portal(portal_link::LinkError::Busy));
+                assert!(busy(
+                    store
+                        .request_staff_approval(link_id, session)
+                        .err()
+                        .unwrap()
+                ));
+                assert!(busy(
+                    store
+                        .restart_staff_approval(link_id, session)
+                        .err()
+                        .unwrap()
+                ));
+                assert!(busy(store.check_documents(session).err().unwrap()));
+                assert!(busy(
+                    store.poll_staff_approval(link_id, session).err().unwrap()
+                ));
             }
             Self::response(
                 self.gets
@@ -1354,6 +1475,9 @@ mod approval_recovery_tests {
                 attempt,
             )?
             .ok_or(VaultError::Invalid)
+        }
+        fn portal_time(&self) -> Option<u64> {
+            self.portal_time
         }
     }
     fn new_connect_store() -> (tempfile::TempDir, VaultStore) {
@@ -1813,6 +1937,343 @@ mod approval_recovery_tests {
         assert!(current.approval.as_ref().unwrap().acceptance.is_none());
         assert!(!current.summary().clinic_approved);
     }
+    fn manifest(store: &VaultStore) -> Manifest {
+        store.session().as_ref().unwrap().manifest.clone()
+    }
+    fn only_gets(http: &Script<'_>) -> Vec<Uuid> {
+        let calls = http.calls.lock().unwrap();
+        assert!(
+            calls.iter().all(|(method, _, _)| *method == "GET"),
+            "a status check must never send a request"
+        );
+        calls.iter().map(|(_, id, _)| *id).collect()
+    }
+
+    #[test]
+    fn poll_only_reads_status_and_gives_time_left_by_the_portals_clock_not_this_devices() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let before = manifest(&store);
+        // This device's clock is long past the request's expiry (the fixture
+        // was made in the past); the portal's clock says 100 seconds are left.
+        assert!(attempt.expires_at < crate::now_ms() / 1000);
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at - 100);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert_eq!(check.expires_in_ms, Some(100_000));
+        assert_eq!(check.link.approval_status, Some(State::Pending));
+        assert!(!check.link.clinic_approved);
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        // Nothing changed, so nothing was written or added to the history.
+        assert!(before == manifest(&store));
+        // A portal that gives no time gives no countdown.
+        let http = Script::new(vec![Reply::Pending], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, None);
+        // Nor does one whose clock is already past the expiry say time is left.
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at + 5);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, Some(0));
+    }
+
+    #[test]
+    fn poll_shows_approval_only_from_a_verified_acceptance_and_keeps_it_across_restart() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![Reply::UnverifiedAccepted], vec![]);
+        http.portal_time = Some(attempt.expires_at - 60);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::Portal(portal_link::LinkError::InvalidResponse))
+        ));
+        assert!(!check.link.clinic_approved);
+        assert_eq!(check.link.approval_status, Some(State::Pending));
+        assert!(saved(&store)
+            .approval
+            .as_ref()
+            .unwrap()
+            .acceptance
+            .is_none());
+        // Pending, then a late but real signed acceptance.
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at - 30);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(!check.link.clinic_approved);
+        let http = Script::new(vec![Reply::Accepted], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert!(check.link.clinic_approved);
+        assert_eq!(check.link.approval_status, Some(State::Accepted));
+        assert_eq!(check.expires_in_ms, None);
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::DeviceApprovalVerified));
+        let store = restart(store);
+        assert!(saved(&store).summary().clinic_approved);
+        // An approved device needs no further reads.
+        let http = Script::new(vec![], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, store.portal_link_ticket(), &http)
+            .unwrap();
+        assert!(check.link.clinic_approved);
+        assert!(http.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn poll_never_sends_or_starts_a_request_for_a_missing_or_finished_one() {
+        for reply in [
+            Reply::Missing,
+            Reply::Terminal(State::Expired, Reason::ChallengeExpired),
+            Reply::Terminal(State::Cancelled, Reason::ChallengeCancelled),
+            Reply::Terminal(State::Refused, Reason::StaffRequired),
+        ] {
+            let terminal = match reply {
+                Reply::Terminal(state, _) => Some(state),
+                _ => None,
+            };
+            let (_temp, store, link, attempt) = setup(true);
+            let session = store.portal_link_ticket();
+            let mut http = Script::new(vec![reply], vec![]);
+            http.portal_time = Some(attempt.expires_at - 60);
+            let check = store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap();
+            assert_eq!(only_gets(&http), vec![attempt.request_id]);
+            let current = saved(&store);
+            assert_eq!(
+                current.approval.as_ref().unwrap().request_id,
+                attempt.request_id
+            );
+            assert_eq!(current.approval.as_ref().unwrap().intent, attempt.intent);
+            assert!(current.approval_history.is_empty());
+            assert_eq!(check.expires_in_ms, None);
+            assert!(!check.link.clinic_approved);
+            match terminal {
+                None => {
+                    assert!(matches!(
+                        check.issue,
+                        Some(VaultError::ApprovalRequestMissing)
+                    ));
+                    assert_eq!(check.link.approval_status, Some(State::Pending));
+                }
+                Some(state) => {
+                    assert!(check.issue.is_none());
+                    assert_eq!(check.link.approval_status, Some(state));
+                    assert_eq!(
+                        check.link.approval_can_restart,
+                        state != State::Refused,
+                        "{state:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn poll_reports_an_unreachable_or_waiting_portal_without_calling_the_request_expired() {
+        for reply in [
+            Reply::Network,
+            Reply::RateLimited(Some(30)),
+            Reply::RateLimited(None),
+        ] {
+            let rate_limited = matches!(reply, Reply::RateLimited(_));
+            let (_temp, store, link, attempt) = setup(true);
+            let session = store.portal_link_ticket();
+            let before = manifest(&store);
+            let http = Script::new(vec![reply], vec![]);
+            let check = store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap();
+            assert_eq!(only_gets(&http), vec![attempt.request_id]);
+            assert!(before == manifest(&store));
+            assert_eq!(check.link.approval_status, Some(State::Pending));
+            assert!(!check.link.clinic_approved);
+            assert_eq!(check.expires_in_ms, None);
+            let issue = check.issue.expect("the failure is reported");
+            assert_eq!(
+                matches!(
+                    issue,
+                    VaultError::Portal(portal_link::LinkError::RateLimited(_))
+                ),
+                rate_limited
+            );
+            assert!(matches!(issue, VaultError::Portal(_)));
+        }
+    }
+
+    #[test]
+    fn poll_shares_admission_ticket_and_recovery_rules_with_all_clinic_work() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let busy = |error| matches!(error, VaultError::Portal(portal_link::LinkError::Busy));
+        // Another clinic operation holds the guard: refused at once, no HTTP.
+        let running = store.start_portal_work().unwrap();
+        let http = Script::new(vec![], vec![]);
+        assert!(busy(
+            store
+                .poll_staff_approval_using(link.id, session, &http)
+                .err()
+                .unwrap()
+        ));
+        drop(running);
+        // A check under way holds it in turn for every other clinic action.
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.busy_on_get = Some((&store, link.id));
+        store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        drop(http);
+        // A ticket from before a lock, recovery mode, and a lock during the
+        // read: nothing is read, or what was read is not saved.
+        let before = manifest(&store);
+        let http = Script::new(vec![], vec![]);
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session.wrapping_add(1), &http),
+            Err(VaultError::Cancelled)
+        ));
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session, &http),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.session().as_mut().unwrap().recovery = None;
+        assert!(http.calls.lock().unwrap().is_empty());
+        assert!(before == manifest(&store));
+        let mut http = Script::new(vec![Reply::Accepted], vec![]);
+        http.lock_on_get = Some(&store);
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session, &http),
+            Err(VaultError::Cancelled)
+        ));
+        drop(http);
+        store.unlock(PASSWORD).unwrap();
+        let current = saved(&store);
+        assert_eq!(
+            current.approval.as_ref().unwrap().request_id,
+            attempt.request_id
+        );
+        assert!(current.approval.as_ref().unwrap().acceptance.is_none());
+        assert!(!current.summary().clinic_approved);
+        assert!(matches!(
+            store.poll_staff_approval_using(
+                Uuid::nil(),
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![])
+            ),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn restart_follows_the_portals_expiry_on_the_same_device_when_this_clock_is_behind() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let linked = finish_connect_link(&store, session).unwrap();
+        store
+            .request_staff_approval_using(
+                linked.id,
+                session,
+                false,
+                &Script::new(vec![], vec![Reply::Pending]),
+            )
+            .unwrap();
+        let first = saved(&store);
+        let old = first.approval.clone().unwrap();
+        // By this device's clock the request still has minutes left.
+        assert!(old.expires_at > crate::now_ms() / 1000 + 60);
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![],
+        );
+        let check = store
+            .poll_staff_approval_using(linked.id, session, &http)
+            .unwrap();
+        assert_eq!(check.link.approval_status, Some(State::Expired));
+        assert!(check.link.approval_can_restart);
+        assert!(
+            saved(&store).approval_history.is_empty(),
+            "a poll never restarts"
+        );
+        // The patient starts a new request: the same link, keys and device.
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![Reply::Pending],
+        );
+        store
+            .request_staff_approval_using(linked.id, session, true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.id, first.id);
+        assert!(current.keys == first.keys);
+        assert_eq!(current.keys.device_key_id(), linked.device_key_id);
+        assert_eq!(manifest(&store).portal_links.len(), 1);
+        assert_eq!(current.approval_history.len(), 1);
+        assert_eq!(current.approval_history[0].request_id, old.request_id);
+        assert_eq!(current.approval_history[0].intent, old.intent);
+        assert_eq!(current.approval_history[0].state(), State::Expired);
+        let new = current.approval.clone().unwrap();
+        assert_ne!(new.request_id, old.request_id);
+        {
+            let calls = http.calls.lock().unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0], ("GET", old.request_id, old.intent.clone()));
+            assert_eq!(calls[1], ("POST", new.request_id, new.intent.clone()));
+        }
+        // Checking the new request reads both, and sends nothing.
+        let http = Script::new(
+            vec![
+                Reply::Pending,
+                Reply::Terminal(State::Expired, Reason::ChallengeExpired),
+            ],
+            vec![],
+        );
+        let check = store
+            .poll_staff_approval_using(linked.id, session, &http)
+            .unwrap();
+        assert_eq!(check.link.approval_status, Some(State::Pending));
+        assert_eq!(only_gets(&http), vec![new.request_id, old.request_id]);
+    }
+
+    #[test]
+    fn poll_recovers_a_late_acceptance_of_the_old_request_after_a_new_one_started() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![Reply::Pending],
+        );
+        store
+            .request_staff_approval_using(link.id, session, true, &http)
+            .unwrap();
+        let http = Script::new(vec![Reply::Pending, Reply::Accepted], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.link.clinic_approved);
+        assert_eq!(check.expires_in_ms, None);
+        let calls = only_gets(&http);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1], attempt.request_id);
+        let store = restart(store);
+        assert!(saved(&store).summary().clinic_approved);
+    }
+
     fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
         let packet: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/java-delivery-interop-v1.json"
@@ -1899,12 +2360,16 @@ mod approval_recovery_tests {
                 br#"{"deliveries":[],"next_cursor":null,"through":"0","anchor_recorded":true}"#
                     .to_vec(),
             ),
+            date: None,
+            retry_after: None,
         }
     }
     fn picked_up() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
             body: Zeroizing::new(br#"{"status":"picked_up"}"#.to_vec()),
+            date: None,
+            retry_after: None,
         }
     }
     #[test]

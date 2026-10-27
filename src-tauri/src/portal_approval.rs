@@ -295,17 +295,33 @@ mod native {
             cancelled,
         )
         .map_err(VaultError::Portal)?;
+        refuse_rate_limited(&response)?;
         if response.status != 200 && response.status != 201 {
             return Err(VaultError::Portal(LinkError::Network));
         }
         parse_status(link, attempt, &response.body)
     }
+    /// The portal asked to be asked less often: said as such, with the wait it
+    /// gave, never as a network failure or a state of the request (#131).
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn refuse_rate_limited(
+        response: &crate::portal_client::ApiResponse,
+    ) -> Result<(), VaultError> {
+        if response.status == 429 {
+            return Err(VaultError::Portal(LinkError::RateLimited(
+                response.retry_after,
+            )));
+        }
+        Ok(())
+    }
+    /// The saved request's status, and the portal's clock when it replied
+    /// (Unix seconds, display only), if it said.
     #[cfg(feature = "portal-linking")]
     pub(crate) fn refresh(
         link: &StoredLink,
         attempt: &Attempt,
         cancelled: &dyn Fn() -> bool,
-    ) -> Result<Option<Attempt>, VaultError> {
+    ) -> Result<(Option<Attempt>, Option<u64>), VaultError> {
         let response = crate::portal_client::api(
             link,
             "GET",
@@ -319,6 +335,7 @@ mod native {
             cancelled,
         )
         .map_err(VaultError::Portal)?;
+        refuse_rate_limited(&response)?;
         if response.status == 404 {
             #[derive(Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -329,13 +346,13 @@ mod native {
                 .ok()
                 .is_some_and(|v| v.code == "approval_not_found")
             {
-                return Ok(None);
+                return Ok((None, response.date));
             }
         }
         if response.status != 200 {
             return Err(VaultError::Portal(LinkError::Network));
         }
-        parse_status(link, attempt, &response.body).map(Some)
+        parse_status(link, attempt, &response.body).map(|reply| (Some(reply), response.date))
     }
     fn verify_challenge(
         link: &StoredLink,
@@ -549,6 +566,26 @@ mod native {
                 .verify(&bytes, &Signature::from_slice(&sig).unwrap())
                 .unwrap();
         }
+        #[test]
+        fn a_portal_asking_to_wait_is_neither_a_network_failure_nor_a_request_state() {
+            let reply = |status, retry_after| crate::portal_client::ApiResponse {
+                status,
+                body: zeroize::Zeroizing::new(br#"{"code":"rate_limited"}"#.to_vec()),
+                date: None,
+                retry_after,
+            };
+            assert!(matches!(
+                refuse_rate_limited(&reply(429, Some(30))),
+                Err(VaultError::Portal(LinkError::RateLimited(Some(30))))
+            ));
+            assert!(matches!(
+                refuse_rate_limited(&reply(429, None)),
+                Err(VaultError::Portal(LinkError::RateLimited(None)))
+            ));
+            for status in [200, 201, 404, 500, 503] {
+                assert!(refuse_rate_limited(&reply(status, Some(30))).is_ok());
+            }
+        }
     }
 }
 #[cfg(feature = "portal-linking")]
@@ -632,9 +669,18 @@ pub(crate) trait ApprovalExchange {
         anchor: &str,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<crate::portal_approval::Attempt, VaultError>;
+    /// The portal's clock (Unix seconds) when it last answered a status read
+    /// through this exchange, if it said. It only shows how long a request
+    /// has left, by the portal's clock rather than this device's (#131).
+    fn portal_time(&self) -> Option<u64> {
+        None
+    }
 }
 #[cfg(feature = "portal-linking")]
-pub(crate) struct ApprovalHttp;
+#[derive(Default)]
+pub(crate) struct ApprovalHttp {
+    portal_time: std::cell::Cell<Option<u64>>,
+}
 #[cfg(feature = "portal-linking")]
 impl ApprovalExchange for ApprovalHttp {
     fn get(
@@ -643,7 +689,14 @@ impl ApprovalExchange for ApprovalHttp {
         attempt: &crate::portal_approval::Attempt,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Option<crate::portal_approval::Attempt>, VaultError> {
-        crate::portal_approval::refresh(link, attempt, cancelled)
+        let (reply, date) = crate::portal_approval::refresh(link, attempt, cancelled)?;
+        if date.is_some() {
+            self.portal_time.set(date);
+        }
+        Ok(reply)
+    }
+    fn portal_time(&self) -> Option<u64> {
+        self.portal_time.get()
     }
     fn post(
         &self,
