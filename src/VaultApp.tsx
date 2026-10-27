@@ -146,6 +146,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     session: number;
     promise: Promise<void>;
   } | null>(null);
+  // A clinic result that arrives while a transfer runs, shown after the
+  // transfer's own outcome rather than in its place.
+  const portalNoticeRef = useRef<string | null>(null);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
   // An automatic or background lock owed while a transfer runs, or before the
@@ -273,6 +276,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       sessionRef.current += 1;
       portalJobRef.current = null;
+      portalNoticeRef.current = null;
       setPortalBusy(false);
       setSnapshot(null);
       // A key shown but not set up ended with the session.
@@ -626,6 +630,16 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     setNotice(message);
   };
 
+  // Clinic work runs beside library operations. While one of them runs a
+  // transfer, the line belongs to the transfer's outcome: a clinic result
+  // waits and is added after it (see `run`), so neither is lost. Nothing is
+  // said for a session that has ended or is locking.
+  const showPortalNotice = (startedIn: number, message: string) => {
+    if (sessionRef.current !== startedIn || lockingRef.current) return;
+    if (transferHold.active) portalNoticeRef.current = message || null;
+    else setNotice(message);
+  };
+
   /** Runs a vault operation; `boxes` names what the patient typed for it,
    * so that a refusal of it says which box to check. */
   const run = async (
@@ -633,12 +647,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     boxes?: BoxKey[],
     clinicOperation = false,
   ) => {
+    const startedIn = sessionRef.current;
     if (!clinicOperation) {
       setBusy(true);
       setNotice("");
       transferHold.operationStarted();
-    }
-    const startedIn = sessionRef.current;
+    } else showPortalNotice(startedIn, "");
     try {
       await operation();
     } catch (error) {
@@ -649,7 +663,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (isLockedError(error) || isCancelledError(error)) {
           lockReasonRef.current ??= "idle";
           requestLock(true);
-        } else if (!transferHold.active) setNotice(vaultErrorMessage(error));
+        } else showPortalNotice(startedIn, vaultErrorMessage(error));
         return;
       }
       // The unlock screen is also shown when the startup status check fails,
@@ -716,8 +730,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } finally {
       if (!clinicOperation) {
         setBusy(false);
-        if (transferHold.operationEnded() && lockHeldRef.current)
-          requestLock(true);
+        const idle = transferHold.operationEnded();
+        if (idle && lockHeldRef.current) requestLock(true);
+        else if (idle && portalNoticeRef.current) {
+          // The transfer has reported: add the clinic result kept meanwhile.
+          const held = portalNoticeRef.current;
+          portalNoticeRef.current = null;
+          if (sessionRef.current === startedIn && !lockingRef.current)
+            setNotice((shown) => (shown ? `${shown} ${held}` : held));
+        }
       }
     }
   };
@@ -783,9 +804,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // after the next unlock.
     else if (transferHold.active) holdForUnlock(message);
   };
-  const setPortalNotice = (message: string) => {
-    if (inSession() && !transferHold.active) setNotice(message);
-  };
+  const setPortalNotice = (message: string) =>
+    showPortalNotice(session, message);
 
   // Waiting files go into Shared with me as soon as the vault is open (#61).
   // One that is not a PDF is not added and is named; anything else keeps them

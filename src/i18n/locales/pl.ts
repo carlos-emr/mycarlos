@@ -11,9 +11,9 @@ export const pl: Record<MessageKey, Message> = {
   "portal.connecting":
     "Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…",
   "portal.connected":
-    "Urządzenie zostało połączone. Poniżej sprawdzisz stan jego zatwierdzenia.",
+    "Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz w sekcji Dokumenty z przychodni.",
   "portal.linkedApprovalIssue":
-    "Urządzenie zostało połączone. Zatwierdzenie przez przychodnię nie zostało potwierdzone. Sprawdź stan i zalecane działanie dla tego urządzenia.",
+    "Urządzenie zostało połączone, ale nie udało się potwierdzić prośby o zatwierdzenie. Stan urządzenia w sekcji Dokumenty z przychodni wskazuje, co zrobić dalej.",
   "portal.retryApproval": "Ponów zapisaną prośbę o zatwierdzenie",
   "portal.errorBusy":
     "Trwa inna operacja związana z przychodnią. Poczekaj, aż się zakończy, i spróbuj ponownie.",

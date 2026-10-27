@@ -5,13 +5,13 @@ import type { MessageKey } from "./en";
 export const fr: Record<MessageKey, Message> = {
   "portal.working": "Opération avec la clinique en cours…",
   "portal.connectConsent":
-    "Cette action associe cet appareil et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.",
+    "Cette action associe cet appareil à votre clinique et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.",
   "portal.connecting":
     "Connexion et demande d’approbation à la clinique en cours…",
   "portal.connected":
-    "Appareil associé. Consultez son état d’approbation ci-dessous.",
+    "Appareil associé. Son état d’approbation est indiqué sous Documents de la clinique.",
   "portal.linkedApprovalIssue":
-    "Appareil associé. L’approbation de la clinique n’est pas confirmée. Suivez l’état et l’action indiqués pour cet appareil.",
+    "Appareil associé, mais la demande d’approbation n’a pas pu être confirmée. Son état sous Documents de la clinique indique la marche à suivre.",
   "portal.retryApproval": "Réessayer la demande d’approbation enregistrée",
   "portal.errorBusy":
     "Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.",
@@ -50,7 +50,7 @@ export const fr: Record<MessageKey, Message> = {
   "portal.result":
     "Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
   "portal.incomplete":
-    "Cette tentative enregistrée est incomplète. Vérifiez les appareils associés dans le portail ou contactez votre clinique avant de vous connecter à nouveau. Cette application ne peut pas reprendre cette tentative.",
+    "Cette tentative enregistrée est incomplète. Vérifiez les appareils associés dans le portail ou contactez votre clinique avant d’associer l’appareil à nouveau. Cette application ne peut pas reprendre cette tentative.",
   "portal.approved": "La clinique a approuvé cet appareil.",
   "portal.notRequested":
     "Demandez l’approbation de la clinique pour recevoir des documents sur cet appareil.",

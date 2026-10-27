@@ -8,9 +8,9 @@ export const es: Record<MessageKey, Message> = {
     "Esta acción vincula este dispositivo y envía una solicitud de aprobación. Su clínica debe aprobar el dispositivo antes de que pueda recibir documentos.",
   "portal.connecting": "Conectando y solicitando la aprobación de la clínica…",
   "portal.connected":
-    "Dispositivo vinculado. Consulte su estado de aprobación a continuación.",
+    "Dispositivo vinculado. Su estado de aprobación se muestra en Documentos de la clínica.",
   "portal.linkedApprovalIssue":
-    "Dispositivo vinculado. La aprobación de la clínica no está confirmada. Siga el estado y la acción indicados para este dispositivo.",
+    "Dispositivo vinculado, pero no se pudo confirmar la solicitud de aprobación. Su estado en Documentos de la clínica indica qué hacer a continuación.",
   "portal.retryApproval": "Reintentar la solicitud de aprobación guardada",
   "portal.errorBusy":
     "Hay otra operación con la clínica en curso. Espere a que termine y vuelva a intentarlo.",
@@ -49,7 +49,7 @@ export const es: Record<MessageKey, Message> = {
   "portal.result":
     "Documentos nuevos guardados: {added}. Documentos que no se pudieron verificar: {refused}.",
   "portal.incomplete":
-    "Este intento guardado está incompleto. Revise los dispositivos vinculados en el portal o contacte con su clínica antes de conectarse de nuevo. Esta aplicación no puede reanudar este intento.",
+    "Este intento guardado está incompleto. Revise los dispositivos vinculados en el portal o contacte con su clínica antes de volver a conectar el dispositivo. Esta aplicación no puede reanudar este intento.",
   "portal.approved": "La clínica aprobó este dispositivo.",
   "portal.notRequested":
     "Solicite la aprobación de la clínica para recibir documentos en este dispositivo.",

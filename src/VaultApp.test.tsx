@@ -7701,6 +7701,52 @@ describe("clinic connection operations", () => {
     expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
   });
 
+  it("adds a clinic result that arrives during a transfer after the transfer's own outcome", async () => {
+    let current = clinicSnapshot;
+    const pending = pendingConnection();
+    let finishImport!: (value: ImportOutcome) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      connectPortal: vi.fn().mockReturnValue(pending.promise),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      importPickedFiles: vi.fn().mockReturnValue(
+        new Promise<ImportOutcome>((resolve) => {
+          finishImport = resolve;
+        }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    // The clinic view is gone and a transfer holds the line: the result waits.
+    await act(async () =>
+      pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+    await act(async () =>
+      finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "1 file(s) encrypted and imported. Device linked. Its approval status is shown under Clinic documents.",
+        ),
+      ).toBeVisible(),
+    );
+  });
+
   it("drops old-session completion without unlocking or clearing a new session's clinic work", async () => {
     const first = pendingConnection();
     const second = pendingConnection();

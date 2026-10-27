@@ -117,7 +117,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(props.setNotice).toHaveBeenCalledWith(
-        "Device linked. See its approval status below.",
+        "Device linked. Its approval status is shown under Clinic documents.",
       ),
     );
     expect(bridge.connectPortal).toHaveBeenCalledOnce();
@@ -182,7 +182,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(props.setNotice).toHaveBeenCalledWith(
-        "Device linked. Clinic approval has not been confirmed. Follow the status and next action shown for this device.",
+        "Device linked, but the approval request could not be confirmed. Its status under Clinic documents says what to do next. The portal request could not be completed. Check your connection and device clock, then try again.",
       ),
     );
     await userEvent
@@ -234,7 +234,7 @@ describe("native clinic document controls", () => {
     expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
   });
 
-  it("does not announce a completion after the clinic view unmounts", async () => {
+  it("still reports a completion after the clinic view unmounts", async () => {
     const { bridge, props, unmount } = fixture();
     const pending = pendingConnect();
     vi.mocked(bridge.connectPortal!).mockReturnValue(pending.promise);
@@ -245,7 +245,12 @@ describe("native clinic document controls", () => {
     await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
     unmount();
     await act(async () => pending.finish({ link, approvalError: null }));
-    expect(props.setNotice).not.toHaveBeenCalled();
+    // The link exists whether or not the view is open: the patient is told
+    // wherever they are, and an older error on the line is replaced.
+    expect(props.setNotice).toHaveBeenCalledOnce();
+    expect(props.setNotice).toHaveBeenCalledWith(
+      "Device linked. Its approval status is shown under Clinic documents.",
+    );
   });
 
   it("keeps all clinic controls hidden when native capability is off", async () => {

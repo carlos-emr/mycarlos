@@ -67,6 +67,11 @@ export function PortalDocuments({
     if (document.activeElement === document.body) heading.focus();
     setFocusLink(null);
   }, [connecting, focusLink, snapshot.portalLinks]);
+  useEffect(() => {
+    // The status line goes back to the copy result when clinic work ends; an
+    // earlier "copied" must not be read out again then.
+    if (connecting || working) setCopyState("");
+  }, [connecting, working]);
   if (
     !snapshot.portalLinkingEnabled ||
     !bridge.connectPortal ||
@@ -177,16 +182,15 @@ export function PortalDocuments({
           profileId: person || null,
         });
         await refresh();
-        if (shown.current) {
-          setFocusLink(result.link.id);
-          setNotice(
-            t(
-              result.approvalError
-                ? "portal.linkedApprovalIssue"
-                : "portal.connected",
-            ),
-          );
-        }
+        if (shown.current) setFocusLink(result.link.id);
+        // Reported even after the patient has left this view: the link exists
+        // whether or not anyone is looking, and the line must not keep an
+        // older error beside it. The setter drops it for a finished session.
+        setNotice(
+          result.approvalError
+            ? `${t("portal.linkedApprovalIssue")} ${vaultErrorMessage(result.approvalError)}`
+            : t("portal.connected"),
+        );
       } catch (error) {
         const next = await refresh();
         const attempt = next.portalLinks?.find(
