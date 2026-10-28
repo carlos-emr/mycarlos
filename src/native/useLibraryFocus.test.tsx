@@ -45,9 +45,9 @@ function Library({
 }
 
 const frame = () => act(() => vi.advanceTimersToNextFrame());
-const keyPress = () =>
+const keyPress = (key = "Enter") =>
   document.body.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    new KeyboardEvent("keydown", { key, bubbles: true }),
   );
 // As in WebKit (macOS, iOS): a click or tap does not focus the button pressed,
 // and takes focus from whatever had it.
@@ -61,7 +61,8 @@ beforeEach(() => {
   vi.useFakeTimers({
     toFake: ["requestAnimationFrame", "cancelAnimationFrame"],
   });
-  // A keyboard user's journeys, unless a test presses with a pointer.
+  // Resets the hook's input record: a keyboard user's journeys, unless a test
+  // presses with a pointer.
   keyPress();
 });
 afterEach(() => vi.useRealTimers());
@@ -145,11 +146,39 @@ describe("library focus recovery", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  it("leaves focus on the page when a pointer press closes a dialog", () => {
-    const { rerender } = render(<Library modal />);
+  // A dialog opened with a pointer, its first control focused as a dialog does.
+  const openWithPointer = () => {
+    const { rerender } = render(<Library />);
+    frame();
+    webkitPress(screen.getByRole("button", { name: "Import" }));
+    rerender(<Library modal />);
     const setup = screen.getByRole("button", { name: "Continue setup" });
     setup.focus();
+    return { rerender, setup };
+  };
+
+  it("leaves focus on the page when a pointer press closes a dialog", () => {
+    const { rerender, setup } = openWithPointer();
     webkitPress(setup);
+    rerender(<Library />);
+    frame();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves focus on the page when a key closes a dialog opened with a pointer", () => {
+    const { rerender } = openWithPointer();
+    keyPress("Escape");
+    rerender(<Library />);
+    frame();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not count a modifier key alone as keyboard use", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    webkitPress(screen.getByRole("button", { name: "Import" }));
+    keyPress("Shift");
+    rerender(<Library busy />);
     rerender(<Library />);
     frame();
     expect(document.activeElement).toBe(document.body);
@@ -166,9 +195,7 @@ describe("library focus recovery", () => {
   });
 
   it("recovers after a pointer press when asked to", () => {
-    const { rerender } = render(<Library modal />);
-    const setup = screen.getByRole("button", { name: "Continue setup" });
-    setup.focus();
+    const { rerender, setup } = openWithPointer();
     webkitPress(setup);
     focusIfLost();
     rerender(<Library />);

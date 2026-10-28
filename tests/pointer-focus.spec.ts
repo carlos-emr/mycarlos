@@ -50,9 +50,8 @@ const focusOnPage = async (page: Page) =>
     "focus after the pointer action",
   ).toBe("the page");
 
-test("closing a document's details far down a long list keeps the place (#90)", async ({
-  page,
-}) => {
+/** Forty more documents, scrolled down to the last of them. */
+async function longList(page: Page) {
   await fakeVault(page, "unlocked");
   await page.addInitScript(() => {
     const internals = Reflect.get(window, "__TAURI_INTERNALS__");
@@ -82,6 +81,25 @@ test("closing a document's details far down a long list keeps the place (#90)", 
   await expect(documents).toHaveCount(40);
   const target = documents.last();
   await target.scrollIntoViewIfNeeded();
+  return { heading, target };
+}
+
+const keepsPlace = async (
+  heading: Locator,
+  target: Locator,
+  before: number | undefined,
+) => {
+  expect(
+    (await target.boundingBox())?.y,
+    "where the document is on screen",
+  ).toBeCloseTo(before ?? NaN, 0);
+  await expect(heading).not.toBeInViewport();
+};
+
+test("closing a document's details far down a long list keeps the place (#90)", async ({
+  page,
+}) => {
+  const { heading, target } = await longList(page);
   await settle(page);
   await expect(heading).not.toBeInViewport();
   const before = (await target.boundingBox())?.y;
@@ -93,11 +111,56 @@ test("closing a document's details far down a long list keeps the place (#90)", 
   await expect(details).toBeHidden();
   await settle(page);
 
-  expect(
-    (await target.boundingBox())?.y,
-    "where the document is on screen",
-  ).toBeCloseTo(before ?? NaN, 0);
+  await keepsPlace(heading, target, before);
+  await focusOnPage(page);
+  await expectOnlyFakedCommands(page);
+});
+
+// How an action starts decides: a key that only ends it is no keyboard use.
+test("Escape closing details opened with a pointer keeps the place (#90)", async ({
+  page,
+}) => {
+  const { heading, target } = await longList(page);
+  await settle(page);
   await expect(heading).not.toBeInViewport();
+  const before = (await target.boundingBox())?.y;
+
+  await press(target);
+  const details = page.getByRole("dialog");
+  await expect(details).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
+  await settle(page);
+
+  await keepsPlace(heading, target, before);
+  await focusOnPage(page);
+  await expectOnlyFakedCommands(page);
+});
+
+test("a key that keeps the vault open after pointer use keeps the place (#90)", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { heading, target } = await longList(page);
+  await page.clock.runFor(1000);
+  await press(target);
+  const details = page.getByRole("dialog");
+  await press(details.getByRole("button", { name: "Close document details" }));
+  await expect(details).toBeHidden();
+  await page.clock.runFor(1000);
+  await expect(heading).not.toBeInViewport();
+  const before = (await target.boundingBox())?.y;
+
+  // Idle until the warning, 30 seconds before the five-minute lock. Any key
+  // keeps the vault open; Shift is the one least like keyboard use.
+  await page.clock.runFor(4.5 * 60_000 + 1000);
+  const warning = page.getByRole("alertdialog");
+  await expect(warning).toBeVisible();
+  await page.keyboard.press("Shift");
+  await expect(warning).toBeHidden();
+  await page.clock.runFor(1000);
+
+  await keepsPlace(heading, target, before);
   await focusOnPage(page);
   await expectOnlyFakedCommands(page);
 });
@@ -149,5 +212,25 @@ test("opening a folder with a pointer leaves focus on the page (#90)", async ({
   ).toBeVisible();
   await settle(page);
   await focusOnPage(page);
+  await expectOnlyFakedCommands(page);
+});
+
+// Main's behaviour, kept: the recovery key setup's opener, the unlock screen,
+// is gone when it closes, so it asks for the heading however it was used.
+test("putting off the recovery key offer with a pointer focuses the heading", async ({
+  page,
+}) => {
+  await fakeVault(page, "locked", { recoveryKey: false });
+  await page.goto("/");
+  await press(page.getByLabel("Passphrase", { exact: true }));
+  await page.keyboard.type("FAKE passphrase for the fake");
+  await press(page.getByRole("button", { name: "Unlock", exact: true }));
+  const offer = page.getByRole("dialog");
+  await expect(offer).toBeVisible();
+  await press(offer.getByRole("button", { name: "Set up later" }));
+  await expect(offer).toBeHidden();
+  await expect(
+    page.getByRole("heading", { name: "My records", level: 1 }),
+  ).toBeFocused();
   await expectOnlyFakedCommands(page);
 });
