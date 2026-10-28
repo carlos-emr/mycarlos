@@ -414,7 +414,6 @@ export function VaultLibrary({
       (view === "grid" && !activeRecordId) ||
       Boolean(readerRecordId),
   );
-
   const searchLocation = `${section}:${profileId}:${currentFolderId ?? ""}`;
   const searchBlocked = Boolean(
     covered ||
@@ -680,7 +679,9 @@ export function VaultLibrary({
           ? "The vault is read-only, so the name was not changed."
           : "Another vault operation is still running. Try again when it finishes.",
       );
-    if (renameTarget.kind === "folder") {
+    if (renameTarget.kind === "profile") {
+      await bridge.renameProfile(renameTarget.id, name);
+    } else if (renameTarget.kind === "folder") {
       const folder = folders.find(
         (candidate) => candidate.id === renameTarget.id,
       );
@@ -689,11 +690,16 @@ export function VaultLibrary({
     } else {
       await bridge.renameRecord(renameTarget.id, name);
     }
+    if (!mountedRef.current) return;
     await refresh();
+    if (!mountedRef.current) return;
     // Cleared now, so that the result is a change even when it repeats.
     setNotice("");
     setDialogResult({
-      message: `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
+      message:
+        renameTarget.kind === "profile"
+          ? t("rename.profile.saved", { name })
+          : `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
       recordId: activeRecordId,
     });
   };
@@ -1281,7 +1287,7 @@ export function VaultLibrary({
             {(section === "records" || inShared) && (
               <main
                 className={dropClass(
-                  "library-main",
+                  `library-main${!inShared && profile && !currentFolder ? " native-person-location" : ""}`,
                   `pane:${currentFolderId ?? "root"}`,
                 )}
                 // Shared with me and recursive search results take no pane
@@ -1396,6 +1402,24 @@ export function VaultLibrary({
                           onClick={() => renameFolder(currentFolder)}
                         >
                           Rename folder
+                        </button>
+                      )}
+                      {!currentFolder && profile && (
+                        <button
+                          className="button native-person-rename"
+                          type="button"
+                          disabled={busy || readOnly}
+                          onClick={() =>
+                            setRenameTarget({
+                              kind: "profile",
+                              id: profile.id,
+                              name: profile.displayName,
+                            })
+                          }
+                        >
+                          {t("rename.profile.action", {
+                            name: profile.displayName,
+                          })}
                         </button>
                       )}
                       <button

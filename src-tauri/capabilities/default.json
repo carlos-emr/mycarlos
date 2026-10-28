@@ -35,6 +35,7 @@
     "allow-vault-create-profile",
     "allow-vault-update-profile-details",
     "allow-vault-shared-identity",
+    "allow-vault-rename-profile",
     "allow-vault-create-folder",
     "allow-vault-update-folder",
     "allow-vault-rename-record",
