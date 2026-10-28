@@ -1,3 +1,4 @@
+import { messagePattern, translate } from "./support/fluent";
 import { expect, test, type Page } from "@playwright/test";
 import {
   expectAnnounced,
@@ -83,7 +84,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
-  await expectAnnounced(page, "1 file(s) encrypted and imported.");
+  await expectAnnounced(page, "1 document encrypted and added.");
 
   // A document's details, and a move from there.
   await page
@@ -102,13 +103,19 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
 
   // A folder's rename dialog, and a folder's own view.
   await page
-    .getByRole("button", { name: "Rename folder FAKE Results" })
+    .getByRole("button", {
+      name: translate("en", "library.folder.rename", { name: "FAKE Results" }),
+    })
     .click();
   const rename = page.getByRole("dialog", { name: /Rename/ });
   await expect(rename).toBeVisible();
   await screenReaderSmoke(page, "rename a folder", rename);
   await rename.press("Escape");
-  await page.getByRole("button", { name: "Open FAKE Results" }).click();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Results" }),
+    })
+    .click();
   await expect(
     page.getByRole("heading", { name: "FAKE Results", level: 1 }),
   ).toBeVisible();
@@ -169,7 +176,7 @@ test("a search's result is read out (#92)", async ({ page }) => {
   await recordAnnouncements(page);
   await page.goto("/");
   const search = page.getByRole("searchbox", {
-    name: "Search everything in My records",
+    name: translate("en", "interface.search.all", { location: "My records" }),
   });
   const status = page.locator("[data-search-status]");
   await expect(search).toBeVisible();
@@ -230,12 +237,16 @@ test("pending search announcements stop when leaving the location (#92)", async 
   await recordAnnouncements(page);
   await page.goto("/");
   const search = page.getByRole("searchbox", {
-    name: "Search everything in My records",
+    name: translate("en", "interface.search.all", { location: "My records" }),
   });
   await expect(search).toBeVisible();
   await page.clock.pauseAt(pauseTarget);
   await search.fill("Results");
-  await page.getByRole("button", { name: "Open FAKE Results" }).click();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Results" }),
+    })
+    .click();
   await page.clock.runFor(600);
   await expect(
     page.getByRole("heading", { name: "FAKE Results", level: 1 }),
@@ -259,11 +270,11 @@ test("the lock warning is named, read once, and the lock says why", async ({
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
   await page.clock.runFor(4.5 * 60 * 1000 + 1000);
   const warning = page.getByRole("alertdialog", {
-    name: "myCarlos will lock in 30 seconds to keep your records private.",
+    name: translate("en", "lockWarning.title", { count: 30 }),
   });
   await expect(warning).toBeVisible();
   await expect(warning).toHaveAccessibleDescription(
-    "To keep it open, press Keep open, or any key.",
+    translate("en", "lockWarning.help", { keepOpen: "Keep open" }),
   );
   await screenReaderSmoke(page, "lock warning", warning);
   // The heading counts down on screen only; a status says once that 10
@@ -271,13 +282,13 @@ test("the lock warning is named, read once, and the lock says why", async ({
   await page.clock.runFor(21 * 1000);
   await expectAnnounced(page, "10 seconds left.");
   await expect(warning).toHaveAccessibleName(
-    "myCarlos will lock in 30 seconds to keep your records private.",
+    translate("en", "lockWarning.title", { count: 30 }),
   );
   await page.clock.runFor(10 * 1000);
   const passphrase = page.getByLabel("Passphrase", { exact: true });
   await expect(passphrase).toBeFocused();
   await expect(passphrase).toHaveAccessibleDescription(
-    /Locked after 5 minutes without use\./,
+    messagePattern("en", "notice.lockedIdle", { count: 5 }),
   );
   await expectOnlyFakedCommands(page);
 });

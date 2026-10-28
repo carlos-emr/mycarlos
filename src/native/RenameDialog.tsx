@@ -1,5 +1,11 @@
+import {
+  useTextState,
+  deferredText,
+  t as translateCurrent,
+  useI18n,
+} from "../i18n";
 import { useState, useRef, type FormEvent } from "react";
-import { useI18n } from "../i18n";
+
 import { useModalFocus } from "../useModalFocus";
 import { utf8Length, vaultErrorMessage } from "../vault";
 import {
@@ -7,7 +13,6 @@ import {
   fileExtension,
   nameTooLong,
   nameIsShared,
-  SHARED_FOLDER_NAME,
 } from "./recordPresentation";
 import { reservedDeviceName } from "./reservedNames";
 import { photoExtension } from "./photo";
@@ -62,7 +67,7 @@ export function RenameDialog({
   const { t } = useI18n();
   const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useTextState();
   // Changes on every refusal, so pressing Save again announces it again even
   // when the message is the same.
   const [refusals, setRefusals] = useState(0);
@@ -150,7 +155,11 @@ export function RenameDialog({
     }
     if (reservedWord) {
       setRefusals((count) => count + 1);
-      setError(t("rename.reserved", { word: reservedWord }));
+      setError(
+        deferredText(() =>
+          translateCurrent("rename.reserved", { word: reservedWord }),
+        ),
+      );
       return;
     }
     setSaving(true);
@@ -159,7 +168,7 @@ export function RenameDialog({
       await onSave(fullName);
       onClose();
     } catch (failure) {
-      setError(vaultErrorMessage(failure, ["box.name"]));
+      setError(deferredText(() => vaultErrorMessage(failure, ["box.name"])));
     } finally {
       setSaving(false);
     }
@@ -233,7 +242,7 @@ export function RenameDialog({
             {sharedName && (
               <p role="alert">
                 {t("create.profile.sharedTaken", {
-                  folder: SHARED_FOLDER_NAME,
+                  folder: t("interface.LibrarySidebar.sharedWithMe"),
                 })}
               </p>
             )}

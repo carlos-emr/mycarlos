@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { humanText } from "../test/humanText";
 import {
   PersonDetailsList,
   detailsProblem,
@@ -61,7 +62,9 @@ describe("required profile identity details", () => {
       />,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Edit details for FAKE Mary" }),
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Mary"),
+      }),
     );
     fireEvent.change(
       screen.getByLabelText("Full name, as on clinic documents"),
@@ -75,12 +78,14 @@ describe("required profile identity details", () => {
       expect(save).toHaveBeenCalledWith("p1", { fullName: "FAKE Mary Smith" }),
     );
     expect(
-      screen.getByRole("form", { name: "Details for FAKE Mary" }),
+      screen.getByRole("form", { name: humanText("Details for FAKE Mary") }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save details" }));
     await waitFor(() =>
       expect(
-        screen.queryByRole("form", { name: "Details for FAKE Mary" }),
+        screen.queryByRole("form", {
+          name: humanText("Details for FAKE Mary"),
+        }),
       ).not.toBeInTheDocument(),
     );
   });
@@ -93,7 +98,9 @@ describe("required profile identity details", () => {
       />,
     );
     expect(
-      screen.getByRole("button", { name: "Edit details for FAKE Mary" }),
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Mary"),
+      }),
     ).toBeDisabled();
   });
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { messagePattern, translate, visibleHumanText } from "./support/fluent";
 import {
   expectAnnounced,
   expectEveryControlNamed,
@@ -18,6 +19,22 @@ const STYLE = `<style>
   button, input { margin: 8px; padding: 4px; font-size: 16px; }
   :focus-visible { outline: 3px solid #1a5fb4; outline-offset: 2px; }
 </style>`;
+
+test("human-copy comparisons keep exact words and non-Fluent bidi controls", () => {
+  const announced = visibleHumanText("Text size \u2068110%\u2069");
+  expect(announced).toBe("Text size 110%");
+  expect(announced).not.toBe("Text size 100%");
+  expect(visibleHumanText("\u202eFAKE.pdf")).toBe("\u202eFAKE.pdf");
+  const label = messagePattern("en", "library.select", { name: "FAKE[1].pdf" });
+  expect(label.test("Select \u2068FAKE[1].pdf\u2069")).toBe(true);
+  expect(label.test("Select \u2068FAKE1xpdf\u2069")).toBe(false);
+  expect(() => translate("en", "library.select")).toThrow(
+    "Cannot format test message: en/library.select",
+  );
+  expect(() => translate("en", "absent.key" as never)).toThrow(
+    "Missing test message",
+  );
+});
 
 async function show(page: Page, body: string) {
   await page.setContent(

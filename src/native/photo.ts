@@ -1,27 +1,25 @@
+import { t as translateNow, formatDate, getLocale } from "../i18n";
+import { formatPhotoName } from "../i18n/core";
 // Taking a photo with the camera (CameraDialog) and showing one (PhotoViewer).
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** A new photo's name, on the patient's own clock, such as "Photo, 17 Oct
- * 2026, 3.05 PM.jpg". The vault refuses ":" in a document name, as Windows
- * does in a file name, so the time is written with a dot. */
+/** A new photo gets a localized name once. Existing document names are user
+ * data and never change when the language changes. Colons are invalid in
+ * Windows file names, so the formatted clock uses dots. */
 export function photoName(now: Date): string {
-  const hours = now.getHours();
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  return `Photo, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}, ${hours % 12 || 12}.${minutes} ${hours < 12 ? "AM" : "PM"}.jpg`;
+  const date = formatDate(now, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const time = formatDate(now, { hour: "numeric", minute: "2-digit" }).replace(
+    /:/g,
+    ".",
+  );
+  // Intl may supply directional presentation marks for some computer locales.
+  // These generated date/time fields are filename metadata, not user input.
+  const filenameText = (value: string) =>
+    value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+  return formatPhotoName(getLocale(), filenameText(date), filenameText(time));
 }
 
 /** The JPEG suffix of a photo name, with its stored case, after a nonempty name. */
@@ -159,30 +157,41 @@ export function cameraFailureMessage(
 ): string {
   switch (failure) {
     case "denied":
-      return `myCarlos can't use the camera. ${
-        platform === "windows"
-          ? "In Windows Settings, open Privacy & security, then Camera, and turn on camera access for desktop apps."
-          : platform === "macos"
-            ? "In System Settings, open Privacy & Security, then Camera, and turn on myCarlos."
-            : platform === "android"
-              ? "Open your phone's Settings, then Apps, then myCarlos, then Permissions, and allow Camera."
-              : platform === "ios"
-                ? "Open your phone's Settings, then myCarlos, and turn on Camera."
-                : "Check your computer's camera privacy settings and let myCarlos use the camera."
-      } Then choose Try again.`;
+      return translateNow("interface.camera.denied", {
+        help:
+          platform === "windows"
+            ? translateNow(
+                "interface.photo.inWindowsSettingsOpenPrivacySecurityThen",
+              )
+            : platform === "macos"
+              ? translateNow(
+                  "interface.photo.inSystemSettingsOpenPrivacySecurityThen",
+                )
+              : platform === "android"
+                ? translateNow(
+                    "interface.photo.openYourPhonesSettingsThenAppsThen",
+                  )
+                : platform === "ios"
+                  ? translateNow(
+                      "interface.photo.openYourPhonesSettingsThenMyCarlosAnd",
+                    )
+                  : translateNow(
+                      "interface.photo.checkYourComputersCameraPrivacySettingsAnd",
+                    ),
+      });
     case "missing":
       // A phone's camera is built in: nothing to connect.
       return isPhone(platform)
-        ? "This phone's camera could not be found. Choose Try again."
-        : "No camera was found. Connect a camera, then choose Try again.";
+        ? translateNow("interface.photo.thisPhonesCameraCouldNotBeFound")
+        : translateNow("interface.photo.noCameraWasFoundConnectACamera");
     case "busy":
-      return "The camera is in use by another app. Close it, then choose Try again.";
+      return translateNow("interface.photo.theCameraIsInUseByAnother");
     case "stopped":
       return isPhone(platform)
-        ? "The camera stopped. Choose Try again."
-        : "The camera stopped. Check that it is connected, then choose Try again.";
+        ? translateNow("interface.photo.theCameraStoppedChooseTryAgain")
+        : translateNow("interface.photo.theCameraStoppedCheckThatItIs");
     case "other":
-      return "The camera could not be started. Choose Try again.";
+      return translateNow("interface.photo.theCameraCouldNotBeStartedChoose");
   }
 }
 
