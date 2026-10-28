@@ -123,10 +123,11 @@ for (const width of [390, 320])
 // 32px text that row is wider than a phone's window, and the window hides what
 // runs past its edge, so "Name A–Z" was cut off and the page slid sideways.
 // The label and the choices wrap instead: each whole, inside the window, in
-// every language.
+// every language. The lock button's words are translated now too, and stay
+// inside the window as well.
 for (const width of [412, 360, 320])
   for (const locale of LOCALES)
-    test(`keeps the whole sort control in the window at ${width}px with 200% default text in ${locale}`, async ({
+    test(`keeps the whole sort control and the lock button in the window at ${width}px with 200% default text in ${locale}`, async ({
       browser,
     }, info) => {
       test.skip(info.project.name !== "desktop", "sets its own phone sizes");
@@ -148,15 +149,17 @@ for (const width of [412, 360, 320])
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         const sort = page.locator(".native-sort-choice");
         await expect(sort).toBeVisible();
-        const problems = await sort.evaluate((control) => {
-          const window_ = control
-            .closest(".app-window")!
+        const problems = await page.evaluate(() => {
+          const window_ = document
+            .querySelector(".app-window")!
             .getBoundingClientRect();
+          const control = document.querySelector(".native-sort-choice")!;
           return [
             control,
             ...control.querySelectorAll<HTMLElement>(
               "button, .native-sort-label",
             ),
+            document.querySelector(".native-lock-button")!,
           ].flatMap((part) => {
             const box = part.getBoundingClientRect();
             const name =
@@ -175,7 +178,10 @@ for (const width of [412, 360, 320])
             ];
           });
         });
-        expect(problems, "sort control inside the window, uncut").toEqual([]);
+        expect(
+          problems,
+          "sort control and lock button inside the window, uncut",
+        ).toEqual([]);
         // The label stays in view, in the language in use, and names the group.
         const label = translate(locale, "library.sort.label");
         const group = page.getByRole("group", { name: label, exact: true });
