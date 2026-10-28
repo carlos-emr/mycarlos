@@ -41,6 +41,96 @@ function open(
 }
 
 describe("RenameDialog", () => {
+  it("closes an unchanged person's folder name without reporting a saved mutation", () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patient" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("corrects a person's folder label without applying document extension rules", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patietn.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    const input = screen.getByLabelText("Folder name");
+    expect(input).toHaveValue("FAKE Patietn.pdf");
+    expect(
+      screen.getByText(/folders and documents stay where they are/),
+    ).toBeVisible();
+    fireEvent.change(input, { target: { value: "  FAKE Patient  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledExactlyOnceWith("FAKE Patient");
+  });
+
+  it("rejects the shared name, control characters and excessive Unicode length for a person", () => {
+    const onSave = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patient" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("Folder name");
+    for (const value of [
+      " sHaReD wItH mE ",
+      "FAKE\u0085Patient",
+      "🪻".repeat(121),
+      "  ",
+    ]) {
+      fireEvent.change(input, { target: { value } });
+      expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+      fireEvent.submit(input.closest("form")!);
+      expect(onSave).not.toHaveBeenCalled();
+    }
+    fireEvent.change(input, { target: { value: "🪻".repeat(120) } });
+    expect(screen.getByRole("button", { name: "Save name" })).toBeEnabled();
+  });
+
+  it("keeps a refused person correction open, and Cancel never saves", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("FAKE native refusal"));
+    const onClose = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patietn" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Folder name"), {
+      target: { value: "FAKE Patient" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "FAKE native refusal",
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["Holiday.jpg", "Holiday", ".jpg"],
     ["Holiday.JPEG", "Holiday", ".JPEG"],

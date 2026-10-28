@@ -1387,3 +1387,167 @@ unlock-waiting =
 unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
 language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Wybierz inny język lub uruchom aplikację ponownie, a przed kolejną próbą sprawdź swoje dokumenty.
+
+error-newerFormat-backup = Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.
+
+error-newerFormat-vault = Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.
+
+personDetails-birthDate = Data urodzenia
+
+personDetails-birthDateRequired = Wpisz datę urodzenia lub zaznacz, że jej nie znasz.
+
+personDetails-birthDateUnknown = Nie znam daty urodzenia tej osoby
+
+personDetails-cancel = Anuluj
+
+personDetails-edit = Edytuj dane
+
+personDetails-editFor = Edytuj dane osoby { $name }
+
+personDetails-for = Dane osoby { $name }
+
+personDetails-fullName = Imię i nazwisko, jak na dokumentach z przychodni
+
+personDetails-fullNameRequired = Wpisz imię i nazwisko tej osoby.
+
+personDetails-futureDate = Data urodzenia nie może być w przyszłości.
+
+personDetails-help = Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.
+
+personDetails-invalidDate = Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.
+
+personDetails-list = Dane osób
+
+personDetails-nameTooLong = Imię i nazwisko są zbyt długie. Skróć je.
+
+personDetails-noDate = Brak daty urodzenia
+
+personDetails-noName = Brak imienia i nazwiska
+
+personDetails-save = Zapisz dane
+
+personDetails-saved = Zapisano dane osoby { $name }.
+
+personSuggestion-byBoth = data urodzenia i imię i nazwisko w dokumencie są zgodne
+
+personSuggestion-byDate = data urodzenia w dokumencie jest zgodna
+
+personSuggestion-byName = imię i nazwisko w dokumencie są zgodne
+
+personSuggestion-dismiss = To nie ta osoba
+
+personSuggestion-dismissLabel = To nie ta osoba: { $document }
+
+personSuggestion-for = Sugerowana osoba dla dokumentu { $document }
+
+personSuggestion-move = Przenieś
+
+personSuggestion-moveLabel = Przenieś { $document } do dokumentacji osoby { $name }
+
+personSuggestion-offer = Wygląda na to, że ten dokument jest dla osoby { $name } ({ $why }). Przenieść go do jej dokumentacji?
+
+portal-address = Adres HTTPS portalu
+
+portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.
+
+portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
+
+portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.
+
+portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.
+
+portal-approvalRefused = Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
+
+portal-approved = Przychodnia zatwierdziła to urządzenie.
+
+portal-awaiting = Zapisano prośbę o zatwierdzenie. Sprawdź aktualizacje lub wyślij ją ponownie.
+
+portal-check = Sprawdź nowe dokumenty
+
+portal-clinicIssue = { $clinic }: { $detail }
+
+portal-code = Kod połączenia
+
+portal-compare = Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
+
+portal-confirmationsPending = Zapisane dokumenty oczekujące na potwierdzenie odbioru: { $count }. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.
+
+portal-copied = Skopiowano kod urządzenia.
+
+portal-copy = Kopiuj kod urządzenia
+
+portal-copyFailed = Zaznacz cały kod urządzenia i skopiuj go.
+
+portal-dateNotRecorded = Data nie została zapisana
+
+portal-deviceCode = Kod urządzenia
+
+portal-deviceName = Nazwa tego urządzenia
+
+portal-errorAddress = Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.
+
+portal-errorCancelled = Łączenie zostało przerwane, ponieważ sejf został zablokowany. Sprawdź połączone urządzenia w portalu przed kolejną próbą.
+
+portal-errorCode = Wpisz pełny kod połączenia wyświetlany w portalu pacjenta.
+
+portal-errorCodeRejected = Portal nie zaakceptował kodu. Utwórz nowy kod połączenia w portalu pacjenta.
+
+portal-errorDamaged = Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Przywróć go z kopii zapasowej albo poproś przychodnię o ponowne wysłanie.
+
+portal-errorDeviceName = Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.
+
+portal-errorDisabled = Łączenie z portalem nie jest włączone w tej wersji.
+
+portal-errorExists = To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.
+
+portal-errorIncomplete = Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.
+
+portal-errorKeys = Przychodnia nie opublikowała jeszcze klucza podpisu. Połączenie jest nieukończone.
+
+portal-errorRefused = Nie udało się zweryfikować dokumentu z przychodni. Nie dodano go ani nie wysłano potwierdzenia odbioru.
+
+portal-errorUnavailable = Łączenie z portalem nie jest jeszcze dostępne na tym urządzeniu.
+
+portal-fingerprint = Pełny odcisk urządzenia
+
+portal-incomplete = Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.
+
+portal-intro = Połącz myCarlos, używając adresu i kodu z portalu pacjenta.
+
+portal-link = Połącz z przychodnią
+
+portal-matchPerson = Dopasuj dane z dokumentu
+
+portal-notRequested = Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
+
+portal-partialResult = Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: { $added }. Nie udało się zweryfikować dokumentów: { $refused }.
+
+portal-person = Czyja dokumentacja
+
+portal-requestApproval = Poproś przychodnię o zatwierdzenie
+
+portal-restartApproval = Rozpocznij nową prośbę o zatwierdzenie
+
+portal-result = Zapisano nowych dokumentów: { $added }. Nie udało się zweryfikować dokumentów: { $refused }.
+
+portal-routing = Dokumenty trafiają do osoby o zgodnym pełnym imieniu i nazwisku oraz dacie urodzenia. Pozostałe trafiają do Udostępnionych mi.
+
+portal-serviceDate = Data świadczenia: { $date }
+
+portal-serviceDateLabel = Data świadczenia
+
+portal-sourceVerified = Z { $clinic } · Zweryfikowano
+
+portal-title = Dokumenty z przychodni
+
+rename-help-profile = Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.
+
+rename-label-profile = Nazwa folderu
+
+rename-profile-action = Zmień nazwę „{ $name }”
+
+rename-profile-controls = Nazwy nie mogą zawierać znaków sterujących.
+
+rename-profile-saved = Nazwa folderu została zmieniona na { $name }.
+
+rename-title-profile = Zmień nazwę folderu osoby

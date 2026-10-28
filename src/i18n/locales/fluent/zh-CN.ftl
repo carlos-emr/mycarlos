@@ -1195,3 +1195,167 @@ unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，它们
 unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，它会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
 language-error-formatting = myCarlos 无法正确显示此消息。请选择其他语言或重新启动应用，并在重试前检查您的记录。
+
+error-newerFormat-backup = 此备份是由较新版本的 myCarlos 保存的。请更新 myCarlos 后再还原。此设备上没有变更任何内容。
+
+error-newerFormat-vault = 此保险库是由较新版本的 myCarlos 保存的。请更新 myCarlos 后再打开。没有变更任何内容。
+
+personDetails-birthDate = 出生日期
+
+personDetails-birthDateRequired = 请输入出生日期，或选择出生日期不详。
+
+personDetails-birthDateUnknown = 我不知道此人的出生日期
+
+personDetails-cancel = 取消
+
+personDetails-edit = 编辑资料
+
+personDetails-editFor = 编辑 { $name } 的资料
+
+personDetails-for = { $name } 的资料
+
+personDetails-fullName = 全名（与诊所文档上的一致）
+
+personDetails-fullNameRequired = 请输入此人的全名。
+
+personDetails-futureDate = 出生日期不能是未来的日期。
+
+personDetails-help = 这些资料保存在此加密保险库中，用于提示分享的文档可能属于谁。这些资料不会验证文档的来源。
+
+personDetails-invalidDate = 请按年、月、日输入有效的出生日期。
+
+personDetails-list = 个人资料
+
+personDetails-nameTooLong = 全名太长，请缩短。
+
+personDetails-noDate = 未填写出生日期
+
+personDetails-noName = 未填写全名
+
+personDetails-save = 保存资料
+
+personDetails-saved = 已保存 { $name } 的资料。
+
+personSuggestion-byBoth = 文档上的出生日期和姓名相符
+
+personSuggestion-byDate = 文档上的出生日期相符
+
+personSuggestion-byName = 文档上的姓名相符
+
+personSuggestion-dismiss = 不是此人
+
+personSuggestion-dismissLabel = 不是此人：「{ $document }」
+
+personSuggestion-for = 「{ $document }」的建议归属人
+
+personSuggestion-move = 移动
+
+personSuggestion-moveLabel = 将「{ $document }」移至 { $name } 的记录
+
+personSuggestion-offer = 这似乎是 { $name } 的文档（{ $why }）。要移至其记录吗？
+
+portal-address = 门户网站 HTTPS 网址
+
+portal-approvalCancelled = 此批准请求已取消。请先检查最新状态，再发起新的请求。
+
+portal-approvalContact = 需要核实诊所的批准状态。请联系诊所了解后续步骤。
+
+portal-approvalExpired = 此批准请求已过期。请先检查最新状态，再发起新的请求。
+
+portal-approvalMissing = 门户网站上找不到您已保存的批准请求。请重新发送已保存的请求。
+
+portal-approvalRefused = 诊所已拒绝此设备的批准请求。请联系诊所了解后续步骤。
+
+portal-approved = 诊所已批准此设备。
+
+portal-awaiting = 批准请求已保存。请检查最新状态，或重新发送请求。
+
+portal-check = 检查新文档
+
+portal-clinicIssue = { $clinic }：{ $detail }
+
+portal-code = 关联码
+
+portal-compare = 请诊所工作人员在批准此设备前，核对此屏幕上的完整指纹。
+
+portal-confirmationsPending = 等待领取确认的已保存文档：{ $count }。请再次检查以完成确认。已保存的副本会留在保险库中。
+
+portal-copied = 已复制设备代码。
+
+portal-copy = 复制设备代码
+
+portal-copyFailed = 请选取完整的设备代码并复制。
+
+portal-dateNotRecorded = 未记录日期
+
+portal-deviceCode = 设备代码
+
+portal-deviceName = 此设备的名称
+
+portal-errorAddress = 请输入门户网站的 HTTPS 网址，不要包含用户名、密码、查询参数或片段标识符。
+
+portal-errorCancelled = 保险库已锁定，因此关联已停止。请先在门户网站的「Linked devices」（已关联的设备）页面查看，再重试。
+
+portal-errorCode = 请输入患者门户网站上显示的完整关联码。
+
+portal-errorCodeRejected = 门户网站不接受该代码。请在患者门户网站创建新的关联码。
+
+portal-errorDamaged = 此诊所的一份已保存文档已损毁或遗失，因此未发送其领取确认。您的其他文档仍已完成检查。请从备份还原该文档，或请诊所重新发送。
+
+portal-errorDeviceName = 请选择 1 到 64 个字符的设备名称，且不得包含控制字符。
+
+portal-errorDisabled = 此版本未启用门户网站关联功能。
+
+portal-errorExists = 此设备已注册。请在患者门户网站查看「Linked devices」（已关联的设备）页面。
+
+portal-errorIncomplete = 无法完成门户网站请求。请检查网络连接和设备时钟，然后重试。
+
+portal-errorKeys = 诊所尚未发布签名密钥。关联未完成。
+
+portal-errorRefused = 有一份诊所文档无法验证。该文档未添加，也未发送领取回执。
+
+portal-errorUnavailable = 此设备尚不能使用门户网站关联功能。
+
+portal-fingerprint = 完整设备指纹
+
+portal-incomplete = 关联未完成。请先在门户网站的「Linked devices」（已关联的设备）页面查看，再重试。
+
+portal-intro = 请使用患者门户网站上显示的网址和关联码来关联 myCarlos。
+
+portal-link = 关联诊所
+
+portal-matchPerson = 依文档上的资料匹配
+
+portal-notRequested = 请申请诊所批准，以便在此设备上接收文档。
+
+portal-partialResult = 部分诊所检查需要处理。已保存的新文档：{ $added }。无法验证的文档：{ $refused }。
+
+portal-person = 谁的记录
+
+portal-requestApproval = 申请诊所批准
+
+portal-restartApproval = 发起新的批准请求
+
+portal-result = 已保存的新文档：{ $added }。无法验证的文档：{ $refused }。
+
+portal-routing = 全名和出生日期相符的文档会归入该人的记录。其他文档会归入「与我分享」。
+
+portal-serviceDate = 服务日期：{ $date }
+
+portal-serviceDateLabel = 服务日期
+
+portal-sourceVerified = 来自 { $clinic } · 已验证
+
+portal-title = 诊所文档
+
+rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
+
+rename-label-profile = 文件夹名称
+
+rename-profile-action = 重命名「{ $name }」
+
+rename-profile-controls = 名称不得包含控制字符。
+
+rename-profile-saved = 文件夹名称已变更为「{ $name }」。
+
+rename-title-profile = 重命名此人的文件夹

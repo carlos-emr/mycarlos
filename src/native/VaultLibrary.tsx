@@ -8,6 +8,9 @@ import {
   type UiText,
   type MessageKey,
 } from "../i18n";
+import type { PersonDetails } from "../vault";
+import { PersonSuggestion } from "./PersonSuggestion";
+import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
@@ -31,6 +34,7 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
@@ -386,6 +390,23 @@ export function VaultLibrary({
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+  const sharedRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (r) => r.profileId === sharedProfileId && !r.hidden,
+      ),
+    [snapshot.records, sharedProfileId],
+  );
+  const suggestions = usePersonSuggestions(
+    bridge,
+    sharedRecords,
+    people,
+    busy ||
+      readOnly ||
+      !inShared ||
+      (view === "grid" && !activeRecordId) ||
+      Boolean(readerRecordId),
+  );
   const searchLocation = `${section}:${profileId}:${currentFolderId ?? ""}`;
   const searchBlocked = Boolean(
     covered ||
@@ -646,7 +667,9 @@ export function VaultLibrary({
               ),
         ),
       );
-    if (renameTarget.kind === "folder") {
+    if (renameTarget.kind === "profile") {
+      await bridge.renameProfile(renameTarget.id, name);
+    } else if (renameTarget.kind === "folder") {
       const folder = folders.find(
         (candidate) => candidate.id === renameTarget.id,
       );
@@ -662,16 +685,21 @@ export function VaultLibrary({
     } else {
       await bridge.renameRecord(renameTarget.id, name);
     }
+    if (!mountedRef.current) return;
     await refresh();
+    if (!mountedRef.current) return;
     // Cleared now, so that the result is a change even when it repeats.
     setNotice("");
     setDialogResult({
-      message: message(
-        renameTarget.kind === "folder"
-          ? "interface.notice.renamedFolder"
-          : "interface.notice.renamedDocument",
-        { name },
-      ),
+      message:
+        renameTarget.kind === "profile"
+          ? message("rename.profile.saved", { name })
+          : message(
+              renameTarget.kind === "folder"
+                ? "interface.notice.renamedFolder"
+                : "interface.notice.renamedDocument",
+              { name },
+            ),
       recordId: activeRecordId,
     });
   };
@@ -1065,10 +1093,12 @@ export function VaultLibrary({
         ),
       );
     }, ["box.currentPassphrase", "box.newPassphrase"]);
-  const createProfile = async (name: string) => {
+  const createProfile = async (name: string, details?: PersonDetails) => {
     let created = false;
     await run(async () => {
-      await bridge.createProfile(name);
+      await (details
+        ? bridge.createProfile(name, details)
+        : bridge.createProfile(name));
       created = true;
       await refresh();
       setNotice(
@@ -1078,6 +1108,40 @@ export function VaultLibrary({
       );
     }, ["box.profileName"]);
     return created;
+  };
+  const renderSuggestion = (record: VaultRecord) => {
+    if (
+      record.profileId !== sharedProfileId ||
+      readOnly ||
+      !record.available ||
+      record.hidden
+    )
+      return null;
+    const suggestion = suggestions.suggestionFor(record.id);
+    return suggestion ? (
+      <PersonSuggestion
+        person={suggestion.person}
+        matchedBy={suggestion.by}
+        documentName={record.displayName}
+        busy={busy || readOnly}
+        onMove={() => moveToPerson([record.id], suggestion.person.id, null)}
+        onDismiss={() => suggestions.dismiss(record.id)}
+      />
+    ) : null;
+  };
+  const updateProfileDetails = async (id: string, details: PersonDetails) => {
+    let saved = false;
+    await run(async () => {
+      await bridge.updateProfileDetails!(id, details);
+      saved = true;
+      await refresh();
+      setNotice(
+        t("personDetails.saved", {
+          name: people.find((p) => p.id === id)?.displayName ?? "",
+        }),
+      );
+    });
+    return saved;
   };
   /** Moves documents to another person, into one of their folders or none.
    * One the person already has stays where it is. */
@@ -1365,7 +1429,7 @@ export function VaultLibrary({
             {(section === "records" || inShared) && (
               <main
                 className={dropClass(
-                  "library-main",
+                  `library-main${!inShared && profile && !currentFolder ? " native-person-location" : ""}`,
                   `pane:${currentFolderId ?? "root"}`,
                 )}
                 // Shared with me and recursive search results take no pane
@@ -1509,6 +1573,24 @@ export function VaultLibrary({
                           onClick={() => renameFolder(currentFolder)}
                         >
                           {translateNow("rename.title.folder")}
+                        </button>
+                      )}
+                      {!currentFolder && profile && (
+                        <button
+                          className="button native-person-rename"
+                          type="button"
+                          disabled={busy || readOnly}
+                          onClick={() =>
+                            setRenameTarget({
+                              kind: "profile",
+                              id: profile.id,
+                              name: profile.displayName,
+                            })
+                          }
+                        >
+                          {t("rename.profile.action", {
+                            name: profile.displayName,
+                          })}
                         </button>
                       )}
                       <button
@@ -1760,6 +1842,16 @@ export function VaultLibrary({
                   </div>
                 )}
 
+                <PortalDocuments
+                  compact
+                  bridge={bridge}
+                  snapshot={snapshot}
+                  busy={busy}
+                  readOnly={readOnly}
+                  run={run}
+                  refresh={refresh}
+                  setNotice={setNotice}
+                />
                 <label className="search">
                   <Icon name="search" />
                   <span className="sr-only">{searchLabel}</span>
@@ -1909,6 +2001,7 @@ export function VaultLibrary({
 
                 <LibraryItems
                   view={view}
+                  suggestionFor={renderSuggestion}
                   folders={visibleFolders}
                   records={visibleRecords}
                   selectedIds={selectedIds}
@@ -1973,6 +2066,17 @@ export function VaultLibrary({
 
             {section === "security" && (
               <SecuritySettings
+                clinicDocuments={
+                  <PortalDocuments
+                    bridge={bridge}
+                    snapshot={snapshot}
+                    busy={busy}
+                    readOnly={readOnly}
+                    run={run}
+                    refresh={refresh}
+                    setNotice={setNotice}
+                  />
+                }
                 busy={busy}
                 readOnly={readOnly}
                 notice={notice}
@@ -1981,6 +2085,10 @@ export function VaultLibrary({
                 onLock={onLock}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                people={people}
+                onUpdateProfileDetails={
+                  bridge.updateProfileDetails ? updateProfileDetails : undefined
+                }
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
@@ -2118,6 +2226,7 @@ export function VaultLibrary({
             unlocking?.recordId !== activeRecord.id && (
               <RecordDetails
                 record={activeRecord}
+                suggestion={renderSuggestion(activeRecord)}
                 folders={folders}
                 moveTargets={
                   inShared || people.length > 1 ? moveTargets : undefined

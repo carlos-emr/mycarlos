@@ -10,6 +10,12 @@ license = "AGPL-3.0-or-later"
 name = "mycarlos_tauri_poc_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Evaluation only. The native link command refuses before any write or request
+# unless this build feature is explicitly selected; renderer state cannot enable it.
+portal-linking = ["dep:reqwest", "dep:rustls", "dep:rustls-platform-verifier", "dep:tokio", "dep:hpke"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -25,8 +31,12 @@ der = { version = "=0.7.10", features = ["alloc", "oid"] }
 # P-256 verification uses the current RustCrypto EC generation to avoid
 # RUSTSEC-2026-0387 through crypto-bigint; keep these versions aligned.
 ecdsa = { version = "=0.17.0", features = ["der"] }
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "zeroize"] }
 hkdf = "0.12"
 fluent-bundle = "=0.16.0"
+# Only the frozen X25519 suite. Disable default P256 KEM to keep the current
+# independent P256 verifier stack and avoid old EC dependencies.
+hpke = { version = "=0.13.0", default-features = false, features = ["std", "x25519"], optional = true }
 hmac = "0.12"
 libc = "0.2"
 # Opens a password-protected PDF, only ever in the separate helper process (src/pdf_unlock.rs).
@@ -42,16 +52,21 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 p256 = { version = "=0.14.0", features = ["ecdsa", "pkcs8"] }
 percent-encoding = "2"
 rand = "0.8"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider"], optional = true }
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring", "tls12"], optional = true }
+rustls-platform-verifier = { version = "=0.7.1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tokio = { version = "1", features = ["time", "macros"], optional = true }
 unicode-normalization = "0.1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 x509-cert = "=0.2.5"
+x25519-dalek = { version = "=2.0.1", default-features = false, features = ["alloc", "static_secrets", "zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
 

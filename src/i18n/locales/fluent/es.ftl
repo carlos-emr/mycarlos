@@ -1355,3 +1355,167 @@ unlock-waiting =
 unlock-waiting-one = Hay un archivo compartido en espera. Desbloquee la bóveda y pasará a «{ $folder }». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.
 
 language-error-formatting = myCarlos no pudo mostrar este mensaje correctamente. Elija otro idioma o reinicie la aplicación; revise sus registros antes de volver a intentarlo.
+
+error-newerFormat-backup = Esta copia de seguridad se guardó con una versión más reciente de myCarlos. Actualice myCarlos para restaurarla. No se cambió nada en este dispositivo.
+
+error-newerFormat-vault = Esta bóveda se guardó con una versión más reciente de myCarlos. Actualice myCarlos para abrirla. No se cambió nada.
+
+personDetails-birthDate = Fecha de nacimiento
+
+personDetails-birthDateRequired = Introduzca la fecha de nacimiento o indique que la desconoce.
+
+personDetails-birthDateUnknown = No conozco la fecha de nacimiento de esta persona
+
+personDetails-cancel = Cancelar
+
+personDetails-edit = Editar datos
+
+personDetails-editFor = Editar los datos de { $name }
+
+personDetails-for = Datos de { $name }
+
+personDetails-fullName = Nombre completo, como en los documentos de la clínica
+
+personDetails-fullNameRequired = Introduzca el nombre completo de la persona.
+
+personDetails-futureDate = La fecha de nacimiento no puede ser futura.
+
+personDetails-help = Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.
+
+personDetails-invalidDate = Introduzca una fecha de nacimiento válida: año, mes y día.
+
+personDetails-list = Datos de las personas
+
+personDetails-nameTooLong = Este nombre completo es demasiado largo. Acórtelo.
+
+personDetails-noDate = Sin fecha de nacimiento
+
+personDetails-noName = Sin nombre completo
+
+personDetails-save = Guardar datos
+
+personDetails-saved = Se guardaron los datos de { $name }.
+
+personSuggestion-byBoth = coinciden la fecha de nacimiento y el nombre del documento
+
+personSuggestion-byDate = coincide la fecha de nacimiento del documento
+
+personSuggestion-byName = coincide el nombre del documento
+
+personSuggestion-dismiss = No es esta persona
+
+personSuggestion-dismissLabel = No es esta persona: { $document }
+
+personSuggestion-for = Persona sugerida para { $document }
+
+personSuggestion-move = Mover
+
+personSuggestion-moveLabel = Mover { $document } a los registros de { $name }
+
+personSuggestion-offer = Parece que este documento es para { $name } ({ $why }). ¿Moverlo a sus registros?
+
+portal-address = Dirección HTTPS del portal
+
+portal-approvalCancelled = Esta solicitud de aprobación se canceló. Busque actualizaciones antes de iniciar otra solicitud.
+
+portal-approvalContact = Es necesario revisar la aprobación de la clínica. Consulte con su clínica los próximos pasos.
+
+portal-approvalExpired = Esta solicitud de aprobación caducó. Busque actualizaciones antes de iniciar otra solicitud.
+
+portal-approvalMissing = No se encontró su solicitud de aprobación guardada en el portal. Vuelva a enviar la solicitud guardada.
+
+portal-approvalRefused = La clínica rechazó esta solicitud de aprobación del dispositivo. Consulte con su clínica los próximos pasos.
+
+portal-approved = La clínica aprobó este dispositivo.
+
+portal-awaiting = Solicitud de aprobación guardada. Busque actualizaciones o envíela de nuevo.
+
+portal-check = Buscar documentos nuevos
+
+portal-clinicIssue = { $clinic }: { $detail }
+
+portal-code = Código de vinculación
+
+portal-compare = Pida al personal de la clínica que compare toda esta huella en esta pantalla antes de aprobar este dispositivo.
+
+portal-confirmationsPending = Documentos guardados pendientes de confirmación de recepción: { $count }. Compruebe de nuevo para completar la confirmación. Sus copias guardadas permanecen en la bóveda.
+
+portal-copied = Código del dispositivo copiado.
+
+portal-copy = Copiar código del dispositivo
+
+portal-copyFailed = Seleccione el código completo del dispositivo y cópielo.
+
+portal-dateNotRecorded = Fecha no registrada
+
+portal-deviceCode = Código del dispositivo
+
+portal-deviceName = Nombre de este dispositivo
+
+portal-errorAddress = Introduzca la dirección HTTPS del portal sin nombre de usuario, contraseña, parámetros de consulta ni fragmento.
+
+portal-errorCancelled = La vinculación se detuvo porque la bóveda se bloqueó. Revise los dispositivos vinculados en el portal antes de volver a intentarlo.
+
+portal-errorCode = Introduzca el código de vinculación completo de su portal de pacientes.
+
+portal-errorCodeRejected = El portal no aceptó ese código. Cree otro código de vinculación en su portal de pacientes.
+
+portal-errorDamaged = Un documento guardado de esta clínica está dañado o no se encuentra, por lo que no se envió su acuse de recibo. Sus demás documentos sí se comprobaron. Restáurelo desde una copia de seguridad o pida a la clínica que se lo vuelva a enviar.
+
+portal-errorDeviceName = Elija un nombre de dispositivo de 1 a 64 caracteres sin caracteres de control.
+
+portal-errorDisabled = La vinculación con el portal no está habilitada en esta versión.
+
+portal-errorExists = Este dispositivo ya está registrado. Revise los dispositivos vinculados en su portal de pacientes.
+
+portal-errorIncomplete = No se pudo completar la solicitud al portal. Revise la conexión y el reloj del dispositivo y vuelva a intentarlo.
+
+portal-errorKeys = La clínica aún no ha publicado una clave de firma. La vinculación está incompleta.
+
+portal-errorRefused = No se pudo verificar un documento de la clínica. No se añadió ni se envió un acuse de recibo.
+
+portal-errorUnavailable = La vinculación con el portal aún no está disponible en este dispositivo.
+
+portal-fingerprint = Huella completa del dispositivo
+
+portal-incomplete = Vinculación incompleta. Revise los dispositivos vinculados en el portal antes de volver a intentarlo.
+
+portal-intro = Vincule myCarlos con la dirección y el código que aparecen en su portal de pacientes.
+
+portal-link = Vincular con la clínica
+
+portal-matchPerson = Usar los datos del documento
+
+portal-notRequested = Solicite la aprobación de la clínica para recibir documentos en este dispositivo.
+
+portal-partialResult = Algunas comprobaciones de clínicas requieren atención. Documentos nuevos guardados: { $added }. Documentos que no se pudieron verificar: { $refused }.
+
+portal-person = De quién son los documentos
+
+portal-requestApproval = Solicitar aprobación de la clínica
+
+portal-restartApproval = Iniciar otra solicitud de aprobación
+
+portal-result = Documentos nuevos guardados: { $added }. Documentos que no se pudieron verificar: { $refused }.
+
+portal-routing = Los documentos se guardan bajo la persona cuyo nombre completo y fecha de nacimiento coincidan. Los demás van a Compartidos conmigo.
+
+portal-serviceDate = Fecha del servicio: { $date }
+
+portal-serviceDateLabel = Fecha del servicio
+
+portal-sourceVerified = De { $clinic } · Verificado
+
+portal-title = Documentos de la clínica
+
+rename-help-profile = Esto solo cambia el nombre que se muestra para la carpeta. Las carpetas y los documentos de la persona se quedan donde están.
+
+rename-label-profile = Nombre de la carpeta
+
+rename-profile-action = Renombrar «{ $name }»
+
+rename-profile-controls = Los nombres no pueden contener caracteres de control.
+
+rename-profile-saved = El nombre de la carpeta se ha cambiado a { $name }.
+
+rename-title-profile = Cambiar el nombre de la carpeta de la persona

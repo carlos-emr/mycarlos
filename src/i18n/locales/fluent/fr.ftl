@@ -1355,3 +1355,167 @@ unlock-waiting =
 unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
 
 language-error-formatting = myCarlos n’a pas pu afficher ce message correctement. Choisissez une autre langue ou redémarrez l’application, puis vérifiez vos dossiers avant de réessayer.
+
+error-newerFormat-backup = Cette sauvegarde a été enregistrée par une version plus récente de myCarlos. Mettez myCarlos à jour pour la restaurer. Rien n’a été modifié sur cet appareil.
+
+error-newerFormat-vault = Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.
+
+personDetails-birthDate = Date de naissance
+
+personDetails-birthDateRequired = Saisissez la date de naissance ou indiquez que vous ne la connaissez pas.
+
+personDetails-birthDateUnknown = Je ne connais pas la date de naissance de cette personne
+
+personDetails-cancel = Annuler
+
+personDetails-edit = Modifier les renseignements
+
+personDetails-editFor = Modifier les renseignements pour { $name }
+
+personDetails-for = Renseignements pour { $name }
+
+personDetails-fullName = Nom complet, comme sur les documents de la clinique
+
+personDetails-fullNameRequired = Saisissez le nom complet de la personne.
+
+personDetails-futureDate = La date de naissance ne peut pas être dans le futur.
+
+personDetails-help = Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.
+
+personDetails-invalidDate = Saisissez une date de naissance valide : année, mois et jour.
+
+personDetails-list = Renseignements des personnes
+
+personDetails-nameTooLong = Ce nom complet est trop long. Raccourcissez-le.
+
+personDetails-noDate = Aucune date de naissance
+
+personDetails-noName = Aucun nom complet
+
+personDetails-save = Enregistrer les renseignements
+
+personDetails-saved = Renseignements pour { $name } enregistrés.
+
+personSuggestion-byBoth = la date de naissance et le nom sur le document correspondent
+
+personSuggestion-byDate = la date de naissance sur le document correspond
+
+personSuggestion-byName = le nom sur le document correspond
+
+personSuggestion-dismiss = Pas cette personne
+
+personSuggestion-dismissLabel = Pas cette personne : { $document }
+
+personSuggestion-for = Personne suggérée pour { $document }
+
+personSuggestion-move = Déplacer
+
+personSuggestion-moveLabel = Déplacer { $document } dans les dossiers de { $name }
+
+personSuggestion-offer = Ce document semble être destiné à { $name } ({ $why }). Le déplacer dans ses dossiers ?
+
+portal-address = Adresse HTTPS du portail
+
+portal-approvalCancelled = Cette demande d’approbation a été annulée. Vérifiez les mises à jour avant de créer une nouvelle demande.
+
+portal-approvalContact = L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.
+
+portal-approvalExpired = Cette demande d’approbation a expiré. Vérifiez les mises à jour avant de créer une nouvelle demande.
+
+portal-approvalMissing = Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.
+
+portal-approvalRefused = La clinique a refusé cette demande d’approbation de l’appareil. Contactez votre clinique pour connaître les prochaines étapes.
+
+portal-approved = La clinique a approuvé cet appareil.
+
+portal-awaiting = Demande d’approbation enregistrée. Vérifiez les mises à jour ou renvoyez-la.
+
+portal-check = Rechercher de nouveaux documents
+
+portal-clinicIssue = { $clinic } : { $detail }
+
+portal-code = Code d’association
+
+portal-compare = Demandez au personnel de la clinique de comparer cette empreinte entière sur cet écran avant d’approuver cet appareil.
+
+portal-confirmationsPending = Documents enregistrés en attente de confirmation de réception : { $count }. Vérifiez à nouveau pour terminer la confirmation. Vos copies enregistrées restent dans le coffre.
+
+portal-copied = Code de l’appareil copié.
+
+portal-copy = Copier le code de l’appareil
+
+portal-copyFailed = Sélectionnez le code entier de l’appareil et copiez-le.
+
+portal-dateNotRecorded = Date non consignée
+
+portal-deviceCode = Code de l’appareil
+
+portal-deviceName = Nom de cet appareil
+
+portal-errorAddress = Saisissez l’adresse HTTPS du portail sans nom d’utilisateur, mot de passe, paramètres de requête ni fragment.
+
+portal-errorCancelled = L’association s’est arrêtée parce que le coffre-fort s’est verrouillé. Consultez les appareils associés dans le portail avant de réessayer.
+
+portal-errorCode = Saisissez le code d’association complet affiché dans votre portail patient.
+
+portal-errorCodeRejected = Le portail a refusé ce code. Créez un nouveau code d’association dans votre portail patient.
+
+portal-errorDamaged = Un document enregistré de cette clinique est endommagé ou manquant. Son accusé de réception n’a donc pas été envoyé. La recherche de vos autres documents s’est poursuivie. Restaurez-le à partir d’une sauvegarde ou demandez à la clinique de vous le renvoyer.
+
+portal-errorDeviceName = Choisissez un nom d’appareil de 1 à 64 caractères sans caractères de contrôle.
+
+portal-errorDisabled = L’association au portail n’est pas activée dans cette version.
+
+portal-errorExists = Cet appareil est déjà enregistré. Consultez les appareils associés dans votre portail patient.
+
+portal-errorIncomplete = La demande au portail n’a pas abouti. Vérifiez votre connexion et l’horloge de l’appareil, puis réessayez.
+
+portal-errorKeys = La clinique n’a pas encore publié de clé de signature. L’association est incomplète.
+
+portal-errorRefused = Un document de la clinique n’a pas pu être vérifié. Il n’a pas été ajouté et aucun accusé de réception n’a été envoyé.
+
+portal-errorUnavailable = L’association au portail n’est pas encore disponible sur cet appareil.
+
+portal-fingerprint = Empreinte complète de l’appareil
+
+portal-incomplete = Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.
+
+portal-intro = Associez myCarlos avec l’adresse et le code affichés dans votre portail patient.
+
+portal-link = Associer à la clinique
+
+portal-matchPerson = Utiliser les renseignements du document
+
+portal-notRequested = Demandez l’approbation de la clinique pour recevoir des documents sur cet appareil.
+
+portal-partialResult = Certaines vérifications auprès des cliniques nécessitent votre attention. Nouveaux documents enregistrés : { $added }. Documents non vérifiés : { $refused }.
+
+portal-person = Dossiers de quelle personne
+
+portal-requestApproval = Demander l’approbation de la clinique
+
+portal-restartApproval = Créer une nouvelle demande d’approbation
+
+portal-result = Nouveaux documents enregistrés : { $added }. Documents non vérifiés : { $refused }.
+
+portal-routing = Les documents sont classés sous la personne dont le nom complet et la date de naissance correspondent. Les autres vont dans Partagés avec moi.
+
+portal-serviceDate = Date du service : { $date }
+
+portal-serviceDateLabel = Date du service
+
+portal-sourceVerified = De { $clinic } · Vérifié
+
+portal-title = Documents de la clinique
+
+rename-help-profile = Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.
+
+rename-label-profile = Nom du dossier
+
+rename-profile-action = Renommer « { $name } »
+
+rename-profile-controls = Les noms ne peuvent pas contenir de caractères de contrôle.
+
+rename-profile-saved = Le dossier s’appelle maintenant { $name }.
+
+rename-title-profile = Renommer le dossier de la personne

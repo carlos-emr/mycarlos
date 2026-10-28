@@ -33,12 +33,13 @@ function renderReader(
   viewPage = vi.fn(async (index: number, _width: number, _password?: string) =>
     page(index),
   ),
+  shownRecord: VaultRecord = record,
 ) {
   const onClose = vi.fn();
   const cancelView = vi.fn();
   const view = render(
     <DocumentReader
-      record={record}
+      record={shownRecord}
       viewPage={viewPage}
       cancelView={cancelView}
       onClose={onClose}
@@ -48,6 +49,22 @@ function renderReader(
 }
 
 describe("the document reader", () => {
+  it.each([undefined, "", "2024-02-29"])(
+    "keeps the clinic service date %s distinct from the date added",
+    async (serviceDate) => {
+      renderReader(undefined, { ...record, clinicServiceDate: serviceDate });
+      if (serviceDate === undefined) {
+        expect(screen.queryByText(/^Service date:/)).not.toBeInTheDocument();
+      } else {
+        expect(
+          screen.getByText(
+            `Service date: ${serviceDate === "" ? "Date not recorded" : serviceDate}`,
+          ),
+        ).toBeVisible();
+      }
+      await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    },
+  );
   it("shows reader-only line boundaries without changing legacy text", async () => {
     const raw =
       "FAKE Imaging ReportPatient: FAKE Morgan PatientFinding: HbA1c 1.5 mg 120/80";
