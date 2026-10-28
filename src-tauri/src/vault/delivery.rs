@@ -77,6 +77,15 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
         && receipt.picked_up_at == c.checked_at_ms / 1000
 }
 
+/// One link's unsettled receipts: the ones whose documents still read back,
+/// and how many were skipped because their saved document is damaged.
+#[cfg(feature = "portal-linking")]
+#[derive(Default)]
+pub(crate) struct PendingReceipts {
+    pub ready: Vec<Custody>,
+    pub damaged: usize,
+}
+
 pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Option<String> {
     let c = record.delivery.as_ref()?;
     let link = links.iter().find(|l| l.id == c.link_id)?;
@@ -152,11 +161,23 @@ impl VaultStore {
         let head = wire::head_bytes(&open.manifest.history.head).ok_or(VaultError::Corrupt)?;
         link.keys.anchor(&head).map_err(VaultError::Portal)
     }
+    #[cfg(test)]
     pub(crate) fn pending_receipts(
         &self,
         link: &StoredLink,
         session: u64,
     ) -> Result<Vec<Custody>, VaultError> {
+        Ok(self.pending_receipts_checked(link, session)?.ready)
+    }
+    /// Unsettled receipts for one link. A record whose saved objects no longer
+    /// read back (damaged or missing) is counted in `damaged`, not returned:
+    /// it is never acknowledged, and it does not stop the other records or
+    /// clinics from being checked.
+    pub(crate) fn pending_receipts_checked(
+        &self,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<PendingReceipts, VaultError> {
         let guard = self.session();
         let open = guard.as_ref().ok_or(VaultError::Locked)?;
         if self.portal_link_ticket() != session {
@@ -169,22 +190,28 @@ impl VaultStore {
             return Err(VaultError::Invalid);
         }
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
-        let mut pending = Vec::new();
+        let mut pending = PendingReceipts::default();
         for record in &open.manifest.records {
             if let Some(c) = &record.delivery {
                 if c.link_id == link.id && c.receipt_outcome.is_none() {
                     // A restored/damaged object must never be acknowledged merely
                     // because its metadata and old receipt are still readable.
-                    for object in record.objects() {
+                    let readable = record.objects().try_for_each(|object| {
                         read_object_ref(
                             &self.root.join("objects").join(object.object_name),
                             open.manifest.vault_id,
                             &keys,
                             object,
                             io::sink(),
-                        )?;
+                        )
+                    });
+                    match readable {
+                        Ok(()) => pending.ready.push(c.clone()),
+                        // Damage stays until the patient restores a good copy;
+                        // a failed read that a retry can get past still stops.
+                        Err(VaultError::Corrupt) => pending.damaged += 1,
+                        Err(error) => return Err(error),
                     }
-                    pending.push(c.clone());
                 }
             }
         }
@@ -1509,7 +1536,8 @@ mod approval_recovery_tests {
         assert!(current.approval.as_ref().unwrap().acceptance.is_none());
         assert!(!current.summary().clinic_approved);
     }
-    fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
+    /// The checked-in FAKE package and the link it was sealed for.
+    fn fixture_package() -> (StoredLink, wire::Outer, Vec<u8>, u64) {
         let packet: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/java-delivery-interop-v1.json"
         ))
@@ -1525,19 +1553,30 @@ mod approval_recovery_tests {
                 .unwrap();
         shared["receiver"] = packet["receiver"].clone();
         let link = wire::tests::fixture_link(&shared);
+        let outer: wire::Outer = serde_json::from_value(packet["outer"].clone()).unwrap();
+        let sealed = wire::decode(packet["blob"].as_str().unwrap()).unwrap();
+        (link, outer, sealed, packet["now"].as_u64().unwrap())
+    }
+    fn add_link(store: &VaultStore, link: &StoredLink) {
         store
             .mutate_recorded(|m, _| {
                 m.portal_links.push(link.clone());
                 Ok(())
             })
             .unwrap();
-        let outer: wire::Outer = serde_json::from_value(packet["outer"].clone()).unwrap();
-        let sealed = wire::decode(packet["blob"].as_str().unwrap()).unwrap();
+    }
+    /// The package opened at its reference clock, and its signed original
+    /// checked in process (unit tests have no PDF helper).
+    fn opened_fixture(
+        link: &StoredLink,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        now: u64,
+    ) -> (wire::Opened, crate::signed_pdf::Manifest) {
         // Reference-clock input is a checked-in synthetic Java package. Verify
         // its real HPKE/ES256 and actual CMS signature before exercising the
         // durable-store/HTTP boundary; this is not a live helper/UI test.
-        let opened =
-            wire::open(&outer, &sealed, &link, &[], packet["now"].as_u64().unwrap()).unwrap();
+        let opened = wire::open(outer, sealed, link, &[], now).unwrap();
         let signed: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
         ))
@@ -1570,6 +1609,12 @@ mod approval_recovery_tests {
         else {
             panic!("actual signed original must match this test link");
         };
+        (opened, checked)
+    }
+    fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
+        let (link, outer, sealed, now) = fixture_package();
+        add_link(store, &link);
+        let (opened, checked) = opened_fixture(&link, &outer, &sealed, now);
         let (id, added) = store
             .commit_delivery(
                 &outer,
@@ -1601,6 +1646,276 @@ mod approval_recovery_tests {
         crate::portal_client::ApiResponse {
             status: 200,
             body: Zeroizing::new(br#"{"status":"picked_up"}"#.to_vec()),
+        }
+    }
+    fn reply(status: u16, body: &[u8]) -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status,
+            body: Zeroizing::new(body.to_vec()),
+        }
+    }
+    fn listing(outers: &[wire::Outer]) -> crate::portal_client::ApiResponse {
+        reply(
+            200,
+            &serde_json::to_vec(&serde_json::json!({
+                "deliveries": outers,
+                "next_cursor": null,
+                "through": outers.len().to_string(),
+                "anchor_recorded": true,
+            }))
+            .unwrap(),
+        )
+    }
+    /// A filed delivery for `other`, a second clinic in this vault, made from
+    /// the checked-in package with that clinic's ids. Its manifest signature
+    /// is not the clinic's, so only for tests that damage it and never send it.
+    fn add_unsent_delivery_for(store: &VaultStore, other: &StoredLink) -> Uuid {
+        let (fixture, mut outer, sealed, now) = fixture_package();
+        let (mut opened, checked) = opened_fixture(&fixture, &outer, &sealed, now);
+        let clinic = other.clinic.as_ref().unwrap();
+        outer.delivery_id = Uuid::new_v4().to_string();
+        outer.recipient_id = clinic.recipient_id.clone();
+        outer.device_key_id = other.keys.device_key_id();
+        let manifest = &mut opened.manifest;
+        manifest.delivery_id = outer.delivery_id.clone();
+        manifest.recipient_id = outer.recipient_id.clone();
+        manifest.device_key_id = outer.device_key_id.clone();
+        manifest.clinic_id = clinic.clinic_id.clone();
+        let (_, signature) = opened.manifest_compact.split_once('.').unwrap();
+        opened.manifest_compact = format!(
+            "{}.{signature}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(serde_json::to_vec(&opened.manifest).unwrap())
+        );
+        let (id, added) = store
+            .commit_delivery(
+                &outer,
+                opened,
+                other,
+                &checked,
+                crate::now_ms(),
+                store.portal_link_ticket(),
+            )
+            .unwrap();
+        assert!(added);
+        id
+    }
+    /// Damages a record's saved document in one of the two ways a vault that
+    /// takes changes can hold: one byte of it changed, or its file gone and
+    /// the record removed as damaged (the vault takes no changes while a
+    /// document it still shows is missing, until the patient does that).
+    // Tests remove files on purpose, to simulate damage and loss (#71).
+    #[allow(clippy::disallowed_methods)]
+    fn damage(store: &VaultStore, record: Uuid, missing: bool) {
+        let name = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .find(|r| r.id == record)
+            .unwrap()
+            .object_name
+            .clone();
+        let path = store.root.join("objects").join(name);
+        let mut bytes = fs::read(&path).unwrap();
+        let permissions = fs::metadata(&path).unwrap().permissions();
+        fs::remove_file(&path).unwrap();
+        if missing {
+            store
+                .mutate_recorded(|m, _| {
+                    m.records
+                        .iter_mut()
+                        .find(|r| r.id == record)
+                        .unwrap()
+                        .hidden = Some(Hidden {
+                        at_ms: crate::now_ms(),
+                        reason: HiddenReason::Damaged,
+                    });
+                    Ok(())
+                })
+                .unwrap();
+        } else {
+            *bytes.last_mut().unwrap() ^= 1;
+            fs::write(&path, bytes).unwrap();
+            fs::set_permissions(&path, permissions).unwrap();
+        }
+    }
+    #[test]
+    fn should_hold_a_damaged_records_receipt_and_still_check_and_send_the_other_clinics() {
+        for missing in [true, false] {
+            // The clinic with the damaged record is checked first.
+            let (_temp, store, damaged_link, _) = setup(false);
+            let (healthy, healthy_id, receipt) = add_signed_pending_delivery(&store);
+            let damaged_id = add_unsent_delivery_for(&store, &damaged_link);
+            damage(&store, damaged_id, missing);
+            let approvals = Script::new(vec![], vec![]);
+            for round in 0..2 {
+                let calls = Mutex::new(Vec::new());
+                let result = crate::portal_pickup::check_using(
+                    &store,
+                    store.portal_link_ticket(),
+                    &approvals,
+                    |link, method, path, body, _, _, _| {
+                        calls
+                            .lock()
+                            .unwrap()
+                            .push((link.id, method.to_owned(), path.to_owned()));
+                        if path.ends_with("/receipt") {
+                            assert_eq!(
+                                serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+                                    ["receipt"],
+                                receipt
+                            );
+                            Ok(picked_up())
+                        } else {
+                            Ok(empty_page())
+                        }
+                    },
+                )
+                .unwrap();
+                let calls = calls.into_inner().unwrap();
+                let listed = calls
+                    .iter()
+                    .filter(|(_, method, path)| {
+                        method == "GET" && path.starts_with("/api/mycarlos/deliveries?")
+                    })
+                    .map(|(id, _, _)| *id)
+                    .collect::<Vec<_>>();
+                assert_eq!(listed, vec![damaged_link.id, healthy.id]);
+                let posted = calls
+                    .iter()
+                    .filter(|(_, method, _)| method == "POST")
+                    .map(|(id, _, _)| *id)
+                    .collect::<Vec<_>>();
+                // The healthy clinic's receipt is sent once; the damaged
+                // record's receipt is never sent.
+                let expected = if round == 0 { vec![healthy.id] } else { vec![] };
+                assert_eq!(posted, expected);
+                assert_eq!(result.issues.len(), 1);
+                assert_eq!(result.issues[0].link_id, damaged_link.id);
+                assert_eq!(result.issues[0].code, crate::portal_pickup::DAMAGED_CODE);
+                assert_eq!(result.receipts_pending, 0);
+            }
+            let guard = store.session();
+            let records = &guard.as_ref().unwrap().manifest.records;
+            let outcome = |id: Uuid| {
+                records
+                    .iter()
+                    .find(|r| r.id == id)
+                    .unwrap()
+                    .delivery
+                    .as_ref()
+                    .unwrap()
+                    .receipt_outcome
+            };
+            assert!(outcome(healthy_id) == Some(wire::ReceiptOutcome::PickedUp));
+            assert!(outcome(damaged_id).is_none());
+        }
+    }
+    #[test]
+    fn should_report_a_failed_download_and_still_fetch_the_clinics_next_delivery() {
+        use portal_link::LinkError;
+        type Failure = fn() -> Result<crate::portal_client::ApiResponse, LinkError>;
+        let failures: [Failure; 4] = [
+            || Err(LinkError::Network),
+            || Err(LinkError::InvalidResponse),
+            || Ok(reply(500, b"{}")),
+            || Ok(reply(404, br#"{"code":"not_ready"}"#)),
+        ];
+        for failure in failures {
+            let (_temp, store, _, _) = setup(false);
+            let (link, second, sealed, _) = fixture_package();
+            add_link(&store, &link);
+            let mut first = second.clone();
+            first.delivery_id = Uuid::new_v4().to_string();
+            let fetched = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, method, path, _, _, _, _| {
+                    if l.id != link.id {
+                        return Ok(empty_page());
+                    }
+                    assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                    fetched.lock().unwrap().push(path.to_owned());
+                    if path.starts_with("/api/mycarlos/deliveries?") {
+                        Ok(listing(&[first.clone(), second.clone()]))
+                    } else if path.ends_with(&first.delivery_id) {
+                        failure()
+                    } else {
+                        Ok(reply(200, &sealed))
+                    }
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                fetched.into_inner().unwrap(),
+                vec![
+                    "/api/mycarlos/deliveries?limit=50".to_owned(),
+                    format!("/api/mycarlos/deliveries/{}", first.delivery_id),
+                    format!("/api/mycarlos/deliveries/{}", second.delivery_id),
+                ]
+            );
+            // The second delivery was downloaded and checked. Unit tests have
+            // no PDF helper and the checked-in package is past its pickup
+            // window, so it is refused here instead of filed.
+            assert_eq!((result.added, result.refused), (0, 1));
+            assert_eq!(result.issues.len(), 1);
+            assert_eq!(result.issues[0].link_id, link.id);
+            assert_eq!(result.issues[0].code, "portal_link_incomplete");
+        }
+    }
+    #[test]
+    fn should_stop_a_clinic_after_three_downloads_in_a_row_get_no_reply() {
+        // None is no reply at all; Some is an HTTP status, which resets the count.
+        for (replies, fetched) in [
+            (vec![None, None, None, None], 3),
+            (vec![None, None, Some(500), None, None, None, None], 6),
+        ] {
+            let (_temp, store, _, _) = setup(false);
+            let (link, outer, _, _) = fixture_package();
+            add_link(&store, &link);
+            let listed = replies
+                .iter()
+                .map(|_| {
+                    let mut outer = outer.clone();
+                    outer.delivery_id = Uuid::new_v4().to_string();
+                    outer
+                })
+                .collect::<Vec<_>>();
+            let downloads = Mutex::new(0);
+            let result = crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, _, path, _, _, _, _| {
+                    if l.id != link.id {
+                        return Ok(empty_page());
+                    }
+                    if path.starts_with("/api/mycarlos/deliveries?") {
+                        return Ok(listing(&listed));
+                    }
+                    let mut downloads = downloads.lock().unwrap();
+                    let index = listed
+                        .iter()
+                        .position(|o| path.ends_with(&o.delivery_id))
+                        .unwrap();
+                    assert_eq!(index, *downloads, "listed order");
+                    *downloads += 1;
+                    match replies[index] {
+                        None => Err(portal_link::LinkError::Network),
+                        Some(status) => Ok(reply(status, b"{}")),
+                    }
+                },
+            )
+            .unwrap();
+            assert_eq!(downloads.into_inner().unwrap(), fetched);
+            assert_eq!(result.issues.len(), 1);
+            assert_eq!(result.issues[0].link_id, link.id);
+            assert_eq!(result.issues[0].code, "portal_link_incomplete");
         }
     }
     #[test]

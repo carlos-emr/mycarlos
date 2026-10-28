@@ -70,6 +70,8 @@ export const pl: Record<MessageKey, Message> = {
     "Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.",
   "portal.errorRefused":
     "Nie udało się zweryfikować dokumentu z przychodni. Nie dodano go ani nie wysłano potwierdzenia odbioru.",
+  "portal.errorDamaged":
+    "Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone.",
 
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",

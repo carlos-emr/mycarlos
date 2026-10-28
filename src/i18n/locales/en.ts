@@ -71,6 +71,8 @@ export const en = {
     "The portal request could not be completed. Check your connection and device clock, then try again.",
   "portal.errorRefused":
     "A clinic document could not be verified. It was not added and no pickup receipt was sent.",
+  "portal.errorDamaged":
+    "A saved document from this clinic is damaged or missing, so its pickup confirmation was not sent. Your other documents were still checked.",
 
   // Window frame
   "frame.banner.title": "Synthetic-data development build",

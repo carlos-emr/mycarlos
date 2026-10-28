@@ -467,6 +467,7 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_link_device_exists: "portal.errorExists",
     portal_link_incomplete: "portal.errorIncomplete",
     pickup_refused: "portal.errorRefused",
+    pickup_damaged: "portal.errorDamaged",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
     if (hasErrorCode(error, code)) return t(key);

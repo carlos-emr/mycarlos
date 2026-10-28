@@ -70,6 +70,8 @@ export const ptBR: Record<MessageKey, Message> = {
     "Não foi possível concluir a solicitação ao portal. Verifique a conexão e o relógio do dispositivo e tente novamente.",
   "portal.errorRefused":
     "Não foi possível verificar um documento da clínica. Ele não foi adicionado e nenhum recibo de retirada foi enviado.",
+  "portal.errorDamaged":
+    "Um documento salvo desta clínica está danificado ou ausente, por isso o recibo de retirada não foi enviado. Seus outros documentos foram verificados normalmente.",
 
   "frame.banner.title": "Versão de desenvolvimento com dados fictícios",
   "frame.banner.body": "Não use informações reais de pacientes",

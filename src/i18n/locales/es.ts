@@ -70,6 +70,8 @@ export const es: Record<MessageKey, Message> = {
     "No se pudo completar la solicitud al portal. Revise la conexión y el reloj del dispositivo y vuelva a intentarlo.",
   "portal.errorRefused":
     "No se pudo verificar un documento de la clínica. No se añadió ni se envió un acuse de recibo.",
+  "portal.errorDamaged":
+    "Un documento guardado de esta clínica está dañado o no se encuentra, por lo que no se envió su acuse de recibo. Sus demás documentos sí se comprobaron.",
 
   "frame.banner.title": "Versión de desarrollo con datos ficticios",
   "frame.banner.body": "No use información real de pacientes",

@@ -70,6 +70,8 @@ export const fr: Record<MessageKey, Message> = {
     "La demande au portail n’a pas abouti. Vérifiez votre connexion et l’horloge de l’appareil, puis réessayez.",
   "portal.errorRefused":
     "Un document de la clinique n’a pas pu être vérifié. Il n’a pas été ajouté et aucun accusé de réception n’a été envoyé.",
+  "portal.errorDamaged":
+    "Un document enregistré de cette clinique est endommagé ou manquant. Son accusé de réception n’a donc pas été envoyé. Vos autres documents ont tout de même été vérifiés.",
 
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
