@@ -272,9 +272,9 @@ describe("native clinic document controls", () => {
         "Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.",
       ),
     ]);
-    expect(props.setNotice).not.toHaveBeenCalledWith(
-      expect.stringContaining("Picked up"),
-    );
+    expect(
+      humanValue(vi.mocked(props.setNotice).mock.calls),
+    ).not.toContainEqual([expect.stringContaining("Picked up")]);
   });
   it("shows clinic-specific partial guidance while preserving successful progress from other links", async () => {
     const { bridge, props } = fixture();

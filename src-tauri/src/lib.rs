@@ -5790,6 +5790,45 @@ mod native_localization_tests {
             let text = PublicText::from(error);
             assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
         }
+        // Main's newer-format and portal errors resolve through the same catalogue.
+        use crate::portal_link::LinkError;
+        for error in [
+            VaultError::NewerFormat,
+            VaultError::BackupNewerFormat,
+            VaultError::Portal(LinkError::Disabled),
+            VaultError::Portal(LinkError::Unavailable),
+            VaultError::Portal(LinkError::InvalidPortal),
+            VaultError::Portal(LinkError::InvalidCode),
+            VaultError::Portal(LinkError::InvalidDeviceName),
+            VaultError::Portal(LinkError::InvalidResponse),
+            VaultError::Portal(LinkError::Network),
+            VaultError::Portal(LinkError::CodeRejected),
+            VaultError::Portal(LinkError::ClinicKeysMissing),
+            VaultError::Portal(LinkError::DeviceExists),
+            VaultError::Portal(LinkError::Cancelled),
+        ] {
+            let text = PublicText::from(error);
+            assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
+        }
+        #[cfg(feature = "portal-linking")]
+        {
+            use crate::portal_approval::{ApprovalReason, ApprovalState};
+            for error in [
+                VaultError::ApprovalTerminal(ApprovalState::Expired, None),
+                VaultError::ApprovalTerminal(ApprovalState::Cancelled, None),
+                VaultError::ApprovalTerminal(ApprovalState::Refused, None),
+                VaultError::ApprovalTerminal(
+                    ApprovalState::Refused,
+                    Some(ApprovalReason::StaffRequired),
+                ),
+                VaultError::ApprovalRequestMissing,
+                VaultError::ApprovalNeedsClinic,
+                VaultError::PickupRefused,
+            ] {
+                let text = PublicText::from(error);
+                assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
+            }
+        }
         for destination in [
             BackupDestination::Path,
             BackupDestination::ProviderUntouched,
