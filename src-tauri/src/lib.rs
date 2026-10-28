@@ -1671,10 +1671,12 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
     run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
-/// The audit history for Security, as far as it checks out (Ben's D129, mycarlos#120). Only
-/// entries native code authenticated from the start of the chain are returned. `complete` says
-/// whether they are the whole chain; when not, `checkedUntilMs` is the time of the last one
-/// returned (null when none is), so the screen can warn that later events can't be checked.
+/// The audit history for Security, as far as it checks out (Ben's D129 and D146, mycarlos#120).
+/// Only entries native code authenticated are returned: `entries` from the start of the chain,
+/// and `laterEntries` after a damaged part, which the manifest's pinned head proves (empty when
+/// none do). `complete` says whether `entries` are the whole chain. When not, `checkedUntilMs` is
+/// the time of the last of `entries` and `checkedFromMs` the time of the first of `laterEntries`
+/// (each null when there is none), so the screen can say which events can't be checked.
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
     audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
