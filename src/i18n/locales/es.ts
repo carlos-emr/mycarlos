@@ -437,6 +437,10 @@ export const es: Record<MessageKey, Message> = {
     "No se guardó ninguna copia de seguridad: el documento «{name}» ({where}) está dañado y ya no se puede leer, y una copia que lo contenga no se podría restaurar. No se cambió nada. Conserve sus copias de seguridad anteriores. Pida ayuda para recuperar este documento desde una copia o copia de seguridad en buen estado antes de volver a intentarlo.",
   "error.damaged.where": "añadido el {date}",
   "error.damaged.whereFor": "añadido el {date}, en los documentos de {person}",
+  "error.newerFormat.vault":
+    "Esta bóveda se guardó con una versión más reciente de myCarlos. Actualice myCarlos para abrirla. No se cambió nada.",
+  "error.newerFormat.backup":
+    "Esta copia de seguridad se guardó con una versión más reciente de myCarlos. Actualice myCarlos para restaurarla. No se cambió nada en este dispositivo.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -520,4 +524,41 @@ export const es: Record<MessageKey, Message> = {
     "Búsqueda borrada. Carpetas en esta ubicación: {folders}. Documentos: {documents}.",
   "library.noMatch.title": "Ningún documento coincide",
   "library.noMatch.help": "Pruebe otra búsqueda.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Nombre completo, como en los documentos de la clínica",
+  "personDetails.birthDate": "Fecha de nacimiento",
+  "personDetails.birthDateUnknown":
+    "No conozco la fecha de nacimiento de esta persona",
+  "personDetails.help":
+    "Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.",
+  "personDetails.nameTooLong":
+    "Este nombre completo es demasiado largo. Acórtelo.",
+  "personDetails.fullNameRequired":
+    "Introduzca el nombre completo de la persona.",
+  "personDetails.birthDateRequired":
+    "Introduzca la fecha de nacimiento o indique que la desconoce.",
+  "personDetails.invalidDate":
+    "Introduzca una fecha de nacimiento válida: año, mes y día.",
+  "personDetails.futureDate": "La fecha de nacimiento no puede ser futura.",
+  "personDetails.list": "Datos de las personas",
+  "personDetails.for": "Datos de {name}",
+  "personDetails.save": "Guardar datos",
+  "personDetails.cancel": "Cancelar",
+  "personDetails.noName": "Sin nombre completo",
+  "personDetails.noDate": "Sin fecha de nacimiento",
+  "personDetails.editFor": "Editar los datos de {name}",
+  "personDetails.edit": "Editar datos",
+  "personDetails.saved": "Se guardaron los datos de {name}.",
+  "personSuggestion.byDate": "coincide la fecha de nacimiento del documento",
+  "personSuggestion.byBoth":
+    "coinciden la fecha de nacimiento y el nombre del documento",
+  "personSuggestion.byName": "coincide el nombre del documento",
+  "personSuggestion.for": "Persona sugerida para {document}",
+  "personSuggestion.offer":
+    "Parece que este documento es para {name} ({why}). ¿Moverlo a sus registros?",
+  "personSuggestion.moveLabel": "Mover {document} a los registros de {name}",
+  "personSuggestion.move": "Mover",
+  "personSuggestion.dismissLabel": "No es esta persona: {document}",
+  "personSuggestion.dismiss": "No es esta persona",
 };

@@ -487,9 +487,10 @@ how, place, placeSha256, previousSession, prev`
 
 `event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
 `hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
-`passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
+`passphraseChanged`, `profileCreated`, `profileDetailsChanged`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
 `{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
-`folderId`) and its `name` afterwards. Renaming a person's top-level folder label is
+`folderId`) and its `name` afterwards, except `profileDetailsChanged`, which records only
+`profileId` and never the identity values. Renaming a person's top-level folder label is
 `folderRenamed` with `how: "personFolder"`, the unchanged person's `profileId`, and
 `oldName`/`name`. It has no `folderId` or `recordId`: no ordinary folder or document
 was changed. Only the profile's displayed label changes; its identity details, IDs,
@@ -554,6 +555,63 @@ unlock, and every backup saved, adds to the history.
 nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
 recorded automatically and tamper-evident on the device only, with no auditor export. A backup
 carries it only as part of the encrypted vault.
+
+### Manifest format 4: optional profile identity details
+
+Format 4 adds optional `fullName` and `birthDate` to each patient profile in the encrypted
+manifest. `fullName` is a trimmed nonempty name, bounded by the existing 120-character name
+limit. `birthDate` is an exact Gregorian `YYYY-MM-DD` date (year 0001–9999). Blank details
+are omitted, not serialized as null. Shared with me is a reserved location and cannot carry
+identity details. Formats 1–3 must not carry either field, including null; such manifests are
+refused. No identity details are written to plaintext headers or filenames.
+
+Creation and editing validate dates natively. A new birth date cannot be later than the
+current local calendar day supplied by the renderer; that day must itself be within one day
+of the native UTC date, covering time zones without trusting an arbitrary future date.
+Structural validation of stored dates does not depend on the clock, so a clock correction
+does not damage an existing vault. Editing details records `profileDetailsChanged` with only
+`profileId`, never the old/new full name or birth date. Details and that history entry use the
+existing atomic recorded mutation. Read-only recovery sessions cannot change them.
+
+A writable unlock upgrades formats 1–3 using the existing two-slot upgrade transaction,
+before new fields or events can be written. Profiles, records, folder assignments, document
+objects and existing history are retained. If recovery makes the vault read-only, it stays in
+its older format until a writable unlock is possible. Backups and restores preserve identity
+details. A backup made by a format-4-capable app requires a format-4-capable app to restore;
+an older app refuses the newer manifest. Keep a pre-upgrade backup if returning to an older
+build is needed; there is no lossy downgrade or silent removal of identity details.
+
+**What an older build shows.** A build that knows only formats 1–3 (every build before format 4)
+cannot tell a newer format from damage. Once both slots are format 4 it reports the vault as
+damaged or incomplete, and a backup saved from it as not a complete myCarlos backup; it changes
+nothing either way. From format 4 on, a manifest that decrypts under the vault's key but declares
+a format newer than the build's own is told apart from damage, and only its format number is
+read: unlock and recovery refuse with `vault_newer_format` ("This vault was saved by a newer
+version of myCarlos. Update myCarlos to open it. Nothing was changed."), and checking or restoring
+a backup refuses with `backup_newer_format` ("This backup was saved by a newer version of
+myCarlos. Update myCarlos to restore it. Nothing on this device was changed."). A newer slot
+beside one the build can open is handled as before: a crash between a newer build's two upgrade
+writes leaves nothing in the newer slot that the other lacks, so the vault opens from the other
+slot, and redundancy repair may write over the newer one. A manifest that does not decrypt, or
+declares a known format and fails its checks, is still damage.
+
+Shared PDF hints are not saved in the manifest or history. Only explicitly labelled patient
+names (Patient name / Patient full name) and optional exact ISO dates (DOB / Date of birth /
+Birth date) from the existing sandbox helper's bounded first-page text are considered.
+When a date is present, its label must be adjacent to the name label (ignoring blank lines);
+possibly truncated text and repeated identity labels yield no hint. The existing reader may
+flatten visually separate PDF text positioned with `Td` or `Tm`; visual positioning alone is
+not an identity boundary. The two tiny test PDFs are handwritten FAKE fixtures: `labelled.pdf`
+uses an explicit `T*` text-line break; `flat-text.pdf` uses `Td` positioning and deliberately
+finds no identity. They are not representative CARLOS output or clinic captures. Bundled dev
+PDFs using `Patient:` and positioned text do not demonstrate this suggestion feature.
+Conflicting or malformed labels, unsupported layouts, encrypted PDFs without an unlocked
+copy, missing text and unavailable helpers yield no hint. No OCR or free-text date guessing
+is performed. The hint never changes source verification and never moves a record by itself.
+The patient must press Move; the existing move and its history entry remain one operation.
+Dismissals and extracted hints last only for the unlocked session. Clinic pickup and automatic
+clinic-to-person links remain dependent on portal linking and authenticated delivery intake
+(portal #41 M2/M4); this change introduces no clinic queue, network client or trust claim.
 
 ## Backup and restore behavior
 

@@ -1,5 +1,6 @@
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod document_identity;
 mod history;
 mod idle;
 mod pdf_unlock;
@@ -223,6 +224,10 @@ impl From<VaultError> for PublicText {
                 code: "corrupt",
                 message: "The vault is damaged or incomplete. No data was changed.",
             },
+            VaultError::NewerFormat => Self {
+                code: "vault_newer_format",
+                message: "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+            },
             VaultError::NotFound => Self {
                 code: "not_found",
                 message: "That item is no longer available.",
@@ -327,6 +332,10 @@ impl From<VaultError> for PublicText {
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
                 message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
+            },
+            VaultError::BackupNewerFormat => Self {
+                code: "backup_newer_format",
+                message: "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
@@ -514,6 +523,17 @@ impl Drop for ChangePassphraseRequest {
 #[serde(rename_all = "camelCase")]
 struct NameRequest {
     display_name: String,
+    #[serde(default)]
+    details: vault::ProfileDetails,
+    today: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileDetailsRequest {
+    profile_id: Uuid,
+    details: vault::ProfileDetails,
+    today: String,
 }
 
 #[derive(Deserialize)]
@@ -2112,7 +2132,30 @@ async fn vault_create_profile(
     request: NameRequest,
 ) -> CommandResult<Uuid> {
     run_blocking(store.inner(), move |store| {
-        store.create_profile(&request.display_name, now_ms())
+        store.create_profile_with_details(
+            &request.display_name,
+            request.details,
+            &request
+                .today
+                .unwrap_or_else(|| vault::utc_date_text(now_ms())),
+            now_ms(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_update_profile_details(
+    store: State<'_, Arc<VaultStore>>,
+    request: ProfileDetailsRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.update_profile_details(
+            request.profile_id,
+            request.details,
+            &request.today,
+            now_ms(),
+        )
     })
     .await
 }
@@ -2126,6 +2169,59 @@ async fn vault_rename_profile(
         store.rename_profile(request.profile_id, &request.display_name, now_ms())
     })
     .await
+}
+
+/// Only a hint for an available PDF still in Shared with me. Unsupported devices,
+/// locked documents and uncertain text return no identity, never a trust claim.
+#[tauri::command]
+async fn vault_shared_identity(
+    store: State<'_, Arc<VaultStore>>,
+    record_id: Uuid,
+) -> CommandResult<Option<document_identity::FoundIdentity>> {
+    // Phones cannot run this helper. Return before decrypting any document.
+    if !cfg!(desktop) {
+        return Ok(None);
+    }
+    let ticket = pdf_view::ViewTicket::identity();
+    let store = Arc::clone(store.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let snapshot = store.snapshot()?;
+        let record = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?;
+        if record.profile_id != snapshot.shared_profile_id
+            || !record.available
+            || record.hidden.is_some()
+            || !record.display_name.to_ascii_lowercase().ends_with(".pdf")
+            || record.plaintext_size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64
+        {
+            return Ok(None);
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        let mut document =
+            zeroize::Zeroizing::new(Vec::with_capacity(record.plaintext_size as usize));
+        store.read_for_suggestion(record_id, &mut *document)?;
+        let found = match pdf_view::view_in_helper(&document, "", 0, 1, &ticket) {
+            pdf_view::Outcome::Shown(shown) => {
+                document_identity::from_text(&zeroize::Zeroizing::new(shown.text))
+            }
+            _ => None,
+        };
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(found)
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -3042,6 +3138,8 @@ pub fn run() {
             vault_restore_inspect,
             vault_restore,
             vault_create_profile,
+            vault_update_profile_details,
+            vault_shared_identity,
             vault_rename_profile,
             vault_create_folder,
             vault_update_folder,
@@ -3557,6 +3655,26 @@ mod tests {
         // Every other error leaves the field out.
         let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
         assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_vault_or_backup_from_a_newer_build_is_not_called_damaged() {
+        let vault = PublicError::from(VaultError::NewerFormat);
+        assert_eq!(vault.code, "vault_newer_format");
+        assert_eq!(
+            vault.message,
+            "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed."
+        );
+        // Opening a backup words it the same, said of the backup.
+        let backup = PublicError::from(VaultError::BackupNewerFormat).of_restore();
+        assert_eq!(backup.code, "backup_newer_format");
+        assert_eq!(
+            backup.message,
+            "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed."
+        );
+        for message in [vault.message, backup.message] {
+            assert!(!message.contains("damaged") && !message.contains("not a complete"));
+        }
     }
 
     #[test]

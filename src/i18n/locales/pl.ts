@@ -452,6 +452,10 @@ export const pl: Record<MessageKey, Message> = {
     "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Proszę zachować wcześniejsze kopie zapasowe. Przed ponowną próbą proszę poprosić o pomoc w odzyskaniu tego dokumentu z nieuszkodzonej kopii lub kopii zapasowej.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
+  "error.newerFormat.vault":
+    "Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.",
+  "error.newerFormat.backup":
+    "Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -539,4 +543,38 @@ export const pl: Record<MessageKey, Message> = {
     "Wyszukiwanie wyczyszczone. Foldery w tej lokalizacji: {folders}. Dokumenty: {documents}.",
   "library.noMatch.title": "Brak pasujących dokumentów",
   "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName": "Imię i nazwisko, jak na dokumentach z przychodni",
+  "personDetails.birthDate": "Data urodzenia",
+  "personDetails.birthDateUnknown": "Nie znam daty urodzenia tej osoby",
+  "personDetails.help":
+    "Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.",
+  "personDetails.nameTooLong": "Imię i nazwisko są zbyt długie. Skróć je.",
+  "personDetails.fullNameRequired": "Wpisz imię i nazwisko tej osoby.",
+  "personDetails.birthDateRequired":
+    "Wpisz datę urodzenia lub zaznacz, że jej nie znasz.",
+  "personDetails.invalidDate":
+    "Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.",
+  "personDetails.futureDate": "Data urodzenia nie może być w przyszłości.",
+  "personDetails.list": "Dane osób",
+  "personDetails.for": "Dane osoby {name}",
+  "personDetails.save": "Zapisz dane",
+  "personDetails.cancel": "Anuluj",
+  "personDetails.noName": "Brak imienia i nazwiska",
+  "personDetails.noDate": "Brak daty urodzenia",
+  "personDetails.editFor": "Edytuj dane osoby {name}",
+  "personDetails.edit": "Edytuj dane",
+  "personDetails.saved": "Zapisano dane osoby {name}.",
+  "personSuggestion.byDate": "data urodzenia w dokumencie jest zgodna",
+  "personSuggestion.byBoth":
+    "data urodzenia i imię i nazwisko w dokumencie są zgodne",
+  "personSuggestion.byName": "imię i nazwisko w dokumencie są zgodne",
+  "personSuggestion.for": "Sugerowana osoba dla dokumentu {document}",
+  "personSuggestion.offer":
+    "Wygląda na to, że ten dokument jest dla osoby {name} ({why}). Przenieść go do jej dokumentacji?",
+  "personSuggestion.moveLabel":
+    "Przenieś {document} do dokumentacji osoby {name}",
+  "personSuggestion.move": "Przenieś",
+  "personSuggestion.dismissLabel": "To nie ta osoba: {document}",
+  "personSuggestion.dismiss": "To nie ta osoba",
 };

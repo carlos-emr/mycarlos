@@ -442,6 +442,10 @@ export const fr: Record<MessageKey, Message> = {
     "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Conservez vos anciennes sauvegardes. Demandez de l’aide pour récupérer ce document à partir d’une copie ou d’une sauvegarde en bon état avant de réessayer.",
   "error.damaged.where": "ajouté le {date}",
   "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
+  "error.newerFormat.vault":
+    "Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.",
+  "error.newerFormat.backup":
+    "Cette sauvegarde a été enregistrée par une version plus récente de myCarlos. Mettez myCarlos à jour pour la restaurer. Rien n’a été modifié sur cet appareil.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -525,4 +529,42 @@ export const fr: Record<MessageKey, Message> = {
     "Recherche effacée. Dossiers à cet emplacement : {folders}. Documents : {documents}.",
   "library.noMatch.title": "Aucun document correspondant",
   "library.noMatch.help": "Essayez une autre recherche.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Nom complet, comme sur les documents de la clinique",
+  "personDetails.birthDate": "Date de naissance",
+  "personDetails.birthDateUnknown":
+    "Je ne connais pas la date de naissance de cette personne",
+  "personDetails.help":
+    "Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.",
+  "personDetails.nameTooLong":
+    "Ce nom complet est trop long. Raccourcissez-le.",
+  "personDetails.fullNameRequired": "Saisissez le nom complet de la personne.",
+  "personDetails.birthDateRequired":
+    "Saisissez la date de naissance ou indiquez que vous ne la connaissez pas.",
+  "personDetails.invalidDate":
+    "Saisissez une date de naissance valide : année, mois et jour.",
+  "personDetails.futureDate":
+    "La date de naissance ne peut pas être dans le futur.",
+  "personDetails.list": "Renseignements des personnes",
+  "personDetails.for": "Renseignements pour {name}",
+  "personDetails.save": "Enregistrer les renseignements",
+  "personDetails.cancel": "Annuler",
+  "personDetails.noName": "Aucun nom complet",
+  "personDetails.noDate": "Aucune date de naissance",
+  "personDetails.editFor": "Modifier les renseignements pour {name}",
+  "personDetails.edit": "Modifier les renseignements",
+  "personDetails.saved": "Renseignements pour {name} enregistrés.",
+  "personSuggestion.byDate": "la date de naissance sur le document correspond",
+  "personSuggestion.byBoth":
+    "la date de naissance et le nom sur le document correspondent",
+  "personSuggestion.byName": "le nom sur le document correspond",
+  "personSuggestion.for": "Personne suggérée pour {document}",
+  "personSuggestion.offer":
+    "Ce document semble être destiné à {name} ({why}). Le déplacer dans ses dossiers ?",
+  "personSuggestion.moveLabel":
+    "Déplacer {document} dans les dossiers de {name}",
+  "personSuggestion.move": "Déplacer",
+  "personSuggestion.dismissLabel": "Pas cette personne : {document}",
+  "personSuggestion.dismiss": "Pas cette personne",
 };

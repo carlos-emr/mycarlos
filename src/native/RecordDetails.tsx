@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -11,6 +11,7 @@ import {
 } from "./MoveTargetSelect";
 
 interface RecordDetailsProps {
+  suggestion?: ReactNode;
   record: VaultRecord;
   folders: VaultFolder[];
   busy: boolean;
@@ -41,6 +42,7 @@ interface RecordDetailsProps {
 }
 export function RecordDetails({
   record,
+  suggestion,
   folders,
   busy,
   readOnly,
@@ -199,6 +201,7 @@ export function RecordDetails({
             </span>
           </p>
         )}
+        {suggestion}
         <div className="native-record-rename">
           {onUnlock && (
             <button

@@ -60,6 +60,8 @@ pub enum HistoryEvent {
     PassphraseChanged,
     /// A patient profile was added.
     ProfileCreated,
+    /// Identity details changed; only the profile id is recorded.
+    ProfileDetailsChanged,
     /// A folder was made; `to` says in which folder ("My records" is none).
     FolderCreated,
     /// An ordinary folder, or a person's top-level folder label when `how`

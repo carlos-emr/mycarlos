@@ -1120,6 +1120,23 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
 
+/* Optional identity details and explicit Shared with me suggestions. */
+.native-person-details-list { list-style: none; padding: 0; min-width: 0; }
+.native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.native-profile-settings > form { width: 100%; min-width: 0; }
+.native-profile-settings label, .native-profile-settings input { min-width: 0; }
+.native-profile-settings input { width: 100%; }
+.native-profile-settings .native-person-date-unknown { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 44px; }
+.native-profile-settings .native-person-date-unknown input { width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; }
+.native-person-date-unknown span { overflow-wrap: anywhere; }
+.native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.native-backup-settings > div > .button { max-width: 100%; }
+.native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }
+.native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
+.native-person-details-list form { width: 100%; }
+.native-person-details-list fieldset, .native-setting-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.native-person-details-actions, .native-person-suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-person-suggestion { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; white-space: normal; overflow-wrap: anywhere; font-size: 0.875rem; }
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
 .language-title { font-size: 0.875rem; font-weight: 700; }

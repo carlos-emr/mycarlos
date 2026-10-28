@@ -7,6 +7,17 @@ export interface PatientProfile {
   id: string;
   displayName: string;
   createdAtMs: number;
+  fullName?: string;
+  birthDate?: string;
+}
+
+export interface PersonDetails {
+  fullName?: string;
+  birthDate?: string;
+}
+export interface FoundIdentity {
+  name: string;
+  birthDate?: string;
 }
 
 export interface VaultFolder {
@@ -250,8 +261,13 @@ export interface VaultBridge {
     credential: RestoreCredential,
     replace: boolean,
   ): Promise<boolean>;
-  createProfile(displayName: string): Promise<string>;
+  createProfile(displayName: string, details?: PersonDetails): Promise<string>;
   renameProfile(profileId: string, displayName: string): Promise<void>;
+  updateProfileDetails?(
+    profileId: string,
+    details: PersonDetails,
+  ): Promise<void>;
+  sharedIdentity?(recordId: string): Promise<FoundIdentity | null>;
   createFolder(
     profileId: string,
     parentId: string | null,
@@ -374,6 +390,14 @@ export function boxesWithControlCharacters(
   return boxes.length ? boxes : undefined;
 }
 
+/** Refusals the app words itself, in the language in use, by their code: a
+ * vault or backup that a newer myCarlos saved is not damaged, and updating
+ * opens it. */
+const ownWording: Readonly<Record<string, MessageKey>> = {
+  vault_newer_format: "error.newerFormat.vault",
+  backup_newer_format: "error.newerFormat.backup",
+};
+
 /** The message for a failed vault operation. `boxes` names, in plain words,
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */
@@ -382,6 +406,12 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
     });
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as PublicError).code
+      : undefined;
+  if (typeof code === "string" && Object.hasOwn(ownWording, code))
+    return t(ownWording[code]);
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {
@@ -548,12 +578,20 @@ export function createVaultBridge(): VaultBridge {
       invoke<boolean>("vault_restore", {
         request: { pickId, ...credential, replace },
       }),
-    createProfile: (displayName) =>
-      invoke<string>("vault_create_profile", { request: { displayName } }),
+    createProfile: (displayName, details = {}) =>
+      invoke<string>("vault_create_profile", {
+        request: { displayName, details, today: localDateText(new Date()) },
+      }),
     renameProfile: (profileId, displayName) =>
       invoke<void>("vault_rename_profile", {
         request: { profileId, displayName },
       }),
+    updateProfileDetails: (profileId, details) =>
+      invoke<void>("vault_update_profile_details", {
+        request: { profileId, details, today: localDateText(new Date()) },
+      }),
+    sharedIdentity: (recordId) =>
+      invoke<FoundIdentity | null>("vault_shared_identity", { recordId }),
     createFolder: (profileId, parentId, name) =>
       invoke<string>("vault_create_folder", {
         request: { profileId, parentId, name },
