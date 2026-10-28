@@ -8177,8 +8177,17 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     "shows read-only recovery after %s during a check, and stops checking",
     async (_, how) => {
       let current = vaultWith(pending);
+      // The vault is read again after the check's own result is shown, as
+      // in the app, where that read takes a moment.
+      let releaseRead!: () => void;
+      const reread = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
       const bridge = clinicBridge({
-        snapshot: vi.fn().mockImplementation(async () => current),
+        snapshot: vi.fn().mockImplementation(async () => {
+          if (current.recovery) await reread;
+          return current;
+        }),
         refreshDeviceApproval: vi.fn().mockImplementation(async () => {
           current = { ...vaultWith(pending), recovery: "writeFailed" };
           if (how === "error")
@@ -8193,9 +8202,19 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       expect(
         screen.getByRole("button", { name: "Connect and request approval" }),
       ).toBeEnabled();
+      // The focused control is disabled once the vault reads read-only:
+      // focus goes to the device's heading, not to the page.
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
       const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
       await pass(10_000);
       expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toHaveFocus();
+      await act(async () => releaseRead());
+      await pass(0);
       // Read again, once: the vault on screen is read-only now.
       expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots + 1);
       expect(
@@ -8204,6 +8223,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       expect(
         screen.getByRole("button", { name: "Retry saved approval request" }),
       ).toBeDisabled();
+      expect(
+        screen.getByRole("heading", { name: "FAKE First Clinic", level: 3 }),
+      ).toHaveFocus();
       await pass(5 * 60_000);
       expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
     },

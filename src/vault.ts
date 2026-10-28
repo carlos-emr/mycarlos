@@ -123,9 +123,14 @@ export interface PortalApprovalCheck {
    * portal's own clock when it replied, so a wrong clock on this device does
    * not change it. Absent when the portal did not say what time it was. */
   expiresInMs?: number | null;
-  /** Why the check could not finish: the portal could not be reached, it
-   * asked to wait, or it does not have the saved request. Nothing saved was
-   * changed because of it. */
+  /** Why the check could not finish. `portal_link_incomplete`: the portal
+   * could not be reached; `portal_refused`: it answered, but not with the
+   * request's state; `portal_rate_limited`: it asked to wait
+   * (`retryAfterMs`); `approval_missing`: it does not have the saved
+   * request; `approval_reply_invalid`: its reply did not verify;
+   * `portal_device_removed`: this device was removed from the portal
+   * account; or any other vault error. What the check read before it is
+   * still saved; the failure itself saves nothing. */
   issue?: PublicError | null;
   /** The vault went into read-only recovery during the check: read the
    * vault again. */
@@ -489,6 +494,8 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     approval_missing: "portal.approvalMissing",
     approval_reply_invalid: "portal.approvalReplyInvalid",
     approval_still_open: "portal.approvalStillOpen",
+    portal_device_removed: "portal.deviceRemoved",
+    portal_refused: "portal.approvalUnanswered",
     portal_link_address: "portal.errorAddress",
     portal_link_code: "portal.errorCode",
     portal_link_device_name: "portal.errorDeviceName",

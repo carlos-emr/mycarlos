@@ -4,12 +4,14 @@ import { vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 import {
   isAwaitingApproval,
+  isRateLimited,
   timeLeft,
   useApprovalPolling,
   waitingNow,
   type CheckChange,
   type LiveApproval,
   type PollApproval,
+  type PortalWaits,
 } from "./useApprovalPolling";
 
 interface Props {
@@ -22,6 +24,8 @@ interface Props {
   /** Checks a device's approval status quietly; given to the clinic setup
    * view only, which then refreshes it automatically while open (#131). */
   poll?: PollApproval;
+  /** The session's per-portal waits after a portal asked to wait (#131). */
+  waits?: PortalWaits;
   refresh: () => Promise<VaultSnapshot>;
   setNotice: (text: string) => void;
   compact?: boolean;
@@ -56,12 +60,18 @@ function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
   if (live?.kind === "failed") return { failed: live.error };
   if (live?.kind === "missing") return say("portal.approvalMissing");
   if (live?.kind === "unreachable") return say("portal.approvalUnreachable");
+  if (live?.kind === "refused") return say("portal.approvalUnanswered");
   if (live?.kind === "wait") return say("portal.approvalWait");
   if (link.approvalStatus === "challenge_ready")
     return say("portal.approvalPickedUp");
   if (live?.kind === "waiting") return say("portal.awaitingClinic");
   return say("portal.awaiting");
 }
+const hasErrorCode = (value: unknown, code: string) =>
+  typeof value === "object" &&
+  value !== null &&
+  (value as { code?: unknown }).code === code;
+
 /** Two card states are the same when they say the same thing. */
 function sameState(a: CardState, b: CardState): boolean {
   if ("key" in a || "key" in b)
@@ -81,6 +91,7 @@ export function PortalDocuments({
   readOnly,
   run,
   poll,
+  waits,
   refresh,
   setNotice,
   compact = false,
@@ -148,17 +159,27 @@ export function PortalDocuments({
     "key" in state ? t(state.key) : vaultErrorMessage(state.failed);
   // A control an automatic check is about to remove or disable, if it has
   // focus: focus then goes to its device's heading, not to the page.
-  const checkFocus = useRef<{ linkId: string; control: Element } | null>(null);
+  const checkFocus = useRef<{
+    linkId: string;
+    control: Element;
+    // The check put the vault into read-only recovery: the render that
+    // disables the control comes after the app reads the vault again.
+    untilReadOnly: boolean;
+  } | null>(null);
   // Said once, when an automatic check changes what a card says (#131). A
   // check that finds nothing new says nothing; nor does the first check
   // confirming that the portal has a request the card already calls saved.
-  const said = ({ before, after }: CheckChange) => {
+  const said = ({ before, after, recovery }: CheckChange) => {
     const focused = document.activeElement;
     if (
       focused &&
       document.getElementById(`portal-link-${after.link.id}`)?.contains(focused)
     )
-      checkFocus.current = { linkId: after.link.id, control: focused };
+      checkFocus.current = {
+        linkId: after.link.id,
+        control: focused,
+        untilReadOnly: recovery === true,
+      };
     const was = cardState(before.link, before.live);
     const now = cardState(after.link, after.live);
     if (
@@ -185,17 +206,21 @@ export function PortalDocuments({
     // or disabled by it? Only then is focus moved, and only to that device.
     const remembered = checkFocus.current;
     if (!remembered) return;
-    checkFocus.current = null;
-    const { linkId, control } = remembered;
+    const { linkId, control, untilReadOnly } = remembered;
     const active = document.activeElement;
-    if (active !== control && active !== document.body && active !== null)
+    if (active !== control && active !== document.body && active !== null) {
+      checkFocus.current = null;
       return;
+    }
+    if (untilReadOnly && !readOnly) return;
+    checkFocus.current = null;
     if (control.isConnected && !(control as HTMLButtonElement).disabled) return;
     document.getElementById(`portal-link-title-${linkId}`)?.focus();
   });
   const polling = useApprovalPolling({
     links,
     poll,
+    waits,
     enabled: available && !compact && !readOnly,
     busy: busy || connecting || working,
     onChange: said,
@@ -214,6 +239,13 @@ export function PortalDocuments({
     void run(async () => {
       try {
         const result = await bridge.checkDocuments!();
+        // A portal that asked to wait is not asked again automatically
+        // before then (a document check gives no time: the default).
+        for (const issue of result.issues ?? [])
+          if (isRateLimited(issue)) {
+            const asked = links.find((link) => link.id === issue.linkId);
+            if (asked) waits?.wait(asked.portalBase);
+          }
         const next = await refresh();
         known = Object.fromEntries(
           (next.portalLinks ?? []).map((link) => [
@@ -304,6 +336,11 @@ export function PortalDocuments({
         known = {
           [result.link.id]: result.approvalError ? undefined : waitingNow(),
         };
+        if (isRateLimited(result.approvalError))
+          waits?.wait(
+            result.link.portalBase,
+            result.approvalError.retryAfterMs,
+          );
         // Reported even after the patient has left this view: the link exists
         // whether or not anyone is looking, and the line must not keep an
         // older error beside it. The setter drops it for a finished session.
@@ -341,6 +378,10 @@ export function PortalDocuments({
       try {
         await send(link.id);
         known = waitingNow();
+      } catch (error) {
+        if (isRateLimited(error))
+          waits?.wait(link.portalBase, error.retryAfterMs);
+        throw error;
       } finally {
         await refresh();
       }
@@ -437,11 +478,14 @@ export function PortalDocuments({
                   ? t("portal.approvalTimeLeft", {
                       count: Math.ceil(left / 60_000),
                     })
-                  : // "Checking" only while checks run.
+                  : // A new request may start by the portal's clock;
+                    // otherwise "checking" only while checks run.
                     t(
-                      polling.checking?.has(link.id)
-                        ? "portal.approvalTimeUp"
-                        : "portal.approvalTimeOver",
+                      link.approvalCanRestart
+                        ? "portal.approvalTimeOverRestart"
+                        : polling.checking?.has(link.id)
+                          ? "portal.approvalTimeUp"
+                          : "portal.approvalTimeOver",
                     )}
               </p>
             )}
@@ -451,7 +495,9 @@ export function PortalDocuments({
             {!readOnly &&
               isAwaitingApproval(link) &&
               ((polling.stopped && live?.kind !== "missing") ||
-                live?.kind === "failed") && (
+                (live?.kind === "failed" &&
+                  // Checking again cannot help a removed device.
+                  !hasErrorCode(live.error, "portal_device_removed"))) && (
                 <p>
                   {t("portal.autoCheckStopped", { button: t("portal.check") })}
                 </p>

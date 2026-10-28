@@ -45,6 +45,12 @@ export const pl: Record<MessageKey, Message> = {
   },
   "portal.approvalTimeUp": "Czas na tę prośbę minął. Sprawdzanie w przychodni…",
   "portal.approvalTimeOver": "Czas na tę prośbę minął.",
+  "portal.approvalTimeOverRestart":
+    "Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, wybierz Rozpocznij nową prośbę o zatwierdzenie.",
+  "portal.approvalUnanswered":
+    "myCarlos nie mógł uzyskać stanu tej prośby z portalu przychodni.",
+  "portal.deviceRemoved":
+    "To urządzenie zostało usunięte z konta w portalu przychodni. Aby znów go używać, połącz je ponownie, używając nowego kodu połączenia z portalu pacjenta.",
   "portal.approvalReplyInvalid":
     "Nie udało się zweryfikować odpowiedzi portalu przychodni na temat tej prośby, więc nie została użyta. Skontaktuj się z przychodnią.",
   "portal.approvalStillOpen":

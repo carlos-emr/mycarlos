@@ -43,6 +43,12 @@ export const fr: Record<MessageKey, Message> = {
   "portal.approvalTimeUp":
     "Le délai de cette demande est écoulé. Vérification auprès de votre clinique…",
   "portal.approvalTimeOver": "Le délai de cette demande est écoulé.",
+  "portal.approvalTimeOverRestart":
+    "Le délai de cette demande est écoulé. Si votre clinique n’a pas approuvé cet appareil, choisissez Créer une nouvelle demande d’approbation.",
+  "portal.approvalUnanswered":
+    "myCarlos n’a pas pu obtenir l’état de cette demande auprès du portail de la clinique.",
+  "portal.deviceRemoved":
+    "Cet appareil a été retiré de votre compte du portail de la clinique. Pour l’utiliser de nouveau, associez-le de nouveau avec un nouveau code d’association de votre portail patient.",
   "portal.approvalReplyInvalid":
     "La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.",
   "portal.approvalStillOpen":

@@ -16,7 +16,11 @@ import type {
   PortalLinkSummary,
 } from "../vault";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
-import type { ApprovalPoll, PollApproval } from "./useApprovalPolling";
+import {
+  PortalWaits,
+  type ApprovalPoll,
+  type PollApproval,
+} from "./useApprovalPolling";
 
 const deviceCode = "Ebz2sH2jVoqcdFhl1BmIOBRm1xuT-zW5bvFBcCeERPY";
 const fingerprint = "11".repeat(32);
@@ -719,8 +723,14 @@ describe("automatic approval status checks (#131)", () => {
     const expiry = 125_000;
     const { poll } = checked(() => {
       const now = performance.now();
+      const left = Math.max(expiry - now, 0);
+      // As the native check does: a new request is offered by the portal's
+      // clock once it is past the request's end.
       if (now < expiry + 3_000)
-        return reply(local, { expiresInMs: Math.max(expiry - now, 0) });
+        return reply(
+          { ...local, approvalCanRestart: left === 0 },
+          { expiresInMs: left },
+        );
       return reply({
         ...link,
         approvalStatus: "expired",
@@ -753,11 +763,14 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledTimes(3);
     await pass(1);
     expect(poll).toHaveBeenCalledTimes(4);
+    // Still "pending" on the portal, but past its end by its clock: a new
+    // request is offered, with plain guidance.
     expect(
       screen.getByText(
-        "The time for this request has run out. Checking with your clinic…",
+        "The time for this request has run out. If your clinic has not approved this device, choose Start a new approval request.",
       ),
     ).toBeVisible();
+    expect(restart()).toBeVisible();
     // Only the portal's own answer says it expired.
     expect(screen.queryByText(EXPIRED)).not.toBeInTheDocument();
     await pass(60_000);
@@ -1084,6 +1097,119 @@ describe("automatic approval status checks (#131)", () => {
     expect(
       screen.queryByText(/Checking with your clinic/),
     ).not.toBeInTheDocument();
+  });
+
+  it("waits only for the portal that asked, and keeps checking the others", async () => {
+    fakeClock();
+    const other: PortalLinkSummary = {
+      ...pending,
+      id: "fake-link-other-portal",
+      portalBase: "https://other-portal.example.test/patient",
+      clinicName: "FAKE Other Clinic",
+      deviceKeyId: "FAKE_OTHER_DEVICE",
+    };
+    const poll = vi.fn<PollApproval>(async (linkId) =>
+      linkId === pending.id
+        ? reply(pending, {
+            issue: { code: "portal_rate_limited", retryAfterMs: 20 * 60_000 },
+          })
+        : reply(other),
+    );
+    fixture({ snapshot: { ...snapshot, portalLinks: [pending, other] }, poll });
+    await pass(10_000);
+    expect(poll.mock.calls).toEqual([[pending.id], [other.id]]);
+    // 10 minutes on: the other clinic was checked on its own schedule, the
+    // one that asked to wait was not asked again, and nothing says stopped.
+    await pass(10 * 60_000);
+    const asked = (id: string) =>
+      poll.mock.calls.filter(([linkId]) => linkId === id).length;
+    expect(asked(pending.id)).toBe(1);
+    expect(asked(other.id)).toBeGreaterThan(10);
+    expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
+    expect(screen.getAllByText(AUTO)).toHaveLength(2);
+  });
+
+  it("keeps a portal's wait when the view closes and opens again", async () => {
+    fakeClock();
+    const waits = new PortalWaits();
+    const poll = vi.fn<PollApproval>(
+      async (): Promise<ApprovalPoll> =>
+        poll.mock.calls.length === 1
+          ? reply(pending, {
+              issue: { code: "portal_rate_limited", retryAfterMs: 5 * 60_000 },
+            })
+          : reply(pending),
+    );
+    const first = fixture({ snapshot: view(pending), poll, waits });
+    await pass(10_000);
+    expect(poll).toHaveBeenCalledOnce();
+    first.unmount();
+    await pass(10_000);
+    fixture({ snapshot: view(pending), poll, waits });
+    // Not 10 s after it opens again: 5 minutes after the portal asked.
+    await pass(289_999);
+    expect(poll).toHaveBeenCalledOnce();
+    await pass(1);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a wait the portal asked of the patient's own request", async () => {
+    const waits = new PortalWaits();
+    const { poll, bridge } = checked(() => reply(pending), pending, { waits });
+    vi.mocked(bridge.requestDeviceApproval!).mockRejectedValue({
+      code: "portal_rate_limited",
+      message: "FAKE native text",
+      retryAfterMs: 120_000,
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      );
+    });
+    await pass(0);
+    expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+    await pass(119_999);
+    expect(poll).not.toHaveBeenCalled();
+    await pass(1);
+    expect(poll).toHaveBeenCalledOnce();
+  });
+
+  it("says a removed device plainly and stops, and words other refusals neutrally", async () => {
+    const removed =
+      "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.";
+    const gone = checked(() =>
+      reply(pending, {
+        issue: { code: "portal_device_removed", message: "Native text." },
+      }),
+    );
+    await pass(10_000);
+    expect(screen.getAllByText(removed)).toHaveLength(2);
+    // Checking again cannot help: no "check again" line, and no checks.
+    expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
+    await pass(10 * 60_000);
+    expect(gone.poll).toHaveBeenCalledOnce();
+    gone.unmount();
+    vi.useRealTimers();
+    const unanswered =
+      "myCarlos could not get this request's status from the clinic portal.";
+    const { poll } = checked(() =>
+      reply(pending, { issue: { code: "portal_refused", message: "Native." } }),
+    );
+    await pass(10_000);
+    expect(screen.getAllByText(unanswered)).toHaveLength(2);
+    expect(screen.queryByText(UNREACHABLE)).not.toBeInTheDocument();
+    expect(screen.getByText(AUTO)).toBeVisible();
+    // Retried, like a connection failure.
+    await pass(20_000);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks early only once for a request whose end the portal's clock keeps near", async () => {
+    // A stuck date: every reply leaves the request one second.
+    const { poll } = checked(() => reply(pending, { expiresInMs: 1_000 }));
+    await pass(16 * 60_000);
+    // The 16 checks of the schedule, and one early one.
+    expect(poll.mock.calls.length).toBeLessThanOrEqual(17);
   });
 
   it("shows the new states in every supported language", async () => {

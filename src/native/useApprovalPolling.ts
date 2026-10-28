@@ -24,6 +24,9 @@ export type LiveApproval =
   | { kind: "unreachable" }
   /** The portal asked myCarlos to check less often. */
   | { kind: "wait" }
+  /** The portal answered, but not with the request's state (maintenance, a
+   * refused device assertion…): said plainly, and retried. */
+  | { kind: "refused" }
   /** The portal does not have the saved request: it must be sent again,
    * which only the patient does. */
   | { kind: "missing" }
@@ -33,8 +36,11 @@ export type LiveApproval =
   | { kind: "failed"; error: unknown };
 
 /** The first check comes this long after the view opens or a request is
- * saved; later ones back off, and never come sooner than the first. */
+ * saved; later ones back off. Only one check per request comes sooner: just
+ * after its time runs out by the portal's clock. */
 export const CHECK_DELAYS_MS = [10_000, 20_000, 40_000, 60_000] as const;
+/** A portal that asked to wait without saying how long is left this long. */
+export const DEFAULT_WAIT_MS = 60_000;
 /** Automatic checks stop this long after they began (the view opened, or the
  * patient last acted): a request lasts about 10 minutes. */
 export const CHECK_WINDOW_MS = 15 * 60_000;
@@ -52,6 +58,36 @@ const COUNTDOWN_STEP_MS = 15_000;
 /** The page's steady clock: unlike the wall clock, it does not jump when the
  * device's time is changed. */
 const steadyNow = () => performance.now();
+
+/** Per portal, when it may next be asked automatically, after it asked to
+ * wait (the page's steady clock). Kept by the app for the session, so that
+ * leaving and reopening the clinic view does not forget a wait, and fed by
+ * the patient's own clinic actions too, which it never holds back. */
+export class PortalWaits {
+  private readonly until = new Map<string, number>();
+  /** Not before this time; 0 when no wait was asked. */
+  notBefore(portal: string): number {
+    return this.until.get(portal) ?? 0;
+  }
+  /** The portal asked to wait `ms` (or did not say: `DEFAULT_WAIT_MS`). */
+  wait(portal: string, ms?: number | null): void {
+    const wait = typeof ms === "number" && ms > 0 ? ms : DEFAULT_WAIT_MS;
+    this.until.set(
+      portal,
+      Math.max(this.notBefore(portal), steadyNow() + wait),
+    );
+  }
+  clear(): void {
+    this.until.clear();
+  }
+}
+
+/** A portal asked to wait, as a clinic operation's error or issue says. */
+export function isRateLimited(
+  value: unknown,
+): value is { retryAfterMs?: number } {
+  return hasCode(value, "portal_rate_limited");
+}
 
 /** The portal answered the patient's own request: it has it open, with no
  * time known until the next check. */
@@ -81,22 +117,9 @@ function checked(link: PortalLinkSummary, found?: LiveApproval): boolean {
   );
 }
 
-/** How long until the next automatic check: the backoff step, no sooner
- * than the portal asked, and soon after the request's time runs out by the
- * portal's clock. */
-export function nextCheckDelay(
-  step: number,
-  { retryAfterMs = 0, untilExpiryMs = null }: NextCheck = {},
-): number {
-  let delay: number =
-    CHECK_DELAYS_MS[Math.min(step, CHECK_DELAYS_MS.length - 1)];
-  if (untilExpiryMs !== null && untilExpiryMs > 0)
-    delay = Math.min(delay, untilExpiryMs + AFTER_EXPIRY_MS);
-  return Math.max(delay, retryAfterMs);
-}
-interface NextCheck {
-  retryAfterMs?: number;
-  untilExpiryMs?: number | null;
+/** How long until the next automatic check, by the backoff step. */
+export function nextCheckDelay(step: number): number {
+  return CHECK_DELAYS_MS[Math.min(step, CHECK_DELAYS_MS.length - 1)];
 }
 
 /** The time a waiting request has left by the portal's clock, now. */
@@ -139,6 +162,8 @@ function found(
     // verify, or any other fault, is said and not asked again.
     if (hasCode(issue, "portal_link_incomplete"))
       return { link, live: { kind: "unreachable" }, retryAfterMs: 0 };
+    if (hasCode(issue, "portal_refused"))
+      return { link, live: { kind: "refused" }, retryAfterMs: 0 };
     return { link, live: { kind: "failed", error: issue }, retryAfterMs: 0 };
   }
   return {
@@ -162,6 +187,9 @@ function found(
 export interface CheckChange {
   before: { link: PortalLinkSummary; live?: LiveApproval };
   after: { link: PortalLinkSummary; live?: LiveApproval };
+  /** The vault went read-only during the check: the app reads it again, and
+   * the view becomes read-only a moment later. */
+  recovery?: boolean;
 }
 
 /**
@@ -175,12 +203,15 @@ export interface CheckChange {
 export function useApprovalPolling({
   links,
   poll,
+  waits,
   enabled,
   busy,
   onChange,
 }: {
   links: PortalLinkSummary[];
   poll?: PollApproval;
+  /** The session's per-portal waits; the view keeps its own without it. */
+  waits?: PortalWaits;
   /** The view is the clinic setup view of a writable vault. */
   enabled: boolean;
   /** A library or clinic operation is running: checks wait for it. */
@@ -207,10 +238,16 @@ export function useApprovalPolling({
   const stepRef = useRef(0);
   // The patient's own clinic work is under way (see `hold`).
   const heldRef = useRef(false);
-  // No automatic check before this time (the steady clock): the portal
-  // asked to wait. It outlasts `restart`; the patient's own actions are not
-  // held by it.
-  const notBeforeRef = useRef(0);
+  // Per portal, no automatic check before the time it asked for. It
+  // outlasts `restart`, and, kept by the app, the view itself; the
+  // patient's own actions are not held by it.
+  const ownWaits = useRef<PortalWaits | null>(null);
+  ownWaits.current ??= new PortalWaits();
+  const waitsRef = useRef(waits ?? ownWaits.current);
+  waitsRef.current = waits ?? ownWaits.current;
+  // Links given their one early check, just after their time runs out by
+  // the portal's clock, in this run of checks.
+  const earlyRef = useRef(new Set<string>());
   // When the latest check began (or the view opened, or the patient acted),
   // and when this run of checks began.
   const lastStartRef = useRef(steadyNow());
@@ -234,7 +271,12 @@ export function useApprovalPolling({
     // No timer runs past the end of this run of checks: when the next check
     // would come after it (the portal asked for a long wait), checks stop.
     const later = (delay: number) => {
-      const wait = Math.max(delay, notBeforeRef.current - steadyNow());
+      // Not before the soonest portal that has not asked to wait longer.
+      const due = linksRef.current
+        .filter((link) => checked(link, liveRef.current[link.id]))
+        .map((link) => waitsRef.current.notBefore(link.portalBase));
+      const soonest = due.length ? Math.min(...due) : 0;
+      const wait = Math.max(delay, soonest - steadyNow());
       if (steadyNow() + wait - windowStartRef.current >= CHECK_WINDOW_MS) {
         setStopped(true);
         return;
@@ -257,9 +299,10 @@ export function useApprovalPolling({
         return;
       }
       lastStartRef.current = steadyNow();
-      let retryAfterMs = 0;
       for (const link of linksRef.current) {
         if (!checked(link, liveRef.current[link.id])) continue;
+        // Its portal asked to wait: the others are still checked.
+        if (waitsRef.current.notBefore(link.portalBase) > steadyNow()) continue;
         const outcome = await pollRef.current?.(link.id);
         // The view closed, the page was hidden, or the patient acted: this
         // reply is not this schedule's to show.
@@ -267,7 +310,8 @@ export function useApprovalPolling({
         if (!outcome) continue;
         const before = { link, live: liveRef.current[link.id] };
         const result = found(outcome, steadyNow());
-        retryAfterMs = Math.max(retryAfterMs, result.retryAfterMs);
+        if (result.live?.kind === "wait")
+          waitsRef.current.wait(link.portalBase, result.retryAfterMs);
         if (!result.link && !result.live) continue;
         const next = { ...liveRef.current };
         if (result.live) next[link.id] = result.live;
@@ -277,24 +321,30 @@ export function useApprovalPolling({
         onChangeRef.current({
           before,
           after: { link: result.link ?? link, live: result.live },
+          recovery:
+            ("check" in outcome && outcome.check.recovery === true) ||
+            ("error" in outcome && hasCode(outcome.error, "recovery_mode")),
         });
       }
       if (cancelled) return;
-      if (retryAfterMs > 0)
-        notBeforeRef.current = Math.max(
-          notBeforeRef.current,
-          steadyNow() + retryAfterMs,
-        );
       stepRef.current += 1;
-      const lefts = Object.values(liveRef.current)
-        .map((entry) => timeLeft(entry, steadyNow()))
-        .filter((left): left is number => left !== null && left > 0);
-      later(
-        nextCheckDelay(stepRef.current, {
-          retryAfterMs,
-          untilExpiryMs: lefts.length ? Math.min(...lefts) : null,
-        }),
-      );
+      // One early check per request, just after its time runs out by the
+      // portal's clock; a clock stuck near the end cannot make more.
+      const lefts = Object.entries(liveRef.current)
+        .filter(([id]) => !earlyRef.current.has(id))
+        .map(([id, entry]) => [id, timeLeft(entry, steadyNow())] as const)
+        .filter((pair): pair is readonly [string, number] => {
+          const left = pair[1];
+          return left !== null && left > 0;
+        });
+      const delay = nextCheckDelay(stepRef.current);
+      const early = lefts.length
+        ? lefts.reduce((a, b) => (b[1] < a[1] ? b : a))
+        : null;
+      if (early && early[1] + AFTER_EXPIRY_MS < delay) {
+        earlyRef.current.add(early[0]);
+        later(early[1] + AFTER_EXPIRY_MS);
+      } else later(delay);
     };
     later(
       Math.max(
@@ -342,6 +392,7 @@ export function useApprovalPolling({
       liveRef.current = next;
       setLive(next);
       heldRef.current = false;
+      earlyRef.current = new Set();
       stepRef.current = 0;
       lastStartRef.current = steadyNow();
       windowStartRef.current = lastStartRef.current;

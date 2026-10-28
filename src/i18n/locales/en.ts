@@ -43,6 +43,12 @@ export const en = {
   "portal.approvalTimeUp":
     "The time for this request has run out. Checking with your clinic…",
   "portal.approvalTimeOver": "The time for this request has run out.",
+  "portal.approvalTimeOverRestart":
+    "The time for this request has run out. If your clinic has not approved this device, choose Start a new approval request.",
+  "portal.approvalUnanswered":
+    "myCarlos could not get this request's status from the clinic portal.",
+  "portal.deviceRemoved":
+    "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.",
   "portal.approvalReplyInvalid":
     "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
   "portal.approvalStillOpen":

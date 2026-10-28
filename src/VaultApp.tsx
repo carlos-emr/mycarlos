@@ -25,7 +25,11 @@ import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
-import type { ApprovalPoll, PollApproval } from "./native/useApprovalPolling";
+import {
+  PortalWaits,
+  type ApprovalPoll,
+  type PollApproval,
+} from "./native/useApprovalPolling";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import { CAMERA_PLATFORMS, isPhone } from "./native/photo";
 import {
@@ -153,6 +157,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const portalNoticeRef = useRef<{ session: number; message: string } | null>(
     null,
   );
+  // Per portal, when automatic approval checks may ask it again after it
+  // asked to wait (#131): kept across the clinic view's remounts, and
+  // forgotten when the session ends.
+  const [portalWaits] = useState(() => new PortalWaits());
   // The automatic approval status check under way, if any (#131).
   const portalPollRef = useRef<{
     session: number;
@@ -286,6 +294,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       sessionRef.current += 1;
       portalJobRef.current = null;
       portalPollRef.current = null;
+      portalWaits.clear();
       portalNoticeRef.current = null;
       setPortalBusy(false);
       setSnapshot(null);
@@ -815,10 +824,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // changed). It never waits behind other clinic work, or another check: it
   // is skipped while one runs. The patient's own clinic action waits for a
   // check under way instead (see `runPortal`). It belongs to this session: a
-  // reply after a lock, or in another session, is dropped. Nothing about it
-  // counts as activity that keeps the vault open: it does not read the whole
-  // vault again (a snapshot would count), but updates the one device it
-  // checked in the vault on screen.
+  // reply after a lock, or in another session, is dropped. A check is not
+  // activity that keeps the vault open: it does not read the whole vault
+  // again (a snapshot counts as activity), but updates the one device it
+  // checked in the vault on screen. The one exception is read-only
+  // recovery during a check: then the vault is read again, once, so that
+  // the whole library shows it.
   const pollApproval: PollApproval = (linkId) => {
     const startedIn = portalSession;
     if (
@@ -1171,6 +1182,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         portalBusy={portalBusy}
         runPortal={runPortal}
         pollApproval={bridge.refreshDeviceApproval ? pollApproval : undefined}
+        approvalWaits={portalWaits}
         setPortalNotice={setPortalNotice}
         refresh={refresh}
         onLock={lockAsked}
