@@ -1977,7 +1977,9 @@ describe("durable vault UI", () => {
     arrive("FAKE_Private_A.pdf");
     arrive("FAKE_Private_B.pdf");
     notifyArrival();
-    expect(await screen.findByText(/2 shared files are waiting/)).toBeVisible();
+    expect(
+      await screen.findByText(humanText(/2 shared files are waiting/)),
+    ).toBeVisible();
     expect(screen.queryByText(/FAKE_Private/)).toBeNull();
     expect(bridge.acceptReceived).not.toHaveBeenCalled();
   });
@@ -1990,11 +1992,15 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", { name: "My records" });
     arrive("FAKE_Already_focused.pdf");
     notifyArrival();
-    await screen.findByRole("button", { name: "Shared with me, 1 new" });
+    await screen.findByRole("button", {
+      name: humanText("Shared with me, 1 new"),
+    });
     expect(bridge.acceptReceived).toHaveBeenCalledOnce();
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: "Shared with me, 1 new" }));
+    await userEvent.setup().click(
+      screen.getByRole("button", {
+        name: humanText("Shared with me, 1 new"),
+      }),
+    );
     expect(
       await screen.findByRole("button", { name: "FAKE_Already_focused.pdf" }),
     ).toBeVisible();
@@ -2025,7 +2031,9 @@ describe("durable vault UI", () => {
     notifyArrival();
     expect(bridge.acceptReceived).toHaveBeenCalledOnce();
     await act(async () => gate.resolve());
-    await screen.findByRole("button", { name: "Shared with me, 2 new" });
+    await screen.findByRole("button", {
+      name: humanText("Shared with me, 2 new"),
+    });
     expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
     expect(vault.records.map((record) => record.displayName)).toEqual([
       "FAKE_First.pdf",
@@ -2049,10 +2057,14 @@ describe("durable vault UI", () => {
     });
     expect(bridge.acceptReceived).toHaveBeenCalledOnce();
     expect(
-      screen.queryByRole("button", { name: /Shared with me, 1 new/ }),
+      screen.queryByRole("button", {
+        name: humanText(/Shared with me, 1 new/),
+      }),
     ).toBeNull();
     notifyArrival();
-    await screen.findByRole("button", { name: "Shared with me, 1 new" });
+    await screen.findByRole("button", {
+      name: humanText("Shared with me, 1 new"),
+    });
     expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
   });
 
@@ -2071,7 +2083,9 @@ describe("durable vault UI", () => {
     expect(bridge.listReceived).toHaveBeenCalledTimes(calls);
     visibility.mockReturnValue("visible");
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    expect(await screen.findByText(/One shared file is waiting/)).toBeVisible();
+    expect(
+      await screen.findByText(humanText(/One shared file is waiting/)),
+    ).toBeVisible();
     expect(screen.queryByText("FAKE_Hidden.pdf")).toBeNull();
     expect(bridge.acceptReceived).not.toHaveBeenCalled();
   });
@@ -2128,7 +2142,9 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(second.bridge.snapshot).toHaveBeenCalled());
     await act(async () => gate.resolve(structuredClone(first.vault)));
     expect(
-      screen.queryByRole("button", { name: /Shared with me, 1 new/ }),
+      screen.queryByRole("button", {
+        name: humanText(/Shared with me, 1 new/),
+      }),
     ).toBeNull();
     expect(screen.queryByText("FAKE_Old_bridge.pdf")).toBeNull();
     expect(screen.getAllByText("FAKE New Person").length).toBeGreaterThan(0);
@@ -2157,7 +2173,9 @@ describe("durable vault UI", () => {
     await unlockWith(user);
     await screen.findByRole("button", { name: "Shared with me" });
     expect(
-      screen.queryByRole("button", { name: "Shared with me, 1 new" }),
+      screen.queryByRole("button", {
+        name: humanText("Shared with me, 1 new"),
+      }),
     ).toBeNull();
   });
 
@@ -2210,7 +2228,7 @@ describe("durable vault UI", () => {
         );
       visibility.mockReturnValue("hidden");
       act(() => document.dispatchEvent(new Event("visibilitychange")));
-      expect(await screen.findByRole("alert")).toHaveTextContent(
+      expect(await screen.findByRole("alert")).toHaveHumanTextContent(
         "Its content is hidden",
       );
       visibility.mockReturnValue("visible");
@@ -2227,7 +2245,9 @@ describe("durable vault UI", () => {
         screen.queryByText("A shared file was added to Shared with me."),
       ).toBeNull();
       expect(
-        screen.queryByRole("button", { name: /Shared with me, 1 new/ }),
+        screen.queryByRole("button", {
+          name: humanText(/Shared with me, 1 new/),
+        }),
       ).toBeNull();
       expect(shared.bridge.acceptReceived).toHaveBeenCalledOnce();
       act(() =>
@@ -2239,23 +2259,27 @@ describe("durable vault UI", () => {
       expect(screen.queryByText(/FAKE_Private_result/)).toBeNull();
       await unlockWith(user);
       const result = await screen.findByText(
-        /FAKE_Private_result.jpg is not a PDF document/,
+        humanText(/FAKE_Private_result.jpg is not a PDF document/),
       );
-      expect(result).toHaveTextContent(
+      expect(result).toHaveHumanTextContent(
         "FAKE_Existing_duplicate.pdf was already in Shared with me.",
       );
-      expect(result).toHaveTextContent(
+      expect(result).toHaveHumanTextContent(
         "A shared file was added to Shared with me.",
       );
       expect(
-        screen.getAllByText(/FAKE_Private_result.jpg is not a PDF document/),
+        screen.getAllByText(
+          humanText(/FAKE_Private_result.jpg is not a PDF document/),
+        ),
       ).toHaveLength(1);
       expect(shared.bridge.acceptReceived).toHaveBeenCalledOnce();
       expect(shared.vault.records.map((record) => record.displayName)).toEqual([
         "FAKE_Saved.pdf",
       ]);
       expect(
-        screen.queryByRole("button", { name: "Shared with me, 1 new" }),
+        screen.queryByRole("button", {
+          name: humanText("Shared with me, 1 new"),
+        }),
       ).toBeNull();
     },
   );
