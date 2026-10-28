@@ -78,7 +78,8 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
 }
 
 /// One link's unsettled receipts: the ones whose documents still read back,
-/// and how many were skipped because their saved document is damaged.
+/// and how many were skipped because a document the vault still shows is
+/// damaged.
 #[cfg(feature = "portal-linking")]
 #[derive(Default)]
 pub(crate) struct PendingReceipts {
@@ -170,9 +171,12 @@ impl VaultStore {
         Ok(self.pending_receipts_checked(link, session)?.ready)
     }
     /// Unsettled receipts for one link. A record whose saved objects no longer
-    /// read back (damaged or missing) is counted in `damaged`, not returned:
-    /// it is never acknowledged, and it does not stop the other records or
-    /// clinics from being checked.
+    /// read back (damaged or missing) is not returned: it is never
+    /// acknowledged, and it does not stop the other records or clinics from
+    /// being checked. It is counted in `damaged` while the vault still shows
+    /// it; once the patient has removed it as damaged it is held without
+    /// being counted, and if its file comes back intact its receipt is ready
+    /// again.
     pub(crate) fn pending_receipts_checked(
         &self,
         link: &StoredLink,
@@ -209,7 +213,11 @@ impl VaultStore {
                         Ok(()) => pending.ready.push(c.clone()),
                         // Damage stays until the patient restores a good copy;
                         // a failed read that a retry can get past still stops.
-                        Err(VaultError::Corrupt) => pending.damaged += 1,
+                        Err(VaultError::Corrupt) => {
+                            if object_required(record) {
+                                pending.damaged += 1;
+                            }
+                        }
                         Err(error) => return Err(error),
                     }
                 }
@@ -1668,7 +1676,8 @@ mod approval_recovery_tests {
     }
     /// A filed delivery for `other`, a second clinic in this vault, made from
     /// the checked-in package with that clinic's ids. Its manifest signature
-    /// is not the clinic's, so only for tests that damage it and never send it.
+    /// is not the clinic's: tests use only its saved custody and receipt,
+    /// never a pickup.
     fn add_unsent_delivery_for(store: &VaultStore, other: &StoredLink) -> Uuid {
         let (fixture, mut outer, sealed, now) = fixture_package();
         let (mut opened, checked) = opened_fixture(&fixture, &outer, &sealed, now);
@@ -1700,13 +1709,8 @@ mod approval_recovery_tests {
         assert!(added);
         id
     }
-    /// Damages a record's saved document in one of the two ways a vault that
-    /// takes changes can hold: one byte of it changed, or its file gone and
-    /// the record removed as damaged (the vault takes no changes while a
-    /// document it still shows is missing, until the patient does that).
-    // Tests remove files on purpose, to simulate damage and loss (#71).
-    #[allow(clippy::disallowed_methods)]
-    fn damage(store: &VaultStore, record: Uuid, missing: bool) {
+    /// The path, bytes and permissions of a record's saved document.
+    fn object_file(store: &VaultStore, record: Uuid) -> (PathBuf, Vec<u8>, fs::Permissions) {
         let name = store
             .session()
             .as_ref()
@@ -1719,100 +1723,170 @@ mod approval_recovery_tests {
             .object_name
             .clone();
         let path = store.root.join("objects").join(name);
-        let mut bytes = fs::read(&path).unwrap();
+        let bytes = fs::read(&path).unwrap();
         let permissions = fs::metadata(&path).unwrap().permissions();
+        (path, bytes, permissions)
+    }
+    /// Writes a saved document's file as `bytes`, with `permissions`.
+    // Tests remove files on purpose, to simulate damage and loss (#71).
+    #[allow(clippy::disallowed_methods)]
+    fn replace_object(path: &Path, bytes: &[u8], permissions: fs::Permissions) {
+        let _ = fs::remove_file(path);
+        fs::write(path, bytes).unwrap();
+        fs::set_permissions(path, permissions).unwrap();
+    }
+    /// Changes one byte of a record's saved document. The vault still shows
+    /// the record and takes changes.
+    fn alter(store: &VaultStore, record: Uuid) {
+        let (path, mut bytes, permissions) = object_file(store, record);
+        *bytes.last_mut().unwrap() ^= 1;
+        replace_object(&path, &bytes, permissions);
+    }
+    /// Deletes a record's saved document and removes the record as damaged,
+    /// as the patient must before a vault missing a document it shows takes
+    /// changes again.
+    // Tests remove files on purpose, to simulate damage and loss (#71).
+    #[allow(clippy::disallowed_methods)]
+    fn remove_as_damaged(store: &VaultStore, record: Uuid) {
+        let (path, _, _) = object_file(store, record);
         fs::remove_file(&path).unwrap();
-        if missing {
-            store
-                .mutate_recorded(|m, _| {
-                    m.records
-                        .iter_mut()
-                        .find(|r| r.id == record)
+        store
+            .mutate_recorded(|m, _| {
+                m.records
+                    .iter_mut()
+                    .find(|r| r.id == record)
+                    .unwrap()
+                    .hidden = Some(Hidden {
+                    at_ms: crate::now_ms(),
+                    reason: HiddenReason::Damaged,
+                });
+                Ok(())
+            })
+            .unwrap();
+    }
+    /// One mailbox check where every listing is empty and every receipt is
+    /// answered picked_up: the result, the links listed in order, and each
+    /// receipt sent with its link.
+    fn check_recording(
+        store: &VaultStore,
+    ) -> (
+        crate::portal_pickup::CheckResult,
+        Vec<Uuid>,
+        Vec<(Uuid, serde_json::Value)>,
+    ) {
+        let listed = Mutex::new(Vec::new());
+        let posted = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |link, method, path, body, _, _, _| {
+                if path.ends_with("/receipt") {
+                    assert_eq!(method, "POST");
+                    let sent: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    posted
+                        .lock()
                         .unwrap()
-                        .hidden = Some(Hidden {
-                        at_ms: crate::now_ms(),
-                        reason: HiddenReason::Damaged,
-                    });
-                    Ok(())
-                })
-                .unwrap();
-        } else {
-            *bytes.last_mut().unwrap() ^= 1;
-            fs::write(&path, bytes).unwrap();
-            fs::set_permissions(&path, permissions).unwrap();
-        }
+                        .push((link.id, sent["receipt"].clone()));
+                    Ok(picked_up())
+                } else {
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    listed.lock().unwrap().push(link.id);
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        (
+            result,
+            listed.into_inner().unwrap(),
+            posted.into_inner().unwrap(),
+        )
+    }
+    fn receipt_outcome(store: &VaultStore, record: Uuid) -> Option<wire::ReceiptOutcome> {
+        store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .find(|r| r.id == record)
+            .unwrap()
+            .delivery
+            .as_ref()
+            .unwrap()
+            .receipt_outcome
     }
     #[test]
     fn should_hold_a_damaged_records_receipt_and_still_check_and_send_the_other_clinics() {
-        for missing in [true, false] {
-            // The clinic with the damaged record is checked first.
-            let (_temp, store, damaged_link, _) = setup(false);
-            let (healthy, healthy_id, receipt) = add_signed_pending_delivery(&store);
-            let damaged_id = add_unsent_delivery_for(&store, &damaged_link);
-            damage(&store, damaged_id, missing);
-            let approvals = Script::new(vec![], vec![]);
-            for round in 0..2 {
-                let calls = Mutex::new(Vec::new());
-                let result = crate::portal_pickup::check_using(
-                    &store,
-                    store.portal_link_ticket(),
-                    &approvals,
-                    |link, method, path, body, _, _, _| {
-                        calls
-                            .lock()
-                            .unwrap()
-                            .push((link.id, method.to_owned(), path.to_owned()));
-                        if path.ends_with("/receipt") {
-                            assert_eq!(
-                                serde_json::from_slice::<serde_json::Value>(&body).unwrap()
-                                    ["receipt"],
-                                receipt
-                            );
-                            Ok(picked_up())
-                        } else {
-                            Ok(empty_page())
-                        }
-                    },
-                )
-                .unwrap();
-                let calls = calls.into_inner().unwrap();
-                let listed = calls
-                    .iter()
-                    .filter(|(_, method, path)| {
-                        method == "GET" && path.starts_with("/api/mycarlos/deliveries?")
-                    })
-                    .map(|(id, _, _)| *id)
-                    .collect::<Vec<_>>();
-                assert_eq!(listed, vec![damaged_link.id, healthy.id]);
-                let posted = calls
-                    .iter()
-                    .filter(|(_, method, _)| method == "POST")
-                    .map(|(id, _, _)| *id)
-                    .collect::<Vec<_>>();
-                // The healthy clinic's receipt is sent once; the damaged
-                // record's receipt is never sent.
-                let expected = if round == 0 { vec![healthy.id] } else { vec![] };
-                assert_eq!(posted, expected);
-                assert_eq!(result.issues.len(), 1);
-                assert_eq!(result.issues[0].link_id, damaged_link.id);
-                assert_eq!(result.issues[0].code, crate::portal_pickup::DAMAGED_CODE);
-                assert_eq!(result.receipts_pending, 0);
-            }
-            let guard = store.session();
-            let records = &guard.as_ref().unwrap().manifest.records;
-            let outcome = |id: Uuid| {
-                records
-                    .iter()
-                    .find(|r| r.id == id)
-                    .unwrap()
-                    .delivery
-                    .as_ref()
-                    .unwrap()
-                    .receipt_outcome
+        // The clinic with the damaged record is checked first.
+        let (_temp, store, damaged_link, _) = setup(false);
+        let (healthy, healthy_id, receipt) = add_signed_pending_delivery(&store);
+        let damaged_id = add_unsent_delivery_for(&store, &damaged_link);
+        alter(&store, damaged_id);
+        for round in 0..2 {
+            let (result, listed, posted) = check_recording(&store);
+            assert_eq!(listed, vec![damaged_link.id, healthy.id]);
+            // The healthy clinic's receipt is sent once; the damaged record's
+            // receipt is never sent.
+            let expected = if round == 0 {
+                vec![(healthy.id, serde_json::Value::from(receipt.clone()))]
+            } else {
+                vec![]
             };
-            assert!(outcome(healthy_id) == Some(wire::ReceiptOutcome::PickedUp));
-            assert!(outcome(damaged_id).is_none());
+            assert_eq!(posted, expected);
+            assert_eq!(result.issues.len(), 1);
+            assert_eq!(result.issues[0].link_id, damaged_link.id);
+            assert_eq!(result.issues[0].code, crate::portal_pickup::DAMAGED_CODE);
+            assert_eq!(result.receipts_pending, 0);
         }
+        assert!(receipt_outcome(&store, healthy_id) == Some(wire::ReceiptOutcome::PickedUp));
+        assert!(receipt_outcome(&store, damaged_id).is_none());
+    }
+    #[test]
+    fn should_stop_reporting_a_record_removed_as_damaged_and_send_its_receipt_if_its_file_returns()
+    {
+        let (_temp, store, damaged_link, _) = setup(false);
+        let (healthy, _, _) = add_signed_pending_delivery(&store);
+        let damaged_id = add_unsent_delivery_for(&store, &damaged_link);
+        let damaged_receipt = store
+            .pending_receipts(&damaged_link, store.portal_link_ticket())
+            .unwrap()[0]
+            .receipt
+            .clone();
+        let (path, intact, permissions) = object_file(&store, damaged_id);
+        // Damaged while the vault still shows it: reported.
+        alter(&store, damaged_id);
+        let (result, _, posted) = check_recording(&store);
+        assert_eq!(
+            posted.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            vec![healthy.id]
+        );
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].link_id, damaged_link.id);
+        assert_eq!(result.issues[0].code, crate::portal_pickup::DAMAGED_CODE);
+        // Removed by the patient as damaged: still held, no longer reported,
+        // and both clinics are still checked.
+        remove_as_damaged(&store, damaged_id);
+        for _ in 0..2 {
+            let (result, listed, posted) = check_recording(&store);
+            assert_eq!(listed, vec![damaged_link.id, healthy.id]);
+            assert!(posted.is_empty());
+            assert!(result.issues.is_empty());
+            assert_eq!(result.receipts_pending, 0);
+        }
+        assert!(receipt_outcome(&store, damaged_id).is_none());
+        // Its file comes back intact: the vault holds the document again, so
+        // its kept receipt is sent, byte for byte.
+        replace_object(&path, &intact, permissions);
+        let (result, _, posted) = check_recording(&store);
+        assert_eq!(
+            posted,
+            vec![(damaged_link.id, serde_json::Value::from(damaged_receipt))]
+        );
+        assert!(result.issues.is_empty());
+        assert!(receipt_outcome(&store, damaged_id) == Some(wire::ReceiptOutcome::PickedUp));
     }
     #[test]
     fn should_report_a_failed_download_and_still_fetch_the_clinics_next_delivery() {
