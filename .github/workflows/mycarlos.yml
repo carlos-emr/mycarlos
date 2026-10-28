@@ -6,6 +6,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      send_delete_demo:
+        description: Build the Windows synthetic-data send-and-delete demo
+        type: boolean
+        required: false
+        default: false
   schedule:
     - cron: "23 9 * * 1"
 
@@ -190,6 +196,8 @@ jobs:
     name: Windows native build
     runs-on: windows-2025
     timeout-minutes: 35
+    env:
+      MYCARLOS_SEND_DELETE_DEMO: ${{ github.event_name == 'workflow_dispatch' && inputs.send_delete_demo }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -202,10 +210,23 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal
       - run: npm ci
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - name: Test Windows vault
+        shell: pwsh
+        run: |
+          $featureArgs = @()
+          if ($env:MYCARLOS_SEND_DELETE_DEMO -eq 'true') {
+            $featureArgs = @('--features', 'portal-linking')
+          }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked @featureArgs -- --test-threads=1
       - name: Build Windows evaluation installer
         # Invoke the pinned CLI directly: npm/PowerShell can consume the build flags.
-        run: node node_modules/@tauri-apps/cli/tauri.js build --debug --bundles nsis
+        shell: pwsh
+        run: |
+          $featureArgs = @()
+          if ($env:MYCARLOS_SEND_DELETE_DEMO -eq 'true') {
+            $featureArgs = @('--features', 'portal-linking')
+          }
+          node node_modules/@tauri-apps/cli/tauri.js build --debug --bundles nsis @featureArgs
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Verify Windows installation
         shell: pwsh
@@ -309,6 +330,7 @@ jobs:
           $commit = $env:HEAD_SHA
           @(
             'myCarlos Windows x64 evaluation — unsigned; synthetic data only'
+            "Send-and-delete demo enabled: $env:MYCARLOS_SEND_DELETE_DEMO"
             "Source repository: $env:SOURCE_REPO"
             "Source commit: $commit"
             "Build: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
@@ -321,7 +343,7 @@ jobs:
         id: windows-download
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: myCarlos-Windows-x64-Evaluation
+          name: myCarlos-Windows-x64-${{ inputs.send_delete_demo && 'SendDelete-Demo' || 'Evaluation' }}
           path: windows-download/
           if-no-files-found: error
           retention-days: 30

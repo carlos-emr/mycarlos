@@ -6,11 +6,17 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod document_identity;
 mod history;
 mod idle;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod portal_approval;
+mod portal_client;
+mod portal_delivery;
+mod portal_link;
+mod portal_pickup;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
@@ -247,6 +253,85 @@ impl From<VaultError> for PublicText {
                 code: "invalid",
                 message_key: "language.error.formatting",
             },
+            #[cfg(feature = "portal-linking")]
+            VaultError::ApprovalTerminal(state, reason) => match state {
+                portal_approval::ApprovalState::Expired => Self {
+                    code: "approval_expired",
+                    message_key: "portal.approvalExpired",
+                },
+                portal_approval::ApprovalState::Cancelled => Self {
+                    code: "approval_cancelled",
+                    message_key: "portal.approvalCancelled",
+                },
+                _ if reason.is_some_and(|r| r.needs_clinic()) => Self {
+                    code: "approval_contact_clinic",
+                    message_key: "portal.approvalContact",
+                },
+                _ => Self {
+                    code: "approval_refused",
+                    message_key: "portal.approvalRefused",
+                },
+            },
+            #[cfg(feature = "portal-linking")]
+            VaultError::ApprovalRequestMissing => Self {
+                code: "approval_missing",
+                message_key: "portal.approvalMissing",
+            },
+            #[cfg(feature = "portal-linking")]
+            VaultError::ApprovalNeedsClinic => Self {
+                code: "approval_contact_clinic",
+                message_key: "portal.approvalContact",
+            },
+            #[cfg(feature = "portal-linking")]
+            VaultError::PickupRefused => Self {
+                code: "pickup_refused",
+                message_key: "portal.errorRefused",
+            },
+            VaultError::Portal(reason) => {
+                use portal_link::LinkError;
+                match reason {
+                    LinkError::Disabled => Self {
+                        code: "portal_link_disabled",
+                        message_key: "portal.errorDisabled",
+                    },
+                    LinkError::Unavailable => Self {
+                        code: "portal_link_unavailable",
+                        message_key: "portal.errorUnavailable",
+                    },
+                    LinkError::InvalidPortal => Self {
+                        code: "portal_link_address",
+                        message_key: "portal.errorAddress",
+                    },
+                    LinkError::InvalidCode => Self {
+                        code: "portal_link_code",
+                        message_key: "portal.errorCode",
+                    },
+                    LinkError::InvalidDeviceName => Self {
+                        code: "portal_link_device_name",
+                        message_key: "portal.errorDeviceName",
+                    },
+                    LinkError::CodeRejected => Self {
+                        code: "portal_link_code_rejected",
+                        message_key: "portal.errorCodeRejected",
+                    },
+                    LinkError::ClinicKeysMissing => Self {
+                        code: "portal_link_keys_missing",
+                        message_key: "portal.errorKeys",
+                    },
+                    LinkError::DeviceExists => Self {
+                        code: "portal_link_device_exists",
+                        message_key: "portal.errorExists",
+                    },
+                    LinkError::Cancelled => Self {
+                        code: "cancelled",
+                        message_key: "portal.errorCancelled",
+                    },
+                    LinkError::Network | LinkError::InvalidResponse => Self {
+                        code: "portal_link_incomplete",
+                        message_key: "portal.errorIncomplete",
+                    },
+                }
+            }
             VaultError::Busy => Self {
                 code: "busy",
                 message_key: "native.error.11",
@@ -274,6 +359,10 @@ impl From<VaultError> for PublicText {
             VaultError::Corrupt => Self {
                 code: "corrupt",
                 message_key: "native.error.17",
+            },
+            VaultError::NewerFormat => Self {
+                code: "vault_newer_format",
+                message_key: "error.newerFormat.vault",
             },
             VaultError::NotFound => Self {
                 code: "not_found",
@@ -379,6 +468,10 @@ impl From<VaultError> for PublicText {
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
                 message_key: "native.error.43",
+            },
+            VaultError::BackupNewerFormat => Self {
+                code: "backup_newer_format",
+                message_key: "error.newerFormat.backup",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
@@ -565,6 +658,24 @@ impl Drop for ChangePassphraseRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NameRequest {
+    display_name: String,
+    #[serde(default)]
+    details: vault::ProfileDetails,
+    today: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileDetailsRequest {
+    profile_id: Uuid,
+    details: vault::ProfileDetails,
+    today: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenameProfileRequest {
+    profile_id: Uuid,
     display_name: String,
 }
 
@@ -826,7 +937,7 @@ impl std::io::Write for FileStart {
 /// checks the whole file.
 fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     let mut start = FileStart::default();
-    let exported = store.export(record_id, &mut start);
+    let exported = store.read_for_view(record_id, &mut start);
     if start.complete() {
         return Ok(start.bytes == photo::JPEG_START);
     }
@@ -872,7 +983,7 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
 /// shown. The record is unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
-    let exported = store.export(record_id, &mut buffer);
+    let exported = store.read_for_view(record_id, &mut buffer);
     if buffer.refused {
         return Err(VaultError::NotPhoto);
     }
@@ -890,7 +1001,7 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
 /// the helper decides when the patient unlocks it.
 fn is_locked_pdf(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     let mut scan = pdf_unlock::LockScan::default();
-    let exported = store.export(record_id, &mut scan);
+    let exported = store.read_for_view(record_id, &mut scan);
     if scan.found() {
         return Ok(true);
     }
@@ -944,7 +1055,7 @@ fn unlock_pdf(
         .find(|record| record.id == record_id)
         .ok_or(VaultError::NotFound)?;
     let mut locked = LimitedBuffer::new(pdf_unlock::MAX_LOCKED_PDF_BYTES);
-    let exported = store.export(record_id, &mut locked);
+    let exported = store.read_for_view(record_id, &mut locked);
     if locked.over {
         return Err(VaultError::PdfTooLarge);
     }
@@ -1481,6 +1592,115 @@ where
 #[tauri::command]
 async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PortalLinkRequest {
+    portal_base: String,
+    code: String,
+    device_name: String,
+    profile_id: Option<Uuid>,
+}
+
+impl Drop for PortalLinkRequest {
+    fn drop(&mut self) {
+        self.code.zeroize();
+    }
+}
+
+#[tauri::command]
+async fn vault_portal_link(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<portal_link::LinkSummary> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Capture before queuing work: an old IPC request must not begin linking
+    // in a session opened while it waited for a blocking worker.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    // User input already touches the native deadline. HTTP completion is not
+    // new activity and must not keep an unattended or newly unlocked vault open.
+    tauri::async_runtime::spawn_blocking(move || {
+        store.link_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_request_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
+}
+
+#[tauri::command]
+async fn vault_restart_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
+}
+
+#[tauri::command]
+async fn vault_check_documents(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<portal_pickup::CheckResult> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = store;
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
 }
 
 #[tauri::command]
@@ -2191,9 +2411,96 @@ async fn vault_create_profile(
     request: NameRequest,
 ) -> CommandResult<Uuid> {
     run_blocking(store.inner(), move |store| {
-        store.create_profile(&request.display_name, now_ms())
+        store.create_profile_with_details(
+            &request.display_name,
+            request.details,
+            &request
+                .today
+                .unwrap_or_else(|| vault::utc_date_text(now_ms())),
+            now_ms(),
+        )
     })
     .await
+}
+
+#[tauri::command]
+async fn vault_update_profile_details(
+    store: State<'_, Arc<VaultStore>>,
+    request: ProfileDetailsRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.update_profile_details(
+            request.profile_id,
+            request.details,
+            &request.today,
+            now_ms(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_rename_profile(
+    store: State<'_, Arc<VaultStore>>,
+    request: RenameProfileRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.rename_profile(request.profile_id, &request.display_name, now_ms())
+    })
+    .await
+}
+
+/// Only a hint for an available PDF still in Shared with me. Unsupported devices,
+/// locked documents and uncertain text return no identity, never a trust claim.
+#[tauri::command]
+async fn vault_shared_identity(
+    store: State<'_, Arc<VaultStore>>,
+    record_id: Uuid,
+) -> CommandResult<Option<document_identity::FoundIdentity>> {
+    // Phones cannot run this helper. Return before decrypting any document.
+    if !cfg!(desktop) {
+        return Ok(None);
+    }
+    let ticket = pdf_view::ViewTicket::identity();
+    let store = Arc::clone(store.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let snapshot = store.snapshot()?;
+        let record = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?;
+        if record.profile_id != snapshot.shared_profile_id
+            || !record.available
+            || record.hidden.is_some()
+            || !record.display_name.to_ascii_lowercase().ends_with(".pdf")
+            || record.plaintext_size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64
+        {
+            return Ok(None);
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        let mut document =
+            zeroize::Zeroizing::new(Vec::with_capacity(record.plaintext_size as usize));
+        store.read_for_suggestion(record_id, &mut *document)?;
+        let found = match pdf_view::view_in_helper(&document, "", 0, 1, &ticket) {
+            pdf_view::Outcome::Shown(shown) => {
+                document_identity::from_text(&zeroize::Zeroizing::new(shown.text))
+            }
+            _ => None,
+        };
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(found)
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -2591,7 +2898,7 @@ async fn vault_view_page(
         }
         // Sized up front, so the document is never copied by a growing buffer.
         let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
-        store.export(record_id, &mut *document)?;
+        store.read_for_view(record_id, &mut *document)?;
         match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
             pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
             pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
@@ -3116,6 +3423,10 @@ pub fn run() {
             vault_touch,
             vault_set_auto_lock,
             vault_snapshot,
+            vault_portal_link,
+            vault_check_documents,
+            vault_request_device_approval,
+            vault_restart_device_approval,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -3129,6 +3440,9 @@ pub fn run() {
             vault_restore_inspect,
             vault_restore,
             vault_create_profile,
+            vault_update_profile_details,
+            vault_shared_identity,
+            vault_rename_profile,
             vault_create_folder,
             vault_update_folder,
             vault_rename_record,
@@ -3654,6 +3968,28 @@ mod tests {
         // Every other error leaves the field out.
         let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
         assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_vault_or_backup_from_a_newer_build_is_not_called_damaged() {
+        let vault = PublicError::from(VaultError::NewerFormat);
+        assert_eq!(vault.code, "vault_newer_format");
+        assert_eq!(vault.message_key, "error.newerFormat.vault");
+        assert_eq!(
+            public_error_text(&vault),
+            "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed."
+        );
+        // Opening a backup words it the same, said of the backup.
+        let backup = PublicError::from(VaultError::BackupNewerFormat).of_restore();
+        assert_eq!(backup.code, "backup_newer_format");
+        assert_eq!(backup.message_key, "error.newerFormat.backup");
+        assert_eq!(
+            public_error_text(&backup),
+            "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed."
+        );
+        for message in [public_error_text(&vault), public_error_text(&backup)] {
+            assert!(!message.contains("damaged") && !message.contains("not a complete"));
+        }
     }
 
     #[test]
@@ -4343,6 +4679,25 @@ mod tests {
     }
 
     #[test]
+    fn profile_rename_payload_identifies_the_person_and_refuses_identity_fields() {
+        let id = Uuid::new_v4();
+        let request: RenameProfileRequest = serde_json::from_value(serde_json::json!({
+            "profileId": id, "displayName": "FAKE Corrected"
+        }))
+        .unwrap();
+        assert_eq!(request.profile_id, id);
+        assert_eq!(request.display_name, "FAKE Corrected");
+        for invalid in [
+            serde_json::json!({"profileId":"not-a-uuid", "displayName":"FAKE Corrected"}),
+            serde_json::json!({"folderId":id,"displayName":"FAKE Corrected"}),
+            serde_json::json!({"profileId":id,"displayName":"FAKE Corrected","fullName":"FAKE Identity"}),
+            serde_json::json!({"profileId":id,"displayName":"FAKE Corrected","birthDate":"2000-01-01"}),
+        ] {
+            assert!(serde_json::from_value::<RenameProfileRequest>(invalid).is_err());
+        }
+    }
+
+    #[test]
     fn production_webview_configuration_has_no_development_network_access() {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
@@ -4406,6 +4761,7 @@ mod tests {
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
             let _ = serde_json::from_slice::<NameRequest>(&payload);
+            let _ = serde_json::from_slice::<RenameProfileRequest>(&payload);
             let _ = serde_json::from_slice::<FolderRequest>(&payload);
             let _ = serde_json::from_slice::<UpdateFolderRequest>(&payload);
             let _ = serde_json::from_slice::<AssignFoldersRequest>(&payload);
@@ -5435,6 +5791,45 @@ mod native_localization_tests {
         ] {
             let text = PublicText::from(error);
             assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
+        }
+        // Main's newer-format and portal errors resolve through the same catalogue.
+        use crate::portal_link::LinkError;
+        for error in [
+            VaultError::NewerFormat,
+            VaultError::BackupNewerFormat,
+            VaultError::Portal(LinkError::Disabled),
+            VaultError::Portal(LinkError::Unavailable),
+            VaultError::Portal(LinkError::InvalidPortal),
+            VaultError::Portal(LinkError::InvalidCode),
+            VaultError::Portal(LinkError::InvalidDeviceName),
+            VaultError::Portal(LinkError::InvalidResponse),
+            VaultError::Portal(LinkError::Network),
+            VaultError::Portal(LinkError::CodeRejected),
+            VaultError::Portal(LinkError::ClinicKeysMissing),
+            VaultError::Portal(LinkError::DeviceExists),
+            VaultError::Portal(LinkError::Cancelled),
+        ] {
+            let text = PublicText::from(error);
+            assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
+        }
+        #[cfg(feature = "portal-linking")]
+        {
+            use crate::portal_approval::{ApprovalReason, ApprovalState};
+            for error in [
+                VaultError::ApprovalTerminal(ApprovalState::Expired, None),
+                VaultError::ApprovalTerminal(ApprovalState::Cancelled, None),
+                VaultError::ApprovalTerminal(ApprovalState::Refused, None),
+                VaultError::ApprovalTerminal(
+                    ApprovalState::Refused,
+                    Some(ApprovalReason::StaffRequired),
+                ),
+                VaultError::ApprovalRequestMissing,
+                VaultError::ApprovalNeedsClinic,
+                VaultError::PickupRefused,
+            ] {
+                let text = PublicText::from(error);
+                assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
+            }
         }
         for destination in [
             BackupDestination::Path,

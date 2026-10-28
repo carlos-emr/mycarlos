@@ -1327,3 +1327,167 @@ unlock-waiting =
 unlock-waiting-one = One shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
 
 language-error-formatting = myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.
+
+error-newerFormat-backup = This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.
+
+error-newerFormat-vault = This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.
+
+personDetails-birthDate = Date of birth
+
+personDetails-birthDateRequired = Enter a date of birth or choose that it is unknown.
+
+personDetails-birthDateUnknown = I don't know this person's date of birth
+
+personDetails-cancel = Cancel
+
+personDetails-edit = Edit details
+
+personDetails-editFor = Edit details for { $name }
+
+personDetails-for = Details for { $name }
+
+personDetails-fullName = Full name, as on clinic documents
+
+personDetails-fullNameRequired = Enter the person's full name.
+
+personDetails-futureDate = A birth date cannot be in the future.
+
+personDetails-help = Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.
+
+personDetails-invalidDate = Enter a valid birth date as year, month and day.
+
+personDetails-list = People's details
+
+personDetails-nameTooLong = This full name is too long. Shorten it.
+
+personDetails-noDate = No birth date
+
+personDetails-noName = No full name
+
+personDetails-save = Save details
+
+personDetails-saved = Details for { $name } saved.
+
+personSuggestion-byBoth = the birth date and name on the document match
+
+personSuggestion-byDate = the birth date on the document matches
+
+personSuggestion-byName = the name on the document matches
+
+personSuggestion-dismiss = Not this person
+
+personSuggestion-dismissLabel = Not this person: { $document }
+
+personSuggestion-for = Suggested person for { $document }
+
+personSuggestion-move = Move
+
+personSuggestion-moveLabel = Move { $document } to { $name }'s records
+
+personSuggestion-offer = Looks like this is for { $name } ({ $why }). Move it to their records?
+
+portal-address = Portal HTTPS address
+
+portal-approvalCancelled = This approval request was cancelled. Check for updates before starting a new request.
+
+portal-approvalContact = Clinic approval needs to be checked. Contact your clinic for next steps.
+
+portal-approvalExpired = This approval request expired. Check for updates before starting a new request.
+
+portal-approvalMissing = Your saved approval request was not found on the portal. Send the saved request again.
+
+portal-approvalRefused = The clinic refused this device approval request. Contact your clinic for next steps.
+
+portal-approved = The clinic approved this device.
+
+portal-awaiting = Approval request saved. Check for updates or send it again.
+
+portal-check = Check for new documents
+
+portal-clinicIssue = { $clinic }: { $detail }
+
+portal-code = Linking code
+
+portal-compare = Ask clinic staff to compare this entire fingerprint on this screen before approving this device.
+
+portal-confirmationsPending = Saved documents awaiting pickup confirmation: { $count }. Check again to finish confirmation. Your saved copies stay in the vault.
+
+portal-copied = Device code copied.
+
+portal-copy = Copy device code
+
+portal-copyFailed = Select the entire device code and copy it.
+
+portal-dateNotRecorded = Date not recorded
+
+portal-deviceCode = Device code
+
+portal-deviceName = Name for this device
+
+portal-errorAddress = Enter the portal HTTPS address without a username, password, query, or fragment.
+
+portal-errorCancelled = Linking stopped because the vault locked. Check Linked devices in the portal before trying again.
+
+portal-errorCode = Enter the complete linking code shown in your patient portal.
+
+portal-errorCodeRejected = The portal did not accept that code. Make a new linking code in your patient portal.
+
+portal-errorDamaged = A saved document from this clinic is damaged or missing, so its pickup confirmation was not sent. Your other documents were still checked. Restore it from a backup, or ask the clinic to send it again.
+
+portal-errorDeviceName = Choose a device name of 1 to 64 characters without control characters.
+
+portal-errorDisabled = Portal linking is not enabled in this build.
+
+portal-errorExists = This device is already registered. Check Linked devices in your patient portal.
+
+portal-errorIncomplete = The portal request could not be completed. Check your connection and device clock, then try again.
+
+portal-errorKeys = The clinic has not published a signing key yet. Linking is incomplete.
+
+portal-errorRefused = A clinic document could not be verified. It was not added and no pickup receipt was sent.
+
+portal-errorUnavailable = Portal linking is not available on this device yet.
+
+portal-fingerprint = Full device fingerprint
+
+portal-incomplete = Link incomplete. Check Linked devices in the portal before trying again.
+
+portal-intro = Link myCarlos using the address and code shown in your patient portal.
+
+portal-link = Link to clinic
+
+portal-matchPerson = Match the document details
+
+portal-notRequested = Request clinic approval to receive documents on this device.
+
+portal-partialResult = Some clinic checks need attention. New documents saved: { $added }. Documents that could not be verified: { $refused }.
+
+portal-person = Whose records
+
+portal-requestApproval = Request clinic approval
+
+portal-restartApproval = Start a new approval request
+
+portal-result = New documents saved: { $added }. Documents that could not be verified: { $refused }.
+
+portal-routing = Documents go to a person with a matching full name and birth date. Other documents go to Shared with me.
+
+portal-serviceDate = Service date: { $date }
+
+portal-serviceDateLabel = Service date
+
+portal-sourceVerified = From { $clinic } · Verified
+
+portal-title = Clinic documents
+
+rename-help-profile = This changes only the displayed folder name. The person's folders and documents stay where they are.
+
+rename-label-profile = Folder name
+
+rename-profile-action = Rename “{ $name }”
+
+rename-profile-controls = Names cannot contain control characters.
+
+rename-profile-saved = Folder name changed to { $name }.
+
+rename-title-profile = Rename person's folder

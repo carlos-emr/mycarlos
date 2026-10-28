@@ -411,6 +411,7 @@ export async function tabRound(page: Page, scope = "body") {
     await page.keyboard.press("Tab");
     const stop = await page.evaluate(stopHere, scope);
     if (stop.kind === "none") continue;
+    if (stop.kind === "date-part") continue;
     if (stop.kind === "first") {
       closed = true;
       break;
@@ -511,6 +512,7 @@ export async function tabRound(page: Page, scope = "body") {
   );
   if (closed && stopCount > 1) {
     const backwards: number[] = [];
+    let backwardsClosed = false;
     for (let i = 0; i < limit; i++) {
       await page.keyboard.press("Shift+Tab");
       const index = await page.evaluate(() =>
@@ -518,9 +520,21 @@ export async function tabRound(page: Page, scope = "body") {
           document.activeElement as Element,
         ),
       );
-      if (index === 0) break;
-      if (index > 0) backwards.push(index);
+      if (index === 0) {
+        backwardsClosed = true;
+        break;
+      }
+      if (index > 0) {
+        const datePart = await page.evaluate(() => {
+          const element = document.activeElement;
+          return element instanceof HTMLInputElement && element.type === "date";
+        });
+        if (!datePart || backwards[backwards.length - 1] !== index)
+          backwards.push(index);
+      }
     }
+    if (!backwardsClosed)
+      problems.push(`Shift+Tab did not come round in ${limit} presses`);
     const expected = Array.from(
       { length: stopCount - 1 },
       (_, i) => stopCount - 1 - i,
@@ -547,6 +561,7 @@ export async function tabRound(page: Page, scope = "body") {
 
 type StopResult =
   | { kind: "none" }
+  | { kind: "date-part" }
   | { kind: "first" }
   | { kind: "again"; label: string }
   | { kind: "stop"; label: string; problems: string[] };
@@ -561,6 +576,19 @@ function stopHere(scope: string): StopResult {
     element.hasAttribute("data-walk-start")
   )
     return { kind: "none" };
+  const previous = stops[stops.length - 1];
+  // Chromium exposes the date's month/day/year and picker as one DOM input.
+  // Only consecutive internal steps may repeat; a trapped date still fails.
+  if (
+    previous === element &&
+    element instanceof HTMLInputElement &&
+    element.type === "date"
+  ) {
+    const parts = Number(Reflect.get(window, "__walkDateParts") ?? 0) + 1;
+    Reflect.set(window, "__walkDateParts", parts);
+    if (parts <= 3) return { kind: "date-part" };
+    return { kind: "again", label: 'input type="date"' };
+  }
   if (stops[0] === element) return { kind: "first" };
   const label = `${element.tagName.toLowerCase()} "${(
     element.getAttribute("aria-label") ??
@@ -575,7 +603,7 @@ function stopHere(scope: string): StopResult {
   const root = document.querySelector(scope);
   if (root && !root.contains(element))
     problems.push(`is outside ${scope} while it is open`);
-  const previous = stops[stops.length - 1];
+  Reflect.set(window, "__walkDateParts", 0);
   if (
     previous &&
     !(

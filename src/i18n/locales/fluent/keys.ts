@@ -594,6 +594,88 @@ export const MESSAGE_KEYS = [
   "unlock.waiting",
   "unlock.waiting.one",
   "language.error.formatting",
+  "error.newerFormat.backup",
+  "error.newerFormat.vault",
+  "personDetails.birthDate",
+  "personDetails.birthDateRequired",
+  "personDetails.birthDateUnknown",
+  "personDetails.cancel",
+  "personDetails.edit",
+  "personDetails.editFor",
+  "personDetails.for",
+  "personDetails.fullName",
+  "personDetails.fullNameRequired",
+  "personDetails.futureDate",
+  "personDetails.help",
+  "personDetails.invalidDate",
+  "personDetails.list",
+  "personDetails.nameTooLong",
+  "personDetails.noDate",
+  "personDetails.noName",
+  "personDetails.save",
+  "personDetails.saved",
+  "personSuggestion.byBoth",
+  "personSuggestion.byDate",
+  "personSuggestion.byName",
+  "personSuggestion.dismiss",
+  "personSuggestion.dismissLabel",
+  "personSuggestion.for",
+  "personSuggestion.move",
+  "personSuggestion.moveLabel",
+  "personSuggestion.offer",
+  "portal.address",
+  "portal.approvalCancelled",
+  "portal.approvalContact",
+  "portal.approvalExpired",
+  "portal.approvalMissing",
+  "portal.approvalRefused",
+  "portal.approved",
+  "portal.awaiting",
+  "portal.check",
+  "portal.clinicIssue",
+  "portal.code",
+  "portal.compare",
+  "portal.confirmationsPending",
+  "portal.copied",
+  "portal.copy",
+  "portal.copyFailed",
+  "portal.dateNotRecorded",
+  "portal.deviceCode",
+  "portal.deviceName",
+  "portal.errorAddress",
+  "portal.errorCancelled",
+  "portal.errorCode",
+  "portal.errorCodeRejected",
+  "portal.errorDamaged",
+  "portal.errorDeviceName",
+  "portal.errorDisabled",
+  "portal.errorExists",
+  "portal.errorIncomplete",
+  "portal.errorKeys",
+  "portal.errorRefused",
+  "portal.errorUnavailable",
+  "portal.fingerprint",
+  "portal.incomplete",
+  "portal.intro",
+  "portal.link",
+  "portal.matchPerson",
+  "portal.notRequested",
+  "portal.partialResult",
+  "portal.person",
+  "portal.requestApproval",
+  "portal.restartApproval",
+  "portal.result",
+  "portal.routing",
+  "portal.serviceDate",
+  "portal.serviceDateLabel",
+  "portal.sourceVerified",
+  "portal.title",
+  "rename.help.profile",
+  "rename.label.profile",
+  "rename.profile.action",
+  "rename.profile.controls",
+  "rename.profile.saved",
+  "rename.title.profile",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1300,6 +1382,88 @@ const FLUENT_IDS_BY_KEY = {
   "unlock.waiting": "unlock-waiting",
   "unlock.waiting.one": "unlock-waiting-one",
   "language.error.formatting": "language-error-formatting",
+  "error.newerFormat.backup": "error-newerFormat-backup",
+  "error.newerFormat.vault": "error-newerFormat-vault",
+  "personDetails.birthDate": "personDetails-birthDate",
+  "personDetails.birthDateRequired": "personDetails-birthDateRequired",
+  "personDetails.birthDateUnknown": "personDetails-birthDateUnknown",
+  "personDetails.cancel": "personDetails-cancel",
+  "personDetails.edit": "personDetails-edit",
+  "personDetails.editFor": "personDetails-editFor",
+  "personDetails.for": "personDetails-for",
+  "personDetails.fullName": "personDetails-fullName",
+  "personDetails.fullNameRequired": "personDetails-fullNameRequired",
+  "personDetails.futureDate": "personDetails-futureDate",
+  "personDetails.help": "personDetails-help",
+  "personDetails.invalidDate": "personDetails-invalidDate",
+  "personDetails.list": "personDetails-list",
+  "personDetails.nameTooLong": "personDetails-nameTooLong",
+  "personDetails.noDate": "personDetails-noDate",
+  "personDetails.noName": "personDetails-noName",
+  "personDetails.save": "personDetails-save",
+  "personDetails.saved": "personDetails-saved",
+  "personSuggestion.byBoth": "personSuggestion-byBoth",
+  "personSuggestion.byDate": "personSuggestion-byDate",
+  "personSuggestion.byName": "personSuggestion-byName",
+  "personSuggestion.dismiss": "personSuggestion-dismiss",
+  "personSuggestion.dismissLabel": "personSuggestion-dismissLabel",
+  "personSuggestion.for": "personSuggestion-for",
+  "personSuggestion.move": "personSuggestion-move",
+  "personSuggestion.moveLabel": "personSuggestion-moveLabel",
+  "personSuggestion.offer": "personSuggestion-offer",
+  "portal.address": "portal-address",
+  "portal.approvalCancelled": "portal-approvalCancelled",
+  "portal.approvalContact": "portal-approvalContact",
+  "portal.approvalExpired": "portal-approvalExpired",
+  "portal.approvalMissing": "portal-approvalMissing",
+  "portal.approvalRefused": "portal-approvalRefused",
+  "portal.approved": "portal-approved",
+  "portal.awaiting": "portal-awaiting",
+  "portal.check": "portal-check",
+  "portal.clinicIssue": "portal-clinicIssue",
+  "portal.code": "portal-code",
+  "portal.compare": "portal-compare",
+  "portal.confirmationsPending": "portal-confirmationsPending",
+  "portal.copied": "portal-copied",
+  "portal.copy": "portal-copy",
+  "portal.copyFailed": "portal-copyFailed",
+  "portal.dateNotRecorded": "portal-dateNotRecorded",
+  "portal.deviceCode": "portal-deviceCode",
+  "portal.deviceName": "portal-deviceName",
+  "portal.errorAddress": "portal-errorAddress",
+  "portal.errorCancelled": "portal-errorCancelled",
+  "portal.errorCode": "portal-errorCode",
+  "portal.errorCodeRejected": "portal-errorCodeRejected",
+  "portal.errorDamaged": "portal-errorDamaged",
+  "portal.errorDeviceName": "portal-errorDeviceName",
+  "portal.errorDisabled": "portal-errorDisabled",
+  "portal.errorExists": "portal-errorExists",
+  "portal.errorIncomplete": "portal-errorIncomplete",
+  "portal.errorKeys": "portal-errorKeys",
+  "portal.errorRefused": "portal-errorRefused",
+  "portal.errorUnavailable": "portal-errorUnavailable",
+  "portal.fingerprint": "portal-fingerprint",
+  "portal.incomplete": "portal-incomplete",
+  "portal.intro": "portal-intro",
+  "portal.link": "portal-link",
+  "portal.matchPerson": "portal-matchPerson",
+  "portal.notRequested": "portal-notRequested",
+  "portal.partialResult": "portal-partialResult",
+  "portal.person": "portal-person",
+  "portal.requestApproval": "portal-requestApproval",
+  "portal.restartApproval": "portal-restartApproval",
+  "portal.result": "portal-result",
+  "portal.routing": "portal-routing",
+  "portal.serviceDate": "portal-serviceDate",
+  "portal.serviceDateLabel": "portal-serviceDateLabel",
+  "portal.sourceVerified": "portal-sourceVerified",
+  "portal.title": "portal-title",
+  "rename.help.profile": "rename-help-profile",
+  "rename.label.profile": "rename-label-profile",
+  "rename.profile.action": "rename-profile-action",
+  "rename.profile.controls": "rename-profile-controls",
+  "rename.profile.saved": "rename-profile-saved",
+  "rename.title.profile": "rename-title-profile",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -1975,6 +2139,91 @@ export interface MessageArgsByKey {
   "unlock.waiting": { count: FluentArgument; folder: FluentArgument };
   "unlock.waiting.one": { folder: FluentArgument };
   "language.error.formatting": undefined;
+  "error.newerFormat.backup": undefined;
+  "error.newerFormat.vault": undefined;
+  "personDetails.birthDate": undefined;
+  "personDetails.birthDateRequired": undefined;
+  "personDetails.birthDateUnknown": undefined;
+  "personDetails.cancel": undefined;
+  "personDetails.edit": undefined;
+  "personDetails.editFor": { name: FluentArgument };
+  "personDetails.for": { name: FluentArgument };
+  "personDetails.fullName": undefined;
+  "personDetails.fullNameRequired": undefined;
+  "personDetails.futureDate": undefined;
+  "personDetails.help": undefined;
+  "personDetails.invalidDate": undefined;
+  "personDetails.list": undefined;
+  "personDetails.nameTooLong": undefined;
+  "personDetails.noDate": undefined;
+  "personDetails.noName": undefined;
+  "personDetails.save": undefined;
+  "personDetails.saved": { name: FluentArgument };
+  "personSuggestion.byBoth": undefined;
+  "personSuggestion.byDate": undefined;
+  "personSuggestion.byName": undefined;
+  "personSuggestion.dismiss": undefined;
+  "personSuggestion.dismissLabel": { document: FluentArgument };
+  "personSuggestion.for": { document: FluentArgument };
+  "personSuggestion.move": undefined;
+  "personSuggestion.moveLabel": {
+    document: FluentArgument;
+    name: FluentArgument;
+  };
+  "personSuggestion.offer": { name: FluentArgument; why: FluentArgument };
+  "portal.address": undefined;
+  "portal.approvalCancelled": undefined;
+  "portal.approvalContact": undefined;
+  "portal.approvalExpired": undefined;
+  "portal.approvalMissing": undefined;
+  "portal.approvalRefused": undefined;
+  "portal.approved": undefined;
+  "portal.awaiting": undefined;
+  "portal.check": undefined;
+  "portal.clinicIssue": { clinic: FluentArgument; detail: FluentArgument };
+  "portal.code": undefined;
+  "portal.compare": undefined;
+  "portal.confirmationsPending": { count: FluentArgument };
+  "portal.copied": undefined;
+  "portal.copy": undefined;
+  "portal.copyFailed": undefined;
+  "portal.dateNotRecorded": undefined;
+  "portal.deviceCode": undefined;
+  "portal.deviceName": undefined;
+  "portal.errorAddress": undefined;
+  "portal.errorCancelled": undefined;
+  "portal.errorCode": undefined;
+  "portal.errorCodeRejected": undefined;
+  "portal.errorDamaged": undefined;
+  "portal.errorDeviceName": undefined;
+  "portal.errorDisabled": undefined;
+  "portal.errorExists": undefined;
+  "portal.errorIncomplete": undefined;
+  "portal.errorKeys": undefined;
+  "portal.errorRefused": undefined;
+  "portal.errorUnavailable": undefined;
+  "portal.fingerprint": undefined;
+  "portal.incomplete": undefined;
+  "portal.intro": undefined;
+  "portal.link": undefined;
+  "portal.matchPerson": undefined;
+  "portal.notRequested": undefined;
+  "portal.partialResult": { added: FluentArgument; refused: FluentArgument };
+  "portal.person": undefined;
+  "portal.requestApproval": undefined;
+  "portal.restartApproval": undefined;
+  "portal.result": { added: FluentArgument; refused: FluentArgument };
+  "portal.routing": undefined;
+  "portal.serviceDate": { date: FluentArgument };
+  "portal.serviceDateLabel": undefined;
+  "portal.sourceVerified": { clinic: FluentArgument };
+  "portal.title": undefined;
+  "rename.help.profile": undefined;
+  "rename.label.profile": undefined;
+  "rename.profile.action": { name: FluentArgument };
+  "rename.profile.controls": undefined;
+  "rename.profile.saved": { name: FluentArgument };
+  "rename.title.profile": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

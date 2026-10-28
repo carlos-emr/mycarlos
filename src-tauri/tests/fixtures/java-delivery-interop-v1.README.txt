@@ -1,0 +1,18 @@
+Synthetic Java/native interoperability packet, 26 October 2026.
+
+This is the actual production Java delivery composer's output recorded by Agent1,
+using the existing CARLOS signed-send-to-mycarlos.pdf fixture and the unchanged
+shared delivery-contract.json FAKE device/clinic keys. Original signed-PDF SHA256:
+48b82b640dfdbcdb871aa3216bca3813abc1d974478bbd35ca7358feb069fa63.
+
+Packet SHA256:1072a30c81c71723b3470445ddf487ce8b362ef9d11ff4e94c1274d134cfa630.
+It contains synthetic ciphertext, signed metadata and public trust information;
+there are no real private keys or patient data. The authoritative M0/M3 fixtures
+are unchanged. This packet is a production-composer regression artifact, not a
+new protocol version or substitute for the shared vectors.
+
+Routine storage/HTTP-boundary tests open it at its reference clock, verify its
+actual HPKE/ES256 and the original CMS signature with the existing PDF fixture's
+layout/embedded manifest, then exercise real encrypted vault persistence and
+scripted HTTP responses. This does not establish helper isolation, live TLS or
+Windows UI behavior; those have separate actual-helper and live-flow checks.

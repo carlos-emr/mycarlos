@@ -1359,3 +1359,167 @@ unlock-waiting =
 unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
 
 language-error-formatting = O myCarlos não conseguiu exibir esta mensagem corretamente. Escolha outro idioma ou reinicie o aplicativo e confira seus registros antes de tentar novamente.
+
+error-newerFormat-backup = Esta cópia de segurança foi salva por uma versão mais recente do myCarlos. Atualize o myCarlos para restaurá-la. Nada foi alterado neste dispositivo.
+
+error-newerFormat-vault = Este cofre foi salvo por uma versão mais recente do myCarlos. Atualize o myCarlos para abri-lo. Nada foi alterado.
+
+personDetails-birthDate = Data de nascimento
+
+personDetails-birthDateRequired = Digite a data de nascimento ou indique que não a conhece.
+
+personDetails-birthDateUnknown = Não sei a data de nascimento desta pessoa
+
+personDetails-cancel = Cancelar
+
+personDetails-edit = Editar dados
+
+personDetails-editFor = Editar dados de { $name }
+
+personDetails-for = Dados de { $name }
+
+personDetails-fullName = Nome completo, como nos documentos da clínica
+
+personDetails-fullNameRequired = Digite o nome completo da pessoa.
+
+personDetails-futureDate = A data de nascimento não pode estar no futuro.
+
+personDetails-help = Guardados neste cofre criptografado para sugerir a quem um documento compartilhado pertence. Esses dados não verificam a origem de um documento.
+
+personDetails-invalidDate = Digite uma data de nascimento válida: ano, mês e dia.
+
+personDetails-list = Dados das pessoas
+
+personDetails-nameTooLong = Este nome completo é muito longo. Encurte-o.
+
+personDetails-noDate = Sem data de nascimento
+
+personDetails-noName = Sem nome completo
+
+personDetails-save = Salvar dados
+
+personDetails-saved = Dados de { $name } salvos.
+
+personSuggestion-byBoth = a data de nascimento e o nome no documento correspondem
+
+personSuggestion-byDate = a data de nascimento no documento corresponde
+
+personSuggestion-byName = o nome no documento corresponde
+
+personSuggestion-dismiss = Não é esta pessoa
+
+personSuggestion-dismissLabel = Não é esta pessoa: { $document }
+
+personSuggestion-for = Pessoa sugerida para { $document }
+
+personSuggestion-move = Mover
+
+personSuggestion-moveLabel = Mover { $document } para os registros de { $name }
+
+personSuggestion-offer = Parece que este documento é para { $name } ({ $why }). Mover para os registros dessa pessoa?
+
+portal-address = Endereço HTTPS do portal
+
+portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Verifique atualizações antes de iniciar outra solicitação.
+
+portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
+
+portal-approvalExpired = Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.
+
+portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
+
+portal-approvalRefused = A clínica recusou esta solicitação de aprovação do dispositivo. Entre em contato com a clínica para saber os próximos passos.
+
+portal-approved = A clínica aprovou este dispositivo.
+
+portal-awaiting = Solicitação de aprovação salva. Verifique atualizações ou envie novamente.
+
+portal-check = Verificar novos documentos
+
+portal-clinicIssue = { $clinic }: { $detail }
+
+portal-code = Código de vinculação
+
+portal-compare = Peça à equipe da clínica para comparar toda esta impressão digital nesta tela antes de aprovar este dispositivo.
+
+portal-confirmationsPending = Documentos salvos aguardando confirmação de retirada: { $count }. Verifique novamente para concluir a confirmação. Suas cópias salvas permanecem no cofre.
+
+portal-copied = Código do dispositivo copiado.
+
+portal-copy = Copiar código do dispositivo
+
+portal-copyFailed = Selecione todo o código do dispositivo e copie.
+
+portal-dateNotRecorded = Data não registrada
+
+portal-deviceCode = Código do dispositivo
+
+portal-deviceName = Nome deste dispositivo
+
+portal-errorAddress = Digite o endereço HTTPS do portal sem nome de usuário, senha, parâmetros de consulta ou fragmento.
+
+portal-errorCancelled = A vinculação foi interrompida porque o cofre foi bloqueado. Confira os dispositivos vinculados no portal antes de tentar novamente.
+
+portal-errorCode = Digite o código completo de vinculação exibido no portal do paciente.
+
+portal-errorCodeRejected = O portal não aceitou esse código. Crie outro código de vinculação no portal do paciente.
+
+portal-errorDamaged = Um documento salvo desta clínica está danificado ou ausente, por isso o recibo de retirada não foi enviado. A busca pelos seus outros documentos continuou. Restaure-o a partir de um backup ou peça à clínica que o envie novamente.
+
+portal-errorDeviceName = Escolha um nome de dispositivo com 1 a 64 caracteres, sem caracteres de controle.
+
+portal-errorDisabled = A vinculação com o portal não está ativada nesta versão.
+
+portal-errorExists = Este dispositivo já está registrado. Confira os dispositivos vinculados no portal do paciente.
+
+portal-errorIncomplete = Não foi possível concluir a solicitação ao portal. Verifique a conexão e o relógio do dispositivo e tente novamente.
+
+portal-errorKeys = A clínica ainda não publicou uma chave de assinatura. A vinculação está incompleta.
+
+portal-errorRefused = Não foi possível verificar um documento da clínica. Ele não foi adicionado e nenhum recibo de retirada foi enviado.
+
+portal-errorUnavailable = A vinculação com o portal ainda não está disponível neste dispositivo.
+
+portal-fingerprint = Impressão digital completa do dispositivo
+
+portal-incomplete = Vinculação incompleta. Confira os dispositivos vinculados no portal antes de tentar novamente.
+
+portal-intro = Vincule o myCarlos usando o endereço e o código exibidos no portal do paciente.
+
+portal-link = Vincular à clínica
+
+portal-matchPerson = Usar os dados do documento
+
+portal-notRequested = Solicite a aprovação da clínica para receber documentos neste dispositivo.
+
+portal-partialResult = Algumas verificações das clínicas precisam de atenção. Novos documentos salvos: { $added }. Documentos que não puderam ser verificados: { $refused }.
+
+portal-person = De quem são os registros
+
+portal-requestApproval = Solicitar aprovação da clínica
+
+portal-restartApproval = Iniciar outra solicitação de aprovação
+
+portal-result = Novos documentos salvos: { $added }. Documentos que não puderam ser verificados: { $refused }.
+
+portal-routing = Os documentos são salvos para a pessoa cujo nome completo e data de nascimento correspondam. Os demais vão para Compartilhados comigo.
+
+portal-serviceDate = Data do atendimento: { $date }
+
+portal-serviceDateLabel = Data do atendimento
+
+portal-sourceVerified = De { $clinic } · Verificado
+
+portal-title = Documentos da clínica
+
+rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
+
+rename-label-profile = Nome da pasta
+
+rename-profile-action = Renomear “{ $name }”
+
+rename-profile-controls = Os nomes não podem conter caracteres de controle.
+
+rename-profile-saved = O nome da pasta foi alterado para { $name }.
+
+rename-title-profile = Renomear a pasta da pessoa
