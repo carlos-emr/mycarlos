@@ -2,15 +2,50 @@
 
 For Ben’s review of the myCarlos screen changes merged since 20 October 2026 without a hands-on check. One section per pull request: what changed for the patient, then the screenshots that pull request already published.
 
-- All screenshots use FAKE data. They are not re-hosted: each image link is copied exactly from the pull request and is pinned to the commit it was published from, so it keeps working after that commit was removed from its branch.
+- All screenshots use FAKE data. They are not re-hosted: each image link is copied exactly from the pull request and is pinned to the commit it was published from, so it keeps working after that commit was removed from its branch. The exception is #124, which published none: its screenshots were made for this review and are pinned to a commit on this branch.
 - Tick **Reviewed by Ben** in the pull request description. In this file the boxes are display only.
-- Listed on 28 October 2026, from main at 97245d4. Newest first; stacked pull requests follow the one that took them to main.
+- Listed on 28 October 2026, from main at 891a963. Newest first; stacked pull requests follow the one that took them to main.
 
-**With screenshots:** [#95](https://github.com/carlos-emr/mycarlos/pull/95), [#79](https://github.com/carlos-emr/mycarlos/pull/79), [#81](https://github.com/carlos-emr/mycarlos/pull/81), [#82](https://github.com/carlos-emr/mycarlos/pull/82), [#62](https://github.com/carlos-emr/mycarlos/pull/62), [#64](https://github.com/carlos-emr/mycarlos/pull/64), [#58](https://github.com/carlos-emr/mycarlos/pull/58), [#61](https://github.com/carlos-emr/mycarlos/pull/61), [#59](https://github.com/carlos-emr/mycarlos/pull/59), [#75](https://github.com/carlos-emr/mycarlos/pull/75), [#77](https://github.com/carlos-emr/mycarlos/pull/77), [#87](https://github.com/carlos-emr/mycarlos/pull/87), [#83](https://github.com/carlos-emr/mycarlos/pull/83), [#60](https://github.com/carlos-emr/mycarlos/pull/60)
+**With screenshots:** #126, #95, #79, #81, #82, #62, #64, #58, #61, #59, #75, #77, #87, #83, #60
 
-**No screenshots published:** [#106](https://github.com/carlos-emr/mycarlos/pull/106), [#116](https://github.com/carlos-emr/mycarlos/pull/116), [#115](https://github.com/carlos-emr/mycarlos/pull/115), [#113](https://github.com/carlos-emr/mycarlos/pull/113), [#112](https://github.com/carlos-emr/mycarlos/pull/112), [#103](https://github.com/carlos-emr/mycarlos/pull/103), [#102](https://github.com/carlos-emr/mycarlos/pull/102), [#65](https://github.com/carlos-emr/mycarlos/pull/65), [#93](https://github.com/carlos-emr/mycarlos/pull/93)
+**No screenshots published:** #106, #116, #115, #113, #112, #103, #102, #65, #93
 
-**To add after merge:** [#126](https://github.com/carlos-emr/mycarlos/pull/126), [#104](https://github.com/carlos-emr/mycarlos/pull/104), [#124](https://github.com/carlos-emr/mycarlos/pull/124). **Left out** (no visible change): see the end.
+**To add after merge:** #104, #124. **Left out** (no visible change): see the end.
+
+---
+
+### [#126](https://github.com/carlos-emr/mycarlos/pull/126) Allow correcting a person's folder name
+
+- [ ] Reviewed by Ben
+
+A person’s top-level folder gets Rename, so a misspelt name can be corrected. Merged 28 Oct.
+
+**[comment](https://github.com/carlos-emr/mycarlos/pull/126#issuecomment-6445599580)** — 27 Oct, pinned to 3baa81b: the built app with a FAKE native side, not a real device; desktop, and 320 px and 390 px windows at 200% text.
+
+before desktop root
+
+![before desktop root](https://raw.githubusercontent.com/carlos-emr/mycarlos/3baa81bf2c4268ff30790f7972771790b17cd7e7/docs/ui-tests/pr-126/screenshots/before-desktop-root.png)
+
+after desktop saved
+
+![after desktop saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/3baa81bf2c4268ff30790f7972771790b17cd7e7/docs/ui-tests/pr-126/screenshots/after-desktop-saved.png)
+
+before narrow320 reader200 root
+
+![before narrow320 reader200 root](https://raw.githubusercontent.com/carlos-emr/mycarlos/3baa81bf2c4268ff30790f7972771790b17cd7e7/docs/ui-tests/pr-126/screenshots/before-narrow320-reader200-root.png)
+
+after narrow320 reader200 dialog
+
+![after narrow320 reader200 dialog](https://raw.githubusercontent.com/carlos-emr/mycarlos/3baa81bf2c4268ff30790f7972771790b17cd7e7/docs/ui-tests/pr-126/screenshots/after-narrow320-reader200-dialog.png)
+
+before narrow390 reader200 root
+
+![before narrow390 reader200 root](https://raw.githubusercontent.com/carlos-emr/mycarlos/3baa81bf2c4268ff30790f7972771790b17cd7e7/docs/ui-tests/pr-126/screenshots/before-narrow390-reader200-root.png)
+
+after narrow390 reader200 saved
+
+![after narrow390 reader200 saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/3baa81bf2c4268ff30790f7972771790b17cd7e7/docs/ui-tests/pr-126/screenshots/after-narrow390-reader200-saved.png)
+
 
 ---
 
@@ -530,15 +565,7 @@ Not repeated here: [the 16 Oct round](https://github.com/carlos-emr/mycarlos/pul
 
 ## To add after merge
 
-Ben approved merging these in this order: [#126](https://github.com/carlos-emr/mycarlos/pull/126), then [#104](https://github.com/carlos-emr/mycarlos/pull/104), then [#124](https://github.com/carlos-emr/mycarlos/pull/124). Once each is merged, move it up with its screenshots.
-
-### [#126](https://github.com/carlos-emr/mycarlos/pull/126) Allow correcting a person's folder name
-
-- [ ] Reviewed by Ben
-
-A person’s top-level folder gets Rename, so a misspelt name can be corrected.
-
-Screenshots: [27 Oct comment: desktop, and 320 px and 390 px windows at 200% text; synthetic, not a real device](https://github.com/carlos-emr/mycarlos/pull/126#issuecomment-6445599580).
+Ben approved merging #126 (merged 28 Oct, now above), then [#104](https://github.com/carlos-emr/mycarlos/pull/104), then [#124](https://github.com/carlos-emr/mycarlos/pull/124). Once each is merged, move it up with its screenshots.
 
 ### [#104](https://github.com/carlos-emr/mycarlos/pull/104) Add encrypted profile identity details and explicit PDF suggestions
 
@@ -554,17 +581,32 @@ Screenshots: [27 Oct comment: the profile form before and after, wide and narrow
 
 Linking a clinic with first-device approval, and picking up documents from the portal; off unless the portal-linking build option is turned on.
 
-_No screenshots have been published on this PR yet._
+**Screenshots made for this review** (28 Oct, pinned to 0cfd122; #124 published none). The built app with a FAKE native side and FAKE data, not a real clinic, portal or device. Before = main 891a963. After = #124 (31c2246) merged onto that main locally, since #124 does not include #126 yet; its one screen-code conflict (`src/vault.ts`) kept both sides. “200% text” is the browser’s default text size at 32 px.
+
+| | Before: main | After: #124 |
+|---|---|---|
+| Security | ![before, Security](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-1-security.png) | ![after, Security with Clinic documents](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-1-security.png) |
+| Library (after: once Check for new documents ran) | ![before, library](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-2-library.png) | ![after, verified clinic document beside a manual import](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-4-library-checked.png) |
+| Phone, 360 px, 200% text: library | ![before, phone library](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-360-200-library.png) | ![after, phone library after a check](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-360-200-library-checked.png) |
+
+| After: Clinic documents | |
+|---|---|
+| 1. No link yet: the link form | ![link form](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-2-link-form.png) |
+| 2. Linked; approval request saved | ![approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-3-awaiting-approval.png) |
+| 3. The clinic approved this device | ![approved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-6-approved.png) |
+| The verified document’s details | ![verified document details](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-5-details.png) |
+| French: approval request saved | ![French, approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-fr-3-awaiting-approval.png) |
+| Phone, 360 px, 200% text: approval request saved | ![phone, approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-360-200-awaiting-approval.png) |
 
 ---
 
 ## Left out: no visible change
 
-- [#127](https://github.com/carlos-emr/mycarlos/pull/127), [#122](https://github.com/carlos-emr/mycarlos/pull/122): dependency updates.
-- [#101](https://github.com/carlos-emr/mycarlos/pull/101): signed-PDF checks during import; imports stay unverified, so nothing changes on screen.
-- [#100](https://github.com/carlos-emr/mycarlos/pull/100), [#99](https://github.com/carlos-emr/mycarlos/pull/99): docs.
-- [#98](https://github.com/carlos-emr/mycarlos/pull/98), [#94](https://github.com/carlos-emr/mycarlos/pull/94), [#78](https://github.com/carlos-emr/mycarlos/pull/78): tests.
-- [#96](https://github.com/carlos-emr/mycarlos/pull/96): keeps a photo under 4 MB; its description says nothing on screen changes.
-- [#89](https://github.com/carlos-emr/mycarlos/pull/89): a colour moved into a theme variable; nothing looks different.
-- [#85](https://github.com/carlos-emr/mycarlos/pull/85): sandbox for the PDF helper; no screen files changed (merged into #64’s branch).
-- [#80](https://github.com/carlos-emr/mycarlos/pull/80): local name remover; no screen yet, nothing in the app calls it.
+- #127, #122: dependency updates.
+- #101: signed-PDF checks during import; imports stay unverified, so nothing changes on screen.
+- #100, #99: docs.
+- #98, #94, #78: tests.
+- #96: keeps a photo under 4 MB; its description says nothing on screen changes.
+- #89: a colour moved into a theme variable; nothing looks different.
+- #85: sandbox for the PDF helper; no screen files changed (merged into #64’s branch).
+- #80: local name remover; no screen yet, nothing in the app calls it.
