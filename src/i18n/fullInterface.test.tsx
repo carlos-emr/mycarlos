@@ -96,7 +96,7 @@ afterEach(async () => {
 });
 
 describe("the installed interface in the selected language", () => {
-  it("updates Lock, Hidden, built-in folders and existing form drafts without remounting", () => {
+  it("updates Lock, built-in folders and existing form drafts without remounting", () => {
     setLocaleOverride("en");
     library();
     const search = screen.getByRole("searchbox");
@@ -112,7 +112,8 @@ describe("the installed interface in the selected language", () => {
         name: "Déverrouillé · Verrouiller maintenant",
       }),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Masqués/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Masqués/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sécurité" })).toBeVisible();
     expect(
       screen.getByRole("button", {
         name: (name) =>

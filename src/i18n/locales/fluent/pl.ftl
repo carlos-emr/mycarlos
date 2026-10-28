@@ -446,7 +446,6 @@ interface-search-all = Szukaj wszędzie w { $location }
 
 interface-SecuritySettings-evaluationBuild = Wersja testowa
 
-interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. myCarlos jej nie pokazuje i nigdy jej nie zmienia ani nie usuwa.
 
 interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne = myCarlos nigdy nie usuwa dokumentów. Ukrycie usuwa dokument z widoku: pozostaje on w zaszyfrowanym sejfie, w sekcji Ukryte, i można go przywrócić. Czytelne kopie zapisane poza myCarlos można zachować lub usunąć samodzielnie.
 
@@ -1565,3 +1564,128 @@ portal-linkedApprovalIssue = Urządzenie zostało połączone, ale nie udało si
 portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
 portal-working = Trwa operacja związana z przychodnią…
+hidden-backToSecurity = Powrót do zabezpieczeń
+
+interface-history-appVersion = Wersja myCarlos
+
+interface-history-damaged = Część tej historii jest uszkodzona. Zdarzenia po { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
+
+interface-history-damagedAll = Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc nie wyświetlono żadnego z nich.
+
+interface-history-damagedBefore = Część tej historii jest uszkodzona. Zdarzenia sprzed { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
+
+interface-history-damagedBetween = Część tej historii jest uszkodzona. Zdarzenia między { $from } a { $to } nie mogą zostać zweryfikowane i nie są wyświetlane.
+
+interface-history-empty = Brak zdarzeń w historii.
+
+interface-history-error-unverified = Nie udało się odczytać ani zweryfikować historii. Nie wyświetlono żadnych zdarzeń.
+
+interface-history-event-backupRestored = Przywrócono kopię zapasową
+
+interface-history-event-backupSaved = Zapisano zaszyfrowaną kopię zapasową
+
+interface-history-event-copySaved = Zapisano czytelną kopię
+
+interface-history-event-created = Utworzono sejf
+
+interface-history-event-folderCreated = Utworzono folder
+
+interface-history-event-folderMoved = Przeniesiono folder
+
+interface-history-event-folderRenamed = Zmieniono nazwę folderu
+
+interface-history-event-hidden = Ukryto dokument
+
+interface-history-event-historyStarted = Rozpoczęto zapisywanie historii
+
+interface-history-event-imported = Dodano dokument
+
+interface-history-event-moved = Przeniesiono dokument
+
+interface-history-event-passphraseChanged = Zmieniono hasło
+
+interface-history-event-profileCreated = Dodano profil pacjenta
+
+interface-history-event-recoveryKeySet = Ustawiono klucz odzyskiwania
+
+interface-history-event-renamed = Zmieniono nazwę dokumentu
+
+interface-history-event-restored = Przywrócono dokument
+
+interface-history-event-setAside = Odłożono sejf
+
+interface-history-event-unlocked = Otworzono sejf
+
+interface-history-events =
+    { $count ->
+    [one] { $count } zdarzenie
+    [few] { $count } zdarzenia
+    [many] { $count } zdarzeń
+    *[other] { $count } zdarzenia
+    }
+
+interface-history-from = Z
+
+interface-history-gap = Zdarzenia w tym miejscu nie mogą zostać zweryfikowane i nie są wyświetlane.
+
+interface-history-how = Sposób
+
+interface-history-how-camera = Dodano za pomocą aparatu
+
+interface-history-how-damaged = Ukryto, ponieważ brakowało pliku
+
+interface-history-how-importedShared = Dodano do Udostępnione mi
+
+interface-history-how-movedFromShared = Przeniesiono z Udostępnione mi
+
+interface-history-how-passphrase = Hasło
+
+interface-history-how-patient = Ukryto ręcznie
+
+interface-history-how-picked = Zaimportowano z wybranego pliku
+
+interface-history-how-recoveryKey = Klucz odzyskiwania
+
+interface-history-how-replaced = Przywrócono, zastępując istniejący sejf
+
+interface-history-intro = Lista zdarzeń zapisana w zaszyfrowanym sejfie. Można ją tylko odczytywać.
+
+interface-history-laterSessionNotRecorded = Co najmniej jedna późniejsza sesja nie została zapisana.
+
+interface-history-loading = Sprawdzanie i odczytywanie całej historii…
+
+interface-history-moreFolders =
+    { $count ->
+    [one] jeszcze { $count } folder
+    [few] jeszcze { $count } foldery
+    [many] jeszcze { $count } folderów
+    *[other] jeszcze { $count } foldera
+    }
+
+interface-history-name = Nazwa
+
+interface-history-personRootFolder = Poziom główny dokumentów osoby
+
+interface-history-place = Miejsce
+
+interface-history-previousName = Poprzednia nazwa
+
+interface-history-previousSession = Poprzednia sesja
+
+interface-history-rootFolder = Poziom główny (nie zapisano lokalizacji)
+
+interface-history-scopeNote = Niektóre wpisy nie wskazują osoby ani nie rozróżniają folderów o tej samej nazwie. Etykiety folderów to zapisane nazwy, a nie pełne ścieżki. Zapisane lokalizacje mogą być skrócone.
+
+interface-history-sessionLockedAutomatically = Zablokowano automatycznie: { $date }
+
+interface-history-sessionLockedByApp = Zablokowano przez aplikację: { $date }
+
+interface-history-sessionLockedByPerson = Zablokowano ręcznie: { $date }
+
+interface-history-sessionNotRecorded = Poprzednia sesja nie została zapisana.
+
+interface-history-title = Historia zdarzeń
+
+interface-history-to = Do
+
+interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. Możesz ją tutaj przeglądać; myCarlos nigdy jej nie zmienia ani nie usuwa.

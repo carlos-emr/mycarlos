@@ -218,7 +218,6 @@ interface-RecordDetails-viewPhoto = 檢視相片
 
 interface-SecuritySettings-evaluationBuild = 評估版本
 
-interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。myCarlos 不會顯示、變更或移除這些紀錄。
 
 interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne = myCarlos 絕不會刪除文件。隱藏文件會使它暫時不顯示，但仍留在加密保險庫中，並列於「已隱藏」；您可以還原文件。您儲存在 myCarlos 外部的可讀副本由您自行保留或刪除。
 
@@ -1373,3 +1372,116 @@ portal-linkedApprovalIssue = 裝置已連結，但無法確認核准請求。請
 portal-retryApproval = 重試已儲存的核准請求
 
 portal-working = 正在處理診所作業…
+hidden-backToSecurity = 返回「安全性」
+
+interface-history-appVersion = myCarlos 版本
+
+interface-history-damaged = 此紀錄有部分已損毀。{ $date } 之後的事件無法檢查，因此不顯示。
+
+interface-history-damagedAll = 此紀錄有部分已損毀。其中的事件無法檢查，因此全部不顯示。
+
+interface-history-damagedBefore = 此紀錄有部分已損毀。{ $date } 之前的事件無法檢查，因此不顯示。
+
+interface-history-damagedBetween = 此紀錄有部分已損毀。{ $from } 至 { $to } 之間的事件無法檢查，因此不顯示。
+
+interface-history-empty = 沒有任何紀錄事件。
+
+interface-history-error-unverified = 無法讀取並驗證紀錄，因此不顯示任何事件。
+
+interface-history-event-backupRestored = 備份已還原
+
+interface-history-event-backupSaved = 加密備份已儲存
+
+interface-history-event-copySaved = 可讀副本已儲存
+
+interface-history-event-created = 保險庫已建立
+
+interface-history-event-folderCreated = 資料夾已建立
+
+interface-history-event-folderMoved = 資料夾已移動
+
+interface-history-event-folderRenamed = 資料夾已重新命名
+
+interface-history-event-hidden = 文件已隱藏
+
+interface-history-event-historyStarted = 紀錄已開始
+
+interface-history-event-imported = 文件已新增
+
+interface-history-event-moved = 文件已移動
+
+interface-history-event-passphraseChanged = 密語已變更
+
+interface-history-event-profileCreated = 病患檔案已新增
+
+interface-history-event-recoveryKeySet = 復原金鑰已設定
+
+interface-history-event-renamed = 文件已重新命名
+
+interface-history-event-restored = 文件已還原
+
+interface-history-event-setAside = 保險庫已擱置
+
+interface-history-event-unlocked = 保險庫已開啟
+
+interface-history-events = { $count } 個事件
+
+interface-history-from = 來源
+
+interface-history-gap = 此處的事件無法檢查，因此不顯示。
+
+interface-history-how = 方式
+
+interface-history-how-camera = 使用相機新增
+
+interface-history-how-damaged = 因檔案遺失而隱藏
+
+interface-history-how-importedShared = 已新增至「與我分享」
+
+interface-history-how-movedFromShared = 從「與我分享」移出
+
+interface-history-how-passphrase = 密語
+
+interface-history-how-patient = 由您隱藏
+
+interface-history-how-picked = 從所選檔案匯入
+
+interface-history-how-recoveryKey = 復原金鑰
+
+interface-history-how-replaced = 還原並取代了現有保險庫
+
+interface-history-intro = 加密保險庫中所存事件的唯讀清單。
+
+interface-history-laterSessionNotRecorded = 之後至少有一個工作階段未記錄。
+
+interface-history-loading = 正在檢查並讀取完整紀錄…
+
+interface-history-moreFolders = 另有 { $count } 個資料夾
+
+interface-history-name = 名稱
+
+interface-history-personRootFolder = 某人的最上層
+
+interface-history-place = 位置
+
+interface-history-previousName = 原名稱
+
+interface-history-previousSession = 上一個工作階段
+
+interface-history-rootFolder = 最上層（未記錄位置）
+
+interface-history-scopeNote = 部分項目未標明是哪個人，也未區分同名的資料夾。資料夾標籤是記錄下來的名稱，而非完整路徑。儲存位置可能會被縮短。
+
+interface-history-sessionLockedAutomatically = 在 { $date } 自動鎖定
+
+interface-history-sessionLockedByApp = App 在 { $date } 鎖定
+
+interface-history-sessionLockedByPerson = 您在 { $date } 鎖定
+
+interface-history-sessionNotRecorded = 上一個工作階段未記錄。
+
+interface-history-title = 操作紀錄
+
+interface-history-to = 目標
+
+interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。您可以在此查看這些紀錄；myCarlos 絕不會變更或移除它們。

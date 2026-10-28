@@ -1136,7 +1136,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         </button>
       </VaultAuthFrame>
     ) : (
-      <VaultAuthFrame state="Locked">
+      <VaultAuthFrame state="Locking">
         <p>
           {t("interface.VaultApp.vaultContentIsHiddenWhileMyCarlosFinishes")}
         </p>

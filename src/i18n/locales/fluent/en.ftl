@@ -416,7 +416,6 @@ interface-search-all = Search everything in { $location }
 
 interface-SecuritySettings-evaluationBuild = Evaluation build
 
-interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. myCarlos does not show it, and never changes or removes it.
 
 interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne = myCarlos never deletes a document. Hiding one takes it out of view: it stays in the encrypted vault, listed under Hidden, and can be restored. Readable copies you save outside myCarlos are yours to keep or delete.
 
@@ -1501,3 +1500,124 @@ portal-linkedApprovalIssue = Device linked, but the approval request could not b
 portal-retryApproval = Retry saved approval request
 
 portal-working = Clinic operation in progress…
+hidden-backToSecurity = Back to Security
+
+interface-history-appVersion = myCarlos version
+
+interface-history-damaged = Part of this history is damaged. Events after { $date } can't be checked and aren't shown.
+
+interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
+
+interface-history-damagedBefore = Part of this history is damaged. Events before { $date } can't be checked and aren't shown.
+
+interface-history-damagedBetween = Part of this history is damaged. Events between { $from } and { $to } can't be checked and aren't shown.
+
+interface-history-empty = There are no history events.
+
+interface-history-error-unverified = The history could not be read and verified. No events are shown.
+
+interface-history-event-backupRestored = Backup restored
+
+interface-history-event-backupSaved = Encrypted backup saved
+
+interface-history-event-copySaved = Readable copy saved
+
+interface-history-event-created = Vault created
+
+interface-history-event-folderCreated = Folder created
+
+interface-history-event-folderMoved = Folder moved
+
+interface-history-event-folderRenamed = Folder renamed
+
+interface-history-event-hidden = Document hidden
+
+interface-history-event-historyStarted = History started
+
+interface-history-event-imported = Document added
+
+interface-history-event-moved = Document moved
+
+interface-history-event-passphraseChanged = Passphrase changed
+
+interface-history-event-profileCreated = Patient profile added
+
+interface-history-event-recoveryKeySet = Recovery key set up
+
+interface-history-event-renamed = Document renamed
+
+interface-history-event-restored = Document restored
+
+interface-history-event-setAside = Vault set aside
+
+interface-history-event-unlocked = Vault opened
+
+interface-history-events =
+    { $count ->
+    [one] { $count } event
+    *[other] { $count } events
+    }
+
+interface-history-from = From
+
+interface-history-gap = Events here can't be checked and aren't shown.
+
+interface-history-how = How
+
+interface-history-how-camera = Added with the camera
+
+interface-history-how-damaged = Hidden because its file was missing
+
+interface-history-how-importedShared = Added to Shared with me
+
+interface-history-how-movedFromShared = Moved from Shared with me
+
+interface-history-how-passphrase = Passphrase
+
+interface-history-how-patient = Hidden by you
+
+interface-history-how-picked = Imported from a chosen file
+
+interface-history-how-recoveryKey = Recovery key
+
+interface-history-how-replaced = Restored over an existing vault
+
+interface-history-intro = A read-only list of events stored in your encrypted vault.
+
+interface-history-laterSessionNotRecorded = At least one later session was not recorded.
+
+interface-history-loading = Checking and reading the complete history…
+
+interface-history-moreFolders =
+    { $count ->
+    [one] { $count } more folder
+    *[other] { $count } more folders
+    }
+
+interface-history-name = Name
+
+interface-history-personRootFolder = A person’s top level
+
+interface-history-place = Where
+
+interface-history-previousName = Previous name
+
+interface-history-previousSession = Previous session
+
+interface-history-rootFolder = Top level (location not recorded)
+
+interface-history-scopeNote = Some entries do not identify the person or distinguish folders with the same name. Folder labels are recorded names, not complete paths. Saved locations may be shortened.
+
+interface-history-sessionLockedAutomatically = Locked automatically at { $date }
+
+interface-history-sessionLockedByApp = Locked by the app at { $date }
+
+interface-history-sessionLockedByPerson = Locked by you at { $date }
+
+interface-history-sessionNotRecorded = The previous session was not recorded.
+
+interface-history-title = Audit history
+
+interface-history-to = To
+
+interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. You can read it here; myCarlos never changes or removes it.
