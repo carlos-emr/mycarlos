@@ -321,6 +321,8 @@ export function LibraryItems({
                 </span>
               </span>
             </button>
+            {/* After the button, so its name stays the document's (#135). */}
+            <RecordSource record={record} />
           </article>
         );
       })}

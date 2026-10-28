@@ -190,6 +190,42 @@ describe("a document's status before its source (#135)", () => {
       }
     });
 
+  // Phones, narrow windows and larger text, where the list has no Source
+  // column: the status goes under the document's name, and a grid tile shows
+  // it under its caption. 32px is the reader's 200% text.
+  for (const [width, text] of [
+    [800, "16px"],
+    [360, "16px"],
+    [360, "32px"],
+    [320, "16px"],
+  ] as const)
+    it(`keeps the whole status in view in the list and the grid at ${width}px and ${text} text, in every language`, async () => {
+      await page.viewport(width, 3200);
+      document.documentElement.style.fontSize = text;
+      for (const locale of LOCALES) {
+        setLocaleOverride(locale);
+        const view = renderLibrary();
+        for (const layout of ["list", "grid"]) {
+          if (layout === "grid")
+            fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+          for (const [shownRecord, status, source] of expected(locale)) {
+            const item = row(locale, shownRecord);
+            const { shown, from } = parts(item, status, source);
+            expectWholeStatus(shown);
+            expectStatusFirst(shown, from);
+            // Under the name, not beside it or over it.
+            const name = within(item)
+              .getAllByText(shownRecord.displayName, { exact: true })
+              .at(-1)!;
+            expect(shown.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+              name.getBoundingClientRect().bottom - 0.5,
+            );
+          }
+        }
+        view.unmount();
+      }
+    });
+
   it("shows the whole source after the status in Details", async () => {
     for (const width of [1100, 360]) {
       await page.viewport(width, 1600);

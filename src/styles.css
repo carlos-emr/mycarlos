@@ -534,6 +534,9 @@ h1, h2, p { margin: 0; }
 .tile-caption > span:last-child { min-width: 0; }
 .tile-caption strong { display: -webkit-box; overflow: hidden; font-size: 0.875rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .tile-caption small { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 0.875rem; }
+/* #135: a tile shows the status and source under its caption, as the list does. */
+.file-tile > .record-source { padding: 0 12px 10px; color: var(--ink-soft); font-size: 0.875rem; }
+.file-tile > .record-source .record-source-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty-state { grid-column: 1 / -1; display: grid; justify-items: center; gap: 5px; padding: 42px 20px; color: var(--ink-soft); text-align: center; }
 .empty-state .icon { width: 28px; height: 28px; color: var(--ink-faint); }
 .empty-state span { font-size: 0.875rem; }
@@ -1011,6 +1014,10 @@ h1, h2, p { margin: 0; }
      tell items apart. At 16px a phone leaves it about 8rem, so a folder's or a
      document's name wraps instead of being cut short. */
   .native-filelist :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
+  /* #135: without the Source column, a document's status and source go under its name, on a
+     line of their own, so that the status is still in view. */
+  .native-filelist .file-row { row-gap: 4px; }
+  .native-filelist .file-row > .record-source { display: flex; grid-column: 2 / -1; grid-row: 2; }
 }
 /* After the rule above, which it narrows further (see #84 above). */
 @media (max-width: 22em) {
