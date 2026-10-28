@@ -3974,18 +3974,20 @@ mod tests {
     fn a_vault_or_backup_from_a_newer_build_is_not_called_damaged() {
         let vault = PublicError::from(VaultError::NewerFormat);
         assert_eq!(vault.code, "vault_newer_format");
+        assert_eq!(vault.message_key, "error.newerFormat.vault");
         assert_eq!(
-            vault.message,
+            public_error_text(&vault),
             "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed."
         );
         // Opening a backup words it the same, said of the backup.
         let backup = PublicError::from(VaultError::BackupNewerFormat).of_restore();
         assert_eq!(backup.code, "backup_newer_format");
+        assert_eq!(backup.message_key, "error.newerFormat.backup");
         assert_eq!(
-            backup.message,
+            public_error_text(&backup),
             "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed."
         );
-        for message in [vault.message, backup.message] {
+        for message in [public_error_text(&vault), public_error_text(&backup)] {
             assert!(!message.contains("damaged") && !message.contains("not a complete"));
         }
     }
