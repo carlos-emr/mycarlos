@@ -1,6 +1,7 @@
+import { t as translateNow, useI18n, formatNumber } from "../i18n";
 import { Fragment, useMemo } from "react";
 import { Icon } from "../Icon";
-import { useI18n } from "../i18n";
+
 import type { PatientProfile, VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 
@@ -13,7 +14,13 @@ interface LibrarySidebarProps {
   people: PatientProfile[];
   /** The open person, while their records are shown. */
   profileId: string;
-  section: "records" | "shared" | "hidden" | "security" | "preferences";
+  section:
+    | "records"
+    | "shared"
+    | "hidden"
+    | "history"
+    | "security"
+    | "preferences";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
   sharedNew: number;
@@ -30,11 +37,8 @@ interface LibrarySidebarProps {
   drag: VaultDragDrop;
   onOpenPerson: (profileId: string) => void;
   onOpenFolder: (profileId: string, folderId: string) => void;
-  /** Hidden documents at the current location (#71). */
-  hiddenCount: number;
   /** Hidden can be opened from Shared with me; keep its whole-vault footer. */
   hiddenFromShared?: boolean;
-  onOpenHidden: () => void;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
 }
@@ -68,7 +72,8 @@ function folderTree(folders: VaultFolder[]) {
 export const personFolderName = (
   person: PatientProfile,
   people: PatientProfile[],
-) => (people.length > 1 ? person.displayName : "My records");
+) =>
+  people.length > 1 ? person.displayName : translateNow("sidebar.myRecords");
 
 export function LibrarySidebar({
   profileName,
@@ -85,13 +90,11 @@ export function LibrarySidebar({
   sharedNew,
   onOpenShared,
   vaultTotals,
-  hiddenCount,
   hiddenFromShared = false,
-  onOpenHidden,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
-  const { t } = useI18n();
+  useI18n();
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
   const trees = useMemo(
     () =>
@@ -139,7 +142,7 @@ export function LibrarySidebar({
           <small>{profileName}</small>
         </span>
       </div>
-      <nav className="side-nav" aria-label={t("sidebar.label")}>
+      <nav className="side-nav" aria-label={translateNow("sidebar.label")}>
         {people.map((person) => {
           const open = section === "records" && person.id === profileId;
           // Only the open person's folders move by drag: a folder does not
@@ -162,10 +165,12 @@ export function LibrarySidebar({
               >
                 <Icon name="folder" />{" "}
                 <span className="native-nav-name">
-                  {several ? person.displayName : t("sidebar.myRecords")}
+                  {several
+                    ? person.displayName
+                    : translateNow("sidebar.myRecords")}
                 </span>
                 <span className="nav-count">
-                  {counts.loose.get(person.id) ?? 0}
+                  {formatNumber(counts.loose.get(person.id) ?? 0)}
                 </span>
               </button>
               {(trees.get(person.id) ?? []).map(({ folder, depth }) => {
@@ -189,7 +194,7 @@ export function LibrarySidebar({
                     // Two people can each have a "Lab results": say whose.
                     aria-label={
                       several
-                        ? `${folder.name} (${person.displayName}) ${counts.byFolder.get(folder.id) ?? 0}`
+                        ? `${folder.name} (${person.displayName}) ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
                         : undefined
                     }
                     draggable={movable || undefined}
@@ -205,7 +210,7 @@ export function LibrarySidebar({
                     <Icon name="folder" />{" "}
                     <span className="native-nav-name">{folder.name}</span>
                     <span className="nav-count">
-                      {counts.byFolder.get(folder.id) ?? 0}
+                      {formatNumber(counts.byFolder.get(folder.id) ?? 0)}
                     </span>
                   </button>
                 );
@@ -229,42 +234,58 @@ export function LibrarySidebar({
           // The count is a flex item, so built from text it would be read
           // "Shared with me , 2 new"; say it plainly instead.
           aria-label={
-            sharedNew > 0 ? `Shared with me, ${sharedNew} new` : undefined
+            sharedNew > 0
+              ? translateNow("interface.sidebar.sharedNew", {
+                  shared: translateNow("interface.LibrarySidebar.sharedWithMe"),
+                  new: translateNow("interface.count.new", {
+                    count: sharedNew,
+                  }),
+                })
+              : undefined
           }
           onClick={onOpenShared}
         >
           <Icon name="letter" />{" "}
-          <span className="native-nav-name">Shared with me</span>
-          {sharedNew > 0 && <span className="nav-count">{sharedNew} new</span>}
+          <span className="native-nav-name">
+            {translateNow("interface.LibrarySidebar.sharedWithMe")}
+          </span>
+          {sharedNew > 0 && (
+            <span className="nav-count">
+              {translateNow("interface.count.new", { count: sharedNew })}
+            </span>
+          )}
         </button>
-        <span className="nav-label">{t("sidebar.settings")}</span>
+        <span className="nav-label">{translateNow("sidebar.settings")}</span>
         <button
-          className={section === "security" ? "selected" : ""}
+          className={
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "selected"
+              : ""
+          }
+          aria-current={
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "page"
+              : undefined
+          }
           type="button"
           onClick={onOpenSecurity}
         >
-          <Icon name="shield" /> {t("security.title")}
+          <Icon name="shield" /> {translateNow("security.title")}
         </button>
         <button
           className={section === "preferences" ? "selected" : ""}
           type="button"
           onClick={onOpenPreferences}
         >
-          <Icon name="text-size" /> {t("sidebar.preferences")}
-        </button>
-        {/* At the bottom of the sidebar, set apart, like the mocks' Trash
-            (#71): out of view, not a folder or a setting. */}
-        <button
-          className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
-          type="button"
-          onClick={onOpenHidden}
-        >
-          <Icon name="hidden" /> Hidden{" "}
-          <span className="nav-count">{hiddenCount}</span>
+          <Icon name="settings" /> {translateNow("sidebar.preferences")}
         </button>
       </nav>
       <div className="storage">
-        <span>{t("sidebar.storage")}</span>
+        <span>{translateNow("sidebar.storage")}</span>
         <div className="storage-meter">
           <span
             style={{
@@ -273,8 +294,8 @@ export function LibrarySidebar({
           />
         </div>
         <small>
-          {t("sidebar.documents", { count: totals.documents })} ·{" "}
-          {t("sidebar.folderCount", { count: totals.folders })}
+          {translateNow("sidebar.documents", { count: totals.documents })} ·{" "}
+          {translateNow("sidebar.folderCount", { count: totals.folders })}
         </small>
       </div>
     </aside>

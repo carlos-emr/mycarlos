@@ -147,5 +147,62 @@ requests. The portal sends a `Date` header, so myCarlos can tell the patient whe
 off.
 
 If a portal or a clinic key may be compromised, follow the incident steps above. The clinic
-revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a revoked
-key, and patients can remove a device under Account → Linked devices in the portal.
+revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
+was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
+
+## Evaluating authenticated linking (#55)
+
+The future link implementation is built only with explicit native Cargo feature
+`portal-linking`; default builds refuse its command before any write or network
+use. The portal and CARLOS off switches remain separately required. A browser
+mock or a setting in the renderer never supplies production clinic pins.
+
+The typed portal address must be HTTPS with no user information, query or
+fragment. Deployments under a path prefix retain that prefix in the signed raw
+request path. Requests do not follow redirects, use cookies or persist an HTTP
+cache. TLS uses platform certificate validation with a TLS 1.2 minimum; no
+invalid-certificate override or document-selected destination is provided. This client makes direct connections and disables proxy discovery and automatic
+retries; an error after a one-use request is not retried silently. Android
+platform-verifier initialization remains an explicit implementation gate, not
+a claim established by desktop source review. Platform trust facilities can
+perform their own certificate/revocation lookups; these OS operations require
+traffic review alongside the app client.
+
+Link codes and private device keys are absent from errors and diagnostics. Only
+the per-link public keys, generic device name, one-use code and signed v1 claims
+leave the device while linking. Clinic names and computed key fingerprints are
+shown to the patient and recorded in encrypted history; the vault keeps private
+seeds, pins and recipient binding encrypted. Do not send a receipt or claim a
+portal delivery was filed merely because a link request succeeded.
+
+## Gated Windows send/delete evaluation
+
+Build with `npm run tauri -- build --features portal-linking` only in the isolated
+synthetic evaluation. Default builds remain OFF. `scripts/test-native-delivery.ps1`
+provides focused Windows checks and an optional feature-enabled installer build.
+
+The explicit Check for new documents action uses only the saved HTTPS portal
+base. Native code signs fixed mailbox/receipt and first-device approval routes;
+no downloaded URL selects a destination. The first mailbox page includes a
+per-link history anchor. Native code verifies the HPKE package, clinic signature,
+exact signed PDF bytes and embedded clinic/recipient/patient binding, then saves
+both PDF objects, metadata, history and a single retained receipt. Only that
+saved receipt can reach the portal. Receipt retry survives a lost response,
+restart and backup/restore; a new outer nonce never changes the inner receipt.
+
+The initial-device approval intent publishes both public keys and immutable
+clinic/recipient/portal binding to the saved portal. Staff must compare the
+full fingerprint on the actual device. The client verifies and saves the signed
+clinic challenge/acceptance before reporting clinic approval. Later-device
+approval, key-catalogue refresh, lost-all-devices recovery, mobile support and
+notification scheduling require their own remaining implementation/validation.
+Do not enable rollout from Linux component or FAKE-trust interoperability tests.
+
+Approval recovery does not replace an expired saved request automatically.
+Native code first reconciles the original ID, verifies any acceptance, and keeps
+old IDs/proofs through an explicit restart. A portal's unsigned terminal status
+cannot erase the only path back to a previously committed clinic acceptance.
+Terminal reasons are a bounded enum displayed as plain guidance, never actor
+identifiers or clinical data. A refusal requiring clinic intervention does not
+fall back to another first-device approval. A signature that remains valid as
+historical evidence does not override current key revocation.

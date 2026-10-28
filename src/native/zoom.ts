@@ -1,5 +1,4 @@
-import { t } from "../i18n";
-
+import { t, formatNumber } from "../i18n";
 // The whole interface is zoomed with Ctrl (Cmd on a Mac) and plus, minus or
 // 0, or with Ctrl and the mouse wheel, as in a browser. The platform's own
 // handling of those keys forgets the level when the app closes, so the app
@@ -91,7 +90,8 @@ export function zoomAfter(level: number, request: ZoomRequest): number {
   return ZOOM_LEVELS[Math.min(Math.max(next, 0), ZOOM_LEVELS.length - 1)];
 }
 
-export const zoomPercent = (level: number) => `${Math.round(level * 100)}%`;
+export const zoomPercent = (level: number) =>
+  `${formatNumber(Math.round(level * 100))}%`;
 
 /** The smallest and largest sizes, as whole percents. */
 export const ZOOM_MIN_PERCENT = Math.round(ZOOM_LEVELS[0] * 100);

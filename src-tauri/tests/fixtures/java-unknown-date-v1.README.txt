@@ -1,0 +1,22 @@
+Synthetic Java interoperability packets for an explicitly unrecorded service date.
+
+These are new regression fixtures, not edits to the frozen shared M0 vectors.
+The sender owner generated them through App.deliveryDocument, configured
+PDFSigningUtil PAdES and compact ES256 signing, and DeliveryComposer HPKE.
+They use the existing shared fixture's public FAKE key derivation and receiver,
+not any live native or clinic keys. No PKCS12/keyring is included.
+
+java-unknown-date-canonical-v1.json: embedded PDF service_date is explicit null;
+delivery manifest service_date is the required string "".
+SHA256 2bc603a3ea3311a14fde89d93b02a4f0632972fa25a1410227199e95eeee37f8
+
+java-unknown-date-legacy-v1.json: embedded PDF and delivery manifest service_date
+are both "", preserving compatibility with already signed legacy copies.
+SHA256 c1bedde7b8415fda7c886e60697da0460c7490b439624e2a34a6f74a8c117ccb
+
+Routine tests verify HPKE/ES256 and the actual original PDF CMS signature using
+the provided ranges and exact embedded manifest, then save/reopen the encrypted
+original, custody/history and retained receipt. Explicit ignored tests use the
+real confined helper and production receive path for both positive packets and
+unknown/known conflicts. They do not establish Windows UI or live portal behavior.
+No service date is inferred from the fixture clock, PDF issue time or Date added.
