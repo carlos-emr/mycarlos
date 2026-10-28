@@ -14036,10 +14036,12 @@ mod tests {
         assert!(store.snapshot().unwrap().records[0].hidden.is_none());
     }
 
-    /// A vault as an earlier build left it: both manifest slots `format`,
-    /// with no history; a format 1 one unpadded, a format 2 one with its
-    /// first document hidden. Returns its master key and id, for reading the
-    /// slots back without an unlock, which would upgrade it.
+    /// A vault as an earlier build left it: both manifest slots `format`.
+    /// Formats 1 and 2 have no history; a format 1 one is unpadded, a format
+    /// 2 one has its first document hidden. A format 3 one keeps the history
+    /// it was made with, which an upgrade must carry over. Returns its master
+    /// key and id, for reading the slots back without an unlock, which would
+    /// upgrade it.
     fn old_format_vault(
         root: &Path,
         names: &[&str],
@@ -14060,10 +14062,12 @@ mod tests {
                 reason: HiddenReason::Patient,
             });
         }
-        // An earlier build kept no history: its segments go, as if never
-        // written.
-        for segment in std::mem::take(&mut manifest.history).segments {
-            fs::remove_file(root.join("objects").join(segment.object_name)).unwrap();
+        // A build before format 3 kept no history: its segments go, as if
+        // never written.
+        if format < MANIFEST_FORMAT_HISTORY {
+            for segment in std::mem::take(&mut manifest.history).segments {
+                fs::remove_file(root.join("objects").join(segment.object_name)).unwrap();
+            }
         }
         for _ in 0..2 {
             manifest.generation += 1;
@@ -14088,6 +14092,53 @@ mod tests {
                 (format, generation, manifest)
             })
             .collect()
+    }
+
+    /// The history one slot names, as it stands, and its entries read from
+    /// their segments and checked against its chain, without an unlock.
+    /// Before format 3 both are empty.
+    fn slot_history(
+        root: &Path,
+        master_key: &[u8; 32],
+        vault_id: Uuid,
+        slot: u64,
+    ) -> (HistoryState, Vec<HistoryEntry>) {
+        let keys = derive_keys(vault_id, master_key).unwrap();
+        let data = fs::read(manifest_path(root, slot)).unwrap();
+        let manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
+        let entries: Vec<HistoryEntry> = manifest
+            .history
+            .segments
+            .iter()
+            .flat_map(|segment| read_history_segment(root, &keys, vault_id, segment).unwrap())
+            .collect();
+        // A vault from before format 3 has no chain to check.
+        if !manifest.history.is_empty() {
+            assert_eq!(
+                history::verify(
+                    vault_id,
+                    &entries,
+                    manifest.history.count,
+                    &manifest.history.head
+                ),
+                Ok(())
+            );
+        }
+        (manifest.history, entries)
+    }
+
+    /// What an unlock adds to an older vault's history: a format 3 one goes
+    /// on from the entries it had; an earlier one starts a history here.
+    fn assert_history_carried_over(from: u32, before: &[HistoryEntry], after: &[HistoryEntry]) {
+        if from < MANIFEST_FORMAT_HISTORY {
+            assert!(before.is_empty());
+            assert_eq!(events_of(&after[..1]), [HistoryEvent::HistoryStarted]);
+        } else {
+            assert!(!before.is_empty());
+            assert_eq!(&after[..before.len()], before, "format {from}");
+            assert!(!events_of(after).contains(&HistoryEvent::HistoryStarted));
+        }
+        assert_eq!(after.last().unwrap().event, HistoryEvent::Unlocked);
     }
 
     /// The events in the session's history, from its segments.
@@ -14136,18 +14187,23 @@ mod tests {
     #[test]
     fn an_older_vault_opens_and_is_upgraded_in_a_commit_of_its_own() {
         let temp = tempfile::tempdir().unwrap();
-        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+        for from in [
+            MANIFEST_FORMAT_V1,
+            MANIFEST_FORMAT_HIDDEN,
+            MANIFEST_FORMAT_HISTORY,
+        ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
                 old_format_vault(&root, &["a.pdf", "b.pdf"], from);
             let before = slots(&root, &master_key, vault_id);
             assert!(before.iter().all(|(format, _, _)| *format == from));
+            let (_, history_before) = slot_history(&root, &master_key, vault_id, 0);
             store.unlock(PASSWORD).unwrap();
             let snapshot = store.snapshot().unwrap();
             assert_eq!(snapshot.recovery, None);
             assert_eq!(snapshot.records.len(), imported.len());
-            // Both slots are format 3 and hold the same state: nothing but
-            // the format, the generation and the history changed.
+            // Both slots are the current format and hold the same state:
+            // nothing but the format, the generation and the history changed.
             let both = slots(&root, &master_key, vault_id);
             assert!(both.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
             assert!(both[0].2 == before[0].2 && both[1].2 == before[0].2);
@@ -14157,13 +14213,19 @@ mod tests {
                 let plaintext = length - 40;
                 assert!(plaintext.is_power_of_two() && plaintext >= MANIFEST_SIZE_CLASS_MIN);
             }
-            // Its history starts at this unlock, and says so.
+            // A format 3 history goes on from where it was; an earlier
+            // vault's starts at this unlock, and says so.
             let entries = history_events(&store);
-            assert_eq!(
-                events_of(&entries),
-                [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
-            );
-            // Hiding now writes format 3 data on top.
+            if from < MANIFEST_FORMAT_HISTORY {
+                assert_eq!(
+                    events_of(&entries),
+                    [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+                );
+            } else {
+                assert_eq!(entries.len(), history_before.len() + 1);
+            }
+            assert_history_carried_over(from, &history_before, &entries);
+            // Hiding now writes data only a history-keeping format holds.
             store.hide_record(imported[1], 9).unwrap();
             store.lock();
             store.unlock(PASSWORD).unwrap();
@@ -14180,12 +14242,21 @@ mod tests {
     #[test]
     fn a_crash_between_the_upgrade_writes_leaves_nothing_an_older_build_could_lose() {
         let temp = tempfile::tempdir().unwrap();
-        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+        for from in [
+            MANIFEST_FORMAT_V1,
+            MANIFEST_FORMAT_HIDDEN,
+            MANIFEST_FORMAT_HISTORY,
+        ] {
             let template = temp.path().join(format!("template-{from}"));
             let (_store, imported, master_key, vault_id) =
                 old_format_vault(&template, &["a.pdf", "b.pdf"], from);
             let before = slots(&template, &master_key, vault_id);
             assert!(before.iter().all(|(format, _, _)| *format == from));
+            let (history_state, history_before) = slot_history(&template, &master_key, vault_id, 0);
+            assert!(
+                slot_history(&template, &master_key, vault_id, 1)
+                    == (history_state.clone(), history_before.clone())
+            );
 
             for boundary in ["upgrade.after-first-write", "upgrade.after-second-write"] {
                 let root = temp.path().join(format!("{from}-{boundary}"));
@@ -14193,15 +14264,17 @@ mod tests {
                 run_termination_child(&root, "unlock", boundary);
                 let after = slots(&root, &master_key, vault_id);
                 // Whatever the slots hold now, it is the state from before the
-                // upgrade, with no history: an older build that opens the
-                // older slot, and drops as orphans the objects only the other
-                // slot names, loses nothing.
+                // upgrade, with the history it had (none before format 3),
+                // every segment still readable: an older build that opens
+                // the older slot, and drops as orphans the objects only the
+                // other slot names, loses nothing.
                 assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
-                let keys = derive_keys(vault_id, &master_key).unwrap();
                 for slot in 0..2 {
-                    let data = fs::read(manifest_path(&root, slot)).unwrap();
-                    let manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
-                    assert!(manifest.history.is_empty(), "{from} {boundary}");
+                    assert!(
+                        slot_history(&root, &master_key, vault_id, slot)
+                            == (history_state.clone(), history_before.clone()),
+                        "{from} {boundary}"
+                    );
                 }
                 let formats: Vec<u32> = after.iter().map(|(format, _, _)| *format).collect();
                 if boundary == "upgrade.after-first-write" {
@@ -14210,16 +14283,23 @@ mod tests {
                     assert_eq!(formats, [VAULT_FORMAT, VAULT_FORMAT]);
                 }
                 // This build opens it, finishes the upgrade, and has
-                // everything, with a history from here on.
+                // everything, with the history carried on (or, before format
+                // 3, started) from here.
                 let restarted = VaultStore::new(root.clone());
                 restarted.unlock(PASSWORD).unwrap();
                 let snapshot = restarted.snapshot().unwrap();
                 assert_eq!(snapshot.recovery, None);
                 assert_eq!(snapshot.records.len(), imported.len());
-                assert_eq!(
-                    events_of(&history_events(&restarted)),
-                    [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
-                );
+                let entries = history_events(&restarted);
+                if from < MANIFEST_FORMAT_HISTORY {
+                    assert_eq!(
+                        events_of(&entries),
+                        [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+                    );
+                } else {
+                    assert_eq!(entries.len(), history_before.len() + 1);
+                }
+                assert_history_carried_over(from, &history_before, &entries);
                 restarted.lock();
                 assert!(slots(&root, &master_key, vault_id)
                     .iter()
@@ -14236,9 +14316,14 @@ mod tests {
             (MANIFEST_FORMAT_V1, "upgrade.after-first-write"),
             (MANIFEST_FORMAT_HIDDEN, "upgrade.before-first-write"),
             (MANIFEST_FORMAT_HIDDEN, "upgrade.after-first-write"),
+            (MANIFEST_FORMAT_HISTORY, "upgrade.before-first-write"),
+            (MANIFEST_FORMAT_HISTORY, "upgrade.after-first-write"),
         ] {
             let root = temp.path().join(format!("{from}-{boundary}"));
-            let (store, imported, _, _) = old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            let (store, imported, master_key, vault_id) =
+                old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            let before = slots(&root, &master_key, vault_id);
+            let (_, history_before) = slot_history(&root, &master_key, vault_id, 0);
             {
                 let _fail = FailAt::new(boundary);
                 store.unlock(PASSWORD).unwrap();
@@ -14254,9 +14339,14 @@ mod tests {
                 Err(VaultError::RecoveryMode)
             ));
             store.lock();
-            // The next unlock upgrades it.
+            // The next unlock upgrades it, with the same state and the
+            // history carried over.
             store.unlock(PASSWORD).unwrap();
             assert_eq!(store.snapshot().unwrap().recovery, None, "{boundary}");
+            assert!(slots(&root, &master_key, vault_id)
+                .iter()
+                .all(|(format, _, state)| *format == VAULT_FORMAT && *state == before[0].2));
+            assert_history_carried_over(from, &history_before, &history_events(&store));
             store.hide_record(imported[1], 3).unwrap();
         }
     }
