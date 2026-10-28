@@ -2805,6 +2805,18 @@ mod approval_recovery_tests {
         };
         (opened, checked)
     }
+    /// The checked-in synthetic Java delivery, opened and its signed PDF
+    /// verified, ready to commit: its link, envelope, contents and manifest.
+    fn signed_delivery() -> (
+        StoredLink,
+        wire::Outer,
+        wire::Opened,
+        crate::signed_pdf::Manifest,
+    ) {
+        let (link, outer, sealed, now) = fixture_package();
+        let (opened, checked) = opened_fixture(&link, &outer, &sealed, now);
+        (link, outer, opened, checked)
+    }
     fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
         let (link, outer, sealed, now) = fixture_package();
         add_link(store, &link);
@@ -2827,6 +2839,162 @@ mod approval_recovery_tests {
             .clone();
         (link, id, receipt)
     }
+    /// Each unlock checks for new documents once (#128). A delivery its
+    /// portal lists again at a later unlock, because the pickup confirmation
+    /// did not reach the portal, is the one already filed: no second record,
+    /// history entry or receipt. The next unlock's check then sends that same
+    /// saved receipt, through `check_using`, and files nothing.
+    ///
+    /// The re-listing itself is committed directly: through `check_using`,
+    /// `receive_delivery` verifies the PDF again with the confined helper
+    /// and this device's clock before it reaches the record already filed,
+    /// and the checked-in synthetic delivery needs its own reference clock
+    /// (see the ignored helper tests).
+    #[test]
+    fn should_file_a_delivery_listed_again_after_lock_and_unlock_only_once() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, id, receipt) = add_signed_pending_delivery(&store);
+        let filed = |store: &VaultStore| {
+            crate::vault::history_events_for_test(store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::DeliveryFiled)
+                .count()
+        };
+        assert_eq!(filed(&store), 1);
+        for _ in 0..2 {
+            let ended = store.portal_link_ticket();
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let session = store.portal_link_ticket();
+            assert_ne!(session, ended, "a new session after the unlock");
+            let history = crate::vault::history_events_for_test(&store).len();
+            let (_, outer, opened, checked) = signed_delivery();
+            assert_eq!(
+                store
+                    .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+                    .unwrap(),
+                (id, false)
+            );
+            assert_eq!(store.snapshot().unwrap().records.len(), 1);
+            assert_eq!(filed(&store), 1);
+            assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+            let pending = store.pending_receipts(&link, session).unwrap();
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].receipt, receipt);
+        }
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let session = store.portal_link_ticket();
+        let sent = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            session,
+            &Script::new(vec![], vec![]),
+            |to, method, path, body, _, _, _| {
+                if path.ends_with("/receipt") {
+                    assert_eq!((to.id, method), (link.id, "POST"));
+                    sent.lock()
+                        .unwrap()
+                        .push(serde_json::from_slice::<serde_json::Value>(&body).unwrap());
+                    Ok(picked_up())
+                } else {
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 0, 0)
+        );
+        assert!(result.issues.is_empty());
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["receipt"], receipt);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(filed(&store), 1);
+        assert!(store.pending_receipts(&link, session).unwrap().is_empty());
+    }
+    /// Ben's D132c: the check after unlocking, and Check for new documents,
+    /// ask only clinics that approved this device or have a request still
+    /// open. No saved request, or one refused or ended, is no reason to ask.
+    #[test]
+    fn should_ask_only_clinics_that_approved_this_device_or_have_an_open_request() {
+        for (state, asked) in [
+            (None, false),
+            (Some(State::Refused), false),
+            (Some(State::Expired), false),
+            (Some(State::Cancelled), false),
+            (Some(State::Pending), true),
+        ] {
+            // A device the clinic approved, checked first.
+            let (x, mut approved, mut accepted) = portal_approval::first_fixture();
+            let first = &x["flows"]["first"];
+            accepted.challenge = Some(first["challenge"]["compact"].as_str().unwrap().into());
+            accepted.acceptance = Some(first["acceptance"]["compact"].as_str().unwrap().into());
+            accepted.status = Some(State::Accepted);
+            approved.approval = Some(accepted);
+            // A second clinic's device, with a request in `state`.
+            let (mut other, _, _, _) = signed_delivery();
+            if let Some(state) = state {
+                let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+                attempt.status = Some(state);
+                other.approval = Some(attempt);
+            }
+            let temp = tempfile::tempdir().unwrap();
+            let store = VaultStore::new(temp.path().join("vault"));
+            store.create(PASSWORD, "FAKE Asking Patient", 1).unwrap();
+            store
+                .mutate_recorded(|m, _| {
+                    m.portal_links.push(approved.clone());
+                    m.portal_links.push(other.clone());
+                    Ok(())
+                })
+                .unwrap();
+            assert!(crate::portal_pickup::worth_asking(&approved));
+            assert_eq!(
+                crate::portal_pickup::worth_asking(&other),
+                asked,
+                "{state:?}"
+            );
+            let approvals = Script::new(if asked { vec![Reply::Pending] } else { vec![] }, vec![]);
+            let listed = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |link, method, path, _, _, _, _| {
+                    assert_eq!(method, "GET");
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    listed.lock().unwrap().push(link.id);
+                    Ok(empty_page())
+                },
+            )
+            .unwrap();
+            let expected = if asked {
+                vec![approved.id, other.id]
+            } else {
+                vec![approved.id]
+            };
+            assert_eq!(listed.into_inner().unwrap(), expected, "{state:?}");
+            // Its status is read only when its request is open.
+            assert_eq!(
+                approvals.calls.lock().unwrap().len(),
+                usize::from(asked),
+                "{state:?}"
+            );
+            assert!(result.issues.is_empty(), "{state:?}");
+        }
+        // A request the clinic has picked up is still open.
+        let (mut other, _, _, _) = signed_delivery();
+        let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+        attempt.status = Some(State::ChallengeReady);
+        other.approval = Some(attempt);
+        assert!(crate::portal_pickup::worth_asking(&other));
+        // So is a saved request with no status yet: it reads as pending.
+        other.approval.as_mut().unwrap().status = None;
+        assert!(crate::portal_pickup::worth_asking(&other));
+    }
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
@@ -2846,6 +3014,14 @@ mod approval_recovery_tests {
             retry_after: None,
         }
     }
+    fn refusal(code: &str) -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status: 403,
+            body: Zeroizing::new(serde_json::to_vec(&serde_json::json!({ "code": code })).unwrap()),
+            date: None,
+            retry_after: None,
+        }
+    }
     fn reply(status: u16, body: &[u8]) -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status,
@@ -2853,6 +3029,77 @@ mod approval_recovery_tests {
             date: None,
             retry_after: None,
         }
+    }
+    fn issues(result: &crate::portal_pickup::CheckResult) -> Vec<(Uuid, &str)> {
+        result
+            .issues
+            .iter()
+            .map(|issue| (issue.link_id, issue.code.as_str()))
+            .collect()
+    }
+    /// The document check says a device the portal removed as it is (#128),
+    /// as the status check does (#131): checking again cannot help it.
+    #[test]
+    fn should_say_an_approved_device_whose_document_list_says_it_was_removed() {
+        let (_temp, store, link, _) = setup(true);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![Reply::Accepted], vec![]),
+            |_, method, path, _, _, _, _| {
+                assert_eq!(method, "GET");
+                assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                Ok(refusal("device_removed"))
+            },
+        )
+        .unwrap();
+        assert!(saved(&store).summary().clinic_approved);
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn should_say_a_waiting_device_whose_status_read_says_it_was_removed() {
+        let (_temp, store, link, _) = setup(true);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![Reply::DeviceRemoved], vec![]),
+            |_, _, _, _, _, _, _| Ok(empty_page()),
+        )
+        .unwrap();
+        assert!(!saved(&store).summary().clinic_approved);
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn should_say_a_removed_device_whose_saved_receipt_is_refused_and_keep_the_receipt() {
+        let (_temp, store, _, _) = setup(false);
+        let (healthy, _, _) = add_signed_pending_delivery(&store);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, path, _, _, _, _| {
+                Ok(if path.ends_with("/receipt") {
+                    refusal("device_removed")
+                } else {
+                    empty_page()
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(issues(&result), vec![(healthy.id, "portal_device_removed")]);
+        assert_eq!(result.receipts_pending, 1);
+    }
+    #[test]
+    fn should_keep_other_refusals_of_the_document_list_a_connection_failure() {
+        let (_temp, store, link, _) = setup(false);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(refusal("forbidden")),
+        )
+        .unwrap();
+        assert_eq!(issues(&result), vec![(link.id, "portal_link_incomplete")]);
     }
     fn listing(outers: &[wire::Outer]) -> crate::portal_client::ApiResponse {
         reply(

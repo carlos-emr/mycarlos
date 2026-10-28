@@ -753,6 +753,13 @@ export const MESSAGE_KEYS = [
   "portal.awaitingClinic",
   "portal.deviceRemoved",
   "portal.errorRateLimited",
+  "portal.checkAgain",
+  "portal.unlockCheckConsent",
+  "portal.unlockChecked",
+  "portal.unlockCheckIncomplete",
+  "portal.unlockCheckNotRun",
+  "portal.unlockCheckWaiting",
+  "portal.unlockRefused",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1632,6 +1639,13 @@ const FLUENT_IDS_BY_KEY = {
   "portal.awaitingClinic": "portal-awaitingClinic",
   "portal.deviceRemoved": "portal-deviceRemoved",
   "portal.errorRateLimited": "portal-errorRateLimited",
+  "portal.checkAgain": "portal-checkAgain",
+  "portal.unlockCheckConsent": "portal-unlockCheckConsent",
+  "portal.unlockChecked": "portal-unlockChecked",
+  "portal.unlockCheckIncomplete": "portal-unlockCheckIncomplete",
+  "portal.unlockCheckNotRun": "portal-unlockCheckNotRun",
+  "portal.unlockCheckWaiting": "portal-unlockCheckWaiting",
+  "portal.unlockRefused": "portal-unlockRefused",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2472,6 +2486,13 @@ export interface MessageArgsByKey {
   "portal.awaitingClinic": undefined;
   "portal.deviceRemoved": undefined;
   "portal.errorRateLimited": undefined;
+  "portal.checkAgain": { button: FluentArgument };
+  "portal.unlockCheckConsent": undefined;
+  "portal.unlockChecked": undefined;
+  "portal.unlockCheckIncomplete": undefined;
+  "portal.unlockCheckNotRun": undefined;
+  "portal.unlockCheckWaiting": undefined;
+  "portal.unlockRefused": { count: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -1727,3 +1727,23 @@ interface-history-title = Historia zdarzeń
 interface-history-to = Do
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. Możesz ją tutaj przeglądać; myCarlos nigdy jej nie zmienia ani nie usuwa.
+
+portal-checkAgain = Aby sprawdzić ponownie, wybierz { $button }.
+
+portal-unlockCheckConsent = Przy każdym odblokowaniu sejfu myCarlos łączy się z portalem przychodni każdego połączonego urządzenia, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty.
+
+portal-unlockChecked = Po odblokowaniu sejfu sprawdzono, czy są nowe dokumenty z przychodni.
+
+portal-unlockCheckIncomplete = Po odblokowaniu sejfu myCarlos nie mógł dokończyć sprawdzania nowych dokumentów z przychodni.
+
+portal-unlockCheckNotRun = Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo trwała inna operacja związana z przychodnią.
+
+portal-unlockCheckWaiting = Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo portal przychodni poprosił o odczekanie.
+
+portal-unlockRefused =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie został dodany. Skontaktuj się z przychodnią.
+    [few] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
+    [many] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
+    }

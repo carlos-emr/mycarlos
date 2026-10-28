@@ -1692,3 +1692,22 @@ interface-history-title = Historique des événements
 interface-history-to = Vers
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve aussi un historique : les ouvertures du coffre-fort; la définition ou la modification de sa phrase secrète ou de sa clé de récupération, ainsi que l’enregistrement ou la restauration d’une sauvegarde; l’ajout de chaque profil patient et la création, le changement de nom ou le déplacement de chaque dossier; l’ajout, le changement de nom, le déplacement, le masquage ou la restauration de chaque document, ainsi que son enregistrement en dehors de myCarlos et l’emplacement choisi. Cet historique est chiffré avec le reste. Vous pouvez le consulter ici ; myCarlos ne le modifie et ne le supprime jamais.
+
+portal-checkAgain = Pour vérifier de nouveau, choisissez { $button }.
+
+portal-unlockCheckConsent = Chaque fois que vous déverrouillez votre coffre-fort, myCarlos communique avec le portail de la clinique de chaque appareil associé pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents.
+
+portal-unlockChecked = Recherche de nouveaux documents de la clinique effectuée après le déverrouillage.
+
+portal-unlockCheckIncomplete = myCarlos n’a pas pu terminer la recherche de nouveaux documents de la clinique après le déverrouillage.
+
+portal-unlockCheckNotRun = myCarlos n’a pas recherché de nouveaux documents de la clinique après le déverrouillage, car une autre opération avec la clinique était en cours.
+
+portal-unlockCheckWaiting = myCarlos n’a pas recherché de nouveaux documents de la clinique après le déverrouillage, car le portail de la clinique lui a demandé d’attendre.
+
+portal-unlockRefused =
+    { $count ->
+    [one] { $count } document de la clinique n’a pas pu être vérifié, il n’a donc pas été ajouté. Communiquez avec votre clinique.
+    [many] { $count } de documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.
+    *[other] { $count } documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.
+    }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
+import { checkClinicDocuments, documentCheckText } from "./documentCheck";
 import {
   isAwaitingApproval,
   isRateLimited,
@@ -232,57 +233,23 @@ export function PortalDocuments({
     // unless the check names a problem with that device's clinic.
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
-      try {
-        const result = await bridge.checkDocuments!();
-        // A portal that asked to wait is not asked again automatically
-        // before then (a document check gives no time: the default).
-        for (const issue of result.issues ?? [])
-          if (isRateLimited(issue)) {
-            const asked = links.find((link) => link.id === issue.linkId);
-            if (asked) waits?.wait(asked.portalBase);
-          }
-        const next = await refresh();
-        known = Object.fromEntries(
-          (next.portalLinks ?? []).map((link) => [
-            link.id,
-            isAwaitingApproval(link) &&
-            !result.issues?.some((issue) => issue.linkId === link.id)
-              ? waitingNow()
-              : undefined,
-          ]),
-        );
-        // Reported after leaving this view too, as for connecting.
-        setNotice(
-          [
-            t(
-              result.issues?.length ? "portal.partialResult" : "portal.result",
-              {
-                added: result.added,
-                refused: result.refused,
-              },
-            ),
-            ...(result.issues ?? []).map((issue) =>
-              t("portal.clinicIssue", {
-                clinic: issue.clinicName,
-                detail: vaultErrorMessage({
-                  code: issue.code,
-                  message: t("portal.errorIncomplete"),
-                }),
-              }),
-            ),
-            ...(result.receiptsPending > 0
-              ? [
-                  t("portal.confirmationsPending", {
-                    count: result.receiptsPending,
-                  }),
-                ]
-              : []),
-          ].join(" "),
-        );
-      } catch (error) {
-        await refresh();
-        throw error;
-      }
+      const { result, vault: next } = await checkClinicDocuments({
+        bridge,
+        links,
+        waits,
+        refresh,
+      });
+      known = Object.fromEntries(
+        (next.portalLinks ?? []).map((link) => [
+          link.id,
+          isAwaitingApproval(link) &&
+          !result.issues?.some((issue) => issue.linkId === link.id)
+            ? waitingNow()
+            : undefined,
+        ]),
+      );
+      // Reported after leaving this view too, as for connecting.
+      setNotice(documentCheckText(result));
     }).finally(() => polling.restart(known));
   };
   const checkButton = (
@@ -311,6 +278,8 @@ export function PortalDocuments({
     polling.hold();
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
+      // A reply after a lock is not the next session's wait (#128).
+      const session = waits?.session();
       submittedRevision.current = revision;
       if (shown.current) {
         setConnecting(true);
@@ -335,6 +304,7 @@ export function PortalDocuments({
           waits?.wait(
             result.link.portalBase,
             result.approvalError.retryAfterMs,
+            session,
           );
         // Reported even after the patient has left this view: the link exists
         // whether or not anyone is looking, and the line must not keep an
@@ -370,12 +340,13 @@ export function PortalDocuments({
     polling.hold();
     let known: LiveApproval | undefined;
     void run(async () => {
+      const session = waits?.session();
       try {
         await send(link.id);
         known = waitingNow();
       } catch (error) {
         if (isRateLimited(error))
-          waits?.wait(link.portalBase, error.retryAfterMs);
+          waits?.wait(link.portalBase, error.retryAfterMs, session);
         throw error;
       } finally {
         await refresh();
@@ -384,9 +355,14 @@ export function PortalDocuments({
   };
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
-      <h2 id="portal-title">{t("portal.title")}</h2>
+      {/* Focusable for the check after unlocking, which may disable the
+          control that had focus (#128). */}
+      <h2 id="portal-title" tabIndex={-1}>
+        {t("portal.title")}
+      </h2>
       <p>{t("portal.intro")}</p>
       <p>{t("portal.connectConsent")}</p>
+      <p>{t("portal.unlockCheckConsent")}</p>
       <form className="native-inline-form" onSubmit={submit}>
         <label>
           {t("portal.address")}

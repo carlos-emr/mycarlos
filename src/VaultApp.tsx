@@ -9,11 +9,19 @@ import {
   type UiText,
   joinText,
 } from "./i18n";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import App from "./App";
 import {
   boxesWithControlCharacters,
   createVaultBridge,
+  hasVaultErrorCode,
   isCancelledError,
   isLockedError,
   isMissingVaultError,
@@ -37,11 +45,19 @@ import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
 import {
+  isAwaitingApproval,
   PortalWaits,
   type ApprovalPoll,
   type PollApproval,
 } from "./native/useApprovalPolling";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import {
+  checkClinicDocuments,
+  unlockCheckFailedText,
+  unlockCheckNotRunText,
+  unlockCheckText,
+  unlockCheckWaitingText,
+} from "./native/documentCheck";
 import { CAMERA_PLATFORMS, isPhone } from "./native/photo";
 import {
   rememberUnfinishedRecoveryKey,
@@ -93,9 +109,28 @@ const PICKER_GRACE_MS = 15 * 60 * 1000;
 // 5 seconds after this screen's own deadline (the native 2-second check only
 // adds to that).
 const TOUCH_THROTTLE_MS = 10_000;
+// The check after unlocking, refused because other clinic work held the
+// native side, asks once more this long after that work returned (#128).
+const BUSY_RETRY_MS = 2_000;
 // The library's import button, named in a notice as the library shows it:
 // in English until the library is translated.
 const IMPORT_BUTTON = "interface.VaultApp.chooseFilesToImport";
+
+/** Where focus goes when the check after unlocking disables the control
+ * that had it (#128): that device's heading in the clinic view, else the
+ * clinic view's heading, else the library page's heading. */
+function headingFor(control: Element): HTMLElement | null {
+  const device = control
+    .closest(".portal-link")
+    ?.querySelector<HTMLElement>("h3[tabindex]");
+  if (device) return device;
+  if (control.closest(".portal-documents"))
+    return document.getElementById("portal-title");
+  return (
+    document.querySelector<HTMLElement>("main h1[tabindex]") ??
+    document.querySelector<HTMLElement>("h1[tabindex]")
+  );
+}
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   useI18n();
@@ -178,6 +213,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const portalPollRef = useRef<{
     session: number;
     promise: Promise<ApprovalPoll>;
+  } | null>(null);
+  // The session in which the latest check for new clinic documents began,
+  // the patient's own or the one after unlocking (#128).
+  const documentCheckSessionRef = useRef(-1);
+  // Clinic work of a session that has ended. Locking cancels its HTTP, but
+  // the native side admits one clinic operation at a time until that work
+  // has returned: the check after the next unlock waits for it, rather than
+  // being refused as busy.
+  const endedPortalWorkRef = useRef<Promise<unknown>>(Promise.resolve());
+  // The check for new clinic documents owed by the latest unlock (#128),
+  // for its session. It waits for the library to give the unlock's own
+  // message, and for the recovery key offer that unlock opened on to close.
+  const [unlockCheck, setUnlockCheck] = useState<{
+    session: number;
+    offerOpen: boolean;
   } | null>(null);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
@@ -325,11 +375,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await bridge.lock();
       sessionRef.current += 1;
+      endedPortalWorkRef.current = Promise.allSettled([
+        endedPortalWorkRef.current,
+        portalJobRef.current?.promise,
+        portalPollRef.current?.promise,
+      ]);
       portalJobRef.current = null;
       portalPollRef.current = null;
       portalWaits.clear();
       portalNoticeRef.current = null;
       setPortalBusy(false);
+      setUnlockCheck(null);
       setSnapshot(null);
       // A key shown but not set up ended with the session.
       setOpeningRecoverySetup(null);
@@ -499,6 +555,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     return {
       ...bridge,
+      // A check for new documents in this session, the patient's own or the
+      // one after unlocking, stands in for the check after unlocking (#128).
+      checkDocuments:
+        bridge.checkDocuments &&
+        (() => {
+          documentCheckSessionRef.current = sessionRef.current;
+          return bridge.checkDocuments!();
+        }),
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
@@ -726,18 +790,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   };
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
-   * so that a refusal of it says which box to check. */
+   * so that a refusal of it says which box to check. Clinic work clears the
+   * line when it starts, except work the patient did not ask for
+   * (`"quiet"`), which leaves what the line says. */
   const run = async (
     operation: () => Promise<void>,
     boxes?: BoxKey[],
-    clinicOperation = false,
+    clinicOperation: boolean | "quiet" = false,
   ) => {
     const startedIn = sessionRef.current;
     if (!clinicOperation) {
       setBusy(true);
       setNotice("");
       transferHold.operationStarted();
-    } else showPortalNotice(startedIn, "");
+    } else if (clinicOperation !== "quiet") showPortalNotice(startedIn, "");
     try {
       await operation();
     } catch (error) {
@@ -840,7 +906,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // synchronous reservation precedes the callback; repeated clicks join the
   // same work without starting another link or approval request.
   const portalSession = sessionRef.current;
-  const runPortal = (operation: () => Promise<void>): Promise<void> => {
+  const runPortal = (
+    operation: () => Promise<void>,
+    { quiet = false }: { quiet?: boolean } = {},
+  ): Promise<void> => {
     const startedIn = portalSession;
     if (sessionRef.current !== startedIn || lockingRef.current)
       return Promise.resolve();
@@ -858,7 +927,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           const poll = portalPollRef.current;
           if (poll?.session === startedIn) await poll.promise;
           if (sessionRef.current !== startedIn || lockingRef.current) return;
-          await run(operation, undefined, true);
+          await run(operation, undefined, quiet ? "quiet" : true);
         })
         .finally(() => {
           if (portalJobRef.current === job) {
@@ -973,6 +1042,155 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   };
   const setPortalNotice = (message: string) =>
     showPortalNotice(session, message);
+
+  // One check for new clinic documents after an unlock (#128), in the
+  // background, as Check for new documents does it: shared with the clinic
+  // controls, which show it as running, and never beside other clinic work.
+  // Only in a writable vault with clinic documents on, and with a device the
+  // clinic has approved or a request still open: the native check reads each
+  // request's status first, so a device approved while myCarlos was closed
+  // receives its documents now. It never sends a request. It says something
+  // only when documents arrived or the check needs attention. A lock ends
+  // it, and what it finds then is not for that session.
+  // The control that had focus as the check after unlocking started.
+  const startFocusRef = useRef<Element | null>(null);
+  const checkAfterUnlock = () => {
+    const startedIn = session;
+    const links = snapshot?.portalLinks ?? [];
+    const approved = new Set(
+      links
+        .filter((link) => !link.incomplete && link.clinicApproved)
+        .map((link) => link.id),
+    );
+    if (
+      // As for the clinic controls, which name its retry.
+      !snapshot?.portalLinkingEnabled ||
+      !bridge.connectPortal ||
+      !bridge.checkDocuments ||
+      snapshot.recovery ||
+      // No saved request, or one refused or ended, is not a reason to ask.
+      (approved.size === 0 && !links.some(isAwaitingApproval)) ||
+      // A check for new documents since this unlock, the patient's own,
+      // stands in for it.
+      documentCheckSessionRef.current === startedIn
+    )
+      return;
+    // Other clinic work under way, such as linking or an approval request:
+    // the check follows it, still once.
+    const active = portalJobRef.current;
+    if (active?.session === startedIn) {
+      void active.promise.then(() =>
+        setUnlockCheck(
+          (due) => due ?? { session: startedIn, offerOpen: false },
+        ),
+      );
+      return;
+    }
+    // The check asks each clinic that approved this device or has a request
+    // open, and no other (Ben, D132c): one of those whose portal asked to
+    // wait is not asked before then. Said, as the check did not run; checking
+    // again now could not help.
+    if (
+      links.some(
+        (link) =>
+          (approved.has(link.id) || isAwaitingApproval(link)) &&
+          portalWaits.waiting(link.portalBase),
+      )
+    ) {
+      showPortalNotice(startedIn, unlockCheckWaitingText());
+      return;
+    }
+    const current = () =>
+      sessionRef.current === startedIn && !lockingRef.current;
+    const check = () =>
+      checkClinicDocuments({
+        bridge: trackedBridge,
+        links,
+        waits: portalWaits,
+        refresh,
+      });
+    // An ended session's work returns soon: the lock cancels its HTTP, which
+    // has its own time limits too.
+    const ended = endedPortalWorkRef.current;
+    const focused = document.activeElement;
+    const before = portalJobRef.current;
+    void runPortal(
+      async () => {
+        await ended;
+        if (!current()) return;
+        let message: string;
+        try {
+          let found: Awaited<ReturnType<typeof check>>;
+          try {
+            found = await check();
+          } catch (error) {
+            if (!hasVaultErrorCode(error, "portal_busy")) throw error;
+            // Other clinic work holds the native side. Once what this app
+            // knows of has returned, and a moment more, it is asked once
+            // again.
+            await Promise.all([
+              endedPortalWorkRef.current,
+              new Promise((done) => window.setTimeout(done, BUSY_RETRY_MS)),
+            ]);
+            if (!current()) return;
+            found = await check();
+          }
+          // A device the clinic approved during the check counts too.
+          for (const link of found.vault.portalLinks ?? [])
+            if (link.clinicApproved) approved.add(link.id);
+          message = unlockCheckText(found.result, (id) => approved.has(id));
+        } catch (error) {
+          // The vault locked: `run` locks here too, as for all clinic work.
+          if (isLockedError(error) || isCancelledError(error)) throw error;
+          message = hasVaultErrorCode(error, "portal_busy")
+            ? unlockCheckNotRunText()
+            : unlockCheckFailedText(error);
+        }
+        if (message) showPortalNotice(startedIn, message);
+      },
+      { quiet: true },
+    );
+    // Started now: a control it is about to disable may have focus.
+    if (portalJobRef.current && portalJobRef.current !== before)
+      startFocusRef.current = focused === document.body ? null : focused;
+  };
+  useEffect(() => {
+    if (!unlockCheck) return;
+    if (unlockCheck.session !== sessionRef.current || status !== "unlocked") {
+      setUnlockCheck(null);
+      return;
+    }
+    // Once the library has given the unlock's own message, so that what the
+    // check finds comes after it and is read out; never under the recovery
+    // key offer, whose status line is hidden.
+    if (!libraryShown || libraryNotice || unlockCheck.offerOpen) return;
+    setUnlockCheck(null);
+    checkAfterUnlock();
+    // The check is started from the render that allows it.
+  }, [libraryNotice, libraryShown, status, unlockCheck]);
+  // If the render that shows the check running disabled the control that
+  // had focus, focus would be left on nothing: it goes to that control's
+  // heading instead (see `headingFor`). Focus is moved in no other case: not
+  // for the patient's own clinic work, and not when the control stays
+  // usable.
+  useLayoutEffect(() => {
+    const control = startFocusRef.current;
+    startFocusRef.current = null;
+    if (!control || !portalBusy) return;
+    const active = document.activeElement;
+    if (active !== control && active !== document.body && active !== null)
+      return;
+    if (control.isConnected && !control.matches(":disabled")) return;
+    headingFor(control)?.focus();
+  }, [portalBusy]);
+  // The library has given the message of the recovery key offer the unlock
+  // opened on: the check follows it.
+  const offerClosed = () =>
+    setUnlockCheck((due) =>
+      due?.session === sessionRef.current && due.offerOpen
+        ? { session: due.session, offerOpen: false }
+        : due,
+    );
 
   // Waiting files go into Shared with me as soon as the vault is open (#61).
   // One that is not a PDF is not added and is named; anything else keeps them
@@ -1135,6 +1353,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
+            setUnlockCheck({
+              session: sessionRef.current,
+              offerOpen: Boolean(offer),
+            });
             // With the offer open, its dialog says that the vault is open,
             // and the library gives the result when the dialog closes: one
             // written under the dialog would not be read out, and would
@@ -1159,6 +1381,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             setSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
+            setUnlockCheck({ session: sessionRef.current, offerOpen: false });
             const outcome = takeHeldOutcome(current);
             setLibraryNotice({
               message: deferredText(() =>
@@ -1256,6 +1479,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onAutoLockMinutes={updateAutoLockMinutes}
         openingRecoverySetup={openingRecoverySetup}
         onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
+        onOfferClosed={offerClosed}
         onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}

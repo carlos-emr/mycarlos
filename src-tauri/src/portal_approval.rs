@@ -365,22 +365,28 @@ mod native {
             // refused device assertion, maintenance, or this device removed
             // from the patient's portal account. Not a connection failure
             // (#131); other clinic operations still word it as one.
-            #[derive(Deserialize)]
-            struct Refusal {
-                code: Option<String>,
-            }
-            let removed = response.status == 403
-                && serde_json::from_slice::<Refusal>(&response.body)
-                    .ok()
-                    .and_then(|r| r.code)
-                    .is_some_and(|code| code == "device_removed");
-            return Err(VaultError::Portal(if removed {
+            return Err(VaultError::Portal(if device_removed(response) {
                 LinkError::DeviceRemoved
             } else {
                 LinkError::HttpRefused(response.status, response.retry_after)
             }));
         }
         parse_status(link, attempt, &response.body).map(|reply| (Some(reply), response.date))
+    }
+    /// The portal says this device was removed from the patient's portal
+    /// account: 403 with the code `device_removed` (#131). The status check
+    /// and the document check (#128) read it the same way.
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn device_removed(response: &crate::portal_client::ApiResponse) -> bool {
+        #[derive(Deserialize)]
+        struct Refusal {
+            code: Option<String>,
+        }
+        response.status == 403
+            && serde_json::from_slice::<Refusal>(&response.body)
+                .ok()
+                .and_then(|r| r.code)
+                .is_some_and(|code| code == "device_removed")
     }
     /// When the portal treats this request as ended, in Unix seconds: the
     /// intent's own expiry, or the saved, verified challenge's when it is
@@ -747,7 +753,7 @@ mod native {
 }
 pub(crate) use native::request_expires_at;
 #[cfg(feature = "portal-linking")]
-pub(crate) use native::{create, publish, refresh};
+pub(crate) use native::{create, device_removed, publish, refresh};
 
 /// How far a reply's `Date` may be from this device's clock and still be
 /// taken as the portal's clock (#131). The portal accepts this device's

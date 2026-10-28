@@ -528,6 +528,59 @@ describe("native clinic document controls", () => {
       screen.queryByRole("button", { name: "Start a new approval request" }),
     ).not.toBeInTheDocument();
   });
+  it("says before linking, in every supported language, that myCarlos contacts the portal at each unlock (#128)", () => {
+    fixture();
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      const said = screen.getByText(
+        translate(locale, "portal.unlockCheckConsent"),
+      );
+      expect(said).toBeVisible();
+      // Read before the button that links the device.
+      const link = screen.getByRole("button", {
+        name: translate(locale, "portal.link"),
+      });
+      expect(
+        said.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+  it.each([
+    ["in the same session", false, true],
+    ["after a lock ended the session", true, false],
+  ] as [string, boolean, boolean][])(
+    "keeps a wait the portal asked of the patient's own check only %s (#128)",
+    async (_, locked, kept) => {
+      const waits = new PortalWaits();
+      let reply!: (value: unknown) => void;
+      const { bridge } = fixture({ waits });
+      vi.mocked(bridge.checkDocuments!).mockReturnValue(
+        new Promise((resolve) => {
+          reply = resolve;
+        }) as never,
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Check for new documents" }));
+      // A lock clears the session's waits while the reply is on its way.
+      if (locked) waits.clear();
+      await act(async () =>
+        reply({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: link.id,
+              clinicName: "FAKE Clinic",
+              code: "portal_rate_limited",
+            },
+          ],
+        }),
+      );
+      expect(waits.waiting(link.portalBase)).toBe(kept);
+    },
+  );
   it("renders the linking and fingerprint labels in every supported language", () => {
     fixture();
     for (const locale of LOCALES) {

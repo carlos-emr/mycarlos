@@ -1657,3 +1657,21 @@ interface-history-title = Audit history
 interface-history-to = To
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. You can read it here; myCarlos never changes or removes it.
+
+portal-checkAgain = To check again, choose { $button }.
+
+portal-unlockCheckConsent = Each time you unlock your vault, myCarlos contacts the clinic portal of each linked device to check for approval updates and new documents.
+
+portal-unlockChecked = Checked for new clinic documents after unlocking.
+
+portal-unlockCheckIncomplete = myCarlos could not finish checking for new clinic documents after unlocking.
+
+portal-unlockCheckNotRun = myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running.
+
+portal-unlockCheckWaiting = myCarlos did not check for new clinic documents after unlocking, because the clinic portal asked it to wait.
+
+portal-unlockRefused =
+    { $count ->
+    [one] { $count } clinic document could not be verified, so it was not added. Contact your clinic.
+    *[other] { $count } clinic documents could not be verified, so they were not added. Contact your clinic.
+    }

@@ -66,20 +66,34 @@ const steadyNow = () => performance.now();
  * the patient's own clinic actions too, which it never holds back. */
 export class PortalWaits {
   private readonly until = new Map<string, number>();
+  // Counts the sessions `clear` has ended.
+  private ended = 0;
+  /** The session now: a wait asked with an earlier one is dropped (#128). */
+  session(): number {
+    return this.ended;
+  }
   /** Not before this time; 0 when no wait was asked. */
   notBefore(portal: string): number {
     return this.until.get(portal) ?? 0;
   }
-  /** The portal asked to wait `ms` (or did not say: `DEFAULT_WAIT_MS`). */
-  wait(portal: string, ms?: number | null): void {
+  /** The portal asked to wait `ms` (or did not say: `DEFAULT_WAIT_MS`).
+   * `session`, if given, is when the request was sent: a reply from a
+   * session a lock has ended is not this session's wait. */
+  wait(portal: string, ms?: number | null, session?: number): void {
+    if (session !== undefined && session !== this.ended) return;
     const wait = typeof ms === "number" && ms > 0 ? ms : DEFAULT_WAIT_MS;
     this.until.set(
       portal,
       Math.max(this.notBefore(portal), steadyNow() + wait),
     );
   }
+  /** The portal asked to wait, and that time has not come yet. */
+  waiting(portal: string): boolean {
+    return this.notBefore(portal) > steadyNow();
+  }
   clear(): void {
     this.until.clear();
+    this.ended += 1;
   }
 }
 
@@ -99,12 +113,27 @@ export const waitingNow = (): LiveApproval => ({
 });
 
 /** A request that is saved and still open, as far as the saved state says. */
+/** Whether a request in each state can still be approved. Every state is
+ * named, so that a new one has to be decided here (Ben's D132c). A saved
+ * request with no status yet reads as pending. */
+const STILL_OPEN: Record<
+  NonNullable<PortalLinkSummary["approvalStatus"]>,
+  boolean
+> = {
+  pending: true,
+  challenge_ready: true,
+  accepted: false,
+  refused: false,
+  expired: false,
+  cancelled: false,
+};
+
 export function isAwaitingApproval(link: PortalLinkSummary): boolean {
   return (
     !link.incomplete &&
     link.approvalRequested &&
     !link.clinicApproved &&
-    ["pending", "challenge_ready"].includes(link.approvalStatus ?? "pending")
+    STILL_OPEN[link.approvalStatus ?? "pending"]
   );
 }
 

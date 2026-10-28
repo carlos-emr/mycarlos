@@ -1692,3 +1692,22 @@ interface-history-title = Historial de auditoría
 interface-history-to = Hasta
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también conserva un historial: cuándo se abrió la bóveda; cuándo se configuró o cambió su frase de contraseña o clave de recuperación, y cuándo se guardó o restauró una copia de seguridad; cuándo se añadió cada perfil de paciente y se creó, cambió de nombre o movió cada carpeta; y cuándo se añadió, cambió de nombre, movió, ocultó, restauró o guardó fuera de myCarlos cada documento, y dónde se guardó. Se cifra junto con todo lo demás. Puede consultarlo aquí; myCarlos nunca lo modifica ni lo elimina.
+
+portal-checkAgain = Para buscar de nuevo, elija { $button }.
+
+portal-unlockCheckConsent = Cada vez que desbloquee su bóveda, myCarlos se comunica con el portal de la clínica de cada dispositivo vinculado para consultar novedades sobre la aprobación y buscar documentos nuevos.
+
+portal-unlockChecked = Se buscaron documentos nuevos de la clínica tras desbloquear la bóveda.
+
+portal-unlockCheckIncomplete = myCarlos no pudo terminar de buscar documentos nuevos de la clínica tras desbloquear la bóveda.
+
+portal-unlockCheckNotRun = myCarlos no buscó documentos nuevos de la clínica tras desbloquear la bóveda, porque había otra operación con la clínica en curso.
+
+portal-unlockCheckWaiting = myCarlos no buscó documentos nuevos de la clínica tras desbloquear la bóveda, porque el portal de la clínica le pidió que esperara.
+
+portal-unlockRefused =
+    { $count ->
+    [one] No se pudo verificar { $count } documento de la clínica, así que no se añadió. Comuníquese con su clínica.
+    [many] No se pudieron verificar { $count } de documentos de la clínica, así que no se añadieron. Comuníquese con su clínica.
+    *[other] No se pudieron verificar { $count } documentos de la clínica, así que no se añadieron. Comuníquese con su clínica.
+    }

@@ -1517,3 +1517,17 @@ interface-history-title = 操作紀錄
 interface-history-to = 目標
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。您可以在此查看這些紀錄；myCarlos 絕不會變更或移除它們。
+
+portal-checkAgain = 若要再次檢查，請選擇「{ $button }」。
+
+portal-unlockCheckConsent = 每次解鎖保險庫時，myCarlos 都會聯絡每個已連結裝置所對應的診所入口網站，檢查核准狀態更新和新文件。
+
+portal-unlockChecked = 解鎖後已檢查新的診所文件。
+
+portal-unlockCheckIncomplete = myCarlos 無法在解鎖後完成新診所文件的檢查。
+
+portal-unlockCheckNotRun = 由於另一項診所作業正在進行，myCarlos 在解鎖後未檢查新的診所文件。
+
+portal-unlockCheckWaiting = 由於診所入口網站要求稍候，myCarlos 在解鎖後未檢查新的診所文件。
+
+portal-unlockRefused = { $count } 份診所文件無法驗證，因此未新增。請聯絡診所。

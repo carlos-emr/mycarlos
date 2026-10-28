@@ -1517,3 +1517,17 @@ interface-history-title = 操作记录
 interface-history-to = 目标
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保存操作记录：保险库何时打开；密码短语或恢复密钥何时设置或变更；备份何时保存或还原；各患者档案何时添加，以及各文件夹何时创建、重命名或移动；每份文档何时添加、重命名、移动、隐藏、还原或保存在 myCarlos 外部，以及保存位置。这些记录会和其他内容一起加密。您可以在此查看这些记录；myCarlos 绝不会变更或移除它们。
+
+portal-checkAgain = 若要再次检查，请选择「{ $button }」。
+
+portal-unlockCheckConsent = 每次解锁保险库时，myCarlos 都会联系每台已关联设备所对应的诊所门户网站，检查批准状态更新和新文档。
+
+portal-unlockChecked = 解锁后已检查新的诊所文档。
+
+portal-unlockCheckIncomplete = myCarlos 无法在解锁后完成新诊所文档的检查。
+
+portal-unlockCheckNotRun = 由于另一项诊所操作正在进行，myCarlos 在解锁后未检查新的诊所文档。
+
+portal-unlockCheckWaiting = 由于诊所门户网站要求稍候，myCarlos 在解锁后未检查新的诊所文档。
+
+portal-unlockRefused = { $count } 份诊所文档无法验证，因此未添加。请联系诊所。

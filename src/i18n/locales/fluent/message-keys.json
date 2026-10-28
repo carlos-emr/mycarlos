@@ -751,5 +751,12 @@
   "portal.autoCheckStopped",
   "portal.awaitingClinic",
   "portal.deviceRemoved",
-  "portal.errorRateLimited"
+  "portal.errorRateLimited",
+  "portal.checkAgain",
+  "portal.unlockCheckConsent",
+  "portal.unlockChecked",
+  "portal.unlockCheckIncomplete",
+  "portal.unlockCheckNotRun",
+  "portal.unlockCheckWaiting",
+  "portal.unlockRefused"
 ]
