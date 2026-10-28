@@ -43,7 +43,16 @@ const CLAIMS = record("claims", "FAKE forwarded letter.pdf", {
 
 const snapshot: VaultSnapshot = {
   profiles: [{ id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 }],
-  folders: [],
+  // A folder, so that the last column holds a Rename as well as Details.
+  folders: [
+    {
+      id: "folder-1",
+      profileId: "profile-1",
+      parentId: null,
+      name: "FAKE Letters",
+      createdAtMs: 1,
+    },
+  ],
   records: [VERIFIED, MANUAL, CLAIMS],
   recovery: null,
   recoveryKeySetAtMs: 1,
@@ -157,31 +166,35 @@ function splitWords(shown: HTMLElement) {
   return split;
 }
 
-/** All of the status is on screen: not cut short, and not hidden by anything
- * that clips the column, the list or the dialog. Nothing is scrolled first: a
- * box that hides what overflows it can still be scrolled by a script, which
- * would bring a cut-off status into view. The windows are tall enough. */
+/** All of the status is on screen, and none of its words is split. */
 function expectWholeStatus(shown: HTMLElement) {
-  expect(shown.checkVisibility()).toBe(true);
-  expect(shown.scrollWidth).toBeLessThanOrEqual(shown.clientWidth);
   expect(splitWords(shown), "a status word split over two lines").toEqual([]);
-  const status = shown.getBoundingClientRect();
+  expectInView(shown);
+}
+
+/** All of an element is on screen: not cut short inside itself, and not
+ * hidden by anything that clips the column, the list or the dialog. Nothing is
+ * scrolled first: a box that hides what overflows it can still be scrolled by
+ * a script, which would bring a cut-off element into view. The windows are
+ * tall enough. */
+function expectInView(element: HTMLElement) {
+  expect(element.checkVisibility()).toBe(true);
+  expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
+  const shown = element.getBoundingClientRect();
   for (
-    let box = shown.parentElement;
+    let box = element.parentElement;
     box && box !== document.body;
     box = box.parentElement
   ) {
     const style = getComputedStyle(box);
     if (style.overflowX !== "visible" || style.overflowY !== "visible") {
       const edges = box.getBoundingClientRect();
-      expect(status.left, box.className).toBeGreaterThanOrEqual(
+      expect(shown.left, box.className).toBeGreaterThanOrEqual(
         edges.left - 0.5,
       );
-      expect(status.right, box.className).toBeLessThanOrEqual(
-        edges.right + 0.5,
-      );
-      expect(status.top, box.className).toBeGreaterThanOrEqual(edges.top - 0.5);
-      expect(status.bottom, box.className).toBeLessThanOrEqual(
+      expect(shown.right, box.className).toBeLessThanOrEqual(edges.right + 0.5);
+      expect(shown.top, box.className).toBeGreaterThanOrEqual(edges.top - 0.5);
+      expect(shown.bottom, box.className).toBeLessThanOrEqual(
         edges.bottom + 0.5,
       );
     }
@@ -189,7 +202,7 @@ function expectWholeStatus(shown: HTMLElement) {
     // around it.
     if (style.position === "fixed") break;
   }
-  expect(status.right).toBeLessThanOrEqual(window.innerWidth);
+  expect(shown.right).toBeLessThanOrEqual(window.innerWidth);
 }
 
 describe("the source the vault stores (#135)", () => {
@@ -219,13 +232,12 @@ describe("a document's status before its source (#135)", () => {
     ).not.toBeInTheDocument();
   });
 
-  // Desktop widths at which the Source column is shown: the widest; 945px, the
-  // narrowest (the five columns fit from 59em, 944px, up, with the Source
-  // column at its least); and larger text in a wide window.
+  // Desktop widths at which the Source column is shown: the widest; 1017px,
+  // the narrowest (the five columns fit whole from 63.5em, 1016px, up, with
+  // the Source column at its least); and larger text in a wide window.
   for (const [width, text] of [
     [1100, "16px"],
-    [960, "16px"],
-    [945, "16px"],
+    [1017, "16px"],
     [1400, "24px"],
   ] as const)
     for (const font of FONTS)
@@ -252,19 +264,26 @@ describe("a document's status before its source (#135)", () => {
             if (shownRecord === VERIFIED)
               expect(from.scrollWidth).toBeGreaterThan(from.clientWidth);
           }
+          // Nor does the wider Source column squeeze Rename or Details,
+          // the last column, out of the row in any language.
+          for (const last of document.querySelectorAll<HTMLElement>(
+            ".native-filelist .file-row > :last-child",
+          ))
+            expectInView(last);
           view.unmount();
         }
       });
 
   // Phones, narrow windows and larger text, where the list has no Source
   // column: the status goes under the document's name, and a grid tile shows
-  // it under its caption. 905px and 944px are desktop windows, with the
-  // sidebar, too narrow for the five columns. 32px is the reader's 200% text;
+  // it under its caption. 1016px, 960px and 905px are desktop windows, with
+  // the sidebar, too narrow for the five columns. 32px is the reader's 200% text;
   // it is set on the page here, so the em breakpoints still read 16px, and only
   // the 320px case takes the narrowest layout that a real 200% text gives at
   // 360px too. The wide font is checked where that layout matches.
   for (const [width, text, fonts] of [
-    [944, "16px", FONTS],
+    [1016, "16px", FONTS],
+    [960, "16px", FONTS],
     [905, "16px", FONTS],
     [800, "16px", FONTS],
     [360, "16px", FONTS],
@@ -298,6 +317,12 @@ describe("a document's status before its source (#135)", () => {
                 name.getBoundingClientRect().bottom - 0.5,
               );
             }
+            // Rename and Details stay whole here too.
+            if (layout === "list")
+              for (const last of document.querySelectorAll<HTMLElement>(
+                ".native-filelist .file-row > :last-child",
+              ))
+                expectInView(last);
           }
           view.unmount();
         }

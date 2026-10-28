@@ -950,8 +950,9 @@ h1, h2, p { margin: 0; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
 /* #135: the Source column's least is the widest one-word status pill in a wide font, so no status
    word is ever split: "Zweryfikowano" in DejaVu Sans Bold at 0.875rem is 134px with the pill's
-   padding and border, 8.375rem. */
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(8.5rem, 11.875rem) 9.5rem minmax(4.5rem, auto); }
+   padding and border, 8.375rem. The last column, Rename or Details, is never narrower than its
+   words, so the wider Source column cannot squeeze them out of the row. */
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(8.5rem, 11.875rem) 9.5rem max-content; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -1023,10 +1024,11 @@ h1, h2, p { margin: 0; }
 /* Zoomed in, a mouse or pen drags the photo to move around (#73). */
 .photo-viewer-frame.can-drag { cursor: grab; }
 .photo-viewer-frame.dragging { cursor: grabbing; user-select: none; }
-/* #135: from 59em down, not 56.25em: the five columns at their least (44px, 10rem, 8.5rem, 9.5rem
-   and 4.5rem, with four 12px gaps and 14px padding each side) need a 640px list, and the page
-   takes 304px around it while the sidebar is shown, so they fit from 944px (59em) up. */
-@media (max-width: 59em) {
+/* #135: from 63.5em down, not 56.25em: the five columns at their least (44px, 10rem, 8.5rem and
+   9.5rem, then the widest Rename or Details in the five languages, the Spanish "Cambiar nombre",
+   143px in DejaVu Sans Bold; with four 12px gaps and 14px padding each side) need a 711px list,
+   and the page takes 304px around it while the sidebar is shown, so they fit from 1015px up. */
+@media (max-width: 63.5em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
   .native-filelist :is(.file-head, .file-row) > .column { display: none; }
   /* #67: the source and date columns are hidden here, so the name is the only way to
