@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { formatDate, setLocaleOverride, translate } from "../i18n";
+import { setLocaleOverride, translate } from "../i18n";
+import { setDeviceLocale } from "../test/deviceLocale";
 import { humanText } from "../test/humanText";
 import type {
   AuditHistoryEntry,
@@ -36,6 +37,8 @@ function pending<T>() {
   });
   return { promise, resolve, reject };
 }
+/** A date as the computer writes it (D130): the language myCarlos uses does not change it. */
+const shownDate = (ms: number) => new Date(ms).toLocaleString();
 /** A whole history, as native code returns it when every piece checks out. */
 const complete = (entries: AuditHistoryEntry[]): AuditHistoryView => ({
   entries,
@@ -122,9 +125,7 @@ describe("AuditHistory verified native results", () => {
       expect(within(articles[0]).getByText(humanText(text))).toBeVisible();
     expect(
       within(articles[0]).getByText(/^Locked by you at/),
-    ).toHaveHumanTextContent(
-      formatDate(1768478400000, { dateStyle: "medium", timeStyle: "short" }),
-    );
+    ).toHaveHumanTextContent(shownDate(1768478400000));
     expect(view.container.querySelector("img")).toBeNull();
     expect(rows).toEqual(original);
     expect(screen.getByRole("status")).toHaveHumanTextContent("2 events");
@@ -148,11 +149,7 @@ describe("AuditHistory verified native results", () => {
       expect(screen.getByRole("status")).toHaveHumanTextContent(
         translate(locale, "interface.history.events", { count: 1 }),
       );
-      expect(
-        screen.getByText(
-          formatDate(entry().atMs, { dateStyle: "medium", timeStyle: "short" }),
-        ),
-      ).toBeVisible();
+      expect(screen.getByText(shownDate(entry().atMs))).toBeVisible();
       expect(shown.bridge.history).toHaveBeenCalledOnce();
     },
   );
@@ -260,8 +257,58 @@ const damaged = (
   checkedUntilMs: entries.at(-1)?.atMs ?? null,
   checkedFromMs: laterEntries[0]?.atMs ?? null,
 });
-const shownDate = (ms: number) =>
-  formatDate(ms, { dateStyle: "medium", timeStyle: "short" });
+describe("AuditHistory dates keep the computer's format (D130)", () => {
+  // Ben's D130: a Canadian computer's date and time, whatever language myCarlos uses.
+  const atMs = Date.UTC(2026, 8, 30, 14, 31);
+  const canadian = (ms: number) => new Date(ms).toLocaleString("en-CA");
+  const french = (ms: number) =>
+    new Intl.DateTimeFormat("fr", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(ms);
+
+  it("shows each event's date as the computer writes it", async () => {
+    setDeviceLocale("en-CA");
+    render(
+      <AuditHistory
+        {...props(
+          bridge(vi.fn().mockResolvedValue(complete([entry({ atMs })]))),
+        )}
+      />,
+    );
+    await screen.findByText("FAKE Avery");
+    await act(async () => setLocaleOverride("fr"));
+    expect(screen.getByText(canadian(atMs))).toBeVisible();
+    expect(screen.queryByText(french(atMs))).not.toBeInTheDocument();
+  });
+
+  it("dates the damage notice as the computer writes it", async () => {
+    setDeviceLocale("en-CA");
+    const later = Date.UTC(2026, 9, 2, 8, 5);
+    render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi
+              .fn()
+              .mockResolvedValue(
+                damaged([entry({ atMs })], [entry({ seq: 9, atMs: later })]),
+              ),
+          ),
+        )}
+      />,
+    );
+    const alert = await screen.findByRole("alert");
+    await act(async () => setLocaleOverride("fr"));
+    expect(alert).toHaveHumanTextContent(
+      translate("fr", "interface.history.damagedBetween", {
+        from: canadian(atMs),
+        to: canadian(later),
+      }),
+    );
+    expect(alert).not.toHaveHumanTextContent(french(atMs));
+  });
+});
 
 describe("AuditHistory damaged history (D129)", () => {
   it("shows the entries that check out, newest first, under a dated warning", async () => {
@@ -483,10 +530,7 @@ describe("AuditHistory recorded semantics", () => {
       );
       expect(session).toHaveHumanTextContent(
         translate(locale, "interface.history.sessionLockedByApp", {
-          date: formatDate(1768478400000, {
-            dateStyle: "medium",
-            timeStyle: "short",
-          }),
+          date: shownDate(1768478400000),
         }),
       );
       expect(

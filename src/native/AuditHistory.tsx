@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   deferredText,
-  formatDate,
   t as translateNow,
   useI18n,
   type MessageKey,
@@ -47,8 +46,10 @@ const howLabels: Record<string, MessageKey> = {
   replaced: "interface.history.how.replaced",
 };
 
+/** Dates keep the computer's own format, whatever language myCarlos uses (D130), as
+ * RecordDetails shows them. */
 const formatTimestamp = (timestamp: number) =>
-  formatDate(timestamp, { dateStyle: "medium", timeStyle: "short" });
+  new Date(timestamp).toLocaleString();
 
 function folderPath(
   folders: string[] | null,
