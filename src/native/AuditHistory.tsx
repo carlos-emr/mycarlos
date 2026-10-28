@@ -207,17 +207,13 @@ export function AuditHistory({
         <>
           {!view.complete && (
             <p className="purpose-note warning" role="alert">
-              {view.checkedUntilMs === null
-                ? translateNow("interface.history.damagedAll")
-                : translateNow("interface.history.damaged", {
-                    date: formatTimestamp(view.checkedUntilMs),
-                  })}
+              {damageNotice(view)}
             </p>
           )}
-          {entries.length === 0 ? (
+          {entries.length === 0 && view.laterEntries.length === 0 ? (
             view.complete && <p>{translateNow("interface.history.empty")}</p>
           ) : (
-            <HistoryList entries={entries} />
+            <HistoryList entries={entries} later={view.laterEntries} />
           )}
         </>
       )}
@@ -225,34 +221,71 @@ export function AuditHistory({
   );
 }
 
-function HistoryList({ entries }: { entries: AuditHistoryEntry[] }) {
+/** The notice for a history that is not complete, from the native dates only (D146): the gap
+ * between the two checked ends, or what lies before or after the only one, or all of it. */
+function damageNotice(view: AuditHistoryView): string {
+  const until = view.checkedUntilMs;
+  const from = view.checkedFromMs;
+  if (until !== null && from !== null)
+    return translateNow("interface.history.damagedBetween", {
+      from: formatTimestamp(until),
+      to: formatTimestamp(from),
+    });
+  if (until !== null)
+    return translateNow("interface.history.damaged", {
+      date: formatTimestamp(until),
+    });
+  if (from !== null)
+    return translateNow("interface.history.damagedBefore", {
+      date: formatTimestamp(from),
+    });
+  return translateNow("interface.history.damagedAll");
+}
+
+function HistoryList({
+  entries,
+  later,
+}: {
+  entries: AuditHistoryEntry[];
+  later: AuditHistoryEntry[];
+}) {
   return (
     <>
       <p className="status-line" role="status">
         {translateNow("interface.history.events", {
-          count: entries.length,
+          count: entries.length + later.length,
         })}
       </p>
       <ol className="audit-history-list">
-        {[...entries].reverse().map((entry) => (
-          <li key={entry.seq}>
-            <article className="audit-history-entry">
-              <h2>{translateNow(eventLabels[entry.event])}</h2>
-              <p className="audit-history-date">
-                {formatTimestamp(entry.atMs)}
-              </p>
-              <dl>
-                {details(entry).map(([label, value], index) => (
-                  <div key={`${label}-${index}`}>
-                    <dt>{translateNow(label)}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </article>
+        {[...later].reverse().map(historyItem)}
+        {later.length > 0 && entries.length > 0 && (
+          <li key="gap" className="audit-history-gap">
+            <p className="purpose-note warning">
+              {translateNow("interface.history.gap")}
+            </p>
           </li>
-        ))}
+        )}
+        {[...entries].reverse().map(historyItem)}
       </ol>
     </>
+  );
+}
+
+function historyItem(entry: AuditHistoryEntry) {
+  return (
+    <li key={entry.seq}>
+      <article className="audit-history-entry">
+        <h2>{translateNow(eventLabels[entry.event])}</h2>
+        <p className="audit-history-date">{formatTimestamp(entry.atMs)}</p>
+        <dl>
+          {details(entry).map(([label, value], index) => (
+            <div key={`${label}-${index}`}>
+              <dt>{translateNow(label)}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </article>
+    </li>
   );
 }

@@ -38,8 +38,10 @@ function pending<T>() {
 /** A whole history, as native code returns it when every piece checks out. */
 const complete = (entries: AuditHistoryEntry[]): AuditHistoryView => ({
   entries,
+  laterEntries: [],
   complete: true,
   checkedUntilMs: null,
+  checkedFromMs: null,
 });
 function bridge(history = vi.fn().mockResolvedValue(complete([]))) {
   return { history } as unknown as VaultBridge;
@@ -245,11 +247,17 @@ describe("AuditHistory verified native results", () => {
   );
 });
 
-/** A history native code could check only up to a damaged or missing piece (D129). */
-const damaged = (entries: AuditHistoryEntry[]): AuditHistoryView => ({
+/** A history native code could check only up to a damaged or missing piece (D129), and after
+ * it as far as the pinned end proves (D146). */
+const damaged = (
+  entries: AuditHistoryEntry[],
+  laterEntries: AuditHistoryEntry[] = [],
+): AuditHistoryView => ({
   entries,
+  laterEntries,
   complete: false,
   checkedUntilMs: entries.at(-1)?.atMs ?? null,
+  checkedFromMs: laterEntries[0]?.atMs ?? null,
 });
 const shownDate = (ms: number) =>
   formatDate(ms, { dateStyle: "medium", timeStyle: "short" });
@@ -274,6 +282,9 @@ describe("AuditHistory damaged history (D129)", () => {
     expect(within(articles[0]).getByRole("heading")).toHaveTextContent(
       "Vault opened",
     );
+    expect(
+      screen.queryByText("Events here can't be checked and aren't shown."),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("2 events");
     expect(
       alert.compareDocumentPosition(screen.getByRole("list")) &
@@ -284,6 +295,88 @@ describe("AuditHistory damaged history (D129)", () => {
       translate("fr", "interface.history.damaged", {
         date: shownDate(rows[1].atMs),
       }),
+    );
+  });
+
+  it("shows both checked ends around the gap, dated from each side (D146)", async () => {
+    const early = [
+      entry(),
+      entry({ seq: 1, event: "unlocked", atMs: Date.UTC(2026, 1, 3, 9) }),
+    ];
+    const later = [
+      entry({ seq: 7, event: "imported", atMs: Date.UTC(2026, 2, 1, 10) }),
+      entry({ seq: 8, event: "renamed", atMs: Date.UTC(2026, 2, 2, 11) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(damaged(early, later))))}
+      />,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `Part of this history is damaged. Events between ${shownDate(early[1].atMs)} and ${shownDate(later[0].atMs)} can't be checked and aren't shown.`,
+    );
+    // Newest first: the later end, the gap, then the start.
+    const items = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(items).toHaveLength(5);
+    expect(
+      items.map(
+        (item) =>
+          within(item).queryByRole("heading")?.textContent ?? item.textContent,
+      ),
+    ).toEqual([
+      "Document renamed",
+      "Document added",
+      "Events here can't be checked and aren't shown.",
+      "Vault opened",
+      "Vault created",
+    ]);
+    expect(screen.getByRole("status")).toHaveTextContent("4 events");
+    await act(async () => setLocaleOverride("pl"));
+    expect(alert).toHaveTextContent(
+      translate("pl", "interface.history.damagedBetween", {
+        from: shownDate(early[1].atMs),
+        to: shownDate(later[0].atMs),
+      }),
+    );
+  });
+
+  it("shows only what the pinned end proves when the start is damaged (D146)", async () => {
+    const later = [
+      entry({ seq: 5, event: "imported", atMs: Date.UTC(2026, 2, 1, 10) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(damaged([], later))))}
+      />,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      `Part of this history is damaged. Events before ${shownDate(later[0].atMs)} can't be checked and aren't shown.`,
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(
+      screen.queryByText("Events here can't be checked and aren't shown."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("dates the notice from native fields only, never from the rows (D146)", async () => {
+    render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi.fn().mockResolvedValue({
+              entries: [entry()],
+              laterEntries: [entry({ seq: 5, event: "imported" })],
+              complete: false,
+              checkedUntilMs: null,
+              checkedFromMs: null,
+            }),
+          ),
+        )}
+      />,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Part of this history is damaged. Its events can't be checked, so none are shown.",
     );
   });
 
@@ -325,8 +418,10 @@ describe("AuditHistory damaged history (D129)", () => {
           bridge(
             vi.fn().mockResolvedValue({
               entries: [entry()],
+              laterEntries: [],
               complete: true,
               checkedUntilMs: entry().atMs,
+              checkedFromMs: entry().atMs,
             }),
           ),
         )}

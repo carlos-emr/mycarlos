@@ -543,15 +543,19 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 unlock, and every backup saved, adds to the history.
 
 **Verified read-only view, kept on the device.** While the vault is unlocked, the Security
-screen can request the history. Native code reads the encrypted segments in order and returns
-display rows over IPC only for entries it has authenticated and linked from the chain's start: it
-stops at the first segment that is missing or does not authenticate, at the first entry that does
-not follow the one before, and at the manifest's count. With the rows it returns `complete`, true
-only when they are the whole chain the manifest pins (its count and head). When it is false,
-Security shows the rows that checked out under a warning, "Part of this history is damaged.
-Events after <date> can't be checked and aren't shown.", dated from the last row returned, or
-says none are shown when no entry checked out (Ben's D129, mycarlos#120). The warning follows
-`complete` only; the renderer never works it out. A damaged segment is never opened or shown.
+screen can request the history. Native code reads every encrypted segment in order and returns
+display rows over IPC only for entries it has authenticated from one of the chain's two pinned
+ends. From the start: entries before the first segment that is missing or does not authenticate,
+while each follows the one before from the genesis value, and never past the manifest's count.
+From the end (Ben's D146): entries after the last such segment, walking back from the manifest's
+pinned head while each is the `prev` of the one after it with the number before it, so that the
+last is number `count - 1` and its hash is the head; none is shown twice. With the rows it returns
+`complete`, true only when the rows from the start are the whole chain the manifest pins (its
+count and head). When it is false, Security shows a notice dated from the native fields: "Part of
+this history is damaged. Events between <date> and <date> can't be checked and aren't shown." (or
+"after <date>", "before <date>", or that none are shown), with a marker in the list where the gap
+is (Ben's D129 and D146, mycarlos#120). The notice follows those fields only; the renderer never
+works it out. A damaged segment is never opened or shown.
 Those rows include recorded names, folder labels, times, methods, session notes and saved
 locations (including file paths or provider addresses). Native record/profile/folder identifiers,
 chain hashes, wrapped keys and object paths are not returned. Some entries lack person context;

@@ -186,14 +186,18 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
-/** Security's audit history (D129, mycarlos#120): entries native code authenticated from the
- * start of the encrypted chain, in order. `complete` says whether they are all of it; when not,
- * `checkedUntilMs` is the time of the last entry returned (null when none is). The screen's
- * warning follows `complete` only; it is never worked out here. */
+/** Security's audit history (D129 and D146, mycarlos#120). `entries` are those native code
+ * authenticated from the start of the encrypted chain, in order; `complete` says whether they are
+ * all of it. When not, `laterEntries` are those after the damaged part that the vault's pinned end
+ * proves, in order, and `checkedUntilMs` / `checkedFromMs` date the gap (the last entry from the
+ * start, the first later entry; null when there is none). The screen's notice follows these
+ * native fields only; it is never worked out here. */
 export interface AuditHistoryView {
   entries: AuditHistoryEntry[];
+  laterEntries: AuditHistoryEntry[];
   complete: boolean;
   checkedUntilMs: number | null;
+  checkedFromMs: number | null;
 }
 
 /** An audit event that native code authenticated from the start of the history chain. */

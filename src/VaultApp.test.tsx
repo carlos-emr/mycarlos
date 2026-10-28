@@ -71,9 +71,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     setAutoLock: vi.fn().mockResolvedValue(undefined),
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(emptySnapshot),
-    history: vi
-      .fn()
-      .mockResolvedValue({ entries: [], complete: true, checkedUntilMs: null }),
+    history: vi.fn().mockResolvedValue({
+      entries: [],
+      laterEntries: [],
+      complete: true,
+      checkedUntilMs: null,
+      checkedFromMs: null,
+    }),
     changePassphrase: vi.fn().mockResolvedValue(undefined),
     // Tests that set up a recovery key say so; the others get a vault without
     // one, as when making the key fails after the vault was created.
@@ -359,6 +363,8 @@ describe("durable vault UI", () => {
                 entries: rows,
                 complete: true,
                 checkedUntilMs: null,
+                checkedFromMs: null,
+                laterEntries: [],
               })
             : vi.fn().mockImplementation(
                 () =>
@@ -401,6 +407,8 @@ describe("durable vault UI", () => {
             entries: rows,
             complete: true,
             checkedUntilMs: null,
+            checkedFromMs: null,
+            laterEntries: [],
           }),
         );
       expect(document.body).not.toHaveTextContent("FAKE pending lock secret");
@@ -473,6 +481,8 @@ describe("durable vault UI", () => {
             entries: [],
             complete: true,
             checkedUntilMs: null,
+            checkedFromMs: null,
+            laterEntries: [],
           }),
       });
       render(<VaultApp bridge={bridge} />);
@@ -520,6 +530,8 @@ describe("durable vault UI", () => {
             ],
             complete: true,
             checkedUntilMs: null,
+            checkedFromMs: null,
+            laterEntries: [],
           });
       });
       expect(bridge.lock).toHaveBeenCalledOnce();
@@ -553,6 +565,8 @@ describe("durable vault UI", () => {
         ],
         complete: true,
         checkedUntilMs: null,
+        checkedFromMs: null,
+        laterEntries: [],
       }),
     });
     render(<VaultApp bridge={bridge} />);

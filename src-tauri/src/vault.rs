@@ -1222,13 +1222,16 @@ impl VaultStore {
         }
     }
 
-    /// The audit history as far as it checks out (Ben's D129, mycarlos#120), for Security's view.
+    /// The audit history as far as it checks out (Ben's D129 and D146, mycarlos#120), for
+    /// Security's view.
     ///
-    /// Segments are read in order, and reading stops at the first that is gone or does not
-    /// authenticate. Entries are kept only while each follows the one before from the genesis
-    /// value, and never past the manifest's count. So only entries the chain authenticates from
-    /// its start are returned, in order, and nothing after a break. `complete` is true exactly
-    /// when every piece was read and the entries are the whole chain the manifest pins (its
+    /// Every segment is read in order. `entries` are those before the first piece that is gone or
+    /// does not authenticate, kept only while each follows the one before from the genesis value,
+    /// and never past the manifest's count. `later` are those after the last such piece, kept only
+    /// back from the end as far as the manifest's pinned head proves them (`linked_suffix`), and
+    /// never one already in `entries`. So every entry returned is authenticated by the chain from
+    /// its start or from its pinned end, in order; nothing between is shown. `complete` is true
+    /// exactly when every piece was read and `entries` are the whole chain the manifest pins (its
     /// count and head), as `verify` checks; a damaged padding piece makes it false too.
     pub fn history_view(&self) -> Result<HistoryView, VaultError> {
         let guard = self.session();
@@ -1243,11 +1246,13 @@ impl VaultStore {
             let complete = manifest.format_version < MANIFEST_FORMAT_HISTORY;
             return Ok(HistoryView {
                 entries: Vec::new(),
+                later: Vec::new(),
                 complete,
             });
         }
         let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
         let mut entries = Vec::new();
+        let mut later = Vec::new();
         let mut all_read = true;
         for segment in &manifest.history.segments {
             run_at_test_boundary("history-segment-read");
@@ -1261,11 +1266,13 @@ impl VaultStore {
                 segment,
                 Arc::clone(&self.cancel_io),
             ) {
-                Ok(found) => entries.extend(found),
-                // A damaged or missing piece: nothing in it or after it can be checked.
+                Ok(found) if all_read => entries.extend(found),
+                Ok(found) => later.extend(found),
+                // A damaged or missing piece: nothing in it can be checked, and what follows it
+                // only back from the pinned end.
                 Err(error) if history_piece_damaged(&error) => {
                     all_read = false;
-                    break;
+                    later.clear();
                 }
                 Err(error) => return Err(error),
             }
@@ -1279,12 +1286,34 @@ impl VaultStore {
             && linked == entries.len()
             && linked == pinned
             && head == manifest.history.head;
+        if complete {
+            later.clear();
+        } else if all_read {
+            // No piece is damaged, but the chain breaks or does not end as pinned: what the
+            // pinned head proves, walking back from it, can still be shown.
+            later.clone_from(&entries);
+        }
         entries.truncate(linked.min(pinned));
+        let proven = history::linked_suffix(
+            &later,
+            manifest.history.count,
+            &manifest.history.head,
+            cancelled,
+        )
+        .map_err(|_| VaultError::Cancelled)?;
+        later.drain(..later.len() - proven);
+        // Each entry once: the later ones are those after the checked start.
+        let shown = entries.len() as u64;
+        later.retain(|entry| entry.seq >= shown);
         run_at_test_boundary("history-verified");
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
-        Ok(HistoryView { entries, complete })
+        Ok(HistoryView {
+            entries,
+            later,
+            complete,
+        })
     }
 
     fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
@@ -4947,6 +4976,8 @@ fn history_piece_damaged(error: &VaultError) -> bool {
 pub struct HistoryView {
     /// Entries authenticated from the start of the chain, in order.
     pub entries: Vec<HistoryEntry>,
+    /// Entries after a damaged part that the manifest's pinned head proves, in order (D146).
+    pub later: Vec<HistoryEntry>,
     /// Whether they are the whole chain the manifest pins.
     pub complete: bool,
 }
@@ -14168,6 +14199,7 @@ mod tests {
         let store = store_with_long_history(&temp.path().join("FAKE-vault"));
         let view = store.history_view().unwrap();
         assert!(view.complete);
+        assert!(view.later.is_empty());
         let guard = store.session();
         let manifest = &guard.as_ref().unwrap().manifest;
         // Every entry, ending at the pinned count and head.
@@ -14200,6 +14232,7 @@ mod tests {
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all);
+        assert!(view.later.is_empty());
     }
 
     #[test]
@@ -14214,8 +14247,9 @@ mod tests {
     }
 
     #[test]
-    fn history_view_shows_only_entries_before_a_damaged_or_missing_middle_piece() {
-        // D129: entries that check out from the start, then nothing after the damage.
+    fn history_view_shows_both_checked_ends_around_a_damaged_or_missing_middle_piece() {
+        // D129 and D146: what checks out from the start, and what the pinned end proves after
+        // the damage; nothing in the damaged piece.
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("FAKE-vault");
         let store = store_with_long_history(&root);
@@ -14224,18 +14258,52 @@ mod tests {
         let middle = &history.segments[1];
         assert!(middle.entry_count > 0 && history.segments[2].entry_count > 0);
         let before = usize::try_from(middle.first_seq).unwrap();
-        assert!(before > 0 && before < all.len());
+        let after = usize::try_from(history.segments[2].first_seq).unwrap();
+        assert!(before > 0 && after == before + middle.entry_count as usize && after < all.len());
         let original = damage_segment(&root, middle);
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
         let path = root.join("objects").join(&middle.object_name);
         fs::remove_file(&path).unwrap();
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        // Later pieces that do not end at the pinned head prove nothing, so none is shown.
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        let view = store.history_view().unwrap();
+        assert_eq!(view.entries, all[..before]);
+        assert!(view.later.is_empty());
+        store.session().as_mut().unwrap().manifest.history = history.clone();
         fs::write(&path, original).unwrap();
-        assert_eq!(store.history_view().unwrap().entries, all);
+        let view = store.history_view().unwrap();
+        assert!(view.complete && view.later.is_empty());
+        assert_eq!(view.entries, all);
+    }
+
+    #[test]
+    fn history_view_shows_only_the_start_when_the_last_piece_with_entries_is_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        let last = history
+            .segments
+            .iter()
+            .rev()
+            .find(|s| s.entry_count > 0)
+            .unwrap();
+        damage_segment(&root, last);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(
+            view.entries,
+            all[..usize::try_from(last.first_seq).unwrap()]
+        );
+        assert!(view.later.is_empty());
     }
 
     #[test]
@@ -14250,30 +14318,45 @@ mod tests {
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all);
+        assert!(view.later.is_empty());
         // The chain does not end at the pinned head.
         store.session().as_mut().unwrap().manifest.history = history.clone();
         store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all);
+        assert!(view.later.is_empty());
         // Entries past the pinned count are never shown.
         store.session().as_mut().unwrap().manifest.history = history.clone();
         store.session().as_mut().unwrap().manifest.history.count -= 1;
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all[..all.len() - 1]);
+        assert!(view.later.is_empty());
     }
 
     #[test]
-    fn history_view_shows_nothing_when_the_first_piece_is_damaged() {
+    fn history_view_shows_only_what_the_end_proves_when_the_first_piece_is_damaged() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("FAKE-vault");
         let store = store_with_long_history(&root);
-        let first = store.session().as_ref().unwrap().manifest.history.segments[0].clone();
-        damage_segment(&root, &first);
+        let all = store.history_entries().unwrap();
+        let segments = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .clone();
+        damage_segment(&root, &segments[0]);
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert!(view.entries.is_empty());
+        assert_eq!(
+            view.later,
+            all[usize::try_from(segments[1].first_seq).unwrap()..]
+        );
     }
 
     #[test]
@@ -14289,6 +14372,7 @@ mod tests {
             store.history_view().unwrap(),
             HistoryView {
                 entries: Vec::new(),
+                later: Vec::new(),
                 complete: true
             }
         );

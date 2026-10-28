@@ -1285,14 +1285,18 @@ struct SpeedTestReport {
     app_version: String,
 }
 
-/// What `vault_history` returns: entries checked from the start of the chain, and whether
-/// they are all of it.
+/// What `vault_history` returns: entries checked from the start of the chain, whether they are
+/// all of it, and, after a damaged part, the later entries the pinned end proves (D146).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AuditHistory {
     entries: Vec<AuditHistoryEntry>,
+    later_entries: Vec<AuditHistoryEntry>,
     complete: bool,
+    /// The time of the last entry checked from the start, when the history is not complete.
     checked_until_ms: Option<u64>,
+    /// The time of the first later entry, when there is one.
+    checked_from_ms: Option<u64>,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -1303,10 +1307,13 @@ impl From<vault::HistoryView> for AuditHistory {
         } else {
             view.entries.last().map(|entry| entry.at_ms)
         };
+        let checked_from_ms = view.later.first().map(|entry| entry.at_ms);
         Self {
             entries: view.entries.into_iter().map(Into::into).collect(),
+            later_entries: view.later.into_iter().map(Into::into).collect(),
             complete: view.complete,
             checked_until_ms,
+            checked_from_ms,
         }
     }
 }
@@ -5552,18 +5559,39 @@ mod audit_history_ipc_tests {
                 history::HistoryEntry::new(history::HistoryEvent::Unlocked, 2_000),
             ]
         };
-        let shown =
-            |entries, complete| AuditHistory::from(vault::HistoryView { entries, complete });
-        let partial = shown(entries(), false);
+        let later = || {
+            vec![
+                history::HistoryEntry::new(history::HistoryEvent::Imported, 5_000),
+                history::HistoryEntry::new(history::HistoryEvent::Renamed, 6_000),
+            ]
+        };
+        let shown = |entries, later, complete| {
+            AuditHistory::from(vault::HistoryView {
+                entries,
+                later,
+                complete,
+            })
+        };
+        let partial = shown(entries(), Vec::new(), false);
         assert!(!partial.complete);
         assert_eq!(partial.entries.len(), 2);
         assert_eq!(partial.checked_until_ms, Some(2_000));
-        let whole = shown(entries(), true);
+        assert_eq!(partial.checked_from_ms, None);
+        let whole = shown(entries(), Vec::new(), true);
         assert!(whole.complete);
         assert_eq!(whole.checked_until_ms, None);
-        let nothing = shown(Vec::new(), false);
+        assert_eq!(whole.checked_from_ms, None);
+        let nothing = shown(Vec::new(), Vec::new(), false);
         assert!(!nothing.complete && nothing.entries.is_empty());
         assert_eq!(nothing.checked_until_ms, None);
+        // D146: a gap between the two checked ends is dated from both sides.
+        let both = shown(entries(), later(), false);
+        assert_eq!((both.entries.len(), both.later_entries.len()), (2, 2));
+        assert_eq!(both.checked_until_ms, Some(2_000));
+        assert_eq!(both.checked_from_ms, Some(5_000));
+        let end_only = shown(Vec::new(), later(), false);
+        assert_eq!(end_only.checked_until_ms, None);
+        assert_eq!(end_only.checked_from_ms, Some(5_000));
     }
 
     /// Use the real generated production capability authority, not mock_context's
@@ -5614,7 +5642,17 @@ mod audit_history_ipc_tests {
             .keys()
             .map(String::as_str)
             .collect();
-        assert_eq!(top, ["checkedUntilMs", "complete", "entries"].into());
+        assert_eq!(
+            top,
+            [
+                "checkedFromMs",
+                "checkedUntilMs",
+                "complete",
+                "entries",
+                "laterEntries"
+            ]
+            .into()
+        );
         assert_eq!(response["complete"], true);
         assert!(response["checkedUntilMs"].is_null());
         let rows = &response["entries"];
@@ -5659,7 +5697,13 @@ mod audit_history_ipc_tests {
             .unwrap();
         assert_eq!(
             damaged,
-            serde_json::json!({ "entries": [], "complete": false, "checkedUntilMs": null })
+            serde_json::json!({
+                "entries": [],
+                "laterEntries": [],
+                "complete": false,
+                "checkedUntilMs": null,
+                "checkedFromMs": null
+            })
         );
         store.lock();
         let Err(locked) = tauri::test::get_ipc_response(&main, request(local)) else {

@@ -308,6 +308,36 @@ pub fn linked_prefix(
     Ok((entries.len(), expected))
 }
 
+/// How many entries, from the last, end the chain at the pinned end (Ben's D146, mycarlos#120):
+/// the last one is number `count - 1` and its hash is `head`, and each earlier one is the `prev`
+/// of the one after it, with the number before it. Each of them is then proven by the pinned
+/// head, whatever came before them. Only a requested stop is an error.
+pub fn linked_suffix(
+    entries: &[HistoryEntry],
+    count: u64,
+    head: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<usize, ChainBreak> {
+    let Some(last) = entries.last() else {
+        return Ok(0);
+    };
+    if last.seq.checked_add(1) != Some(count) || last.hash() != head {
+        return Ok(0);
+    }
+    let mut linked = 1;
+    for pair in entries.windows(2).rev() {
+        if cancelled() {
+            return Err(ChainBreak::Cancelled);
+        }
+        let (earlier, later) = (&pair[0], &pair[1]);
+        if earlier.seq.checked_add(1) != Some(later.seq) || later.prev != earlier.hash() {
+            break;
+        }
+        linked += 1;
+    }
+    Ok(linked)
+}
+
 /// One segment's plaintext: its entries, one per line, then spaces to
 /// exactly `SEGMENT_PLAINTEXT_BYTES`. None if they do not fit. Built in a
 /// buffer of that size, wiped when dropped, so that no copy of the names in
@@ -455,6 +485,45 @@ mod tests {
         );
         assert_eq!(
             linked_prefix(vault, &entries, || true),
+            Err(ChainBreak::Cancelled)
+        );
+    }
+
+    #[test]
+    fn the_linked_suffix_is_only_what_the_pinned_head_proves() {
+        let vault = Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
+        let mut entries = vec![
+            entry(HistoryEvent::Created, 1),
+            entry(HistoryEvent::Unlocked, 2),
+            entry(HistoryEvent::Imported, 3),
+            entry(HistoryEvent::Renamed, 4),
+        ];
+        let head = chain(&mut entries, 0, genesis(vault));
+        let never = || false;
+        assert_eq!(linked_suffix(&entries, 4, &head, never), Ok(4));
+        // The later pieces alone, as after a damaged earlier one.
+        assert_eq!(linked_suffix(&entries[2..], 4, &head, never), Ok(2));
+        assert_eq!(linked_suffix(&[], 4, &head, never), Ok(0));
+        // Not ending at the pinned end: cut short, too long, or another head.
+        assert_eq!(linked_suffix(&entries[..3], 4, &head, never), Ok(0));
+        assert_eq!(linked_suffix(&entries, 5, &head, never), Ok(0));
+        assert_eq!(linked_suffix(&entries, 4, &"0".repeat(64), never), Ok(0));
+        // A spliced-in entry: only what follows it is proven.
+        let mut spliced = entries.clone();
+        spliced[1].at_ms = 99;
+        assert_eq!(linked_suffix(&spliced, 4, &head, never), Ok(2));
+        // Numbers that skip, as when a piece is left out.
+        let mut skipped = entries.clone();
+        skipped.remove(2);
+        assert_eq!(linked_suffix(&skipped, 4, &head, never), Ok(1));
+        // Another vault's chain is not this vault's end, even of the same length.
+        let mut foreign = entries.clone();
+        foreign.iter_mut().for_each(|e| e.app = "0.1.1".to_owned());
+        let foreign_head = chain(&mut foreign, 0, genesis(Uuid::nil()));
+        assert_ne!(foreign_head, head);
+        assert_eq!(linked_suffix(&foreign, 4, &head, never), Ok(0));
+        assert_eq!(
+            linked_suffix(&entries, 4, &head, || true),
             Err(ChainBreak::Cancelled)
         );
     }
