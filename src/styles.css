@@ -1117,6 +1117,9 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
      Keep their original colours, without opting any app controls out. */
   .paper-preview, .preview-paper { forced-color-adjust: none; }
   :focus-visible, .vault-card input:focus { outline: 3px solid Highlight; outline-offset: 2px; }
+  /* A selected segment button already has a Highlight ring; with focus it gets a different one,
+     so a keyboard user can tell focus from selection. */
+  .native-vault-page .segment button[aria-pressed="true"]:focus-visible { outline: 3px solid CanvasText; outline-offset: -6px; }
   .text-size-box input[aria-invalid="true"] { outline: 2px solid CanvasText; }
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }

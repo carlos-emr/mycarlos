@@ -765,7 +765,7 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
 
-  it("takes the focus to the new location's heading when the reader opens a place, and only then", async () => {
+  it("takes the focus to the new location's heading when the reader opens a place", async () => {
     const user = userEvent.setup();
     renderLibrary();
     const heading = () => screen.getByRole("heading", { level: 1 });
