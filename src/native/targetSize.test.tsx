@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import {
   within,
   cleanup,
@@ -185,7 +186,7 @@ function expectComfortable(where: string) {
 }
 
 const press = (name: string | RegExp) =>
-  fireEvent.click(screen.getByRole("button", { name }));
+  fireEvent.click(screen.getByRole("button", { name: humanText(name) }));
 
 afterEach(async () => {
   cleanup();
@@ -274,20 +275,32 @@ describe("targets and text sizes in the app (#67)", () => {
     const pairs: [Element, Element][] = [
       [
         document.querySelector('.native-section-tabs [aria-current="page"]')!,
-        screen.getByRole("button", { name: "Security" }),
+        screen.getByRole("button", { name: humanText("Security") }),
       ],
       // On a phone, the people are top-level folders under the path (Ben, 21 Oct).
       [
         within(
-          screen.getByRole("navigation", { name: "Record library" }),
-        ).getByRole("button", { name: "FAKE Avery", current: "page" }),
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        ).getByRole("button", {
+          name: humanText("FAKE Avery"),
+          current: "page",
+        }),
         within(
-          screen.getByRole("navigation", { name: "Record library" }),
-        ).getByRole("button", { name: "FAKE Blake", current: false }),
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        ).getByRole("button", {
+          name: humanText("FAKE Blake"),
+          current: false,
+        }),
       ],
       [
-        screen.getByRole("button", { name: "List view", pressed: true }),
-        screen.getByRole("button", { name: "Grid view", pressed: false }),
+        screen.getByRole("button", {
+          name: humanText("List view"),
+          pressed: true,
+        }),
+        screen.getByRole("button", {
+          name: humanText("Grid view"),
+          pressed: false,
+        }),
       ],
     ];
     for (const [chosen, other] of pairs) {
@@ -300,7 +313,7 @@ describe("targets and text sizes in the app (#67)", () => {
   it("draws an unticked box's edge at 3:1 or more (WCAG 1.4.11)", () => {
     renderLibrary();
     const tick = screen.getByRole("button", {
-      name: "Select FAKE Results.pdf",
+      name: humanText("Select FAKE Results.pdf"),
     });
     const channels = (colour: string) =>
       colour
@@ -335,9 +348,11 @@ describe("targets and text sizes in the app (#67)", () => {
   it("shows body text at 16px", () => {
     renderLibrary();
     for (const element of [
-      screen.getByRole("button", { name: "FAKE Results.pdf" }),
-      screen.getByRole("button", { name: "Details for FAKE Results.pdf" }),
-      screen.getByText(/Hold and drag a document or folder/),
+      screen.getByRole("button", { name: humanText("FAKE Results.pdf") }),
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Results.pdf"),
+      }),
+      screen.getByText(humanText(/Hold and drag a document or folder/)),
     ])
       expect(getComputedStyle(element).fontSize).toBe("16px");
   });

@@ -1,5 +1,12 @@
-import { useI18n } from "../i18n";
+import {
+  useTextState,
+  deferredText,
+  useI18n,
+  t as translateNow,
+} from "../i18n";
+import { recordSource } from "./recordPresentation";
 import { ClinicServiceDate } from "./ClinicServiceDate";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import {
@@ -65,7 +72,7 @@ export function DocumentReader({
   cancelView?: () => void;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -78,7 +85,7 @@ export function DocumentReader({
   );
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useTextState();
   // The document's own password, once given: kept while the reader is open,
   // for the pages that follow, and gone with it.
   const [password, setPassword] = useState<string | undefined>(undefined);
@@ -160,7 +167,7 @@ export function DocumentReader({
           setAsking(true);
           return;
         }
-        setError(vaultErrorMessage(failure));
+        setError(deferredText(() => vaultErrorMessage(failure)));
       },
     );
     return () => {
@@ -177,7 +184,13 @@ export function DocumentReader({
   };
 
   const last = pageCount === null ? null : pageCount - 1;
-  const where = pageCount === null ? "" : `Page ${page + 1} of ${pageCount}`;
+  const where =
+    pageCount === null
+      ? ""
+      : translateNow("interface.reader.where", {
+          page: page + 1,
+          total: pageCount,
+        });
   // The picture shown is the page asked for, not one left from before.
   const current = shown && shown.page === page && !asking && !error;
   return (
@@ -195,10 +208,10 @@ export function DocumentReader({
             <h2 id="reader-title">{record.displayName}</h2>
             <p id="reader-trust">
               {record.verifiedClinicName
-                ? t("portal.sourceVerified", {
+                ? translateNow("portal.sourceVerified", {
                     clinic: record.verifiedClinicName,
                   })
-                : record.sourceLabel}
+                : recordSource(record)}
             </p>
             {record.clinicServiceDate !== undefined && (
               <p>
@@ -212,7 +225,7 @@ export function DocumentReader({
             type="button"
             onClick={onClose}
           >
-            Close
+            {translateNow("photo.close")}
           </button>
         </header>
         <div className="native-reader-controls">
@@ -222,7 +235,7 @@ export function DocumentReader({
             disabled={loading || page === 0}
             onClick={() => setPage((current) => current - 1)}
           >
-            Previous page
+            {translateNow("interface.DocumentReader.previousPage")}
           </button>
           <span className="native-reader-where">{where}</span>
           <button
@@ -231,7 +244,7 @@ export function DocumentReader({
             disabled={loading || last === null || page >= last}
             onClick={() => setPage((current) => current + 1)}
           >
-            Next page
+            {translateNow("interface.DocumentReader.nextPage")}
           </button>
           <span className="native-reader-zoom">
             <button
@@ -242,9 +255,13 @@ export function DocumentReader({
                 setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
               }
             >
-              Smaller
+              {translateNow("interface.DocumentReader.smaller")}
             </button>
-            <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+            <span aria-live="polite">
+              {translateNow("interface.reader.zoom", {
+                percent: Math.round(zoom * 100),
+              })}
+            </span>
             <button
               className="button"
               type="button"
@@ -253,7 +270,7 @@ export function DocumentReader({
                 setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
               }
             >
-              Larger
+              {translateNow("interface.DocumentReader.larger")}
             </button>
             <button
               className="button"
@@ -261,7 +278,7 @@ export function DocumentReader({
               disabled={loading || zoom === 1}
               onClick={() => setZoom(1)}
             >
-              Fit width
+              {translateNow("interface.DocumentReader.fitWidth")}
             </button>
           </span>
         </div>
@@ -270,9 +287,12 @@ export function DocumentReader({
           role="status"
         >
           {loading && !asking
-            ? `Opening page ${page + 1}…`
+            ? translateNow("interface.reader.opening", { page: page + 1 })
             : current
-              ? `Page ${shown.page + 1} of ${shown.pageCount}`
+              ? translateNow("interface.reader.where", {
+                  page: shown.page + 1,
+                  total: shown.pageCount,
+                })
               : ""}
         </p>
         {asking && (
@@ -281,11 +301,13 @@ export function DocumentReader({
             onSubmit={giveDocumentPassword}
           >
             <p id="reader-password-help">
-              This document is locked with its own password. Enter the document
-              password from your patient portal. It is not kept after you close
-              the document.
+              {translateNow(
+                "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
+              )}
             </p>
-            <label htmlFor="reader-password">Document password</label>
+            <label htmlFor="reader-password">
+              {translateNow("interface.DocumentReader.documentPassword")}
+            </label>
             <input
               id="reader-password"
               type="password"
@@ -302,12 +324,13 @@ export function DocumentReader({
             />
             {wrongTries > 0 && (
               <p id="reader-password-error" role="alert" key={wrongTries}>
-                That password did not open the document. Check it in your
-                patient portal, then try again.
+                {translateNow(
+                  "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+                )}
               </p>
             )}
             <button className="button primary" disabled={!typed}>
-              Open
+              {translateNow("interface.DocumentReader.open")}
             </button>
           </form>
         )}
@@ -319,22 +342,31 @@ export function DocumentReader({
           ref={pageRef}
           tabIndex={0}
           role="region"
-          aria-label={current ? `Page ${shown.page + 1}` : "Page"}
+          aria-label={translateNow("interface.reader.page", {
+            page: current ? shown.page + 1 : page + 1,
+          })}
         >
           {current && (
             <img
               src={shown.image}
-              alt={`Page ${shown.page + 1} of ${shown.pageCount}. The page's text follows.`}
+              alt={translateNow("interface.reader.textFollows", {
+                page: shown.page + 1,
+                total: shown.pageCount,
+              })}
               style={{ width: `${cssWidth}px` }}
             />
           )}
         </div>
         {current && (
           <details className="native-reader-text">
-            <summary>Text on this page</summary>
+            <summary>
+              {translateNow("interface.DocumentReader.textOnThisPage")}
+            </summary>
             <div>
               {(shown.readableText ?? shown.text).trim() ||
-                "No text could be read on this page. It may be a scan."}
+                translateNow(
+                  "interface.DocumentReader.noTextCouldBeReadOnThis",
+                )}
             </div>
           </details>
         )}

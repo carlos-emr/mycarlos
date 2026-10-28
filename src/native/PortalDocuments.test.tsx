@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { humanText, humanValue } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
 import type {
@@ -461,18 +462,18 @@ describe("native clinic document controls", () => {
       .setup()
       .click(screen.getByRole("button", { name: "Check for new documents" }));
     await waitFor(() =>
-      expect(props.setNotice).toHaveBeenCalledWith(
+      expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
         expect.stringContaining("New documents saved: 1."),
-      ),
+      ]),
     );
-    expect(props.setNotice).toHaveBeenCalledWith(
+    expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
       expect.stringContaining(
         "Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.",
       ),
-    );
-    expect(props.setNotice).not.toHaveBeenCalledWith(
-      expect.stringContaining("Picked up"),
-    );
+    ]);
+    expect(
+      humanValue(vi.mocked(props.setNotice).mock.calls),
+    ).not.toContainEqual([expect.stringContaining("Picked up")]);
   });
   it("shows clinic-specific partial guidance while preserving successful progress from other links", async () => {
     const { bridge, props } = fixture();
@@ -492,17 +493,17 @@ describe("native clinic document controls", () => {
       .setup()
       .click(screen.getByRole("button", { name: "Check for new documents" }));
     await waitFor(() =>
-      expect(props.setNotice).toHaveBeenCalledWith(
+      expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
         expect.stringContaining(
           "Some clinic checks need attention. New documents saved: 2.",
         ),
-      ),
+      ]),
     );
-    expect(props.setNotice).toHaveBeenCalledWith(
+    expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
       expect.stringContaining(
         "FAKE Other Clinic: This approval request expired.",
       ),
-    );
+    ]);
   });
   it("keeps contact guidance and hides restart when the native request archive is full", () => {
     fixture({
@@ -698,7 +699,9 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledTimes(16);
     expect(
       screen.getByText(
-        "Automatic checks have stopped. To check again, choose Check for new documents.",
+        humanText(
+          "Automatic checks have stopped. To check again, choose Check for new documents.",
+        ),
       ),
     ).toBeVisible();
     expect(screen.queryByText(AUTO)).not.toBeInTheDocument();
@@ -796,17 +799,23 @@ describe("automatic approval status checks (#131)", () => {
     expect(restart()).toBeVisible();
     await pass(10_000);
     const left = screen.getByText(
-      "Time left for this request: about 2 minutes.",
+      humanText("Time left for this request: about 2 minutes."),
     );
     expect(left.closest("[role=status],[aria-live]")).toBeNull();
     expect(restart()).not.toBeInTheDocument();
     // It moves without a check, and is never read out.
     await pass(15_000);
     expect(poll).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Time left for this request: about 2 minutes."));
+    expect(
+      screen.getByText(
+        humanText("Time left for this request: about 2 minutes."),
+      ),
+    );
     await pass(50_000);
     expect(
-      screen.getByText("Time left for this request: about 1 minute."),
+      screen.getByText(
+        humanText("Time left for this request: about 1 minute."),
+      ),
     ).toBeVisible();
     expect(status()).toBeEmptyDOMElement();
     // Checks at 10, 30 and 70 s; the next comes 2 s after the time runs out
@@ -820,7 +829,9 @@ describe("automatic approval status checks (#131)", () => {
     // request is offered, with plain guidance.
     expect(
       screen.getByText(
-        "The time for this request has run out. If your clinic has not approved this device, choose Start a new approval request.",
+        humanText(
+          "The time for this request has run out. If your clinic has not approved this device, choose Start a new approval request.",
+        ),
       ),
     ).toBeVisible();
     expect(restart()).toBeVisible();
@@ -1006,7 +1017,7 @@ describe("automatic approval status checks (#131)", () => {
     );
     await pass(10_000);
     expect(screen.getAllByText(invalid)).toHaveLength(2);
-    expect(screen.getByText(STOPPED)).toBeVisible();
+    expect(screen.getByText(humanText(STOPPED))).toBeVisible();
     for (const wrong of [UNREACHABLE, AUTO, "The clinic approved this device."])
       expect(screen.queryByText(wrong)).not.toBeInTheDocument();
     await pass(10 * 60_000);
@@ -1019,7 +1030,7 @@ describe("automatic approval status checks (#131)", () => {
     }));
     await pass(10_000);
     expect(screen.getAllByText("FAKE storage fault text.")).toHaveLength(2);
-    expect(screen.getByText(STOPPED)).toBeVisible();
+    expect(screen.getByText(humanText(STOPPED))).toBeVisible();
     expect(screen.queryByText(UNREACHABLE)).not.toBeInTheDocument();
     await pass(10 * 60_000);
     expect(poll).toHaveBeenCalledOnce();
@@ -1043,7 +1054,7 @@ describe("automatic approval status checks (#131)", () => {
           "The clinic portal asked myCarlos to check less often.",
         ),
       ).toHaveLength(2);
-      expect(screen.getByText(STOPPED)).toBeVisible();
+      expect(screen.getByText(humanText(STOPPED))).toBeVisible();
       // No timer fires at once, nor later.
       await pass(1_000);
       await pass(30 * 60_000);
@@ -1095,7 +1106,7 @@ describe("automatic approval status checks (#131)", () => {
     fixture({ snapshot: shown, poll });
     await pass(10_000);
     expect(poll.mock.calls).toEqual([[pending.id], [second.id]]);
-    expect(status()).toHaveTextContent(
+    expect(status()).toHaveHumanTextContent(
       "FAKE Second Clinic: Your saved approval request was not found on the portal. Send the saved request again.",
     );
     await pass(20_000);
@@ -1143,7 +1154,7 @@ describe("automatic approval status checks (#131)", () => {
       reply(pending, { expiresInMs: Math.max(end - performance.now(), 0) }),
     );
     await pass(end + 60_000);
-    expect(screen.getByText(STOPPED)).toBeVisible();
+    expect(screen.getByText(humanText(STOPPED))).toBeVisible();
     expect(
       screen.getByText("The time for this request has run out."),
     ).toBeVisible();
@@ -1178,7 +1189,7 @@ describe("automatic approval status checks (#131)", () => {
       poll.mock.calls.filter(([linkId]) => linkId === id).length;
     expect(asked(pending.id)).toBe(1);
     expect(asked(other.id)).toBeGreaterThan(10);
-    expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
+    expect(screen.queryByText(humanText(STOPPED))).not.toBeInTheDocument();
     expect(screen.getAllByText(AUTO)).toHaveLength(2);
   });
 
@@ -1247,7 +1258,7 @@ describe("automatic approval status checks (#131)", () => {
     expect(button("Retry saved approval request")).toBeDisabled();
     expect(button("Start a new approval request")).toBeDisabled();
     // Checking again cannot help: no "check again" line, and no checks.
-    expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
+    expect(screen.queryByText(humanText(STOPPED))).not.toBeInTheDocument();
     await pass(10 * 60_000);
     expect(gone.poll).toHaveBeenCalledOnce();
     gone.unmount();
