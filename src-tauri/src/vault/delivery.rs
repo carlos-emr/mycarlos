@@ -2880,6 +2880,85 @@ mod approval_recovery_tests {
             retry_after: None,
         }
     }
+    fn refusal(code: &str) -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status: 403,
+            body: Zeroizing::new(serde_json::to_vec(&serde_json::json!({ "code": code })).unwrap()),
+            date: None,
+            retry_after: None,
+        }
+    }
+    fn issues(result: &crate::portal_pickup::CheckResult) -> Vec<(Uuid, &str)> {
+        result
+            .issues
+            .iter()
+            .map(|issue| (issue.link_id, issue.code.as_str()))
+            .collect()
+    }
+    /// The document check says a device the portal removed as it is (#128),
+    /// as the status check does (#131): checking again cannot help it.
+    #[test]
+    fn should_say_an_approved_device_whose_document_list_says_it_was_removed() {
+        let (_temp, store, link, _) = setup(true);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![Reply::Accepted], vec![]),
+            |_, method, path, _, _, _, _| {
+                assert_eq!(method, "GET");
+                assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                Ok(refusal("device_removed"))
+            },
+        )
+        .unwrap();
+        assert!(saved(&store).summary().clinic_approved);
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn should_say_a_waiting_device_whose_status_read_says_it_was_removed() {
+        let (_temp, store, link, _) = setup(true);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![Reply::DeviceRemoved], vec![]),
+            |_, _, _, _, _, _, _| Ok(empty_page()),
+        )
+        .unwrap();
+        assert!(!saved(&store).summary().clinic_approved);
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn should_say_a_removed_device_whose_saved_receipt_is_refused_and_keep_the_receipt() {
+        let (_temp, store, _, _) = setup(false);
+        let (healthy, _, _) = add_signed_pending_delivery(&store);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, path, _, _, _, _| {
+                Ok(if path.ends_with("/receipt") {
+                    refusal("device_removed")
+                } else {
+                    empty_page()
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(issues(&result), vec![(healthy.id, "portal_device_removed")]);
+        assert_eq!(result.receipts_pending, 1);
+    }
+    #[test]
+    fn should_keep_other_refusals_of_the_document_list_a_connection_failure() {
+        let (_temp, store, link, _) = setup(false);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(refusal("forbidden")),
+        )
+        .unwrap();
+        assert_eq!(issues(&result), vec![(link.id, "portal_link_incomplete")]);
+    }
     #[test]
     fn should_continue_a_second_links_real_saved_receipt_when_first_link_is_terminal() {
         let (_temp, store, first, _) = setup(true);

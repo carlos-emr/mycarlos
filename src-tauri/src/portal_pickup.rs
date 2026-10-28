@@ -44,6 +44,11 @@ fn add_issue(
         crate::vault::VaultError::Invalid | crate::vault::VaultError::NotFound => {
             "portal_link_incomplete"
         }
+        // Said as it is, as the status check says it (#131): checking again
+        // cannot help a device the portal removed (#128).
+        crate::vault::VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved) => {
+            "portal_device_removed"
+        }
         _ => crate::PublicText::from(error).code,
     };
     if result
@@ -100,6 +105,16 @@ where
     };
     use serde::Deserialize;
     let cancelled = || store.portal_link_ticket() != session;
+    // A refusal that says the portal removed this device is told apart from
+    // a connection failure (#128); any other answer is not one this check
+    // can use.
+    let refused = |response: &crate::portal_client::ApiResponse| {
+        VaultError::Portal(if crate::portal_approval::device_removed(response) {
+            LinkError::DeviceRemoved
+        } else {
+            LinkError::Network
+        })
+    };
     let send = |link: &StoredLink, c: &crate::portal_delivery::Custody| -> Result<(), VaultError> {
         let anchor = store.delivery_anchor(link, session)?;
         let body = serde_json::to_vec(&serde_json::json!({"receipt":c.receipt}))
@@ -137,7 +152,7 @@ where
             {
                 ReceiptOutcome::Gone
             }
-            _ => return Err(VaultError::Portal(LinkError::Network)),
+            _ => return Err(refused(&response)),
         };
         store.settle_receipt(link, c, outcome, session)
     };
@@ -200,7 +215,7 @@ where
                 )
                 .map_err(VaultError::Portal)?;
                 if response.status != 200 {
-                    return Err(VaultError::Portal(LinkError::Network));
+                    return Err(refused(&response));
                 }
                 let page: Page = serde_json::from_slice(&response.body)
                     .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
@@ -243,7 +258,7 @@ where
                         {
                             continue;
                         }
-                        return Err(VaultError::Portal(LinkError::Network));
+                        return Err(refused(&response));
                     }
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((_, added)) => {
