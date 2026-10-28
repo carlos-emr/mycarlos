@@ -134,15 +134,22 @@ function expectWholeStatus(shown: HTMLElement) {
     box = box.parentElement
   ) {
     const style = getComputedStyle(box);
-    if (style.overflowX === "visible" && style.overflowY === "visible")
-      continue;
-    const edges = box.getBoundingClientRect();
-    expect(status.left, box.className).toBeGreaterThanOrEqual(edges.left - 0.5);
-    expect(status.right, box.className).toBeLessThanOrEqual(edges.right + 0.5);
-    expect(status.top, box.className).toBeGreaterThanOrEqual(edges.top - 0.5);
-    expect(status.bottom, box.className).toBeLessThanOrEqual(
-      edges.bottom + 0.5,
-    );
+    if (style.overflowX !== "visible" || style.overflowY !== "visible") {
+      const edges = box.getBoundingClientRect();
+      expect(status.left, box.className).toBeGreaterThanOrEqual(
+        edges.left - 0.5,
+      );
+      expect(status.right, box.className).toBeLessThanOrEqual(
+        edges.right + 0.5,
+      );
+      expect(status.top, box.className).toBeGreaterThanOrEqual(edges.top - 0.5);
+      expect(status.bottom, box.className).toBeLessThanOrEqual(
+        edges.bottom + 0.5,
+      );
+    }
+    // A fixed box, such as a dialog's backdrop, is not clipped by the boxes
+    // around it.
+    if (style.position === "fixed") break;
   }
   expect(status.right).toBeLessThanOrEqual(window.innerWidth);
 }
