@@ -8799,6 +8799,40 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(bridge.checkDocuments).not.toHaveBeenCalled();
   });
 
+  it("is not held back by a wait on the portal of a request that ended (D132c)", async () => {
+    // Another clinic's request ended; restarting it was asked to wait. The
+    // check asks only the clinic that approved this device, on its own
+    // portal.
+    const ended: PortalLinkSummary = {
+      ...waiting,
+      id: "fake-ended-link",
+      portalBase: "https://second-portal.example.test/patient",
+      approvalStatus: "expired",
+      approvalCanRestart: true,
+    };
+    const { bridge } = clinicBridge(vaultWith(approved, ended), {
+      restartDeviceApproval: vi.fn().mockRejectedValue({
+        code: "portal_rate_limited",
+        message: "FAKE native text.",
+        retryAfterMs: 120_000,
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Start a new approval request" }),
+    );
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByText(
+        /did not check for new clinic documents after unlocking/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("says confirmations still owed, and how to finish them, once", async () => {
     const { bridge } = clinicBridge(vaultWith(approved), {
       checkDocuments: vi.fn().mockResolvedValue(

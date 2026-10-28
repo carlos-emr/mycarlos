@@ -1033,12 +1033,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       );
       return;
     }
-    // The check asks every linked portal: one that asked to wait is not asked
-    // before then. Said, as the check did not run; checking again now could
-    // not help.
+    // The check asks each clinic that approved this device or has a request
+    // open, and no other (Ben, D132c): one of those whose portal asked to
+    // wait is not asked before then. Said, as the check did not run; checking
+    // again now could not help.
     if (
       links.some(
-        (link) => !link.incomplete && portalWaits.waiting(link.portalBase),
+        (link) =>
+          (approved.has(link.id) || isAwaitingApproval(link)) &&
+          portalWaits.waiting(link.portalBase),
       )
     ) {
       showPortalNotice(startedIn, unlockCheckWaitingText());

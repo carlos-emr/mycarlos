@@ -68,24 +68,84 @@ fn add_issue(
         code: code.into(),
     });
 }
+/// Whether a check for new documents contacts this link's clinic (Ben,
+/// D132c): only for a device the clinic approved, or with a request still
+/// open as last saved (pending, or ready for the clinic). A refused, ended
+/// or never-sent request is no reason to ask. The check after unlocking and
+/// Check for new documents both go by it.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn worth_asking(link: &crate::portal_link::StoredLink) -> bool {
+    use crate::portal_approval::ApprovalState;
+    crate::portal_approval::currently_approved(link)
+        || link.approval.as_ref().is_some_and(|attempt| {
+            attempt.acceptance.is_none()
+                && matches!(
+                    attempt.state(),
+                    ApprovalState::Pending | ApprovalState::ChallengeReady
+                )
+        })
+}
 #[cfg(feature = "portal-linking")]
 pub(crate) fn check(
     store: &crate::vault::VaultStore,
     session: u64,
 ) -> Result<CheckResult, crate::vault::VaultError> {
-    check_using(
+    check_asking_using(
         store,
         session,
         &crate::portal_approval::ApprovalHttp::default(),
         crate::portal_client::api,
     )
 }
+/// The check as the app runs it: only the clinics worth asking.
 #[cfg(feature = "portal-linking")]
+pub(crate) fn check_asking_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
+    check_links_using(store, session, approval, exchange, &worth_asking)
+}
+/// Every linked clinic, whatever its approval: for tests of the pipeline.
+#[cfg(all(test, feature = "portal-linking"))]
 pub(crate) fn check_using<F>(
     store: &crate::vault::VaultStore,
     session: u64,
     approval: &impl crate::portal_approval::ApprovalExchange,
     exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
+    check_links_using(store, session, approval, exchange, &|_| true)
+}
+#[cfg(feature = "portal-linking")]
+fn check_links_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+    include: &dyn Fn(&crate::portal_link::StoredLink) -> bool,
 ) -> Result<CheckResult, crate::vault::VaultError>
 where
     F: Fn(
@@ -178,7 +238,11 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
-    for original in store.delivery_links(session)? {
+    for original in store
+        .delivery_links(session)?
+        .into_iter()
+        .filter(|link| include(link))
+    {
         let outcome = (|| -> Result<(), VaultError> {
             // Known durable custody is independent of advisory approval refresh.
             // Retry it first, including for a link whose new request was refused.

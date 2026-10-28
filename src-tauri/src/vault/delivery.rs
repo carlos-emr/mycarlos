@@ -2861,6 +2861,83 @@ mod approval_recovery_tests {
         assert_eq!(filed(&store), 1);
         assert!(store.pending_receipts(&link, session).unwrap().is_empty());
     }
+    /// Ben's D132c: the check after unlocking, and Check for new documents,
+    /// ask only clinics that approved this device or have a request still
+    /// open. A refused, ended or never-sent request is no reason to ask.
+    #[test]
+    fn should_ask_only_clinics_that_approved_this_device_or_have_an_open_request() {
+        for (state, asked) in [
+            (None, false),
+            (Some(State::Refused), false),
+            (Some(State::Expired), false),
+            (Some(State::Cancelled), false),
+            (Some(State::Pending), true),
+        ] {
+            // A device the clinic approved, checked first.
+            let (x, mut approved, mut accepted) = portal_approval::first_fixture();
+            let first = &x["flows"]["first"];
+            accepted.challenge = Some(first["challenge"]["compact"].as_str().unwrap().into());
+            accepted.acceptance = Some(first["acceptance"]["compact"].as_str().unwrap().into());
+            accepted.status = Some(State::Accepted);
+            approved.approval = Some(accepted);
+            // A second clinic's device, with a request in `state`.
+            let (mut other, _, _, _) = signed_delivery();
+            if let Some(state) = state {
+                let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+                attempt.status = Some(state);
+                other.approval = Some(attempt);
+            }
+            let temp = tempfile::tempdir().unwrap();
+            let store = VaultStore::new(temp.path().join("vault"));
+            store.create(PASSWORD, "FAKE Asking Patient", 1).unwrap();
+            store
+                .mutate_recorded(|m, _| {
+                    m.portal_links.push(approved.clone());
+                    m.portal_links.push(other.clone());
+                    Ok(())
+                })
+                .unwrap();
+            assert!(crate::portal_pickup::worth_asking(&approved));
+            assert_eq!(
+                crate::portal_pickup::worth_asking(&other),
+                asked,
+                "{state:?}"
+            );
+            let approvals = Script::new(if asked { vec![Reply::Pending] } else { vec![] }, vec![]);
+            let listed = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |link, method, path, _, _, _, _| {
+                    assert_eq!(method, "GET");
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    listed.lock().unwrap().push(link.id);
+                    Ok(empty_page())
+                },
+            )
+            .unwrap();
+            let expected = if asked {
+                vec![approved.id, other.id]
+            } else {
+                vec![approved.id]
+            };
+            assert_eq!(listed.into_inner().unwrap(), expected, "{state:?}");
+            // Its status is read only when its request is open.
+            assert_eq!(
+                approvals.calls.lock().unwrap().len(),
+                usize::from(asked),
+                "{state:?}"
+            );
+            assert!(result.issues.is_empty(), "{state:?}");
+        }
+        // A request the clinic has picked up is still open.
+        let (mut other, _, _, _) = signed_delivery();
+        let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+        attempt.status = Some(State::ChallengeReady);
+        other.approval = Some(attempt);
+        assert!(crate::portal_pickup::worth_asking(&other));
+    }
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
