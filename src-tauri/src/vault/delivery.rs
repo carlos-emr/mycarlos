@@ -2788,7 +2788,14 @@ mod approval_recovery_tests {
     /// Each unlock checks for new documents once (#128). A delivery its
     /// portal lists again at a later unlock, because the pickup confirmation
     /// did not reach the portal, is the one already filed: no second record,
-    /// history entry or receipt.
+    /// history entry or receipt. The next unlock's check then sends that same
+    /// saved receipt, through `check_using`, and files nothing.
+    ///
+    /// The re-listing itself is committed directly: through `check_using`,
+    /// `receive_delivery` verifies the PDF again with the confined helper
+    /// and this device's clock before it reaches the record already filed,
+    /// and the checked-in synthetic delivery needs its own reference clock
+    /// (see the ignored helper tests).
     #[test]
     fn should_file_a_delivery_listed_again_after_lock_and_unlock_only_once() {
         let (_temp, store, _, _) = setup(false);
@@ -2821,6 +2828,38 @@ mod approval_recovery_tests {
             assert_eq!(pending.len(), 1);
             assert_eq!(pending[0].receipt, receipt);
         }
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let session = store.portal_link_ticket();
+        let sent = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            session,
+            &Script::new(vec![], vec![]),
+            |to, method, path, body, _, _, _| {
+                if path.ends_with("/receipt") {
+                    assert_eq!((to.id, method), (link.id, "POST"));
+                    sent.lock()
+                        .unwrap()
+                        .push(serde_json::from_slice::<serde_json::Value>(&body).unwrap());
+                    Ok(picked_up())
+                } else {
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 0, 0)
+        );
+        assert!(result.issues.is_empty());
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["receipt"], receipt);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(filed(&store), 1);
+        assert!(store.pending_receipts(&link, session).unwrap().is_empty());
     }
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
