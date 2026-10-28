@@ -555,7 +555,9 @@ count and head). When it is false, Security shows a notice dated from the native
 this history is damaged. Events between <date> and <date> can't be checked and aren't shown." (or
 "after <date>", "before <date>", or that none are shown), with a marker in the list where the gap
 is (Ben's D129 and D146, mycarlos#120). The notice follows those fields only; the renderer never
-works it out. A damaged segment is never opened or shown.
+works it out. Its dates are the entries' recorded times, so after the device clock was set back
+the first can read later than the second; the order shown is always the chain's. A damaged
+segment is never opened or shown.
 Those rows include recorded names, folder labels, times, methods, session notes and saved
 locations (including file paths or provider addresses). Native record/profile/folder identifiers,
 chain hashes, wrapped keys and object paths are not returned. Some entries lack person context;
