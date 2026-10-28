@@ -3446,23 +3446,29 @@ fn notify_received(app: &tauri::AppHandle) {
 /// What a second launch on Windows says when it cannot hand what was opened to
 /// the myCarlos already running (#133): fixed text, never a path or file name,
 /// in the Windows display language when myCarlos has it, else English.
+/// `language` is a Windows LANGID: the primary language in the low 10 bits and
+/// the sublanguage above it, which tells Traditional from Simplified Chinese.
 #[cfg(any(windows, test))]
-fn handoff_failed_text(primary_language: u16) -> (&'static str, &'static str) {
-    let text = match primary_language {
+fn handoff_failed_text(language: u16) -> (&'static str, &'static str) {
+    let text = match (language & 0x3ff, language >> 10) {
         // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
-        0x0c => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
-        0x0a => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
-        0x15 => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
-        0x16 => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        (0x0c, _) => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
+        (0x0a, _) => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
+        (0x15, _) => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
+        (0x16, _) => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        // LANG_CHINESE: Traditional for Taiwan, Hong Kong, Macau and zh-Hant;
+        // Simplified for the rest (China, Singapore, zh-Hans).
+        (0x04, 0x01 | 0x03 | 0x05 | 0x1f) => "myCarlos 已開啟，但無法與其連線。未新增任何內容。請關閉 myCarlos，然後重試。",
+        (0x04, _) => "myCarlos 已打开，但无法与其连接。未添加任何内容。请关闭 myCarlos，然后重试。",
         _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
     };
     ("myCarlos", text)
 }
 
-/// The primary language of the Windows display language.
+/// The Windows display language, as a LANGID.
 #[cfg(windows)]
 fn windows_display_language() -> u16 {
-    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() & 0x3ff }
+    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() }
 }
 
 // Keep one generated context for every runtime. On macOS the macro also
@@ -3668,13 +3674,22 @@ mod tests {
             (0x0a, "myCarlos ya está abierto"),
             (0x15, "myCarlos jest już uruchomiony"),
             (0x16, "O myCarlos já está aberto"),
+            // Full LANGIDs: the sublanguage picks the Chinese script.
+            (0x040c, "myCarlos est déjà ouvert"),
+            (0x0804, "myCarlos 已打开"),
+            (0x1004, "myCarlos 已打开"),
+            (0x0004, "myCarlos 已打开"),
+            (0x0404, "myCarlos 已開啟"),
+            (0x0c04, "myCarlos 已開啟"),
+            (0x1404, "myCarlos 已開啟"),
+            (0x7c04, "myCarlos 已開啟"),
         ] {
             let (title, text) = handoff_failed_text(language);
             assert_eq!(title, "myCarlos");
             assert!(text.starts_with(start), "{language:#x}");
         }
         // Fixed text only: never a path or a file name.
-        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16] {
+        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16, 0x0804, 0x0404] {
             let text = handoff_failed_text(language).1;
             assert!(!text.contains('\\') && !text.contains('/') && !text.contains(':'));
         }
