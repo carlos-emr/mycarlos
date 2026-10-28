@@ -3,6 +3,7 @@ import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOCALES, setLocaleOverride, translate, type Locale } from "../i18n";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
+import { DocumentReader } from "./DocumentReader";
 import { MANUAL_IMPORT_LABEL } from "./RecordSource";
 import { VaultLibrary } from "./VaultLibrary";
 
@@ -71,8 +72,24 @@ function renderLibrary() {
 
 afterEach(async () => {
   document.documentElement.style.fontSize = "";
+  document.getElementById("wide-font")?.remove();
   await page.viewport(1100, 760);
 });
+
+/** A wide font that every machine has one of (DejaVu Sans on Linux, CI
+ * included; Verdana on Windows and macOS), as targetSize.test.tsx uses: a
+ * status that only fits in a narrower font such as Roboto fails everywhere. */
+function useWideFont() {
+  const style = document.createElement("style");
+  style.id = "wide-font";
+  style.textContent =
+    ':root { font-family: "DejaVu Sans", Verdana, sans-serif !important; }';
+  document.head.append(style);
+}
+const FONTS = ["the default font", "a wide font"] as const;
+const setFont = (font: (typeof FONTS)[number]) => {
+  if (font === "a wide font") useWideFont();
+};
 
 /** What each document shows: its status, then its source. */
 const expected = (locale: Locale) => {
@@ -120,6 +137,25 @@ function expectStatusFirst(shown: HTMLElement, from: HTMLElement) {
   else expect(status.bottom).toBeLessThanOrEqual(source.top + 0.5);
 }
 
+/** The status's words that are drawn over more than one line: the status may
+ * wrap between its words ("Nie" / "zweryfikowano"), never inside one. */
+function splitWords(shown: HTMLElement) {
+  const text = shown.firstChild as Text;
+  const split: string[] = [];
+  let at = 0;
+  for (const word of text.data.split(" ")) {
+    const range = document.createRange();
+    range.setStart(text, at);
+    range.setEnd(text, at + word.length);
+    const lines = new Set(
+      Array.from(range.getClientRects(), (box) => Math.round(box.top)),
+    );
+    if (lines.size > 1) split.push(word);
+    at += word.length + 1;
+  }
+  return split;
+}
+
 /** All of the status is on screen: not cut short, and not hidden by anything
  * that clips the column, the list or the dialog. Nothing is scrolled first: a
  * box that hides what overflows it can still be scrolled by a script, which
@@ -127,6 +163,7 @@ function expectStatusFirst(shown: HTMLElement, from: HTMLElement) {
 function expectWholeStatus(shown: HTMLElement) {
   expect(shown.checkVisibility()).toBe(true);
   expect(shown.scrollWidth).toBeLessThanOrEqual(shown.clientWidth);
+  expect(splitWords(shown), "a status word split over two lines").toEqual([]);
   const status = shown.getBoundingClientRect();
   for (
     let box = shown.parentElement;
@@ -168,96 +205,163 @@ describe("a document's status before its source (#135)", () => {
     ).not.toBeInTheDocument();
   });
 
-  // Desktop widths at which the Source column is shown: the widest, the
-  // narrowest (the column at its least), and larger text in a wide window.
+  // Desktop widths at which the Source column is shown: the widest; 945px, the
+  // narrowest (the five columns fit from 59em, 944px, up, with the Source
+  // column at its least); and larger text in a wide window.
   for (const [width, text] of [
     [1100, "16px"],
     [960, "16px"],
+    [945, "16px"],
     [1400, "24px"],
   ] as const)
-    it(`keeps the whole status in view beside a long source at ${width}px and ${text} text, in every language`, async () => {
-      await page.viewport(width, 1400);
-      document.documentElement.style.fontSize = text;
-      for (const locale of LOCALES) {
-        setLocaleOverride(locale);
-        const view = renderLibrary();
-        for (const [shownRecord, status, source] of expected(locale)) {
-          const { shown, from } = parts(
-            row(locale, shownRecord),
-            status,
-            source,
-          );
-          expectWholeStatus(shown);
-          expectStatusFirst(shown, from);
-          // A long source is what gives way: cut short after the status.
-          if (shownRecord === VERIFIED)
-            expect(from.scrollWidth).toBeGreaterThan(from.clientWidth);
+    for (const font of FONTS)
+      it(`keeps the whole status in view beside a long source at ${width}px and ${text} text in ${font}, in every language`, async () => {
+        await page.viewport(width, 1400);
+        document.documentElement.style.fontSize = text;
+        setFont(font);
+        for (const locale of LOCALES) {
+          setLocaleOverride(locale);
+          const view = renderLibrary();
+          for (const [shownRecord, status, source] of expected(locale)) {
+            const { shown, from } = parts(
+              row(locale, shownRecord),
+              status,
+              source,
+            );
+            // Beside the name, in the Source column, not on a line under it.
+            expect(
+              getComputedStyle(shown.closest(".record-source")!).gridRowStart,
+            ).toBe("auto");
+            expectWholeStatus(shown);
+            expectStatusFirst(shown, from);
+            // A long source is what gives way: cut short after the status.
+            if (shownRecord === VERIFIED)
+              expect(from.scrollWidth).toBeGreaterThan(from.clientWidth);
+          }
+          view.unmount();
         }
-        view.unmount();
-      }
-    });
+      });
 
   // Phones, narrow windows and larger text, where the list has no Source
   // column: the status goes under the document's name, and a grid tile shows
-  // it under its caption. 32px is the reader's 200% text.
-  for (const [width, text] of [
-    [800, "16px"],
-    [360, "16px"],
-    [360, "32px"],
-    [320, "16px"],
+  // it under its caption. 905px and 944px are desktop windows, with the
+  // sidebar, too narrow for the five columns. 32px is the reader's 200% text;
+  // it is set on the page here, so the em breakpoints still read 16px, and only
+  // the 320px case takes the narrowest layout that a real 200% text gives at
+  // 360px too. The wide font is checked where that layout matches.
+  for (const [width, text, fonts] of [
+    [944, "16px", FONTS],
+    [905, "16px", FONTS],
+    [800, "16px", FONTS],
+    [360, "16px", FONTS],
+    [360, "32px", FONTS.slice(0, 1)],
+    [320, "32px", FONTS],
+    [320, "16px", FONTS],
   ] as const)
-    it(`keeps the whole status in view in the list and the grid at ${width}px and ${text} text, in every language`, async () => {
-      await page.viewport(width, 3200);
-      document.documentElement.style.fontSize = text;
-      for (const locale of LOCALES) {
-        setLocaleOverride(locale);
-        const view = renderLibrary();
-        for (const layout of ["list", "grid"]) {
-          if (layout === "grid")
-            fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
-          for (const [shownRecord, status, source] of expected(locale)) {
-            const item = row(locale, shownRecord);
-            const { shown, from } = parts(item, status, source);
-            expectWholeStatus(shown);
-            expectStatusFirst(shown, from);
-            // Under the name, not beside it or over it.
-            const name = within(item)
-              .getAllByText(shownRecord.displayName, { exact: true })
-              .at(-1)!;
-            expect(shown.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-              name.getBoundingClientRect().bottom - 0.5,
+    for (const font of fonts)
+      it(`keeps the whole status in view in the list and the grid at ${width}px and ${text} text in ${font}, in every language`, async () => {
+        await page.viewport(width, 3200);
+        document.documentElement.style.fontSize = text;
+        setFont(font);
+        for (const locale of LOCALES) {
+          setLocaleOverride(locale);
+          const view = renderLibrary();
+          for (const layout of ["list", "grid"]) {
+            if (layout === "grid")
+              fireEvent.click(
+                screen.getByRole("button", { name: "Grid view" }),
+              );
+            for (const [shownRecord, status, source] of expected(locale)) {
+              const item = row(locale, shownRecord);
+              const { shown, from } = parts(item, status, source);
+              expectWholeStatus(shown);
+              expectStatusFirst(shown, from);
+              // Under the name, not beside it or over it.
+              const name = within(item)
+                .getAllByText(shownRecord.displayName, { exact: true })
+                .at(-1)!;
+              expect(shown.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+                name.getBoundingClientRect().bottom - 0.5,
+              );
+            }
+          }
+          view.unmount();
+        }
+      });
+
+  for (const [width, text, fonts] of [
+    [1100, "16px", FONTS],
+    [360, "16px", FONTS],
+    [360, "32px", FONTS],
+    [320, "32px", FONTS],
+  ] as const)
+    for (const font of fonts)
+      it(`shows the whole status, then all of the source, in Details and the reader at ${width}px and ${text} text in ${font}, in every language`, async () => {
+        await page.viewport(width, 2400);
+        document.documentElement.style.fontSize = text;
+        setFont(font);
+        for (const locale of LOCALES) {
+          setLocaleOverride(locale);
+          for (const [shownRecord, status, source] of expected(locale).slice(
+            0,
+            2,
+          )) {
+            const library = renderLibrary();
+            fireEvent.click(
+              screen.getByRole("button", {
+                name: translate(locale, "library.document.details", {
+                  name: shownRecord.displayName,
+                }),
+              }),
             );
+            const sourceRow = within(screen.getByRole("dialog")).getByText(
+              "Source",
+              { exact: true },
+            ).parentElement!;
+            expectWholeSource(sourceRow, status, source);
+            library.unmount();
+
+            const reader = renderReader(shownRecord);
+            expectWholeSource(
+              document.getElementById("reader-trust")!,
+              status,
+              source,
+            );
+            await screen.findByRole("img", { name: /^Page 1 of 1/ });
+            reader.unmount();
           }
         }
-        view.unmount();
-      }
-    });
-
-  it("shows the whole source after the status in Details", async () => {
-    for (const width of [1100, 360]) {
-      await page.viewport(width, 1600);
-      const view = renderLibrary();
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: "Details for FAKE clinic letter.pdf",
-        }),
-      );
-      const details = screen.getByRole("dialog");
-      const sourceRow = within(details).getByText("Source", {
-        exact: true,
-      }).parentElement!;
-      const { shown, from } = parts(
-        sourceRow,
-        "Verified",
-        `From ${LONG_CLINIC}`,
-      );
-      expectWholeStatus(shown);
-      expectStatusFirst(shown, from);
-      // Nothing of the source is cut off: it wraps.
-      expect(from.checkVisibility()).toBe(true);
-      expect(from.scrollWidth).toBeLessThanOrEqual(from.clientWidth);
-      expectWholeStatus(from);
-      view.unmount();
-    }
-  });
+      });
 });
+
+/** In Details and the reader: the whole status first, then all of the source,
+ * wrapped, nothing of it cut off. */
+function expectWholeSource(where: HTMLElement, status: string, source: string) {
+  const { shown, from } = parts(where, status, source);
+  expectWholeStatus(shown);
+  expectStatusFirst(shown, from);
+  expect(from.checkVisibility()).toBe(true);
+  expect(from.scrollWidth).toBeLessThanOrEqual(from.clientWidth);
+}
+
+/** A one-page document in the reader; the page is a FAKE blank picture. */
+function renderReader(shownRecord: VaultRecord) {
+  const blank =
+    "data:image/svg+xml;charset=utf-8," +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1035"/>',
+    );
+  return render(
+    <DocumentReader
+      record={shownRecord}
+      viewPage={async () => ({
+        pageCount: 1,
+        width: 800,
+        height: 1035,
+        image: blank,
+        text: "FAKE page text",
+      })}
+      onClose={vi.fn()}
+    />,
+  );
+}

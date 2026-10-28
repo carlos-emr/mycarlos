@@ -172,7 +172,7 @@ export function RecordDetails({
             <dt>Kind</dt>
             <dd>{kind.label}</dd>
           </div>
-          <div>
+          <div className="native-source-row">
             <dt>Source</dt>
             <dd>
               <RecordSource record={record} />
