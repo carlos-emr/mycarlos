@@ -328,8 +328,9 @@ crash checks do not establish Windows or live portal end-to-end behavior.
 When a device links, myCarlos takes the clinic's signing keys from the portal
 at the address the patient enters, over HTTPS, and trusts them for that link
 from then on. Nothing outside that portal confirms them. A patient who links to
-a look-alike portal can therefore receive documents that show as Verified, as
-coming from the clinic that portal names. This does not expose the vault's
+a look-alike portal, or whose linking is intercepted or answered by a
+compromised portal, can therefore receive documents that show as Verified, as
+coming from the clinic the portal names. This does not expose the vault's
 contents, and nothing from the vault goes to that portal beyond what any linked
 portal receives (NET-03). Ben accepted this risk on 28 October 2026 so that
 myCarlos works with other EMRs' portals (NET-02, DEL-06). Possible later steps:

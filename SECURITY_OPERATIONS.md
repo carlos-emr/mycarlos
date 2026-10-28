@@ -147,8 +147,8 @@ requests. The portal sends a `Date` header, so myCarlos can tell the patient whe
 off.
 
 If a portal or a clinic key may be compromised, follow the incident steps above. The clinic
-revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a revoked
-key, and patients can remove a device under Account → Linked devices in the portal.
+revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
+was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
 
 ## Evaluating authenticated linking (#55)
 

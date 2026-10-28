@@ -71,7 +71,7 @@ export const fr: Record<MessageKey, Message> = {
   "portal.errorRefused":
     "Un document de la clinique n’a pas pu être vérifié. Il n’a pas été ajouté et aucun accusé de réception n’a été envoyé.",
   "portal.errorDamaged":
-    "Un document enregistré de cette clinique est endommagé ou manquant. Son accusé de réception n’a donc pas été envoyé. Vos autres documents ont tout de même été vérifiés.",
+    "Un document enregistré de cette clinique est endommagé ou manquant. Son accusé de réception n’a donc pas été envoyé. La recherche de vos autres documents s’est poursuivie. Restaurez-le à partir d’une sauvegarde ou demandez à la clinique de vous le renvoyer.",
 
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":

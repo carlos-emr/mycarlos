@@ -71,7 +71,7 @@ export const ptBR: Record<MessageKey, Message> = {
   "portal.errorRefused":
     "Não foi possível verificar um documento da clínica. Ele não foi adicionado e nenhum recibo de retirada foi enviado.",
   "portal.errorDamaged":
-    "Um documento salvo desta clínica está danificado ou ausente, por isso o recibo de retirada não foi enviado. Seus outros documentos foram verificados normalmente.",
+    "Um documento salvo desta clínica está danificado ou ausente, por isso o recibo de retirada não foi enviado. A busca pelos seus outros documentos continuou. Restaure-o a partir de um backup ou peça à clínica que o envie novamente.",
 
   "frame.banner.title": "Versão de desenvolvimento com dados fictícios",
   "frame.banner.body": "Não use informações reais de pacientes",
