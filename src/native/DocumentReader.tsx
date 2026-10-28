@@ -5,6 +5,7 @@ import {
   t as translateNow,
 } from "../i18n";
 import { recordSource } from "./recordPresentation";
+import { ClinicServiceDate } from "./ClinicServiceDate";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
@@ -205,7 +206,18 @@ export function DocumentReader({
         <header className="dialog-head native-reader-head">
           <div>
             <h2 id="reader-title">{record.displayName}</h2>
-            <p id="reader-trust">{recordSource(record)}</p>
+            <p id="reader-trust">
+              {record.verifiedClinicName
+                ? translateNow("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : recordSource(record)}
+            </p>
+            {record.clinicServiceDate !== undefined && (
+              <p>
+                <ClinicServiceDate value={record.clinicServiceDate} />
+              </p>
+            )}
           </div>
           <button
             ref={closeRef}

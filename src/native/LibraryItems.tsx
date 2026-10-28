@@ -1,12 +1,15 @@
-import { t as translateNow, useI18n, formatDate } from "../i18n";
+import { t as translateNow, useI18n } from "../i18n";
+import type { ReactNode } from "react";
 import { Icon } from "../Icon";
 
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind, recordSource } from "./recordPresentation";
+import { ClinicServiceDate } from "./ClinicServiceDate";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibraryItemsProps {
   view: "list" | "grid";
+  suggestionFor?: (record: VaultRecord) => ReactNode;
   folders: VaultFolder[];
   records: VaultRecord[];
   selectedIds: string[];
@@ -49,6 +52,7 @@ function EmptyState({ searching }: { searching: boolean }) {
 
 export function LibraryItems({
   view,
+  suggestionFor,
   folders,
   records,
   selectedIds,
@@ -137,7 +141,9 @@ export function LibraryItems({
           <span className="column" aria-hidden="true">
             —
           </span>
-          <span className="column">{formatDate(folder.createdAtMs)}</span>
+          <span className="column">
+            {new Date(folder.createdAtMs).toLocaleDateString()}
+          </span>
           <button
             className="native-rename-button"
             type="button"
@@ -192,6 +198,7 @@ export function LibraryItems({
                   {formatBytes(record.plaintextSize)} · {kind.label}
                   {!record.available && ` · ${unavailableLabel}`}
                 </small>
+                <ClinicServiceDate value={record.clinicServiceDate} />
                 {recordLocation && (
                   <small
                     className="native-result-path"
@@ -203,9 +210,18 @@ export function LibraryItems({
                   </small>
                 )}
               </span>
+              {suggestionFor?.(record)}
             </div>
-            <span className="column">{recordSource(record)}</span>
-            <span className="column">{formatDate(record.importedAtMs)}</span>
+            <span className="column">
+              {record.verifiedClinicName
+                ? translateNow("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : recordSource(record)}
+            </span>
+            <span className="column">
+              {new Date(record.importedAtMs).toLocaleDateString()}
+            </span>
             <button
               className="more-button native-details-button"
               type="button"
@@ -321,9 +337,12 @@ export function LibraryItems({
                 <span>
                   <strong>{record.displayName}</strong>
                   <small>
-                    {formatDate(record.importedAtMs)}
+                    {record.clinicServiceDate !== undefined &&
+                      `${translateNow("library.column.added")}: `}
+                    {new Date(record.importedAtMs).toLocaleDateString()}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
+                  <ClinicServiceDate value={record.clinicServiceDate} />
                   {recordLocation && (
                     <small className="native-result-path">
                       {translateNow("interface.inLocation", {

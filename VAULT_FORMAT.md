@@ -487,9 +487,18 @@ how, place, placeSha256, previousSession, prev`
 
 `event` is one of `created`, `historyStarted`, `unlocked`, `imported`, `renamed`, `moved`,
 `hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
-`passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
+`passphraseChanged`, `profileCreated`, `profileDetailsChanged`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
 `{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
-`folderId`) and its `name` afterwards. Shared intake also gives the reserved source
+`folderId`) and its `name` afterwards, except `profileDetailsChanged`, which records only
+`profileId` and never the identity values. Renaming a person's top-level folder label is
+`folderRenamed` with `how: "personFolder"`, the unchanged person's `profileId`, and
+`oldName`/`name`. It has no `folderId` or `recordId`: no ordinary folder or document
+was changed. Only the profile's displayed label changes; its identity details, IDs,
+document bytes, signatures and previous history stay untouched. This uses existing
+event and optional fields without changing manifest format or canonical entry order;
+older readers can parse, verify and append it. A reader that does not label this
+method specially can show “Folder renamed” with its old/new names and the method
+marker. Shared intake also gives the reserved source
 `profileId`; its move to a person records `moved` with `how: "shared"` and the destination
 `profileId`, even when both locations have no folders. The move and its history entry commit
 together. For folder events, `folderCreated` gives in `to` the folder it was made in,
@@ -569,6 +578,63 @@ The view never edits entries or saves a separate history file: Ben chose (#71, 1
 history recorded automatically and tamper-evident on the device, with no auditor export. A backup
 carries it only as part of the encrypted vault. The view does not overcome rollback of a complete
 vault or an inaccurate device clock; those limits and the outside-anchor follow-up remain.
+
+### Manifest format 4: optional profile identity details
+
+Format 4 adds optional `fullName` and `birthDate` to each patient profile in the encrypted
+manifest. `fullName` is a trimmed nonempty name, bounded by the existing 120-character name
+limit. `birthDate` is an exact Gregorian `YYYY-MM-DD` date (year 0001–9999). Blank details
+are omitted, not serialized as null. Shared with me is a reserved location and cannot carry
+identity details. Formats 1–3 must not carry either field, including null; such manifests are
+refused. No identity details are written to plaintext headers or filenames.
+
+Creation and editing validate dates natively. A new birth date cannot be later than the
+current local calendar day supplied by the renderer; that day must itself be within one day
+of the native UTC date, covering time zones without trusting an arbitrary future date.
+Structural validation of stored dates does not depend on the clock, so a clock correction
+does not damage an existing vault. Editing details records `profileDetailsChanged` with only
+`profileId`, never the old/new full name or birth date. Details and that history entry use the
+existing atomic recorded mutation. Read-only recovery sessions cannot change them.
+
+A writable unlock upgrades formats 1–3 using the existing two-slot upgrade transaction,
+before new fields or events can be written. Profiles, records, folder assignments, document
+objects and existing history are retained. If recovery makes the vault read-only, it stays in
+its older format until a writable unlock is possible. Backups and restores preserve identity
+details. A backup made by a format-4-capable app requires a format-4-capable app to restore;
+an older app refuses the newer manifest. Keep a pre-upgrade backup if returning to an older
+build is needed; there is no lossy downgrade or silent removal of identity details.
+
+**What an older build shows.** A build that knows only formats 1–3 (every build before format 4)
+cannot tell a newer format from damage. Once both slots are format 4 it reports the vault as
+damaged or incomplete, and a backup saved from it as not a complete myCarlos backup; it changes
+nothing either way. From format 4 on, a manifest that decrypts under the vault's key but declares
+a format newer than the build's own is told apart from damage, and only its format number is
+read: unlock and recovery refuse with `vault_newer_format` ("This vault was saved by a newer
+version of myCarlos. Update myCarlos to open it. Nothing was changed."), and checking or restoring
+a backup refuses with `backup_newer_format` ("This backup was saved by a newer version of
+myCarlos. Update myCarlos to restore it. Nothing on this device was changed."). A newer slot
+beside one the build can open is handled as before: a crash between a newer build's two upgrade
+writes leaves nothing in the newer slot that the other lacks, so the vault opens from the other
+slot, and redundancy repair may write over the newer one. A manifest that does not decrypt, or
+declares a known format and fails its checks, is still damage.
+
+Shared PDF hints are not saved in the manifest or history. Only explicitly labelled patient
+names (Patient name / Patient full name) and optional exact ISO dates (DOB / Date of birth /
+Birth date) from the existing sandbox helper's bounded first-page text are considered.
+When a date is present, its label must be adjacent to the name label (ignoring blank lines);
+possibly truncated text and repeated identity labels yield no hint. The existing reader may
+flatten visually separate PDF text positioned with `Td` or `Tm`; visual positioning alone is
+not an identity boundary. The two tiny test PDFs are handwritten FAKE fixtures: `labelled.pdf`
+uses an explicit `T*` text-line break; `flat-text.pdf` uses `Td` positioning and deliberately
+finds no identity. They are not representative CARLOS output or clinic captures. Bundled dev
+PDFs using `Patient:` and positioned text do not demonstrate this suggestion feature.
+Conflicting or malformed labels, unsupported layouts, encrypted PDFs without an unlocked
+copy, missing text and unavailable helpers yield no hint. No OCR or free-text date guessing
+is performed. The hint never changes source verification and never moves a record by itself.
+The patient must press Move; the existing move and its history entry remain one operation.
+Dismissals and extracted hints last only for the unlocked session. Clinic pickup and automatic
+clinic-to-person links remain dependent on portal linking and authenticated delivery intake
+(portal #41 M2/M4); this change introduces no clinic queue, network client or trust claim.
 
 ## Backup and restore behavior
 
@@ -746,3 +812,152 @@ state, described in the recovery-key sections above.
   activation code awaits an actual v2.
 - The application has been extracted into this dedicated repository; protected release infrastructure
   and the remaining review gates are still required before release. See [HANDOFF.md](HANDOFF.md).
+
+
+### Future manifest format 5: portal link custody (#55)
+
+This future branch reserves format 5 above held profile format 4. It does not
+authorize upgrading the current demo. A writable unlock upgrades older supported
+manifests using the existing redundant/history transaction; read-only recovery
+never writes a migration. Older applications refuse the new version.
+
+`portalLinks` is absent for an empty list, at most 16 entries otherwise. Each
+entry keeps its UUID, canonical HTTPS portal base (including any deployment path),
+a generic patient-edited device name, optional existing-person UUID, creation
+time and two independent 32-byte private seeds (`x25519`, `ed25519`). These seeds
+are inside the authenticated encrypted manifest, never the public snapshot.
+Every clone of the private-seed structure zeroizes on drop.
+
+An entry with no `clinic` is an incomplete attempt. It is durably committed
+before the one-use code is sent; the code is never stored in the vault. An entry
+becomes linked only when a valid response binds its derived device key ID to
+a recipient, clinic ID/name and 1–16 canonical P-256 SPKI keys with hash-derived
+IDs and active/revoked status, including at least one active key. Duplicate
+link IDs, device IDs, key IDs or response members are refused.
+
+`portalLinkStarted` and `portalLinked` are history events. Both have a
+`portalLinkId`; success also records the clinic name and complete `clinicKeyIds`
+in that same encrypted commit. New optional history fields appear before `prev`
+and are omitted when absent, preserving the old canonical bytes.
+
+The public snapshot carries native availability and redacted summaries (portal
+base, generic device name, clinic name, key fingerprints, person and incomplete
+state). It carries no private seeds, SPKI blobs or recipient IDs. Backup already
+contains this encrypted manifest and hence retains link custody. Signed-original
+object metadata, durable verification results, rechecks and the restore notice
+are further format-5 work; their absence must not be reported as complete #55.
+
+#### Format-5 original-PDF custody source checkpoint
+
+Document objects and history segments are synced before publication through
+`atomicwrites::move_atomic`: `MoveFileExW(MOVEFILE_WRITE_THROUGH)` on Windows,
+and atomic publication followed by source/destination directory sync on Unix.
+The encrypted manifest is published afterwards through the existing atomic-write
+primitive. Restart tests cover a crash after either document object, history
+publication, and each manifest slot. These tests establish process-crash recovery;
+Windows power-loss behavior still needs the actual supported filesystem/device
+validation before delivery is enabled.
+
+`originalPdf`, when present on a record, describes a separate MCVO1 object: its
+own UUID, object name, wrapped independent random key, plaintext size and SHA-256.
+The source implementation retains this for every accepted PDF, including unsigned,
+unknown-signer and oversized input, so custody does not depend on a hostile PDF's
+signature classification. This costs approximately two encrypted PDF objects per
+record. Camera JPEGs do not normally carry a PDF header and retain one object.
+
+The copy streams from an authenticated read of the incoming encrypted object,
+before helper parsing, into the existing XChaCha20-Poly1305 framing. No readable
+temporary file is made; one output chunk is held until the final-chunk bit is
+known. Both references enter the same durable record/history commit, backup,
+restore and orphan-reference set. New original-object UUIDs cannot alias records
+or history segments. The original's plaintext hash is checked on export/backup/
+restore. Saving or sharing selects the original; viewing uses the intact display
+object. Conservative identity suggestions prefer raw original PDF bytes and
+continue using helper raw text, never readableText.
+
+A missing original does not remove the intact display. Its presence is exposed
+separately; backup/export refuse an unavailable or unauthentic original. This is
+a private source checkpoint: focused original custody and process-restart tests pass on Linux; durable
+verification state/rechecks and missing/corrupt-source downgrade history still
+need implementation, and no full #55 or platform claim follows from these edits.
+
+#### Format 6: clinic delivery custody and first-device approval
+
+Format 6 prevents older writers from discarding delivery or approval evidence.
+Writable unlock upgrades formats 1–5 before adding it. Header and object formats
+are unchanged. Default builds still disable all portal network commands, and
+can open and back up this encrypted evidence without enabling network access.
+
+A received record's optional `delivery` contains its saved link UUID, complete
+outer identity, authenticated delivery manifest and exact compact signature,
+checked PDF document ID/revision, check time, filing history head, exact signed
+receipt, and optional terminal receipt outcome (`picked_up` or `gone`). The
+receipt is outside the chain because it authenticates the per-link HMAC of the
+head after `deliveryFiled`. Both independent PDF objects and history segments
+are synced/published before the manifest that owns them and the receipt. No
+receipt is exposed to the HTTP path until this custody commit succeeds.
+An uncertain manifest publication preserves possibly referenced objects and
+makes the session read-only until restart reconciliation.
+
+Same-link delivery IDs are stable. Identical ciphertext retries do not add a
+record or regenerate the receipt; a different ciphertext under an existing ID
+is refused. Pending receipts are retried before a new mailbox listing, using
+exact saved compact bytes and a fresh outer request assertion. Only strict
+200 `picked_up` or 404 `delivery_not_found` responses settle retry; a generic
+404, refusal, timeout or lost reply does not. Settlement appends history and
+retains the original receipt. `gone` never represents a cryptographic pickup.
+
+A link's optional `approval` keeps one first-device request UUID, exact signed
+intent and expiry, and any verified challenge/acceptance. Intent and history
+are committed before POST. This milestone implements `staff_first` only, with
+null predecessor; it does not authorize a later-device or lost-all-devices
+fallback. Exact clinic signatures bind the saved portal base, recipient, both
+public keys, device ID, request, challenge and original compact hashes. Unsigned
+portal status alone never establishes approval. Stored historical evidence
+remains readable after revocation; current approval requires active pinned keys.
+Full device code/fingerprint in the snapshot are public identifiers only.
+
+Linux shared-vector, real-helper interoperability and subprocess-crash tests
+are partial evidence. Supported Windows filesystem behavior, real portal HTTP,
+actual linking/staff approval and full native UI flow remain enablement gates.
+
+#### Format 7: recoverable approval requests and terminal status
+
+Format 7 retains original request IDs across explicit restarts. Each link keeps
+its current `approval` and bounded `approvalHistory` (at most 16 requests in all).
+No request/proof is dropped to make room: a full history stops new requests and
+asks the patient to contact the clinic. Each attempt can also keep its typed
+advisory `status` and controlled `reason`; old format-6 attempts with neither
+field remain readable. Current approval still requires a verified acceptance,
+never an unsigned status. Header/object formats and M3 wire bytes are unchanged.
+
+Request sends and restart actions first reconcile all retained unaccepted IDs.
+An accepted response is verified and saved before any restart decision. Ordinary
+retry keeps the original intent/request ID even after local expiry. A separate,
+explicit restart may create a new intent only after reconciliation, retaining
+the complete old attempt. A later valid acceptance for a retained ID still
+establishes this same device's approval; current key trust remains mandatory.
+A failed/unknown reconciliation never starts a replacement automatically.
+
+Typed refused/expired/cancelled states and their controlled reasons are committed
+with history before a visible error is returned. Both POST replies and GET
+updates take this path. Unknown reasons, malformed replies and invalid proofs
+are refused. Check for new documents cannot silently turn a terminal refusal
+into a successful pending check. The UI distinguishes exact retry from explicit
+restart and preserves terminal guidance after reopening the vault. Upgrade
+coverage includes formats 1–6. Production-boundary tests exercise the real
+vault/proof parser with scripted synthetic HTTP replies; those tests do not
+claim live network or Windows end-to-end completion.
+
+Approval reconciliation commits each independently verified response before the
+next HTTP exchange. Once current acceptance is durable, unavailable archive
+endpoints do not block that link. An archived network/parser failure leaves the
+old request intact and is surfaced without discarding earlier committed proof
+or terminal state. Explicit restarts still refuse unresolved reconciliation.
+
+Mailbox checks retry each link's existing durable receipts before approval
+refresh. Per-clinic portal/approval failures are returned as typed, content-free
+issues while independent links continue. Global lock, cancellation, corruption,
+recovery or storage failures still stop the operation. Saved documents with an
+unconfirmed receipt remain pending and preserve the exact compact bytes for the
+next check; pending count and clinic guidance are shown together with progress.

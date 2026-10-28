@@ -1,9 +1,11 @@
+import { humanValue } from "./test/humanText";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-import { setLocaleOverride, formatDate } from "./i18n";
+import { setLocaleOverride } from "./i18n";
+import { setDeviceLocale } from "./test/deviceLocale";
 import {
   boxesWithControlCharacters,
   createVaultBridge,
@@ -195,8 +197,10 @@ describe("a backup refused over a damaged document", () => {
       records: [record("record-1", "p1"), record("record-2", "p2")],
     };
     const named = namedDamage(damaged, vault) as { message: string };
-    expect(named.message).toMatch(
-      /^No backup was saved: the document "FAKE_Scan\.pdf" \(added .+, in Avery's records\)/,
+    expect(humanValue(named.message)).toMatch(
+      humanValue(
+        /^No backup was saved: the document "FAKE_Scan\.pdf" \(added .+, in Avery's records\)/,
+      ),
     );
     const alone = namedDamage(damaged, {
       profiles: [vault.profiles[1]],
@@ -214,8 +218,10 @@ describe("a backup refused over a damaged document", () => {
       { ...damaged, note: "An empty file (0 bytes) may be left." },
       vault,
     );
-    expect(vaultErrorMessage(named)).toMatch(
-      /^No backup was saved: the document .* An empty file \(0 bytes\) may be left\.$/,
+    expect(humanValue(vaultErrorMessage(named))).toMatch(
+      humanValue(
+        /^No backup was saved: the document .* An empty file \(0 bytes\) may be left\.$/,
+      ),
     );
   });
 
@@ -230,13 +236,19 @@ describe("a backup refused over a damaged document", () => {
 describe("error messages", () => {
   it("adds the note about how a failure came about", () => {
     expect(
-      vaultErrorMessage({
-        code: "storage",
-        message: "No backup was saved.",
-        note: "An empty file (0 bytes) may be left.",
-      }),
-    ).toBe("No backup was saved. An empty file (0 bytes) may be left.");
-    expect(vaultErrorMessage({ code: "storage", message: "No." })).toBe("No.");
+      humanValue(
+        vaultErrorMessage({
+          code: "storage",
+          message: "No backup was saved.",
+          note: "An empty file (0 bytes) may be left.",
+        }),
+      ),
+    ).toBe(
+      humanValue("No backup was saved. An empty file (0 bytes) may be left."),
+    );
+    expect(
+      humanValue(vaultErrorMessage({ code: "storage", message: "No." })),
+    ).toBe(humanValue("No."));
   });
 
   it("names the boxes to check when what was typed is refused (#69)", () => {
@@ -244,27 +256,43 @@ describe("error messages", () => {
       code: "invalid",
       message: "Something you typed wasn't accepted. Check it and try again.",
     };
-    expect(vaultErrorMessage(refused, ["box.folderName"])).toBe(
-      "Check the folder name, then try again.",
+    expect(humanValue(vaultErrorMessage(refused, ["box.folderName"]))).toBe(
+      humanValue("Check the folder name, then try again."),
     );
     expect(
-      vaultErrorMessage(refused, ["box.recoveryKey", "box.newPassphrase"]),
-    ).toBe("Check the recovery key and the new passphrase, then try again.");
-    expect(
-      vaultErrorMessage(refused, [
-        "box.name",
-        "box.passphrase",
-        "box.recoveryKey",
-      ]),
+      humanValue(
+        vaultErrorMessage(refused, ["box.recoveryKey", "box.newPassphrase"]),
+      ),
     ).toBe(
-      "Check the name, the passphrase and the recovery key, then try again.",
+      humanValue(
+        "Check the recovery key and the new passphrase, then try again.",
+      ),
+    );
+    expect(
+      humanValue(
+        vaultErrorMessage(refused, [
+          "box.name",
+          "box.passphrase",
+          "box.recoveryKey",
+        ]),
+      ),
+    ).toBe(
+      humanValue(
+        "Check the name, the passphrase and the recovery key, then try again.",
+      ),
     );
     // Without boxes, and for any other failure, the message is as it was.
-    expect(vaultErrorMessage(refused)).toBe(refused.message);
-    expect(vaultErrorMessage(refused, [])).toBe(refused.message);
+    expect(humanValue(vaultErrorMessage(refused))).toBe(
+      humanValue(refused.message),
+    );
+    expect(humanValue(vaultErrorMessage(refused, []))).toBe(
+      humanValue(refused.message),
+    );
     expect(
-      vaultErrorMessage({ code: "storage", message: "No." }, ["box.name"]),
-    ).toBe("No.");
+      humanValue(
+        vaultErrorMessage({ code: "storage", message: "No." }, ["box.name"]),
+      ),
+    ).toBe(humanValue("No."));
   });
 
   it("names at setup only a box whose text the vault refuses (#69)", () => {
@@ -290,12 +318,12 @@ describe("error messages", () => {
         "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
       retryAfterMs: 4_200,
     };
-    expect(vaultErrorMessage(waiting)).toBe(
-      `${waiting.message} Try again in 5 seconds.`,
+    expect(humanValue(vaultErrorMessage(waiting))).toBe(
+      humanValue(`${waiting.message} Try again in 5 seconds.`),
     );
-    expect(vaultErrorMessage({ ...waiting, retryAfterMs: 900 })).toMatch(
-      /Try again in 1 second\.$/,
-    );
+    expect(
+      humanValue(vaultErrorMessage({ ...waiting, retryAfterMs: 900 })),
+    ).toMatch(humanValue(/Try again in 1 second\.$/));
   });
 
   it("gives today on the patient's own calendar", () => {
@@ -310,23 +338,31 @@ describe("errors the app words itself, in the language in use (#46)", () => {
   it("names the boxes to check, joined as the language joins a list", () => {
     setLocaleOverride("fr");
     expect(
-      vaultErrorMessage(refused, ["box.recoveryKey", "box.newPassphrase"]),
+      humanValue(
+        vaultErrorMessage(refused, ["box.recoveryKey", "box.newPassphrase"]),
+      ),
     ).toBe(
-      "Vérifiez la clé de récupération et la nouvelle phrase secrète, puis réessayez.",
+      humanValue(
+        "Vérifiez la clé de récupération et la nouvelle phrase secrète, puis réessayez.",
+      ),
     );
     setLocaleOverride("pl");
     expect(
-      vaultErrorMessage(refused, [
-        "box.name",
-        "box.passphrase",
-        "box.recoveryKey",
-      ]),
+      humanValue(
+        vaultErrorMessage(refused, [
+          "box.name",
+          "box.passphrase",
+          "box.recoveryKey",
+        ]),
+      ),
     ).toBe(
-      "Proszę sprawdzić nazwę, hasło główne i klucz odzyskiwania, a potem spróbować ponownie.",
+      humanValue(
+        "Proszę sprawdzić nazwę, hasło główne i klucz odzyskiwania, a potem spróbować ponownie.",
+      ),
     );
     setLocaleOverride("es");
-    expect(vaultErrorMessage(refused, ["box.folderName"])).toBe(
-      "Revise el nombre de la carpeta y vuelva a intentarlo.",
+    expect(humanValue(vaultErrorMessage(refused, ["box.folderName"]))).toBe(
+      humanValue("Revise el nombre de la carpeta y vuelva a intentarlo."),
     );
   });
 
@@ -338,17 +374,25 @@ describe("errors the app words itself, in the language in use (#46)", () => {
         message: "X",
         retryAfterMs: ms,
       });
-    expect(wait(1000)).toBe("X Proszę spróbować ponownie za 1 sekundę.");
-    expect(wait(2000)).toBe("X Proszę spróbować ponownie za 2 sekundy.");
-    expect(wait(5000)).toBe("X Proszę spróbować ponownie za 5 sekund.");
+    expect(humanValue(wait(1000))).toBe(
+      humanValue("X Proszę spróbować ponownie za 1 sekundę."),
+    );
+    expect(humanValue(wait(2000))).toBe(
+      humanValue("X Proszę spróbować ponownie za 2 sekundy."),
+    );
+    expect(humanValue(wait(5000))).toBe(
+      humanValue("X Proszę spróbować ponownie za 5 sekund."),
+    );
     setLocaleOverride("pt-BR");
-    expect(wait(1000)).toBe("X Tente de novo em 1 segundo.");
+    expect(humanValue(wait(1000))).toBe(
+      humanValue("X Tente de novo em 1 segundo."),
+    );
   });
 
   it("words its own fallback, and a backup refused over a damaged document", () => {
     setLocaleOverride("es");
-    expect(vaultErrorMessage(null)).toBe(
-      "No se pudo completar la operación en la bóveda.",
+    expect(humanValue(vaultErrorMessage(null))).toBe(
+      humanValue("No se pudo completar la operación en la bóveda."),
     );
     setLocaleOverride("pt-BR");
     const vault = {
@@ -374,11 +418,20 @@ describe("errors the app words itself, in the language in use (#46)", () => {
       { code: "damaged_document", message: "Native.", recordId: "record-2" },
       vault,
     ) as { message: string };
-    // The date follows the selected app language.
-    const date = formatDate(Date.UTC(2026, 0, 15, 12));
-    expect(named.message).toContain(
-      `Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan.pdf” (adicionado em ${date}, nos documentos de Avery)`,
+    // The date as the computer writes it, in a Portuguese sentence.
+    const date = new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString();
+    expect(humanValue(named.message)).toContain(
+      humanValue(
+        `Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan.pdf” (adicionado em ${date}, nos documentos de Avery)`,
+      ),
     );
+    // A Canadian computer writes 2026-01-15 whatever language myCarlos uses
+    // (Ben, 21 Oct, kept 28 Oct), and the message is worded when it is read.
+    setDeviceLocale("en-CA");
+    for (const locale of ["fr", "pt-BR"] as const) {
+      setLocaleOverride(locale);
+      expect(named.message, locale).toContain("2026-01-15");
+    }
   });
 });
 
@@ -441,12 +494,51 @@ describe("localized native presentation contracts", () => {
         ],
       },
     ) as { message: string };
-    expect(error.message).toContain(
-      'No backup was saved: the document "FAKE_{where}.pdf"',
+    expect(humanValue(error.message)).toContain(
+      humanValue('No backup was saved: the document "FAKE_{where}.pdf"'),
     );
     setLocaleOverride("pt-BR");
-    expect(error.message).toContain("Nenhuma cópia de segurança foi salva");
-    expect(error.message).toContain("FAKE_{where}.pdf");
-    expect(vaultErrorMessage(error)).toBe(error.message);
+    expect(humanValue(error.message)).toContain(
+      humanValue("Nenhuma cópia de segurança foi salva"),
+    );
+    expect(humanValue(error.message)).toContain(humanValue("FAKE_{where}.pdf"));
+    expect(humanValue(vaultErrorMessage(error))).toBe(
+      humanValue(error.message),
+    );
+  });
+
+  it("says a vault or backup a newer myCarlos saved needs an update, not that it is damaged", () => {
+    const vault = { code: "vault_newer_format", message: "Native text." };
+    const backup = { code: "backup_newer_format", message: "Native text." };
+    expect(vaultErrorMessage(vault)).toBe(
+      "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+    );
+    expect(vaultErrorMessage(backup)).toBe(
+      "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
+    );
+    setLocaleOverride("fr");
+    expect(vaultErrorMessage(vault)).toBe(
+      "Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.",
+    );
+    setLocaleOverride("es");
+    expect(vaultErrorMessage(backup)).toBe(
+      "Esta copia de seguridad se guardó con una versión más reciente de myCarlos. Actualice myCarlos para restaurarla. No se cambió nada en este dispositivo.",
+    );
+    setLocaleOverride("pl");
+    expect(vaultErrorMessage(vault)).toBe(
+      "Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.",
+    );
+    setLocaleOverride("pt-BR");
+    expect(vaultErrorMessage(backup)).toBe(
+      "Esta cópia de segurança foi salva por uma versão mais recente do myCarlos. Atualize o myCarlos para restaurá-la. Nada foi alterado neste dispositivo.",
+    );
+    // Any other code keeps the native text, and a code that only looks
+    // like an object key is not one.
+    expect(vaultErrorMessage({ code: "corrupt", message: "Native." })).toBe(
+      "Native.",
+    );
+    expect(vaultErrorMessage({ code: "toString", message: "Native." })).toBe(
+      "Native.",
+    );
   });
 });

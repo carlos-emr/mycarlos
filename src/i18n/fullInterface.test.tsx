@@ -16,6 +16,8 @@ import { DocumentReader } from "../native/DocumentReader";
 import { RecordDetails } from "../native/RecordDetails";
 import { HiddenDocuments } from "../native/HiddenDocuments";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
+import { printedDate } from "../native/KeyLabel";
+import { setDeviceLocale } from "../test/deviceLocale";
 
 const record: VaultRecord = {
   id: "record",
@@ -113,7 +115,10 @@ describe("the installed interface in the selected language", () => {
     expect(screen.queryByRole("button", { name: /^Masqués/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Sécurité" })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: /^Partagés avec moi, / }),
+      screen.getByRole("button", {
+        name: (name) =>
+          name.replace(/[\u2068\u2069]/g, "").startsWith("Partagés avec moi, "),
+      }),
     ).toBeVisible();
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(search).toHaveValue("FAKE {count}");
@@ -201,7 +206,10 @@ describe("the installed interface in the selected language", () => {
   });
 
   for (const locale of LOCALES) {
-    it(`localizes document details, hidden counts, dates, sizes and accessibility labels in ${locale}`, () => {
+    it(`localizes document details, hidden counts, sizes and accessibility labels in ${locale}, with dates as the computer writes them`, () => {
+      // Ben, 21 Oct, kept 28 Oct: dates keep the computer's format, whatever
+      // language myCarlos uses. A Canadian computer writes 2026-10-23.
+      setDeviceLocale("en-CA");
       setLocaleOverride(locale);
       const details = render(
         <RecordDetails
@@ -235,11 +243,9 @@ describe("the installed interface in the selected language", () => {
       const size = `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(record.plaintextSize / (1024 * 1024))} MB`;
       expect(dialog).toHaveTextContent(size);
       expect(dialog).toHaveTextContent(
-        new Intl.DateTimeFormat(locale, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(record.importedAtMs),
+        new Date(record.importedAtMs).toLocaleString(),
       );
+      expect(dialog).toHaveTextContent("2026-10-23, ");
       details.unmount();
       render(
         <HiddenDocuments
@@ -268,6 +274,15 @@ describe("the installed interface in the selected language", () => {
           translate(locale, "interface.count.hidden", { count: 1 }),
         ),
       ).toHaveTextContent(record.displayName);
+      expect(screen.getByText("2026-10-23")).toBeVisible();
+      cleanup();
+      library();
+      // The folder's and the document's date added, in the library list.
+      expect(screen.getAllByText("2026-10-23")).toHaveLength(2);
+      // The recovery kit and Settings > Security print the month in words.
+      expect(printedDate(new Date(record.importedAtMs))).toBe(
+        "October 23, 2026",
+      );
       expect(document.documentElement.lang).toBe(locale);
     });
   }

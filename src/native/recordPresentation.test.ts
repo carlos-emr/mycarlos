@@ -1,9 +1,11 @@
+import { humanValue } from "../test/humanText";
 import { getLocale } from "../i18n";
 import { describe, expect, it } from "vitest";
 import {
   fileExtension,
   formatBytes,
   formatFileSize,
+  nameIsShared,
   nameTooLong,
   recordKind,
   searchKey,
@@ -54,6 +56,26 @@ describe("nameTooLong", () => {
     expect(nameTooLong("\u{1F4C1}".repeat(120))).toBe(false);
     expect(nameTooLong(`  ${"a".repeat(120)}  `)).toBe(false);
     expect(nameTooLong("a".repeat(121))).toBe(true);
+  });
+});
+
+describe("nameIsShared", () => {
+  // The same names the vault refuses (vault.rs,
+  // no_person_takes_the_shared_folders_name_in_any_language).
+  it("refuses Shared with me as any language shows it (#61)", () => {
+    for (const name of [
+      " shared WITH me ",
+      " PARTAGÉS avec moi ",
+      "Partage\u0301s avec moi",
+      "compartido CONMIGO",
+      "UDOSTĘPNIONE MI",
+      "compartilhados comigo",
+    ])
+      expect(nameIsShared(name), name).toBe(true);
+  });
+  it("lets a name that only holds it, or differs by a letter, be a person's", () => {
+    for (const name of ["Partagés avec moi 2", "Compartido", "Udostępnione mu"])
+      expect(nameIsShared(name), name).toBe(false);
   });
 });
 
@@ -111,18 +133,18 @@ describe("fileExtension", () => {
 describe("formatFileSize", () => {
   it("counts as the platform's file app does, with the exact bytes", () => {
     // Android Files, macOS Finder and Linux file managers count in 1000s.
-    expect(formatFileSize(600_000, false)).toBe(
-      `600 kB, ${(600000).toLocaleString()} bytes`,
+    expect(humanValue(formatFileSize(600_000, false))).toBe(
+      humanValue(`600 kB, ${(600000).toLocaleString()} bytes`),
     );
-    expect(formatFileSize(2_500_000, false)).toBe(
-      `2.5 MB, ${(2500000).toLocaleString()} bytes`,
+    expect(humanValue(formatFileSize(2_500_000, false))).toBe(
+      humanValue(`2.5 MB, ${(2500000).toLocaleString()} bytes`),
     );
     // Windows Explorer counts in 1024s.
-    expect(formatFileSize(600_000, true)).toBe(
-      `586 KB, ${(600000).toLocaleString()} bytes`,
+    expect(humanValue(formatFileSize(600_000, true))).toBe(
+      humanValue(`586 KB, ${(600000).toLocaleString()} bytes`),
     );
     // An empty or tiny file shows only its bytes.
-    expect(formatFileSize(0, false)).toBe("0 bytes");
-    expect(formatFileSize(999, true)).toBe("999 bytes");
+    expect(humanValue(formatFileSize(0, false))).toBe(humanValue("0 bytes"));
+    expect(humanValue(formatFileSize(999, true))).toBe(humanValue("999 bytes"));
   });
 });

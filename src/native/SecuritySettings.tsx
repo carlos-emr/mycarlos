@@ -2,14 +2,26 @@ import {
   t as translateNow,
   useI18n,
   withElements,
-  formatDate,
   formatNumber,
   type UiText,
   resolveText,
   deferredText,
 } from "../i18n";
+import {
+  PersonDetailsFields,
+  PersonDetailsList,
+  detailsProblem,
+  trimmedDetails,
+} from "./PersonDetails";
+import type { PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "../Icon";
 
 import {
@@ -31,6 +43,7 @@ import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
 
 interface SecuritySettingsProps {
+  clinicDocuments?: ReactNode;
   busy: boolean;
   readOnly: boolean;
   notice: string;
@@ -38,7 +51,12 @@ interface SecuritySettingsProps {
   onAutoLockMinutes: (value: unknown) => void;
   onLock: () => Promise<void>;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
-  onCreateProfile: (name: string) => Promise<boolean>;
+  onCreateProfile: (name: string, details?: PersonDetails) => Promise<boolean>;
+  people?: PatientProfile[];
+  onUpdateProfileDetails?: (
+    id: string,
+    details: PersonDetails,
+  ) => Promise<boolean>;
   hiddenCount: number;
   focusHiddenEntry?: boolean;
   hiddenScopeName: string;
@@ -113,7 +131,7 @@ function newBackupText(
   const date = printedDate(saved);
   // In the system's format, like printedDate: they match the language while it
   // follows the system.
-  const time = formatDate(saved, {
+  const time = saved.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -127,6 +145,7 @@ function newBackupText(
 }
 
 export function SecuritySettings({
+  clinicDocuments,
   busy,
   readOnly,
   notice,
@@ -141,6 +160,8 @@ export function SecuritySettings({
   onOpenHidden,
   focusAuditEntry = false,
   onOpenAuditHistory,
+  people = [],
+  onUpdateProfileDetails,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -200,6 +221,8 @@ export function SecuritySettings({
     }
   };
   const [profileName, setProfileName] = useState("");
+  const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
+  const [profileBirthDateUnknown, setProfileBirthDateUnknown] = useState(false);
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
@@ -227,8 +250,23 @@ export function SecuritySettings({
   const submitProfile = (event: FormEvent) => {
     event.preventDefault();
     // Cleared only once the profile exists, so a refused name can be corrected.
-    void onCreateProfile(profileName).then((created) => {
-      if (created) setProfileName("");
+    if (
+      busy ||
+      readOnly ||
+      (onUpdateProfileDetails &&
+        detailsProblem(profileDetails, profileBirthDateUnknown))
+    )
+      return;
+    void (
+      onUpdateProfileDetails
+        ? onCreateProfile(profileName, trimmedDetails(profileDetails))
+        : onCreateProfile(profileName)
+    ).then((created) => {
+      if (created) {
+        setProfileName("");
+        setProfileDetails({});
+        setProfileBirthDateUnknown(false);
+      }
     });
   };
   return (
@@ -249,6 +287,7 @@ export function SecuritySettings({
       <p className="status-line" role="status" aria-live="polite">
         {notice}
       </p>
+      {clinicDocuments}
       <div className="setting-list">
         <section className="setting-row">
           <div>
@@ -350,10 +389,9 @@ export function SecuritySettings({
             {recoveryKeySetAtMs && recoveryKeyLabel && (
               <p>
                 {withElements(
-                  translateNow("security.recoveryKey.current", {
-                    date: printedDate(new Date(recoveryKeySetAtMs)),
-                  }),
+                  "security.recoveryKey.current",
                   { label: <KeyLabel label={recoveryKeyLabel} /> },
+                  { date: printedDate(new Date(recoveryKeySetAtMs)) },
                 )}
               </p>
             )}
@@ -371,7 +409,7 @@ export function SecuritySettings({
             </button>
           </div>
         </section>
-        <section className="setting-row">
+        <section className="setting-row native-backup-settings">
           <div>
             <h2>{translateNow("security.backup.title")}</h2>
             <p>{translateNow("security.backup.body")}</p>
@@ -547,7 +585,7 @@ export function SecuritySettings({
             <p>{translateNow("security.copies.body")}</p>
           </div>
         </section>
-        <section className="setting-row native-setting-form">
+        <section className="setting-row native-setting-form native-profile-settings">
           <div>
             <h2>{translateNow("security.profiles.title")}</h2>
             <p>{translateNow("security.profiles.body")}</p>
@@ -572,11 +610,25 @@ export function SecuritySettings({
                 })}
               </p>
             )}
+            {onUpdateProfileDetails && (
+              <fieldset disabled={busy || readOnly}>
+                <PersonDetailsFields
+                  details={profileDetails}
+                  onChange={setProfileDetails}
+                  birthDateUnknown={profileBirthDateUnknown}
+                  onBirthDateUnknownChange={setProfileBirthDateUnknown}
+                />
+              </fieldset>
+            )}
             <button
               className="button"
               disabled={
                 busy ||
                 readOnly ||
+                Boolean(
+                  onUpdateProfileDetails &&
+                    detailsProblem(profileDetails, profileBirthDateUnknown),
+                ) ||
                 !profileName.trim() ||
                 nameTooLong(profileName) ||
                 nameIsShared(profileName)
@@ -585,6 +637,13 @@ export function SecuritySettings({
               {translateNow("security.profiles.add")}
             </button>
           </form>
+          {onUpdateProfileDetails && (
+            <PersonDetailsList
+              people={people}
+              busy={busy || readOnly}
+              onSave={onUpdateProfileDetails}
+            />
+          )}
         </section>
       </div>
     </main>

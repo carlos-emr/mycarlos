@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -32,7 +33,8 @@ function show(kept?: string, mac = false) {
   return { setZoom, zoom };
 }
 
-const box = () => screen.getByRole("textbox", { name: "Text size in percent" });
+const box = () =>
+  screen.getByRole("textbox", { name: humanText("Text size in percent") });
 
 describe("TextSizeSetting", () => {
   beforeEach(() => window.localStorage.clear());
@@ -43,58 +45,66 @@ describe("TextSizeSetting", () => {
     const user = userEvent.setup();
     const { setZoom } = show();
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Text size 100%");
+    expect(status).toHaveHumanTextContent("Text size 100%");
     expect(box()).toHaveValue("100");
     // Nothing to go back to at the ordinary size.
     expect(
-      screen.queryByRole("button", { name: "Back to normal size" }),
+      screen.queryByRole("button", { name: humanText("Back to normal size") }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/hold Ctrl and press plus/)).toBeVisible();
+    expect(
+      screen.getByText(humanText(/hold Ctrl and press plus/)),
+    ).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
-    expect(status).toHaveTextContent("Text size 110%");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    );
+    expect(status).toHaveHumanTextContent("Text size 110%");
     expect(box()).toHaveValue("110");
     expect(setZoom).toHaveBeenLastCalledWith(1.1);
 
     await user.click(
-      screen.getByRole("button", { name: "Back to normal size" }),
+      screen.getByRole("button", { name: humanText("Back to normal size") }),
     );
-    expect(status).toHaveTextContent("Text size 100%");
+    expect(status).toHaveHumanTextContent("Text size 100%");
     expect(setZoom).toHaveBeenLastCalledWith(1);
   });
 
   it("shows a size that was set with the keys, or kept from last time", () => {
     show("2.5");
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Text size 250%");
+    expect(status).toHaveHumanTextContent("Text size 250%");
     expect(box()).toHaveValue("250");
     act(() => {
       window.dispatchEvent(
         new KeyboardEvent("keydown", { key: "-", ctrlKey: true }),
       );
     });
-    expect(status).toHaveTextContent("Text size 200%");
+    expect(status).toHaveHumanTextContent("Text size 200%");
     expect(box()).toHaveValue("200");
   });
 
   it("stops at each end, and keeps the focus there", async () => {
     const user = userEvent.setup();
     const { setZoom } = show("3");
-    const larger = screen.getByRole("button", { name: "Larger text" });
+    const larger = screen.getByRole("button", {
+      name: humanText("Larger text"),
+    });
     await user.click(larger);
     expect(larger).toHaveAttribute("aria-disabled", "true");
     expect(larger).toHaveFocus();
     await user.click(larger);
     expect(setZoom).toHaveBeenLastCalledWith(4);
     expect(
-      screen.getByRole("button", { name: "Smaller text" }),
+      screen.getByRole("button", { name: humanText("Smaller text") }),
     ).toHaveAttribute("aria-disabled", "false");
   });
 
   it("steps down to the smallest size, and stops there", async () => {
     const user = userEvent.setup();
     const { setZoom } = show("0.9");
-    const smaller = screen.getByRole("button", { name: "Smaller text" });
+    const smaller = screen.getByRole("button", {
+      name: humanText("Smaller text"),
+    });
     await user.click(smaller);
     expect(setZoom).toHaveBeenLastCalledWith(0.8);
     expect(box()).toHaveValue("80");
@@ -109,23 +119,31 @@ describe("TextSizeSetting", () => {
     const user = userEvent.setup();
     show("1.5");
     await user.click(
-      screen.getByRole("button", { name: "Back to normal size" }),
+      screen.getByRole("button", { name: humanText("Back to normal size") }),
     );
-    expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    ).toHaveFocus();
   });
 
   it("keeps the focus when Ctrl+0 removes Back to normal size", async () => {
     const user = userEvent.setup();
     show("1.5");
     await user.click(
-      screen.getByRole("button", { name: "Back to normal size" }),
+      screen.getByRole("button", { name: humanText("Back to normal size") }),
     );
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
-    const back = screen.getByRole("button", { name: "Back to normal size" });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    );
+    const back = screen.getByRole("button", {
+      name: humanText("Back to normal size"),
+    });
     back.focus();
     await user.keyboard("{Control>}0{/Control}");
     expect(back).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    ).toHaveFocus();
   });
 
   it.each([
@@ -162,12 +180,18 @@ describe("TextSizeSetting", () => {
     "keeps the focus when %s removes Back to normal size",
     (_how, kept, press) => {
       show(kept);
-      const back = screen.getByRole("button", { name: "Back to normal size" });
+      const back = screen.getByRole("button", {
+        name: humanText("Back to normal size"),
+      });
       back.focus();
       act(press);
-      expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Text size 100%",
+      );
       expect(back).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+      expect(
+        screen.getByRole("button", { name: humanText("Larger text") }),
+      ).toHaveFocus();
     },
   );
 
@@ -178,7 +202,9 @@ describe("TextSizeSetting", () => {
     dialog.setAttribute("aria-modal", "true");
     document.body.append(dialog);
     onTestFinished(() => dialog.remove());
-    const back = screen.getByRole("button", { name: "Back to normal size" });
+    const back = screen.getByRole("button", {
+      name: humanText("Back to normal size"),
+    });
     back.focus();
     // By a key, not a click, so that only the focus says Back was in use.
     act(() => {
@@ -186,11 +212,11 @@ describe("TextSizeSetting", () => {
         new KeyboardEvent("keydown", { key: "0", ctrlKey: true }),
       );
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Text size 100%");
     expect(back).not.toBeInTheDocument();
     // The dialog's own focus handling takes it back; this setting does not.
     expect(
-      screen.getByRole("button", { name: "Larger text" }),
+      screen.getByRole("button", { name: humanText("Larger text") }),
     ).not.toHaveFocus();
   });
 
@@ -207,9 +233,11 @@ describe("TextSizeSetting", () => {
     inside.focus();
     // As a screen reader presses it: without moving the focus first.
     await act(async () =>
-      screen.getByRole("button", { name: "Back to normal size" }).click(),
+      screen
+        .getByRole("button", { name: humanText("Back to normal size") })
+        .click(),
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Text size 100%");
     expect(inside).toHaveFocus();
   });
 
@@ -217,20 +245,24 @@ describe("TextSizeSetting", () => {
     const user = userEvent.setup();
     show();
     expect(screen.getAllByRole("status")).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    );
     expect(screen.getAllByRole("status")).toHaveLength(1);
-    expect(screen.getByRole("status")).toHaveTextContent("Text size 110%");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Text size 110%");
   });
 
   it("names the key a Mac has", () => {
     show("1.5", true);
-    expect(screen.getByText(/hold Command and press plus/)).toBeVisible();
+    expect(
+      screen.getByText(humanText(/hold Command and press plus/)),
+    ).toBeVisible();
   });
 
   describe("the box", () => {
     it("is labelled and described for a screen reader", () => {
       show();
-      expect(box()).toHaveAccessibleDescription(/from 80% to 400%/);
+      expect(box()).toHaveHumanAccessibleDescription(/from 80% to 400%/);
     });
 
     it.each([
@@ -243,7 +275,7 @@ describe("TextSizeSetting", () => {
       await user.clear(box());
       await user.type(box(), `${typed}{Enter}`);
       expect(setZoom).toHaveBeenLastCalledWith(level);
-      expect(screen.getByRole("status")).toHaveTextContent(
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
         `Text size ${shown}%`,
       );
       expect(box()).toHaveValue(shown);
@@ -263,8 +295,8 @@ describe("TextSizeSetting", () => {
         await user.clear(box());
         await user.type(box(), `${typed}{Enter}`);
         expect(setZoom).toHaveBeenLastCalledWith(level);
-        expect(box()).toHaveAccessibleDescription(new RegExp(`^${note}`));
-        expect(screen.getByText(note)).toBeVisible();
+        expect(box()).toHaveHumanAccessibleDescription(new RegExp(`^${note}`));
+        expect(screen.getByText(humanText(note))).toBeVisible();
       },
     );
 
@@ -278,9 +310,11 @@ describe("TextSizeSetting", () => {
         if (typed) await user.type(box(), typed);
         await user.keyboard("{Enter}");
         expect(setZoom).not.toHaveBeenCalled();
-        expect(screen.getByRole("status")).toHaveTextContent("Text size 150%");
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          "Text size 150%",
+        );
         expect(box()).toHaveAttribute("aria-invalid", "true");
-        expect(box()).toHaveAccessibleDescription(
+        expect(box()).toHaveHumanAccessibleDescription(
           /^Type a number from 80 to 400\./,
         );
         // Kept to be corrected, where the focus already is.
@@ -312,7 +346,9 @@ describe("TextSizeSetting", () => {
       await user.type(box(), "175");
       await user.tab();
       expect(setZoom).toHaveBeenLastCalledWith(1.75);
-      expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+      expect(
+        screen.getByRole("button", { name: humanText("Larger text") }),
+      ).toHaveFocus();
     });
 
     it("changes nothing when the size typed is the size shown", async () => {
@@ -332,7 +368,9 @@ describe("TextSizeSetting", () => {
       await user.type(box(), "200");
       // Ctrl+0 means the ordinary size, whatever is half typed.
       await user.keyboard("{Control>}0{/Control}");
-      expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Text size 100%",
+      );
       expect(box()).toHaveValue("100");
       await user.tab();
       expect(setZoom).toHaveBeenLastCalledWith(1);
@@ -357,12 +395,12 @@ describe("TextSizeSetting", () => {
       const note = "The largest size is 400%.";
       await user.clear(box());
       await user.type(box(), "500{Enter}");
-      expect(screen.getByText(note)).toBeVisible();
+      expect(screen.getByText(humanText(note))).toBeVisible();
       await user.clear(box());
       await user.type(box(), "9");
-      expect(screen.queryByText(note)).not.toBeInTheDocument();
+      expect(screen.queryByText(humanText(note))).not.toBeInTheDocument();
       await user.type(box(), "00{Enter}");
-      expect(screen.getByText(note)).toBeVisible();
+      expect(screen.getByText(humanText(note))).toBeVisible();
     });
 
     it("keeps a refused size and its message when the box is left", async () => {
@@ -374,8 +412,12 @@ describe("TextSizeSetting", () => {
       expect(setZoom).not.toHaveBeenCalled();
       expect(box()).toHaveValue("abc");
       expect(box()).toHaveAttribute("aria-invalid", "true");
-      expect(screen.getByText("Type a number from 80 to 400.")).toBeVisible();
-      expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+      expect(
+        screen.getByText(humanText("Type a number from 80 to 400.")),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: humanText("Larger text") }),
+      ).toHaveFocus();
     });
 
     it("waits for a word being composed before Enter applies", async () => {
@@ -387,10 +429,14 @@ describe("TextSizeSetting", () => {
       // As WebKit sends it: the composition already ended, key code 229.
       fireEvent.keyDown(box(), { key: "Enter", keyCode: 229 });
       // The size itself, which changes at once (the platform is told later).
-      expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Text size 100%",
+      );
       expect(box()).toHaveValue("150");
       await user.keyboard("{Enter}");
-      expect(screen.getByRole("status")).toHaveTextContent("Text size 150%");
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Text size 150%",
+      );
       await vi.waitFor(() => expect(setZoom).toHaveBeenLastCalledWith(1.5));
     });
 
@@ -400,14 +446,16 @@ describe("TextSizeSetting", () => {
       await user.clear(box());
       await user.type(box(), "130{Enter}");
       const note = "130% is between sizes, so it is 125%.";
-      expect(screen.getByText(note)).toBeVisible();
+      expect(screen.getByText(humanText(note))).toBeVisible();
       act(() => {
         window.dispatchEvent(
           new KeyboardEvent("keydown", { key: "+", ctrlKey: true }),
         );
       });
-      expect(screen.getByRole("status")).toHaveTextContent("Text size 150%");
-      expect(screen.queryByText(note)).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Text size 150%",
+      );
+      expect(screen.queryByText(humanText(note))).not.toBeInTheDocument();
     });
 
     it("waits when the window, not the box, loses the focus", async () => {
@@ -432,13 +480,19 @@ describe("TextSizeSetting", () => {
       await user.clear(box());
       await user.type(box(), "100");
       await user.click(
-        screen.getByRole("button", { name: "Back to normal size" }),
+        screen.getByRole("button", { name: humanText("Back to normal size") }),
       );
-      expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Text size 100%",
+      );
       expect(
-        screen.queryByRole("button", { name: "Back to normal size" }),
+        screen.queryByRole("button", {
+          name: humanText("Back to normal size"),
+        }),
       ).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Larger text" })).toHaveFocus();
+      expect(
+        screen.getByRole("button", { name: humanText("Larger text") }),
+      ).toHaveFocus();
     });
 
     it("is kept for the next launch", async () => {
@@ -467,13 +521,13 @@ describe("NativeZoomProvider", () => {
         <p>FAKE records list</p>
       </NativeZoomProvider>,
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Text size 100%");
     act(() => {
       window.dispatchEvent(
         new KeyboardEvent("keydown", { key: "+", ctrlKey: true }),
       );
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Text size 110%");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Text size 110%");
   });
 });
 
@@ -491,13 +545,13 @@ describe("PreferencesSettings", () => {
       </NativeZoomProvider>,
     );
     expect(
-      screen.getByRole("heading", { level: 1, name: "Preferences" }),
+      screen.getByRole("heading", { level: 1, name: humanText("Preferences") }),
     ).toBeVisible();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     const zoom = startZoom(vi.fn().mockResolvedValue(undefined), false);
     onTestFinished(zoom.stop);
     await act(async () => install({ zoom, mac: false }));
-    expect(screen.getByRole("status")).toHaveTextContent("Text size 100%");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Text size 100%");
     expect(box()).toHaveValue("100");
   });
 
@@ -510,7 +564,7 @@ describe("PreferencesSettings", () => {
     await act(async () => undefined);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Here, text size follows your device/),
+      screen.getByText(humanText(/Here, text size follows your device/)),
     ).toBeVisible();
   });
 });
@@ -521,15 +575,19 @@ it("updates an existing text-size refusal without replacing its typed draft", ()
   const input = box();
   fireEvent.change(input, { target: { value: "FAKE" } });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(screen.getByText("Type a number from 80 to 400.")).toBeVisible();
+  expect(
+    screen.getByText(humanText("Type a number from 80 to 400.")),
+  ).toBeVisible();
   act(() => setLocaleOverride("fr"));
   expect(
-    screen.getByRole("textbox", { name: translate("fr", "textSize.box") }),
+    screen.getByRole("textbox", {
+      name: humanText(translate("fr", "textSize.box")),
+    }),
   ).toBe(input);
   expect(input).toHaveValue("FAKE");
   expect(
     screen.getByText(
-      translate("fr", "textSize.notNumber", { min: 80, max: 400 }),
+      humanText(translate("fr", "textSize.notNumber", { min: 80, max: 400 })),
     ),
   ).toBeVisible();
 });

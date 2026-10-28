@@ -60,8 +60,12 @@ pub enum HistoryEvent {
     PassphraseChanged,
     /// A patient profile was added.
     ProfileCreated,
+    /// Identity details changed; only the profile id is recorded.
+    ProfileDetailsChanged,
     /// A folder was made; `to` says in which folder ("My records" is none).
     FolderCreated,
+    /// An ordinary folder, or a person's top-level folder label when `how`
+    /// is "personFolder" (profile id only; there is no ordinary folder id).
     FolderRenamed,
     /// A folder moved; `from` and `to` are the folder it was in and the one
     /// it is in now.
@@ -69,6 +73,14 @@ pub enum HistoryEvent {
     /// This vault was set aside (#71's third part): moved, whole and still
     /// encrypted, into `set-aside/`, never erased.
     SetAside,
+    PortalLinkStarted,
+    PortalLinked,
+    DeviceApprovalRequested,
+    DeviceApprovalVerified,
+    DeviceApprovalStatusChanged,
+    DeviceApprovalRequestRestarted,
+    DeliveryFiled,
+    DeliveryReceiptSettled,
 }
 
 /// A folder as it was named at the time of the event.
@@ -131,6 +143,14 @@ pub struct HistoryEntry {
     /// the app knows ("lockedAt:<ms>:<by>"), or "notRecorded".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portal_link_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinic_key_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ciphertext_sha256: Option<String>,
     /// The hash of the entry before this one.
     pub prev: String,
 }
@@ -156,6 +176,10 @@ impl HistoryEntry {
             place: None,
             place_sha256: None,
             previous_session: None,
+            portal_link_id: None,
+            clinic_key_ids: None,
+            delivery_id: None,
+            ciphertext_sha256: None,
             prev: String::new(),
         }
     }
