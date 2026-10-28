@@ -250,6 +250,21 @@ The glib source fix is verified separately as described above. The unmaintained
 packages still need an upstream migration or replacement review before release;
 a passing default audit does not establish that every dependency is maintained.
 
+### Tokio I/O safety advisory (RUSTSEC-2026-0386)
+
+Tokio is locked to 1.53.3, the patched release on the existing 1.53 line for
+[RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386.html).
+The update preserves the other locked packages, dependency edges and features.
+Tauri and its transitive dependencies use Tokio; the application uses Tauri's
+async runtime.
+
+The affected `AsyncFd` APIs are Unix-specific. The upstream change deprecates the
+old constructors and adds unsafe registration APIs: callers must keep the file
+descriptor valid, open and unchanged throughout the registration. Upgrading does
+not itself enforce that ownership requirement in callers. Source inspection found
+no application `AsyncFd` use; this is not proof of exploitability or its absence.
+Other advisory warnings remain visible through the existing native audit command.
+
 ### Previous removal validation (historical)
 
 All seven jobs passed in the linked run for code commit `c5f682b`: Windows, macOS,

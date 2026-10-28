@@ -262,6 +262,7 @@ export interface VaultBridge {
     replace: boolean,
   ): Promise<boolean>;
   createProfile(displayName: string, details?: PersonDetails): Promise<string>;
+  renameProfile(profileId: string, displayName: string): Promise<void>;
   updateProfileDetails?(
     profileId: string,
     details: PersonDetails,
@@ -580,6 +581,10 @@ export function createVaultBridge(): VaultBridge {
     createProfile: (displayName, details = {}) =>
       invoke<string>("vault_create_profile", {
         request: { displayName, details, today: localDateText(new Date()) },
+      }),
+    renameProfile: (profileId, displayName) =>
+      invoke<void>("vault_rename_profile", {
+        request: { profileId, displayName },
       }),
     updateProfileDetails: (profileId, details) =>
       invoke<void>("vault_update_profile_details", {

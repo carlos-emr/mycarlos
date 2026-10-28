@@ -182,6 +182,13 @@ export const pl: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Zmień nazwę dokumentu",
+  "rename.title.profile": "Zmień nazwę folderu osoby",
+  "rename.label.profile": "Nazwa folderu",
+  "rename.help.profile":
+    "Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.",
+  "rename.profile.controls": "Nazwy nie mogą zawierać znaków sterujących.",
+  "rename.profile.saved": "Nazwa folderu została zmieniona na {name}.",
+  "rename.profile.action": "Zmień nazwę „{name}”",
   "rename.title.folder": "Zmień nazwę folderu",
   "rename.label.folder": "Nazwa folderu",
   "rename.label.document": "Nazwa pliku",

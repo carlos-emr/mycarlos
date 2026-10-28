@@ -105,6 +105,7 @@ fn main() {
             "vault_create_profile",
             "vault_update_profile_details",
             "vault_shared_identity",
+            "vault_rename_profile",
             "vault_create_folder",
             "vault_update_folder",
             "vault_rename_record",
