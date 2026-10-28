@@ -416,6 +416,10 @@ export const en = {
     'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. Keep your older backups. Ask for help recovering this document from a good copy or backup before trying again.',
   "error.damaged.where": "added {date}",
   "error.damaged.whereFor": "added {date}, in {person}'s records",
+  "error.newerFormat.vault":
+    "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+  "error.newerFormat.backup":
+    "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {

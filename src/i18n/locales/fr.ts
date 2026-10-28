@@ -434,6 +434,10 @@ export const fr: Record<MessageKey, Message> = {
     "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Conservez vos anciennes sauvegardes. Demandez de l’aide pour récupérer ce document à partir d’une copie ou d’une sauvegarde en bon état avant de réessayer.",
   "error.damaged.where": "ajouté le {date}",
   "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
+  "error.newerFormat.vault":
+    "Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.",
+  "error.newerFormat.backup":
+    "Cette sauvegarde a été enregistrée par une version plus récente de myCarlos. Mettez myCarlos à jour pour la restaurer. Rien n’a été modifié sur cet appareil.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {

@@ -445,6 +445,10 @@ export const pl: Record<MessageKey, Message> = {
     "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Proszę zachować wcześniejsze kopie zapasowe. Przed ponowną próbą proszę poprosić o pomoc w odzyskaniu tego dokumentu z nieuszkodzonej kopii lub kopii zapasowej.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
+  "error.newerFormat.vault":
+    "Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.",
+  "error.newerFormat.backup":
+    "Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {

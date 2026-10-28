@@ -389,6 +389,14 @@ export function boxesWithControlCharacters(
   return boxes.length ? boxes : undefined;
 }
 
+/** Refusals the app words itself, in the language in use, by their code: a
+ * vault or backup that a newer myCarlos saved is not damaged, and updating
+ * opens it. */
+const ownWording: Readonly<Record<string, MessageKey>> = {
+  vault_newer_format: "error.newerFormat.vault",
+  backup_newer_format: "error.newerFormat.backup",
+};
+
 /** The message for a failed vault operation. `boxes` names, in plain words,
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */
@@ -397,6 +405,12 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
     });
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as PublicError).code
+      : undefined;
+  if (typeof code === "string" && Object.hasOwn(ownWording, code))
+    return t(ownWording[code]);
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, note, retryAfterMs } = error as PublicError;
     if (typeof message === "string") {

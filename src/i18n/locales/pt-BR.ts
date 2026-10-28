@@ -428,6 +428,10 @@ export const ptBR: Record<MessageKey, Message> = {
     "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Guarde seus backups anteriores. Peça ajuda para recuperar este documento de uma cópia ou backup em boas condições antes de tentar novamente.",
   "error.damaged.where": "adicionado em {date}",
   "error.damaged.whereFor": "adicionado em {date}, nos documentos de {person}",
+  "error.newerFormat.vault":
+    "Este cofre foi salvo por uma versão mais recente do myCarlos. Atualize o myCarlos para abri-lo. Nada foi alterado.",
+  "error.newerFormat.backup":
+    "Esta cópia de segurança foi salva por uma versão mais recente do myCarlos. Atualize o myCarlos para restaurá-la. Nada foi alterado neste dispositivo.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {

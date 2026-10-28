@@ -429,6 +429,10 @@ export const es: Record<MessageKey, Message> = {
     "No se guardó ninguna copia de seguridad: el documento «{name}» ({where}) está dañado y ya no se puede leer, y una copia que lo contenga no se podría restaurar. No se cambió nada. Conserve sus copias de seguridad anteriores. Pida ayuda para recuperar este documento desde una copia o copia de seguridad en buen estado antes de volver a intentarlo.",
   "error.damaged.where": "añadido el {date}",
   "error.damaged.whereFor": "añadido el {date}, en los documentos de {person}",
+  "error.newerFormat.vault":
+    "Esta bóveda se guardó con una versión más reciente de myCarlos. Actualice myCarlos para abrirla. No se cambió nada.",
+  "error.newerFormat.backup":
+    "Esta copia de seguridad se guardó con una versión más reciente de myCarlos. Actualice myCarlos para restaurarla. No se cambió nada en este dispositivo.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {

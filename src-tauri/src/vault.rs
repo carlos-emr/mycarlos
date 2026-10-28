@@ -243,6 +243,10 @@ pub enum VaultError {
     WrongPassphrase,
     #[error("the vault data is damaged or incomplete")]
     Corrupt,
+    /// Every manifest this build could open was written by a newer build, in
+    /// a format this one does not know. Not damage: nothing was changed.
+    #[error("the vault was saved by a newer version of the app")]
+    NewerFormat,
     #[error("the requested item does not exist")]
     NotFound,
     #[error("the requested change is not valid")]
@@ -295,6 +299,10 @@ pub enum VaultError {
     WrongRecoveryKey,
     #[error("the file is not a complete, unchanged myCarlos backup")]
     BackupUnreadable,
+    /// The backup's manifest is authentic but in a format newer than this
+    /// build's: a newer build saved it.
+    #[error("the backup was saved by a newer version of the app")]
+    BackupNewerFormat,
     #[error("the backup or the vault is not what was confirmed")]
     BackupChanged,
     #[error("the backup file could not be opened")]
@@ -5238,6 +5246,13 @@ enum SlotReading {
     Absent,
     /// Present but not an authentic manifest: damage that a repair may replace.
     Damaged,
+    /// An authentic manifest in a format newer than this build's: a newer
+    /// build wrote it. It counts as damaged when the other slot can be opened,
+    /// as after a crash between the two writes of a newer build's upgrade,
+    /// which leaves nothing in it that the other slot lacks (see
+    /// `upgrade_manifest`). When nothing else can be opened, the unlock is
+    /// refused as `NewerFormat`, not as damage.
+    Newer,
     /// Exists but could not be read (sharing violation, permission or device
     /// error). It may hold the newest committed state, so nothing may replace
     /// it and no orphan cleanup may run.
@@ -5299,8 +5314,10 @@ fn read_manifest_slot_reading(
             };
         }
     };
-    let Some(manifest) = decrypt_manifest(&data, manifest_key, vault_id) else {
-        return SlotReading::Damaged;
+    let manifest = match open_manifest(&data, manifest_key, vault_id) {
+        Ok(manifest) => manifest,
+        Err(ManifestRefusal::Damaged) => return SlotReading::Damaged,
+        Err(ManifestRefusal::Newer) => return SlotReading::Newer,
     };
     let mut missing = HashSet::new();
     let mut unknown = HashSet::new();
@@ -5328,8 +5345,29 @@ fn read_manifest_slot_reading(
 }
 
 fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Option<Manifest> {
+    open_manifest(data, manifest_key, vault_id).ok()
+}
+
+/// Why a manifest file was not opened.
+#[derive(Debug, PartialEq, Eq)]
+enum ManifestRefusal {
+    /// Not an authentic manifest that this build can read.
+    Damaged,
+    /// Authentic, but its format is newer than this build's: a newer build
+    /// wrote it. Only its format number is read.
+    Newer,
+}
+
+/// Decrypts and checks a manifest. One that decrypts under the vault's key
+/// but declares a newer format is told apart from damage, so an older build
+/// can say to update instead of calling the vault damaged.
+fn open_manifest(
+    data: &[u8],
+    manifest_key: &[u8; 32],
+    vault_id: Uuid,
+) -> Result<Manifest, ManifestRefusal> {
     if data.len() < 40 {
-        return None;
+        return Err(ManifestRefusal::Damaged);
     }
     let aad = manifest_aad(vault_id);
     let plaintext = XChaCha20Poly1305::new(manifest_key.into())
@@ -5340,11 +5378,31 @@ fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Opt
                 aad: &aad,
             },
         )
-        .ok()?;
+        .map_err(|_| ManifestRefusal::Damaged)?;
     let plaintext = Zeroizing::new(plaintext);
-    let manifest = serde_json::from_slice::<Manifest>(&plaintext).ok()?;
-    validate_manifest_structure(&manifest, vault_id).ok()?;
-    Some(manifest)
+    if let Ok(manifest) = serde_json::from_slice::<Manifest>(&plaintext) {
+        if validate_manifest_structure(&manifest, vault_id).is_ok() {
+            return Ok(manifest);
+        }
+    }
+    Err(if newer_build_manifest(&plaintext) {
+        ManifestRefusal::Newer
+    } else {
+        ManifestRefusal::Damaged
+    })
+}
+
+/// Whether an authenticated manifest's plaintext declares a format newer
+/// than this build's. Only the format number is parsed; the rest of a
+/// format this build does not know is skipped unread.
+fn newer_build_manifest(plaintext: &[u8]) -> bool {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct FormatOnly {
+        format_version: u64,
+    }
+    serde_json::from_slice::<FormatOnly>(plaintext)
+        .is_ok_and(|manifest| manifest.format_version > u64::from(VAULT_FORMAT))
 }
 
 /// Which generation an unlock opens, and what the session may do with it.
@@ -5382,9 +5440,13 @@ fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultEr
         // No generation has all of its objects.
         let (manifest, missing) = newest(slots.iter().filter_map(SlotReading::authentic))?
             .ok_or_else(|| {
-                // Nothing to open, but not for certain nothing there: a slot
-                // that could not be read may hold the vault's state.
-                if slots
+                // Nothing to open. A slot a newer build wrote says why, and
+                // updating opens the vault whatever an unreadable slot holds.
+                if slots.iter().any(|slot| matches!(slot, SlotReading::Newer)) {
+                    VaultError::NewerFormat
+                // Not for certain nothing there: a slot that could not be
+                // read may hold the vault's state.
+                } else if slots
                     .iter()
                     .any(|slot| matches!(slot, SlotReading::Unreadable))
                 {
@@ -6994,8 +7056,13 @@ fn open_backup<R: Read>(
     let (header, master_key) = open_backup_header(&header_data, credential)?;
     let manifest_data = reader.small_entry(BACKUP_KIND_MANIFEST, MAX_MANIFEST_BYTES)?;
     let keys = derive_keys(header.vault_id, &master_key)?;
-    let manifest = decrypt_manifest(&manifest_data, &keys.manifest, header.vault_id)
-        .ok_or(VaultError::BackupUnreadable)?;
+    let manifest =
+        open_manifest(&manifest_data, &keys.manifest, header.vault_id).map_err(|refusal| {
+            match refusal {
+                ManifestRefusal::Newer => VaultError::BackupNewerFormat,
+                ManifestRefusal::Damaged => VaultError::BackupUnreadable,
+            }
+        })?;
     Ok(OpenedBackup {
         reader,
         header,
@@ -14215,6 +14282,276 @@ mod tests {
             validate_manifest_structure(&manifest, vault_id),
             Err(VaultError::Corrupt)
         ));
+    }
+
+    /// The plaintext of `manifest` as a newer build might write it, at
+    /// `generation`: a format number past this build's and, if
+    /// `restructured`, a layout this build cannot read at all.
+    fn newer_manifest_plaintext(
+        manifest: &Manifest,
+        generation: u64,
+        restructured: bool,
+    ) -> Vec<u8> {
+        let mut value = serde_json::to_value(manifest).unwrap();
+        value["formatVersion"] = (VAULT_FORMAT + 1).into();
+        value["generation"] = generation.into();
+        if restructured {
+            value["records"] = serde_json::json!({ "FAKE future layout": [] });
+        }
+        serde_json::to_vec(&value).unwrap()
+    }
+
+    /// `plaintext` sealed as a manifest file under `master_key`: what a newer
+    /// build holding the vault's key would write.
+    fn sealed_manifest(master_key: &[u8; 32], vault_id: Uuid, plaintext: &[u8]) -> Vec<u8> {
+        let keys = derive_keys(vault_id, master_key).unwrap();
+        let mut nonce = [0_u8; 24];
+        rand::RngCore::fill_bytes(&mut OsRng, &mut nonce);
+        let ciphertext = XChaCha20Poly1305::new((&keys.manifest).into())
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: &manifest_aad(vault_id),
+                },
+            )
+            .unwrap();
+        [nonce.as_slice(), &ciphertext].concat()
+    }
+
+    /// A locked vault's master key and current manifest, read through an
+    /// unlock.
+    fn key_and_manifest(store: &VaultStore) -> ([u8; 32], Manifest) {
+        store.unlock(PASSWORD).unwrap();
+        let read = {
+            let guard = store.unlocked.lock().unwrap();
+            let unlocked = guard.as_ref().unwrap();
+            (*unlocked.master_key, unlocked.manifest.clone())
+        };
+        store.lock();
+        read
+    }
+
+    fn sorted_files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut files = every_file(root);
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn a_manifest_a_newer_build_wrote_is_told_apart_from_damage() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _) = vault_with_records(&temp.path().join("vault"), &["FAKE a.pdf"]);
+        let (master_key, manifest) = key_and_manifest(&store);
+        let vault_id = manifest.vault_id;
+        let keys = derive_keys(vault_id, &master_key).unwrap();
+        let open = |plaintext: &[u8]| {
+            open_manifest(
+                &sealed_manifest(&master_key, vault_id, plaintext),
+                &keys.manifest,
+                vault_id,
+            )
+            .err()
+        };
+        assert_eq!(open(&serde_json::to_vec(&manifest).unwrap()), None);
+        for restructured in [false, true] {
+            let newer = newer_manifest_plaintext(&manifest, manifest.generation, restructured);
+            assert_eq!(open(&newer), Some(ManifestRefusal::Newer));
+        }
+        // Damage stays damage: a known format that does not check out, a
+        // format number that is not newer or not a number, and text that is
+        // not a manifest.
+        let mut value = serde_json::to_value(&manifest).unwrap();
+        value["records"] = serde_json::json!({ "FAKE future layout": [] });
+        assert_eq!(
+            open(&serde_json::to_vec(&value).unwrap()),
+            Some(ManifestRefusal::Damaged)
+        );
+        for format in [serde_json::json!(0), serde_json::json!("9")] {
+            let mut value = serde_json::to_value(&manifest).unwrap();
+            value["formatVersion"] = format;
+            assert_eq!(
+                open(&serde_json::to_vec(&value).unwrap()),
+                Some(ManifestRefusal::Damaged)
+            );
+        }
+        assert_eq!(open(b"FAKE not a manifest"), Some(ManifestRefusal::Damaged));
+        // So is a newer manifest not sealed under this vault's key and id:
+        // only an authentic one says a newer build wrote it.
+        let newer = newer_manifest_plaintext(&manifest, manifest.generation, false);
+        let mut other_key = [0_u8; 32];
+        rand::RngCore::fill_bytes(&mut OsRng, &mut other_key);
+        for sealed in [
+            sealed_manifest(&other_key, vault_id, &newer),
+            sealed_manifest(&master_key, Uuid::new_v4(), &newer),
+        ] {
+            assert_eq!(
+                open_manifest(&sealed, &keys.manifest, vault_id).err(),
+                Some(ManifestRefusal::Damaged)
+            );
+        }
+    }
+
+    #[test]
+    fn nothing_to_open_but_a_slot_a_newer_build_wrote_is_refused_as_newer() {
+        use SlotReading::{Absent, Damaged, Newer, Unreadable};
+        for slots in [
+            [Newer, Newer],
+            [Newer, Damaged],
+            [Absent, Newer],
+            // Updating opens it, whatever the slot that could not be read holds.
+            [Newer, Unreadable],
+            [Unreadable, Newer],
+        ] {
+            assert!(matches!(
+                select_manifest(&slots),
+                Err(VaultError::NewerFormat)
+            ));
+        }
+        assert!(matches!(
+            select_manifest(&[Damaged, Damaged]),
+            Err(VaultError::Corrupt)
+        ));
+        assert!(matches!(
+            select_manifest(&[Absent, Unreadable]),
+            Err(VaultError::Unreadable)
+        ));
+    }
+
+    #[test]
+    fn a_vault_a_newer_build_saved_is_refused_as_newer_with_nothing_changed() {
+        let temp = tempfile::tempdir().unwrap();
+        for restructured in [false, true] {
+            let root = temp.path().join(format!("vault-{restructured}"));
+            let (store, _, key) = backed_up_vault(&root);
+            let (master_key, manifest) = key_and_manifest(&store);
+            // Both slots hold the newer format, as after a newer build's
+            // finished upgrade.
+            for generation in [manifest.generation + 1, manifest.generation + 2] {
+                let plaintext = newer_manifest_plaintext(&manifest, generation, restructured);
+                atomic_bytes(
+                    &manifest_path(&root, generation),
+                    &sealed_manifest(&master_key, manifest.vault_id, &plaintext),
+                )
+                .unwrap();
+            }
+            let before = sorted_files(&root);
+            assert!(matches!(
+                store.unlock(PASSWORD),
+                Err(VaultError::NewerFormat)
+            ));
+            assert!(matches!(
+                store.recover(&key, PASSPHRASE_REPLACEMENT),
+                Err(VaultError::NewerFormat)
+            ));
+            assert_eq!(store.status().unwrap(), VaultStatus::Locked);
+            assert!(sorted_files(&root) == before, "{restructured}");
+        }
+    }
+
+    #[test]
+    fn a_newer_builds_unfinished_upgrade_still_opens_from_the_slot_this_build_knows() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, imported, _) = vault_with_records(&root, &["FAKE a.pdf", "FAKE b.pdf"]);
+        let (master_key, manifest) = key_and_manifest(&store);
+        // A newer build's upgrade wrote its first slot and stopped: the other
+        // slot holds the same state in this build's format.
+        let generation = manifest.generation + 1;
+        let plaintext = newer_manifest_plaintext(&manifest, generation, true);
+        atomic_bytes(
+            &manifest_path(&root, generation),
+            &sealed_manifest(&master_key, manifest.vault_id, &plaintext),
+        )
+        .unwrap();
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        assert_eq!(snapshot.records.len(), imported.len());
+        store.lock();
+        // As before: the newer slot held nothing the other lacks, so the
+        // redundancy repair wrote over it.
+        assert!(slots(&root, &master_key, manifest.vault_id)
+            .iter()
+            .all(|(format, _, _)| *format == VAULT_FORMAT));
+    }
+
+    #[test]
+    fn a_backup_a_newer_build_saved_is_refused_as_newer_with_nothing_changed() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home-a").join("vault");
+        let (store, _, key) = backed_up_vault(&root);
+        let (master_key, manifest) = key_and_manifest(&store);
+        let header_data = serde_json::to_vec_pretty(&read_latest_header(&root).unwrap()).unwrap();
+        let elsewhere = temp.path().join("home-b").join("vault");
+        let empty_device = VaultStore::new(elsewhere.clone());
+        for restructured in [false, true] {
+            // Whole and correctly tagged, every object included: only its
+            // manifest's format is newer.
+            let plaintext = newer_manifest_plaintext(&manifest, manifest.generation, restructured);
+            let manifest_data = sealed_manifest(&master_key, manifest.vault_id, &plaintext);
+            let mut backup = Vec::new();
+            let mut writer = BackupWriter::new(&mut backup).unwrap();
+            for (kind, name, data) in [
+                (BACKUP_KIND_HEADER, "header.json", &header_data),
+                (BACKUP_KIND_MANIFEST, "manifest.bin", &manifest_data),
+            ] {
+                writer
+                    .entry(kind, name, data.len() as u64, &mut data.as_slice())
+                    .unwrap();
+            }
+            let objects = manifest
+                .records
+                .iter()
+                .map(|record| &record.object_name)
+                .chain(manifest.history.segments.iter().map(|s| &s.object_name));
+            for name in objects {
+                let data = fs::read(root.join("objects").join(name)).unwrap();
+                writer
+                    .entry(
+                        BACKUP_KIND_OBJECT,
+                        name,
+                        data.len() as u64,
+                        &mut data.as_slice(),
+                    )
+                    .unwrap();
+            }
+            writer
+                .finish(&master_key, manifest.vault_id, manifest.generation, 5)
+                .unwrap();
+
+            let before = sorted_files(&root);
+            for by_key in [false, true] {
+                let credential = || {
+                    if by_key {
+                        RestoreCredential::RecoveryKey(&key)
+                    } else {
+                        RestoreCredential::Passphrase(PASSWORD)
+                    }
+                };
+                let refused = |result: Result<_, VaultError>| {
+                    matches!(result, Err(VaultError::BackupNewerFormat))
+                };
+                assert!(refused(
+                    store
+                        .inspect_backup(Cursor::new(backup.clone()), credential())
+                        .map(|_| ())
+                ));
+                assert!(refused(store.restore(
+                    Cursor::new(backup.clone()),
+                    credential(),
+                    true
+                )));
+                assert!(refused(empty_device.restore(
+                    Cursor::new(backup.clone()),
+                    credential(),
+                    false
+                )));
+            }
+            assert!(sorted_files(&root) == before, "{restructured}");
+            assert!(restore_leftovers(&root).is_empty());
+            assert_eq!(empty_device.status().unwrap(), VaultStatus::Absent);
+        }
     }
 
     #[test]

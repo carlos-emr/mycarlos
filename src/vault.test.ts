@@ -380,4 +380,39 @@ describe("errors the app words itself, in the language in use (#46)", () => {
       `Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan.pdf” (adicionado em ${date}, nos documentos de Avery)`,
     );
   });
+
+  it("says a vault or backup a newer myCarlos saved needs an update, not that it is damaged", () => {
+    const vault = { code: "vault_newer_format", message: "Native text." };
+    const backup = { code: "backup_newer_format", message: "Native text." };
+    expect(vaultErrorMessage(vault)).toBe(
+      "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+    );
+    expect(vaultErrorMessage(backup)).toBe(
+      "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
+    );
+    setLocaleOverride("fr");
+    expect(vaultErrorMessage(vault)).toBe(
+      "Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.",
+    );
+    setLocaleOverride("es");
+    expect(vaultErrorMessage(backup)).toBe(
+      "Esta copia de seguridad se guardó con una versión más reciente de myCarlos. Actualice myCarlos para restaurarla. No se cambió nada en este dispositivo.",
+    );
+    setLocaleOverride("pl");
+    expect(vaultErrorMessage(vault)).toBe(
+      "Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.",
+    );
+    setLocaleOverride("pt-BR");
+    expect(vaultErrorMessage(backup)).toBe(
+      "Esta cópia de segurança foi salva por uma versão mais recente do myCarlos. Atualize o myCarlos para restaurá-la. Nada foi alterado neste dispositivo.",
+    );
+    // Any other code keeps the native text, and a code that only looks
+    // like an object key is not one.
+    expect(vaultErrorMessage({ code: "corrupt", message: "Native." })).toBe(
+      "Native.",
+    );
+    expect(vaultErrorMessage({ code: "toString", message: "Native." })).toBe(
+      "Native.",
+    );
+  });
 });

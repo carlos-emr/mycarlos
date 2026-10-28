@@ -224,6 +224,10 @@ impl From<VaultError> for PublicText {
                 code: "corrupt",
                 message: "The vault is damaged or incomplete. No data was changed.",
             },
+            VaultError::NewerFormat => Self {
+                code: "vault_newer_format",
+                message: "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+            },
             VaultError::NotFound => Self {
                 code: "not_found",
                 message: "That item is no longer available.",
@@ -328,6 +332,10 @@ impl From<VaultError> for PublicText {
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
                 message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
+            },
+            VaultError::BackupNewerFormat => Self {
+                code: "backup_newer_format",
+                message: "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
@@ -3628,6 +3636,26 @@ mod tests {
         // Every other error leaves the field out.
         let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
         assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_vault_or_backup_from_a_newer_build_is_not_called_damaged() {
+        let vault = PublicError::from(VaultError::NewerFormat);
+        assert_eq!(vault.code, "vault_newer_format");
+        assert_eq!(
+            vault.message,
+            "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed."
+        );
+        // Opening a backup words it the same, said of the backup.
+        let backup = PublicError::from(VaultError::BackupNewerFormat).of_restore();
+        assert_eq!(backup.code, "backup_newer_format");
+        assert_eq!(
+            backup.message,
+            "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed."
+        );
+        for message in [vault.message, backup.message] {
+            assert!(!message.contains("damaged") && !message.contains("not a complete"));
+        }
     }
 
     #[test]
