@@ -1,3 +1,4 @@
+import { translate } from "./support/fluent";
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -94,7 +95,9 @@ test("the unlock screen still lets a patient who forgot the passphrase start aga
   const setAside = page.getByRole("button", { name: "Set vault aside" });
   await expect(setAside).toBeDisabled();
   await page
-    .getByLabel("Type RESET MYCARLOS VAULT")
+    .getByLabel(
+      translate("en", "reset.type", { phrase: "RESET MYCARLOS VAULT" }),
+    )
     .fill("RESET MYCARLOS VAULT");
   await expect(setAside).toBeEnabled();
   expect((await scan(page)).violations).toEqual([]);

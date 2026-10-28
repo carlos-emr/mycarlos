@@ -1,3 +1,4 @@
+import { translate } from "./support/fluent";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -564,7 +565,7 @@ for (const theme of ["light", "dark"] as const) {
     await screenshot(page, info, `${theme}-library`);
     await contrast(page, fields, "border-top-color", 3);
     const selected = page.getByRole("button", {
-      name: "Select FAKE Example.pdf",
+      name: translate("en", "library.select", { name: "FAKE Example.pdf" }),
     });
     await selected.click();
     await expect(selected).toHaveAttribute("aria-pressed", "true");
@@ -577,7 +578,11 @@ for (const theme of ["light", "dark"] as const) {
     await accessible(page);
     await screenshot(page, info, `${theme}-grid`);
     await page
-      .getByRole("button", { name: "Rename folder FAKE Results" })
+      .getByRole("button", {
+        name: translate("en", "library.folder.rename", {
+          name: "FAKE Results",
+        }),
+      })
       .click();
     const dialog = page.getByRole("dialog", {
       name: "Rename folder",
@@ -651,7 +656,7 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
     page.getByText("Changes are paused.", { exact: true }),
   ).toBeVisible();
   const selected = page.getByRole("button", {
-    name: "Select FAKE Example.pdf",
+    name: translate("en", "library.select", { name: "FAKE Example.pdf" }),
   });
   await selected.click();
   await expect(selected).toHaveAttribute("aria-pressed", "true");
@@ -705,7 +710,9 @@ test("forced colours keep the library's controls and a dialog's field and button
   await readableOnBackplate(page);
   await screenshot(page, info, "forced-library");
   await page
-    .getByRole("button", { name: "Rename folder FAKE Results" })
+    .getByRole("button", {
+      name: translate("en", "library.folder.rename", { name: "FAKE Results" }),
+    })
     .click();
   const dialog = page.getByRole("dialog", {
     name: "Rename folder",

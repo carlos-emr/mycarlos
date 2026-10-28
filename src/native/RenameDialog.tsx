@@ -1,11 +1,18 @@
+import {
+  useTextState,
+  deferredText,
+  t as translateCurrent,
+  useI18n,
+} from "../i18n";
 import { useState, useRef, type FormEvent } from "react";
-import { useI18n } from "../i18n";
+
 import { useModalFocus } from "../useModalFocus";
 import { utf8Length, vaultErrorMessage } from "../vault";
 import {
   NAME_INPUT_MAX_LENGTH,
   fileExtension,
   nameTooLong,
+  nameIsShared,
 } from "./recordPresentation";
 import { reservedDeviceName } from "./reservedNames";
 import { photoExtension } from "./photo";
@@ -24,7 +31,7 @@ const trimLikeVault = (value: string) =>
   value.replace(/^[\s\u0085]+|[\s\u0085]+$/g, "");
 
 export type RenameTarget = {
-  kind: "folder" | "document";
+  kind: "folder" | "document" | "profile";
   id: string;
   name: string;
   /** The native side identified this document's bytes as JPEG. */
@@ -60,7 +67,7 @@ export function RenameDialog({
   const { t } = useI18n();
   const [name, setName] = useState(originalStem);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useTextState();
   // Changes on every refusal, so pressing Save again announces it again even
   // when the message is the same.
   const [refusals, setRefusals] = useState(0);
@@ -73,7 +80,10 @@ export function RenameDialog({
     target.photo
       ? /\.jpe?g$/i.test(value)
       : value.toLowerCase().endsWith(extension.toLowerCase());
-  let stem = trimLikeVault(name);
+  let stem =
+    target.kind === "profile"
+      ? name.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "")
+      : trimLikeVault(name);
   const typedExtension = target.photo
     ? (/\.jpe?g$/i.exec(stem)?.[0] ?? "")
     : extension;
@@ -87,13 +97,15 @@ export function RenameDialog({
   // An untouched name is saved exactly as it was: trimming only the stem would
   // otherwise change a name such as "Results .pdf" that nobody edited.
   const fullName =
-    name === originalStem && (!target.photo || storedExtension)
-      ? target.name
-      : stem + extension;
+    target.kind === "profile"
+      ? stem
+      : name === originalStem && (!target.photo || storedExtension)
+        ? target.name
+        : stem + extension;
   const tooLong =
     target.kind === "document"
       ? utf8Length(fullName) > MAX_DOCUMENT_NAME_BYTES
-      : nameTooLong(name);
+      : nameTooLong(target.kind === "profile" ? fullName : name);
   // The vault keeps document names usable as file names on every platform, so
   // it refuses these rather than change them. Name them instead of letting the
   // save fail with a generic message.
@@ -121,7 +133,15 @@ export function RenameDialog({
     target.kind === "document"
       ? reservedDeviceName(trimLikeVault(fullName))
       : undefined;
-  const invalid = tooLong || unsafeName || gainsExtension || !stem;
+  const sharedName = target.kind === "profile" && nameIsShared(fullName);
+  const controlCharacters = target.kind === "profile" && /\p{Cc}/u.test(stem);
+  const invalid =
+    tooLong ||
+    unsafeName ||
+    gainsExtension ||
+    !stem ||
+    sharedName ||
+    controlCharacters;
   const close = () => {
     if (!saving) onClose();
   };
@@ -129,9 +149,17 @@ export function RenameDialog({
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving || readOnly || invalid) return;
+    if (target.kind === "profile" && fullName === target.name) {
+      onClose();
+      return;
+    }
     if (reservedWord) {
       setRefusals((count) => count + 1);
-      setError(t("rename.reserved", { word: reservedWord }));
+      setError(
+        deferredText(() =>
+          translateCurrent("rename.reserved", { word: reservedWord }),
+        ),
+      );
       return;
     }
     setSaving(true);
@@ -140,7 +168,7 @@ export function RenameDialog({
       await onSave(fullName);
       onClose();
     } catch (failure) {
-      setError(vaultErrorMessage(failure, ["box.name"]));
+      setError(deferredText(() => vaultErrorMessage(failure, ["box.name"])));
     } finally {
       setSaving(false);
     }
@@ -149,7 +177,7 @@ export function RenameDialog({
     <div className="dialog-backdrop" role="presentation" onMouseDown={close}>
       <section
         ref={dialogRef}
-        className="record-dialog native-rename-dialog"
+        className={`record-dialog native-rename-dialog${target.kind === "profile" ? " native-profile-rename-dialog" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="rename-title"
@@ -157,17 +185,21 @@ export function RenameDialog({
       >
         <header className="dialog-head">
           <h2 id="rename-title">
-            {target.kind === "folder"
-              ? t("rename.title.folder")
-              : t("rename.title.document")}
+            {target.kind === "profile"
+              ? t("rename.title.profile")
+              : target.kind === "folder"
+                ? t("rename.title.folder")
+                : t("rename.title.document")}
           </h2>
         </header>
         <form onSubmit={(event) => void save(event)}>
           <div className="native-rename-fields">
             <label htmlFor="rename-name">
-              {target.kind === "folder"
-                ? t("rename.label.folder")
-                : t("rename.label.document")}
+              {target.kind === "profile"
+                ? t("rename.label.profile")
+                : target.kind === "folder"
+                  ? t("rename.label.folder")
+                  : t("rename.label.document")}
             </label>
             <div className="native-rename-input">
               <input
@@ -175,7 +207,7 @@ export function RenameDialog({
                 id="rename-name"
                 required
                 maxLength={
-                  target.kind === "folder"
+                  target.kind !== "document"
                     ? NAME_INPUT_MAX_LENGTH
                     : MAX_DOCUMENT_NAME_BYTES
                 }
@@ -194,17 +226,29 @@ export function RenameDialog({
               {extension && <span aria-hidden="true">{extension}</span>}
             </div>
             <p id="rename-help">
-              {target.kind === "folder"
-                ? t("rename.help.folder")
-                : extension
-                  ? t("rename.help.documentExtension", { extension })
-                  : t("rename.help.document")}
+              {target.kind === "profile"
+                ? t("rename.help.profile")
+                : target.kind === "folder"
+                  ? t("rename.help.folder")
+                  : extension
+                    ? t("rename.help.documentExtension", { extension })
+                    : t("rename.help.document")}
             </p>
             {extension && name.trim() && !stem && (
               <p role="alert">{t("rename.stemMissing", { extension })}</p>
             )}
             {gainsExtension && <p role="alert">{t("rename.gainsExtension")}</p>}
             {tooLong && <p role="alert">{t("rename.tooLong")}</p>}
+            {sharedName && (
+              <p role="alert">
+                {t("create.profile.sharedTaken", {
+                  folder: t("interface.LibrarySidebar.sharedWithMe"),
+                })}
+              </p>
+            )}
+            {controlCharacters && (
+              <p role="alert">{t("rename.profile.controls")}</p>
+            )}
             {unsafeName && (
               <p role="alert">
                 {t("rename.unsafe", { characters: UNSAFE_CHARACTERS })}

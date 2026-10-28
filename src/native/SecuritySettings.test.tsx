@@ -1,3 +1,5 @@
+import { humanValue } from "../test/humanText";
+import { humanText } from "../test/humanText";
 import {
   act,
   cleanup,
@@ -7,6 +9,8 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { setLocaleOverride } from "../i18n";
+import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
 
@@ -34,6 +38,10 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     onLock: vi.fn().mockResolvedValue(undefined),
     onChangePassphrase: vi.fn().mockResolvedValue(undefined),
     onCreateProfile: vi.fn().mockResolvedValue(true),
+    hiddenCount: 0,
+    hiddenScopeName: "My records",
+    onOpenHidden: vi.fn(),
+    onOpenAuditHistory: vi.fn(),
     recoveryKeySetAtMs: null,
     onSetUpRecoveryKey: vi.fn(),
     onSaveBackup: vi.fn().mockResolvedValue(undefined),
@@ -45,12 +53,16 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
 }
 
 const change = (label: string, value: string) =>
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  fireEvent.change(screen.getByLabelText(humanText(label)), {
+    target: { value },
+  });
 
 describe("SecuritySettings speed test", () => {
   it("does not start while another vault action is busy", () => {
     const props = renderSettings({ busy: true });
-    const button = screen.getByRole("button", { name: "Run speed test" });
+    const button = screen.getByRole("button", {
+      name: humanText("Run speed test"),
+    });
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(props.onSpeedTest).not.toHaveBeenCalled();
@@ -65,29 +77,33 @@ describe("SecuritySettings speed test", () => {
           finish = resolve;
         }),
     );
-    const button = screen.getByRole("button", { name: "Run speed test" });
+    const button = screen.getByRole("button", {
+      name: humanText("Run speed test"),
+    });
     const section = button.closest("section")!;
     const status = within(section).getByRole("status");
     expect(status).toBeEmptyDOMElement();
     expect(props.onSpeedTest).not.toHaveBeenCalled();
 
     fireEvent.click(button);
-    expect(status).toHaveTextContent("Measuring…");
+    expect(status).toHaveHumanTextContent("Measuring…");
     expect(button).toBeDisabled();
     await act(async () => finish(speedTest));
-    expect(status).toHaveTextContent(
+    expect(status).toHaveHumanTextContent(
       "5 runs: 812, 820, 815, 830, 811 ms. Median 815 ms, longest 830 ms. Argon2id, 64 MiB, 3 passes, 4 lanes. android aarch64, myCarlos 0.1.0. Release build.",
     );
     expect(button).toBeEnabled();
   });
 
   it("says which kind of build was timed", () => {
-    expect(speedTestLine({ ...speedTest, release: false })).toMatch(
-      /Evaluation build\.$/,
+    expect(humanValue(speedTestLine({ ...speedTest, release: false }))).toMatch(
+      humanValue(/Evaluation build\.$/),
     );
     expect(
-      speedTestLine({ ...speedTest, release: false, simulator: true }),
-    ).toMatch(/Evaluation build, Simulator\.$/);
+      humanValue(
+        speedTestLine({ ...speedTest, release: false, simulator: true }),
+      ),
+    ).toMatch(humanValue(/Evaluation build, Simulator\.$/));
   });
 
   it("says why it could not measure, and can be run again", async () => {
@@ -96,15 +112,23 @@ describe("SecuritySettings speed test", () => {
       code: "busy",
       message: "FAKE already running.",
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
-    expect(await screen.findByText("FAKE already running.")).toBeVisible();
-    const button = screen.getByRole("button", { name: "Run speed test" });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Run speed test") }),
+    );
+    expect(
+      await screen.findByText(humanText("FAKE already running.")),
+    ).toBeVisible();
+    const button = screen.getByRole("button", {
+      name: humanText("Run speed test"),
+    });
     expect(button).toBeEnabled();
     expect(
       within(button.closest("section")!).getByRole("status"),
     ).toBeEmptyDOMElement();
     fireEvent.click(button);
-    expect(await screen.findByText(speedTestLine(speedTest))).toBeVisible();
+    expect(
+      await screen.findByText(humanText(speedTestLine(speedTest))),
+    ).toBeVisible();
     expect(props.onSpeedTest).toHaveBeenCalledTimes(2);
     // Only a locked vault locks the app.
     expect(props.onLock).not.toHaveBeenCalled();
@@ -116,14 +140,18 @@ describe("SecuritySettings speed test", () => {
       code: "locked",
       message: "FAKE the vault is locked.",
     });
-    const button = screen.getByRole("button", { name: "Run speed test" });
+    const button = screen.getByRole("button", {
+      name: humanText("Run speed test"),
+    });
     fireEvent.click(button);
     await vi.waitFor(() => expect(props.onLock).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(button).toBeEnabled());
     expect(
       within(button.closest("section")!).getByRole("status"),
     ).toBeEmptyDOMElement();
-    expect(screen.queryByText("FAKE the vault is locked.")).toBeNull();
+    expect(
+      screen.queryByText(humanText("FAKE the vault is locked.")),
+    ).toBeNull();
   });
 
   it("does not lock again once the screen has gone", async () => {
@@ -136,7 +164,9 @@ describe("SecuritySettings speed test", () => {
           }),
       ),
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run speed test" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Run speed test") }),
+    );
     // The app locked by itself and this screen went.
     cleanup();
     await act(async () => answer({ code: "locked", message: "FAKE locked." }));
@@ -148,35 +178,39 @@ describe("SecuritySettings recovery key", () => {
   it("shows the current key's label and date, so the current kit can be told", () => {
     const setAt = Date.UTC(2026, 8, 30, 12);
     renderSettings({ recoveryKeySetAtMs: setAt, recoveryKeyLabel: "7F3A" });
-    const line = screen.getByText(/Your current key has the label/);
+    const line = screen.getByText(humanText(/Your current key has the label/));
     // Shown as printed, and spelled out to a screen reader.
-    expect(within(line).getByText("7F3A")).toHaveAttribute(
+    expect(within(line).getByText(humanText("7F3A"))).toHaveAttribute(
       "aria-hidden",
       "true",
     );
-    expect(within(line).getByText("7 F 3 A")).toHaveClass("sr-only");
-    expect(line).toHaveTextContent(/one with another label does not open/);
+    expect(within(line).getByText(humanText("7 F 3 A"))).toHaveClass("sr-only");
+    expect(line).toHaveHumanTextContent(/one with another label does not open/);
     // A kit or note from before labels has none, and may still work.
-    expect(line).toHaveTextContent(
+    expect(line).toHaveHumanTextContent(
       `one without a label may still be this key, set up on ${printedDate(new Date(setAt))}.`,
     );
     // The date it was set up is beside the heading.
     expect(
-      screen.getByText(`Set up ${printedDate(new Date(setAt))}`),
+      screen.getByText(humanText(`Set up ${printedDate(new Date(setAt))}`)),
     ).toBeVisible();
   });
 
   it("shows the steps for older backups: a new one first", () => {
     const props = renderSettings({ oldBackupsGuide: { step: "save" } });
-    const guide = screen.getByRole("region", { name: "Your older backups" });
+    const guide = screen.getByRole("region", {
+      name: humanText("Your older backups"),
+    });
     const steps = within(guide).getAllByRole("listitem");
-    expect(steps[0]).toHaveTextContent("Save a new backup now");
+    expect(steps[0]).toHaveHumanTextContent("Save a new backup now");
     // A patient with no older backups is not held to the steps.
     expect(
-      within(guide).getByRole("button", { name: "I have no older backups" }),
+      within(guide).getByRole("button", {
+        name: humanText("I have no older backups"),
+      }),
     ).toBeVisible();
     fireEvent.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(props.onSaveBackup).toHaveBeenCalledOnce();
   });
@@ -192,15 +226,21 @@ describe("SecuritySettings recovery key", () => {
       },
       onOldBackupsGuideDone,
     });
-    const guide = screen.getByRole("region", { name: "Your older backups" });
+    const guide = screen.getByRole("region", {
+      name: humanText("Your older backups"),
+    });
     // Kept, with a copy away from this device; the rest are older.
     const steps = within(guide).getAllByRole("listitem");
-    expect(steps[0]).toHaveTextContent(
+    expect(steps[0]).toHaveHumanTextContent(
       `Your new backup is “myCarlos backup 2026-09-30 7F3A” (2 kB, ${(2048).toLocaleString()} bytes). Keep it, or a copy of it, somewhere other than this device`,
     );
-    expect(steps[1]).toHaveTextContent("other than the new one and its copies");
+    expect(steps[1]).toHaveHumanTextContent(
+      "other than the new one and its copies",
+    );
     fireEvent.click(
-      within(guide).getByRole("button", { name: "Done with older backups" }),
+      within(guide).getByRole("button", {
+        name: humanText("Done with older backups"),
+      }),
     );
     expect(onOldBackupsGuideDone).toHaveBeenCalledOnce();
   });
@@ -217,9 +257,9 @@ describe("SecuritySettings recovery key", () => {
     });
     expect(
       within(
-        screen.getByRole("region", { name: "Your older backups" }),
+        screen.getByRole("region", { name: humanText("Your older backups") }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent(`(586 KB, ${(600000).toLocaleString()} bytes)`);
+    ).toHaveHumanTextContent(`(586 KB, ${(600000).toLocaleString()} bytes)`);
   });
 
   it("names no file when the platform does not say it", () => {
@@ -230,10 +270,32 @@ describe("SecuritySettings recovery key", () => {
     // It is told apart by when it was saved.
     expect(
       within(
-        screen.getByRole("region", { name: "Your older backups" }),
+        screen.getByRole("region", { name: humanText("Your older backups") }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent(
+    ).toHaveHumanTextContent(
       `Your new backup is the one you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} (0 bytes)`,
+    );
+  });
+
+  it("says when it was saved as the computer writes it, whatever the language", () => {
+    // Ben, 21 Oct, kept 28 Oct: a Canadian computer's date and time, in a
+    // French sentence.
+    setDeviceLocale("en-CA");
+    setLocaleOverride("fr");
+    const savedAtMs = Date.UTC(2026, 8, 30, 14, 31);
+    renderSettings({
+      oldBackupsGuide: { step: "delete", keep: null, savedAtMs, bytes: 0 },
+    });
+    const time = new Intl.DateTimeFormat("en-CA", {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(savedAtMs);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Vos anciennes sauvegardes" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveHumanTextContent(
+      `Votre nouvelle sauvegarde est celle que vous venez d’enregistrer, le September 30, 2026 vers ${time} (`,
     );
   });
 
@@ -241,14 +303,16 @@ describe("SecuritySettings recovery key", () => {
     renderSettings({ readOnly: true, oldBackupsGuide: { step: "save" } });
     expect(
       within(
-        screen.getByRole("region", { name: "Your older backups" }),
+        screen.getByRole("region", { name: humanText("Your older backups") }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent("Once the vault accepts changes again");
+    ).toHaveHumanTextContent("Once the vault accepts changes again");
   });
 
   it("names no label for a vault without a key", () => {
     renderSettings({ recoveryKeyLabel: null });
-    expect(screen.queryByText(/Your current key has the label/)).toBeNull();
+    expect(
+      screen.queryByText(humanText(/Your current key has the label/)),
+    ).toBeNull();
   });
 });
 
@@ -256,16 +320,16 @@ describe("SecuritySettings privacy notice", () => {
   it("says that nothing is deleted and that a history is kept (#71)", () => {
     renderSettings();
     const notice = screen
-      .getByRole("heading", { name: "What myCarlos keeps" })
+      .getByRole("heading", { name: humanText("What myCarlos keeps") })
       .closest("section")!;
-    expect(notice).toHaveTextContent(/never deletes a document/);
-    expect(notice).toHaveTextContent(
+    expect(notice).toHaveHumanTextContent(/never deletes a document/);
+    expect(notice).toHaveHumanTextContent(
       /also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where/,
     );
-    expect(notice).toHaveTextContent(
-      /does not show it, and never changes or removes it/,
+    expect(notice).toHaveHumanTextContent(
+      /can read it here; myCarlos never changes or removes it/,
     );
-    expect(notice).toHaveTextContent(
+    expect(notice).toHaveHumanTextContent(
       /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,
     );
   });
@@ -275,7 +339,8 @@ describe("SecuritySettings passphrase change", () => {
   it("says what a new passphrase does not protect, without urging a new vault", () => {
     renderSettings();
     const limit =
-      screen.getByText(/a new passphrase\s+is not enough/).textContent ?? "";
+      screen.getByText(humanText(/a new passphrase\s+is not enough/))
+        .textContent ?? "";
     expect(limit).toMatch(/the old one still opens that copy/);
     expect(limit).toMatch(/Ask for help before you set your vault aside/);
     // The steps are in the documents, not here: nothing on this screen
@@ -289,23 +354,27 @@ describe("SecuritySettings passphrase change", () => {
     // removing every vault, so Security doesn't offer it as a fresh start.
     renderSettings();
     expect(
-      screen.queryByRole("button", { name: /set vault aside/i }),
+      screen.queryByRole("button", { name: humanText(/set vault aside/i) }),
     ).toBeNull();
-    expect(screen.queryByText("Show reset controls")).toBeNull();
-    expect(screen.queryByLabelText(/RESET MYCARLOS VAULT/)).toBeNull();
-    expect(document.body).not.toHaveTextContent(/start again/i);
+    expect(screen.queryByText(humanText("Show reset controls"))).toBeNull();
+    expect(
+      screen.queryByLabelText(humanText(/RESET MYCARLOS VAULT/)),
+    ).toBeNull();
+    expect(document.body).not.toHaveHumanTextContent(/start again/i);
   });
 
   it("says hiding a document leaves copies outside the vault, not that it deletes (#71)", () => {
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: "Readable copies and screenshots" })
+      .getByRole("heading", {
+        name: humanText("Readable copies and screenshots"),
+      })
       .closest("section")!;
-    expect(section).toHaveTextContent(
+    expect(section).toHaveHumanTextContent(
       /Hiding a document in myCarlos does not erase those copies/,
     );
     // Nothing in myCarlos deletes a document since #71.
-    expect(section).not.toHaveTextContent(/delet/i);
+    expect(section).not.toHaveHumanTextContent(/delet/i);
   });
 
   it("refuses a replacement under the minimum length before sending it", () => {
@@ -314,8 +383,10 @@ describe("SecuritySettings passphrase change", () => {
     change("New passphrase", "short phrase");
     change("Confirm new passphrase", "short phrase");
 
-    expect(screen.getByRole("alert")).toHaveTextContent("too short");
-    const button = screen.getByRole("button", { name: "Change passphrase" });
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too short");
+    const button = screen.getByRole("button", {
+      name: humanText("Change passphrase"),
+    });
     expect(button).toBeDisabled();
     fireEvent.submit(button.closest("form")!);
     expect(props.onChangePassphrase).not.toHaveBeenCalled();
@@ -328,10 +399,12 @@ describe("SecuritySettings passphrase change", () => {
     change("New passphrase", "lantern-orbit-willow-cascade-572");
     change("Confirm new passphrase", "lantern-orbit-willow-cascade-572");
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
       "longer than any vault passphrase",
     );
-    const button = screen.getByRole("button", { name: "Change passphrase" });
+    const button = screen.getByRole("button", {
+      name: humanText("Change passphrase"),
+    });
     expect(button).toBeDisabled();
     fireEvent.submit(button.closest("form")!);
     expect(props.onChangePassphrase).not.toHaveBeenCalled();
@@ -345,18 +418,24 @@ describe("SecuritySettings passphrase change", () => {
 describe("SecuritySettings profiles", () => {
   it("limits a profile name by characters, as the vault does", () => {
     renderSettings();
-    const name = screen.getByLabelText("New profile name");
+    const name = screen.getByLabelText(humanText("New profile name"));
     fireEvent.change(name, { target: { value: "\u{1F332}".repeat(120) } });
     expect(name).toHaveValue("\u{1F332}".repeat(120));
     expect((name as HTMLInputElement).maxLength).toBe(240);
-    expect(screen.getByRole("button", { name: "Add profile" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    ).toBeEnabled();
 
     fireEvent.change(name, { target: { value: "a".repeat(121) } });
-    expect(screen.getByRole("alert")).toHaveTextContent("too long");
-    expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
+    expect(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    ).toBeDisabled();
 
     fireEvent.change(name, { target: { value: "   " } });
-    expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    ).toBeDisabled();
   });
 });
 
@@ -364,7 +443,7 @@ describe("SecuritySettings backup", () => {
   it("saves an encrypted backup", () => {
     const props = renderSettings();
     fireEvent.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(props.onSaveBackup).toHaveBeenCalledOnce();
   });
@@ -373,20 +452,24 @@ describe("SecuritySettings backup", () => {
 describe("Automatic lock delay (#67)", () => {
   it("steps by one minute with minus and plus, within 1 to 15", () => {
     const props = renderSettings({ autoLockMinutes: 5 });
-    const group = screen.getByRole("group", { name: "Automatic lock delay" });
-    expect(screen.queryByRole("combobox", { name: /lock delay/i })).toBeNull();
-    expect(within(group).getByText("5 minutes")).toBeVisible();
+    const group = screen.getByRole("group", {
+      name: humanText("Automatic lock delay"),
+    });
+    expect(
+      screen.queryByRole("combobox", { name: humanText(/lock delay/i) }),
+    ).toBeNull();
+    expect(within(group).getByText(humanText("5 minutes"))).toBeVisible();
     // On focus, each step says what the delay is now.
     for (const name of ["Shorter delay", "Longer delay"])
       expect(
         within(group).getByRole("button", { name }),
-      ).toHaveAccessibleDescription("5 minutes");
+      ).toHaveHumanAccessibleDescription("5 minutes");
     fireEvent.click(
-      within(group).getByRole("button", { name: "Longer delay" }),
+      within(group).getByRole("button", { name: humanText("Longer delay") }),
     );
     expect(props.onAutoLockMinutes).toHaveBeenLastCalledWith(6);
     fireEvent.click(
-      within(group).getByRole("button", { name: "Shorter delay" }),
+      within(group).getByRole("button", { name: humanText("Shorter delay") }),
     );
     expect(props.onAutoLockMinutes).toHaveBeenLastCalledWith(4);
   });
@@ -398,7 +481,7 @@ describe("Automatic lock delay (#67)", () => {
     ] as const) {
       const props = renderSettings({ autoLockMinutes: minutes });
       const group = screen.getAllByRole("group", {
-        name: "Automatic lock delay",
+        name: humanText("Automatic lock delay"),
       })[0];
       const end = within(group).getByRole("button", { name });
       expect(end).toHaveAttribute("aria-disabled", "true");

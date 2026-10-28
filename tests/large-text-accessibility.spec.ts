@@ -1,3 +1,4 @@
+import { translate } from "./support/fluent";
 import {
   expect,
   test,
@@ -271,6 +272,8 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return;
         // A PDF's details ask whether it is locked with a password (#54).
         if (command === "vault_is_locked_pdf") return false;
+        // These FAKE PDFs carry no patient identity hint.
+        if (command === "vault_shared_identity") return null;
         if (command === "received_list")
           return {
             files: structuredClone(waiting),
@@ -348,7 +351,9 @@ async function walkTheVault(large: LargeText) {
     .fill("FAKE passphrase for the mock");
   await page.getByRole("button", { name: "Unlock" }).click();
   const letter = page.getByRole("article", {
-    name: "FAKE Letter.pdf document",
+    name: translate("en", "library.document.label", {
+      name: "FAKE Letter.pdf",
+    }),
   });
   await expect(letter).toBeVisible();
   await expectNoViolations(page, "library", large.cutOff);
@@ -368,7 +373,11 @@ async function walkTheVault(large: LargeText) {
   ).toBeVisible();
   await expectNoViolations(page, "Shared with me", large.cutOff);
   await page
-    .getByRole("button", { name: "Details for FAKE Referral.pdf" })
+    .getByRole("button", {
+      name: translate("en", "library.document.details", {
+        name: "FAKE Referral.pdf",
+      }),
+    })
     .click();
   const shared = page.getByRole("dialog", { name: "FAKE Referral.pdf" });
   await expect(shared.getByRole("combobox", { name: "Move to" })).toBeVisible();
@@ -415,10 +424,8 @@ test("has no automatically detectable WCAG violations on the vault screens with 
   await withReaderText200(page, walkTheVault);
 });
 
-// #84: at the reader's 200% default text, the library's controls are cut off
-// (first setup fits since #84 step 1; the vault's library fits on a computer
-// since #67's larger controls). Expected to fail until #84 is fixed; axe and
-// sideways scrolling are still checked at that size by the tests above.
+// #84: the preview library still cuts controls off at 200% default text.
+// The vault test below requires the cut-off checks on both desktop and phone.
 test("cuts nothing off with the reader's default text at 200% (#84)", async ({
   page,
 }) => {
@@ -431,10 +438,6 @@ test("cuts nothing off with the reader's default text at 200% (#84)", async ({
 
 test("cuts nothing off on the vault screens with the reader's default text at 200% (#84)", async ({
   page,
-}, testInfo) => {
-  test.fail(
-    testInfo.project.name === "phone",
-    "#84: the library is cut off on a phone at 200% default text",
-  );
+}) => {
   await withReaderText200(page, walkTheVault, true);
 });
