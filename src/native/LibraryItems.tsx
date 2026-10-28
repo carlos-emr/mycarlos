@@ -1,11 +1,14 @@
+import type { ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useI18n } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
+import { ClinicServiceDate } from "./ClinicServiceDate";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibraryItemsProps {
   view: "list" | "grid";
+  suggestionFor?: (record: VaultRecord) => ReactNode;
   folders: VaultFolder[];
   records: VaultRecord[];
   selectedIds: string[];
@@ -44,6 +47,7 @@ function EmptyState({ searching }: { searching: boolean }) {
 
 export function LibraryItems({
   view,
+  suggestionFor,
   folders,
   records,
   selectedIds,
@@ -177,6 +181,7 @@ export function LibraryItems({
                   {formatBytes(record.plaintextSize)} · {kind.label}
                   {!record.available && ` · ${unavailableLabel}`}
                 </small>
+                <ClinicServiceDate value={record.clinicServiceDate} />
                 {recordLocation && (
                   <small
                     className="native-result-path"
@@ -186,8 +191,15 @@ export function LibraryItems({
                   </small>
                 )}
               </span>
+              {suggestionFor?.(record)}
             </div>
-            <span className="column">{record.sourceLabel}</span>
+            <span className="column">
+              {record.verifiedClinicName
+                ? t("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : record.sourceLabel}
+            </span>
             <span className="column">
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
@@ -300,9 +312,12 @@ export function LibraryItems({
                 <span>
                   <strong>{record.displayName}</strong>
                   <small>
+                    {record.clinicServiceDate !== undefined &&
+                      `${t("library.column.added")}: `}
                     {new Date(record.importedAtMs).toLocaleDateString()}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
+                  <ClinicServiceDate value={record.clinicServiceDate} />
                   {recordLocation && (
                     <small className="native-result-path">
                       In {recordLocation(record)}
