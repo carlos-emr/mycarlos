@@ -6,6 +6,7 @@ import {
   fakeVault,
   recordAnnouncements,
   screenReaderSmoke,
+  tabRound,
   walk,
 } from "./support/a11y";
 
@@ -375,6 +376,40 @@ test("Move to in a document's details moves it only where the patient chooses (#
   ).toBeVisible();
   // Move is disabled once the document is there; focus goes back to the list.
   await expect(moveTo).toBeFocused();
+});
+
+test("the keyboard walk handles native date parts and still detects a trapped date", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <style>:focus { outline: 3px solid blue; }</style>
+    <button>Before</button>
+    <label>Birth date <input type="date"></label>
+    <button>After</button>
+  `);
+  expect((await tabRound(page)).problems).toEqual([]);
+  await page.locator('input[type="date"]').evaluate((input) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") event.preventDefault();
+    });
+  });
+  expect((await tabRound(page)).problems).toContain(
+    'focus came back to input type="date" before going round',
+  );
+  await page.locator('input[type="date"]').evaluate((input) => {
+    const date = input.cloneNode(true);
+    input.replaceWith(date);
+    date.addEventListener("keydown", (event) => {
+      if (
+        (event as KeyboardEvent).key === "Tab" &&
+        (event as KeyboardEvent).shiftKey
+      )
+        event.preventDefault();
+    });
+  });
+  expect((await tabRound(page)).problems).toContain(
+    "Shift+Tab did not come round in 150 presses",
+  );
 });
 
 test("Settings work from the keyboard alone", async ({ page }) => {

@@ -81,6 +81,7 @@ function renderLibrary(
 ) {
   let current = initial;
   const bridge = {
+    platform: vi.fn().mockResolvedValue("windows"),
     savePhoto: vi.fn(async () => {
       current = {
         ...current,

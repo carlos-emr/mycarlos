@@ -39,6 +39,7 @@ function renderLibrary(
 ) {
   let current = base;
   const bridge = {
+    platform: vi.fn().mockResolvedValue("windows"),
     isPhoto: vi.fn(async () => false),
     isLockedPdf: vi.fn(async (id: string) => id === "locked-1"),
     unlockPdf: vi.fn(async () => {

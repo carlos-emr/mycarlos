@@ -7,6 +7,17 @@ export interface PatientProfile {
   id: string;
   displayName: string;
   createdAtMs: number;
+  fullName?: string;
+  birthDate?: string;
+}
+
+export interface PersonDetails {
+  fullName?: string;
+  birthDate?: string;
+}
+export interface FoundIdentity {
+  name: string;
+  birthDate?: string;
 }
 
 export interface VaultFolder {
@@ -32,6 +43,11 @@ export interface VaultRecord {
   /** Set while the document is hidden (#71): out of every view but Hidden,
    * with its encrypted file kept. Nothing is ever deleted. */
   hidden?: HiddenRecord | null;
+  /** The separate exact incoming PDF, retained independently of display bytes. */
+  originalPdfAvailable?: boolean;
+  verifiedClinicName?: string;
+  /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
+  clinicServiceDate?: string;
 }
 
 /** When, and why, a document was hidden (#71). */
@@ -49,6 +65,9 @@ export interface VaultSnapshot {
   profiles: PatientProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];
+  /** Native compile capability; absent/false keeps the linking flow hidden. */
+  portalLinkingEnabled?: boolean;
+  portalLinks?: PortalLinkSummary[];
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
   recoveryKeySetAtMs?: number | null;
@@ -58,6 +77,49 @@ export interface VaultSnapshot {
    * as the "Shared with me" folder, never as a person. In `profiles` once the
    * first file has arrived. */
   sharedProfileId?: string;
+}
+
+export interface PortalLinkSummary {
+  id: string;
+  portalBase: string;
+  deviceName: string;
+  profileId: string | null;
+  clinicName: string | null;
+  fingerprints: string[];
+  incomplete: boolean;
+  deviceKeyId: string;
+  deviceFingerprint: string;
+  approvalRequested: boolean;
+  clinicApproved: boolean;
+  approvalStatus?:
+    | "pending"
+    | "challenge_ready"
+    | "accepted"
+    | "refused"
+    | "expired"
+    | "cancelled"
+    | null;
+  approvalReason?:
+    | "invalid_proof"
+    | "candidate_changed"
+    | "binding_changed"
+    | "predecessor_not_accepted"
+    | "predecessor_removed"
+    | "stale_predecessor"
+    | "challenge_expired"
+    | "challenge_cancelled"
+    | "staff_required"
+    | "no_accepted_approver"
+    | null;
+  approvalCanRestart?: boolean;
+  approvalRequestLimitReached?: boolean;
+}
+
+export interface PortalLinkInput {
+  portalBase: string;
+  code: string;
+  deviceName: string;
+  profileId: string | null;
 }
 
 /** One group of the recovery key as the patient typed it back, by position. */
@@ -207,6 +269,15 @@ export interface VaultBridge {
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
+  linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
+  checkDocuments?(): Promise<{
+    added: number;
+    refused: number;
+    receiptsPending: number;
+    issues?: { linkId: string; clinicName: string; code: string }[];
+  }>;
+  requestDeviceApproval?(linkId: string): Promise<void>;
+  restartDeviceApproval?(linkId: string): Promise<void>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -252,7 +323,13 @@ export interface VaultBridge {
     credential: RestoreCredential,
     replace: boolean,
   ): Promise<boolean>;
-  createProfile(displayName: string): Promise<string>;
+  createProfile(displayName: string, details?: PersonDetails): Promise<string>;
+  renameProfile(profileId: string, displayName: string): Promise<void>;
+  updateProfileDetails?(
+    profileId: string,
+    details: PersonDetails,
+  ): Promise<void>;
+  sharedIdentity?(recordId: string): Promise<FoundIdentity | null>;
   createFolder(
     profileId: string,
     parentId: string | null,
@@ -378,6 +455,14 @@ export function boxesWithControlCharacters(
   return boxes.length ? boxes : undefined;
 }
 
+/** Refusals the app words itself, in the language in use, by their code: a
+ * vault or backup that a newer myCarlos saved is not damaged, and updating
+ * opens it. */
+const ownWording: Readonly<Record<string, MessageKey>> = {
+  vault_newer_format: "error.newerFormat.vault",
+  backup_newer_format: "error.newerFormat.backup",
+};
+
 /** The message for a failed vault operation. `boxes` names, in plain words,
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */
@@ -386,10 +471,34 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     return typeof error.uiText === "string"
       ? error.uiText
       : error.uiText.render();
+  const portalErrors = {
+    approval_expired: "portal.approvalExpired",
+    approval_cancelled: "portal.approvalCancelled",
+    approval_refused: "portal.approvalRefused",
+    approval_contact_clinic: "portal.approvalContact",
+    approval_missing: "portal.approvalMissing",
+    portal_link_address: "portal.errorAddress",
+    portal_link_code: "portal.errorCode",
+    portal_link_device_name: "portal.errorDeviceName",
+    portal_link_code_rejected: "portal.errorCodeRejected",
+    portal_link_keys_missing: "portal.errorKeys",
+    portal_link_device_exists: "portal.errorExists",
+    portal_link_incomplete: "portal.errorIncomplete",
+    pickup_refused: "portal.errorRefused",
+    pickup_damaged: "portal.errorDamaged",
+  } as const;
+  for (const [code, key] of Object.entries(portalErrors))
+    if (hasErrorCode(error, code)) return t(key);
   if (boxes?.length && hasErrorCode(error, "invalid"))
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
     });
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as PublicError).code
+      : undefined;
+  if (typeof code === "string" && Object.hasOwn(ownWording, code))
+    return t(ownWording[code]);
   if (typeof error === "object" && error !== null && "message" in error) {
     const { message, messageKey, note, noteKey, retryAfterMs, damageRecord } =
       error as PublicError;
@@ -553,6 +662,13 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
+    checkDocuments: () => invoke("vault_check_documents"),
+    restartDeviceApproval: (linkId) =>
+      invoke("vault_restart_device_approval", { linkId }),
+    requestDeviceApproval: (linkId) =>
+      invoke("vault_request_device_approval", { linkId }),
+    linkPortal: (request) =>
+      invoke<PortalLinkSummary>("vault_portal_link", { request }),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },
@@ -588,8 +704,20 @@ export function createVaultBridge(): VaultBridge {
         locale: getLocale(),
         request: { pickId, ...credential, replace },
       }),
-    createProfile: (displayName) =>
-      invoke<string>("vault_create_profile", { request: { displayName } }),
+    createProfile: (displayName, details = {}) =>
+      invoke<string>("vault_create_profile", {
+        request: { displayName, details, today: localDateText(new Date()) },
+      }),
+    renameProfile: (profileId, displayName) =>
+      invoke<void>("vault_rename_profile", {
+        request: { profileId, displayName },
+      }),
+    updateProfileDetails: (profileId, details) =>
+      invoke<void>("vault_update_profile_details", {
+        request: { profileId, details, today: localDateText(new Date()) },
+      }),
+    sharedIdentity: (recordId) =>
+      invoke<FoundIdentity | null>("vault_shared_identity", { recordId }),
     createFolder: (profileId, parentId, name) =>
       invoke<string>("vault_create_folder", {
         request: { profileId, parentId, name },

@@ -1,5 +1,5 @@
 import { useI18n, t as translateNow } from "../i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -12,6 +12,7 @@ import {
 } from "./MoveTargetSelect";
 
 interface RecordDetailsProps {
+  suggestion?: ReactNode;
   record: VaultRecord;
   folders: VaultFolder[];
   busy: boolean;
@@ -42,6 +43,7 @@ interface RecordDetailsProps {
 }
 export function RecordDetails({
   record,
+  suggestion,
   folders,
   busy,
   readOnly,
@@ -187,12 +189,28 @@ export function RecordDetails({
           </div>
           <div>
             <dt>{translateNow("library.column.source")}</dt>
-            <dd>{recordSource(record)}</dd>
+            <dd>
+              {record.verifiedClinicName
+                ? translateNow("portal.sourceVerified", {
+                    clinic: record.verifiedClinicName,
+                  })
+                : recordSource(record)}
+            </dd>
           </div>
           <div>
             <dt>{translateNow("library.column.added")}</dt>
             <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
           </div>
+          {record.clinicServiceDate !== undefined && (
+            <div>
+              <dt>{translateNow("portal.serviceDateLabel")}</dt>
+              <dd>
+                {record.clinicServiceDate === ""
+                  ? translateNow("portal.dateNotRecorded")
+                  : record.clinicServiceDate}
+              </dd>
+            </div>
+          )}
           <div>
             <dt>{translateNow("interface.RecordDetails.file")}</dt>
             <dd>{formatBytes(record.plaintextSize)}</dd>
@@ -224,6 +242,7 @@ export function RecordDetails({
             </span>
           </p>
         )}
+        {suggestion}
         <div className="native-record-rename">
           {onUnlock && (
             <button

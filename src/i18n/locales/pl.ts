@@ -7,6 +7,74 @@ import type { MessageKey } from "./en";
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
   ...interfaceMessages,
+  "portal.serviceDateLabel": "Data świadczenia",
+  "portal.serviceDate": "Data świadczenia: {date}",
+  "portal.dateNotRecorded": "Data nie została zapisana",
+  "portal.restartApproval": "Rozpocznij nową prośbę o zatwierdzenie",
+  "portal.approvalExpired":
+    "Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+  "portal.approvalCancelled":
+    "Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+  "portal.approvalRefused":
+    "Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
+  "portal.approvalContact":
+    "Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
+  "portal.approvalMissing":
+    "Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.",
+  "portal.confirmationsPending":
+    "Zapisane dokumenty oczekujące na potwierdzenie odbioru: {count}. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.",
+  "portal.partialResult":
+    "Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Dokumenty z przychodni",
+  "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",
+  "portal.address": "Adres HTTPS portalu",
+  "portal.code": "Kod połączenia",
+  "portal.deviceName": "Nazwa tego urządzenia",
+  "portal.person": "Czyja dokumentacja",
+  "portal.matchPerson": "Dopasuj dane z dokumentu",
+  "portal.routing":
+    "Dokumenty trafiają do osoby o zgodnym pełnym imieniu i nazwisku oraz dacie urodzenia. Pozostałe trafiają do Udostępnionych mi.",
+  "portal.link": "Połącz z przychodnią",
+  "portal.check": "Sprawdź nowe dokumenty",
+  "portal.result":
+    "Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
+  "portal.incomplete":
+    "Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.",
+  "portal.approved": "Przychodnia zatwierdziła to urządzenie.",
+  "portal.notRequested":
+    "Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.",
+  "portal.awaiting":
+    "Zapisano prośbę o zatwierdzenie. Sprawdź aktualizacje lub wyślij ją ponownie.",
+  "portal.deviceCode": "Kod urządzenia",
+  "portal.copy": "Kopiuj kod urządzenia",
+  "portal.copied": "Skopiowano kod urządzenia.",
+  "portal.copyFailed": "Zaznacz cały kod urządzenia i skopiuj go.",
+  "portal.fingerprint": "Pełny odcisk urządzenia",
+  "portal.compare":
+    "Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.",
+  "portal.requestApproval": "Poproś przychodnię o zatwierdzenie",
+  "portal.sourceVerified": "Z {clinic} · Zweryfikowano",
+  "portal.errorAddress":
+    "Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.",
+  "portal.errorCode":
+    "Wpisz pełny kod połączenia wyświetlany w portalu pacjenta.",
+  "portal.errorDeviceName":
+    "Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.",
+  "portal.errorCodeRejected":
+    "Portal nie zaakceptował kodu. Utwórz nowy kod połączenia w portalu pacjenta.",
+  "portal.errorKeys":
+    "Przychodnia nie opublikowała jeszcze klucza podpisu. Połączenie jest nieukończone.",
+  "portal.errorExists":
+    "To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.",
+  "portal.errorIncomplete":
+    "Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.",
+  "portal.errorRefused":
+    "Nie udało się zweryfikować dokumentu z przychodni. Nie dodano go ani nie wysłano potwierdzenia odbioru.",
+  "portal.errorDamaged":
+    "Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Przywróć go z kopii zapasowej albo poproś przychodnię o ponowne wysłanie.",
+
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
   "frame.window.label": "Prywatny sejf myCarlos",
@@ -184,6 +252,13 @@ export const pl: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Zmień nazwę dokumentu",
+  "rename.title.profile": "Zmień nazwę folderu osoby",
+  "rename.label.profile": "Nazwa folderu",
+  "rename.help.profile":
+    "Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.",
+  "rename.profile.controls": "Nazwy nie mogą zawierać znaków sterujących.",
+  "rename.profile.saved": "Nazwa folderu została zmieniona na {name}.",
+  "rename.profile.action": "Zmień nazwę „{name}”",
   "rename.title.folder": "Zmień nazwę folderu",
   "rename.label.folder": "Nazwa folderu",
   "rename.label.document": "Nazwa pliku",
@@ -447,6 +522,10 @@ export const pl: Record<MessageKey, Message> = {
     "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Proszę zachować wcześniejsze kopie zapasowe. Przed ponowną próbą proszę poprosić o pomoc w odzyskaniu tego dokumentu z nieuszkodzonej kopii lub kopii zapasowej.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
+  "error.newerFormat.vault":
+    "Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.",
+  "error.newerFormat.backup":
+    "Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -534,4 +613,38 @@ export const pl: Record<MessageKey, Message> = {
     "Wyszukiwanie wyczyszczone. Foldery w tej lokalizacji: {folders}. Dokumenty: {documents}.",
   "library.noMatch.title": "Brak pasujących dokumentów",
   "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName": "Imię i nazwisko, jak na dokumentach z przychodni",
+  "personDetails.birthDate": "Data urodzenia",
+  "personDetails.birthDateUnknown": "Nie znam daty urodzenia tej osoby",
+  "personDetails.help":
+    "Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.",
+  "personDetails.nameTooLong": "Imię i nazwisko są zbyt długie. Skróć je.",
+  "personDetails.fullNameRequired": "Wpisz imię i nazwisko tej osoby.",
+  "personDetails.birthDateRequired":
+    "Wpisz datę urodzenia lub zaznacz, że jej nie znasz.",
+  "personDetails.invalidDate":
+    "Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.",
+  "personDetails.futureDate": "Data urodzenia nie może być w przyszłości.",
+  "personDetails.list": "Dane osób",
+  "personDetails.for": "Dane osoby {name}",
+  "personDetails.save": "Zapisz dane",
+  "personDetails.cancel": "Anuluj",
+  "personDetails.noName": "Brak imienia i nazwiska",
+  "personDetails.noDate": "Brak daty urodzenia",
+  "personDetails.editFor": "Edytuj dane osoby {name}",
+  "personDetails.edit": "Edytuj dane",
+  "personDetails.saved": "Zapisano dane osoby {name}.",
+  "personSuggestion.byDate": "data urodzenia w dokumencie jest zgodna",
+  "personSuggestion.byBoth":
+    "data urodzenia i imię i nazwisko w dokumencie są zgodne",
+  "personSuggestion.byName": "imię i nazwisko w dokumencie są zgodne",
+  "personSuggestion.for": "Sugerowana osoba dla dokumentu {document}",
+  "personSuggestion.offer":
+    "Wygląda na to, że ten dokument jest dla osoby {name} ({why}). Przenieść go do jej dokumentacji?",
+  "personSuggestion.moveLabel":
+    "Przenieś {document} do dokumentacji osoby {name}",
+  "personSuggestion.move": "Przenieś",
+  "personSuggestion.dismissLabel": "To nie ta osoba: {document}",
+  "personSuggestion.dismiss": "To nie ta osoba",
 };

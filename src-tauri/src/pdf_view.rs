@@ -21,23 +21,35 @@ use zeroize::Zeroizing;
 
 /// The latest page request; an older one still drawing is stopped.
 static VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
+static IDENTITY_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// One page request. It stays current until a newer request, a lock or the reader closing.
 #[derive(Clone, Copy)]
-pub(crate) struct ViewTicket(u64);
+pub(crate) struct ViewTicket(u64, bool);
 
 impl ViewTicket {
     pub(crate) fn new() -> Self {
-        Self(VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1)
+        Self(VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1, false)
+    }
+
+    /// Background suggestions cannot supersede the reader's page request.
+    pub(crate) fn identity() -> Self {
+        Self(IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1, true)
     }
 
     pub(crate) fn is_current(&self) -> bool {
-        VIEW_GENERATION.load(Ordering::SeqCst) == self.0
+        let generation = if self.1 {
+            &IDENTITY_GENERATION
+        } else {
+            &VIEW_GENERATION
+        };
+        generation.load(Ordering::SeqCst) == self.0
     }
 }
 
 /// Stops any page being drawn: when the vault locks and when the reader closes.
 pub(crate) fn cancel_views() {
+    IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst);
     VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -48,7 +60,7 @@ const VIEW_RESPONSE_MAGIC: &[u8; 8] = b"MCPDFVR2";
 /// The widest or tallest page picture, in pixels: larger asks are scaled down.
 pub(crate) const MAX_SIDE: u32 = 4096;
 /// The most page text sent back; longer text is cut, at a character boundary.
-const MAX_PAGE_TEXT_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_PAGE_TEXT_BYTES: usize = 256 * 1024;
 /// The largest picture taken back: a 4096 x 4096 page as PNG stays well below it.
 const MAX_PNG_BYTES: usize = 96 * 1024 * 1024;
 

@@ -7,6 +7,75 @@ import type { Message } from "../types";
  * as plain text, never as HTML. */
 export const en = {
   ...interfaceMessages,
+  "portal.serviceDateLabel": "Service date",
+  "portal.serviceDate": "Service date: {date}",
+  "portal.dateNotRecorded": "Date not recorded",
+  "portal.restartApproval": "Start a new approval request",
+  "portal.approvalExpired":
+    "This approval request expired. Check for updates before starting a new request.",
+  "portal.approvalCancelled":
+    "This approval request was cancelled. Check for updates before starting a new request.",
+  "portal.approvalRefused":
+    "The clinic refused this device approval request. Contact your clinic for next steps.",
+  "portal.approvalContact":
+    "Clinic approval needs to be checked. Contact your clinic for next steps.",
+  "portal.approvalMissing":
+    "Your saved approval request was not found on the portal. Send the saved request again.",
+  "portal.confirmationsPending":
+    "Saved documents awaiting pickup confirmation: {count}. Check again to finish confirmation. Your saved copies stay in the vault.",
+  "portal.partialResult":
+    "Some clinic checks need attention. New documents saved: {added}. Documents that could not be verified: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Clinic documents",
+  "portal.intro":
+    "Link myCarlos using the address and code shown in your patient portal.",
+  "portal.address": "Portal HTTPS address",
+  "portal.code": "Linking code",
+  "portal.deviceName": "Name for this device",
+  "portal.person": "Whose records",
+  "portal.matchPerson": "Match the document details",
+  "portal.routing":
+    "Documents go to a person with a matching full name and birth date. Other documents go to Shared with me.",
+  "portal.link": "Link to clinic",
+  "portal.check": "Check for new documents",
+  "portal.result":
+    "New documents saved: {added}. Documents that could not be verified: {refused}.",
+  "portal.incomplete":
+    "Link incomplete. Check Linked devices in the portal before trying again.",
+  "portal.approved": "The clinic approved this device.",
+  "portal.notRequested":
+    "Request clinic approval to receive documents on this device.",
+  "portal.awaiting":
+    "Approval request saved. Check for updates or send it again.",
+  "portal.deviceCode": "Device code",
+  "portal.copy": "Copy device code",
+  "portal.copied": "Device code copied.",
+  "portal.copyFailed": "Select the entire device code and copy it.",
+  "portal.fingerprint": "Full device fingerprint",
+  "portal.compare":
+    "Ask clinic staff to compare this entire fingerprint on this screen before approving this device.",
+  "portal.requestApproval": "Request clinic approval",
+  "portal.sourceVerified": "From {clinic} · Verified",
+  "portal.errorAddress":
+    "Enter the portal HTTPS address without a username, password, query, or fragment.",
+  "portal.errorCode":
+    "Enter the complete linking code shown in your patient portal.",
+  "portal.errorDeviceName":
+    "Choose a device name of 1 to 64 characters without control characters.",
+  "portal.errorCodeRejected":
+    "The portal did not accept that code. Make a new linking code in your patient portal.",
+  "portal.errorKeys":
+    "The clinic has not published a signing key yet. Linking is incomplete.",
+  "portal.errorExists":
+    "This device is already registered. Check Linked devices in your patient portal.",
+  "portal.errorIncomplete":
+    "The portal request could not be completed. Check your connection and device clock, then try again.",
+  "portal.errorRefused":
+    "A clinic document could not be verified. It was not added and no pickup receipt was sent.",
+  "portal.errorDamaged":
+    "A saved document from this clinic is damaged or missing, so its pickup confirmation was not sent. Your other documents were still checked. Restore it from a backup, or ask the clinic to send it again.",
+
   // Window frame
   "frame.banner.title": "Synthetic-data development build",
   "frame.banner.body": "Do not use real patient information",
@@ -170,6 +239,13 @@ export const en = {
 
   // Rename a document or folder
   "rename.title.document": "Rename document",
+  "rename.title.profile": "Rename person's folder",
+  "rename.label.profile": "Folder name",
+  "rename.help.profile":
+    "This changes only the displayed folder name. The person's folders and documents stay where they are.",
+  "rename.profile.controls": "Names cannot contain control characters.",
+  "rename.profile.saved": "Folder name changed to {name}.",
+  "rename.profile.action": "Rename “{name}”",
   "rename.title.folder": "Rename folder",
   "rename.label.folder": "Folder name",
   "rename.label.document": "File name",
@@ -418,6 +494,10 @@ export const en = {
     'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. Keep your older backups. Ask for help recovering this document from a good copy or backup before trying again.',
   "error.damaged.where": "added {date}",
   "error.damaged.whereFor": "added {date}, in {person}'s records",
+  "error.newerFormat.vault":
+    "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+  "error.newerFormat.backup":
+    "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -495,6 +575,38 @@ export const en = {
     "Search cleared. Folders in this location: {folders}. Documents: {documents}.",
   "library.noMatch.title": "No matching records",
   "library.noMatch.help": "Try another search.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName": "Full name, as on clinic documents",
+  "personDetails.birthDate": "Date of birth",
+  "personDetails.birthDateUnknown": "I don't know this person's date of birth",
+  "personDetails.help":
+    "Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.",
+  "personDetails.nameTooLong": "This full name is too long. Shorten it.",
+  "personDetails.fullNameRequired": "Enter the person's full name.",
+  "personDetails.birthDateRequired":
+    "Enter a date of birth or choose that it is unknown.",
+  "personDetails.invalidDate":
+    "Enter a valid birth date as year, month and day.",
+  "personDetails.futureDate": "A birth date cannot be in the future.",
+  "personDetails.list": "People's details",
+  "personDetails.for": "Details for {name}",
+  "personDetails.save": "Save details",
+  "personDetails.cancel": "Cancel",
+  "personDetails.noName": "No full name",
+  "personDetails.noDate": "No birth date",
+  "personDetails.editFor": "Edit details for {name}",
+  "personDetails.edit": "Edit details",
+  "personDetails.saved": "Details for {name} saved.",
+  "personSuggestion.byDate": "the birth date on the document matches",
+  "personSuggestion.byBoth": "the birth date and name on the document match",
+  "personSuggestion.byName": "the name on the document matches",
+  "personSuggestion.for": "Suggested person for {document}",
+  "personSuggestion.offer":
+    "Looks like this is for {name} ({why}). Move it to their records?",
+  "personSuggestion.moveLabel": "Move {document} to {name}'s records",
+  "personSuggestion.move": "Move",
+  "personSuggestion.dismissLabel": "Not this person: {document}",
+  "personSuggestion.dismiss": "Not this person",
 } as const satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
