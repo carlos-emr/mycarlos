@@ -685,8 +685,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Clinic work clears the line when it starts, so anything on it when a
   // result arrives was written by other work since, and is kept. Nothing is
   // said for a session that has ended or is locking.
-  const addNotice = (message: string) =>
-    setNotice((shown) => (shown ? `${shown} ${message}` : message));
+  // A notice is translated text (UiText), not a plain string: join them as
+  // text, or the line would read "[object Object] …".
+  const addNotice = (message: UiText) =>
+    setNotice((shown) => (shown ? joinText(shown, message) : message));
   const showPortalNotice = (startedIn: number, message: string) => {
     // A hidden screen after a failed lock shows nothing new; only a lock,
     // which ends this session, can leave it.

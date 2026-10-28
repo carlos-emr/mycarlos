@@ -8618,7 +8618,7 @@ describe("clinic connection operations", () => {
     ],
     [
       "transfer",
-      "1 file(s) encrypted and imported. Device linked. Its approval status is shown in Security, under Clinic documents.",
+      "1 document encrypted and added. Device linked. Its approval status is shown in Security, under Clinic documents.",
     ],
   ] as const)(
     "adds a clinic result that arrives during an import's %s after the import's own result",
@@ -8684,7 +8684,9 @@ describe("clinic connection operations", () => {
           ? pick(null)
           : finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
       );
-      await waitFor(() => expect(screen.getByText(expected)).toBeVisible());
+      await waitFor(() =>
+        expect(screen.getByText(humanText(expected))).toBeVisible(),
+      );
     },
   );
 
