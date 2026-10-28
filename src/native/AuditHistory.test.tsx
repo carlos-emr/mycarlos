@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { formatDate, setLocaleOverride, translate } from "../i18n";
+import { humanText } from "../test/humanText";
 import type {
   AuditHistoryEntry,
   AuditHistoryView,
@@ -67,7 +68,7 @@ describe("AuditHistory verified native results", () => {
     expect(
       screen.getByRole("heading", { name: "Audit history" }),
     ).toHaveFocus();
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
       "Checking and reading the complete history…",
     );
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
@@ -104,10 +105,10 @@ describe("AuditHistory verified native results", () => {
     );
     await screen.findByText(malicious);
     const articles = screen.getAllByRole("article");
-    expect(within(articles[0]).getByRole("heading")).toHaveTextContent(
+    expect(within(articles[0]).getByRole("heading")).toHaveHumanTextContent(
       "Document moved",
     );
-    expect(within(articles[1]).getByRole("heading")).toHaveTextContent(
+    expect(within(articles[1]).getByRole("heading")).toHaveHumanTextContent(
       "Vault created",
     );
     for (const text of [
@@ -118,15 +119,15 @@ describe("AuditHistory verified native results", () => {
       "FAKE /exports/copy.pdf",
       "FAKE 0.1.0",
     ])
-      expect(within(articles[0]).getByText(text)).toBeVisible();
+      expect(within(articles[0]).getByText(humanText(text))).toBeVisible();
     expect(
       within(articles[0]).getByText(/^Locked by you at/),
-    ).toHaveTextContent(
+    ).toHaveHumanTextContent(
       formatDate(1768478400000, { dateStyle: "medium", timeStyle: "short" }),
     );
     expect(view.container.querySelector("img")).toBeNull();
     expect(rows).toEqual(original);
-    expect(screen.getByRole("status")).toHaveTextContent("2 events");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("2 events");
   });
 
   it.each(["fr", "pl", "pt-BR", "es"] as const)(
@@ -138,13 +139,13 @@ describe("AuditHistory verified native results", () => {
       render(<AuditHistory {...shown} />);
       await screen.findByText("FAKE Avery");
       await act(async () => setLocaleOverride(locale));
-      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      expect(screen.getByRole("heading", { level: 1 })).toHaveHumanTextContent(
         translate(locale, "interface.history.title"),
       );
-      expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      expect(screen.getByRole("heading", { level: 2 })).toHaveHumanTextContent(
         translate(locale, "interface.history.event.created"),
       );
-      expect(screen.getByRole("status")).toHaveTextContent(
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
         translate(locale, "interface.history.events", { count: 1 }),
       );
       expect(
@@ -160,13 +161,13 @@ describe("AuditHistory verified native results", () => {
     const shown = props(bridge(vi.fn().mockRejectedValue(unverified)));
     render(<AuditHistory {...shown} />);
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
+    expect(alert).toHaveHumanTextContent(
       "The history could not be read and verified. No events are shown.",
     );
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent("/private/vault");
+    expect(document.body).not.toHaveHumanTextContent("/private/vault");
     await act(async () => setLocaleOverride("fr"));
-    expect(alert).toHaveTextContent(
+    expect(alert).toHaveHumanTextContent(
       translate("fr", "interface.history.error.unverified"),
     );
     expect(shown.onLock).not.toHaveBeenCalled();
@@ -217,7 +218,7 @@ describe("AuditHistory verified native results", () => {
       view.rerender(<AuditHistory {...nextProps} />);
       expect(screen.queryByText("FAKE Avery")).not.toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-      expect(screen.getByRole("status")).toHaveTextContent("Checking");
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Checking");
       await act(async () =>
         next.resolve(complete([entry({ name: "FAKE Blake" })])),
       );
@@ -274,24 +275,24 @@ describe("AuditHistory damaged history (D129)", () => {
       />,
     );
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
+    expect(alert).toHaveHumanTextContent(
       `Part of this history is damaged. Events after ${shownDate(rows[1].atMs)} can't be checked and aren't shown.`,
     );
     const articles = screen.getAllByRole("article");
     expect(articles).toHaveLength(2);
-    expect(within(articles[0]).getByRole("heading")).toHaveTextContent(
+    expect(within(articles[0]).getByRole("heading")).toHaveHumanTextContent(
       "Vault opened",
     );
     expect(
       screen.queryByText("Events here can't be checked and aren't shown."),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("2 events");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("2 events");
     expect(
       alert.compareDocumentPosition(screen.getByRole("list")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     await act(async () => setLocaleOverride("fr"));
-    expect(alert).toHaveTextContent(
+    expect(alert).toHaveHumanTextContent(
       translate("fr", "interface.history.damaged", {
         date: shownDate(rows[1].atMs),
       }),
@@ -313,7 +314,7 @@ describe("AuditHistory damaged history (D129)", () => {
       />,
     );
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
+    expect(alert).toHaveHumanTextContent(
       `Part of this history is damaged. Events between ${shownDate(early[1].atMs)} and ${shownDate(later[0].atMs)} can't be checked and aren't shown.`,
     );
     // Newest first: the later end, the gap, then the start.
@@ -331,9 +332,9 @@ describe("AuditHistory damaged history (D129)", () => {
       "Vault opened",
       "Vault created",
     ]);
-    expect(screen.getByRole("status")).toHaveTextContent("4 events");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("4 events");
     await act(async () => setLocaleOverride("pl"));
-    expect(alert).toHaveTextContent(
+    expect(alert).toHaveHumanTextContent(
       translate("pl", "interface.history.damagedBetween", {
         from: shownDate(early[1].atMs),
         to: shownDate(later[0].atMs),
@@ -350,7 +351,7 @@ describe("AuditHistory damaged history (D129)", () => {
         {...props(bridge(vi.fn().mockResolvedValue(damaged([], later))))}
       />,
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       `Part of this history is damaged. Events before ${shownDate(later[0].atMs)} can't be checked and aren't shown.`,
     );
     expect(screen.getAllByRole("article")).toHaveLength(1);
@@ -375,7 +376,7 @@ describe("AuditHistory damaged history (D129)", () => {
         )}
       />,
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "Part of this history is damaged. Its events can't be checked, so none are shown.",
     );
   });
@@ -386,7 +387,7 @@ describe("AuditHistory damaged history (D129)", () => {
         {...props(bridge(vi.fn().mockResolvedValue(damaged([]))))}
       />,
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "Part of this history is damaged. Its events can't be checked, so none are shown.",
     );
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
@@ -437,7 +438,7 @@ describe("AuditHistory damaged history (D129)", () => {
       />,
     );
     await screen.findByText("FAKE Avery");
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
       shownDate(entry().atMs),
     );
   });
@@ -480,7 +481,7 @@ describe("AuditHistory recorded semantics", () => {
           translate(locale, "interface.history.laterSessionNotRecorded"),
         ),
       );
-      expect(session).toHaveTextContent(
+      expect(session).toHaveHumanTextContent(
         translate(locale, "interface.history.sessionLockedByApp", {
           date: formatDate(1768478400000, {
             dateStyle: "medium",
