@@ -1915,14 +1915,10 @@ async fn vault_refresh_device_approval(
 fn approval_code_issue(error: VaultError) -> PublicError {
     use portal_link::LinkError;
     let (code, message_key) = match &error {
-        VaultError::Invalid => (
-            "approval_code_format",
-            "portal.codeFormat",
-        ),
-        VaultError::Portal(LinkError::HttpRefused(_, _)) => (
-            "approval_code_refused",
-            "portal.codeRefused",
-        ),
+        VaultError::Invalid => ("approval_code_format", "portal.codeFormat"),
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("approval_code_refused", "portal.codeRefused")
+        }
         _ => return approval_check_issue(error),
     };
     PublicError {
