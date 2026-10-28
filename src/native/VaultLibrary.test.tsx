@@ -86,7 +86,7 @@ describe("VaultLibrary folders", () => {
   it("sends a person's top-level name correction to that same profile, not the folder mutator", async () => {
     const { bridge } = renderLibrary();
     fireEvent.click(
-      screen.getByRole("button", { name: "Rename “FAKE Avery”" }),
+      screen.getByRole("button", { name: humanText("Rename “FAKE Avery”") }),
     );
     expect(
       screen.getByRole("dialog", { name: "Rename person's folder" }),
@@ -110,7 +110,7 @@ describe("VaultLibrary folders", () => {
   it("cancels a person's name correction without any native mutation", () => {
     const { bridge } = renderLibrary();
     fireEvent.click(
-      screen.getByRole("button", { name: "Rename “FAKE Avery”" }),
+      screen.getByRole("button", { name: humanText("Rename “FAKE Avery”") }),
     );
     fireEvent.change(screen.getByLabelText("Folder name"), {
       target: { value: "FAKE Corrected" },
@@ -210,9 +210,13 @@ describe("clinic service dates", () => {
       };
       renderLibrary({ ...snapshot, records: [document] });
       const value = serviceDate === "" ? "Date not recorded" : serviceDate;
-      expect(screen.getByText(`Service date: ${value}`)).toBeVisible();
+      expect(
+        screen.getByText(humanText(`Service date: ${value}`)),
+      ).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
-      expect(screen.getByText(`Service date: ${value}`)).toBeVisible();
+      expect(
+        screen.getByText(humanText(`Service date: ${value}`)),
+      ).toBeVisible();
       expect(
         screen.getByText(
           `Date added: ${new Date(dateAdded).toLocaleDateString()}`,

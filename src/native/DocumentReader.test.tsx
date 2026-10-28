@@ -58,11 +58,13 @@ describe("the document reader", () => {
       } else {
         expect(
           screen.getByText(
-            `Service date: ${serviceDate === "" ? "Date not recorded" : serviceDate}`,
+            humanText(
+              `Service date: ${serviceDate === "" ? "Date not recorded" : serviceDate}`,
+            ),
           ),
         ).toBeVisible();
       }
-      await screen.findByRole("img", { name: /^Page 1 of 2/ });
+      await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     },
   );
   it("shows reader-only line boundaries without changing legacy text", async () => {
