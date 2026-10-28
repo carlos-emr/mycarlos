@@ -1850,18 +1850,15 @@ struct DeviceApprovalCheck {
 fn approval_check_issue(error: VaultError) -> PublicError {
     use portal_link::LinkError;
     let (code, message_key) = match &error {
-        VaultError::Portal(LinkError::InvalidResponse) => (
-            "approval_reply_invalid",
-            "portal.approvalReplyInvalid",
-        ),
-        VaultError::Portal(LinkError::DeviceRemoved) => (
-            "portal_device_removed",
-            "portal.deviceRemoved",
-        ),
-        VaultError::Portal(LinkError::HttpRefused(_, _)) => (
-            "portal_refused",
-            "portal.approvalUnanswered",
-        ),
+        VaultError::Portal(LinkError::InvalidResponse) => {
+            ("approval_reply_invalid", "portal.approvalReplyInvalid")
+        }
+        VaultError::Portal(LinkError::DeviceRemoved) => {
+            ("portal_device_removed", "portal.deviceRemoved")
+        }
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("portal_refused", "portal.approvalUnanswered")
+        }
         _ => return PublicError::from(error),
     };
     // A refusal may say how long to wait (maintenance sends Retry-After).
