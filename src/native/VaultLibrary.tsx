@@ -154,6 +154,11 @@ export function VaultLibrary({
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const pendingHeadingFocusRef = useRef<{
+    profileId: string;
+    folderId: string | null;
+  } | null>(null);
   // Keep Hidden scoped to the location it was opened from, including Shared.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
   // The steps for older backups after a key whose kit may have been lost or
@@ -538,6 +543,12 @@ export function VaultLibrary({
   }, [profileId]);
   /** Opens a person's top-level folder, or one of their folders. */
   const openPerson = (person: string, folderId: string | null = null) => {
+    if (
+      section !== "records" ||
+      person !== profileId ||
+      folderId !== currentFolderId
+    )
+      pendingHeadingFocusRef.current = { profileId: person, folderId };
     setSection("records");
     if (person === profileId) {
       setCurrentFolderId(folderId);
@@ -546,6 +557,22 @@ export function VaultLibrary({
     openingFolderRef.current = folderId;
     setProfileId(person);
   };
+
+  useEffect(() => {
+    const pending = pendingHeadingFocusRef.current;
+    if (
+      !pending ||
+      pending.profileId !== profileId ||
+      pending.folderId !== currentFolderId ||
+      section !== "records"
+    )
+      return;
+    pendingHeadingFocusRef.current = null;
+    const frame = window.requestAnimationFrame(() =>
+      pageHeadingRef.current?.focus(),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentFolderId, profileId, section]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -565,7 +592,6 @@ export function VaultLibrary({
   // A dialog returns focus to the button that opened it. When that button is
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
-  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const focusPageIfLost = () =>
     window.setTimeout(() => {
       const focused = document.activeElement;
@@ -1060,6 +1086,18 @@ export function VaultLibrary({
   const locationTitle = inShared
     ? rootLocationTitle
     : (currentFolder?.name ?? rootLocationTitle);
+  const locationAnnouncement = inShared
+    ? t("library.location.files", {
+        context: rootLocationTitle,
+        files: t("sidebar.fileCount", { count: visibleRecords.length }),
+      })
+    : t("library.location.summary", {
+        context: currentFolder
+          ? folderPath(folderById, currentFolder.parentId, rootLocationTitle)
+          : rootLocationTitle,
+        folders: t("sidebar.folderCount", { count: visibleFolders.length }),
+        files: t("sidebar.fileCount", { count: visibleRecords.length }),
+      });
   const searchLabel = inShared
     ? "Search Shared with me"
     : currentFolder
@@ -1069,10 +1107,20 @@ export function VaultLibrary({
   return (
     <div className="evaluation-page native-vault-page" inert={covered}>
       {/* Polite, but not a second status line: the library has one. */}
-      <p className="sr-only" aria-live="polite">
+      <p
+        className="sr-only"
+        aria-live="polite"
+        inert={Boolean(renameTarget)}
+        aria-hidden={Boolean(renameTarget)}
+      >
         {sharedAnnouncement}
       </p>
-      <div className="evaluation-banner" role="note">
+      <div
+        className="evaluation-banner"
+        role="note"
+        inert={covered || Boolean(renameTarget)}
+        aria-hidden={covered || Boolean(renameTarget)}
+      >
         <strong>Synthetic-data development build</strong>
         <span>
           Files and record details are encrypted and saved on this device
@@ -1092,6 +1140,7 @@ export function VaultLibrary({
                 confirmHideDamaged ||
                 recoverySetup,
             )}
+            aria-hidden={Boolean(renameTarget)}
           >
             <span className="window-dots" aria-hidden="true">
               <i />
@@ -1099,12 +1148,19 @@ export function VaultLibrary({
               <i />
             </span>
             <span className="window-title">myCarlos</span>
+            {/* Named by its visible words, so voice control's "click Lock
+                now" works in every language (WCAG 2.5.3); the state before
+                them is not read out with the button (#121). */}
             <button
               className="unlock-pill native-lock-button"
               type="button"
               onClick={() => void onLock()}
             >
-              <Icon name="lock-open" /> Unlocked · Lock now
+              <Icon name="lock-open" />
+              <span>
+                <span aria-hidden="true">{t("library.lock.unlocked")} · </span>
+                {t("security.lockNow")}
+              </span>
             </button>
           </header>
 
@@ -1120,6 +1176,7 @@ export function VaultLibrary({
                 confirmHideDamaged ||
                 recoverySetup,
             )}
+            aria-hidden={Boolean(renameTarget)}
           >
             {PHONE_TABS.map(([value, label]) => (
               <button
@@ -1150,6 +1207,7 @@ export function VaultLibrary({
                 confirmHideDamaged ||
                 recoverySetup,
             )}
+            aria-hidden={Boolean(renameTarget)}
           >
             <LibrarySidebar
               profileName={
@@ -1235,17 +1293,16 @@ export function VaultLibrary({
                           dragOver(event, "breadcrumb:root")
                         }
                         onDrop={(event) => dropInto(event, null)}
-                        onClick={() => {
-                          setSection("records");
-                          setCurrentFolderId(null);
-                        }}
+                        onClick={() => openPerson(profileId, null)}
                       >
                         {profile ? personFolderName(profile, people) : ""}
                       </button>
                       {currentFolder && (
                         <>
                           <span aria-hidden="true">›</span>
-                          <strong>{currentFolder.name}</strong>
+                          <strong aria-hidden="true">
+                            {currentFolder.name}
+                          </strong>
                         </>
                       )}
                     </>
@@ -1288,10 +1345,21 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                    <h1
+                      ref={pageHeadingRef}
+                      tabIndex={-1}
+                      aria-describedby="location-announcement"
+                    >
                       {locationTitle}
                     </h1>
-                    <p>
+                    <p
+                      className="sr-only"
+                      id="location-announcement"
+                      aria-hidden="true"
+                    >
+                      {locationAnnouncement}
+                    </p>
+                    <p aria-hidden="true">
                       {inShared
                         ? `${visibleRecords.length} documents${normalizedQuery ? " found" : ""}`
                         : `${visibleFolders.length} folders · ${visibleRecords.length} documents ${normalizedQuery ? "found" : "in this location"}`}
@@ -1544,22 +1612,33 @@ export function VaultLibrary({
                     and choose Move to.
                   </span>
                   <div className="view-controls">
-                    {/* Both choices in view, with words (#67). */}
-                    <fieldset className="native-sort-choice">
-                      <legend>Sort by</legend>
-                      {SORT_CHOICES.map(([value, label]) => (
-                        <label key={value}>
-                          <input
-                            type="radio"
-                            name="native-sort"
-                            value={value}
-                            checked={sort === value}
-                            onChange={() => setSort(value)}
-                          />
-                          {label}
-                        </label>
-                      ))}
-                    </fieldset>
+                    {/* Both choices in view, with words (#67), under a label
+                        that stays in view and names the group (#121). */}
+                    <div
+                      className="native-sort-choice"
+                      role="group"
+                      aria-labelledby="native-sort-label"
+                    >
+                      <span
+                        className="native-sort-label"
+                        id="native-sort-label"
+                      >
+                        {t("library.sort.label")}
+                      </span>
+                      <span className="segment native-sort-segment">
+                        {SORT_CHOICES.map(([value, label]) => (
+                          <button
+                            className={sort === value ? "selected" : ""}
+                            type="button"
+                            key={value}
+                            aria-pressed={sort === value}
+                            onClick={() => setSort(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
                     <span
                       className="segment native-view-segment"
                       aria-label="Choose record view"
@@ -1668,7 +1747,7 @@ export function VaultLibrary({
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
-                  onOpenFolder={setCurrentFolderId}
+                  onOpenFolder={(folderId) => openPerson(profileId, folderId)}
                   onOpenRecord={(recordId) => {
                     // The details dialog repeats the notice. One left over from
                     // an earlier operation would read as being about this record.

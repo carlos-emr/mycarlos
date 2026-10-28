@@ -2,7 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RenameDialog } from "./RenameDialog";
 
-const HELP = "This changes the name in myCarlos and the suggested export name.";
+const HELP =
+  "Please type what you'd like to rename this file to. Note: this does not change the file type.";
+const HELP_WITH_EXTENSION =
+  "Please type what you'd like to rename this file to. Note: the";
 const UNSAFE =
   'Document names cannot contain < > : " | ? * / \\ or invisible control characters, or end with a dot.';
 const GAINS =
@@ -54,7 +57,7 @@ describe("RenameDialog", () => {
         "true",
       );
       expect(input).toHaveAccessibleDescription(
-        `${HELP} The ${extension} extension stays the same.`,
+        `${HELP_WITH_EXTENSION} ${extension} extension stays the same.`,
       );
     },
   );
@@ -130,7 +133,7 @@ describe("RenameDialog", () => {
       expect(shown).toBeVisible();
       expect(shown).toHaveAttribute("aria-hidden", "true");
       expect(input).toHaveAccessibleDescription(
-        `${HELP} The ${extension} extension stays the same.`,
+        `${HELP_WITH_EXTENSION} ${extension} extension stays the same.`,
       );
     } else {
       expect(screen.queryByText(/^\.\w+$/)).not.toBeInTheDocument();
@@ -273,14 +276,14 @@ describe("RenameDialog", () => {
       [`COM${cp(0xb9)}`, `COM${cp(0xb9)}`],
       [`lpt${cp(0xb3)}`, `lpt${cp(0xb3)}`],
       ["CON.backup", "CON"],
-    ].map(([typed, word]) => ["Results.pdf", typed, word]),
-    ["Visit notes", "AUX .txt", "AUX"],
-    ["Visit notes", "AUX   .txt", "AUX"],
+    ].map(([typed, word]) => ["Results.pdf", typed, word, ".pdf"]),
+    ["Visit notes", "AUX .txt", "AUX", ""],
+    ["Visit notes", "AUX   .txt", "AUX", ""],
     // Trimmed as the vault trims, U+0085 included.
-    ["Results.pdf", "\u0085CON", "CON"],
+    ["Results.pdf", "\u0085CON", "CON", ".pdf"],
   ])(
     "refuses %j renamed to %j when saved, naming %j",
-    (stored, typed, word) => {
+    (stored, typed, word, extension) => {
       const { input, onSave, save, type, submit } = open(stored);
       type(typed);
       // Not while typing: "Con" is on the way to "Consult notes".
@@ -298,7 +301,11 @@ describe("RenameDialog", () => {
       type(`${typed}x`);
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(input).not.toHaveAttribute("aria-invalid");
-      expect(input).toHaveAccessibleDescription(expect.stringContaining(HELP));
+      expect(input).toHaveAccessibleDescription(
+        extension
+          ? `${HELP_WITH_EXTENSION} ${extension} extension stays the same.`
+          : HELP,
+      );
     },
   );
 

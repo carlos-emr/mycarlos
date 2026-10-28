@@ -1501,9 +1501,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: "FAKE_Letter.pdf" }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
-    );
+    await user.click(screen.getByRole("button", { name: "Lock now" }));
     expect(
       await screen.findByRole("heading", { name: "Unlock your vault" }),
     ).toBeVisible();
@@ -2943,7 +2941,9 @@ describe("durable vault UI", () => {
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
     await user.click(
-      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+      within(screen.getByRole("main")).getByRole("button", {
+        name: "Lock now",
+      }),
     );
     await screen.findByRole("heading", { name: "Unlock your vault" });
     await act(async () => {
@@ -7218,7 +7218,11 @@ describe("the app's notices in the language in use (#46)", () => {
     ).toBeVisible();
     expect(screen.queryByText(/Automatic locking set/)).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await user.click(
+      within(screen.getByRole("main")).getByRole("button", {
+        name: pl("security.lockNow"),
+      }),
+    );
     expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
     expect(screen.queryByText("Vault locked.")).toBeNull();
   });

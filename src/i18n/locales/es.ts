@@ -154,6 +154,15 @@ export const es: Record<MessageKey, Message> = {
     many: "{count} de carpetas",
     other: "{count} carpetas",
   },
+  "sidebar.fileCount": {
+    one: "{count} archivo",
+    many: "{count} de archivos",
+    other: "{count} archivos",
+  },
+  "library.location.summary": "En {context}: {folders}, {files}.",
+  "library.location.files": "En {context}: {files}.",
+  "library.sort.label": "Ordenar por",
+  "library.lock.unlocked": "Desbloqueada",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Tamaño del texto",
@@ -176,11 +185,11 @@ export const es: Record<MessageKey, Message> = {
   "rename.label.folder": "Nombre de la carpeta",
   "rename.label.document": "Nombre del archivo",
   "rename.help.folder":
-    "La carpeta y su contenido permanecen en el mismo lugar.",
+    "Escriba el nombre que desea darle a esta carpeta. Nota: la carpeta y su contenido permanecerán en el mismo lugar.",
   "rename.help.document":
-    "Esto cambia el nombre en myCarlos y el nombre sugerido al exportar.",
+    "Escriba el nombre que desea darle a este archivo. Nota: el tipo de archivo no cambiará.",
   "rename.help.documentExtension":
-    "Esto cambia el nombre en myCarlos y el nombre sugerido al exportar. La extensión {extension} no cambia.",
+    "Escriba el nombre que desea darle a este archivo. Nota: la extensión {extension} seguirá igual.",
   "rename.stemMissing": "Escriba un nombre antes de {extension}.",
   "rename.gainsExtension":
     "El nombre de este documento no tiene la extensión .pdf, así que no puede terminar en .pdf.",

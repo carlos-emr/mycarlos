@@ -5,8 +5,10 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
@@ -490,18 +492,17 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     expect(screen.getByRole("button", { name: "Grid view" })).toHaveTextContent(
       "Grid",
     );
-    // Sort is a row of radio buttons, not a dropdown with only an icon.
+    // Each sort choice is a separate tab stop.
     const sort = screen.getByRole("group", { name: "Sort by" });
-    expect(
-      within(sort)
-        .getAllByRole("radio")
-        .map((choice) => choice.closest("label")?.textContent),
-    ).toEqual(["Newest first", "Name A–Z"]);
-    expect(
-      within(sort).getByRole("radio", { name: "Newest first" }),
-    ).toBeChecked();
-    fireEvent.click(within(sort).getByRole("radio", { name: "Name A–Z" }));
-    expect(within(sort).getByRole("radio", { name: "Name A–Z" })).toBeChecked();
+    const sortChoices = within(sort).getAllByRole("button");
+    expect(sortChoices.map((choice) => choice.textContent)).toEqual([
+      "Newest first",
+      "Name A–Z",
+    ]);
+    expect(sortChoices.map((choice) => choice.tabIndex)).toEqual([0, 0]);
+    expect(sortChoices[0]).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(sortChoices[1]);
+    expect(sortChoices[1]).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(details);
     expect(
       screen.getByRole("button", { name: "Close document details" }),
@@ -591,7 +592,7 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
     // Whose folder it is, for a screen reader.
-    expect(letters).toHaveAccessibleName("FAKE Letters (FAKE Avery) 0");
+    expect(letters).toHaveAccessibleName("FAKE Letters (FAKE Avery), 0 files");
     const avery = within(library).getByRole("button", { name: /^FAKE Avery/ });
     const blake = within(library).getByRole("button", { name: /^FAKE Blake/ });
     expect(avery).toHaveAttribute("aria-current", "page");
@@ -611,6 +612,11 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     );
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "FAKE 2025 Letters",
+    );
+    expect(
+      screen.getByRole("heading", { level: 1 }),
+    ).toHaveAccessibleDescription(
+      "In FAKE Avery / FAKE Letters: 1 folder, 0 files.",
     );
     expect(
       within(
@@ -747,4 +753,114 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       await page.viewport(1100, 760);
     }
   });
+});
+
+describe("VaultLibrary for a screen reader (#121)", () => {
+  afterEach(() => setLocaleOverride(null));
+
+  /** Lets the page's next animation frames run: the heading takes the focus
+   * in one. */
+  const nextFrames = () =>
+    new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+
+  it("takes the focus to the new location's heading when the reader opens a place", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    const heading = () => screen.getByRole("heading", { level: 1 });
+    const sidebar = screen.getByRole("navigation", { name: "Record library" });
+    await nextFrames();
+    // Not when the library first shows.
+    expect(heading()).not.toHaveFocus();
+    // From the sidebar: the heading then says where the reader is.
+    within(sidebar)
+      .getByRole("button", { name: /^FAKE Letters,/ })
+      .focus();
+    await user.keyboard("{Enter}");
+    expect(heading()).toHaveTextContent("FAKE Letters");
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
+    // From a folder in the page.
+    screen.getByRole("button", { name: "Open FAKE 2025 Letters" }).focus();
+    await user.keyboard("{Enter}");
+    expect(heading()).toHaveTextContent("FAKE 2025 Letters");
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
+    // From the path, back to the top level.
+    within(document.querySelector(".native-profile-row") as HTMLElement)
+      .getByRole("button", { name: "My records" })
+      .focus();
+    await user.keyboard("{Enter}");
+    expect(heading()).toHaveTextContent("My records");
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
+    // Choosing the place already open leaves the focus where it is.
+    const myRecords = within(sidebar).getByRole("button", {
+      name: /^My records,/,
+    });
+    myRecords.focus();
+    await user.keyboard("{Enter}");
+    await nextFrames();
+    expect(myRecords).toHaveFocus();
+  });
+
+  it("keeps the page behind Rename from a screen reader until Rename closes", async () => {
+    renderLibrary();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Rename folder FAKE Letters" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Rename folder" });
+    // All a screen reader can reach is in the dialog (or holds it, as the
+    // window does).
+    for (const role of [
+      "banner",
+      "button",
+      "group",
+      "heading",
+      "main",
+      "navigation",
+      "note",
+      "region",
+      "textbox",
+    ] as const)
+      for (const element of screen.queryAllByRole(role))
+        if (!element.contains(dialog))
+          expect(dialog, `${role}: ${element.textContent}`).toContainElement(
+            element,
+          );
+    expect(screen.queryByRole("main")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Lock now" })).toBeNull();
+    // The polite line too: what it says next is not about the dialog.
+    expect(
+      document.querySelector('.native-vault-page > [aria-live="polite"]'),
+    ).toHaveAttribute("aria-hidden", "true");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("main")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Lock now" })).toBeVisible();
+    expect(
+      screen.getByRole("navigation", { name: "Record library" }),
+    ).toBeVisible();
+    expect(screen.getByRole("note")).toBeVisible();
+  });
+
+  it.each(LOCALES)(
+    "names the window's lock button by words it shows, and shows the sort label, in %s",
+    (locale) => {
+      setLocaleOverride(locale);
+      renderLibrary();
+      const lockNow = translate(locale, "security.lockNow");
+      const lock = within(
+        document.querySelector(".titlebar") as HTMLElement,
+      ).getByRole("button");
+      // WCAG 2.5.3: the name is words on the button, so saying "click"
+      // and what it shows works by voice; the state before them is not read.
+      expect(lock).toHaveAccessibleName(lockNow);
+      expect(lock.textContent).toBe(
+        `${translate(locale, "library.lock.unlocked")} · ${lockNow}`,
+      );
+      const label = translate(locale, "library.sort.label");
+      const sort = screen.getByRole("group", { name: label });
+      expect(within(sort).getByText(label)).toBeVisible();
+      expect(within(sort).getAllByRole("button")).toHaveLength(2);
+    },
+  );
 });

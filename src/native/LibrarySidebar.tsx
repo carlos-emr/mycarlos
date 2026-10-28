@@ -156,6 +156,12 @@ export function LibrarySidebar({
                 )}
                 type="button"
                 aria-current={open && !currentFolderId ? "page" : undefined}
+                aria-label={`${several ? person.displayName : t("sidebar.myRecords")}, ${t(
+                  "sidebar.fileCount",
+                  {
+                    count: counts.loose.get(person.id) ?? 0,
+                  },
+                )}`}
                 onClick={() => onOpenPerson(person.id)}
                 onDragOver={(event) => dragOver(event, rootZone)}
                 onDrop={(event) => dropInto(event, null, person.id)}
@@ -186,12 +192,14 @@ export function LibrarySidebar({
                     type="button"
                     key={folder.id}
                     aria-current={here ? "page" : undefined}
-                    // Two people can each have a "Lab results": say whose.
-                    aria-label={
-                      several
-                        ? `${folder.name} (${person.displayName}) ${counts.byFolder.get(folder.id) ?? 0}`
-                        : undefined
-                    }
+                    // Say the file count in words, and distinguish matching
+                    // folder names when there are multiple people.
+                    aria-label={`${folder.name}${several ? ` (${person.displayName})` : ""}, ${t(
+                      "sidebar.fileCount",
+                      {
+                        count: counts.byFolder.get(folder.id) ?? 0,
+                      },
+                    )}`}
                     draggable={movable || undefined}
                     onDragStart={(event) => {
                       if (!movable) return event.preventDefault();

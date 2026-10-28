@@ -163,6 +163,16 @@ export const pl: Record<MessageKey, Message> = {
     many: "{count} folderów",
     other: "{count} folderu",
   },
+  "sidebar.fileCount": {
+    one: "{count} plik",
+    few: "{count} pliki",
+    many: "{count} plików",
+    other: "{count} pliku",
+  },
+  "library.location.summary": "W {context}: {folders}, {files}.",
+  "library.location.files": "W {context}: {files}.",
+  "library.sort.label": "Sortuj według",
+  "library.lock.unlocked": "Odblokowany",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Rozmiar tekstu",
@@ -186,11 +196,11 @@ export const pl: Record<MessageKey, Message> = {
   "rename.label.folder": "Nazwa folderu",
   "rename.label.document": "Nazwa pliku",
   "rename.help.folder":
-    "Folder i jego zawartość pozostają w tym samym miejscu.",
+    "Wpisz nazwę, którą chcesz nadać temu folderowi. Uwaga: folder i jego zawartość pozostaną w tym samym miejscu.",
   "rename.help.document":
-    "Zmienia to nazwę w myCarlos oraz nazwę proponowaną przy eksporcie.",
+    "Wpisz nazwę, którą chcesz nadać temu plikowi. Uwaga: typ pliku się nie zmieni.",
   "rename.help.documentExtension":
-    "Zmienia to nazwę w myCarlos oraz nazwę proponowaną przy eksporcie. Rozszerzenie {extension} pozostaje bez zmian.",
+    "Wpisz nazwę, którą chcesz nadać temu plikowi. Uwaga: rozszerzenie {extension} pozostanie bez zmian.",
   "rename.stemMissing": "Proszę wpisać nazwę przed {extension}.",
   "rename.gainsExtension":
     "Nazwa tego dokumentu nie ma rozszerzenia .pdf, więc nie może kończyć się na .pdf.",

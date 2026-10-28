@@ -154,6 +154,15 @@ export const ptBR: Record<MessageKey, Message> = {
     many: "{count} de pastas",
     other: "{count} pastas",
   },
+  "sidebar.fileCount": {
+    one: "{count} arquivo",
+    many: "{count} de arquivos",
+    other: "{count} arquivos",
+  },
+  "library.location.summary": "Em {context}: {folders}, {files}.",
+  "library.location.files": "Em {context}: {files}.",
+  "library.sort.label": "Ordenar por",
+  "library.lock.unlocked": "Desbloqueado",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Tamanho do texto",
@@ -176,11 +185,12 @@ export const ptBR: Record<MessageKey, Message> = {
   "rename.title.folder": "Renomear pasta",
   "rename.label.folder": "Nome da pasta",
   "rename.label.document": "Nome do arquivo",
-  "rename.help.folder": "A pasta e seu conteúdo continuam no mesmo lugar.",
+  "rename.help.folder":
+    "Digite o nome que você quer dar a esta pasta. Observação: a pasta e seu conteúdo continuarão no mesmo lugar.",
   "rename.help.document":
-    "Isso muda o nome no myCarlos e o nome sugerido ao exportar.",
+    "Digite o nome que você quer dar a este arquivo. Observação: o tipo do arquivo não será alterado.",
   "rename.help.documentExtension":
-    "Isso muda o nome no myCarlos e o nome sugerido ao exportar. A extensão {extension} continua a mesma.",
+    "Digite o nome que você quer dar a este arquivo. Observação: a extensão {extension} continuará igual.",
   "rename.stemMissing": "Digite um nome antes de {extension}.",
   "rename.gainsExtension":
     "O nome deste documento não tem a extensão .pdf, então não pode terminar em .pdf.",
