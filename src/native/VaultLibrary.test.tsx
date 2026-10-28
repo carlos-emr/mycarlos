@@ -963,7 +963,9 @@ describe("Audit history keeps Security's Hidden location", () => {
         ).toHaveFocus();
       fireEvent.click(hidden);
       expect(
-        screen.getByRole("article", { name: "FAKE shared secret.pdf, hidden" }),
+        screen.getByRole("article", {
+          name: humanText("FAKE shared secret.pdf, hidden"),
+        }),
       ).toBeVisible();
       expect(
         screen.queryByText("FAKE person secret.pdf"),

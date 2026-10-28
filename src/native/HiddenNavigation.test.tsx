@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
+import { humanText } from "../test/humanText";
 
 const hiddenRecord = (id: string, profileId: string): VaultRecord => ({
   id,
@@ -40,6 +41,7 @@ function library(options: { busy?: boolean; readOnly?: boolean } = {}) {
   };
   const bridge = {
     native: true,
+    platform: vi.fn().mockResolvedValue("windows"),
     unhideRecord: vi.fn().mockImplementation(async (id: string) => {
       current = {
         ...current,
@@ -221,7 +223,7 @@ describe("Hidden inside Security", () => {
     await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(screen.getByRole("button", { name: /^Hidden 1/ }));
     const row = screen.getByRole("article", {
-      name: "FAKE avery-hidden {name}.pdf, hidden",
+      name: humanText("FAKE avery-hidden {name}.pdf, hidden"),
     });
     act(() => setLocaleOverride("pl"));
     expect(
@@ -249,7 +251,7 @@ describe("Hidden inside Security", () => {
       await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(screen.getByRole("button", { name: /^Hidden 1/ }));
       const restore = screen.getByRole("button", {
-        name: "Restore FAKE avery-hidden {name}.pdf",
+        name: humanText("Restore FAKE avery-hidden {name}.pdf"),
       });
       expect(restore).toBeDisabled();
       await user.click(restore);
