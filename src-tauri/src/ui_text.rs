@@ -120,8 +120,20 @@ impl UiLocale {
     }
 }
 
+/// Room for the whole result from the start: each placeholder becomes at most
+/// the longest value. The buffer then never grows while values are copied in,
+/// so no freed, unwiped copy of a value (such as a recovery key) is left behind.
+fn interpolation_capacity(template: &str, values: &[(&str, &str)]) -> usize {
+    let longest = values
+        .iter()
+        .map(|(_, value)| value.len())
+        .max()
+        .unwrap_or(0);
+    template.len() + template.matches('{').count() * longest
+}
+
 fn interpolate(template: &str, values: &[(&str, &str)]) -> String {
-    let mut result = String::with_capacity(template.len());
+    let mut result = String::with_capacity(interpolation_capacity(template, values));
     let mut rest = template;
     while let Some(open) = rest.find('{') {
         result.push_str(&rest[..open]);
@@ -143,6 +155,27 @@ fn interpolate(template: &str, values: &[(&str, &str)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn interpolation_never_grows_its_buffer_while_copying_values() {
+        let key = "FAKE-RECOVERY-WORDS-THAT-ARE-LONGER-THAN-THEIR-PLACEHOLDER";
+        for template in [
+            "Key: {key}",
+            "{key} and again {key}, label {label}, date {date}.",
+            "{missing} {key}",
+            "no placeholders",
+        ] {
+            let values = [
+                ("key", key),
+                ("label", "FAKE label"),
+                ("date", "2026-10-28"),
+            ];
+            let reserved = interpolation_capacity(template, &values);
+            let text = interpolate(template, &values);
+            assert!(text.len() <= reserved, "{template}");
+            // Unchanged capacity: the first allocation held the whole result.
+            assert_eq!(text.capacity(), reserved, "{template}");
+        }
+    }
     #[test]
     fn native_localization_locale_is_validated_and_user_values_are_never_reparsed() {
         for tag in ["en", "fr", "es", "pl", "pt-BR"] {
