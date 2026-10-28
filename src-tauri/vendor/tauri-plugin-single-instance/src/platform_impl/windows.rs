@@ -173,22 +173,30 @@ fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
     let bytes = wire::encode(std::ffi::OsStr::new(""), std::env::args_os()).ok_or_else(invalid)?;
     let ours = unsafe { process_identity(GetCurrentProcess()) }.ok_or_else(invalid)?;
     let started = Instant::now();
-    let hwnd = loop {
-        if let Some(hwnd) = own_window(class_name, window_name, &ours) {
-            break hwnd;
+    loop {
+        if let Some((hwnd, process_id)) = own_window(class_name, window_name, &ours) {
+            let remaining = FORWARD_TIMEOUT
+                .checked_sub(started.elapsed())
+                .ok_or_else(invalid)?;
+            let timeout = remaining.as_millis().min(u32::MAX as u128) as u32;
+            if timeout == 0 {
+                return Err(invalid());
+            }
+            // Checked a moment ago: send only while the window still belongs to
+            // that same process; otherwise look again.
+            if window_process(hwnd) == Some(process_id) {
+                return send(hwnd, &bytes, timeout);
+            }
         }
         if started.elapsed() >= FORWARD_TIMEOUT {
             return Err(invalid());
         }
         std::thread::sleep(Duration::from_millis(10));
-    };
-    let remaining = FORWARD_TIMEOUT
-        .checked_sub(started.elapsed())
-        .ok_or_else(invalid)?;
-    let timeout = remaining.as_millis().min(u32::MAX as u128) as u32;
-    if timeout == 0 {
-        return Err(invalid());
     }
+}
+
+fn send(hwnd: HWND, bytes: &[u8], timeout: u32) -> io::Result<()> {
+    let invalid = || io::Error::other("single-instance handoff failed");
     let cds = COPYDATASTRUCT {
         dwData: wire::MESSAGE,
         cbData: bytes.len() as u32,
@@ -215,8 +223,13 @@ fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
 }
 
 /// The first window with this class and title that this user's own copy of
-/// this executable owns, at no lower integrity level. Files go only there.
-fn own_window(class_name: &[u16], window_name: &[u16], ours: &owner::Process) -> Option<HWND> {
+/// this executable owns, at no lower integrity level, and the process found
+/// owning it. Files go only there.
+fn own_window(
+    class_name: &[u16],
+    window_name: &[u16],
+    ours: &owner::Process,
+) -> Option<(HWND, u32)> {
     let mut after = std::ptr::null_mut();
     loop {
         let hwnd = unsafe {
@@ -230,8 +243,10 @@ fn own_window(class_name: &[u16], window_name: &[u16], ours: &owner::Process) ->
         if hwnd.is_null() {
             return None;
         }
-        if window_owner(hwnd).is_some_and(|owner| owner::may_receive(ours, &owner)) {
-            return Some(hwnd);
+        if let Some((process_id, owner)) = window_owner(hwnd) {
+            if owner::may_receive(ours, &owner) {
+                return Some((hwnd, process_id));
+            }
         }
         after = hwnd;
     }
@@ -245,18 +260,21 @@ impl Drop for OwnedHandle {
     }
 }
 
-fn window_owner(hwnd: HWND) -> Option<owner::Process> {
+/// The process that owns a window, if Windows says.
+fn window_process(hwnd: HWND) -> Option<u32> {
     let mut process_id = 0u32;
     unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
-    if process_id == 0 {
-        return None;
-    }
+    (process_id != 0).then_some(process_id)
+}
+
+fn window_owner(hwnd: HWND) -> Option<(u32, owner::Process)> {
+    let process_id = window_process(hwnd)?;
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
     if process.is_null() {
         return None;
     }
     let process = OwnedHandle(process);
-    unsafe { process_identity(process.0) }
+    unsafe { process_identity(process.0) }.map(|owner| (process_id, owner))
 }
 
 /// The executable path, user and integrity level of a process that this

@@ -56,7 +56,10 @@ refused before sending; replacement characters are never substituted.
 A second launch hands its arguments only to a window owned by this user's own
 copy of the same executable: the owning process must report the same full image
 path as this launch, the same user SID, and an integrity level no lower than this
-launch's. Windows with the right class and title but another owner are skipped.
+launch's. Windows with the right class and title but another owner are skipped,
+and the owning process is checked again just before sending. Paths are compared
+ignoring the case of ASCII letters only; any other difference counts as another
+executable, so the handoff fails closed and the message box is shown.
 No working directory is sent; the receiving app does not use it. When the handoff
 cannot complete, the app's fixed-text message box (no paths or file names) says
 so before the second launch exits.

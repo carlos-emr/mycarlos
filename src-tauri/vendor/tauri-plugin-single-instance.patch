@@ -272,7 +272,7 @@
              Ok(())
          })
          .on_event(|app, event| {
-@@ -116,16 +167,203 @@
+@@ -116,18 +167,223 @@
          .build()
  }
  
@@ -287,22 +287,30 @@
 +    let bytes = wire::encode(std::ffi::OsStr::new(""), std::env::args_os()).ok_or_else(invalid)?;
 +    let ours = unsafe { process_identity(GetCurrentProcess()) }.ok_or_else(invalid)?;
 +    let started = Instant::now();
-+    let hwnd = loop {
-+        if let Some(hwnd) = own_window(class_name, window_name, &ours) {
-+            break hwnd;
++    loop {
++        if let Some((hwnd, process_id)) = own_window(class_name, window_name, &ours) {
++            let remaining = FORWARD_TIMEOUT
++                .checked_sub(started.elapsed())
++                .ok_or_else(invalid)?;
++            let timeout = remaining.as_millis().min(u32::MAX as u128) as u32;
++            if timeout == 0 {
++                return Err(invalid());
++            }
++            // Checked a moment ago: send only while the window still belongs to
++            // that same process; otherwise look again.
++            if window_process(hwnd) == Some(process_id) {
++                return send(hwnd, &bytes, timeout);
++            }
          }
 +        if started.elapsed() >= FORWARD_TIMEOUT {
 +            return Err(invalid());
 +        }
 +        std::thread::sleep(Duration::from_millis(10));
-+    };
-+    let remaining = FORWARD_TIMEOUT
-+        .checked_sub(started.elapsed())
-+        .ok_or_else(invalid)?;
-+    let timeout = remaining.as_millis().min(u32::MAX as u128) as u32;
-+    if timeout == 0 {
-+        return Err(invalid());
 +    }
++}
++
++fn send(hwnd: HWND, bytes: &[u8], timeout: u32) -> io::Result<()> {
++    let invalid = || io::Error::other("single-instance handoff failed");
 +    let cds = COPYDATASTRUCT {
 +        dwData: wire::MESSAGE,
 +        cbData: bytes.len() as u32,
@@ -329,8 +337,13 @@
 +}
 +
 +/// The first window with this class and title that this user's own copy of
-+/// this executable owns, at no lower integrity level. Files go only there.
-+fn own_window(class_name: &[u16], window_name: &[u16], ours: &owner::Process) -> Option<HWND> {
++/// this executable owns, at no lower integrity level, and the process found
++/// owning it. Files go only there.
++fn own_window(
++    class_name: &[u16],
++    window_name: &[u16],
++    ours: &owner::Process,
++) -> Option<(HWND, u32)> {
 +    let mut after = std::ptr::null_mut();
 +    loop {
 +        let hwnd = unsafe {
@@ -344,8 +357,10 @@
 +        if hwnd.is_null() {
 +            return None;
 +        }
-+        if window_owner(hwnd).is_some_and(|owner| owner::may_receive(ours, &owner)) {
-+            return Some(hwnd);
++        if let Some((process_id, owner)) = window_owner(hwnd) {
++            if owner::may_receive(ours, &owner) {
++                return Some((hwnd, process_id));
++            }
 +        }
 +        after = hwnd;
 +    }
@@ -359,18 +374,21 @@
 +    }
 +}
 +
-+fn window_owner(hwnd: HWND) -> Option<owner::Process> {
++/// The process that owns a window, if Windows says.
++fn window_process(hwnd: HWND) -> Option<u32> {
 +    let mut process_id = 0u32;
 +    unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
-+    if process_id == 0 {
-+        return None;
-+    }
++    (process_id != 0).then_some(process_id)
++}
++
++fn window_owner(hwnd: HWND) -> Option<(u32, owner::Process)> {
++    let process_id = window_process(hwnd)?;
 +    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
 +    if process.is_null() {
 +        return None;
 +    }
 +    let process = OwnedHandle(process);
-+    unsafe { process_identity(process.0) }
++    unsafe { process_identity(process.0) }.map(|owner| (process_id, owner))
 +}
 +
 +/// The executable path, user and integrity level of a process that this
@@ -381,14 +399,12 @@
 +    if QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, image.as_mut_ptr(), &mut length) == 0
 +    {
 +        return None;
-     }
--    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
--        unsafe { DestroyWindow(hwnd.0 as _) };
++    }
 +    image.truncate(length as usize);
 +    let mut token = std::ptr::null_mut();
 +    if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 || token.is_null() {
 +        return None;
-     }
++    }
 +    let token = OwnedHandle(token);
 +    let user = token_information(token.0, TokenUser)?;
 +    let user = sid_bytes((*(user.as_ptr() as *const TOKEN_USER)).User.Sid)?;
@@ -437,15 +453,17 @@
 +    let count = GetSidSubAuthorityCount(sid);
 +    if count.is_null() || *count == 0 {
 +        return None;
-+    }
+     }
+-    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
+-        unsafe { DestroyWindow(hwnd.0 as _) };
 +    let authority = GetSidSubAuthority(sid, u32::from(*count - 1));
 +    if authority.is_null() {
 +        None
 +    } else {
 +        Some(*authority)
-+    }
-+}
-+
+     }
+ }
+ 
 +pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
 +    let Some(target) = manager.try_state::<TargetWindowHandle<R>>() else {
 +        return;
@@ -480,10 +498,12 @@
 +            }
 +        },
 +    );
- }
- 
++}
++
  unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
-@@ -138,28 +376,50 @@
+     hwnd: HWND,
+     msg: u32,
+@@ -138,28 +394,50 @@
          WM_CREATE => {
              let create_struct = &*(lparam as *const CREATESTRUCTW);
              let userdata = create_struct.lpCreateParams as *const UserData<R>;
@@ -513,8 +533,7 @@
 -                userdata.run_callback(args, cwd.to_string());
 +            if lparam == 0 {
 +                return 0;
-             }
--            1
++            }
 +            let cds = &*(lparam as *const COPYDATASTRUCT);
 +            if cds.dwData != wire::MESSAGE
 +                || cds.lpData.is_null()
@@ -522,7 +541,8 @@
 +                || cds.cbData as usize > wire::MAX_BYTES
 +            {
 +                return 0;
-+            }
+             }
+-            1
 +            // Windows copies this allocation; read exactly its bounded length, without
 +            // relying on a terminator or ever replacing malformed UTF-8.
 +            let bytes = std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize);
@@ -551,7 +571,7 @@
              0
          }
          _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-@@ -170,7 +430,7 @@
+@@ -170,7 +448,7 @@
      class_name: &[u16],
      window_name: &[u16],
      userdata: *const UserData<R>,
@@ -560,7 +580,7 @@
      unsafe {
          let class = WNDCLASSEXW {
              cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-@@ -186,21 +446,14 @@
+@@ -186,21 +464,14 @@
              lpszClassName: class_name.as_ptr(),
              hIconSm: std::ptr::null_mut(),
          };
@@ -589,7 +609,7 @@
              class_name.as_ptr(),
              window_name.as_ptr(),
              WS_OVERLAPPED,
-@@ -213,15 +466,14 @@
+@@ -213,15 +484,14 @@
              GetModuleHandleW(std::ptr::null()),
              userdata as _,
          );
@@ -613,7 +633,7 @@
      }
  }
  
-@@ -236,19 +488,16 @@
+@@ -236,19 +506,16 @@
  unsafe fn SetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
      w32wm::SetWindowLongW(hwnd, index, value as _) as _
  }

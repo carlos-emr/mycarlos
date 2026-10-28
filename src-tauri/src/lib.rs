@@ -2934,7 +2934,7 @@ fn handoff_failed_text(primary_language: u16) -> (&'static str, &'static str) {
         // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
         0x0c => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
         0x0a => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
-        0x15 => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Zamknij myCarlos i spróbuj ponownie.",
+        0x15 => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
         0x16 => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
         _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
     };
