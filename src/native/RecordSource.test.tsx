@@ -264,6 +264,27 @@ describe("a document's status before its source (#135)", () => {
             if (shownRecord === VERIFIED)
               expect(from.scrollWidth).toBeGreaterThan(from.clientWidth);
           }
+          // The header's Source and Date added stay over their columns. Only
+          // in English in the default font: elsewhere Details is wider than
+          // 4.5rem, which already moved the rows' columns from the header's
+          // before #135 (each row sizes its own last column).
+          if (locale === "en" && font === "the default font") {
+            const head = document.querySelectorAll<HTMLElement>(
+              ".native-filelist .file-head > .column",
+            );
+            const cells = row(locale, VERIFIED).querySelectorAll<HTMLElement>(
+              ":scope > .column",
+            );
+            expect(head).toHaveLength(2);
+            head.forEach((label, index) =>
+              expect(
+                Math.abs(
+                  label.getBoundingClientRect().left -
+                    cells[index].getBoundingClientRect().left,
+                ),
+              ).toBeLessThanOrEqual(3),
+            );
+          }
           // Nor does the wider Source column squeeze Rename or Details,
           // the last column, out of the row in any language.
           for (const last of document.querySelectorAll<HTMLElement>(

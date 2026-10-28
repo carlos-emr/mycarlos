@@ -953,8 +953,9 @@ h1, h2, p { margin: 0; }
    padding and border, 8.375rem. The last column, Rename or Details, is never narrower than its
    words, so the wider Source column cannot squeeze them out of the row. */
 .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(8.5rem, 11.875rem) 9.5rem max-content; }
-/* The last column's least, 4.5rem as before, is kept on its control instead. */
-.native-filelist .file-row > :last-child { min-width: 4.5rem; }
+/* The last column's least, 4.5rem as before, is kept on its control instead, and on the header's
+   empty last cell, so that the header's columns stay over the rows'. */
+.native-filelist :is(.file-head, .file-row) > :last-child { min-width: 4.5rem; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -1032,7 +1033,7 @@ h1, h2, p { margin: 0; }
    and the page takes 304px around it while the sidebar is shown, so they fit from 1015px up. */
 @media (max-width: 63.5em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
-  .native-filelist .file-row > :last-child { min-width: 0; }
+  .native-filelist :is(.file-head, .file-row) > :last-child { min-width: 0; }
   .native-filelist :is(.file-head, .file-row) > .column { display: none; }
   /* #67: the source and date columns are hidden here, so the name is the only way to
      tell items apart. At 16px a phone leaves it about 8rem, so a folder's or a
