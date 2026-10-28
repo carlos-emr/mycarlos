@@ -98,6 +98,24 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
         .then(|| clinic.clinic_name.clone())
 }
 
+/// How far one clinic code request has got in this run of the app (clinic
+/// code v1). Never the code itself.
+#[cfg(feature = "portal-linking")]
+#[derive(Clone, Copy, Default)]
+pub(super) struct CodeProgress {
+    /// Codes typed that did not match this clinic. None of them was sent.
+    mismatches: u8,
+    /// The portal took a code; the clinic has yet to answer.
+    pub(super) submitted: bool,
+    /// No more codes are taken for this request.
+    pub(super) locked: bool,
+}
+
+/// After this many codes that do not match the clinic, a request takes no
+/// more (clinic code v1).
+#[cfg(feature = "portal-linking")]
+const MAX_CODE_MISMATCHES: u8 = 5;
+
 #[cfg(feature = "portal-linking")]
 pub(super) struct PortalWork<'a>(&'a AtomicBool);
 
@@ -1023,7 +1041,7 @@ impl VaultStore {
             .into_iter()
             .find(|saved| saved.id == linked.id)
             .ok_or(VaultError::NotFound)?;
-        Ok((current.summary(), approval_error))
+        Ok((self.link_summary(&current), approval_error))
     }
 
     pub(crate) fn request_staff_approval(
@@ -1041,6 +1059,104 @@ impl VaultStore {
     ) -> Result<(), VaultError> {
         let _running = self.start_portal_work()?;
         self.request_staff_approval_using(link_id, session, true, &ApprovalHttp::default())
+    }
+    pub(super) fn code_progress(&self, request_id: Uuid) -> CodeProgress {
+        self.approval_codes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&request_id)
+            .copied()
+            .unwrap_or_default()
+    }
+    fn update_code_progress(&self, request_id: Uuid, change: impl FnOnce(&mut CodeProgress)) {
+        change(
+            self.approval_codes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .entry(request_id)
+                .or_default(),
+        );
+    }
+    /// Takes the code the patient typed for this link's open code request
+    /// (clinic code v1). It is checked here first, against the clinic key that
+    /// signed the request's verified challenge, this device and this request:
+    /// a code that does not match is never sent, and after five of those the
+    /// request takes no more. A code that matches is sent to the portal in a
+    /// signed device request; the clinic's answer comes through the usual
+    /// status checks. The code is never saved or logged.
+    pub(crate) fn submit_approval_code(
+        &self,
+        link_id: Uuid,
+        typed: &str,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        self.submit_approval_code_using(link_id, typed, session, &ApprovalHttp::default())
+    }
+    fn submit_approval_code_using(
+        &self,
+        link_id: Uuid,
+        typed: &str,
+        session: u64,
+        http: &impl ApprovalExchange,
+    ) -> Result<(), VaultError> {
+        let _running = self.start_portal_work()?;
+        // Refuses a locked vault, another session's ticket and recovery mode.
+        let link = self
+            .delivery_links(session)?
+            .into_iter()
+            .find(|l| l.id == link_id)
+            .ok_or(VaultError::NotFound)?;
+        let attempt = link
+            .approval
+            .as_ref()
+            .filter(|attempt| {
+                !crate::portal_approval::currently_approved(&link)
+                    && attempt.acceptance.is_none()
+                    && attempt.state() == crate::portal_approval::ApprovalState::ChallengeReady
+            })
+            .ok_or(VaultError::ApprovalCodeNotOpen)?;
+        let kid = crate::portal_approval::code_challenge_kid(&link, attempt)?;
+        if self.code_progress(attempt.request_id).locked {
+            return Err(VaultError::ApprovalCodeLocked);
+        }
+        let digits = crate::portal_approval::code_digits(typed)?;
+        let (code_r, check) = digits.split_at(6);
+        let expected = crate::portal_approval::code_check(
+            &kid,
+            &link.keys.device_key_id(),
+            &attempt.request_id.to_string(),
+            code_r,
+        );
+        if expected.as_str() != check {
+            let mut locked = false;
+            self.update_code_progress(attempt.request_id, |progress| {
+                progress.mismatches = progress.mismatches.saturating_add(1);
+                progress.locked |= progress.mismatches >= MAX_CODE_MISMATCHES;
+                locked = progress.locked;
+            });
+            return Err(if locked {
+                VaultError::ApprovalCodeLocked
+            } else {
+                VaultError::ApprovalCodeMismatch
+            });
+        }
+        let anchor = self.delivery_anchor(&link, session)?;
+        let cancelled = || self.portal_link_ticket() != session;
+        let sent = http.submit_code(&link, attempt, code_r, &anchor, &cancelled);
+        // Kept even if the vault locked meanwhile: the portal has the code.
+        match &sent {
+            Ok(()) => {
+                self.update_code_progress(attempt.request_id, |progress| progress.submitted = true)
+            }
+            Err(VaultError::ApprovalCodeLocked) => {
+                self.update_code_progress(attempt.request_id, |progress| progress.locked = true)
+            }
+            Err(_) => {}
+        }
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        sent
     }
     /// Reads one linked device's approval status for the clinic view's
     /// automatic refresh (#131). It only reads the portal (GET) and saves what
@@ -1091,7 +1207,7 @@ impl VaultStore {
                 .ok_or(VaultError::NotFound)?;
             (current, open.recovery.is_some())
         };
-        let mut link = current.summary();
+        let mut link = self.link_summary(&current);
         let open = !link.clinic_approved
             && matches!(
                 link.approval_status,
@@ -1469,6 +1585,8 @@ mod approval_recovery_tests {
         Refused(u16),
         /// The portal says this device was removed from the account.
         DeviceRemoved,
+        /// "Accepted" with this signed challenge and acceptance.
+        AcceptedWith(String, String),
     }
     struct Script<'a> {
         gets: Mutex<VecDeque<Reply>>,
@@ -1480,6 +1598,11 @@ mod approval_recovery_tests {
         portal_time: Option<u64>,
         /// Other clinic work tried while a status read is under way.
         busy_on_get: Option<(&'a VaultStore, Uuid)>,
+        /// Replies to sent codes, in order; a code sent with none left fails
+        /// the test.
+        code_replies: Mutex<VecDeque<Result<(), VaultError>>>,
+        /// Each code sent: request id, the 6 digits, and the vault anchor.
+        sent_codes: Mutex<Vec<(Uuid, String, String)>>,
     }
     impl<'a> Script<'a> {
         fn new(gets: Vec<Reply>, posts: Vec<Reply>) -> Self {
@@ -1491,6 +1614,8 @@ mod approval_recovery_tests {
                 check_saved_on_post: None,
                 portal_time: None,
                 busy_on_get: None,
+                code_replies: Mutex::new(VecDeque::new()),
+                sent_codes: Mutex::new(Vec::new()),
             }
         }
         fn response(
@@ -1528,6 +1653,9 @@ mod approval_recovery_tests {
                 }
                 Reply::Pending => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null})
+                }
+                Reply::AcceptedWith(challenge, acceptance) => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":challenge,"acceptance":acceptance,"reason":null})
                 }
                 Reply::ChallengeReady(challenge) => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"challenge_ready","challenge":challenge,"acceptance":null,"reason":null})
@@ -1578,6 +1706,12 @@ mod approval_recovery_tests {
                 assert!(busy(
                     store.poll_staff_approval(link_id, session).err().unwrap()
                 ));
+                assert!(busy(
+                    store
+                        .submit_approval_code(link_id, "000000000", session)
+                        .err()
+                        .unwrap()
+                ));
             }
             Self::response(
                 self.gets
@@ -1625,6 +1759,234 @@ mod approval_recovery_tests {
         fn portal_time(&self) -> Option<u64> {
             self.portal_time
         }
+        fn submit_code(
+            &self,
+            _: &StoredLink,
+            attempt: &Attempt,
+            code_r: &str,
+            anchor: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<(), VaultError> {
+            self.sent_codes.lock().unwrap().push((
+                attempt.request_id,
+                code_r.to_owned(),
+                anchor.to_owned(),
+            ));
+            self.code_replies
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected code sent")
+        }
+    }
+    /// A vault whose one link has an open request that the clinic answered
+    /// with a code challenge (clinic code v1), and the code that matches it.
+    fn code_setup() -> (tempfile::TempDir, VaultStore, StoredLink, String) {
+        let (_, mut link, mut attempt) = portal_approval::first_fixture();
+        attempt.challenge = Some(portal_approval::fixture_challenge_with(|c| {
+            c["approval_kind"] = "code".into()
+        }));
+        attempt.status = Some(State::ChallengeReady);
+        link.approval = Some(attempt.clone());
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Code Patient", 1).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        let code = code_for(&link, &link.clinic.as_ref().unwrap().clinic_keys[0].kid);
+        (temp, store, link, code)
+    }
+    /// The 9-digit code `482193` + check digits made with `kid` for this
+    /// link's device and current request.
+    fn code_for(link: &StoredLink, kid: &str) -> String {
+        let attempt = link.approval.as_ref().unwrap();
+        format!(
+            "482193{}",
+            portal_approval::code_check(
+                kid,
+                &link.keys.device_key_id(),
+                &attempt.request_id.to_string(),
+                "482193"
+            )
+            .as_str()
+        )
+    }
+    fn shown(store: &VaultStore) -> portal_link::LinkSummary {
+        store.snapshot().unwrap().portal_links.remove(0)
+    }
+    #[test]
+    fn should_check_a_code_natively_and_never_send_one_that_does_not_match_this_clinic() {
+        let (_temp, store, link, code) = code_setup();
+        let attempt = link.approval.as_ref().unwrap();
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        let submit =
+            |typed: &str| store.submit_approval_code_using(link.id, typed, session, &script);
+        // Not 9 digits: refused before any check, and not counted.
+        for typed in ["48219364", "482 193 64x", ""] {
+            assert!(matches!(submit(typed), Err(VaultError::Invalid)));
+        }
+        // A code made for another clinic key (a look-alike portal's), another
+        // device, another request, or with a digit wrong.
+        let other_device = portal_approval::code_check(
+            &link.clinic.as_ref().unwrap().clinic_keys[0].kid,
+            "FAKE-device-key-0002",
+            &attempt.request_id.to_string(),
+            "482193",
+        );
+        let other_request = portal_approval::code_check(
+            &link.clinic.as_ref().unwrap().clinic_keys[0].kid,
+            &link.keys.device_key_id(),
+            &Uuid::new_v4().to_string(),
+            "482193",
+        );
+        let mut typo = code.clone().into_bytes();
+        typo[0] = if typo[0] == b'9' { b'0' } else { typo[0] + 1 };
+        let wrong = [
+            code_for(&link, "FAKE-kid-clinic-B-0001"),
+            format!("482193{}", other_device.as_str()),
+            format!("482193{}", other_request.as_str()),
+            String::from_utf8(typo).unwrap(),
+        ]
+        .into_iter()
+        .filter(|candidate| candidate != &code)
+        .collect::<Vec<_>>();
+        assert!(wrong.len() >= 3, "the check digits tell these apart");
+        let mut tries = 0;
+        for candidate in wrong.iter().cycle() {
+            tries += 1;
+            let result = submit(candidate);
+            if tries < 5 {
+                assert!(
+                    matches!(result, Err(VaultError::ApprovalCodeMismatch)),
+                    "{tries}"
+                );
+                assert!(!shown(&store).approval_code_locked);
+            } else {
+                // The fifth says that no more are taken.
+                assert!(matches!(result, Err(VaultError::ApprovalCodeLocked)));
+                break;
+            }
+        }
+        assert!(shown(&store).approval_code_locked);
+        // Now even the right code is refused, and still nothing was sent.
+        assert!(matches!(submit(&code), Err(VaultError::ApprovalCodeLocked)));
+        assert!(script.sent_codes.lock().unwrap().is_empty());
+        let summary = shown(&store);
+        assert!(summary.approval_by_code && !summary.approval_code_submitted);
+    }
+    #[test]
+    fn should_send_a_matching_code_with_the_vault_anchor_and_show_it_submitted_until_accepted() {
+        let (_temp, store, link, code) = code_setup();
+        let attempt = link.approval.clone().unwrap();
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        script.code_replies.lock().unwrap().push_back(Ok(()));
+        let summary = shown(&store);
+        assert!(summary.approval_by_code);
+        assert!(!summary.approval_code_submitted && !summary.approval_code_locked);
+        // Typed as the email shows it.
+        let typed = format!("{} {}-{}", &code[..3], &code[3..6], &code[6..]);
+        store
+            .submit_approval_code_using(link.id, &typed, session, &script)
+            .unwrap();
+        assert_eq!(
+            *script.sent_codes.lock().unwrap(),
+            vec![(
+                attempt.request_id,
+                "482193".to_owned(),
+                store.delivery_anchor(&link, session).unwrap()
+            )]
+        );
+        let summary = shown(&store);
+        assert!(summary.approval_code_submitted && !summary.clinic_approved);
+        // The usual status check then finds the clinic's code acceptance.
+        let challenge = attempt.challenge.clone().unwrap();
+        let acceptance = portal_approval::fixture_acceptance_with(&challenge, |a| {
+            a["approval_kind"] = "code".into()
+        });
+        let check = Script::new(vec![Reply::AcceptedWith(challenge, acceptance)], vec![]);
+        let found = store
+            .poll_staff_approval_using(link.id, session, &check)
+            .unwrap();
+        assert!(found.link.clinic_approved && found.link.approval_by_code);
+        assert!(saved(&store).summary().clinic_approved);
+        // Approved: no code is taken any more, and none is sent.
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeNotOpen)
+        ));
+        assert_eq!(script.sent_codes.lock().unwrap().len(), 1);
+    }
+    #[test]
+    fn should_take_no_more_codes_once_the_portal_has_had_five() {
+        let (_temp, store, link, code) = code_setup();
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        script
+            .code_replies
+            .lock()
+            .unwrap()
+            .push_back(Err(VaultError::ApprovalCodeLocked));
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeLocked)
+        ));
+        assert!(shown(&store).approval_code_locked);
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeLocked)
+        ));
+        assert_eq!(script.sent_codes.lock().unwrap().len(), 1);
+        // The clinic's final refusal is kept with its reason.
+        let check = Script::new(
+            vec![Reply::Terminal(State::Refused, Reason::CodeAttempts)],
+            vec![],
+        );
+        let found = store
+            .poll_staff_approval_using(link.id, session, &check)
+            .unwrap();
+        assert_eq!(found.link.approval_status, Some(State::Refused));
+        assert_eq!(found.link.approval_reason, Some(Reason::CodeAttempts));
+    }
+    #[test]
+    fn should_send_no_code_for_a_request_that_is_not_waiting_for_one() {
+        // Staff approval, and a request with no challenge yet.
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        let code = code_for(&link, &link.clinic.as_ref().unwrap().clinic_keys[0].kid);
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeNotOpen)
+        ));
+        let mut staff = link.clone();
+        let attempt = staff.approval.as_mut().unwrap();
+        attempt.challenge = Some(portal_approval::fixture_challenge_with(|_| {}));
+        attempt.status = Some(State::ChallengeReady);
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = staff.clone();
+                Ok(())
+            })
+            .unwrap();
+        assert!(!shown(&store).approval_by_code);
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeNotOpen)
+        ));
+        // A locked vault takes none either.
+        let (_temp, store, link, code) = code_setup();
+        let session = store.portal_link_ticket();
+        store.lock();
+        assert!(store
+            .submit_approval_code_using(link.id, &code, session, &script)
+            .is_err());
+        assert!(script.sent_codes.lock().unwrap().is_empty());
     }
     fn new_connect_store() -> (tempfile::TempDir, VaultStore) {
         let temp = tempfile::tempdir().unwrap();
@@ -2914,6 +3276,51 @@ mod approval_recovery_tests {
         assert_eq!(store.snapshot().unwrap().records.len(), 1);
         assert_eq!(filed(&store), 1);
         assert!(store.pending_receipts(&link, session).unwrap().is_empty());
+    }
+    /// Ben's D132c with clinic code v1 (#141, root-87's review of #138): a
+    /// device the clinic approved by code is asked, and its documents are
+    /// listed, like one approved by staff.
+    #[test]
+    fn should_ask_a_clinic_that_approved_this_device_by_code() {
+        let (_, mut link, mut attempt) = portal_approval::first_fixture();
+        let challenge =
+            portal_approval::fixture_challenge_with(|c| c["approval_kind"] = "code".into());
+        attempt.acceptance = Some(portal_approval::fixture_acceptance_with(&challenge, |a| {
+            a["approval_kind"] = "code".into()
+        }));
+        attempt.challenge = Some(challenge);
+        attempt.status = Some(State::Accepted);
+        link.approval = Some(attempt);
+        assert!(portal_approval::currently_approved(&link));
+        assert!(portal_approval::approval_by_code(&link));
+        assert!(crate::portal_pickup::worth_asking(&link));
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Code Approved Patient", 1)
+            .unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        let listed = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            // Approved already: its status is not read again.
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                assert_eq!(method, "GET");
+                assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                listed.lock().unwrap().push(l.id);
+                Ok(empty_page())
+            },
+        )
+        .unwrap();
+        assert_eq!(listed.into_inner().unwrap(), vec![link.id]);
+        assert!(result.issues.is_empty());
     }
     /// Ben's D132c: the check after unlocking, and Check for new documents,
     /// ask only clinics that approved this device or have a request still

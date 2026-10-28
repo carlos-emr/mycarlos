@@ -1537,3 +1537,25 @@ library-source-manualImport = 手動匯入
 library-status-unverified = 未驗證
 
 library-status-verified = 已驗證
+
+portal-approvedByCode = 診所已透過驗證碼確認此裝置。
+
+portal-codeFormat = 請輸入診所電子郵件中驗證碼的 9 位數字。
+
+portal-codeHint = 請輸入診所透過電子郵件寄給您的 9 位數驗證碼。切勿使用網站上顯示的驗證碼。
+
+portal-codeLabel = 診所電子郵件中的驗證碼
+
+portal-codeLocked = 此請求已嘗試過太多驗證碼，因此 myCarlos 不會再接受新的驗證碼。請聯絡診所。
+
+portal-codeMismatch = 此驗證碼與此診所不符。請確認您連結的是診所真正的入口網站網址，然後重試。
+
+portal-codeNeeded = 診所已透過電子郵件寄給您確認此裝置的驗證碼。請在下方輸入。
+
+portal-codeNotOpen = 此請求目前不需要驗證碼。myCarlos 下次檢查時會顯示診所的回覆。
+
+portal-codeRefused = 診所入口網站未接受此驗證碼。請幾分鐘後重試。
+
+portal-codeSubmit = 確認驗證碼
+
+portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。

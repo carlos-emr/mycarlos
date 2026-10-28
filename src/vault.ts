@@ -110,9 +110,17 @@ export interface PortalLinkSummary {
     | "challenge_cancelled"
     | "staff_required"
     | "no_accepted_approver"
+    | "code_attempts"
     | null;
   approvalCanRestart?: boolean;
   approvalRequestLimitReached?: boolean;
+  /** The clinic asked for the code it emailed (#141): the request that
+   * approved this device, when one did, else the current one. */
+  approvalByCode?: boolean;
+  /** A code was sent for the current request; the clinic has yet to answer. */
+  approvalCodeSubmitted?: boolean;
+  /** No more codes are taken for the current request. */
+  approvalCodeLocked?: boolean;
 }
 
 /** What a read-only status check of a linked device's approval found (#131).
@@ -357,6 +365,9 @@ export interface VaultBridge {
     issues?: { linkId: string; clinicName: string; code: string }[];
   }>;
   requestDeviceApproval?(linkId: string): Promise<void>;
+  /** Checks the code a clinic emailed natively, and sends it only if it
+   * matches this clinic (#141). */
+  submitApprovalCode?(linkId: string, code: string): Promise<void>;
   restartDeviceApproval?(linkId: string): Promise<void>;
   /** Reads one linked device's approval status from its portal and saves the
    * clinic's answer (#131). It only reads: no request is sent or started. */
@@ -576,6 +587,11 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_rate_limited: "portal.errorRateLimited",
     pickup_refused: "portal.errorRefused",
     pickup_damaged: "portal.errorDamaged",
+    approval_code_mismatch: "portal.codeMismatch",
+    approval_code_locked: "portal.codeLocked",
+    approval_code_not_open: "portal.codeNotOpen",
+    approval_code_format: "portal.codeFormat",
+    approval_code_refused: "portal.codeRefused",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
     if (hasErrorCode(error, code)) {
@@ -764,6 +780,8 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_restart_device_approval", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
+    submitApprovalCode: (linkId, code) =>
+      invoke("vault_submit_approval_code", { linkId, code }),
     refreshDeviceApproval: (linkId) =>
       invoke<PortalApprovalCheck>("vault_refresh_device_approval", { linkId }),
     linkPortal: (request) =>

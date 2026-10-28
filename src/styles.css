@@ -1217,6 +1217,13 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .portal-documents .native-inline-form p { grid-column: 1 / -1; }
 .portal-documents input, .portal-documents select { min-height: 44px; }
 .portal-documents .native-inline-form button { justify-self: start; }
+/* D142: the panel's intro reads as its own block, clear of the link form's box. */
+.portal-documents > h2 + p { margin-block-start: .25rem; }
+.portal-documents > p + p { margin-block-start: .5rem; }
+.portal-documents > .native-inline-form { margin-block-start: 1.25rem; }
+/* #141: the code a clinic emailed, one column: label, hint, button, message. */
+.portal-documents .portal-code-form { grid-template-columns: minmax(0, 1fr); max-width: 36rem; gap: .5rem; }
+.portal-documents .portal-code-form label, .portal-documents .portal-code-form p { margin: 0; }
 @media (max-width: 40em) {
   .portal-documents .native-inline-form { grid-template-columns: minmax(0, 1fr); }
 }

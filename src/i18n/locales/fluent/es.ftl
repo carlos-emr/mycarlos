@@ -1717,3 +1717,25 @@ library-source-manualImport = Importación manual
 library-status-unverified = No verificado
 
 library-status-verified = Verificado
+
+portal-approvedByCode = Su clínica confirmó este dispositivo con un código.
+
+portal-codeFormat = Escriba los 9 dígitos del código del correo de su clínica.
+
+portal-codeHint = Escriba el código de 9 dígitos que su clínica le envió por correo electrónico. Nunca use un código que aparezca en un sitio web.
+
+portal-codeLabel = Código del correo de su clínica
+
+portal-codeLocked = Se probaron demasiados códigos para esta solicitud, así que myCarlos no aceptará otro. Comuníquese con su clínica.
+
+portal-codeMismatch = Este código no corresponde a esta clínica. Compruebe que vinculó la dirección real del portal de su clínica y vuelva a intentarlo.
+
+portal-codeNeeded = Su clínica le envió por correo electrónico un código para confirmar este dispositivo. Escríbalo abajo.
+
+portal-codeNotOpen = Esta solicitud no está esperando un código ahora. myCarlos mostrará la respuesta de su clínica en la próxima comprobación.
+
+portal-codeRefused = El portal de la clínica no aceptó el código. Vuelva a intentarlo en unos minutos.
+
+portal-codeSubmit = Confirmar código
+
+portal-codeSubmitted = Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.

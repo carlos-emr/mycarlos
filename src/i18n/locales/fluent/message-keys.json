@@ -761,5 +761,16 @@
   "library.source.clinic",
   "library.source.manualImport",
   "library.status.unverified",
-  "library.status.verified"
+  "library.status.verified",
+  "portal.approvedByCode",
+  "portal.codeFormat",
+  "portal.codeHint",
+  "portal.codeLabel",
+  "portal.codeLocked",
+  "portal.codeMismatch",
+  "portal.codeNeeded",
+  "portal.codeNotOpen",
+  "portal.codeRefused",
+  "portal.codeSubmit",
+  "portal.codeSubmitted"
 ]

@@ -258,6 +258,15 @@ pub enum VaultError {
     #[cfg(feature = "portal-linking")]
     #[error("the clinic portal still has the approval request open")]
     ApprovalStillOpen,
+    #[cfg(feature = "portal-linking")]
+    #[error("the code does not match this clinic")]
+    ApprovalCodeMismatch,
+    #[cfg(feature = "portal-linking")]
+    #[error("too many codes were tried for this approval request")]
+    ApprovalCodeLocked,
+    #[cfg(feature = "portal-linking")]
+    #[error("the approval request is not waiting for a code")]
+    ApprovalCodeNotOpen,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
@@ -839,6 +848,10 @@ pub struct VaultStore {
     /// Shared admission for linking, approval requests and document checks.
     #[cfg(feature = "portal-linking")]
     portal_check_running: AtomicBool,
+    /// How far each clinic code request has got in this run of the app, by
+    /// request id (clinic code v1). Never the code itself. In memory only.
+    #[cfg(feature = "portal-linking")]
+    approval_codes: Mutex<HashMap<Uuid, delivery::CodeProgress>>,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -860,6 +873,8 @@ impl VaultStore {
             portal_session: AtomicU64::new(0),
             #[cfg(feature = "portal-linking")]
             portal_check_running: AtomicBool::new(false),
+            #[cfg(feature = "portal-linking")]
+            approval_codes: Mutex::new(HashMap::new()),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -1340,10 +1355,7 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        Ok(Self::snapshot_of(
-            &self.root,
-            guard.as_ref().ok_or(VaultError::Locked)?,
-        ))
+        Ok(self.snapshot_of(guard.as_ref().ok_or(VaultError::Locked)?))
     }
 
     /// The strict read: the whole history, or `Corrupt` when any of it does not check out.
@@ -1453,14 +1465,29 @@ impl VaultStore {
         })
     }
 
-    fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
+    /// A link's summary for the screen, with this run's clinic code progress
+    /// for its current request (clinic code v1).
+    pub(crate) fn link_summary(&self, link: &StoredLink) -> LinkSummary {
+        #[cfg_attr(not(feature = "portal-linking"), allow(unused_mut))]
+        let mut summary = link.summary();
+        #[cfg(feature = "portal-linking")]
+        if let Some(attempt) = &link.approval {
+            let progress = self.code_progress(attempt.request_id);
+            summary.approval_code_submitted = progress.submitted;
+            summary.approval_code_locked = progress.locked;
+        }
+        summary
+    }
+
+    fn snapshot_of(&self, unlocked: &UnlockedVault) -> VaultSnapshot {
+        let root = self.root.as_path();
         VaultSnapshot {
             portal_linking_enabled: crate::portal_client::available(),
             portal_links: unlocked
                 .manifest
                 .portal_links
                 .iter()
-                .map(StoredLink::summary)
+                .map(|link| self.link_summary(link))
                 .collect(),
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
@@ -3088,7 +3115,7 @@ impl VaultStore {
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
-        Ok(Self::snapshot_of(&self.root, unlocked))
+        Ok(self.snapshot_of(unlocked))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten

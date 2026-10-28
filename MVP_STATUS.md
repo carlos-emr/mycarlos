@@ -188,6 +188,8 @@ privacy, accessibility, or clinical review.
 - [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
       and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
+      In the default-off `portal-linking` evaluation only: a clinic can confirm a new device with a code it
+      emails the patient (clinic code v1, #141; THREAT_MODEL DEL-07).
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
 - [ ] Add signing, notarization, app-store packaging, updater security, and release operations,
       with the app-store licence review in [`LICENSE_NOTES.md`](LICENSE_NOTES.md) and the licence

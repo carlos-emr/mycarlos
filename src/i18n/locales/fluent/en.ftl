@@ -1681,3 +1681,25 @@ library-source-manualImport = Manual import
 library-status-unverified = Unverified
 
 library-status-verified = Verified
+
+portal-approvedByCode = Your clinic confirmed this device by code.
+
+portal-codeFormat = Enter the 9 digits of the code from your clinic's email.
+
+portal-codeHint = Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.
+
+portal-codeLabel = Code from your clinic's email
+
+portal-codeLocked = Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic.
+
+portal-codeMismatch = This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.
+
+portal-codeNeeded = Your clinic emailed you a code to confirm this device. Enter it below.
+
+portal-codeNotOpen = This request isn't waiting for a code now. myCarlos will show your clinic's answer when it next checks.
+
+portal-codeRefused = The clinic portal didn't take the code. Try again in a few minutes.
+
+portal-codeSubmit = Confirm code
+
+portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.

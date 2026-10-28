@@ -21,6 +21,7 @@
     "allow-vault-request-device-approval",
     "allow-vault-restart-device-approval",
     "allow-vault-refresh-device-approval",
+    "allow-vault-submit-approval-code",
     "allow-vault-change-passphrase",
     "allow-vault-recovery-key-begin",
     "allow-vault-recovery-key-confirm",
