@@ -295,17 +295,33 @@ mod native {
             cancelled,
         )
         .map_err(VaultError::Portal)?;
+        refuse_rate_limited(&response)?;
         if response.status != 200 && response.status != 201 {
             return Err(VaultError::Portal(LinkError::Network));
         }
         parse_status(link, attempt, &response.body)
     }
+    /// The portal asked to be asked less often: said as such, with the wait it
+    /// gave, never as a network failure or a state of the request (#131).
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn refuse_rate_limited(
+        response: &crate::portal_client::ApiResponse,
+    ) -> Result<(), VaultError> {
+        if response.status == 429 {
+            return Err(VaultError::Portal(LinkError::RateLimited(
+                response.retry_after,
+            )));
+        }
+        Ok(())
+    }
+    /// The saved request's status, and the portal's clock when it replied
+    /// (Unix seconds, display only), if it said.
     #[cfg(feature = "portal-linking")]
     pub(crate) fn refresh(
         link: &StoredLink,
         attempt: &Attempt,
         cancelled: &dyn Fn() -> bool,
-    ) -> Result<Option<Attempt>, VaultError> {
+    ) -> Result<(Option<Attempt>, Option<u64>), VaultError> {
         let response = crate::portal_client::api(
             link,
             "GET",
@@ -319,6 +335,18 @@ mod native {
             cancelled,
         )
         .map_err(VaultError::Portal)?;
+        read_status(link, attempt, &response)
+    }
+    /// A status reply as `refresh` reads it: the request's state (`None`: the
+    /// portal does not have it) and the portal's clock from its `Date`
+    /// header. Kept apart from the HTTP call so that it can be tested.
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn read_status(
+        link: &StoredLink,
+        attempt: &Attempt,
+        response: &crate::portal_client::ApiResponse,
+    ) -> Result<(Option<Attempt>, Option<u64>), VaultError> {
+        refuse_rate_limited(response)?;
         if response.status == 404 {
             #[derive(Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -329,13 +357,40 @@ mod native {
                 .ok()
                 .is_some_and(|v| v.code == "approval_not_found")
             {
-                return Ok(None);
+                return Ok((None, response.date));
             }
         }
         if response.status != 200 {
-            return Err(VaultError::Portal(LinkError::Network));
+            // The portal answered, but not with the request's state: a
+            // refused device assertion, maintenance, or this device removed
+            // from the patient's portal account. Not a connection failure
+            // (#131); other clinic operations still word it as one.
+            #[derive(Deserialize)]
+            struct Refusal {
+                code: Option<String>,
+            }
+            let removed = response.status == 403
+                && serde_json::from_slice::<Refusal>(&response.body)
+                    .ok()
+                    .and_then(|r| r.code)
+                    .is_some_and(|code| code == "device_removed");
+            return Err(VaultError::Portal(if removed {
+                LinkError::DeviceRemoved
+            } else {
+                LinkError::HttpRefused(response.status, response.retry_after)
+            }));
         }
-        parse_status(link, attempt, &response.body).map(Some)
+        parse_status(link, attempt, &response.body).map(|reply| (Some(reply), response.date))
+    }
+    /// When the portal treats this request as ended, in Unix seconds: the
+    /// intent's own expiry, or the saved, verified challenge's when it is
+    /// earlier (the portal moves its expiry to the challenge's then).
+    pub(crate) fn request_expires_at(link: &StoredLink, attempt: &Attempt) -> u64 {
+        attempt
+            .challenge
+            .as_deref()
+            .and_then(|challenge| verify_challenge(link, attempt, challenge, false).ok())
+            .map_or(attempt.expires_at, |c| c.expires_at.min(attempt.expires_at))
     }
     fn verify_challenge(
         link: &StoredLink,
@@ -549,10 +604,223 @@ mod native {
                 .verify(&bytes, &Signature::from_slice(&sig).unwrap())
                 .unwrap();
         }
+        fn reply(
+            status: u16,
+            body: serde_json::Value,
+            date: Option<u64>,
+        ) -> crate::portal_client::ApiResponse {
+            crate::portal_client::ApiResponse {
+                status,
+                body: zeroize::Zeroizing::new(serde_json::to_vec(&body).unwrap()),
+                date,
+                retry_after: Some(30),
+            }
+        }
+        #[test]
+        fn a_status_reply_keeps_the_portals_clock_and_tells_missing_waiting_and_bad_apart() {
+            let (x, link, attempt) = crate::portal_approval::first_fixture();
+            let clock = Some(x["now"].as_u64().unwrap());
+            let pending = serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null});
+            let (state, date) = read_status(&link, &attempt, &reply(200, pending, clock)).unwrap();
+            assert_eq!(state.unwrap().state(), ApprovalState::Pending);
+            assert_eq!(date, clock);
+            let missing = serde_json::json!({"code":"approval_not_found"});
+            let (state, date) =
+                read_status(&link, &attempt, &reply(404, missing.clone(), clock)).unwrap();
+            assert!(state.is_none());
+            assert_eq!(date, clock);
+            assert!(matches!(
+                read_status(&link, &attempt, &reply(429, missing, clock)),
+                Err(VaultError::Portal(LinkError::RateLimited(Some(30))))
+            ));
+            // Refusals are not connection failures; a removed device is
+            // told apart.
+            for (status, body) in [
+                (404, serde_json::json!({"code":"other"})),
+                (404, serde_json::json!({"detail":"not found"})),
+                (403, serde_json::json!({"code":"recipient_mismatch"})),
+                (500, serde_json::json!({})),
+                (503, serde_json::json!({})),
+            ] {
+                assert!(matches!(
+                    read_status(&link, &attempt, &reply(status, body, clock)),
+                    Err(VaultError::Portal(LinkError::HttpRefused(s, Some(30)))) if s == status
+                ));
+            }
+            assert!(matches!(
+                read_status(
+                    &link,
+                    &attempt,
+                    &reply(403, serde_json::json!({"code":"device_removed"}), clock)
+                ),
+                Err(VaultError::Portal(LinkError::DeviceRemoved))
+            ));
+            // "Accepted" with the challenge offered as its acceptance.
+            let challenge = &x["flows"]["first"]["challenge"]["compact"];
+            let forged = serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":challenge,"acceptance":challenge,"reason":null});
+            assert!(matches!(
+                read_status(&link, &attempt, &reply(200, forged, clock)),
+                Err(VaultError::Portal(LinkError::InvalidResponse))
+            ));
+        }
+        #[test]
+        fn a_request_ends_at_the_earlier_of_its_intent_and_its_saved_challenge() {
+            let (x, link, attempt) = crate::portal_approval::first_fixture();
+            assert_eq!(request_expires_at(&link, &attempt), attempt.expires_at);
+            let mut challenged = attempt.clone();
+            challenged.challenge = Some(
+                x["flows"]["first"]["challenge"]["compact"]
+                    .as_str()
+                    .unwrap()
+                    .into(),
+            );
+            assert_eq!(request_expires_at(&link, &challenged), attempt.expires_at);
+            challenged.challenge = Some(crate::portal_approval::fixture_challenge_expiring_at(
+                attempt.expires_at - 300,
+            ));
+            verify_challenge(
+                &link,
+                &challenged,
+                challenged.challenge.as_ref().unwrap(),
+                true,
+            )
+            .unwrap();
+            assert_eq!(
+                request_expires_at(&link, &challenged),
+                attempt.expires_at - 300
+            );
+        }
+        #[test]
+        fn a_reply_date_stands_for_the_portals_clock_only_when_it_can_be() {
+            use crate::portal_approval::{portal_clock, PORTAL_CLOCK_BOUND_SECONDS as BOUND};
+            let local = 1_792_454_400;
+            let end = local + 500;
+            for usable in [local, local - BOUND, local + BOUND, local + 200] {
+                assert_eq!(
+                    portal_clock(Some(usable), end, local),
+                    Some(usable),
+                    "{usable}"
+                );
+            }
+            // A stuck or far-off date, or none at all: this device's clock is
+            // used instead.
+            for unusable in [local - BOUND - 1, local + BOUND + 1, 0, u64::MAX] {
+                assert_eq!(portal_clock(Some(unusable), end, local), None, "{unusable}");
+            }
+            assert_eq!(portal_clock(None, end, local), None);
+            // Nor does a date leaving the request an hour or more count.
+            assert_eq!(portal_clock(Some(local), local + 3_600, local), None);
+            assert_eq!(portal_clock(Some(local), local + 3_599, local), Some(local));
+        }
+        #[test]
+        fn approval_http_keeps_the_last_portal_clock_it_was_given() {
+            use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
+            let http = ApprovalHttp::default();
+            assert_eq!(http.portal_time(), None);
+            http.remember(Some(5));
+            http.remember(None);
+            assert_eq!(http.portal_time(), Some(5));
+            http.remember(Some(7));
+            assert_eq!(http.portal_time(), Some(7));
+        }
+        #[test]
+        fn a_portal_asking_to_wait_is_neither_a_network_failure_nor_a_request_state() {
+            let reply = |status, retry_after| crate::portal_client::ApiResponse {
+                status,
+                body: zeroize::Zeroizing::new(br#"{"code":"rate_limited"}"#.to_vec()),
+                date: None,
+                retry_after,
+            };
+            assert!(matches!(
+                refuse_rate_limited(&reply(429, Some(30))),
+                Err(VaultError::Portal(LinkError::RateLimited(Some(30))))
+            ));
+            assert!(matches!(
+                refuse_rate_limited(&reply(429, None)),
+                Err(VaultError::Portal(LinkError::RateLimited(None)))
+            ));
+            for status in [200, 201, 404, 500, 503] {
+                assert!(refuse_rate_limited(&reply(status, Some(30))).is_ok());
+            }
+        }
     }
 }
+pub(crate) use native::request_expires_at;
 #[cfg(feature = "portal-linking")]
 pub(crate) use native::{create, publish, refresh};
+
+/// How far a reply's `Date` may be from this device's clock and still be
+/// taken as the portal's clock (#131). The portal accepts this device's
+/// signed requests only while its own clock is between 30 s behind and
+/// 90 s ahead of this device's, so a date further off than this is not the
+/// clock that judged the request: a stuck header, or another server's.
+#[cfg(feature = "portal-linking")]
+pub const PORTAL_CLOCK_BOUND_SECONDS: u64 = 300;
+
+/// The portal's clock from its reply, when it can stand for it: near this
+/// device's clock (`PORTAL_CLOCK_BOUND_SECONDS`), and leaving the request
+/// less than an hour (requests last ten minutes). Otherwise `None`, and
+/// this device's clock is used, as when the portal gave no date. Shared by
+/// the time left, the restart offer and the restart itself.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn portal_clock(
+    portal_now: Option<u64>,
+    request_end: u64,
+    local_now: u64,
+) -> Option<u64> {
+    portal_now.filter(|&now| {
+        now.abs_diff(local_now) <= PORTAL_CLOCK_BOUND_SECONDS
+            && request_end.saturating_sub(now) < 3_600
+    })
+}
+
+/// The portal's clock for deciding whether this request has ended, when it
+/// can be used: the portal has the request (`portal_has_it`; a request it
+/// does not have is judged by this device's clock) and its date can stand
+/// for its clock (`portal_clock`). `None`: use this device's clock. One
+/// choice for the status check and the restart (#131).
+#[cfg(feature = "portal-linking")]
+pub(crate) fn deciding_portal_time(
+    portal_now: Option<u64>,
+    link: &StoredLink,
+    attempt: &Attempt,
+    portal_has_it: bool,
+    local_now: u64,
+) -> Option<u64> {
+    portal_has_it
+        .then(|| portal_clock(portal_now, request_expires_at(link, attempt), local_now))
+        .flatten()
+}
+
+/// Whether this request has ended by `clock`: the portal said so, or its end
+/// has passed. The portal says "expired" only once the clinic's system has
+/// (which needs a challenge), so for a request it never picked up the time
+/// is the only way to tell.
+pub(crate) fn request_ended(link: &StoredLink, attempt: &Attempt, clock: u64) -> bool {
+    matches!(
+        attempt.state(),
+        ApprovalState::Expired | ApprovalState::Cancelled
+    ) || request_expires_at(link, attempt) <= clock
+}
+
+/// Whether a new request may start for this device by `clock`: a slot is
+/// left, no acceptance is kept, and the current request was not refused and
+/// has ended. One rule for the saved summary (this device's clock) and the
+/// status check and restart (the portal's clock when it can be used).
+pub(crate) fn can_restart(link: &StoredLink, clock: u64) -> bool {
+    let requests = link.approval_history.len() + usize::from(link.approval.is_some());
+    let accepted = link
+        .approval
+        .iter()
+        .chain(link.approval_history.iter())
+        .any(|a| a.acceptance.is_some());
+    requests < MAX_APPROVAL_REQUESTS
+        && !accepted
+        && link
+            .approval
+            .as_ref()
+            .is_some_and(|a| a.state() != ApprovalState::Refused && request_ended(link, a, clock))
+}
 
 #[cfg(all(test, feature = "portal-linking"))]
 pub(crate) use native::parse_status;
@@ -615,8 +883,75 @@ pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredL
     (x, link, attempt)
 }
 
+/// The fixture's first-device challenge with a different expiry, signed
+/// again with the shared fixture's FAKE clinic key, read from the fixture
+/// at run time (#131).
+#[cfg(all(test, feature = "portal-linking"))]
+pub(crate) fn fixture_challenge_expiring_at(expires_at: u64) -> String {
+    let (x, _, _) = first_fixture();
+    let mut claims = x["flows"]["first"]["challenge"]["claims"].clone();
+    claims["expires_at"] = expires_at.into();
+    sign_fixture_claims(&claims)
+}
+
+/// A first-device challenge for this link's saved request, issued and
+/// ending at the given times, signed with the fixture's FAKE clinic key (the
+/// link must carry the fixture's clinic, as test links do).
+#[cfg(all(test, feature = "portal-linking"))]
+pub(crate) fn signed_challenge(
+    link: &crate::portal_link::StoredLink,
+    attempt: &Attempt,
+    issued_at: u64,
+    expires_at: u64,
+) -> String {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
+    let (x, _, _) = first_fixture();
+    let clinic = link.clinic.as_ref().unwrap();
+    let (x25519, ed25519) = link.keys.public();
+    let mut claims = x["flows"]["first"]["challenge"]["claims"].clone();
+    claims["request_id"] = attempt.request_id.to_string().into();
+    claims["candidate_device_key_id"] = link.keys.device_key_id().into();
+    claims["candidate_x25519_public_key"] = B64.encode(x25519).into();
+    claims["candidate_ed25519_public_key"] = B64.encode(ed25519).into();
+    claims["candidate_intent_sha256"] =
+        crate::portal_delivery::sha256(attempt.intent.as_bytes()).into();
+    claims["clinic_id"] = clinic.clinic_id.clone().into();
+    claims["recipient_id"] = clinic.recipient_id.clone().into();
+    claims["public_portal_base_url"] = link.portal_base.clone().into();
+    claims["issued_at"] = issued_at.into();
+    claims["expires_at"] = expires_at.into();
+    sign_fixture_claims(&claims)
+}
+
+#[cfg(all(test, feature = "portal-linking"))]
+fn sign_fixture_claims(claims: &serde_json::Value) -> String {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
+    use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+    use p256::pkcs8::{DecodePrivateKey, EncodePublicKey};
+    let (x, _, _) = first_fixture();
+    let clinic = &x["keys"]["clinic"];
+    let key = SigningKey::from_pkcs8_der(
+        &B64.decode(clinic["FAKE_private_pkcs8_b64url"].as_str().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        B64.encode(key.verifying_key().to_public_key_der().unwrap().as_bytes()),
+        clinic["spki"].as_str().unwrap(),
+        "the fixture's clinic key"
+    );
+    let payload = serde_json::to_vec(claims).unwrap();
+    let signature: Signature = key.sign(&payload);
+    format!(
+        "{}.{}",
+        B64.encode(&payload),
+        B64.encode(signature.to_bytes())
+    )
+}
+
+use crate::portal_link::StoredLink;
 #[cfg(feature = "portal-linking")]
-use crate::{portal_link::StoredLink, vault::VaultError};
+use crate::vault::VaultError;
 #[cfg(feature = "portal-linking")]
 pub(crate) trait ApprovalExchange {
     fn get(
@@ -632,9 +967,28 @@ pub(crate) trait ApprovalExchange {
         anchor: &str,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<crate::portal_approval::Attempt, VaultError>;
+    /// The portal's clock (Unix seconds) when it last answered a status read
+    /// through this exchange, if it said. It only shows how long a request
+    /// has left, by the portal's clock rather than this device's (#131).
+    fn portal_time(&self) -> Option<u64> {
+        None
+    }
 }
 #[cfg(feature = "portal-linking")]
-pub(crate) struct ApprovalHttp;
+#[derive(Default)]
+pub(crate) struct ApprovalHttp {
+    portal_time: std::cell::Cell<Option<u64>>,
+}
+#[cfg(feature = "portal-linking")]
+impl ApprovalHttp {
+    /// Keeps the portal's clock from a status reply that gave one; a reply
+    /// without it leaves the last one known.
+    fn remember(&self, date: Option<u64>) {
+        if date.is_some() {
+            self.portal_time.set(date);
+        }
+    }
+}
 #[cfg(feature = "portal-linking")]
 impl ApprovalExchange for ApprovalHttp {
     fn get(
@@ -643,7 +997,12 @@ impl ApprovalExchange for ApprovalHttp {
         attempt: &crate::portal_approval::Attempt,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Option<crate::portal_approval::Attempt>, VaultError> {
-        crate::portal_approval::refresh(link, attempt, cancelled)
+        let (reply, date) = crate::portal_approval::refresh(link, attempt, cancelled)?;
+        self.remember(date);
+        Ok(reply)
+    }
+    fn portal_time(&self) -> Option<u64> {
+        self.portal_time.get()
     }
     fn post(
         &self,

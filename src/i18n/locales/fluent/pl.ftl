@@ -1451,7 +1451,7 @@ portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Sprawd
 
 portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
 
-portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.
+portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Dokumenty z przychodni.
 
 portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.
 
@@ -1564,6 +1564,44 @@ portal-linkedApprovalIssue = Urządzenie zostało połączone, ale nie udało si
 portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
 portal-working = Trwa operacja związana z przychodnią…
+
+portal-approvalExpiredCard = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego samego urządzenia, wybierz Rozpocznij nową prośbę o zatwierdzenie. Dokumenty i połączenie tego urządzenia pozostają bez zmian.
+
+portal-approvalPickedUp = System dokumentacji przychodni odebrał tę prośbę. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.
+
+portal-approvalReplyInvalid = Nie udało się zweryfikować odpowiedzi portalu przychodni na temat tej prośby, więc nie została użyta. Skontaktuj się z przychodnią.
+
+portal-approvalStillOpen = Ta prośba o zatwierdzenie jest nadal otwarta w portalu przychodni. Poczekaj, aż się zakończy, zanim rozpoczniesz nową.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Pozostały czas na tę prośbę: około { $count } minuty.
+    [few] Pozostały czas na tę prośbę: około { $count } minut.
+    [many] Pozostały czas na tę prośbę: około { $count } minut.
+    *[other] Pozostały czas na tę prośbę: około { $count } minuty.
+    }
+
+portal-approvalTimeOver = Czas na tę prośbę minął.
+
+portal-approvalTimeOverRestart = Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, wybierz { $button }.
+
+portal-approvalTimeUp = Czas na tę prośbę minął. Sprawdzanie w przychodni…
+
+portal-approvalUnanswered = myCarlos nie mógł uzyskać stanu tej prośby z portalu przychodni.
+
+portal-approvalUnreachable = myCarlos nie mógł połączyć się z portalem przychodni, więc stan tej prośby nie jest jeszcze znany.
+
+portal-approvalWait = Portal przychodni poprosił myCarlos o rzadsze sprawdzanie.
+
+portal-autoChecking = Dopóki ta strona jest otwarta, myCarlos automatycznie sprawdza, czy przychodnia odpowiedziała.
+
+portal-autoCheckStopped = Automatyczne sprawdzanie zostało zatrzymane. Aby sprawdzić ponownie, wybierz { $button }.
+
+portal-awaitingClinic = Przychodnia otrzymała prośbę o zatwierdzenie. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.
+
+portal-deviceRemoved = To urządzenie zostało usunięte z konta w portalu przychodni. Aby znów go używać, połącz je ponownie, używając nowego kodu połączenia z portalu pacjenta.
+
+portal-errorRateLimited = Portal przychodni poprosił myCarlos, aby odczekał przed ponowną próbą.
 hidden-backToSecurity = Powrót do zabezpieczeń
 
 interface-history-appVersion = Wersja myCarlos

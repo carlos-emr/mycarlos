@@ -1259,7 +1259,7 @@ portal-approvalCancelled = 此核准請求已取消。請先檢查最新狀態�
 
 portal-approvalContact = 需要確認診所的核准狀態。請聯絡診所了解後續步驟。
 
-portal-approvalExpired = 此核准請求已過期。請先檢查最新狀態，再提出新的請求。
+portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「診所文件」。
 
 portal-approvalMissing = 入口網站上找不到您已儲存的核准請求。請重新傳送已儲存的請求。
 
@@ -1372,6 +1372,38 @@ portal-linkedApprovalIssue = 裝置已連結，但無法確認核准請求。請
 portal-retryApproval = 重試已儲存的核准請求
 
 portal-working = 正在處理診所作業…
+
+portal-approvalExpiredCard = 此核准請求已過期。若要為同一裝置再次申請，請選擇「提出新的核准請求」。您的文件和此裝置的連結保持不變。
+
+portal-approvalPickedUp = 診所的病歷系統已接收此請求。正在等待診所人員核准此裝置。
+
+portal-approvalReplyInvalid = 無法驗證診所入口網站對此請求的回覆，因此未採用。請聯絡診所。
+
+portal-approvalStillOpen = 此核准請求在診所入口網站上仍未結束。請等它結束後再提出新的請求。
+
+portal-approvalTimeLeft = 此請求剩餘時間：約 { $count } 分鐘。
+
+portal-approvalTimeOver = 此請求的時間已用完。
+
+portal-approvalTimeOverRestart = 此請求的時間已用完。如果診所尚未核准此裝置，請選擇「{ $button }」。
+
+portal-approvalTimeUp = 此請求的時間已用完。正在向診所查詢…
+
+portal-approvalUnanswered = myCarlos 無法從診所入口網站取得此請求的狀態。
+
+portal-approvalUnreachable = myCarlos 無法連線至診所入口網站，因此目前還不知道此請求的狀態。
+
+portal-approvalWait = 診所入口網站要求 myCarlos 降低檢查頻率。
+
+portal-autoChecking = 此頁面開啟期間，myCarlos 會自動檢查診所的回覆。
+
+portal-autoCheckStopped = 自動檢查已停止。若要再次檢查，請選擇「{ $button }」。
+
+portal-awaitingClinic = 診所已收到核准請求。正在等待診所人員核准此裝置。
+
+portal-deviceRemoved = 此裝置已從您的診所入口網站帳戶中移除。若要再次使用，請使用病患入口網站提供的新連結碼重新連線。
+
+portal-errorRateLimited = 診所入口網站要求 myCarlos 稍候再試。
 hidden-backToSecurity = 返回「安全性」
 
 interface-history-appVersion = myCarlos 版本

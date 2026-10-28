@@ -114,6 +114,22 @@ describe("native idle deadline bridge", () => {
     expect(invoke.mock.calls).toEqual([["vault_portal_connect", { request }]]);
   });
 
+  it("checks one device's approval in one read-only native call (#131)", async () => {
+    const bridge = createVaultBridge();
+    const result = {
+      link: { id: "FAKE link", deviceKeyId: "FAKE key" },
+      expiresInMs: 120_000,
+      issue: null,
+    };
+    invoke.mockResolvedValue(result);
+    await expect(bridge.refreshDeviceApproval!("FAKE link")).resolves.toEqual(
+      result,
+    );
+    expect(invoke.mock.calls).toEqual([
+      ["vault_refresh_device_approval", { linkId: "FAKE link" }],
+    ]);
+  });
+
   it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
     const bridge = createVaultBridge();
     const sent: Uint8Array[] = [];
@@ -383,6 +399,30 @@ describe("errors the app words itself, in the language in use (#46)", () => {
     setLocaleOverride("es");
     expect(humanValue(vaultErrorMessage(refused, ["box.folderName"]))).toBe(
       humanValue("Revise el nombre de la carpeta y vuelva a intentarlo."),
+    );
+  });
+
+  it("says a clinic portal asked to wait, and for how long if it said (#131)", () => {
+    const asked = { code: "portal_rate_limited", message: "Native text." };
+    setLocaleOverride("fr");
+    expect(vaultErrorMessage(asked)).toBe(
+      "Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.",
+    );
+    expect(
+      vaultErrorMessage({ code: "approval_reply_invalid", message: "Native." }),
+    ).toBe(
+      "La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.",
+    );
+    expect(
+      vaultErrorMessage({ code: "approval_still_open", message: "Native." }),
+    ).toBe(
+      "Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.",
+    );
+    setLocaleOverride("en");
+    expect(
+      humanValue(vaultErrorMessage({ ...asked, retryAfterMs: 30_000 })),
+    ).toBe(
+      "The clinic portal asked myCarlos to wait before trying again. Try again in 30 seconds.",
     );
   });
 

@@ -1419,7 +1419,7 @@ portal-approvalCancelled = Cette demande d’approbation a été annulée. Véri
 
 portal-approvalContact = L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.
 
-portal-approvalExpired = Cette demande d’approbation a expiré. Vérifiez les mises à jour avant de créer une nouvelle demande.
+portal-approvalExpired = Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Documents de la clinique.
 
 portal-approvalMissing = Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.
 
@@ -1532,6 +1532,43 @@ portal-linkedApprovalIssue = Appareil associé, mais la demande d’approbation 
 portal-retryApproval = Réessayer la demande d’approbation enregistrée
 
 portal-working = Opération avec la clinique en cours…
+
+portal-approvalExpiredCard = Cette demande d’approbation a expiré. Pour en faire une autre pour ce même appareil, choisissez Créer une nouvelle demande d’approbation. Vos documents et le lien de cet appareil restent tels quels.
+
+portal-approvalPickedUp = Le système de dossiers de votre clinique a pris en charge cette demande. En attente de l’approbation de cet appareil par le personnel de la clinique.
+
+portal-approvalReplyInvalid = La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.
+
+portal-approvalStillOpen = Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Temps restant pour cette demande : environ { $count } minute.
+    [many] Temps restant pour cette demande : environ { $count } de minutes.
+    *[other] Temps restant pour cette demande : environ { $count } minutes.
+    }
+
+portal-approvalTimeOver = Le délai de cette demande est écoulé.
+
+portal-approvalTimeOverRestart = Le délai de cette demande est écoulé. Si votre clinique n’a pas approuvé cet appareil, choisissez { $button }.
+
+portal-approvalTimeUp = Le délai de cette demande est écoulé. Vérification auprès de votre clinique…
+
+portal-approvalUnanswered = myCarlos n’a pas pu obtenir l’état de cette demande auprès du portail de la clinique.
+
+portal-approvalUnreachable = myCarlos n’a pas pu joindre le portail de la clinique : l’état de cette demande n’est donc pas encore connu.
+
+portal-approvalWait = Le portail de la clinique a demandé à myCarlos de vérifier moins souvent.
+
+portal-autoChecking = Tant que cette page est ouverte, myCarlos vérifie automatiquement si votre clinique a répondu.
+
+portal-autoCheckStopped = Les vérifications automatiques sont arrêtées. Pour vérifier de nouveau, choisissez { $button }.
+
+portal-awaitingClinic = Votre clinique a reçu la demande d’approbation. En attente de l’approbation de cet appareil par le personnel de la clinique.
+
+portal-deviceRemoved = Cet appareil a été retiré de votre compte du portail de la clinique. Pour l’utiliser de nouveau, associez-le de nouveau avec un nouveau code d’association de votre portail patient.
+
+portal-errorRateLimited = Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.
 hidden-backToSecurity = Retour à la sécurité
 
 interface-history-appVersion = Version de myCarlos

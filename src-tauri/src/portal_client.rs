@@ -153,6 +153,94 @@ pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
 pub(crate) struct ApiResponse {
     pub status: u16,
     pub body: zeroize::Zeroizing<Vec<u8>>,
+    /// The portal's clock when it replied (Unix seconds), from its `Date`
+    /// header. It is not signed: it may only show how long a request has
+    /// left, and never decides a state (#131).
+    pub date: Option<u64>,
+    /// The seconds the portal asked to wait (`Retry-After`), if it said.
+    pub retry_after: Option<u64>,
+}
+
+/// An HTTP date in its only current form (RFC 9110 IMF-fixdate, such as
+/// `Sun, 06 Nov 1994 08:49:37 GMT`), as Unix seconds. The obsolete forms, a
+/// day the month does not have, a weekday that does not match the date, and
+/// anything else give `None`.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn http_date(text: &str) -> Option<u64> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 29
+        || &bytes[3..5] != b", "
+        || bytes[7] != b' '
+        || bytes[11] != b' '
+        || bytes[16] != b' '
+        || bytes[19] != b':'
+        || bytes[22] != b':'
+        || &bytes[25..] != b" GMT"
+    {
+        return None;
+    }
+    let number = |range: std::ops::Range<usize>| -> Option<u64> {
+        let digits = text.get(range)?;
+        digits
+            .bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| digits.parse().ok())?
+    };
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let month = MONTHS.iter().position(|m| text.get(8..11) == Some(m))? as u64 + 1;
+    let (day, year) = (number(5..7)?, number(12..16)?);
+    let (hour, minute, second) = (number(17..19)?, number(20..22)?, number(23..25)?);
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let month_days = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    if !(1970..=9999).contains(&year)
+        || !(1..=month_days[month as usize - 1]).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    // Days since 1970-01-01 in the proleptic Gregorian calendar.
+    let (y, m) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
+    let era = y / 400;
+    let year_of_era = y - era * 400;
+    let day_of_year = (153 * m + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    // 1970-01-01 was a Thursday.
+    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    if text.get(0..3) != Some(WEEKDAYS[(days % 7) as usize]) {
+        return None;
+    }
+    Some(days * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+/// `Retry-After` as seconds to wait. Only its number form is read: its date
+/// form depends on the clocks agreeing.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn retry_after_seconds(text: &str) -> Option<u64> {
+    let text = text.trim();
+    (!text.is_empty() && text.len() <= 9 && text.bytes().all(|c| c.is_ascii_digit()))
+        .then(|| text.parse().ok())?
 }
 
 #[cfg(feature = "portal-linking")]
@@ -242,6 +330,14 @@ pub(crate) fn api(
                 return Err(LinkError::InvalidResponse);
             }
             let status = response.status().as_u16();
+            let header = |name| {
+                response
+                    .headers()
+                    .get(name)
+                    .and_then(|value: &reqwest::header::HeaderValue| value.to_str().ok())
+            };
+            let date = header(reqwest::header::DATE).and_then(http_date);
+            let retry_after = header(reqwest::header::RETRY_AFTER).and_then(retry_after_seconds);
             let mut body = zeroize::Zeroizing::new(Vec::new());
             while let Some(chunk) = response.chunk().await.map_err(|_| LinkError::Network)? {
                 if cancelled() {
@@ -252,7 +348,12 @@ pub(crate) fn api(
                 }
                 body.extend_from_slice(&chunk);
             }
-            Ok(ApiResponse { status, body })
+            Ok(ApiResponse {
+                status,
+                body,
+                date,
+                retry_after,
+            })
         };
         tauri::async_runtime::block_on(async {
             tokio::select! { biased;
@@ -263,8 +364,77 @@ pub(crate) fn api(
     }
 }
 
-#[cfg(all(test, feature = "portal-linking", not(target_os = "android")))]
+#[cfg(all(test, feature = "portal-linking"))]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_only_current_http_dates_as_unix_seconds() {
+        // RFC 9110's own example, and the start of Unix time.
+        assert_eq!(
+            http_date("Sun, 06 Nov 1994 08:49:37 GMT"),
+            Some(784_111_777)
+        );
+        assert_eq!(http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        // A leap day of a year divisible by 400, and the last day of a year.
+        assert_eq!(
+            http_date("Tue, 29 Feb 2000 00:00:00 GMT"),
+            Some(951_782_400)
+        );
+        assert_eq!(
+            http_date("Thu, 31 Dec 2026 23:59:59 GMT"),
+            Some(1_798_761_599)
+        );
+        // A leap day and the first day after a February.
+        assert_eq!(
+            http_date("Thu, 29 Feb 2024 12:00:00 GMT"),
+            Some(1_709_208_000)
+        );
+        assert_eq!(
+            http_date("Fri, 01 Mar 2024 00:00:00 GMT"),
+            Some(1_709_251_200)
+        );
+        for refused in [
+            "",
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+            "Sun Nov  6 08:49:37 1994",
+            "Sun, 06 Nov 1994 08:49:37 UTC",
+            "Sun, 06 Foo 1994 08:49:37 GMT",
+            "Sun, 6  Nov 1994 08:49:37 GMT",
+            "Sun, 06 Nov 1994 24:00:00 GMT",
+            "Sun, 00 Nov 1994 08:49:37 GMT",
+            "Sun, 06 Nov 1969 23:59:59 GMT",
+            "Sun, +6 Nov 1994 08:49:37 GMT",
+            // Days the month does not have, and a wrong weekday.
+            "Sat, 31 Feb 2024 00:00:00 GMT",
+            "Sun, 29 Feb 2026 00:00:00 GMT",
+            "Mon, 29 Feb 1900 00:00:00 GMT",
+            "Fri, 31 Apr 2026 00:00:00 GMT",
+            "Mon, 06 Nov 1994 08:49:37 GMT",
+        ] {
+            assert_eq!(http_date(refused), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn reads_only_the_number_form_of_retry_after() {
+        assert_eq!(retry_after_seconds("30"), Some(30));
+        assert_eq!(retry_after_seconds(" 120 "), Some(120));
+        assert_eq!(retry_after_seconds("0"), Some(0));
+        for refused in [
+            "",
+            "-5",
+            "1.5",
+            "Sun, 06 Nov 1994 08:49:37 GMT",
+            "9999999999",
+        ] {
+            assert_eq!(retry_after_seconds(refused), None, "{refused}");
+        }
+    }
+}
+
+#[cfg(all(test, feature = "portal-linking", not(target_os = "android")))]
+mod timeout_tests {
     use super::request_timeout;
     use std::time::Duration;
 

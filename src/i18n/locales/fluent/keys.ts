@@ -737,6 +737,22 @@ export const MESSAGE_KEYS = [
   "portal.linkedApprovalIssue",
   "portal.retryApproval",
   "portal.working",
+  "portal.approvalExpiredCard",
+  "portal.approvalPickedUp",
+  "portal.approvalReplyInvalid",
+  "portal.approvalStillOpen",
+  "portal.approvalTimeLeft",
+  "portal.approvalTimeOver",
+  "portal.approvalTimeOverRestart",
+  "portal.approvalTimeUp",
+  "portal.approvalUnanswered",
+  "portal.approvalUnreachable",
+  "portal.approvalWait",
+  "portal.autoChecking",
+  "portal.autoCheckStopped",
+  "portal.awaitingClinic",
+  "portal.deviceRemoved",
+  "portal.errorRateLimited",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1600,6 +1616,22 @@ const FLUENT_IDS_BY_KEY = {
   "portal.linkedApprovalIssue": "portal-linkedApprovalIssue",
   "portal.retryApproval": "portal-retryApproval",
   "portal.working": "portal-working",
+  "portal.approvalExpiredCard": "portal-approvalExpiredCard",
+  "portal.approvalPickedUp": "portal-approvalPickedUp",
+  "portal.approvalReplyInvalid": "portal-approvalReplyInvalid",
+  "portal.approvalStillOpen": "portal-approvalStillOpen",
+  "portal.approvalTimeLeft": "portal-approvalTimeLeft",
+  "portal.approvalTimeOver": "portal-approvalTimeOver",
+  "portal.approvalTimeOverRestart": "portal-approvalTimeOverRestart",
+  "portal.approvalTimeUp": "portal-approvalTimeUp",
+  "portal.approvalUnanswered": "portal-approvalUnanswered",
+  "portal.approvalUnreachable": "portal-approvalUnreachable",
+  "portal.approvalWait": "portal-approvalWait",
+  "portal.autoChecking": "portal-autoChecking",
+  "portal.autoCheckStopped": "portal-autoCheckStopped",
+  "portal.awaitingClinic": "portal-awaitingClinic",
+  "portal.deviceRemoved": "portal-deviceRemoved",
+  "portal.errorRateLimited": "portal-errorRateLimited",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2424,6 +2456,22 @@ export interface MessageArgsByKey {
   "portal.linkedApprovalIssue": undefined;
   "portal.retryApproval": undefined;
   "portal.working": undefined;
+  "portal.approvalExpiredCard": undefined;
+  "portal.approvalPickedUp": undefined;
+  "portal.approvalReplyInvalid": undefined;
+  "portal.approvalStillOpen": undefined;
+  "portal.approvalTimeLeft": { count: FluentArgument };
+  "portal.approvalTimeOver": undefined;
+  "portal.approvalTimeOverRestart": { button: FluentArgument };
+  "portal.approvalTimeUp": undefined;
+  "portal.approvalUnanswered": undefined;
+  "portal.approvalUnreachable": undefined;
+  "portal.approvalWait": undefined;
+  "portal.autoChecking": undefined;
+  "portal.autoCheckStopped": { button: FluentArgument };
+  "portal.awaitingClinic": undefined;
+  "portal.deviceRemoved": undefined;
+  "portal.errorRateLimited": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

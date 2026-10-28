@@ -84,7 +84,7 @@ pub(crate) fn check(
     check_using(
         store,
         session,
-        &crate::portal_approval::ApprovalHttp,
+        &crate::portal_approval::ApprovalHttp::default(),
         crate::portal_client::api,
     )
 }

@@ -1419,7 +1419,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1532,6 +1532,43 @@ portal-linkedApprovalIssue = Dispositivo vinculado, mas não foi possível confi
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 
 portal-working = Operação com a clínica em andamento…
+
+portal-approvalExpiredCard = Esta solicitação de aprovação expirou. Para pedir de novo para este mesmo dispositivo, escolha Iniciar outra solicitação de aprovação. Seus documentos e a conexão deste dispositivo continuam como estão.
+
+portal-approvalPickedUp = O sistema de prontuários da sua clínica recebeu esta solicitação. Aguardando a equipe da clínica aprovar este dispositivo.
+
+portal-approvalReplyInvalid = Não foi possível verificar a resposta do portal da clínica sobre esta solicitação, então ela não foi usada. Entre em contato com sua clínica.
+
+portal-approvalStillOpen = Esta solicitação de aprovação ainda está aberta no portal da clínica. Aguarde até que ela termine antes de iniciar outra.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Tempo restante para esta solicitação: cerca de { $count } minuto.
+    [many] Tempo restante para esta solicitação: cerca de { $count } de minutos.
+    *[other] Tempo restante para esta solicitação: cerca de { $count } minutos.
+    }
+
+portal-approvalTimeOver = O tempo desta solicitação acabou.
+
+portal-approvalTimeOverRestart = O tempo desta solicitação acabou. Se a sua clínica não aprovou este dispositivo, escolha { $button }.
+
+portal-approvalTimeUp = O tempo desta solicitação acabou. Verificando com sua clínica…
+
+portal-approvalUnanswered = O myCarlos não conseguiu obter o status desta solicitação no portal da clínica.
+
+portal-approvalUnreachable = O myCarlos não conseguiu acessar o portal da clínica, então o status desta solicitação ainda não é conhecido.
+
+portal-approvalWait = O portal da clínica pediu ao myCarlos que verifique com menos frequência.
+
+portal-autoChecking = Enquanto esta página estiver aberta, o myCarlos verifica automaticamente se a sua clínica respondeu.
+
+portal-autoCheckStopped = As verificações automáticas pararam. Para verificar novamente, escolha { $button }.
+
+portal-awaitingClinic = Sua clínica recebeu a solicitação de aprovação. Aguardando a equipe da clínica aprovar este dispositivo.
+
+portal-deviceRemoved = Este dispositivo foi removido da sua conta do portal da clínica. Para usá-lo novamente, vincule-o de novo com um novo código de vinculação do portal do paciente.
+
+portal-errorRateLimited = O portal da clínica pediu ao myCarlos que aguarde antes de tentar novamente.
 hidden-backToSecurity = Voltar para Segurança
 
 interface-history-appVersion = Versão do myCarlos

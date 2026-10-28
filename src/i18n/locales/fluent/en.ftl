@@ -1387,7 +1387,7 @@ portal-approvalCancelled = This approval request was cancelled. Check for update
 
 portal-approvalContact = Clinic approval needs to be checked. Contact your clinic for next steps.
 
-portal-approvalExpired = This approval request expired. Check for updates before starting a new request.
+portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Clinic documents.
 
 portal-approvalMissing = Your saved approval request was not found on the portal. Send the saved request again.
 
@@ -1500,6 +1500,42 @@ portal-linkedApprovalIssue = Device linked, but the approval request could not b
 portal-retryApproval = Retry saved approval request
 
 portal-working = Clinic operation in progress…
+
+portal-approvalExpiredCard = This approval request expired. To ask again for this same device, choose Start a new approval request. Your documents and this device's link stay as they are.
+
+portal-approvalPickedUp = Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.
+
+portal-approvalReplyInvalid = The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.
+
+portal-approvalStillOpen = This approval request is still open on the clinic portal. Wait until it ends before starting a new one.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Time left for this request: about { $count } minute.
+    *[other] Time left for this request: about { $count } minutes.
+    }
+
+portal-approvalTimeOver = The time for this request has run out.
+
+portal-approvalTimeOverRestart = The time for this request has run out. If your clinic has not approved this device, choose { $button }.
+
+portal-approvalTimeUp = The time for this request has run out. Checking with your clinic…
+
+portal-approvalUnanswered = myCarlos could not get this request's status from the clinic portal.
+
+portal-approvalUnreachable = myCarlos could not reach the clinic portal, so this request's status is not known yet.
+
+portal-approvalWait = The clinic portal asked myCarlos to check less often.
+
+portal-autoChecking = While this page is open, myCarlos checks for your clinic's answer automatically.
+
+portal-autoCheckStopped = Automatic checks have stopped. To check again, choose { $button }.
+
+portal-awaitingClinic = Your clinic has the approval request. Waiting for clinic staff to approve this device.
+
+portal-deviceRemoved = This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.
+
+portal-errorRateLimited = The clinic portal asked myCarlos to wait before trying again.
 hidden-backToSecurity = Back to Security
 
 interface-history-appVersion = myCarlos version

@@ -735,5 +735,21 @@
   "portal.errorBusy",
   "portal.linkedApprovalIssue",
   "portal.retryApproval",
-  "portal.working"
+  "portal.working",
+  "portal.approvalExpiredCard",
+  "portal.approvalPickedUp",
+  "portal.approvalReplyInvalid",
+  "portal.approvalStillOpen",
+  "portal.approvalTimeLeft",
+  "portal.approvalTimeOver",
+  "portal.approvalTimeOverRestart",
+  "portal.approvalTimeUp",
+  "portal.approvalUnanswered",
+  "portal.approvalUnreachable",
+  "portal.approvalWait",
+  "portal.autoChecking",
+  "portal.autoCheckStopped",
+  "portal.awaitingClinic",
+  "portal.deviceRemoved",
+  "portal.errorRateLimited"
 ]

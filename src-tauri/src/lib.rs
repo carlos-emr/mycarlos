@@ -287,6 +287,11 @@ impl From<VaultError> for PublicText {
                 code: "pickup_refused",
                 message_key: "portal.errorRefused",
             },
+            #[cfg(feature = "portal-linking")]
+            VaultError::ApprovalStillOpen => Self {
+                code: "approval_still_open",
+                message_key: "portal.approvalStillOpen",
+            },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
@@ -326,11 +331,20 @@ impl From<VaultError> for PublicText {
                         code: "portal_busy",
                         message_key: "portal.errorBusy",
                     },
+                    LinkError::RateLimited(_) => Self {
+                        code: "portal_rate_limited",
+                        message_key: "portal.errorRateLimited",
+                    },
                     LinkError::Cancelled => Self {
                         code: "cancelled",
                         message_key: "portal.errorCancelled",
                     },
-                    LinkError::Network | LinkError::InvalidResponse => Self {
+                    // Refusals keep the wording they had for every operation but
+                    // the status check (#131, `approval_check_issue`).
+                    LinkError::Network
+                    | LinkError::InvalidResponse
+                    | LinkError::DeviceRemoved
+                    | LinkError::HttpRefused(_, _) => Self {
                         code: "portal_link_incomplete",
                         message_key: "portal.errorIncomplete",
                     },
@@ -507,13 +521,20 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
+        // How long the clinic portal asked to wait, if it said (#131).
+        let retry_after_ms = match error {
+            VaultError::Portal(portal_link::LinkError::RateLimited(Some(seconds))) => {
+                Some(seconds.saturating_mul(1000))
+            }
+            _ => None,
+        };
         let PublicText { code, message_key } = PublicText::from(error);
         Self {
             code,
             message_key,
             record_id,
             note_key: None,
-            retry_after_ms: None,
+            retry_after_ms,
         }
     }
 }
@@ -1788,6 +1809,84 @@ async fn vault_portal_connect(
 struct PortalConnectResult {
     link: portal_link::LinkSummary,
     approval_error: Option<PublicError>,
+}
+
+/// What a status check of a linked device's approval found (#131).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceApprovalCheck {
+    link: portal_link::LinkSummary,
+    expires_in_ms: Option<u64>,
+    issue: Option<PublicError>,
+    /// The vault went into read-only recovery during the check.
+    recovery: bool,
+}
+
+/// Why a status check could not finish, as the clinic view is told. Only
+/// here are these told apart from a connection failure (every other clinic
+/// operation keeps `portal_link_incomplete` for all of them): a reply that
+/// did not parse or verify, and a device removed from the portal account,
+/// are said and not asked again; another refusal is said plainly and
+/// retried, like a connection failure.
+fn approval_check_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Portal(LinkError::InvalidResponse) => {
+            ("approval_reply_invalid", "portal.approvalReplyInvalid")
+        }
+        VaultError::Portal(LinkError::DeviceRemoved) => {
+            ("portal_device_removed", "portal.deviceRemoved")
+        }
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("portal_refused", "portal.approvalUnanswered")
+        }
+        _ => return PublicError::from(error),
+    };
+    // A refusal may say how long to wait (maintenance sends Retry-After).
+    let retry_after_ms = match error {
+        VaultError::Portal(LinkError::HttpRefused(_, Some(seconds))) => {
+            Some(seconds.saturating_mul(1000))
+        }
+        _ => None,
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms,
+    }
+}
+
+/// A read-only status check of one linked device's approval, for the clinic
+/// view's automatic refresh (#131). It never sends or starts a request. Like
+/// the other clinic commands it is not activity: a check, however often it
+/// runs, never keeps an unattended vault open.
+#[tauri::command]
+async fn vault_refresh_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<DeviceApprovalCheck> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Captured before queuing: a check queued in an older session must not
+    // read or save anything in a newer one.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.refresh_device_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map(|check| DeviceApprovalCheck {
+            link: check.link,
+            expires_in_ms: check.expires_in_ms,
+            issue: check.issue.map(approval_check_issue),
+            recovery: check.recovery,
+        })
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -3585,6 +3684,7 @@ pub fn run() {
             vault_check_documents,
             vault_request_device_approval,
             vault_restart_device_approval,
+            vault_refresh_device_approval,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -3956,6 +4056,65 @@ mod tests {
             "",
         ] {
             assert!(!is_plain_date(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
+        use portal_link::LinkError;
+        let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
+        assert_eq!(waited.code, "portal_rate_limited");
+        assert_eq!(waited.retry_after_ms, Some(30_000));
+        let value = serde_json::to_value(&waited).unwrap();
+        assert_eq!(value["retryAfterMs"], 30_000);
+        let unsaid = PublicError::from(VaultError::Portal(LinkError::RateLimited(None)));
+        assert_eq!(unsaid.code, "portal_rate_limited");
+        assert!(serde_json::to_value(&unsaid).unwrap()["retryAfterMs"].is_null());
+        for other in [
+            LinkError::Network,
+            LinkError::InvalidResponse,
+            LinkError::Busy,
+        ] {
+            let error = PublicError::from(VaultError::Portal(other));
+            assert_ne!(error.code, "portal_rate_limited");
+            assert_eq!(error.retry_after_ms, None);
+        }
+    }
+
+    #[test]
+    fn a_status_check_tells_a_reply_that_did_not_verify_apart_from_no_connection() {
+        use portal_link::LinkError;
+        let invalid = approval_check_issue(VaultError::Portal(LinkError::InvalidResponse));
+        assert_eq!(invalid.code, "approval_reply_invalid");
+        assert_eq!(invalid.message_key, "portal.approvalReplyInvalid");
+        assert!(public_error_text(&invalid).contains("Contact your clinic"));
+        let offline = approval_check_issue(VaultError::Portal(LinkError::Network));
+        assert_eq!(offline.code, "portal_link_incomplete");
+        let waiting = approval_check_issue(VaultError::Portal(LinkError::RateLimited(Some(9))));
+        assert_eq!(
+            (waiting.code, waiting.retry_after_ms),
+            ("portal_rate_limited", Some(9_000))
+        );
+        assert_eq!(
+            approval_check_issue(VaultError::Portal(LinkError::DeviceRemoved)).code,
+            "portal_device_removed"
+        );
+        let maintenance =
+            approval_check_issue(VaultError::Portal(LinkError::HttpRefused(503, Some(300))));
+        assert_eq!(
+            (maintenance.code, maintenance.retry_after_ms),
+            ("portal_refused", Some(300_000))
+        );
+        // Every other clinic operation keeps its existing code.
+        for kept in [
+            LinkError::InvalidResponse,
+            LinkError::DeviceRemoved,
+            LinkError::HttpRefused(404, None),
+        ] {
+            assert_eq!(
+                PublicError::from(VaultError::Portal(kept)).code,
+                "portal_link_incomplete"
+            );
         }
     }
 
