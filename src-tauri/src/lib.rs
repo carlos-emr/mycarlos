@@ -213,6 +213,8 @@ impl From<VaultError> for PublicText {
             #[cfg(feature="portal-linking")]
             VaultError::ApprovalNeedsClinic => Self {code:"approval_contact_clinic",message:"Clinic approval needs to be checked before another request. Contact your clinic for next steps."},
             #[cfg(feature="portal-linking")]
+            VaultError::ApprovalStillOpen => Self {code:"approval_still_open",message:"This approval request is still open on the clinic portal. Wait until it ends before starting a new one."},
+            #[cfg(feature="portal-linking")]
             VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
@@ -1578,6 +1580,28 @@ struct DeviceApprovalCheck {
     link: portal_link::LinkSummary,
     expires_in_ms: Option<u64>,
     issue: Option<PublicError>,
+    /// The vault went into read-only recovery during the check.
+    recovery: bool,
+}
+
+/// Why a status check could not finish, as the clinic view is told. A reply
+/// that did not parse or verify is told apart from a connection failure
+/// here only (other clinic operations keep `portal_link_incomplete` for
+/// both): the view says the first and stops, and retries the second.
+fn approval_check_issue(error: VaultError) -> PublicError {
+    if matches!(
+        error,
+        VaultError::Portal(portal_link::LinkError::InvalidResponse)
+    ) {
+        return PublicError {
+            code: "approval_reply_invalid",
+            message: "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
+            record_id: None,
+            note: None,
+            retry_after_ms: None,
+        };
+    }
+    PublicError::from(error)
 }
 
 /// A read-only status check of one linked device's approval, for the clinic
@@ -1605,7 +1629,8 @@ async fn vault_refresh_device_approval(
         .map(|check| DeviceApprovalCheck {
             link: check.link,
             expires_in_ms: check.expires_in_ms,
-            issue: check.issue.map(PublicError::from),
+            issue: check.issue.map(approval_check_issue),
+            recovery: check.recovery,
         })
         .map_err(Into::into)
 }
@@ -3716,6 +3741,26 @@ mod tests {
             assert_ne!(error.code, "portal_rate_limited");
             assert_eq!(error.retry_after_ms, None);
         }
+    }
+
+    #[test]
+    fn a_status_check_tells_a_reply_that_did_not_verify_apart_from_no_connection() {
+        use portal_link::LinkError;
+        let invalid = approval_check_issue(VaultError::Portal(LinkError::InvalidResponse));
+        assert_eq!(invalid.code, "approval_reply_invalid");
+        assert!(invalid.message.contains("Contact your clinic"));
+        let offline = approval_check_issue(VaultError::Portal(LinkError::Network));
+        assert_eq!(offline.code, "portal_link_incomplete");
+        let waiting = approval_check_issue(VaultError::Portal(LinkError::RateLimited(Some(9))));
+        assert_eq!(
+            (waiting.code, waiting.retry_after_ms),
+            ("portal_rate_limited", Some(9_000))
+        );
+        // Every other clinic operation keeps its existing code.
+        assert_eq!(
+            PublicError::from(VaultError::Portal(LinkError::InvalidResponse)).code,
+            "portal_link_incomplete"
+        );
     }
 
     #[test]

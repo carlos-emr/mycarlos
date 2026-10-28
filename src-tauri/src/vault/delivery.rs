@@ -942,14 +942,20 @@ use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
 pub(crate) struct ApprovalCheck {
     /// The device's saved state after the check, in the same session.
     pub link: portal_link::LinkSummary,
-    /// For a request still open: what the portal leaves it, by the portal's
-    /// own clock when it replied (its `Date` header), so a wrong clock on
-    /// this device does not change it. Display only: it never decides a
-    /// state, and `None` when the portal gave no time.
+    /// For a request still open: the time the portal leaves it. Its end
+    /// (`expires_at`) was set from this device's clock when the request was
+    /// made, but the portal enforces that same number with its own clock, so
+    /// what is left is counted from the portal's clock when it replied (its
+    /// `Date` header), not from this device's. Display only: it never
+    /// decides a state, and `None` when the portal gave no time.
     pub expires_in_ms: Option<u64>,
     /// Why the check could not finish (no connection, a portal asking to
-    /// wait, or a request it does not have). Nothing saved changed for it.
+    /// wait, a reply that did not verify, a request it does not have).
+    /// Nothing saved changed for it.
     pub issue: Option<VaultError>,
+    /// The vault went into read-only recovery during the check (a save that
+    /// reached only one copy): the renderer must read the vault again.
+    pub recovery: bool,
 }
 
 #[cfg(feature = "portal-linking")]
@@ -1029,8 +1035,25 @@ impl VaultStore {
         };
         let recovery = self.reconcile_approvals(&find()?, session, http)?;
         // Publish only the persisted state, read again in the same session.
-        let current = find()?;
-        let link = current.summary();
+        // Read directly: a save during this check that reached only one copy
+        // has just put the vault into read-only recovery, which the caller
+        // must be told, with the state that was saved.
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        let (current, in_recovery) = {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            let current = open
+                .manifest
+                .portal_links
+                .iter()
+                .find(|l| l.id == link_id && l.clinic.is_some())
+                .cloned()
+                .ok_or(VaultError::NotFound)?;
+            (current, open.recovery.is_some())
+        };
+        let mut link = current.summary();
         let open = !link.clinic_approved
             && matches!(
                 link.approval_status,
@@ -1039,15 +1062,21 @@ impl VaultStore {
                         | crate::portal_approval::ApprovalState::ChallengeReady
                 )
             );
-        let expires_in_ms = match (&current.approval, http.portal_time()) {
-            (Some(attempt), Some(portal_now)) if open && !recovery.missing => {
-                let left = attempt.expires_at.saturating_sub(portal_now);
-                // Requests last minutes: a day or more means a clock that
-                // cannot be read sensibly, so no time is shown.
-                (left < 86_400).then_some(left * 1000)
+        let mut expires_in_ms = None;
+        if let (Some(attempt), Some(portal_now)) = (&current.approval, http.portal_time()) {
+            if open && !recovery.missing && recovery.deferred.is_none() {
+                let left = crate::portal_approval::request_expires_at(&current, attempt)
+                    .saturating_sub(portal_now);
+                // A request lasts ten minutes: an hour or more means clocks
+                // that cannot be read sensibly, so no time is shown.
+                if left < 3_600 {
+                    expires_in_ms = Some(left * 1000);
+                    // Whether a new request may start follows the portal's
+                    // clock too, as the restart itself does.
+                    link.approval_can_restart = !link.approval_request_limit_reached && left == 0;
+                }
             }
-            _ => None,
-        };
+        }
         Ok(ApprovalCheck {
             link,
             expires_in_ms,
@@ -1056,6 +1085,7 @@ impl VaultStore {
             } else {
                 recovery.deferred
             },
+            recovery: in_recovery,
         })
     }
     fn approval_error(link: &StoredLink, missing: bool) -> Result<(), VaultError> {
@@ -1170,6 +1200,15 @@ impl VaultStore {
                     saved = self.save_approval_state(&saved, next, session, false)?;
                 }
                 Ok(None) => missing = true,
+                // The portal asked to wait: nothing more is asked of it now,
+                // not even the older requests (#131).
+                Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
+                    return Ok(ApprovalReconciliation {
+                        saved,
+                        missing: false,
+                        deferred: Some(error),
+                    });
+                }
                 Err(error) if crate::portal_pickup::is_per_link_failure(&error) => {
                     deferred = Some(error)
                 }
@@ -1198,6 +1237,13 @@ impl VaultStore {
                     saved = self.save_approval_state(&saved, next, session, false)?;
                 }
                 Ok(None) => {}
+                Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
+                    return Ok(ApprovalReconciliation {
+                        saved,
+                        missing,
+                        deferred: Some(error),
+                    });
+                }
                 Err(error) if crate::portal_pickup::is_per_link_failure(&error) => {
                     if deferred.is_none() {
                         deferred = Some(error);
@@ -1255,16 +1301,25 @@ impl VaultStore {
             if prior.state() == crate::portal_approval::ApprovalState::Refused {
                 return Err(VaultError::ApprovalTerminal(prior.state(), prior.reason));
             }
-            // The portal's word that the request expired stands even while
-            // this device's clock says it has time left (#131).
-            if prior.expires_at > now
-                && !matches!(
-                    prior.state(),
-                    crate::portal_approval::ApprovalState::Cancelled
-                        | crate::portal_approval::ApprovalState::Expired
-                )
-            {
-                return Err(VaultError::Invalid);
+            let ended = matches!(
+                prior.state(),
+                crate::portal_approval::ApprovalState::Cancelled
+                    | crate::portal_approval::ApprovalState::Expired
+            );
+            // The portal's word, and its clock, decide whether the request
+            // is still open (#131). It would accept a second open request
+            // for this device, so none is started while the one it has can
+            // still be approved, whatever this device's clock says. The
+            // portal says "expired" only once the clinic's system has; until
+            // then, its clock past the request's end means it has ended.
+            match http.portal_time() {
+                Some(portal_now) if !ended && !recovery.missing => {
+                    if crate::portal_approval::request_expires_at(&link, prior) > portal_now {
+                        return Err(VaultError::ApprovalStillOpen);
+                    }
+                }
+                _ if !ended && prior.expires_at > now => return Err(VaultError::Invalid),
+                _ => {}
             }
             if link.approval_history.len() + 1 >= crate::portal_approval::MAX_APPROVAL_REQUESTS {
                 return Err(VaultError::ApprovalNeedsClinic);
@@ -1300,6 +1355,13 @@ impl VaultStore {
         http: &impl ApprovalExchange,
     ) -> Result<(StoredLink, Option<VaultError>), VaultError> {
         let recovery = self.reconcile_approvals(link, session, http)?;
+        // The portal asked to wait: this link's document check stops here
+        // too, rather than asking it again at once.
+        if let Some(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) =
+            recovery.deferred
+        {
+            return Err(error);
+        }
         Self::approval_error(&recovery.saved, recovery.missing)?;
         Ok((recovery.saved, recovery.deferred))
     }
@@ -1330,6 +1392,8 @@ mod approval_recovery_tests {
         /// acceptance (#131): it must never count as approval.
         UnverifiedAccepted,
         Pending,
+        /// "Challenge ready" with this clinic-signed challenge.
+        ChallengeReady(String),
         Terminal(State, Reason),
         Missing,
         Network,
@@ -1385,6 +1449,9 @@ mod approval_recovery_tests {
                 }
                 Reply::Pending => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null})
+                }
+                Reply::ChallengeReady(challenge) => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":"challenge_ready","challenge":challenge,"acceptance":null,"reason":null})
                 }
                 Reply::Terminal(state, reason) => {
                     serde_json::json!({"request_id":attempt.request_id,"status":state,"challenge":null,"acceptance":null,"reason":reason})
@@ -2272,6 +2339,191 @@ mod approval_recovery_tests {
         assert_eq!(calls[1], attempt.request_id);
         let store = restart(store);
         assert!(saved(&store).summary().clinic_approved);
+    }
+
+    #[test]
+    fn checks_and_document_checks_stop_asking_once_the_portal_asks_to_wait() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        // A kept older request, which a status check reads too.
+        store
+            .request_staff_approval_using(
+                link.id,
+                session,
+                true,
+                &Script::new(
+                    vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+                    vec![Reply::Pending],
+                ),
+            )
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.approval_history[0].request_id, attempt.request_id);
+        let new_id = current.approval.as_ref().unwrap().request_id;
+        // One read, refused with a wait: nothing more is asked.
+        let http = Script::new(vec![Reply::RateLimited(Some(300))], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::Portal(portal_link::LinkError::RateLimited(
+                Some(300)
+            )))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id]);
+        // The document check's approval step stops that link the same way.
+        let http = Script::new(vec![Reply::RateLimited(None)], vec![]);
+        assert!(matches!(
+            store.refresh_staff_approval_for_check(&current, session, &http),
+            Err(VaultError::Portal(portal_link::LinkError::RateLimited(
+                None
+            )))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id]);
+        // A wait asked on the older request stops there too.
+        let http = Script::new(vec![Reply::Pending, Reply::RateLimited(Some(60))], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::Portal(portal_link::LinkError::RateLimited(
+                Some(60)
+            )))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id, attempt.request_id]);
+    }
+
+    #[test]
+    fn poll_counts_time_left_to_the_portals_end_of_the_request_by_its_clock() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        // The clinic's system published a challenge that ends 5 minutes
+        // before the intent does: the portal moves the request's end to it.
+        let challenge = portal_approval::fixture_challenge_expiring_at(attempt.expires_at - 300);
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge)], vec![]);
+        http.portal_time = Some(attempt.expires_at - 400);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert_eq!(check.link.approval_status, Some(State::ChallengeReady));
+        assert_eq!(check.expires_in_ms, Some(100_000));
+        // This device's clock says the request ran out long ago; the
+        // portal's gives it time, so no new request is offered.
+        assert!(saved(&store).summary().approval_can_restart);
+        assert!(!check.link.approval_can_restart);
+        // Past the challenge's end by the portal's clock: time is up, and a
+        // new request may start, before the intent's own end.
+        let challenge = saved(&store).approval.unwrap().challenge.unwrap();
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge.clone())], vec![]);
+        http.portal_time = Some(attempt.expires_at - 290);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, Some(0));
+        assert!(check.link.approval_can_restart);
+        // Clocks an hour or more apart give no time at all.
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge)], vec![]);
+        http.portal_time = Some(attempt.expires_at - 300 - 3_600);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, None);
+    }
+
+    #[test]
+    fn restart_never_opens_a_second_request_while_the_portals_clock_gives_the_first_time() {
+        // This device's clock says the fixture's request ran out long ago.
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let before = manifest(&store);
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at - 100);
+        assert!(matches!(
+            store.request_staff_approval_using(link.id, session, true, &http),
+            Err(VaultError::ApprovalStillOpen)
+        ));
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        assert!(before == manifest(&store));
+        assert_eq!(
+            crate::PublicError::from(VaultError::ApprovalStillOpen).code,
+            "approval_still_open"
+        );
+        // Once its time is up by the portal's clock, even before the portal
+        // says "expired", a new request starts for the same device.
+        let mut http = Script::new(vec![Reply::Pending], vec![Reply::Pending]);
+        http.portal_time = Some(attempt.expires_at + 5);
+        store
+            .request_staff_approval_using(link.id, session, true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.approval_history.len(), 1);
+        assert_eq!(current.approval_history[0].request_id, attempt.request_id);
+        assert_ne!(current.approval.unwrap().request_id, attempt.request_id);
+    }
+
+    #[test]
+    fn restart_follows_the_portals_clock_when_this_device_is_behind_it() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let linked = finish_connect_link(&store, session).unwrap();
+        store
+            .request_staff_approval_using(
+                linked.id,
+                session,
+                false,
+                &Script::new(vec![], vec![Reply::Pending]),
+            )
+            .unwrap();
+        let old = saved(&store).approval.unwrap();
+        assert!(old.expires_at > crate::now_ms() / 1000 + 60);
+        // Still "pending" on the portal, but past its end by the portal's
+        // clock: no longer approvable there.
+        let mut http = Script::new(vec![Reply::Pending], vec![Reply::Pending]);
+        http.portal_time = Some(old.expires_at + 5);
+        store
+            .request_staff_approval_using(linked.id, session, true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.approval_history[0].request_id, old.request_id);
+        assert_ne!(current.approval.unwrap().request_id, old.request_id);
+    }
+
+    #[test]
+    fn poll_reports_read_only_recovery_when_its_save_reaches_one_copy() {
+        struct FailSecondCopy;
+        impl Drop for FailSecondCopy {
+            fn drop(&mut self) {
+                FAIL_AT_TEST_BOUNDARY.set(&[]);
+            }
+        }
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let http = Script::new(vec![Reply::Pending], vec![]);
+        assert!(
+            !store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap()
+                .recovery
+        );
+        let failing = FailSecondCopy;
+        FAIL_AT_TEST_BOUNDARY.set(&["manifest.after-first-write"]);
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![],
+        );
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        drop(failing);
+        assert!(check.recovery, "the vault is read-only now");
+        assert_eq!(check.link.approval_status, Some(State::Expired));
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session, &Script::new(vec![], vec![])),
+            Err(VaultError::RecoveryMode)
+        ));
     }
 
     fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {

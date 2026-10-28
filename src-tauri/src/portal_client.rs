@@ -145,7 +145,8 @@ pub(crate) struct ApiResponse {
 }
 
 /// An HTTP date in its only current form (RFC 9110 IMF-fixdate, such as
-/// `Sun, 06 Nov 1994 08:49:37 GMT`), as Unix seconds. The obsolete forms and
+/// `Sun, 06 Nov 1994 08:49:37 GMT`), as Unix seconds. The obsolete forms, a
+/// day the month does not have, a weekday that does not match the date, and
 /// anything else give `None`.
 #[cfg(feature = "portal-linking")]
 pub(crate) fn http_date(text: &str) -> Option<u64> {
@@ -174,8 +175,23 @@ pub(crate) fn http_date(text: &str) -> Option<u64> {
     let month = MONTHS.iter().position(|m| text.get(8..11) == Some(m))? as u64 + 1;
     let (day, year) = (number(5..7)?, number(12..16)?);
     let (hour, minute, second) = (number(17..19)?, number(20..22)?, number(23..25)?);
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let month_days = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     if !(1970..=9999).contains(&year)
-        || !(1..=31).contains(&day)
+        || !(1..=month_days[month as usize - 1]).contains(&day)
         || hour > 23
         || minute > 59
         || second > 60
@@ -193,6 +209,11 @@ pub(crate) fn http_date(text: &str) -> Option<u64> {
     let day_of_year = (153 * m + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     let days = era * 146_097 + day_of_era - 719_468;
+    // 1970-01-01 was a Thursday.
+    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    if text.get(0..3) != Some(WEEKDAYS[(days % 7) as usize]) {
+        return None;
+    }
     Some(days * 86_400 + hour * 3_600 + minute * 60 + second)
 }
 
@@ -337,6 +358,15 @@ mod tests {
             Some(784_111_777)
         );
         assert_eq!(http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        // A leap day of a year divisible by 400, and the last day of a year.
+        assert_eq!(
+            http_date("Tue, 29 Feb 2000 00:00:00 GMT"),
+            Some(951_782_400)
+        );
+        assert_eq!(
+            http_date("Thu, 31 Dec 2026 23:59:59 GMT"),
+            Some(1_798_761_599)
+        );
         // A leap day and the first day after a February.
         assert_eq!(
             http_date("Thu, 29 Feb 2024 12:00:00 GMT"),
@@ -357,6 +387,12 @@ mod tests {
             "Sun, 00 Nov 1994 08:49:37 GMT",
             "Sun, 06 Nov 1969 23:59:59 GMT",
             "Sun, +6 Nov 1994 08:49:37 GMT",
+            // Days the month does not have, and a wrong weekday.
+            "Sat, 31 Feb 2024 00:00:00 GMT",
+            "Sun, 29 Feb 2026 00:00:00 GMT",
+            "Mon, 29 Feb 1900 00:00:00 GMT",
+            "Fri, 31 Apr 2026 00:00:00 GMT",
+            "Mon, 06 Nov 1994 08:49:37 GMT",
         ] {
             assert_eq!(http_date(refused), None, "{refused}");
         }

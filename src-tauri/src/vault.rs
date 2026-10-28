@@ -252,6 +252,9 @@ pub enum VaultError {
     #[cfg(feature = "portal-linking")]
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
+    #[cfg(feature = "portal-linking")]
+    #[error("the clinic portal still has the approval request open")]
+    ApprovalStillOpen,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
