@@ -230,7 +230,9 @@ impl From<VaultError> for PublicText {
                     LinkError::Busy => Self { code: "portal_busy", message: "Another clinic operation is running. Wait for it to finish, then try again." },
                     LinkError::RateLimited(_) => Self { code: "portal_rate_limited", message: "The clinic portal asked myCarlos to wait before trying again." },
                     LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
-                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
+                    // Refusals keep the wording they had for every operation but
+                    // the status check (#131, `approval_check_issue`).
+                    LinkError::Network | LinkError::InvalidResponse | LinkError::DeviceRemoved | LinkError::HttpRefused(_) => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
                 }
             },
             VaultError::Busy => Self {
@@ -1584,24 +1586,36 @@ struct DeviceApprovalCheck {
     recovery: bool,
 }
 
-/// Why a status check could not finish, as the clinic view is told. A reply
-/// that did not parse or verify is told apart from a connection failure
-/// here only (other clinic operations keep `portal_link_incomplete` for
-/// both): the view says the first and stops, and retries the second.
+/// Why a status check could not finish, as the clinic view is told. Only
+/// here are these told apart from a connection failure (every other clinic
+/// operation keeps `portal_link_incomplete` for all of them): a reply that
+/// did not parse or verify, and a device removed from the portal account,
+/// are said and not asked again; another refusal is said plainly and
+/// retried, like a connection failure.
 fn approval_check_issue(error: VaultError) -> PublicError {
-    if matches!(
-        error,
-        VaultError::Portal(portal_link::LinkError::InvalidResponse)
-    ) {
-        return PublicError {
-            code: "approval_reply_invalid",
-            message: "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
-            record_id: None,
-            note: None,
-            retry_after_ms: None,
-        };
+    use portal_link::LinkError;
+    let (code, message) = match error {
+        VaultError::Portal(LinkError::InvalidResponse) => (
+            "approval_reply_invalid",
+            "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
+        ),
+        VaultError::Portal(LinkError::DeviceRemoved) => (
+            "portal_device_removed",
+            "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.",
+        ),
+        VaultError::Portal(LinkError::HttpRefused(_)) => (
+            "portal_refused",
+            "myCarlos could not get this request's status from the clinic portal.",
+        ),
+        other => return PublicError::from(other),
+    };
+    PublicError {
+        code,
+        message,
+        record_id: None,
+        note: None,
+        retry_after_ms: None,
     }
-    PublicError::from(error)
 }
 
 /// A read-only status check of one linked device's approval, for the clinic
@@ -3756,11 +3770,25 @@ mod tests {
             (waiting.code, waiting.retry_after_ms),
             ("portal_rate_limited", Some(9_000))
         );
-        // Every other clinic operation keeps its existing code.
         assert_eq!(
-            PublicError::from(VaultError::Portal(LinkError::InvalidResponse)).code,
-            "portal_link_incomplete"
+            approval_check_issue(VaultError::Portal(LinkError::DeviceRemoved)).code,
+            "portal_device_removed"
         );
+        assert_eq!(
+            approval_check_issue(VaultError::Portal(LinkError::HttpRefused(503))).code,
+            "portal_refused"
+        );
+        // Every other clinic operation keeps its existing code.
+        for kept in [
+            LinkError::InvalidResponse,
+            LinkError::DeviceRemoved,
+            LinkError::HttpRefused(404),
+        ] {
+            assert_eq!(
+                PublicError::from(VaultError::Portal(kept)).code,
+                "portal_link_incomplete"
+            );
+        }
     }
 
     #[test]

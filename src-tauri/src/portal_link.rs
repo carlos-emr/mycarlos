@@ -44,6 +44,14 @@ pub enum LinkError {
     /// it asked to wait, if it said (#131).
     #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     RateLimited(Option<u64>),
+    /// The portal refused because this device was removed from the patient's
+    /// portal account (403 `device_removed`, #131).
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    DeviceRemoved,
+    /// The portal answered with this other HTTP status instead of what was
+    /// asked: a refused device assertion, maintenance… (#131).
+    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    HttpRefused(u16),
     Cancelled,
 }
 
@@ -334,18 +342,9 @@ impl StoredLink {
             approval_request_limit_reached: !accepted
                 && self.approval_history.len() + usize::from(self.approval.is_some())
                     >= crate::portal_approval::MAX_APPROVAL_REQUESTS,
-            approval_can_restart: self.approval_history.len()
-                + usize::from(self.approval.is_some())
-                < crate::portal_approval::MAX_APPROVAL_REQUESTS
-                && !accepted
-                && self.approval.as_ref().is_some_and(|a| {
-                    a.state() != crate::portal_approval::ApprovalState::Refused
-                        && (matches!(
-                            a.state(),
-                            crate::portal_approval::ApprovalState::Expired
-                                | crate::portal_approval::ApprovalState::Cancelled
-                        ) || a.expires_at <= crate::now_ms() / 1000)
-                }),
+            // By this device's clock here; a status check uses the portal's
+            // when it can (#131). One rule for both.
+            approval_can_restart: crate::portal_approval::can_restart(self, crate::now_ms() / 1000),
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())
