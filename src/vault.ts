@@ -1,5 +1,5 @@
+import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { getLocale, t, type MessageKey } from "./i18n";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -34,6 +34,7 @@ export interface VaultRecord {
   folderIds: string[];
   displayName: string;
   sourceLabel: string;
+  sourceKind?: "manual";
   mediaType: string;
   plaintextSize: number;
   importedAtMs: number;
@@ -237,6 +238,7 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
+  sourceKind?: "manual";
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -270,6 +272,55 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** Security's audit history (D129 and D146, mycarlos#120). `entries` are those native code
+ * authenticated from the start of the encrypted chain, in order; `complete` says whether they are
+ * all of it. When not, `laterEntries` are those after the damaged part that the vault's pinned end
+ * proves, in order, and `checkedUntilMs` / `checkedFromMs` date the gap (the last entry from the
+ * start, the first later entry; null when there is none). The screen's notice follows these
+ * native fields only; it is never worked out here. */
+export interface AuditHistoryView {
+  entries: AuditHistoryEntry[];
+  laterEntries: AuditHistoryEntry[];
+  complete: boolean;
+  checkedUntilMs: number | null;
+  checkedFromMs: number | null;
+}
+
+/** An audit event that native code authenticated from the start of the history chain. */
+export interface AuditHistoryEntry {
+  seq: number;
+  atMs: number;
+  app: string;
+  event:
+    | "created"
+    | "historyStarted"
+    | "unlocked"
+    | "imported"
+    | "renamed"
+    | "moved"
+    | "hidden"
+    | "restored"
+    | "copySaved"
+    | "recoveryKeySet"
+    | "backupSaved"
+    | "backupRestored"
+    | "passphraseChanged"
+    | "profileCreated"
+    | "folderCreated"
+    | "folderRenamed"
+    | "folderMoved"
+    | "setAside";
+  name: string | null;
+  oldName: string | null;
+  from: string[] | null;
+  fromTotal: number | null;
+  to: string[] | null;
+  toTotal: number | null;
+  how: string | null;
+  place: string | null;
+  previousSession: string | null;
+}
+
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
 export interface PassphraseRules {
   longEnough: boolean;
@@ -298,6 +349,8 @@ export interface VaultBridge {
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
+  /** Reads the audit history as far as its encrypted chain checks out. */
+  history(): Promise<AuditHistoryView>;
   linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
   /** One explicit action, under one native session ticket; a failed approval
    * step returns the durable original link rather than creating another one. */
@@ -459,6 +512,9 @@ export interface VaultBridge {
 export interface PublicError {
   code?: string;
   message?: string;
+  messageKey?: string;
+  noteKey?: string;
+  damageRecord?: { name: string; at: number; person?: string };
   /** The document a failure is about, if it is about one. */
   recordId?: string;
   /** A sentence to add after the message, about how the failure came about. */
@@ -506,6 +562,10 @@ const ownWording: Readonly<Record<string, MessageKey>> = {
  * what the patient typed for it ("the folder name"): a refusal of what was
  * typed then says which box to check (#69). */
 export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
+  if (error instanceof UiError)
+    return typeof error.uiText === "string"
+      ? error.uiText
+      : error.uiText.render();
   const portalErrors = {
     approval_expired: "portal.approvalExpired",
     approval_cancelled: "portal.approvalCancelled",
@@ -551,11 +611,19 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
       : undefined;
   if (typeof code === "string" && Object.hasOwn(ownWording, code))
     return t(ownWording[code]);
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const { message, note, retryAfterMs } = error as PublicError;
-    if (typeof message === "string") {
-      const parts = [message];
-      if (typeof note === "string") parts.push(note);
+  if (typeof error === "object" && error !== null) {
+    const { message, messageKey, note, noteKey, retryAfterMs, damageRecord } =
+      error as PublicError;
+    const knownKey = (key: unknown): key is MessageKey => hasMessageKey(key);
+    const translatedMessage = knownKey(messageKey) ? t(messageKey) : undefined;
+    if (translatedMessage !== undefined || typeof message === "string") {
+      const parts = [
+        damageRecord
+          ? damageText(damageRecord)
+          : (translatedMessage ?? message),
+      ];
+      if (knownKey(noteKey)) parts.push(t(noteKey));
+      else if (typeof note === "string") parts.push(note);
       if (typeof retryAfterMs === "number" && retryAfterMs > 0) {
         const seconds = Math.ceil(retryAfterMs / 1000);
         parts.push(t("error.retryIn", { count: seconds }));
@@ -566,11 +634,23 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
   return t("error.fallback");
 }
 
+/** Resolve a damaged document's own values once in the selected language. */
+function damageText(record: NonNullable<PublicError["damageRecord"]>): string {
+  // As the computer writes dates, whatever language myCarlos uses (Ben,
+  // 21 Oct): a Canadian computer writes 2026-01-15, never 1/15/2026.
+  const date = new Date(record.at).toLocaleDateString();
+  const where = t(
+    record.person ? "error.damaged.whereFor" : "error.damaged.where",
+    { date, person: record.person ?? "" },
+  );
+  return t("error.damaged", { name: record.name, where });
+}
+
 /** A backup refused over one document that no longer reads, named: the
  * native side gives only its id. Any other error is returned as it is. */
 export function namedDamage(
   error: unknown,
-  vault: Pick<VaultSnapshot, "profiles" | "records">,
+  vault: Pick<VaultSnapshot, "profiles" | "records" | "sharedProfileId">,
 ): unknown {
   if (!hasErrorCode(error, "damaged_document")) return error;
   const id = (error as PublicError).recordId;
@@ -582,26 +662,30 @@ export function namedDamage(
     vault.profiles.length > 1
       ? vault.profiles.find((candidate) => candidate.id === record.profileId)
       : undefined;
-  // As the computer writes dates, whatever language myCarlos uses (Ben,
-  // 21 Oct): a Canadian computer writes 2026-01-15, never 1/15/2026.
-  const date = new Date(record.importedAtMs).toLocaleDateString();
-  const where = profile
-    ? t("error.damaged.whereFor", { date, person: profile.displayName })
-    : t("error.damaged.where", { date });
-  // What may be left where it was being saved still holds.
-  const { note } = error as PublicError;
+  const damageRecord = {
+    name: record.displayName,
+    at: record.importedAtMs,
+    ...(profile &&
+      profile.id !== vault.sharedProfileId && { person: profile.displayName }),
+  };
   return {
-    code: "damaged_document",
-    message: t("error.damaged", { name: record.displayName, where }),
-    ...(typeof note === "string" && { note }),
+    ...(error as PublicError),
+    damageRecord,
+    get message() {
+      return damageText(damageRecord);
+    },
   };
 }
 
 /** The note a failure carries about how it came about, if any. */
 export function vaultErrorNote(error: unknown): string | null {
   if (typeof error !== "object" || error === null) return null;
-  const { note } = error as PublicError;
-  return typeof note === "string" ? note : null;
+  const { note, noteKey } = error as PublicError;
+  return hasMessageKey(noteKey)
+    ? t(noteKey as MessageKey)
+    : typeof note === "string"
+      ? note
+      : null;
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -690,6 +774,7 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
+    history: () => invoke<AuditHistoryView>("vault_history"),
     checkDocuments: () => invoke("vault_check_documents"),
     restartDeviceApproval: (linkId) =>
       invoke("vault_restart_device_approval", { linkId }),
@@ -710,9 +795,11 @@ export function createVaultBridge(): VaultBridge {
       invoke<string>("vault_recovery_key_begin", { request: { passphrase } }),
     confirmRecoveryKey: (groups) =>
       invoke<VaultSnapshot | null>("vault_recovery_key_confirm", {
+        locale: getLocale(),
         request: { groups },
       }),
-    saveRecoveryKit: () => invoke<boolean>("vault_recovery_kit_save"),
+    saveRecoveryKit: () =>
+      invoke<boolean>("vault_recovery_kit_save", { locale: getLocale() }),
     benchmarkKdf: () => invoke<SpeedTestReport>("kdf_benchmark"),
     recoveryKeyLabel: () => invoke<string>("vault_recovery_key_label"),
     cancelRecoveryKey: () => invoke<void>("vault_recovery_key_cancel"),
@@ -724,13 +811,15 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
     saveBackupToPicked: (pickId) =>
       invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
-    pickRestoreSource: () => invoke<string | null>("vault_restore_pick"),
+    pickRestoreSource: () =>
+      invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>
       invoke<RestorePreview>("vault_restore_inspect", {
         request: { pickId, ...credential },
       }),
     restore: (pickId, credential, replace) =>
       invoke<boolean>("vault_restore", {
+        locale: getLocale(),
         request: { pickId, ...credential, replace },
       }),
     createProfile: (displayName, details = {}) =>
@@ -767,6 +856,7 @@ export function createVaultBridge(): VaultBridge {
       }),
     pickImportFiles: (profileId, folderIds) =>
       invoke<string | null>("vault_import_pick", {
+        locale: getLocale(),
         request: { profileId, folderIds },
       }),
     importPickedFiles: (pickId, profileId, folderIds) =>
@@ -822,7 +912,10 @@ export function createVaultBridge(): VaultBridge {
         request: { confirmed },
       }),
     reset: (confirmation) =>
-      invoke<boolean>("vault_reset", { request: { confirmation } }),
+      invoke<boolean>("vault_reset", {
+        locale: getLocale(),
+        request: { confirmation },
+      }),
   };
 }
 

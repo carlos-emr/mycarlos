@@ -1,3 +1,5 @@
+import { humanText, humanValue, visibleText } from "../test/humanText";
+import { resolveText } from "../i18n";
 import {
   cleanup,
   fireEvent,
@@ -46,6 +48,13 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     renameProfile: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
     snapshot: vi.fn().mockResolvedValue(shown),
+    history: vi.fn().mockResolvedValue({
+      entries: [],
+      laterEntries: [],
+      complete: true,
+      checkedUntilMs: null,
+      checkedFromMs: null,
+    }),
     isLockedPdf: vi.fn().mockResolvedValue(false),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
@@ -84,7 +93,7 @@ describe("VaultLibrary folders", () => {
   it("sends a person's top-level name correction to that same profile, not the folder mutator", async () => {
     const { bridge } = renderLibrary();
     fireEvent.click(
-      screen.getByRole("button", { name: "Rename “FAKE Avery”" }),
+      screen.getByRole("button", { name: humanText("Rename “FAKE Avery”") }),
     );
     expect(
       screen.getByRole("dialog", { name: "Rename person's folder" }),
@@ -108,7 +117,7 @@ describe("VaultLibrary folders", () => {
   it("cancels a person's name correction without any native mutation", () => {
     const { bridge } = renderLibrary();
     fireEvent.click(
-      screen.getByRole("button", { name: "Rename “FAKE Avery”" }),
+      screen.getByRole("button", { name: humanText("Rename “FAKE Avery”") }),
     );
     fireEvent.change(screen.getByLabelText("Folder name"), {
       target: { value: "FAKE Corrected" },
@@ -123,18 +132,22 @@ describe("VaultLibrary folders", () => {
     async (destination) => {
       const { bridge, setNotice } = renderLibrary();
       const sidebar = screen.getByRole("navigation", {
-        name: "Record library",
+        name: humanText("Record library"),
       });
       dragFolder(
-        within(sidebar).getByRole("button", { name: /^FAKE Letters/ }),
         within(sidebar).getByRole("button", {
-          name: new RegExp(`^${destination}`),
+          name: humanText(/^FAKE Letters/),
+        }),
+        within(sidebar).getByRole("button", {
+          name: humanText(new RegExp(`^${destination}`)),
         }),
       );
       await vi.waitFor(() =>
-        expect(setNotice).toHaveBeenCalledWith(
-          "A folder cannot be moved into itself or its subfolders.",
-        ),
+        expect(
+          humanValue(
+            setNotice.mock.calls.map(([notice]) => resolveText(notice)),
+          ),
+        ).toContain("A folder cannot be moved into itself or its subfolders."),
       );
       expect(bridge.updateFolder).not.toHaveBeenCalled();
     },
@@ -142,10 +155,14 @@ describe("VaultLibrary folders", () => {
 
   it("still moves a subfolder up to its grandparent", async () => {
     const { bridge } = renderLibrary();
-    const sidebar = screen.getByRole("navigation", { name: "Record library" });
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
     dragFolder(
-      within(sidebar).getByRole("button", { name: /^FAKE June Letters/ }),
-      within(sidebar).getByRole("button", { name: /^FAKE Letters/ }),
+      within(sidebar).getByRole("button", {
+        name: humanText(/^FAKE June Letters/),
+      }),
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Letters/) }),
     );
     await vi.waitFor(() =>
       expect(bridge.updateFolder).toHaveBeenCalledWith(
@@ -158,11 +175,13 @@ describe("VaultLibrary folders", () => {
 
   it("shows when a folder was added in the Date added column", () => {
     renderLibrary();
-    const row = screen.getByRole("article", { name: "FAKE Letters folder" });
-    expect(row).toHaveTextContent(
+    const row = screen.getByRole("article", {
+      name: humanText("FAKE Letters folder"),
+    });
+    expect(row).toHaveHumanTextContent(
       new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
     );
-    expect(row).not.toHaveTextContent(/\bFolder\b/);
+    expect(row).not.toHaveHumanTextContent(/\bFolder\b/);
   });
 });
 
@@ -198,9 +217,13 @@ describe("clinic service dates", () => {
       };
       renderLibrary({ ...snapshot, records: [document] });
       const value = serviceDate === "" ? "Date not recorded" : serviceDate;
-      expect(screen.getByText(`Service date: ${value}`)).toBeVisible();
+      expect(
+        screen.getByText(humanText(`Service date: ${value}`)),
+      ).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
-      expect(screen.getByText(`Service date: ${value}`)).toBeVisible();
+      expect(
+        screen.getByText(humanText(`Service date: ${value}`)),
+      ).toBeVisible();
       expect(
         screen.getByText(
           `Date added: ${new Date(dateAdded).toLocaleDateString()}`,
@@ -248,22 +271,26 @@ const filed: VaultSnapshot = {
 };
 
 const search = (label: string, text: string) =>
-  fireEvent.change(screen.getByRole("searchbox", { name: label }), {
+  fireEvent.change(screen.getByRole("searchbox", { name: humanText(label) }), {
     target: { value: text },
   });
 // Each document shown, with the folder path given for it.
 const shownDocuments = () =>
   screen
-    .queryAllByRole("article", { name: / document$/ })
+    .queryAllByRole("article", { name: humanText(/ document$/) })
     .map((row) => [
       row.getAttribute("aria-label")?.replace(/ document$/, ""),
-      within(row).queryByText(/^In /)?.textContent ?? null,
+      within(row).queryByText(humanText(/^In /))?.textContent
+        ? visibleText(
+            within(row).getByText(humanText(/^In /)).textContent ?? "",
+          )
+        : null,
     ]);
 const openFolder = (name: RegExp) =>
   fireEvent.click(
     within(
-      screen.getByRole("navigation", { name: "Record library" }),
-    ).getByRole("button", { name }),
+      screen.getByRole("navigation", { name: humanText("Record library") }),
+    ).getByRole("button", { name: humanText(name) }),
   );
 
 describe("VaultLibrary search", () => {
@@ -302,23 +329,29 @@ describe("VaultLibrary search", () => {
   it("searches only the current person's root and names that person's paths", () => {
     renderLibrary(separateScopes);
     search("Search everything in FAKE Avery", "blood");
-    expect(shownDocuments()).toHaveLength(5);
+    expect(humanValue(shownDocuments())).toHaveLength(5);
     expect(
       shownDocuments().every(([, path]) => path?.startsWith("In FAKE Avery")),
     ).toBe(true);
-    const sidebar = screen.getByRole("navigation", { name: "Record library" });
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
     fireEvent.click(
-      within(sidebar).getByRole("button", { name: /^FAKE Blake/ }),
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Blake/) }),
     );
     search("Search everything in FAKE Blake", "blood");
-    expect(shownDocuments()).toEqual([
+    expect(humanValue(shownDocuments())).toEqual([
       ["FAKE Blood log.pdf", "In FAKE Blake"],
       ["FAKE Blood test.pdf", "In FAKE Blake / FAKE Lab results"],
     ]);
     search("Search everything in FAKE Blake", "lab");
-    const folders = screen.getAllByRole("article", { name: / folder$/ });
+    const folders = screen.getAllByRole("article", {
+      name: humanText(/ folder$/),
+    });
     expect(folders).toHaveLength(1);
-    expect(within(folders[0]).getByText("In FAKE Blake")).toBeVisible();
+    expect(
+      within(folders[0]).getByText(humanText("In FAKE Blake")),
+    ).toBeVisible();
   });
 
   it("searches only Shared with me, without person folders or pane drops", () => {
@@ -327,25 +360,29 @@ describe("VaultLibrary search", () => {
     openFolder(/^FAKE 2026/);
     fireEvent.click(
       within(
-        screen.getByRole("navigation", { name: "Record library" }),
-      ).getByRole("button", { name: /^Shared with me/ }),
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^Shared with me/) }),
     );
     const sharedRow = () =>
-      screen.getByRole("article", { name: "FAKE Blood shared.pdf document" });
+      screen.getByRole("article", {
+        name: humanText("FAKE Blood shared.pdf document"),
+      });
     dragFolder(sharedRow(), screen.getByRole("main"));
     search("Search Shared with me", "blood");
-    expect(shownDocuments()).toEqual([
+    expect(humanValue(shownDocuments())).toEqual([
       ["FAKE Blood shared.pdf", "In Shared with me"],
     ]);
-    expect(screen.getByText("1 documents found")).toBeVisible();
+    expect(screen.getByText(humanText("1 document found"))).toBeVisible();
     dragFolder(sharedRow(), screen.getByRole("main"));
     search("Search Shared with me", "lab");
-    expect(screen.queryAllByRole("article", { name: / folder$/ })).toHaveLength(
-      0,
-    );
-    expect(shownDocuments()).toEqual([]);
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(0);
+    expect(humanValue(shownDocuments())).toEqual([]);
     search("Search Shared with me", "");
-    expect(shownDocuments()).toEqual([["FAKE Blood shared.pdf", null]]);
+    expect(humanValue(shownDocuments())).toEqual([
+      ["FAKE Blood shared.pdf", null],
+    ]);
     expect(bridge.updateFolder).not.toHaveBeenCalled();
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
   });
@@ -360,13 +397,13 @@ describe("VaultLibrary search", () => {
       ),
     });
     search("Search everything in My records", "blood");
-    expect(shownDocuments()).toHaveLength(4);
+    expect(humanValue(shownDocuments())).toHaveLength(4);
     expect(
       shownDocuments().some(([, path]) => path?.endsWith("FAKE June")),
     ).toBe(false);
     openFolder(/^FAKE Lab results/);
     search("Search this folder and its subfolders", "blood test");
-    expect(shownDocuments()).toEqual([
+    expect(humanValue(shownDocuments())).toEqual([
       ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
     ]);
   });
@@ -375,7 +412,7 @@ describe("VaultLibrary search", () => {
     renderLibrary(filed);
     search("Search everything in My records", "blood");
 
-    expect(shownDocuments()).toEqual([
+    expect(humanValue(shownDocuments())).toEqual([
       ["FAKE Blood pressure log.pdf", "In My records"],
       ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
       [
@@ -388,7 +425,9 @@ describe("VaultLibrary search", () => {
         "In My records / FAKE Lab results / FAKE 2026; My records / FAKE Letters",
       ],
     ]);
-    expect(screen.getByText("0 folders · 5 documents found")).toBeVisible();
+    expect(
+      screen.getByText(humanText("0 folders · 5 documents found")),
+    ).toBeVisible();
   });
 
   it("from a folder covers it and every folder beneath it, and nothing else", () => {
@@ -397,7 +436,7 @@ describe("VaultLibrary search", () => {
     search("Search this folder and its subfolders", "blood test");
 
     // The referral matches too, but is filed in another branch.
-    expect(shownDocuments()).toEqual([
+    expect(humanValue(shownDocuments())).toEqual([
       ["FAKE Blood test.pdf", "In My records / FAKE Lab results"],
       [
         "FAKE Blood test.pdf",
@@ -406,12 +445,12 @@ describe("VaultLibrary search", () => {
     ]);
     // The path is read out with the document's buttons too.
     const deep = screen.getAllByRole("article", {
-      name: "FAKE Blood test.pdf document",
+      name: humanText("FAKE Blood test.pdf document"),
     })[1];
     for (const name of ["FAKE Blood test.pdf", "Select FAKE Blood test.pdf"])
       expect(
-        within(deep).getByRole("button", { name }),
-      ).toHaveAccessibleDescription(
+        within(deep).getByRole("button", { name: humanText(name) }),
+      ).toHaveHumanAccessibleDescription(
         "In My records / FAKE Lab results / FAKE 2026 / FAKE June",
       );
   });
@@ -421,7 +460,7 @@ describe("VaultLibrary search", () => {
     openFolder(/^FAKE Lab results/);
     search("Search this folder and its subfolders", "fake blood test.pdf");
 
-    expect(shownDocuments()).toContainEqual([
+    expect(humanValue(shownDocuments())).toContainEqual([
       "FAKE Blood test.pdf",
       "In My records / FAKE Lab results / FAKE 2026 / FAKE June",
     ]);
@@ -432,7 +471,7 @@ describe("VaultLibrary search", () => {
     openFolder(/^FAKE Lab results/);
     search("Search this folder and its subfolders", "count");
 
-    expect(shownDocuments()).toEqual([
+    expect(humanValue(shownDocuments())).toEqual([
       [
         "FAKE Blood count.pdf",
         "In My records / FAKE Lab results / FAKE 2026; My records / FAKE Letters",
@@ -444,16 +483,22 @@ describe("VaultLibrary search", () => {
     renderLibrary(filed);
     search("Search everything in My records", "june");
 
-    const rows = screen.getAllByRole("article", { name: "FAKE June folder" });
+    const rows = screen.getAllByRole("article", {
+      name: humanText("FAKE June folder"),
+    });
     expect(
-      rows.map((row) => within(row).getByText(/^In /).textContent),
+      humanValue(
+        rows.map((row) => within(row).getByText(humanText(/^In /)).textContent),
+      ),
     ).toEqual([
       "In My records / FAKE Lab results / FAKE 2026",
       "In My records / FAKE Letters",
     ]);
     expect(
-      within(rows[0]).getByRole("button", { name: "Open FAKE June" }),
-    ).toHaveAccessibleDescription(
+      within(rows[0]).getByRole("button", {
+        name: humanText("Open FAKE June"),
+      }),
+    ).toHaveHumanAccessibleDescription(
       "1 item In My records / FAKE Lab results / FAKE 2026",
     );
 
@@ -462,8 +507,8 @@ describe("VaultLibrary search", () => {
     search("Search this folder and its subfolders", "fake");
     expect(
       screen
-        .getAllByRole("article", { name: / folder$/ })
-        .map((row) => row.getAttribute("aria-label")),
+        .getAllByRole("article", { name: humanText(/ folder$/) })
+        .map((row) => visibleText(row.getAttribute("aria-label") ?? "")),
     ).toEqual(["FAKE June folder"]);
   });
 
@@ -471,20 +516,22 @@ describe("VaultLibrary search", () => {
     renderLibrary(filed);
     openFolder(/^FAKE Lab results/);
     search("Search this folder and its subfolders", "blood");
-    expect(shownDocuments()).toHaveLength(3);
+    expect(humanValue(shownDocuments())).toHaveLength(3);
 
     search("Search this folder and its subfolders", "");
-    expect(shownDocuments()).toEqual([["FAKE Blood test.pdf", null]]);
+    expect(humanValue(shownDocuments())).toEqual([
+      ["FAKE Blood test.pdf", null],
+    ]);
     expect(
       screen
-        .getAllByRole("article", { name: / folder$/ })
+        .getAllByRole("article", { name: humanText(/ folder$/) })
         .map((row) => [
-          row.getAttribute("aria-label"),
-          within(row).queryByText(/^In /),
+          visibleText(row.getAttribute("aria-label") ?? ""),
+          within(row).queryByText(humanText(/^In /)),
         ]),
     ).toEqual([["FAKE 2026 folder", null]]);
     expect(
-      screen.getByText("1 folders · 1 documents in this location"),
+      screen.getByText(humanText("1 folder · 1 document in this location")),
     ).toBeVisible();
   });
 
@@ -495,16 +542,20 @@ describe("VaultLibrary search", () => {
       fireEvent.click(
         within(
           screen
-            .getAllByRole("article", { name: "FAKE Blood test.pdf document" })
-            .find((row) => within(row).queryByText(/FAKE June$/))!,
-        ).getByRole("button", { name: "Select FAKE Blood test.pdf" }),
+            .getAllByRole("article", {
+              name: humanText("FAKE Blood test.pdf document"),
+            })
+            .find((row) => within(row).queryByText(humanText(/FAKE June$/)))!,
+        ).getByRole("button", {
+          name: humanText("Select FAKE Blood test.pdf"),
+        }),
       );
     selectDeep();
-    expect(screen.getByText("1 selected")).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Move selected to"), {
+    expect(screen.getByText(humanText("1 selected"))).toBeVisible();
+    fireEvent.change(screen.getByLabelText(humanText("Move selected to")), {
       target: { value: "letters" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Move" }));
+    fireEvent.click(screen.getByRole("button", { name: humanText("Move") }));
     await vi.waitFor(() =>
       expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
         ["lab-deep"],
@@ -515,12 +566,14 @@ describe("VaultLibrary search", () => {
     // Once the search changes, the selection starts again, so a move acts
     // only on documents chosen while in view.
     await vi.waitFor(() =>
-      expect(screen.queryByText(/selected$/)).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText(humanText(/selected$/)),
+      ).not.toBeInTheDocument(),
     );
     selectDeep();
-    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(screen.getByText(humanText("1 selected"))).toBeVisible();
     search("Search everything in My records", "");
-    expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(humanText(/selected$/))).not.toBeInTheDocument();
   });
 
   it("does not move a result let go of over the results it came from", () => {
@@ -528,13 +581,13 @@ describe("VaultLibrary search", () => {
     openFolder(/^FAKE Lab results/);
     search("Search this folder and its subfolders", "june");
     dragFolder(
-      screen.getByRole("article", { name: "FAKE June folder" }),
+      screen.getByRole("article", { name: humanText("FAKE June folder") }),
       screen.getByRole("main"),
     );
     search("Search this folder and its subfolders", "blood test");
     dragFolder(
       screen.getAllByRole("article", {
-        name: "FAKE Blood test.pdf document",
+        name: humanText("FAKE Blood test.pdf document"),
       })[1],
       screen.getByRole("main"),
     );
@@ -564,31 +617,35 @@ describe("VaultLibrary controls for older patients (#67)", () => {
   it("puts words on its buttons and shows both sort choices", () => {
     renderLibrary(withRecord);
     const details = screen.getByRole("button", {
-      name: "Details for FAKE Results.pdf",
+      name: humanText("Details for FAKE Results.pdf"),
     });
-    expect(details).toHaveTextContent(/^Details$/);
-    expect(screen.getByRole("button", { name: "List view" })).toHaveTextContent(
-      "List",
-    );
-    expect(screen.getByRole("button", { name: "Grid view" })).toHaveTextContent(
-      "Grid",
-    );
+    expect(details).toHaveHumanTextContent(/^Details$/);
+    expect(
+      screen.getByRole("button", { name: humanText("List view") }),
+    ).toHaveHumanTextContent("List");
+    expect(
+      screen.getByRole("button", { name: humanText("Grid view") }),
+    ).toHaveHumanTextContent("Grid");
     // Sort is a row of radio buttons, not a dropdown with only an icon.
-    const sort = screen.getByRole("group", { name: "Sort by" });
+    const sort = screen.getByRole("group", { name: humanText("Sort by") });
     expect(
       within(sort)
         .getAllByRole("radio")
         .map((choice) => choice.closest("label")?.textContent),
     ).toEqual(["Newest first", "Name A–Z"]);
     expect(
-      within(sort).getByRole("radio", { name: "Newest first" }),
+      within(sort).getByRole("radio", { name: humanText("Newest first") }),
     ).toBeChecked();
-    fireEvent.click(within(sort).getByRole("radio", { name: "Name A–Z" }));
-    expect(within(sort).getByRole("radio", { name: "Name A–Z" })).toBeChecked();
+    fireEvent.click(
+      within(sort).getByRole("radio", { name: humanText("Name A–Z") }),
+    );
+    expect(
+      within(sort).getByRole("radio", { name: humanText("Name A–Z") }),
+    ).toBeChecked();
     fireEvent.click(details);
     expect(
-      screen.getByRole("button", { name: "Close document details" }),
-    ).toHaveTextContent(/^Close$/);
+      screen.getByRole("button", { name: humanText("Close document details") }),
+    ).toHaveHumanTextContent(/^Close$/);
   });
 });
 
@@ -614,7 +671,9 @@ describe("VaultLibrary moving and selecting without dragging (#67)", () => {
     renderLibrary(withRecord);
     expect(
       screen.getByText(
-        "Hold and drag a document or folder to move it, or open it and choose Move to.",
+        humanText(
+          "Hold and drag a document or folder to move it, or open it and choose Move to.",
+        ),
       ),
     ).toBeVisible();
   });
@@ -622,19 +681,21 @@ describe("VaultLibrary moving and selecting without dragging (#67)", () => {
   it("selects a document in grid view as in list view, with a 44px target", () => {
     renderLibrary(withRecord);
     const listTick = screen.getByRole("button", {
-      name: "Select FAKE Results.pdf",
+      name: humanText("Select FAKE Results.pdf"),
     });
     const box = listTick.getBoundingClientRect();
     expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
-    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Grid view") }),
+    );
     const gridTick = screen.getByRole("button", {
-      name: "Select FAKE Results.pdf",
+      name: humanText("Select FAKE Results.pdf"),
     });
     const tile = gridTick.getBoundingClientRect();
     expect(Math.min(tile.width, tile.height)).toBeGreaterThanOrEqual(44);
     fireEvent.click(gridTick);
     expect(gridTick).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(screen.getByText(humanText("1 selected"))).toBeVisible();
   });
 });
 
@@ -649,8 +710,12 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
 
   it("shows each person as a top-level folder over their own folders, with Shared with me beside them (Ben, 21 Oct)", () => {
     renderLibrary(twoPatients);
-    expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
-    const library = screen.getByRole("navigation", { name: "Record library" });
+    expect(
+      screen.queryByRole("group", { name: humanText("Patient") }),
+    ).toBeNull();
+    const library = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
     const names = () =>
       Array.from(library.querySelectorAll(".native-nav-name")).map(
         (name) => name.textContent,
@@ -666,43 +731,49 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     // Shared with me is no one's: at the top level, never indented under a
     // person as their folders are.
     const shared = within(library).getByRole("button", {
-      name: /^Shared with me/,
+      name: humanText(/^Shared with me/),
     });
     const letters = within(library).getByRole("button", {
-      name: /^FAKE Letters/,
+      name: humanText(/^FAKE Letters/),
     });
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
     // Whose folder it is, for a screen reader.
-    expect(letters).toHaveAccessibleName("FAKE Letters (FAKE Avery) 0");
-    const avery = within(library).getByRole("button", { name: /^FAKE Avery/ });
-    const blake = within(library).getByRole("button", { name: /^FAKE Blake/ });
+    expect(letters).toHaveHumanAccessibleName("FAKE Letters (FAKE Avery) 0");
+    const avery = within(library).getByRole("button", {
+      name: humanText(/^FAKE Avery/),
+    });
+    const blake = within(library).getByRole("button", {
+      name: humanText(/^FAKE Blake/),
+    });
     expect(avery).toHaveAttribute("aria-current", "page");
     fireEvent.click(blake);
     expect(blake).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+    expect(screen.getByRole("heading", { level: 1 })).toHaveHumanTextContent(
       "FAKE Blake",
     );
     // Blake's records hold none of Avery's folders.
     expect(
-      screen.queryByRole("article", { name: "FAKE Letters folder" }),
+      screen.queryByRole("article", { name: humanText("FAKE Letters folder") }),
     ).toBeNull();
     // Opening one of Avery's folders from Blake's opens it at once, with
     // the person in the path.
     fireEvent.click(
-      within(library).getByRole("button", { name: /^FAKE 2025 Letters/ }),
+      within(library).getByRole("button", {
+        name: humanText(/^FAKE 2025 Letters/),
+      }),
     );
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+    expect(screen.getByRole("heading", { level: 1 })).toHaveHumanTextContent(
       "FAKE 2025 Letters",
     );
     expect(
       within(
         document.querySelector(".native-profile-row") as HTMLElement,
-      ).getByRole("button", { name: "FAKE Avery" }),
+      ).getByRole("button", { name: humanText("FAKE Avery") }),
     ).toBeVisible();
-    expect(document.querySelector(".native-profile-row")).toHaveTextContent(
-      "FAKE Avery›FAKE 2025 Letters",
-    );
+    expect(
+      document.querySelector(".native-profile-row"),
+    ).toHaveHumanTextContent("FAKE Avery›FAKE 2025 Letters");
     cleanup();
 
     // With one person, their folder is "My records".
@@ -710,7 +781,7 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(
       Array.from(
         screen
-          .getByRole("navigation", { name: "Record library" })
+          .getByRole("navigation", { name: humanText("Record library") })
           .querySelectorAll(".native-nav-name"),
       ).map((name) => name.textContent),
     ).toEqual([
@@ -725,13 +796,13 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
   it("shows Shared with me's whole name in the sidebar, with its new count on one line (#61)", () => {
     renderLibrary(snapshot, 2);
     const shared = screen.getByRole("button", {
-      name: "Shared with me, 2 new",
+      name: humanText("Shared with me, 2 new"),
     });
     const name = shared.querySelector(".native-nav-name")!;
     expect(name.textContent).toBe("Shared with me");
     expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
     const text = document.createRange();
-    text.selectNodeContents(within(shared).getByText("2 new"));
+    text.selectNodeContents(within(shared).getByText(humanText("2 new")));
     const lines = new Set(
       [...text.getClientRects()].map((box) => Math.round(box.top)),
     );
@@ -753,19 +824,25 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       ],
     };
     const { bridge, setNotice } = renderLibrary(withBlakeFolder);
-    const library = screen.getByRole("navigation", { name: "Record library" });
+    const library = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
     // Avery is open: Blake's folder shows, but does not move by drag.
     const blakes = within(library).getByRole("button", {
-      name: /^FAKE School forms/,
+      name: humanText(/^FAKE School forms/),
     });
     expect(blakes).not.toHaveAttribute("draggable");
     expect(
-      within(library).getByRole("button", { name: /^FAKE June Letters/ }),
+      within(library).getByRole("button", {
+        name: humanText(/^FAKE June Letters/),
+      }),
     ).toHaveAttribute("draggable", "true");
     // Within Avery's own, a folder still moves.
     dragFolder(
-      within(library).getByRole("button", { name: /^FAKE June Letters/ }),
-      within(library).getByRole("button", { name: /^FAKE Letters/ }),
+      within(library).getByRole("button", {
+        name: humanText(/^FAKE June Letters/),
+      }),
+      within(library).getByRole("button", { name: humanText(/^FAKE Letters/) }),
     );
     await vi.waitFor(() =>
       expect(bridge.updateFolder).toHaveBeenCalledWith(
@@ -775,9 +852,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       ),
     );
     await vi.waitFor(() =>
-      expect(setNotice).toHaveBeenCalledWith(
-        "FAKE June Letters moved to FAKE Letters.",
-      ),
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContain("FAKE June Letters moved to FAKE Letters."),
     );
   });
 
@@ -785,14 +862,17 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     await page.viewport(390, 844);
     try {
       renderLibrary(twoPatients, 2);
-      expect(screen.queryByRole("combobox", { name: "Section" })).toBeNull();
-      const sections = screen.getByRole("navigation", { name: "Section" });
+      expect(
+        screen.queryByRole("combobox", { name: humanText("Section") }),
+      ).toBeNull();
+      const sections = screen.getByRole("navigation", {
+        name: humanText("Section"),
+      });
       const tabs = within(sections).getAllByRole("button");
       // Records holds the people and Shared with me (Ben, 21 Oct); it says
       // how many shared files are new (#61).
-      expect(tabs.map((tab) => tab.textContent)).toEqual([
+      expect(humanValue(tabs.map((tab) => tab.textContent))).toEqual([
         "Records (2 new)",
-        "Hidden",
         "Security",
         "Preferences",
       ]);
@@ -800,19 +880,23 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       // The sidebar is hidden here; the same top-level folders sit under
       // the path, and exactly one list of them is in reach.
       const library = screen.getByRole("navigation", {
-        name: "Record library",
+        name: humanText("Record library"),
       });
       expect(
         within(library)
           .getAllByRole("button")
-          .map((button) => button.textContent?.trim()),
+          .map((button) => visibleText(button.textContent?.trim() ?? "")),
       ).toEqual(["FAKE Avery", "FAKE Blake", "Shared with me (2 new)"]);
       fireEvent.click(
-        within(library).getByRole("button", { name: /^Shared with me/ }),
+        within(library).getByRole("button", {
+          name: humanText(/^Shared with me/),
+        }),
       );
       expect(tabs[0]).toHaveAttribute("aria-current", "page");
       expect(
-        within(library).getByRole("button", { name: /^Shared with me/ }),
+        within(library).getByRole("button", {
+          name: humanText(/^Shared with me/),
+        }),
       ).toHaveAttribute("aria-current", "page");
       fireEvent.click(tabs[2]);
       expect(tabs[2]).toHaveAttribute("aria-current", "page");
@@ -822,12 +906,70 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       // With one person: My records and Shared with me.
       renderLibrary(snapshot, 2);
       expect(
-        within(screen.getByRole("navigation", { name: "Record library" }))
+        within(
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        )
           .getAllByRole("button")
-          .map((button) => button.textContent?.trim()),
+          .map((button) => visibleText(button.textContent?.trim() ?? "")),
       ).toEqual(["My records", "Shared with me (2 new)"]);
     } finally {
       await page.viewport(1100, 760);
     }
   });
+});
+
+describe("Audit history keeps Security's Hidden location", () => {
+  it.each(["back", "persistent navigation"])(
+    "keeps Shared with me after returning by %s",
+    async (route) => {
+      const shared: VaultSnapshot = {
+        ...snapshot,
+        sharedProfileId: "shared",
+        profiles: [
+          ...snapshot.profiles,
+          { id: "shared", displayName: "Shared with me", createdAtMs: 2 },
+        ],
+        records: [
+          {
+            ...record("person-hidden", "FAKE person secret.pdf", []),
+            hidden: { atMs: 2, reason: "patient" },
+          },
+          {
+            ...record("shared-hidden", "FAKE shared secret.pdf", []),
+            profileId: "shared",
+            hidden: { atMs: 2, reason: "patient" },
+          },
+        ],
+      };
+      renderLibrary(shared);
+      openFolder(/^Shared with me/);
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      expect(
+        screen.getByRole("button", { name: /^Hidden 1 Shared with me/ }),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText("There are no history events.");
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: route === "back" ? /Back to Security/i : "Security",
+        }),
+      );
+      const hidden = screen.getByRole("button", {
+        name: /^Hidden 1 Shared with me/,
+      });
+      if (route === "back")
+        expect(
+          screen.getByRole("button", { name: "Audit history" }),
+        ).toHaveFocus();
+      fireEvent.click(hidden);
+      expect(
+        screen.getByRole("article", {
+          name: humanText("FAKE shared secret.pdf, hidden"),
+        }),
+      ).toBeVisible();
+      expect(
+        screen.queryByText("FAKE person secret.pdf"),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
