@@ -48,6 +48,27 @@ function renderReader(
 }
 
 describe("the document reader", () => {
+  it("says Verified before the clinic's name, however long (#135)", async () => {
+    const clinic =
+      "FAKE Northern Riverside Family Health Team and Community Wellness Clinic";
+    renderReader(undefined, { ...record, verifiedClinicName: clinic });
+    const reader = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
+    expect(reader).toHaveAccessibleDescription(`Verified From ${clinic}`);
+    const trust = document.getElementById("reader-trust")!;
+    const status = within(trust).getByText("Verified", { exact: true });
+    const source = within(trust).getByText(`From ${clinic}`, { exact: true });
+    // First: left of the source on its line, or on a line above it.
+    const [first, then] = [status, source].map((part) =>
+      part.getBoundingClientRect(),
+    );
+    expect(
+      first.right <= then.left + 0.5 || first.bottom <= then.top + 0.5,
+    ).toBe(true);
+    // All of the source is shown: it wraps.
+    expect(source.scrollWidth).toBeLessThanOrEqual(source.clientWidth);
+    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+  });
+
   it.each([undefined, "", "2024-02-29"])(
     "keeps the clinic service date %s distinct from the date added",
     async (serviceDate) => {
@@ -93,7 +114,8 @@ describe("the document reader", () => {
   it("shows the first page, its text and where the document came from", async () => {
     const { viewPage } = renderReader();
     const reader = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
-    expect(reader).toHaveAccessibleDescription("Manual import — unverified");
+    // #135: the status first, then the source the vault stored, by its name.
+    expect(reader).toHaveAccessibleDescription("Unverified Manual import");
     const picture = await screen.findByRole("img", {
       name: "Page 1 of 2. The page's text follows.",
     });

@@ -113,7 +113,6 @@ export const en = {
   "portal.compare":
     "Ask clinic staff to compare this entire fingerprint on this screen before approving this device.",
   "portal.requestApproval": "Request clinic approval",
-  "portal.sourceVerified": "From {clinic} · Verified",
   "portal.errorAddress":
     "Enter the portal HTTPS address without a username, password, query, or fragment.",
   "portal.errorCode":
@@ -599,6 +598,12 @@ export const en = {
   "library.column.name": "Name",
   "library.column.source": "Source",
   "library.column.added": "Date added",
+  // A document's status, then its source (#135). Verified comes only from the
+  // vault's own check of a clinic delivery, never from the source text.
+  "library.status.verified": "Verified",
+  "library.status.unverified": "Unverified",
+  "library.source.clinic": "From {clinic}",
+  "library.source.manualImport": "Manual import",
   "library.folder.label": "{name} folder",
   "library.folder.open": "Open {name}",
   "library.folder.items": {

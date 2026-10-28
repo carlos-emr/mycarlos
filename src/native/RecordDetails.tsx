@@ -4,6 +4,7 @@ import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
+import { RecordSource } from "./RecordSource";
 import {
   MoveTargetSelect,
   moveTargetValue,
@@ -174,11 +175,7 @@ export function RecordDetails({
           <div>
             <dt>Source</dt>
             <dd>
-              {record.verifiedClinicName
-                ? t("portal.sourceVerified", {
-                    clinic: record.verifiedClinicName,
-                  })
-                : record.sourceLabel}
+              <RecordSource record={record} />
             </dd>
           </div>
           <div>

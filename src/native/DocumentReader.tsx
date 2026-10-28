@@ -1,5 +1,5 @@
-import { useI18n } from "../i18n";
 import { ClinicServiceDate } from "./ClinicServiceDate";
+import { RecordSource } from "./RecordSource";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import {
@@ -65,7 +65,6 @@ export function DocumentReader({
   cancelView?: () => void;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -194,11 +193,7 @@ export function DocumentReader({
           <div>
             <h2 id="reader-title">{record.displayName}</h2>
             <p id="reader-trust">
-              {record.verifiedClinicName
-                ? t("portal.sourceVerified", {
-                    clinic: record.verifiedClinicName,
-                  })
-                : record.sourceLabel}
+              <RecordSource record={record} />
             </p>
             {record.clinicServiceDate !== undefined && (
               <p>

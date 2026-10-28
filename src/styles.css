@@ -507,6 +507,16 @@ h1, h2, p { margin: 0; }
 .record-open { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 0.875rem; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .record-open:hover { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
 .file-row .column { overflow: hidden; color: var(--ink-soft); font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
+/* #135: a document's status, Verified or Unverified, comes first as a word of its own. Its source
+   follows on the same line when there is room, or goes under it; either way a long source wraps
+   or is cut short after the status and never pushes it out of view. */
+.record-source { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; }
+.record-status { max-width: 100%; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); color: var(--ink); font-weight: 700; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+.record-source.verified .record-status { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
+.record-source-name { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+/* In the list the source keeps to one line; Details and the reader show all of it. */
+.file-row .record-source-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-metadata .record-source { justify-content: flex-end; }
 .more-button { display: grid; place-items: center; padding: 6px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-faint); }
 .more-button:hover { background: var(--canvas-2); color: var(--ink); }
 

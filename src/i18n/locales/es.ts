@@ -116,7 +116,6 @@ export const es: Record<MessageKey, Message> = {
   "portal.compare":
     "Pida al personal de la clínica que compare toda esta huella en esta pantalla antes de aprobar este dispositivo.",
   "portal.requestApproval": "Solicitar aprobación de la clínica",
-  "portal.sourceVerified": "De {clinic} · Verificado",
   "portal.errorAddress":
     "Introduzca la dirección HTTPS del portal sin nombre de usuario, contraseña, parámetros de consulta ni fragmento.",
   "portal.errorCode":
@@ -622,6 +621,10 @@ export const es: Record<MessageKey, Message> = {
   "library.column.name": "Nombre",
   "library.column.source": "Origen",
   "library.column.added": "Añadido el",
+  "library.status.verified": "Verificado",
+  "library.status.unverified": "No verificado",
+  "library.source.clinic": "De {clinic}",
+  "library.source.manualImport": "Importación manual",
   "library.folder.label": "Carpeta {name}",
   "library.folder.open": "Abrir {name}",
   "library.folder.items": {

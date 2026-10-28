@@ -115,7 +115,6 @@ export const ptBR: Record<MessageKey, Message> = {
   "portal.compare":
     "Peça à equipe da clínica para comparar toda esta impressão digital nesta tela antes de aprovar este dispositivo.",
   "portal.requestApproval": "Solicitar aprovação da clínica",
-  "portal.sourceVerified": "De {clinic} · Verificado",
   "portal.errorAddress":
     "Digite o endereço HTTPS do portal sem nome de usuário, senha, parâmetros de consulta ou fragmento.",
   "portal.errorCode":
@@ -619,6 +618,10 @@ export const ptBR: Record<MessageKey, Message> = {
   "library.column.name": "Nome",
   "library.column.source": "Origem",
   "library.column.added": "Adicionado em",
+  "library.status.verified": "Verificado",
+  "library.status.unverified": "Não verificado",
+  "library.source.clinic": "De {clinic}",
+  "library.source.manualImport": "Importação manual",
   "library.folder.label": "Pasta {name}",
   "library.folder.open": "Abrir {name}",
   "library.folder.items": {

@@ -117,7 +117,6 @@ export const pl: Record<MessageKey, Message> = {
   "portal.compare":
     "Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.",
   "portal.requestApproval": "Poproś przychodnię o zatwierdzenie",
-  "portal.sourceVerified": "Z {clinic} · Zweryfikowano",
   "portal.errorAddress":
     "Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.",
   "portal.errorCode":
@@ -640,6 +639,10 @@ export const pl: Record<MessageKey, Message> = {
   "library.column.name": "Nazwa",
   "library.column.source": "Źródło",
   "library.column.added": "Data dodania",
+  "library.status.verified": "Zweryfikowano",
+  "library.status.unverified": "Nie zweryfikowano",
+  "library.source.clinic": "Z {clinic}",
+  "library.source.manualImport": "Import ręczny",
   "library.folder.label": "Folder {name}",
   "library.folder.open": "Otwórz {name}",
   "library.folder.items": {

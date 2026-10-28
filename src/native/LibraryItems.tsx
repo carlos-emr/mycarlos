@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
 import { ClinicServiceDate } from "./ClinicServiceDate";
+import { RecordSource } from "./RecordSource";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibraryItemsProps {
@@ -193,13 +194,7 @@ export function LibraryItems({
               </span>
               {suggestionFor?.(record)}
             </div>
-            <span className="column">
-              {record.verifiedClinicName
-                ? t("portal.sourceVerified", {
-                    clinic: record.verifiedClinicName,
-                  })
-                : record.sourceLabel}
-            </span>
+            <RecordSource record={record} className="column" />
             <span className="column">
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
