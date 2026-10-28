@@ -17610,10 +17610,13 @@ mod tests {
                     id: profile_id,
                     display_name: "Jamie".to_owned(),
                     created_at_ms: 1,
+                    full_name: None,
+                    birth_date: None,
                 }],
                 folders,
                 records: Vec::new(),
                 history: HistoryState::default(),
+                portal_links: Vec::new(),
             };
             validate_manifest_structure(&manifest, manifest.vault_id).unwrap();
         }
