@@ -3277,6 +3277,51 @@ mod approval_recovery_tests {
         assert_eq!(filed(&store), 1);
         assert!(store.pending_receipts(&link, session).unwrap().is_empty());
     }
+    /// Ben's D132c with clinic code v1 (#141, root-87's review of #138): a
+    /// device the clinic approved by code is asked, and its documents are
+    /// listed, like one approved by staff.
+    #[test]
+    fn should_ask_a_clinic_that_approved_this_device_by_code() {
+        let (_, mut link, mut attempt) = portal_approval::first_fixture();
+        let challenge =
+            portal_approval::fixture_challenge_with(|c| c["approval_kind"] = "code".into());
+        attempt.acceptance = Some(portal_approval::fixture_acceptance_with(&challenge, |a| {
+            a["approval_kind"] = "code".into()
+        }));
+        attempt.challenge = Some(challenge);
+        attempt.status = Some(State::Accepted);
+        link.approval = Some(attempt);
+        assert!(portal_approval::currently_approved(&link));
+        assert!(portal_approval::approval_by_code(&link));
+        assert!(crate::portal_pickup::worth_asking(&link));
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Code Approved Patient", 1)
+            .unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        let listed = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            // Approved already: its status is not read again.
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                assert_eq!(method, "GET");
+                assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                listed.lock().unwrap().push(l.id);
+                Ok(empty_page())
+            },
+        )
+        .unwrap();
+        assert_eq!(listed.into_inner().unwrap(), vec![link.id]);
+        assert!(result.issues.is_empty());
+    }
     /// Ben's D132c: the check after unlocking, and Check for new documents,
     /// ask only clinics that approved this device or have a request still
     /// open. No saved request, or one refused or ended, is no reason to ask.
