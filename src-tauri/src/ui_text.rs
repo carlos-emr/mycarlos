@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{hash_map::Entry, HashMap};
 use unicode_normalization::UnicodeNormalization;
+use zeroize::Zeroizing;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UiTextError {
@@ -32,9 +33,25 @@ pub(crate) enum UiLocale {
     ZhTw,
 }
 
+/// Whether a name is "Shared with me" as any language shows it, ignoring case,
+/// space around it and how its accents are typed. The folder is shown in the
+/// app's language, so a person by any of these names would read as it (#61).
+/// A language whose name cannot be read refuses the name rather than let it
+/// through.
+pub(crate) fn names_shared_folder(name: &str) -> bool {
+    let key = |text: &str| text.trim().nfc().collect::<String>().to_lowercase();
+    let typed = key(name);
+    UiLocale::ALL.iter().any(|locale| {
+        match locale.text(MessageId::InterfaceLibrarySidebarSharedWithMe) {
+            Ok(shown) => key(&shown) == typed,
+            Err(_) => true,
+        }
+    })
+}
+
 impl UiLocale {
-    #[cfg(test)]
-    const ALL: [Self; 7] = [
+    /// Every shipped language, for checks that must hold in all of them.
+    pub(crate) const ALL: [Self; 7] = [
         Self::En,
         Self::Fr,
         Self::Es,
@@ -126,11 +143,14 @@ impl UiLocale {
                 args.set(*name, *value);
             }
             let mut errors = Vec::new();
-            let text = bundle
-                .format_pattern(pattern, Some(&args), &mut errors)
-                .into_owned();
+            let mut text = WipingText::with_capacity(
+                values.iter().map(|(_, value)| value.len()).sum::<usize>() + 256,
+            );
+            bundle
+                .write_pattern(&mut text, pattern, Some(&args), &mut errors)
+                .map_err(|_| UiTextError::Formatting)?;
             if errors.is_empty() {
-                Ok(text)
+                Ok(text.into_string())
             } else {
                 Err(UiTextError::Formatting)
             }
@@ -162,6 +182,37 @@ impl UiLocale {
         let phrase = self.text(MessageId::NativeResetPhrase)?;
         let max_bytes: usize = phrase.nfd().map(char::len_utf8).sum();
         Ok(typed.len() <= max_bytes && typed.nfc().eq(phrase.nfc()))
+    }
+}
+
+/// Text built in one buffer that leaves no freed copy of itself behind: when it
+/// must grow, the old buffer is wiped before it is freed. Values such as a
+/// recovery key are copied in here, so no unwiped copy of one stays in freed
+/// memory (#119).
+struct WipingText(Zeroizing<String>);
+
+impl WipingText {
+    fn with_capacity(bytes: usize) -> Self {
+        Self(Zeroizing::new(String::with_capacity(bytes)))
+    }
+
+    /// The text, in the buffer it was built in: nothing is copied.
+    fn into_string(mut self) -> String {
+        std::mem::take(&mut *self.0)
+    }
+}
+
+impl std::fmt::Write for WipingText {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        let needed = self.0.len() + text.len();
+        if needed > self.0.capacity() {
+            let mut grown = String::with_capacity(needed.max(self.0.capacity() * 2));
+            grown.push_str(&self.0);
+            // The old buffer is a Zeroizing: replacing it wipes it.
+            self.0 = Zeroizing::new(grown);
+        }
+        self.0.push_str(text);
+        Ok(())
     }
 }
 
@@ -235,6 +286,66 @@ mod tests {
     use super::*;
     fn visible(text: String) -> String {
         text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    #[test]
+    fn text_outgrowing_its_buffer_moves_to_a_new_one_with_nothing_lost() {
+        use std::fmt::Write;
+        let key = "FAKE-RECOVERY-WORDS-THAT-ARE-LONGER-THAN-THEIR-BUFFER";
+        let mut text = WipingText::with_capacity(4);
+        let first = text.0.as_ptr();
+        write!(text, "Key: {key}, again {key}.").unwrap();
+        // A new buffer was taken (the old one was wiped as it went).
+        assert_ne!(text.0.as_ptr(), first);
+        let grown = text.0.as_ptr();
+        let written = text.into_string();
+        assert_eq!(written, format!("Key: {key}, again {key}."));
+        // Handed over in the same buffer, not copied out.
+        assert_eq!(written.as_ptr(), grown);
+    }
+    #[test]
+    fn recovery_kit_text_is_the_same_as_fluent_formats_it() {
+        let key = "FAKE-RECOVERY-WORDS-THAT-ARE-MUCH-LONGER-THAN-A-PLACEHOLDER".repeat(8);
+        let values = [
+            ("key", key.as_str()),
+            ("label", "FAKE label"),
+            ("date", "2026-10-28"),
+        ];
+        for locale in UiLocale::ALL {
+            for isolating in [false, true] {
+                let ours = locale
+                    .format_strings(MessageId::NativeKitText, &values, isolating)
+                    .unwrap();
+                let mut bundle = bundle_from_source(locale, locale.source()).unwrap();
+                bundle.set_use_isolating(isolating);
+                let pattern = bundle
+                    .get_message(MessageId::NativeKitText.as_str())
+                    .and_then(|message| message.value())
+                    .unwrap();
+                let mut args = FluentArgs::new();
+                for (name, value) in values {
+                    args.set(name, value);
+                }
+                let mut errors = Vec::new();
+                let fluent = bundle.format_pattern(pattern, Some(&args), &mut errors);
+                assert!(errors.is_empty());
+                assert_eq!(ours, fluent, "{locale:?}");
+            }
+        }
+    }
+    #[test]
+    fn the_shared_folder_name_is_refused_in_every_shipped_language() {
+        for locale in UiLocale::ALL {
+            let shown = locale
+                .text(MessageId::InterfaceLibrarySidebarSharedWithMe)
+                .unwrap();
+            assert!(names_shared_folder(&shown), "{locale:?}");
+            assert!(
+                names_shared_folder(&format!("  {}  ", shown.to_uppercase())),
+                "{locale:?}"
+            );
+            assert!(!names_shared_folder(&format!("{shown} 2")), "{locale:?}");
+        }
     }
 
     #[test]

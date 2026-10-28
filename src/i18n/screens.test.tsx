@@ -28,6 +28,7 @@ import { AppearanceProvider } from "../AppearanceProvider";
 import { startAppearance } from "../appearance";
 import { LibraryItems } from "../native/LibraryItems";
 import type { VaultDragDrop } from "../native/useVaultDragDrop";
+import { setDeviceLocale } from "../test/deviceLocale";
 import type { VaultFolder, VaultRecord } from "../vault";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
@@ -684,7 +685,9 @@ describe("the library list and grid in each language", () => {
             location: "FAKE Avery / FAKE Parent / FAKE Labs",
           }),
         );
-      expect(screen.getAllByText(formatDate(added))).toHaveLength(2);
+      expect(
+        screen.getAllByText(new Date(added).toLocaleDateString()),
+      ).toHaveLength(2);
       results.unmount();
 
       const grid = renderItems("grid", undefined, true);
@@ -721,10 +724,21 @@ describe("the library list and grid in each language", () => {
     });
   }
 
-  it("shows computer dates independently of the app language", () => {
-    setLocaleOverride("fr");
-    renderItems("list");
-    expect(screen.getAllByText(formatDate(added))).toHaveLength(2);
+  it("keeps the device's date format while the language follows the system", () => {
+    // As the rest of the app does (Settings > Security, the recovery kit):
+    // a Canadian device writes 2026-01-15 whatever language is shown (Ben,
+    // 21 Oct, kept 28 Oct).
+    setDeviceLocale("en-CA");
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      const list = renderItems("list");
+      // The folder's date added and the document's.
+      expect(screen.getAllByText("2026-01-15"), locale).toHaveLength(2);
+      list.unmount();
+      const grid = renderItems("grid");
+      expect(screen.getAllByText("2026-01-15"), locale).toHaveLength(1);
+      grid.unmount();
+    }
   });
 
   it("counts items with each language's forms", () => {

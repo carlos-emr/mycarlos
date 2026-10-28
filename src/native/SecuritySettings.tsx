@@ -2,7 +2,6 @@ import {
   t as translateNow,
   useI18n,
   withElements,
-  formatDate,
   formatNumber,
   type UiText,
   resolveText,
@@ -107,7 +106,7 @@ function newBackupText(
   const date = printedDate(saved);
   // In the system's format, like printedDate: they match the language while it
   // follows the system.
-  const time = formatDate(saved, {
+  const time = saved.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });

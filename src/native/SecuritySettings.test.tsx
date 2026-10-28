@@ -9,6 +9,8 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { setLocaleOverride } from "../i18n";
+import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
 
@@ -268,6 +270,28 @@ describe("SecuritySettings recovery key", () => {
       ).getAllByRole("listitem")[0],
     ).toHaveHumanTextContent(
       `Your new backup is the one you just saved, on ${printedDate(new Date(savedAtMs))} at about ${new Date(savedAtMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} (0 bytes)`,
+    );
+  });
+
+  it("says when it was saved as the computer writes it, whatever the language", () => {
+    // Ben, 21 Oct, kept 28 Oct: a Canadian computer's date and time, in a
+    // French sentence.
+    setDeviceLocale("en-CA");
+    setLocaleOverride("fr");
+    const savedAtMs = Date.UTC(2026, 8, 30, 14, 31);
+    renderSettings({
+      oldBackupsGuide: { step: "delete", keep: null, savedAtMs, bytes: 0 },
+    });
+    const time = new Intl.DateTimeFormat("en-CA", {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(savedAtMs);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Vos anciennes sauvegardes" }),
+      ).getAllByRole("listitem")[0],
+    ).toHaveTextContent(
+      `Votre nouvelle sauvegarde est celle que vous venez d’enregistrer, le September 30, 2026 vers ${time} (`,
     );
   });
 

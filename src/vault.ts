@@ -1,11 +1,4 @@
-import {
-  getLocale,
-  t,
-  hasMessageKey,
-  formatDate,
-  UiError,
-  type MessageKey,
-} from "./i18n";
+import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
@@ -422,7 +415,9 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
 
 /** Resolve a damaged document's own values once in the selected language. */
 function damageText(record: NonNullable<PublicError["damageRecord"]>): string {
-  const date = formatDate(record.at);
+  // As the computer writes dates, whatever language myCarlos uses (Ben,
+  // 21 Oct): a Canadian computer writes 2026-01-15, never 1/15/2026.
+  const date = new Date(record.at).toLocaleDateString();
   const where = t(
     record.person ? "error.damaged.whereFor" : "error.damaged.where",
     { date, person: record.person ?? "" },

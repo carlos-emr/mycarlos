@@ -6319,11 +6319,11 @@ pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
-/// A person's name: a valid name, and not the shared folder's, which would read
-/// as the folder (#61).
+/// A person's name: a valid name, and not the shared folder's in any language
+/// the app shows it in, which would read as the folder (#61).
 fn validate_person_name(name: &str) -> Result<(), VaultError> {
     validate_name(name)?;
-    if name.trim().to_lowercase() == SHARED_PROFILE_NAME.to_lowercase() {
+    if crate::ui_text::names_shared_folder(name) {
         return Err(VaultError::Invalid);
     }
     Ok(())
@@ -8700,6 +8700,37 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn no_person_takes_the_shared_folders_name_in_any_language() {
+        // The stored name is one of the names refused.
+        assert!(crate::ui_text::names_shared_folder(SHARED_PROFILE_NAME));
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(matches!(
+            store.create(PASSWORD, " PARTAGÉS avec moi ", 1),
+            Err(VaultError::Invalid)
+        ));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        // The folder as each language shows it, in another case or with an
+        // accent typed as a separate mark.
+        for name in [
+            "Partage\u{301}s avec moi",
+            "compartido CONMIGO",
+            "UDOSTĘPNIONE MI",
+            "compartilhados comigo",
+        ] {
+            assert!(
+                matches!(store.create_profile(name, 2), Err(VaultError::Invalid)),
+                "{name}"
+            );
+        }
+        // A name that only holds one, or differs by a letter, is a person's.
+        for name in ["Partagés avec moi 2", "Compartido", "Udostępnione mu"] {
+            store.create_profile(name, 3).unwrap();
+        }
+        assert_eq!(store.snapshot().unwrap().profiles.len(), 4);
     }
 
     #[test]

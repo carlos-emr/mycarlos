@@ -5,6 +5,7 @@ import {
   fileExtension,
   formatBytes,
   formatFileSize,
+  nameIsShared,
   nameTooLong,
   recordKind,
   searchKey,
@@ -55,6 +56,26 @@ describe("nameTooLong", () => {
     expect(nameTooLong("\u{1F4C1}".repeat(120))).toBe(false);
     expect(nameTooLong(`  ${"a".repeat(120)}  `)).toBe(false);
     expect(nameTooLong("a".repeat(121))).toBe(true);
+  });
+});
+
+describe("nameIsShared", () => {
+  // The same names the vault refuses (vault.rs,
+  // no_person_takes_the_shared_folders_name_in_any_language).
+  it("refuses Shared with me as any language shows it (#61)", () => {
+    for (const name of [
+      " shared WITH me ",
+      " PARTAGÉS avec moi ",
+      "Partage\u0301s avec moi",
+      "compartido CONMIGO",
+      "UDOSTĘPNIONE MI",
+      "compartilhados comigo",
+    ])
+      expect(nameIsShared(name), name).toBe(true);
+  });
+  it("lets a name that only holds it, or differs by a letter, be a person's", () => {
+    for (const name of ["Partagés avec moi 2", "Compartido", "Udostępnione mu"])
+      expect(nameIsShared(name), name).toBe(false);
   });
 });
 

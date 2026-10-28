@@ -1,5 +1,5 @@
 import { humanText, humanValue, visibleText } from "../test/humanText";
-import { resolveText, formatDate } from "../i18n";
+import { resolveText } from "../i18n";
 import {
   cleanup,
   fireEvent,
@@ -132,7 +132,9 @@ describe("VaultLibrary folders", () => {
     const row = screen.getByRole("article", {
       name: humanText("FAKE Letters folder"),
     });
-    expect(row).toHaveHumanTextContent(formatDate(Date.UTC(2026, 0, 15, 12)));
+    expect(row).toHaveHumanTextContent(
+      new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
+    );
     expect(row).not.toHaveHumanTextContent(/\bFolder\b/);
   });
 });

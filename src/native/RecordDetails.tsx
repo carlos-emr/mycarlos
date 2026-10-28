@@ -1,4 +1,4 @@
-import { useI18n, t as translateNow, formatDate } from "../i18n";
+import { useI18n, t as translateNow } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
@@ -191,12 +191,7 @@ export function RecordDetails({
           </div>
           <div>
             <dt>{translateNow("library.column.added")}</dt>
-            <dd>
-              {formatDate(record.importedAtMs, {
-                dateStyle: "medium",
-                timeStyle: "short",
-              })}
-            </dd>
+            <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
           </div>
           <div>
             <dt>{translateNow("interface.RecordDetails.file")}</dt>

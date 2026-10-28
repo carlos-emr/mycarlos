@@ -1,4 +1,4 @@
-import { useI18n, t as translateNow, formatDate } from "../i18n";
+import { useI18n, t as translateNow } from "../i18n";
 import { Icon } from "../Icon";
 import type { VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
@@ -109,7 +109,9 @@ export function HiddenDocuments({
               </div>
               <span className="column">{place}</span>
               <span className="column hidden-date">
-                {record.hidden ? formatDate(record.hidden.atMs) : ""}
+                {record.hidden
+                  ? new Date(record.hidden.atMs).toLocaleDateString()
+                  : ""}
               </span>
               {canRestore ? (
                 <button
