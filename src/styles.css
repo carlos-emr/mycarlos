@@ -1029,7 +1029,7 @@ h1, h2, p { margin: 0; }
 .photo-viewer-frame.dragging { cursor: grabbing; user-select: none; }
 /* #135: from 63.5em down, not 56.25em: the five columns at their least (44px, 10rem, 8.5rem and
    9.5rem, then the widest Rename or Details in the five languages, the Spanish "Cambiar nombre",
-   143px in DejaVu Sans Bold; with four 12px gaps and 14px padding each side) need a 711px list,
+   about 143px in regular DejaVu Sans; with four 12px gaps and 14px padding each side) need a 711px list,
    and the page takes 304px around it while the sidebar is shown, so they fit from 1015px up. */
 @media (max-width: 63.5em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
