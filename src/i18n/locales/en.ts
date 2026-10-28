@@ -68,6 +68,12 @@ export const en = {
   "portal.partialResult":
     "Some clinic checks need attention. New documents saved: {added}. Documents that could not be verified: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
+  "portal.unlockCheckConsent":
+    "After your clinic approves this device, myCarlos will contact the clinic portal each time you unlock your vault, to check for new documents.",
+  "portal.unlockChecked": "Checked for new clinic documents after unlocking.",
+  "portal.unlockCheckIncomplete":
+    "myCarlos could not finish checking for new clinic documents after unlocking.",
+  "portal.checkAgain": "To check again, choose {button}.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Clinic documents",
   "portal.intro":

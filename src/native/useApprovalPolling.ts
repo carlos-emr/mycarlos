@@ -78,6 +78,10 @@ export class PortalWaits {
       Math.max(this.notBefore(portal), steadyNow() + wait),
     );
   }
+  /** The portal asked to wait, and that time has not come yet. */
+  waiting(portal: string): boolean {
+    return this.notBefore(portal) > steadyNow();
+  }
   clear(): void {
     this.until.clear();
   }

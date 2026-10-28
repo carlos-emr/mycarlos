@@ -68,6 +68,13 @@ export const es: Record<MessageKey, Message> = {
   "portal.partialResult":
     "Algunas comprobaciones de clínicas requieren atención. Documentos nuevos guardados: {added}. Documentos que no se pudieron verificar: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
+  "portal.unlockCheckConsent":
+    "Cuando su clínica apruebe este dispositivo, myCarlos se comunicará con el portal de la clínica cada vez que desbloquee su bóveda, para buscar documentos nuevos.",
+  "portal.unlockChecked":
+    "Se buscaron documentos nuevos de la clínica tras desbloquear la bóveda.",
+  "portal.unlockCheckIncomplete":
+    "myCarlos no pudo terminar de buscar documentos nuevos de la clínica tras desbloquear la bóveda.",
+  "portal.checkAgain": "Para buscar de nuevo, elija {button}.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos de la clínica",
   "portal.intro":

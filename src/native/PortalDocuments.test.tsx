@@ -527,6 +527,23 @@ describe("native clinic document controls", () => {
       screen.queryByRole("button", { name: "Start a new approval request" }),
     ).not.toBeInTheDocument();
   });
+  it("says before linking, in every supported language, that myCarlos contacts the portal at each unlock (#128)", () => {
+    fixture();
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      const said = screen.getByText(
+        translate(locale, "portal.unlockCheckConsent"),
+      );
+      expect(said).toBeVisible();
+      // Read before the button that links the device.
+      const link = screen.getByRole("button", {
+        name: translate(locale, "portal.link"),
+      });
+      expect(
+        said.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
   it("renders the linking and fingerprint labels in every supported language", () => {
     fixture();
     for (const locale of LOCALES) {

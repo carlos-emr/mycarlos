@@ -68,6 +68,13 @@ export const fr: Record<MessageKey, Message> = {
   "portal.partialResult":
     "Certaines vérifications auprès des cliniques nécessitent votre attention. Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
   "portal.clinicIssue": "{clinic} : {detail}",
+  "portal.unlockCheckConsent":
+    "Une fois cet appareil approuvé par votre clinique, myCarlos communiquera avec le portail de la clinique chaque fois que vous déverrouillerez votre coffre-fort, afin de rechercher de nouveaux documents.",
+  "portal.unlockChecked":
+    "Recherche de nouveaux documents de la clinique effectuée après le déverrouillage.",
+  "portal.unlockCheckIncomplete":
+    "myCarlos n’a pas pu terminer la recherche de nouveaux documents de la clinique après le déverrouillage.",
+  "portal.checkAgain": "Pour vérifier de nouveau, choisissez {button}.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documents de la clinique",
   "portal.intro":

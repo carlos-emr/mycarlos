@@ -100,6 +100,7 @@ export function VaultLibrary({
   onAutoLockMinutes,
   openingRecoverySetup = null,
   onOpeningRecoverySetupShown,
+  onOfferClosed,
   onUnfinishedRecoveryKey,
   canPrint = false,
   keyboardHints = true,
@@ -138,6 +139,8 @@ export function VaultLibrary({
    * new vault's key, to set up first, or the offer of one at unlock. */
   openingRecoverySetup?: OpeningRecoverySetup | null;
   onOpeningRecoverySetupShown?: () => void;
+  /** The recovery key offer the library opened on at unlock has closed. */
+  onOfferClosed?: () => void;
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
@@ -1853,6 +1856,7 @@ export function VaultLibrary({
                 const saved = replaced
                   ? `Recovery key replaced. The old one no longer opens this vault. ${backups}`
                   : "Recovery key saved. Keep your kit somewhere safe.";
+                if (recoverySetup.offered) onOfferClosed?.();
                 setRecoverySetup(null);
                 setNotice("");
                 // The setup is finished once the patient is told so. Until
@@ -1872,6 +1876,7 @@ export function VaultLibrary({
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
                 const offered = recoverySetup.offered;
+                if (offered) onOfferClosed?.();
                 setRecoverySetup(null);
                 // An offer that was left before any key was shown: the
                 // unlock's own result, which waited for the dialog.

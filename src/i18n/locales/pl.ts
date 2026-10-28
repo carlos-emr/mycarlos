@@ -70,6 +70,13 @@ export const pl: Record<MessageKey, Message> = {
   "portal.partialResult":
     "Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
+  "portal.unlockCheckConsent":
+    "Gdy przychodnia zatwierdzi to urządzenie, myCarlos przy każdym odblokowaniu sejfu połączy się z portalem przychodni, aby sprawdzić, czy są nowe dokumenty.",
+  "portal.unlockChecked":
+    "Po odblokowaniu sejfu sprawdzono, czy są nowe dokumenty z przychodni.",
+  "portal.unlockCheckIncomplete":
+    "Po odblokowaniu sejfu myCarlos nie mógł dokończyć sprawdzania nowych dokumentów z przychodni.",
+  "portal.checkAgain": "Aby sprawdzić ponownie, wybierz {button}.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Dokumenty z przychodni",
   "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",
