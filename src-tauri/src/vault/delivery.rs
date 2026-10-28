@@ -1069,9 +1069,11 @@ impl VaultStore {
         // the same choice the restart makes.
         let local_now = crate::now_ms() / 1000;
         let portal_now = current.approval.as_ref().and_then(|attempt| {
-            crate::portal_approval::portal_clock(
+            crate::portal_approval::deciding_portal_time(
                 http.portal_time(),
-                crate::portal_approval::request_expires_at(&current, attempt),
+                &current,
+                attempt,
+                !recovery.missing,
                 local_now,
             )
         });
@@ -1335,17 +1337,20 @@ impl VaultStore {
             // for it (`portal_clock`); otherwise, or when it does not have
             // the request, this device's clock decides, so a stuck or far-off
             // date can never hold a new request back for good.
-            let clock = if recovery.missing {
-                None
-            } else {
-                crate::portal_approval::portal_clock(
-                    http.portal_time(),
-                    crate::portal_approval::request_expires_at(&link, prior),
-                    now,
-                )
-            };
+            let clock = crate::portal_approval::deciding_portal_time(
+                http.portal_time(),
+                &link,
+                prior,
+                !recovery.missing,
+                now,
+            );
             if !crate::portal_approval::request_ended(&link, prior, clock.unwrap_or(now)) {
-                return Err(VaultError::ApprovalStillOpen);
+                // "Still open on the portal" only when the portal has it.
+                return Err(if recovery.missing {
+                    VaultError::ApprovalRequestMissing
+                } else {
+                    VaultError::ApprovalStillOpen
+                });
             }
             if link.approval_history.len() + 1 >= crate::portal_approval::MAX_APPROVAL_REQUESTS {
                 return Err(VaultError::ApprovalNeedsClinic);
@@ -1467,7 +1472,7 @@ mod approval_recovery_tests {
                 Reply::Network => return Err(VaultError::Portal(portal_link::LinkError::Network)),
                 Reply::Refused(status) => {
                     return Err(VaultError::Portal(portal_link::LinkError::HttpRefused(
-                        status,
+                        status, None,
                     )))
                 }
                 Reply::DeviceRemoved => {
@@ -2562,6 +2567,37 @@ mod approval_recovery_tests {
             store.request_staff_approval_using(link.id, store.portal_link_ticket(), true, &http),
             Err(VaultError::ApprovalStillOpen)
         ));
+    }
+
+    #[test]
+    fn a_request_the_portal_does_not_have_is_judged_by_this_devices_clock_in_check_and_restart() {
+        // This device's clock gives the request 30 s; the portal's clock is
+        // 60 s ahead (past its end), but the portal does not have it.
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, attempt) = connect_with_request_made_at(now - 570);
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![Reply::Missing], vec![]);
+        http.portal_time = Some(now + 60);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::ApprovalRequestMissing)
+        ));
+        assert!(
+            !check.link.approval_can_restart,
+            "no offer the restart refuses"
+        );
+        let mut http = Script::new(vec![Reply::Missing], vec![]);
+        http.portal_time = Some(now + 60);
+        // Never "still open on the portal" for a request the portal lacks.
+        assert!(matches!(
+            store.request_staff_approval_using(link.id, session, true, &http),
+            Err(VaultError::ApprovalRequestMissing)
+        ));
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        assert!(saved(&store).approval_history.is_empty());
     }
 
     #[test]

@@ -232,7 +232,7 @@ impl From<VaultError> for PublicText {
                     LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
                     // Refusals keep the wording they had for every operation but
                     // the status check (#131, `approval_check_issue`).
-                    LinkError::Network | LinkError::InvalidResponse | LinkError::DeviceRemoved | LinkError::HttpRefused(_) => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
+                    LinkError::Network | LinkError::InvalidResponse | LinkError::DeviceRemoved | LinkError::HttpRefused(_, _) => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
                 }
             },
             VaultError::Busy => Self {
@@ -1594,7 +1594,7 @@ struct DeviceApprovalCheck {
 /// retried, like a connection failure.
 fn approval_check_issue(error: VaultError) -> PublicError {
     use portal_link::LinkError;
-    let (code, message) = match error {
+    let (code, message) = match &error {
         VaultError::Portal(LinkError::InvalidResponse) => (
             "approval_reply_invalid",
             "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
@@ -1603,18 +1603,25 @@ fn approval_check_issue(error: VaultError) -> PublicError {
             "portal_device_removed",
             "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.",
         ),
-        VaultError::Portal(LinkError::HttpRefused(_)) => (
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => (
             "portal_refused",
             "myCarlos could not get this request's status from the clinic portal.",
         ),
-        other => return PublicError::from(other),
+        _ => return PublicError::from(error),
+    };
+    // A refusal may say how long to wait (maintenance sends Retry-After).
+    let retry_after_ms = match error {
+        VaultError::Portal(LinkError::HttpRefused(_, Some(seconds))) => {
+            Some(seconds.saturating_mul(1000))
+        }
+        _ => None,
     };
     PublicError {
         code,
         message,
         record_id: None,
         note: None,
-        retry_after_ms: None,
+        retry_after_ms,
     }
 }
 
@@ -3774,15 +3781,17 @@ mod tests {
             approval_check_issue(VaultError::Portal(LinkError::DeviceRemoved)).code,
             "portal_device_removed"
         );
+        let maintenance =
+            approval_check_issue(VaultError::Portal(LinkError::HttpRefused(503, Some(300))));
         assert_eq!(
-            approval_check_issue(VaultError::Portal(LinkError::HttpRefused(503))).code,
-            "portal_refused"
+            (maintenance.code, maintenance.retry_after_ms),
+            ("portal_refused", Some(300_000))
         );
         // Every other clinic operation keeps its existing code.
         for kept in [
             LinkError::InvalidResponse,
             LinkError::DeviceRemoved,
-            LinkError::HttpRefused(404),
+            LinkError::HttpRefused(404, None),
         ] {
             assert_eq!(
                 PublicError::from(VaultError::Portal(kept)).code,

@@ -49,9 +49,10 @@ pub enum LinkError {
     #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     DeviceRemoved,
     /// The portal answered with this other HTTP status instead of what was
-    /// asked: a refused device assertion, maintenance… (#131).
+    /// asked (a refused device assertion, maintenance…), with the seconds it
+    /// asked to wait, if it said (#131).
     #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
-    HttpRefused(u16),
+    HttpRefused(u16, Option<u64>),
     Cancelled,
 }
 

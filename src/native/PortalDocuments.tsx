@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useI18n, type MessageKey } from "../i18n";
-import { vaultErrorMessage } from "../vault";
+import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 import {
   isAwaitingApproval,
@@ -67,11 +67,6 @@ function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
   if (live?.kind === "waiting") return say("portal.awaitingClinic");
   return say("portal.awaiting");
 }
-const hasErrorCode = (value: unknown, code: string) =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as { code?: unknown }).code === code;
-
 /** Two card states are the same when they say the same thing. */
 function sameState(a: CardState, b: CardState): boolean {
   if ("key" in a || "key" in b)
@@ -461,6 +456,11 @@ export function PortalDocuments({
         const left = isAwaitingApproval(link)
           ? timeLeft(live, polling.now)
           : null;
+        // The latest check says the portal removed this device: neither a
+        // retry nor a new request can work until it is connected again.
+        const removed =
+          live?.kind === "failed" &&
+          hasVaultErrorCode(live.error, "portal_device_removed");
         return (
           <div
             className="portal-link"
@@ -480,13 +480,15 @@ export function PortalDocuments({
                     })
                   : // A new request may start by the portal's clock;
                     // otherwise "checking" only while checks run.
-                    t(
-                      link.approvalCanRestart
-                        ? "portal.approvalTimeOverRestart"
-                        : polling.checking?.has(link.id)
+                    link.approvalCanRestart
+                    ? t("portal.approvalTimeOverRestart", {
+                        button: t("portal.restartApproval"),
+                      })
+                    : t(
+                        polling.checking?.has(link.id)
                           ? "portal.approvalTimeUp"
                           : "portal.approvalTimeOver",
-                    )}
+                      )}
               </p>
             )}
             {polling.checking?.has(link.id) && (
@@ -497,7 +499,7 @@ export function PortalDocuments({
               ((polling.stopped && live?.kind !== "missing") ||
                 (live?.kind === "failed" &&
                   // Checking again cannot help a removed device.
-                  !hasErrorCode(live.error, "portal_device_removed"))) && (
+                  !hasVaultErrorCode(live.error, "portal_device_removed"))) && (
                 <p>
                   {t("portal.autoCheckStopped", { button: t("portal.check") })}
                 </p>
@@ -545,7 +547,10 @@ export function PortalDocuments({
                   className="button"
                   type="button"
                   disabled={
-                    disabled || terminal(link) || !bridge.requestDeviceApproval
+                    disabled ||
+                    removed ||
+                    terminal(link) ||
+                    !bridge.requestDeviceApproval
                   }
                   onClick={() =>
                     requestAction(link, bridge.requestDeviceApproval!)
@@ -563,7 +568,9 @@ export function PortalDocuments({
                   <button
                     className="button"
                     type="button"
-                    disabled={disabled || !bridge.restartDeviceApproval}
+                    disabled={
+                      disabled || removed || !bridge.restartDeviceApproval
+                    }
                     onClick={() =>
                       requestAction(link, bridge.restartDeviceApproval!)
                     }

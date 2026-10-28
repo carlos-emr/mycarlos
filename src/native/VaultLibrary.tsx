@@ -1596,6 +1596,7 @@ export function VaultLibrary({
                   working={portalBusy}
                   readOnly={readOnly}
                   run={runPortal}
+                  waits={approvalWaits}
                   refresh={refresh}
                   setNotice={setPortalNotice}
                 />

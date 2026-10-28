@@ -8231,6 +8231,62 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     },
   );
 
+  it("keeps a wait asked of the header's document check for the clinic view, until the vault locks", async () => {
+    const bridge = clinicBridge({
+      checkDocuments: vi.fn().mockResolvedValue({
+        added: 0,
+        refused: 0,
+        receiptsPending: 0,
+        issues: [
+          {
+            linkId: pending.id,
+            clinicName: "FAKE First Clinic",
+            code: "portal_rate_limited",
+          },
+        ],
+      }),
+      refreshDeviceApproval: vi.fn().mockResolvedValue(found(pending)),
+    });
+    fakeClock();
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await pass(100);
+    // The check in the library's header, not the clinic view's.
+    await click(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    );
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getByRole("button", { name: "Security" }));
+    // Not 10 s after the view opens: the portal's wait (60 s, as it gave no
+    // time) holds the first check.
+    await pass(50_000);
+    expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+    await pass(10_100);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    // A wait does not outlive the session: after a lock, the first check
+    // comes 10 s after the view opens.
+    vi.mocked(bridge.checkDocuments!).mockClear();
+    await click(
+      screen.getAllByRole("button", { name: "Check for new documents" })[0],
+    );
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    await pass(100);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+        target: { value: "FAKE wait lock passphrase" },
+      });
+    });
+    await click(screen.getByRole("button", { name: "Unlock" }));
+    await pass(100);
+    await click(screen.getByRole("button", { name: "Security" }));
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+  });
+
   it("does not offer automatic checks when this build cannot check", async () => {
     const bridge = clinicBridge({ refreshDeviceApproval: undefined });
     await openClinicView(bridge);

@@ -44,7 +44,7 @@ export const ptBR: Record<MessageKey, Message> = {
     "O tempo desta solicitação acabou. Verificando com sua clínica…",
   "portal.approvalTimeOver": "O tempo desta solicitação acabou.",
   "portal.approvalTimeOverRestart":
-    "O tempo desta solicitação acabou. Se a sua clínica não aprovou este dispositivo, escolha Iniciar outra solicitação de aprovação.",
+    "O tempo desta solicitação acabou. Se a sua clínica não aprovou este dispositivo, escolha {button}.",
   "portal.approvalUnanswered":
     "O myCarlos não conseguiu obter o status desta solicitação no portal da clínica.",
   "portal.deviceRemoved":

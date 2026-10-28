@@ -46,7 +46,7 @@ export const pl: Record<MessageKey, Message> = {
   "portal.approvalTimeUp": "Czas na tę prośbę minął. Sprawdzanie w przychodni…",
   "portal.approvalTimeOver": "Czas na tę prośbę minął.",
   "portal.approvalTimeOverRestart":
-    "Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, wybierz Rozpocznij nową prośbę o zatwierdzenie.",
+    "Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, wybierz {button}.",
   "portal.approvalUnanswered":
     "myCarlos nie mógł uzyskać stanu tej prośby z portalu przychodni.",
   "portal.deviceRemoved":

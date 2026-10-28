@@ -44,7 +44,7 @@ export const en = {
     "The time for this request has run out. Checking with your clinic…",
   "portal.approvalTimeOver": "The time for this request has run out.",
   "portal.approvalTimeOverRestart":
-    "The time for this request has run out. If your clinic has not approved this device, choose Start a new approval request.",
+    "The time for this request has run out. If your clinic has not approved this device, choose {button}.",
   "portal.approvalUnanswered":
     "myCarlos could not get this request's status from the clinic portal.",
   "portal.deviceRemoved":

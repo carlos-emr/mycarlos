@@ -1177,13 +1177,22 @@ describe("automatic approval status checks (#131)", () => {
   it("says a removed device plainly and stops, and words other refusals neutrally", async () => {
     const removed =
       "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.";
-    const gone = checked(() =>
-      reply(pending, {
-        issue: { code: "portal_device_removed", message: "Native text." },
-      }),
+    // This device's clock offers a new request; neither can work now.
+    const offered: PortalLinkSummary = { ...pending, approvalCanRestart: true };
+    const gone = checked(
+      () =>
+        reply(offered, {
+          issue: { code: "portal_device_removed", message: "Native text." },
+        }),
+      offered,
     );
+    const button = (name: string) => screen.getByRole("button", { name });
+    expect(button("Retry saved approval request")).toBeEnabled();
+    expect(button("Start a new approval request")).toBeEnabled();
     await pass(10_000);
     expect(screen.getAllByText(removed)).toHaveLength(2);
+    expect(button("Retry saved approval request")).toBeDisabled();
+    expect(button("Start a new approval request")).toBeDisabled();
     // Checking again cannot help: no "check again" line, and no checks.
     expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
     await pass(10 * 60_000);
@@ -1207,9 +1216,113 @@ describe("automatic approval status checks (#131)", () => {
   it("checks early only once for a request whose end the portal's clock keeps near", async () => {
     // A stuck date: every reply leaves the request one second.
     const { poll } = checked(() => reply(pending, { expiresInMs: 1_000 }));
+    await pass(10_000);
+    expect(poll).toHaveBeenCalledOnce();
+    // The one early check: 2 s after the second left, not 20 s.
+    await pass(2_999);
+    expect(poll).toHaveBeenCalledOnce();
+    await pass(1);
+    expect(poll).toHaveBeenCalledTimes(2);
+    // Then the schedule only: 40 s, then every 60 s, to the end.
+    await pass(39_999);
+    expect(poll).toHaveBeenCalledTimes(2);
+    await pass(1);
+    expect(poll).toHaveBeenCalledTimes(3);
     await pass(16 * 60_000);
     // The 16 checks of the schedule, and one early one.
-    expect(poll.mock.calls.length).toBeLessThanOrEqual(17);
+    expect(poll).toHaveBeenCalledTimes(17);
+  });
+
+  it("keeps a wait asked with a refusal, as during maintenance", async () => {
+    const answers: ApprovalPoll[] = [
+      reply(pending, {
+        issue: {
+          code: "portal_refused",
+          message: "Native.",
+          retryAfterMs: 300_000,
+        },
+      }),
+      reply(pending),
+    ];
+    const { poll } = checked((call) => answers[call - 1]);
+    await pass(10_000);
+    expect(poll).toHaveBeenCalledOnce();
+    // Not 20 s later, as for a refusal that says nothing: 5 minutes.
+    await pass(299_999);
+    expect(poll).toHaveBeenCalledOnce();
+    await pass(1);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a wait the portal asked while connecting", async () => {
+    fakeClock();
+    const waits = new PortalWaits();
+    const poll = vi.fn<PollApproval>(async () => reply(pending));
+    const empty = { ...snapshot, portalLinks: [] };
+    const result = fixture({ snapshot: empty, poll, waits });
+    vi.mocked(result.bridge.connectPortal!).mockResolvedValue({
+      link: pending,
+      approvalError: {
+        code: "portal_rate_limited",
+        message: "FAKE native text",
+        retryAfterMs: 120_000,
+      },
+    });
+    vi.mocked(result.props.refresh).mockImplementation(async () => {
+      result.rerender(
+        <PortalDocuments {...result.props} snapshot={view(pending)} />,
+      );
+      return view(pending);
+    });
+    fireEvent.change(screen.getByLabelText("Portal HTTPS address"), {
+      target: { value: "https://portal.example.test/patient" },
+    });
+    fireEvent.change(screen.getByLabelText("Linking code"), {
+      target: { value: "01234567-89ABCDEFGH" },
+    });
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    await pass(0);
+    expect(result.bridge.connectPortal).toHaveBeenCalledOnce();
+    // Not 10 s after the connection: the 2 minutes the portal asked for.
+    await pass(119_999);
+    expect(poll).not.toHaveBeenCalled();
+    await pass(1);
+    expect(poll).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a wait the compact document check was asked for", async () => {
+    const waits = new PortalWaits();
+    const { bridge } = fixture({ compact: true, waits });
+    vi.mocked(bridge.checkDocuments!).mockResolvedValue({
+      added: 0,
+      refused: 0,
+      receiptsPending: 0,
+      issues: [
+        {
+          linkId: link.id,
+          clinicName: "FAKE Clinic",
+          code: "portal_rate_limited",
+        },
+      ],
+    });
+    const before = performance.now();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Check for new documents" }),
+      );
+    });
+    await waitFor(() => expect(bridge.checkDocuments).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(waits.notBefore(link.portalBase)).toBeGreaterThanOrEqual(
+        before + 60_000,
+      ),
+    );
   });
 
   it("shows the new states in every supported language", async () => {

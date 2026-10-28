@@ -44,7 +44,7 @@ export const fr: Record<MessageKey, Message> = {
     "Le délai de cette demande est écoulé. Vérification auprès de votre clinique…",
   "portal.approvalTimeOver": "Le délai de cette demande est écoulé.",
   "portal.approvalTimeOverRestart":
-    "Le délai de cette demande est écoulé. Si votre clinique n’a pas approuvé cet appareil, choisissez Créer une nouvelle demande d’approbation.",
+    "Le délai de cette demande est écoulé. Si votre clinique n’a pas approuvé cet appareil, choisissez {button}.",
   "portal.approvalUnanswered":
     "myCarlos n’a pas pu obtenir l’état de cette demande auprès du portail de la clinique.",
   "portal.deviceRemoved":

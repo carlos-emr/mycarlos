@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { hasVaultErrorCode as hasCode } from "../vault";
 import type { PortalApprovalCheck, PortalLinkSummary } from "../vault";
 
 /** What one automatic status check came to (#131): what the portal said, a
@@ -129,11 +130,6 @@ export function timeLeft(live: LiveApproval | undefined, now: number) {
     : null;
 }
 
-const hasCode = (value: unknown, code: string) =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as { code?: unknown }).code === code;
-
 /** What a check said about one link: its saved state and what was found. */
 function found(
   outcome: Exclude<ApprovalPoll, null>,
@@ -162,8 +158,13 @@ function found(
     // verify, or any other fault, is said and not asked again.
     if (hasCode(issue, "portal_link_incomplete"))
       return { link, live: { kind: "unreachable" }, retryAfterMs: 0 };
+    // A refusal may say how long to wait (maintenance does): kept.
     if (hasCode(issue, "portal_refused"))
-      return { link, live: { kind: "refused" }, retryAfterMs: 0 };
+      return {
+        link,
+        live: { kind: "refused" },
+        retryAfterMs: Math.max(issue.retryAfterMs ?? 0, 0),
+      };
     return { link, live: { kind: "failed", error: issue }, retryAfterMs: 0 };
   }
   return {
@@ -310,7 +311,10 @@ export function useApprovalPolling({
         if (!outcome) continue;
         const before = { link, live: liveRef.current[link.id] };
         const result = found(outcome, steadyNow());
-        if (result.live?.kind === "wait")
+        if (
+          result.live?.kind === "wait" ||
+          (result.live?.kind === "refused" && result.retryAfterMs > 0)
+        )
           waitsRef.current.wait(link.portalBase, result.retryAfterMs);
         if (!result.link && !result.live) continue;
         const next = { ...liveRef.current };

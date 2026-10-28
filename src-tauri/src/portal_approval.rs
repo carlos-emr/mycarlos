@@ -377,7 +377,7 @@ mod native {
             return Err(VaultError::Portal(if removed {
                 LinkError::DeviceRemoved
             } else {
-                LinkError::HttpRefused(response.status)
+                LinkError::HttpRefused(response.status, response.retry_after)
             }));
         }
         parse_status(link, attempt, &response.body).map(|reply| (Some(reply), response.date))
@@ -644,7 +644,7 @@ mod native {
             ] {
                 assert!(matches!(
                     read_status(&link, &attempt, &reply(status, body, clock)),
-                    Err(VaultError::Portal(LinkError::HttpRefused(s))) if s == status
+                    Err(VaultError::Portal(LinkError::HttpRefused(s, Some(30)))) if s == status
                 ));
             }
             assert!(matches!(
@@ -772,6 +772,24 @@ pub(crate) fn portal_clock(
         now.abs_diff(local_now) <= PORTAL_CLOCK_BOUND_SECONDS
             && request_end.saturating_sub(now) < 3_600
     })
+}
+
+/// The portal's clock for deciding whether this request has ended, when it
+/// can be used: the portal has the request (`portal_has_it`; a request it
+/// does not have is judged by this device's clock) and its date can stand
+/// for its clock (`portal_clock`). `None`: use this device's clock. One
+/// choice for the status check and the restart (#131).
+#[cfg(feature = "portal-linking")]
+pub(crate) fn deciding_portal_time(
+    portal_now: Option<u64>,
+    link: &StoredLink,
+    attempt: &Attempt,
+    portal_has_it: bool,
+    local_now: u64,
+) -> Option<u64> {
+    portal_has_it
+        .then(|| portal_clock(portal_now, request_expires_at(link, attempt), local_now))
+        .flatten()
 }
 
 /// Whether this request has ended by `clock`: the portal said so, or its end

@@ -44,7 +44,7 @@ export const es: Record<MessageKey, Message> = {
     "Se acabó el tiempo de esta solicitud. Consultando con su clínica…",
   "portal.approvalTimeOver": "Se acabó el tiempo de esta solicitud.",
   "portal.approvalTimeOverRestart":
-    "Se acabó el tiempo de esta solicitud. Si su clínica no aprobó este dispositivo, elija Iniciar otra solicitud de aprobación.",
+    "Se acabó el tiempo de esta solicitud. Si su clínica no aprobó este dispositivo, elija {button}.",
   "portal.approvalUnanswered":
     "myCarlos no pudo obtener el estado de esta solicitud del portal de la clínica.",
   "portal.deviceRemoved":
