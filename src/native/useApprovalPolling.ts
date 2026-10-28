@@ -66,12 +66,21 @@ const steadyNow = () => performance.now();
  * the patient's own clinic actions too, which it never holds back. */
 export class PortalWaits {
   private readonly until = new Map<string, number>();
+  // Counts the sessions `clear` has ended.
+  private ended = 0;
+  /** The session now: a wait asked with an earlier one is dropped (#128). */
+  session(): number {
+    return this.ended;
+  }
   /** Not before this time; 0 when no wait was asked. */
   notBefore(portal: string): number {
     return this.until.get(portal) ?? 0;
   }
-  /** The portal asked to wait `ms` (or did not say: `DEFAULT_WAIT_MS`). */
-  wait(portal: string, ms?: number | null): void {
+  /** The portal asked to wait `ms` (or did not say: `DEFAULT_WAIT_MS`).
+   * `session`, if given, is when the request was sent: a reply from a
+   * session a lock has ended is not this session's wait. */
+  wait(portal: string, ms?: number | null, session?: number): void {
+    if (session !== undefined && session !== this.ended) return;
     const wait = typeof ms === "number" && ms > 0 ? ms : DEFAULT_WAIT_MS;
     this.until.set(
       portal,
@@ -84,6 +93,7 @@ export class PortalWaits {
   }
   clear(): void {
     this.until.clear();
+    this.ended += 1;
   }
 }
 

@@ -1,6 +1,5 @@
 import { t } from "../i18n";
 import {
-  isRecoveryModeError,
   vaultErrorMessage,
   type PortalLinkSummary,
   type VaultBridge,
@@ -20,7 +19,9 @@ export type DocumentCheck = Awaited<
  * the saved pickup receipt and the retry of confirmations still owed. Both
  * Check for new documents and the check after unlocking (#128) come here.
  * A portal that asked to wait is not asked again automatically before then
- * (a document check gives no time: the default).
+ * (a document check gives no time: the default), unless the reply comes
+ * after the session that asked ended: a lock clears the waits, and a reply
+ * from before it must not hold back the next session.
  */
 export async function checkClinicDocuments({
   bridge,
@@ -33,12 +34,13 @@ export async function checkClinicDocuments({
   waits?: PortalWaits;
   refresh: () => Promise<VaultSnapshot>;
 }): Promise<{ result: DocumentCheck; vault: VaultSnapshot }> {
+  const session = waits?.session();
   try {
     const result = await bridge.checkDocuments!();
     for (const issue of result.issues ?? [])
       if (isRateLimited(issue)) {
         const asked = links.find((link) => link.id === issue.linkId);
-        if (asked) waits?.wait(asked.portalBase);
+        if (asked) waits?.wait(asked.portalBase, undefined, session);
       }
     return { result, vault: await refresh() };
   } catch (error) {
@@ -80,45 +82,86 @@ export function documentCheckText(result: DocumentCheck): string {
 
 const checkAgain = () => t("portal.checkAgain", { button: t("portal.check") });
 
+/** Problems that checking again cannot help, or that ask not to check
+ * again yet: what they say is what to do. */
+const NO_RETRY = new Set([
+  "portal_rate_limited",
+  "portal_device_removed",
+  "approval_refused",
+  "approval_expired",
+  "approval_cancelled",
+  "approval_contact_clinic",
+  "approval_missing",
+  "approval_reply_invalid",
+  "approval_still_open",
+  "pickup_refused",
+  "portal_link_disabled",
+  "portal_link_unavailable",
+  "recovery_mode",
+]);
+const retryHelps = (error: unknown) => {
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code !== "string" || !NO_RETRY.has(code);
+};
+
 /**
  * What the check after unlocking says (#128): nothing when nothing arrived
- * and nothing went wrong, so that unlocking stays quiet; otherwise what Check
- * for new documents would say, and, when something can be tried again, that
- * button. A check that could not finish is told apart from one that found
- * nothing. `counted` names the links the check was for (those the clinic has
- * approved): another link's problem, such as one still waiting for approval,
- * is on its own card under Clinic documents.
+ * and nothing went wrong, so that unlocking stays quiet. What arrived is
+ * said as Check for new documents says it. When nothing was saved, only what
+ * needs attention is said: a document that could not be verified (which the
+ * portal offers again at every unlock, as no receipt is sent for it), or why
+ * the check could not finish, told apart from one that found nothing. The
+ * button is named only when checking again can help, and not twice.
+ * `counted` names the links the check speaks for (those the clinic has
+ * approved): a device still waiting for approval has its state on its own
+ * card under Clinic documents.
  */
 export function unlockCheckText(
   result: DocumentCheck,
   counted: (linkId: string) => boolean,
 ): string {
   const issues = (result.issues ?? []).filter((issue) => counted(issue.linkId));
-  const failed = issues.length > 0 || result.receiptsPending > 0;
-  const arrived = result.added > 0 || result.refused > 0;
-  if (!arrived && !failed) return "";
-  const retry = failed ? [checkAgain()] : [];
-  if (!arrived)
+  const pending = result.receiptsPending > 0;
+  if (!result.added && !result.refused && !issues.length && !pending) return "";
+  // The pickup confirmation line already says to check again.
+  const retry =
+    !pending && issues.some((issue) => retryHelps(issue)) ? [checkAgain()] : [];
+  if (result.added > 0)
     return [
-      t("portal.unlockCheckIncomplete"),
-      ...issueLines(issues),
-      ...pendingLines(result),
+      t("portal.unlockChecked"),
+      documentCheckText({ ...result, issues }),
       ...retry,
     ].join(" ");
   return [
-    t("portal.unlockChecked"),
-    documentCheckText({ ...result, issues }),
+    t(
+      issues.length || pending
+        ? "portal.unlockCheckIncomplete"
+        : "portal.unlockChecked",
+    ),
+    ...(result.refused > 0
+      ? [t("portal.unlockRefused", { count: result.refused })]
+      : []),
+    ...issueLines(issues),
+    ...pendingLines(result),
     ...retry,
   ].join(" ");
 }
 
-/** The check after unlocking failed as a whole (#128). In read-only
- * recovery there is nothing to try again: the button is off, and the library
- * says what to do. */
+/** The check after unlocking failed as a whole (#128). The button is named
+ * only when checking again can help: not in read-only recovery, for one. */
 export function unlockCheckFailedText(error: unknown): string {
   return [
     t("portal.unlockCheckIncomplete"),
     vaultErrorMessage(error),
-    ...(isRecoveryModeError(error) ? [] : [checkAgain()]),
+    ...(retryHelps(error) ? [checkAgain()] : []),
   ].join(" ");
+}
+
+/** The check after unlocking found the native side busy twice, and did not
+ * run (#128). */
+export function unlockCheckNotRunText(): string {
+  return [t("portal.unlockCheckNotRun"), checkAgain()].join(" ");
 }

@@ -3,6 +3,7 @@ import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import {
   documentCheckText,
   unlockCheckFailedText,
+  unlockCheckNotRunText,
   unlockCheckText,
   type DocumentCheck,
 } from "./documentCheck";
@@ -61,7 +62,7 @@ describe("what a check for new clinic documents says (#128)", () => {
         every,
       ),
     ).toBe(
-      `${CHECKED} Some clinic checks need attention. New documents saved: 1. Documents that could not be verified: 0. FAKE Clinic b: This approval request expired. To ask again for this device, go to Security, under Clinic documents. ${RETRY}`,
+      `${CHECKED} Some clinic checks need attention. New documents saved: 1. Documents that could not be verified: 0. FAKE Clinic b: This approval request expired. To ask again for this device, go to Security, under Clinic documents.`,
     );
   });
 
@@ -76,21 +77,87 @@ describe("what a check for new clinic documents says (#128)", () => {
     );
   });
 
-  it("offers no retry that cannot help: an unverifiable document, or read-only recovery", () => {
+  it("says plainly that a document could not be verified, and to contact the clinic", () => {
+    // The portal offers it again at every unlock: no receipt is sent for
+    // it. No count of nothing saved, and no retry that cannot help.
     expect(unlockCheckText(found({ refused: 1 }), every)).toBe(
-      `${CHECKED} New documents saved: 0. Documents that could not be verified: 1.`,
+      `${CHECKED} 1 clinic document could not be verified, so it was not added. Contact your clinic.`,
     );
+    expect(unlockCheckText(found({ refused: 2 }), every)).toBe(
+      `${CHECKED} 2 clinic documents could not be verified, so they were not added. Contact your clinic.`,
+    );
+    // Beside saved documents, the counts say it.
+    expect(unlockCheckText(found({ added: 1, refused: 1 }), every)).toBe(
+      `${CHECKED} New documents saved: 1. Documents that could not be verified: 1.`,
+    );
+  });
+
+  it("names the button only when checking again can help", () => {
+    for (const [code, detail] of [
+      [
+        "portal_rate_limited",
+        "The clinic portal asked myCarlos to wait before trying again.",
+      ],
+      [
+        "portal_device_removed",
+        "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.",
+      ],
+      [
+        "approval_reply_invalid",
+        "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
+      ],
+    ])
+      expect(
+        unlockCheckText(found({ issues: [clinic("a", code)] }), every),
+      ).toBe(`${NOT_FINISHED} FAKE Clinic a: ${detail}`);
+    // One problem that checking again can help is enough.
+    expect(
+      unlockCheckText(
+        found({
+          issues: [
+            clinic("a", "portal_device_removed"),
+            clinic("b", "portal_link_incomplete"),
+          ],
+        }),
+        every,
+      ).endsWith(`${OFFLINE} ${RETRY}`),
+    ).toBe(true);
     expect(
       unlockCheckFailedText({
         code: "recovery_mode",
         message: "FAKE native recovery text.",
       }),
     ).toBe(`${NOT_FINISHED} FAKE native recovery text.`);
+    expect(
+      unlockCheckFailedText({
+        code: "portal_rate_limited",
+        message: "FAKE native text.",
+      }),
+    ).toBe(
+      `${NOT_FINISHED} The clinic portal asked myCarlos to wait before trying again.`,
+    );
   });
 
-  it("says confirmations still owed, with the retry that finishes them", () => {
+  it("says confirmations still owed, and to check again, once", () => {
     expect(unlockCheckText(found({ receiptsPending: 2 }), every)).toBe(
-      `${NOT_FINISHED} Saved documents awaiting pickup confirmation: 2. Check again to finish confirmation. Your saved copies stay in the vault. ${RETRY}`,
+      `${NOT_FINISHED} Saved documents awaiting pickup confirmation: 2. Check again to finish confirmation. Your saved copies stay in the vault.`,
+    );
+    expect(
+      unlockCheckText(
+        found({
+          receiptsPending: 1,
+          issues: [clinic("a", "portal_link_incomplete")],
+        }),
+        every,
+      ),
+    ).toBe(
+      `${NOT_FINISHED} FAKE Clinic a: ${OFFLINE} Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.`,
+    );
+  });
+
+  it("says a check that did not run, and how to check", () => {
+    expect(unlockCheckNotRunText()).toBe(
+      `myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
     );
   });
 
@@ -118,6 +185,13 @@ describe("what a check for new clinic documents says (#128)", () => {
       ).toContain(check);
       expect(unlockCheckText(found({ added: 1 }), every)).toBe(
         `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.result", { added: 1, refused: 0 })}`,
+      );
+      for (const count of [1, 2, 5, 22])
+        expect(unlockCheckText(found({ refused: count }), every)).toBe(
+          `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.unlockRefused", { count })}`,
+        );
+      expect(unlockCheckNotRunText()).toBe(
+        `${translate(locale, "portal.unlockCheckNotRun")} ${translate(locale, "portal.checkAgain", { button: check })}`,
       );
     }
   });

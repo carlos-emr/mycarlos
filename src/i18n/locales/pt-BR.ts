@@ -69,12 +69,20 @@ export const ptBR: Record<MessageKey, Message> = {
     "Algumas verificações das clínicas precisam de atenção. Novos documentos salvos: {added}. Documentos que não puderam ser verificados: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
   "portal.unlockCheckConsent":
-    "Depois que sua clínica aprovar este dispositivo, o myCarlos vai se conectar ao portal da clínica sempre que você desbloquear seu cofre, para verificar se há novos documentos.",
+    "Sempre que você desbloquear seu cofre, o myCarlos se conecta ao portal da clínica de cada dispositivo vinculado para verificar atualizações da aprovação e novos documentos.",
   "portal.unlockChecked":
     "Verificação de novos documentos da clínica feita após desbloquear o cofre.",
   "portal.unlockCheckIncomplete":
     "O myCarlos não conseguiu concluir a verificação de novos documentos da clínica após desbloquear o cofre.",
   "portal.checkAgain": "Para verificar novamente, escolha {button}.",
+  "portal.unlockRefused": {
+    one: "Não foi possível verificar {count} documento da clínica, então ele não foi adicionado. Entre em contato com sua clínica.",
+    many: "Não foi possível verificar {count} de documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.",
+    other:
+      "Não foi possível verificar {count} documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.",
+  },
+  "portal.unlockCheckNotRun":
+    "O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque outra operação com a clínica estava em andamento.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos da clínica",
   "portal.intro":

@@ -69,11 +69,18 @@ export const en = {
     "Some clinic checks need attention. New documents saved: {added}. Documents that could not be verified: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
   "portal.unlockCheckConsent":
-    "After your clinic approves this device, myCarlos will contact the clinic portal each time you unlock your vault, to check for new documents.",
+    "Each time you unlock your vault, myCarlos contacts the clinic portal of each linked device to check for approval updates and new documents.",
   "portal.unlockChecked": "Checked for new clinic documents after unlocking.",
   "portal.unlockCheckIncomplete":
     "myCarlos could not finish checking for new clinic documents after unlocking.",
   "portal.checkAgain": "To check again, choose {button}.",
+  "portal.unlockRefused": {
+    one: "{count} clinic document could not be verified, so it was not added. Contact your clinic.",
+    other:
+      "{count} clinic documents could not be verified, so they were not added. Contact your clinic.",
+  },
+  "portal.unlockCheckNotRun":
+    "myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Clinic documents",
   "portal.intro":

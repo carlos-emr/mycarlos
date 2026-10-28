@@ -69,12 +69,20 @@ export const es: Record<MessageKey, Message> = {
     "Algunas comprobaciones de clínicas requieren atención. Documentos nuevos guardados: {added}. Documentos que no se pudieron verificar: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
   "portal.unlockCheckConsent":
-    "Cuando su clínica apruebe este dispositivo, myCarlos se comunicará con el portal de la clínica cada vez que desbloquee su bóveda, para buscar documentos nuevos.",
+    "Cada vez que desbloquee su bóveda, myCarlos se comunica con el portal de la clínica de cada dispositivo vinculado para consultar novedades sobre la aprobación y buscar documentos nuevos.",
   "portal.unlockChecked":
     "Se buscaron documentos nuevos de la clínica tras desbloquear la bóveda.",
   "portal.unlockCheckIncomplete":
     "myCarlos no pudo terminar de buscar documentos nuevos de la clínica tras desbloquear la bóveda.",
   "portal.checkAgain": "Para buscar de nuevo, elija {button}.",
+  "portal.unlockRefused": {
+    one: "No se pudo verificar {count} documento de la clínica, así que no se añadió. Comuníquese con su clínica.",
+    many: "No se pudieron verificar {count} de documentos de la clínica, así que no se añadieron. Comuníquese con su clínica.",
+    other:
+      "No se pudieron verificar {count} documentos de la clínica, así que no se añadieron. Comuníquese con su clínica.",
+  },
+  "portal.unlockCheckNotRun":
+    "myCarlos no buscó documentos nuevos de la clínica tras desbloquear la bóveda, porque había otra operación con la clínica en curso.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos de la clínica",
   "portal.intro":

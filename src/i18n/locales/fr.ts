@@ -69,12 +69,20 @@ export const fr: Record<MessageKey, Message> = {
     "Certaines vérifications auprès des cliniques nécessitent votre attention. Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
   "portal.clinicIssue": "{clinic} : {detail}",
   "portal.unlockCheckConsent":
-    "Une fois cet appareil approuvé par votre clinique, myCarlos communiquera avec le portail de la clinique chaque fois que vous déverrouillerez votre coffre-fort, afin de rechercher de nouveaux documents.",
+    "Chaque fois que vous déverrouillez votre coffre-fort, myCarlos communique avec le portail de la clinique de chaque appareil associé pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents.",
   "portal.unlockChecked":
     "Recherche de nouveaux documents de la clinique effectuée après le déverrouillage.",
   "portal.unlockCheckIncomplete":
     "myCarlos n’a pas pu terminer la recherche de nouveaux documents de la clinique après le déverrouillage.",
   "portal.checkAgain": "Pour vérifier de nouveau, choisissez {button}.",
+  "portal.unlockRefused": {
+    one: "{count} document de la clinique n’a pas pu être vérifié, il n’a donc pas été ajouté. Communiquez avec votre clinique.",
+    many: "{count} de documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.",
+    other:
+      "{count} documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.",
+  },
+  "portal.unlockCheckNotRun":
+    "myCarlos n’a pas recherché de nouveaux documents de la clinique après le déverrouillage, car une autre opération avec la clinique était en cours.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documents de la clinique",
   "portal.intro":

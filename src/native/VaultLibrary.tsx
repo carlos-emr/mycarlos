@@ -612,6 +612,17 @@ export function VaultLibrary({
     }, ANNOUNCE_DELAY_MS);
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
+  // The recovery key offer the library opened on has closed: the app is
+  // told once that dialog's message is on the line, or was dropped for a
+  // newer one, so that what it says next comes after it (#128).
+  const offerClosingRef = useRef(false);
+  const onOfferClosedRef = useRef(onOfferClosed);
+  onOfferClosedRef.current = onOfferClosed;
+  const offerSettled = () => {
+    if (!offerClosingRef.current) return;
+    offerClosingRef.current = false;
+    onOfferClosedRef.current?.();
+  };
   useEffect(() => {
     // Any dialog open, such as a confirmation opened straight away, hides the
     // status line too: wait until it closes.
@@ -635,11 +646,13 @@ export function VaultLibrary({
       (activeRecordId !== null && activeRecordId !== dialogResult.recordId)
     ) {
       setDialogResult(null);
+      offerSettled();
       return;
     }
     const timer = window.setTimeout(() => {
       setNoticeRef.current(dialogResult.message);
       setDialogResult(null);
+      offerSettled();
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [
@@ -1856,7 +1869,7 @@ export function VaultLibrary({
                 const saved = replaced
                   ? `Recovery key replaced. The old one no longer opens this vault. ${backups}`
                   : "Recovery key saved. Keep your kit somewhere safe.";
-                if (recoverySetup.offered) onOfferClosed?.();
+                if (recoverySetup.offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 setNotice("");
                 // The setup is finished once the patient is told so. Until
@@ -1876,7 +1889,7 @@ export function VaultLibrary({
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
                 const offered = recoverySetup.offered;
-                if (offered) onOfferClosed?.();
+                if (offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 // An offer that was left before any key was shown: the
                 // unlock's own result, which waited for the dialog.

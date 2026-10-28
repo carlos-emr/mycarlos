@@ -7789,7 +7789,10 @@ describe("clinic connection operations", () => {
       snapshot: vi.fn().mockImplementation(async () => current),
       unlock: vi.fn().mockImplementation(async () => current),
       connectPortal: vi.fn().mockReturnValue(pending.promise),
-      checkDocuments: vi.fn(),
+      // The unlock checks for documents (#128): nothing new.
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
       requestDeviceApproval: vi.fn(),
       pickImportFiles: vi.fn().mockReturnValue(
         new Promise<string | null>((resolve) => {
@@ -8079,7 +8082,10 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       snapshot: vi.fn().mockResolvedValue(vaultWith(pending)),
       unlock: vi.fn().mockResolvedValue(vaultWith(pending)),
       connectPortal: vi.fn(),
-      checkDocuments: vi.fn(),
+      // An unlock now checks for documents (#128): nothing new.
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
       requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
       restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
       ...overrides,
@@ -8233,18 +8239,35 @@ describe("automatic clinic approval checks in the app (#131)", () => {
 
   it("keeps a wait asked of the header's document check for the clinic view, until the vault locks", async () => {
     const bridge = clinicBridge({
-      checkDocuments: vi.fn().mockResolvedValue({
-        added: 0,
-        refused: 0,
-        receiptsPending: 0,
-        issues: [
-          {
-            linkId: pending.id,
-            clinicName: "FAKE First Clinic",
-            code: "portal_rate_limited",
-          },
-        ],
-      }),
+      // The header's two checks are asked to wait; the next session's own
+      // check after unlocking (#128) is not.
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValueOnce({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: "FAKE First Clinic",
+              code: "portal_rate_limited",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: "FAKE First Clinic",
+              code: "portal_rate_limited",
+            },
+          ],
+        })
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
       refreshDeviceApproval: vi.fn().mockResolvedValue(found(pending)),
     });
     fakeClock();
@@ -8281,7 +8304,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       });
     });
     await click(screen.getByRole("button", { name: "Unlock" }));
-    await pass(100);
+    // The unlock's own check runs first (#128); it is not asked to wait.
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
     await click(screen.getByRole("button", { name: "Security" }));
     await pass(10_000);
     expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
@@ -8572,7 +8597,10 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     ).toBeEnabled();
   });
 
-  it("is not activity: left alone after unlocking, the vault locks on time", async () => {
+  // The check's one read of the vault at its end touches the native idle
+  // deadline, as every vault command does (a backstop that fires after the
+  // app's own). The app's own idle lock counts only the patient's input.
+  it("does not count as use: left alone after unlocking, the vault locks on time", async () => {
     const { bridge } = clinicBridge(vaultWith(approved));
     await start(bridge);
     await unlock();
@@ -8660,7 +8688,8 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     },
   );
 
-  it("says a document that could not be verified was not added, without a retry that cannot help", async () => {
+  // The portal offers it again at every unlock: no receipt is sent for it.
+  it("says plainly that a document could not be verified and to contact the clinic, without a retry that cannot help", async () => {
     const { bridge } = clinicBridge(vaultWith(approved), {
       checkDocuments: vi.fn().mockResolvedValue(found({ refused: 1 })),
     });
@@ -8669,12 +8698,29 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await pass(ANNOUNCE_DELAY_MS);
     await pass(0);
     expect(said()).toBe(
-      `${UNLOCKED} ${CHECKED} New documents saved: 0. Documents that could not be verified: 1.`,
+      `${UNLOCKED} ${CHECKED} 1 clinic document could not be verified, so it was not added. Contact your clinic.`,
     );
     expect(screen.queryByText("FAKE_Clinic_Letter.pdf")).toBeNull();
   });
 
-  it("says confirmations still owed, and how to finish them", async () => {
+  it("names a device the portal removed, without a retry that cannot help", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue(
+          found({ issues: [issue(approved, "portal_device_removed")] }),
+        ),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
+    );
+  });
+
+  it("says confirmations still owed, and how to finish them, once", async () => {
     const { bridge } = clinicBridge(vaultWith(approved), {
       checkDocuments: vi.fn().mockResolvedValue(
         found({
@@ -8688,7 +8734,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await pass(ANNOUNCE_DELAY_MS);
     await pass(0);
     expect(said()).toBe(
-      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: ${OFFLINE} Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault. ${RETRY}`,
+      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: ${OFFLINE} Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.`,
     );
   });
 
@@ -8713,7 +8759,30 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       }),
       {},
     ],
-    ["for a device the clinic has not approved", vaultWith(waiting), {}],
+    [
+      "for a request the clinic refused",
+      vaultWith({ ...waiting, approvalStatus: "refused" }),
+      {},
+    ],
+    [
+      "for a request that expired",
+      vaultWith({ ...waiting, approvalStatus: "expired" }),
+      {},
+    ],
+    [
+      "for a request that was cancelled",
+      vaultWith({ ...waiting, approvalStatus: "cancelled" }),
+      {},
+    ],
+    [
+      "for a device whose approval was never requested",
+      vaultWith({
+        ...waiting,
+        approvalRequested: false,
+        approvalStatus: null,
+      }),
+      {},
+    ],
     [
       "without a document check in this build",
       vaultWith(approved),
@@ -8764,21 +8833,51 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     );
   });
 
-  it("says nothing when a check the patient did not ask for is refused as busy", async () => {
+  const BUSY = {
+    code: "portal_busy",
+    message:
+      "Another clinic operation is running. Wait for it to finish, then try again.",
+  };
+
+  it("asks once more when other clinic work held the native side, and says nothing of it", async () => {
     const { bridge } = clinicBridge(vaultWith(approved), {
-      checkDocuments: vi.fn().mockRejectedValue({
-        code: "portal_busy",
-        message:
-          "Another clinic operation is running. Wait for it to finish, then try again.",
-      }),
+      checkDocuments: vi
+        .fn()
+        .mockRejectedValueOnce(BUSY)
+        .mockResolvedValue(found()),
     });
     await start(bridge);
     await unlock();
     await pass(ANNOUNCE_DELAY_MS);
     await pass(0);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    // Still shown as running while it waits to ask again.
+    expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    await pass(1_900);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(100);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    await pass(0);
     expect(said()).toBe(UNLOCKED);
     expect(screen.queryByText(BUSY_TEXT)).toBeNull();
+  });
+
+  it("says the check did not run, and how to check, when the native side stays busy", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi.fn().mockRejectedValue(BUSY),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(2_000);
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    expect(said()).toBe(
+      `${UNLOCKED} myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
+    );
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
   });
 
   it("locks when the vault locked natively during the check, as for any clinic work", async () => {
@@ -8891,7 +8990,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(said()).toBe(UNLOCKED);
   });
 
-  it("checks only once the recovery key offer the unlock opened on has closed, after its message", async () => {
+  it("checks once the recovery key offer the unlock opened on has closed and its message is on the line, which a fast result follows", async () => {
     forgetRecoveryOffer();
     const { bridge, deliver } = clinicBridge({
       ...vaultWith(approved),
@@ -8908,14 +9007,49 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await pass(5_000);
     expect(bridge.checkDocuments).not.toHaveBeenCalled();
     await click(within(dialog).getByRole("button", { name: "Set up later" }));
-    await pass(ANNOUNCE_DELAY_MS);
-    expect(said()).toBe(UNLOCKED);
     expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    // The dialog's own message is written: the check starts then, not on a
+    // guess of when that would be.
     await pass(ANNOUNCE_DELAY_MS);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     await pass(0);
     expect(said()).toBe(
       `${UNLOCKED} ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
+    );
+  });
+
+  it("keeps what an offered key setup left unfinished says first, before a fast result", async () => {
+    forgetRecoveryOffer();
+    const { bridge, deliver } = clinicBridge(
+      { ...vaultWith(approved), recoveryKeySetAtMs: null },
+      {
+        beginRecoveryKey: vi
+          .fn()
+          .mockResolvedValue("ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345"),
+      },
+    );
+    vi.mocked(bridge.checkDocuments!).mockImplementation(
+      deliver(found({ added: 1 })),
+    );
+    await start(bridge);
+    await unlock();
+    const offer = screen.getByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    await act(async () => {
+      fireEvent.change(within(offer).getByLabelText("Passphrase"), {
+        target: { value: "FAKE unlock passphrase" },
+      });
+    });
+    await click(within(offer).getByRole("button", { name: "Continue" }));
+    const shown = screen.getByRole("dialog", { name: "Your recovery key" });
+    await click(within(shown).getByRole("button", { name: "Set up later" }));
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(0);
+    expect(said()).toBe(
+      `Recovery key setup was not finished. The key you were shown does not open the vault. Destroy any kit saved or printed just now. ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
     );
   });
 
@@ -8957,7 +9091,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     },
   );
 
-  it("keeps a wait a portal asks of the check for the clinic view, and says to check again later", async () => {
+  it("keeps a wait a portal asks of the check for the clinic view, and does not say to check again", async () => {
     const sameClinic = { ...waiting, portalBase: approved.portalBase };
     const { bridge } = clinicBridge(vaultWith(approved, sameClinic), {
       checkDocuments: vi
@@ -8976,7 +9110,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await pass(ANNOUNCE_DELAY_MS);
     await pass(0);
     expect(said()).toBe(
-      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: The clinic portal asked myCarlos to wait before trying again. ${RETRY}`,
+      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: The clinic portal asked myCarlos to wait before trying again.`,
     );
     // The clinic view's own status checks keep that portal's wait (60 s, as
     // a document check gives no time), not its usual 10 s.
@@ -8987,19 +9121,177 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
   });
 
-  it("does not speak for a clinic that has not approved this device", async () => {
-    const { bridge } = clinicBridge(vaultWith(approved, waiting), {
-      checkDocuments: vi
-        .fn()
-        .mockResolvedValue(
-          found({ issues: [issue(waiting, "portal_link_incomplete")] }),
-        ),
+  it.each([
+    ["beside an approved one", [approved, waiting]],
+    ["alone", [waiting]],
+  ] as [string, PortalLinkSummary[]][])(
+    "stays quiet about a device still waiting for approval, %s",
+    async (_, links) => {
+      const { bridge } = clinicBridge(vaultWith(...links), {
+        checkDocuments: vi
+          .fn()
+          .mockResolvedValue(
+            found({ issues: [issue(waiting, "portal_link_incomplete")] }),
+          ),
+      });
+      await start(bridge);
+      await unlock();
+      await pass(ANNOUNCE_DELAY_MS);
+      await pass(0);
+      // Checked, for the status the clinic may have given while myCarlos
+      // was closed; the card under Clinic documents says the rest.
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      expect(said()).toBe(UNLOCKED);
+      expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+      expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+    },
+  );
+
+  it("receives the first documents at the next unlock for a device the clinic approved while myCarlos was closed", async () => {
+    const { bridge, state } = clinicBridge(vaultWith(waiting));
+    // The native check reads the request's status first: the clinic
+    // approved it meanwhile, so its documents come in the same check.
+    vi.mocked(bridge.checkDocuments!).mockImplementation(async () => {
+      state.current = {
+        ...state.current,
+        portalLinks: [
+          { ...waiting, clinicApproved: true, approvalStatus: "accepted" },
+        ],
+        records: [...state.current.records, delivered],
+      };
+      return found({ added: 1 });
     });
     await start(bridge);
     await unlock();
     await pass(ANNOUNCE_DELAY_MS);
-    await pass(0);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
-    expect(said()).toBe(UNLOCKED);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
+    );
+    expect(screen.getByText("FAKE_Clinic_Letter.pdf")).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    await click(screen.getByRole("button", { name: "Security" }));
+    expect(screen.getByText("The clinic approved this device.")).toBeVisible();
   });
+
+  it.each([
+    [
+      "the library's Check for new documents",
+      async () =>
+        screen.getByRole("button", { name: "Check for new documents" }),
+      { name: "My records", level: 1 },
+    ],
+    [
+      "a box of the connect form",
+      async () => {
+        await click(screen.getByRole("button", { name: "Security" }));
+        return screen.getByLabelText("Linking code");
+      },
+      { name: "Clinic documents", level: 2 },
+    ],
+    [
+      "a device's Copy device code",
+      async () => {
+        await click(screen.getByRole("button", { name: "Security" }));
+        return screen.getByRole("button", { name: "Copy device code" });
+      },
+      { name: "FAKE First Clinic", level: 3 },
+    ],
+  ] as [string, () => Promise<HTMLElement>, { name: string; level: number }][])(
+    "moves focus to the nearest heading when the check disables %s, which had it",
+    async (_, control, heading) => {
+      const slow = later<Check>();
+      const { bridge } = clinicBridge(vaultWith(approved), {
+        checkDocuments: vi.fn().mockReturnValue(slow.promise),
+      });
+      await start(bridge);
+      await unlock();
+      const focused = await control();
+      focused.focus();
+      expect(focused).toHaveFocus();
+      await pass(ANNOUNCE_DELAY_MS);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      expect(focused).toBeDisabled();
+      expect(screen.getByRole("heading", heading)).toHaveFocus();
+      await act(async () => slow.settle(found()));
+      await pass(0);
+      // Back in use, it is not given focus again: nothing moves twice.
+      expect(focused).toBeEnabled();
+      expect(screen.getByRole("heading", heading)).toHaveFocus();
+    },
+  );
+
+  it("moves no focus for the patient's own check, or when the focused control stays usable", async () => {
+    const own = later<Check>();
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockReturnValueOnce(own.promise)
+        .mockResolvedValue(found()),
+    });
+    await start(bridge);
+    await unlock();
+    // The patient's own press, just after unlocking: the automatic check
+    // does not run beside it, and focus is left as that press leaves it.
+    const check = screen.getByRole("button", {
+      name: "Check for new documents",
+    });
+    check.focus();
+    await click(check);
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("heading", { name: "My records", level: 1 }),
+    ).not.toHaveFocus();
+    await act(async () => own.settle(found()));
+    await pass(0);
+    // The next unlock's check, with focus on the search box, which it does
+    // not disable.
+    await lockNow();
+    await unlock();
+    const search = screen.getByPlaceholderText(
+      "Search everything in My records",
+    );
+    search.focus();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    expect(search).toHaveFocus();
+  });
+
+  it.each([
+    ["the check after unlocking", false],
+    ["the patient's own check", true],
+  ] as [string, boolean][])(
+    "keeps a wait a portal asked of %s before a lock out of the next session",
+    async (_, own) => {
+      const stale = later<Check>();
+      const { bridge } = clinicBridge(vaultWith(approved), {
+        checkDocuments: vi
+          .fn()
+          .mockReturnValueOnce(stale.promise)
+          .mockResolvedValue(found()),
+      });
+      await start(bridge);
+      await unlock();
+      if (own)
+        await click(
+          screen.getByRole("button", { name: "Check for new documents" }),
+        );
+      await pass(ANNOUNCE_DELAY_MS);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      await lockNow();
+      // The reply comes after the lock, which cleared the session's waits.
+      await act(async () =>
+        stale.settle(
+          found({ issues: [issue(approved, "portal_rate_limited")] }),
+        ),
+      );
+      await pass(0);
+      await unlock();
+      await pass(ANNOUNCE_DELAY_MS);
+      // Not held back by the ended session's wait.
+      expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    },
+  );
 });

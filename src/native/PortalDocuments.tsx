@@ -278,6 +278,8 @@ export function PortalDocuments({
     polling.hold();
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
+      // A reply after a lock is not the next session's wait (#128).
+      const session = waits?.session();
       submittedRevision.current = revision;
       if (shown.current) {
         setConnecting(true);
@@ -302,6 +304,7 @@ export function PortalDocuments({
           waits?.wait(
             result.link.portalBase,
             result.approvalError.retryAfterMs,
+            session,
           );
         // Reported even after the patient has left this view: the link exists
         // whether or not anyone is looking, and the line must not keep an
@@ -337,12 +340,13 @@ export function PortalDocuments({
     polling.hold();
     let known: LiveApproval | undefined;
     void run(async () => {
+      const session = waits?.session();
       try {
         await send(link.id);
         known = waitingNow();
       } catch (error) {
         if (isRateLimited(error))
-          waits?.wait(link.portalBase, error.retryAfterMs);
+          waits?.wait(link.portalBase, error.retryAfterMs, session);
         throw error;
       } finally {
         await refresh();
@@ -351,7 +355,11 @@ export function PortalDocuments({
   };
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
-      <h2 id="portal-title">{t("portal.title")}</h2>
+      {/* Focusable for the check after unlocking, which may disable the
+          control that had focus (#128). */}
+      <h2 id="portal-title" tabIndex={-1}>
+        {t("portal.title")}
+      </h2>
       <p>{t("portal.intro")}</p>
       <p>{t("portal.connectConsent")}</p>
       <p>{t("portal.unlockCheckConsent")}</p>

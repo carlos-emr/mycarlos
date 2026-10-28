@@ -544,6 +544,42 @@ describe("native clinic document controls", () => {
       ).toBeTruthy();
     }
   });
+  it.each([
+    ["in the same session", false, true],
+    ["after a lock ended the session", true, false],
+  ] as [string, boolean, boolean][])(
+    "keeps a wait the portal asked of the patient's own check only %s (#128)",
+    async (_, locked, kept) => {
+      const waits = new PortalWaits();
+      let reply!: (value: unknown) => void;
+      const { bridge } = fixture({ waits });
+      vi.mocked(bridge.checkDocuments!).mockReturnValue(
+        new Promise((resolve) => {
+          reply = resolve;
+        }) as never,
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Check for new documents" }));
+      // A lock clears the session's waits while the reply is on its way.
+      if (locked) waits.clear();
+      await act(async () =>
+        reply({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: link.id,
+              clinicName: "FAKE Clinic",
+              code: "portal_rate_limited",
+            },
+          ],
+        }),
+      );
+      expect(waits.waiting(link.portalBase)).toBe(kept);
+    },
+  );
   it("renders the linking and fingerprint labels in every supported language", () => {
     fixture();
     for (const locale of LOCALES) {

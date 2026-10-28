@@ -71,12 +71,21 @@ export const pl: Record<MessageKey, Message> = {
     "Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
   "portal.clinicIssue": "{clinic}: {detail}",
   "portal.unlockCheckConsent":
-    "Gdy przychodnia zatwierdzi to urządzenie, myCarlos przy każdym odblokowaniu sejfu połączy się z portalem przychodni, aby sprawdzić, czy są nowe dokumenty.",
+    "Przy każdym odblokowaniu sejfu myCarlos łączy się z portalem przychodni każdego połączonego urządzenia, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty.",
   "portal.unlockChecked":
     "Po odblokowaniu sejfu sprawdzono, czy są nowe dokumenty z przychodni.",
   "portal.unlockCheckIncomplete":
     "Po odblokowaniu sejfu myCarlos nie mógł dokończyć sprawdzania nowych dokumentów z przychodni.",
   "portal.checkAgain": "Aby sprawdzić ponownie, wybierz {button}.",
+  "portal.unlockRefused": {
+    one: "Nie udało się zweryfikować {count} dokumentu z przychodni, więc nie został dodany. Skontaktuj się z przychodnią.",
+    few: "Nie udało się zweryfikować {count} dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.",
+    many: "Nie udało się zweryfikować {count} dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.",
+    other:
+      "Nie udało się zweryfikować {count} dokumentu z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.",
+  },
+  "portal.unlockCheckNotRun":
+    "Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo trwała inna operacja związana z przychodnią.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Dokumenty z przychodni",
   "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",
