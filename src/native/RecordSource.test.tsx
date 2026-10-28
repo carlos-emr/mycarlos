@@ -267,7 +267,9 @@ describe("a document's status before its source (#135)", () => {
           // The header's Source and Date added stay over their columns. Only
           // in English in the default font: elsewhere Details is wider than
           // 4.5rem, which already moved the rows' columns from the header's
-          // before #135 (each row sizes its own last column).
+          // before #135 (each row sizes its own last column). A few pixels
+          // either way follow the fonts a machine has (4.5px on CI's); a
+          // misplaced header is off by tens of pixels.
           if (locale === "en" && font === "the default font") {
             const head = document.querySelectorAll<HTMLElement>(
               ".native-filelist .file-head > .column",
@@ -282,7 +284,7 @@ describe("a document's status before its source (#135)", () => {
                   label.getBoundingClientRect().left -
                     cells[index].getBoundingClientRect().left,
                 ),
-              ).toBeLessThanOrEqual(3),
+              ).toBeLessThanOrEqual(8),
             );
           }
           // Nor does the wider Source column squeeze Rename or Details,
