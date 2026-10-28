@@ -431,7 +431,6 @@ interface-search-all = Pesquisar tudo em { $location }
 
 interface-SecuritySettings-evaluationBuild = Versão de avaliação
 
-interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. O myCarlos não o mostra e nunca o altera nem o remove.
 
 interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne = O myCarlos nunca exclui um documento. Ocultar um documento o tira da vista: ele continua no cofre criptografado, na seção Ocultos, e pode ser restaurado. Você pode guardar ou excluir as cópias legíveis que salvar fora do myCarlos.
 
@@ -1570,3 +1569,126 @@ portal-awaitingClinic = Sua clínica recebeu a solicitação de aprovação. Agu
 portal-deviceRemoved = Este dispositivo foi removido da sua conta do portal da clínica. Para usá-lo novamente, vincule-o de novo com um novo código de vinculação do portal do paciente.
 
 portal-errorRateLimited = O portal da clínica pediu ao myCarlos que aguarde antes de tentar novamente.
+hidden-backToSecurity = Voltar para Segurança
+
+interface-history-appVersion = Versão do myCarlos
+
+interface-history-damaged = Parte deste histórico está danificada. Os eventos após { $date } não podem ser verificados e não são exibidos.
+
+interface-history-damagedAll = Parte deste histórico está danificada. Os eventos dele não podem ser verificados, por isso nenhum é exibido.
+
+interface-history-damagedBefore = Parte deste histórico está danificada. Os eventos anteriores a { $date } não podem ser verificados e não são exibidos.
+
+interface-history-damagedBetween = Parte deste histórico está danificada. Os eventos entre { $from } e { $to } não podem ser verificados e não são exibidos.
+
+interface-history-empty = Não há eventos no histórico.
+
+interface-history-error-unverified = Não foi possível ler e verificar o histórico. Nenhum evento foi exibido.
+
+interface-history-event-backupRestored = Backup restaurado
+
+interface-history-event-backupSaved = Backup criptografado salvo
+
+interface-history-event-copySaved = Cópia legível salva
+
+interface-history-event-created = Cofre criado
+
+interface-history-event-folderCreated = Pasta criada
+
+interface-history-event-folderMoved = Pasta movida
+
+interface-history-event-folderRenamed = Pasta renomeada
+
+interface-history-event-hidden = Documento ocultado
+
+interface-history-event-historyStarted = Histórico iniciado
+
+interface-history-event-imported = Documento adicionado
+
+interface-history-event-moved = Documento movido
+
+interface-history-event-passphraseChanged = Frase-senha alterada
+
+interface-history-event-profileCreated = Perfil de paciente adicionado
+
+interface-history-event-recoveryKeySet = Chave de recuperação configurada
+
+interface-history-event-renamed = Documento renomeado
+
+interface-history-event-restored = Documento restaurado
+
+interface-history-event-setAside = Cofre colocado de lado
+
+interface-history-event-unlocked = Cofre aberto
+
+interface-history-events =
+    { $count ->
+    [one] { $count } evento
+    [many] { $count } eventos
+    *[other] { $count } eventos
+    }
+
+interface-history-from = De
+
+interface-history-gap = Os eventos neste ponto não podem ser verificados e não são exibidos.
+
+interface-history-how = Como
+
+interface-history-how-camera = Adicionado com a câmera
+
+interface-history-how-damaged = Ocultado porque o arquivo estava ausente
+
+interface-history-how-importedShared = Adicionado a Compartilhado comigo
+
+interface-history-how-movedFromShared = Movido de Compartilhado comigo
+
+interface-history-how-passphrase = Frase-senha
+
+interface-history-how-patient = Ocultado por você
+
+interface-history-how-picked = Importado de um arquivo escolhido
+
+interface-history-how-recoveryKey = Chave de recuperação
+
+interface-history-how-replaced = Restaurado substituindo um cofre existente
+
+interface-history-intro = Lista somente para leitura dos eventos armazenados no cofre criptografado.
+
+interface-history-laterSessionNotRecorded = Pelo menos uma sessão posterior não foi registrada.
+
+interface-history-loading = Verificando e lendo o histórico completo…
+
+interface-history-moreFolders =
+    { $count ->
+    [one] mais { $count } pasta
+    [many] mais { $count } pastas
+    *[other] mais { $count } pastas
+    }
+
+interface-history-name = Nome
+
+interface-history-personRootFolder = Nível principal de uma pessoa
+
+interface-history-place = Onde
+
+interface-history-previousName = Nome anterior
+
+interface-history-previousSession = Sessão anterior
+
+interface-history-rootFolder = Nível principal (local não registrado)
+
+interface-history-scopeNote = Algumas entradas não identificam a pessoa nem distinguem pastas com o mesmo nome. Os rótulos das pastas são os nomes registrados, não caminhos completos. Os locais salvos podem estar abreviados.
+
+interface-history-sessionLockedAutomatically = Bloqueado automaticamente em { $date }
+
+interface-history-sessionLockedByApp = Bloqueado pelo aplicativo em { $date }
+
+interface-history-sessionLockedByPerson = Bloqueado por você em { $date }
+
+interface-history-sessionNotRecorded = A sessão anterior não foi registrada.
+
+interface-history-title = Histórico de auditoria
+
+interface-history-to = Para
+
+interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.

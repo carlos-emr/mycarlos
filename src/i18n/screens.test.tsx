@@ -57,6 +57,10 @@ function renderSecurity() {
       onLock={vi.fn().mockResolvedValue(undefined)}
       onChangePassphrase={vi.fn().mockResolvedValue(undefined)}
       onCreateProfile={vi.fn().mockResolvedValue(true)}
+      hiddenCount={0}
+      hiddenScopeName="FAKE Avery"
+      onOpenHidden={vi.fn()}
+      onOpenAuditHistory={vi.fn()}
       recoveryKeySetAtMs={Date.UTC(2026, 9, 1)}
       recoveryKeyLabel="BEAD"
       onSetUpRecoveryKey={vi.fn()}
@@ -260,8 +264,6 @@ describe("the person-folder sidebar in each language", () => {
         } as unknown as VaultDragDrop,
         onOpenPerson: vi.fn(),
         onOpenFolder: vi.fn(),
-        hiddenCount: 0,
-        onOpenHidden: vi.fn(),
         onOpenSecurity: vi.fn(),
         onOpenPreferences: vi.fn(),
       };

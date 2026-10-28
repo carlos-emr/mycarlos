@@ -99,6 +99,7 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = ["
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 tempfile = "3"
 

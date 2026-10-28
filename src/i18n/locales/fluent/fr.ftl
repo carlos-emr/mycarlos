@@ -431,7 +431,6 @@ interface-search-all = Rechercher partout dans { $location }
 
 interface-SecuritySettings-evaluationBuild = Version d’évaluation
 
-interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve aussi un historique : les ouvertures du coffre-fort; la définition ou la modification de sa phrase secrète ou de sa clé de récupération, ainsi que l’enregistrement ou la restauration d’une sauvegarde; l’ajout de chaque profil patient et la création, le changement de nom ou le déplacement de chaque dossier; l’ajout, le changement de nom, le déplacement, le masquage ou la restauration de chaque document, ainsi que son enregistrement en dehors de myCarlos et l’emplacement choisi. Cet historique est chiffré avec le reste. myCarlos ne l’affiche pas et ne le modifie ni ne le supprime jamais.
 
 interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne = myCarlos ne supprime jamais de document. Masquer un document le retire de l’affichage : il reste dans le coffre-fort chiffré, dans Masqués, et peut être restauré. Vous pouvez conserver ou supprimer les copies lisibles que vous enregistrez en dehors de myCarlos.
 
@@ -1570,3 +1569,126 @@ portal-awaitingClinic = Votre clinique a reçu la demande d’approbation. En at
 portal-deviceRemoved = Cet appareil a été retiré de votre compte du portail de la clinique. Pour l’utiliser de nouveau, associez-le de nouveau avec un nouveau code d’association de votre portail patient.
 
 portal-errorRateLimited = Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.
+hidden-backToSecurity = Retour à la sécurité
+
+interface-history-appVersion = Version de myCarlos
+
+interface-history-damaged = Une partie de cet historique est endommagée. Les événements après le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
+
+interface-history-damagedAll = Une partie de cet historique est endommagée. Ses événements ne peuvent pas être vérifiés, donc aucun ne s’affiche.
+
+interface-history-damagedBefore = Une partie de cet historique est endommagée. Les événements avant le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
+
+interface-history-damagedBetween = Une partie de cet historique est endommagée. Les événements entre le { $from } et le { $to } ne peuvent pas être vérifiés et ne s’affichent pas.
+
+interface-history-empty = Aucun événement dans l’historique.
+
+interface-history-error-unverified = L’historique n’a pas pu être lu et vérifié. Aucun événement ne s’affiche.
+
+interface-history-event-backupRestored = Sauvegarde restaurée
+
+interface-history-event-backupSaved = Sauvegarde chiffrée enregistrée
+
+interface-history-event-copySaved = Copie lisible enregistrée
+
+interface-history-event-created = Coffre créé
+
+interface-history-event-folderCreated = Dossier créé
+
+interface-history-event-folderMoved = Dossier déplacé
+
+interface-history-event-folderRenamed = Dossier renommé
+
+interface-history-event-hidden = Document masqué
+
+interface-history-event-historyStarted = Historique commencé
+
+interface-history-event-imported = Document ajouté
+
+interface-history-event-moved = Document déplacé
+
+interface-history-event-passphraseChanged = Phrase secrète modifiée
+
+interface-history-event-profileCreated = Profil patient ajouté
+
+interface-history-event-recoveryKeySet = Clé de récupération configurée
+
+interface-history-event-renamed = Document renommé
+
+interface-history-event-restored = Document restauré
+
+interface-history-event-setAside = Coffre mis de côté
+
+interface-history-event-unlocked = Coffre ouvert
+
+interface-history-events =
+    { $count ->
+    [one] { $count } événement
+    [many] { $count } événements
+    *[other] { $count } événements
+    }
+
+interface-history-from = Depuis
+
+interface-history-gap = Les événements à cet endroit ne peuvent pas être vérifiés et ne s’affichent pas.
+
+interface-history-how = Méthode
+
+interface-history-how-camera = Ajouté avec l’appareil photo
+
+interface-history-how-damaged = Masqué car le fichier était absent
+
+interface-history-how-importedShared = Ajouté à Partagé avec moi
+
+interface-history-how-movedFromShared = Déplacé depuis Partagé avec moi
+
+interface-history-how-passphrase = Phrase secrète
+
+interface-history-how-patient = Masqué par vous
+
+interface-history-how-picked = Importé depuis un fichier choisi
+
+interface-history-how-recoveryKey = Clé de récupération
+
+interface-history-how-replaced = Restauré en remplaçant un coffre existant
+
+interface-history-intro = Liste en lecture seule des événements enregistrés dans votre coffre chiffré.
+
+interface-history-laterSessionNotRecorded = Au moins une session ultérieure n’a pas été enregistrée.
+
+interface-history-loading = Vérification et lecture de tout l’historique…
+
+interface-history-moreFolders =
+    { $count ->
+    [one] { $count } dossier supplémentaire
+    [many] { $count } dossiers supplémentaires
+    *[other] { $count } dossiers supplémentaires
+    }
+
+interface-history-name = Nom
+
+interface-history-personRootFolder = Premier niveau d’une personne
+
+interface-history-place = Emplacement
+
+interface-history-previousName = Nom précédent
+
+interface-history-previousSession = Session précédente
+
+interface-history-rootFolder = Premier niveau (emplacement non enregistré)
+
+interface-history-scopeNote = Certaines entrées n’identifient pas la personne ou ne distinguent pas les dossiers portant le même nom. Les libellés des dossiers sont les noms enregistrés, pas des chemins complets. Les emplacements de sauvegarde peuvent être abrégés.
+
+interface-history-sessionLockedAutomatically = Verrouillé automatiquement le { $date }
+
+interface-history-sessionLockedByApp = Verrouillé par l’application le { $date }
+
+interface-history-sessionLockedByPerson = Verrouillé par vous le { $date }
+
+interface-history-sessionNotRecorded = La session précédente n’a pas été enregistrée.
+
+interface-history-title = Historique des événements
+
+interface-history-to = Vers
+
+interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve aussi un historique : les ouvertures du coffre-fort; la définition ou la modification de sa phrase secrète ou de sa clé de récupération, ainsi que l’enregistrement ou la restauration d’une sauvegarde; l’ajout de chaque profil patient et la création, le changement de nom ou le déplacement de chaque dossier; l’ajout, le changement de nom, le déplacement, le masquage ou la restauration de chaque document, ainsi que son enregistrement en dehors de myCarlos et l’emplacement choisi. Cet historique est chiffré avec le reste. Vous pouvez le consulter ici ; myCarlos ne le modifie et ne le supprime jamais.
