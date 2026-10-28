@@ -233,18 +233,33 @@ export function PortalDocuments({
     if (control.isConnected && !(control as HTMLButtonElement).disabled) return;
     document.getElementById(`portal-link-title-${linkId}`)?.focus();
   });
-  // The device whose code form had focus when a code was sent (#141). When
-  // the form goes (the code was taken, or no more are), focus moves to that
-  // device's heading, not to the page; never while it is elsewhere.
-  const codeFocus = useRef<string | null>(null);
+  // The control in a code form that had focus when its code was sent
+  // (#141). While the clinic work runs it is disabled, and focus falls to the
+  // page. Once the work is over, focus goes back to it, or, if the form has
+  // gone (the code was taken, or no more are), to its device's heading.
+  // Never while focus is somewhere the patient put it.
+  const codeFocus = useRef<{
+    linkId: string;
+    control: HTMLElement;
+    done: boolean;
+  } | null>(null);
+  const [, setCodeDone] = useState(0);
   useEffect(() => {
-    const linkId = codeFocus.current;
-    if (!linkId) return;
-    const form = document.getElementById(`portal-code-form-${linkId}`);
-    if (form?.contains(document.activeElement)) return;
+    const pending = codeFocus.current;
+    if (!pending) return;
+    const active = document.activeElement;
+    const lost = active === document.body || active === null;
+    if (!lost && active !== pending.control) {
+      codeFocus.current = null;
+      return;
+    }
+    if (!pending.done) return;
+    const { control, linkId } = pending;
+    if (control.isConnected && control.matches(":disabled")) return;
     codeFocus.current = null;
-    if (document.activeElement === document.body || !document.activeElement)
-      document.getElementById(`portal-link-title-${linkId}`)?.focus();
+    if (!lost) return;
+    if (control.isConnected) control.focus();
+    else document.getElementById(`portal-link-title-${linkId}`)?.focus();
   });
   const polling = useApprovalPolling({
     links,
@@ -394,12 +409,12 @@ export function PortalDocuments({
     if (disabled || !bridge.submitApprovalCode) return;
     const typed = approvalCodes[link.id] ?? "";
     setCodeIssues((issues) => ({ ...issues, [link.id]: "" }));
-    if (
-      document
-        .getElementById(`portal-code-form-${link.id}`)
-        ?.contains(document.activeElement)
-    )
-      codeFocus.current = link.id;
+    const active = document.activeElement;
+    codeFocus.current =
+      active instanceof HTMLElement &&
+      document.getElementById(`portal-code-form-${link.id}`)?.contains(active)
+        ? { linkId: link.id, control: active, done: false }
+        : null;
     polling.hold();
     let known: LiveApproval | undefined;
     void run(async () => {
@@ -437,7 +452,11 @@ export function PortalDocuments({
       } finally {
         await refresh();
       }
-    }).finally(() => polling.restart({ [link.id]: known }));
+    }).finally(() => {
+      if (codeFocus.current?.linkId === link.id) codeFocus.current.done = true;
+      setCodeDone((count) => count + 1);
+      polling.restart({ [link.id]: known });
+    });
   };
   return (
     <section className="portal-documents" aria-labelledby="portal-title">

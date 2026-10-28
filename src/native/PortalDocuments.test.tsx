@@ -1454,9 +1454,15 @@ describe("the code a clinic emails (#141)", () => {
     expect(codeBox()).not.toBeInTheDocument();
   });
 
-  it("sends the code as typed to the native side only, clears it, and says it was sent", async () => {
+  it("sends the code as typed to the native side only, and says it was sent", async () => {
     const { bridge, props, rerender, failures } = fixture({
       snapshot: showing(),
+    });
+    // As in the app, the vault read after the code was taken says so.
+    const sent = showing({ approvalCodeSubmitted: true });
+    vi.mocked(props.refresh).mockImplementation(async () => {
+      rerender(<PortalDocuments {...props} snapshot={sent} />);
+      return sent;
     });
     const user = userEvent.setup();
     await user.type(codeBox()!, "482 193 644");
@@ -1468,26 +1474,45 @@ describe("the code a clinic emails (#141)", () => {
       ),
     );
     expect(bridge.submitApprovalCode).toHaveBeenCalledOnce();
-    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    await waitFor(() => expect(codeBox()).not.toBeInTheDocument());
     expect(failures).toEqual([]);
-    expect(codeBox()).toHaveValue("");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Code sent. Waiting for your clinic to confirm this device.",
     );
-    // The saved state then says so, and the form goes: focus moves to this
-    // device's heading, not to the page.
-    rerender(
-      <PortalDocuments
-        {...props}
-        snapshot={showing({ approvalCodeSubmitted: true })}
-      />,
-    );
-    expect(codeBox()).not.toBeInTheDocument();
+    // The form went with focus in it: focus moves to this device's
+    // heading, not to the page.
     await waitFor(() =>
       expect(document.activeElement).toBe(
         document.getElementById(`portal-link-title-${link.id}`),
       ),
     );
+  });
+
+  it("puts focus back on the control it left once the clinic work is over", async () => {
+    const { bridge, props, rerender } = fixture({ snapshot: showing() });
+    let refuse!: (error: unknown) => void;
+    vi.mocked(bridge.submitApprovalCode!).mockImplementationOnce(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    const user = userEvent.setup();
+    await user.type(codeBox()!, "482193645");
+    const confirm = screen.getByRole("button", { name: "Confirm code" });
+    await user.click(confirm);
+    // The app disables clinic controls while the work runs, and focus falls
+    // to the page.
+    rerender(<PortalDocuments {...props} busy working />);
+    expect(confirm).toBeDisabled();
+    act(() => confirm.blur());
+    expect(document.activeElement).toBe(document.body);
+    refuse({ code: "approval_code_mismatch" });
+    await screen.findByText(mismatch);
+    // Not while it is still disabled; then back where it was.
+    expect(document.activeElement).toBe(document.body);
+    rerender(<PortalDocuments {...props} />);
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
   });
 
   it("says beside it when a code does not match this clinic, and keeps it to correct", async () => {
