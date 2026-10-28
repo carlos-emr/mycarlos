@@ -205,6 +205,7 @@ impl From<VaultError> for PublicText {
             VaultError::ApprovalTerminal(state,reason) => match state {
                 portal_approval::ApprovalState::Expired => Self {code:"approval_expired",message:"This clinic approval request expired. Check for updates before starting a new request."},
                 portal_approval::ApprovalState::Cancelled => Self {code:"approval_cancelled",message:"This clinic approval request was cancelled. Check for updates before starting a new request."},
+                _ if reason == Some(portal_approval::ApprovalReason::CodeAttempts) => Self {code:"approval_code_locked",message:"Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic."},
                 _ if reason.is_some_and(|r|r.needs_clinic()) => Self {code:"approval_contact_clinic",message:"The clinic cannot approve this request here. Contact your clinic for next steps."},
                 _ => Self {code:"approval_refused",message:"The clinic refused this device approval request. Contact your clinic before trying again."},
             },
@@ -214,6 +215,12 @@ impl From<VaultError> for PublicText {
             VaultError::ApprovalNeedsClinic => Self {code:"approval_contact_clinic",message:"Clinic approval needs to be checked before another request. Contact your clinic for next steps."},
             #[cfg(feature="portal-linking")]
             VaultError::ApprovalStillOpen => Self {code:"approval_still_open",message:"This approval request is still open on the clinic portal. Wait until it ends before starting a new one."},
+            #[cfg(feature="portal-linking")]
+            VaultError::ApprovalCodeMismatch => Self {code:"approval_code_mismatch",message:"This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again."},
+            #[cfg(feature="portal-linking")]
+            VaultError::ApprovalCodeLocked => Self {code:"approval_code_locked",message:"Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic."},
+            #[cfg(feature="portal-linking")]
+            VaultError::ApprovalCodeNotOpen => Self {code:"approval_code_not_open",message:"This request isn't waiting for a code now. myCarlos will show your clinic's answer when it next checks."},
             #[cfg(feature="portal-linking")]
             VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
             VaultError::Portal(reason) => {
@@ -1654,6 +1661,63 @@ async fn vault_refresh_device_approval(
             recovery: check.recovery,
         })
         .map_err(Into::into)
+}
+
+/// Why a code the patient typed was not taken (clinic code v1). A code that
+/// is not 9 digits, and a refusal by the portal, are said as such; the rest
+/// as a status check says them.
+#[cfg(feature = "portal-linking")]
+fn approval_code_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message) = match &error {
+        VaultError::Invalid => (
+            "approval_code_format",
+            "Enter the 9 digits of the code from your clinic's email.",
+        ),
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => (
+            "approval_code_refused",
+            "The clinic portal didn't take the code. Try again in a few minutes.",
+        ),
+        _ => return approval_check_issue(error),
+    };
+    PublicError {
+        code,
+        message,
+        record_id: None,
+        note: None,
+        retry_after_ms: None,
+    }
+}
+
+/// Takes the code a clinic emailed for a linked device's open request
+/// (clinic code v1). It is checked natively and sent to the portal only if it
+/// matches this clinic; it is never saved or logged, and the typed text is
+/// wiped here once used.
+#[tauri::command]
+async fn vault_submit_approval_code(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+    mut code: String,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        code.zeroize();
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || {
+            let result = store.submit_approval_code(link_id, &code, session);
+            code.zeroize();
+            result
+        })
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(approval_code_issue)
+    }
 }
 
 #[tauri::command]
@@ -3380,6 +3444,7 @@ pub fn run() {
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_refresh_device_approval,
+            vault_submit_approval_code,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,

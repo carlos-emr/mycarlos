@@ -255,6 +255,15 @@ pub struct LinkSummary {
     pub approval_reason: Option<crate::portal_approval::ApprovalReason>,
     pub approval_can_restart: bool,
     pub approval_request_limit_reached: bool,
+    /// The clinic asked for the code it emailed (clinic code v1): the request
+    /// that approved this device, when one did, else the current one.
+    pub approval_by_code: bool,
+    /// This run of the app sent a code for the current request and the
+    /// portal took it; the clinic has yet to answer.
+    pub approval_code_submitted: bool,
+    /// No more codes are taken for the current request: too many did not
+    /// match this clinic, or the portal has had five.
+    pub approval_code_locked: bool,
 }
 
 impl StoredLink {
@@ -346,6 +355,10 @@ impl StoredLink {
             // By this device's clock here; a status check uses the portal's
             // when it can (#131). One rule for both.
             approval_can_restart: crate::portal_approval::can_restart(self, crate::now_ms() / 1000),
+            approval_by_code: crate::portal_approval::approval_by_code(self),
+            // In memory only: the store adds them (`VaultStore::link_summary`).
+            approval_code_submitted: false,
+            approval_code_locked: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

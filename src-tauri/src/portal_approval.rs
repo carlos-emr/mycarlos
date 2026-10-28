@@ -42,6 +42,8 @@ pub enum ApprovalReason {
     ChallengeCancelled,
     StaffRequired,
     NoAcceptedApprover,
+    /// Five wrong codes were sent for this request (clinic code v1): final.
+    CodeAttempts,
 }
 impl ApprovalReason {
     #[cfg(feature = "portal-linking")]
@@ -314,6 +316,86 @@ mod native {
         }
         Ok(())
     }
+    /// Sends the code the patient typed, once it has been checked against this
+    /// clinic, for the clinic to compare (clinic code v1). Only the 6 digits
+    /// the clinic made go to the portal, never the check digits.
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn send_code(
+        link: &StoredLink,
+        attempt: &Attempt,
+        code_r: &str,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
+        let (route, body) = code_request(attempt, code_r)?;
+        let response = crate::portal_client::api(
+            link,
+            "POST",
+            &route,
+            body.to_vec(),
+            Some(anchor),
+            4096,
+            cancelled,
+        )
+        .map_err(VaultError::Portal)?;
+        read_code_reply(&response)
+    }
+    /// The route and exact body that send a code: `{"code_r":"482193"}`.
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn code_request(
+        attempt: &Attempt,
+        code_r: &str,
+    ) -> Result<(String, zeroize::Zeroizing<Vec<u8>>), VaultError> {
+        if code_r.len() != 6 || !code_r.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(VaultError::Invalid);
+        }
+        Ok((
+            format!("/api/mycarlos/device-approvals/{}/code", attempt.request_id),
+            zeroize::Zeroizing::new(format!("{{\"code_r\":\"{code_r}\"}}").into_bytes()),
+        ))
+    }
+    /// What the portal said to a sent code. Only `202 {"status":"submitted"}`
+    /// means the clinic has it; the clinic's answer comes later, through the
+    /// usual status checks.
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn read_code_reply(
+        response: &crate::portal_client::ApiResponse,
+    ) -> Result<(), VaultError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Submitted {
+            status: String,
+        }
+        #[derive(Deserialize)]
+        struct Refusal {
+            code: Option<String>,
+        }
+        if response.status == 202 {
+            return serde_json::from_slice::<Submitted>(&response.body)
+                .ok()
+                .filter(|reply| reply.status == "submitted")
+                .map(|_| ())
+                .ok_or(VaultError::Portal(LinkError::InvalidResponse));
+        }
+        let code = serde_json::from_slice::<Refusal>(&response.body)
+            .ok()
+            .and_then(|refusal| refusal.code);
+        Err(match (response.status, code.as_deref()) {
+            // Five codes were already sent for this request: final, whatever
+            // wait the portal also gives.
+            (429, Some("code_attempts")) => VaultError::ApprovalCodeLocked,
+            (429, _) => VaultError::Portal(LinkError::RateLimited(response.retry_after)),
+            (403, Some("device_removed")) => VaultError::Portal(LinkError::DeviceRemoved),
+            (404, Some("approval_not_found")) => VaultError::ApprovalRequestMissing,
+            (409, Some("approval_not_code" | "approval_not_pending")) => {
+                VaultError::ApprovalCodeNotOpen
+            }
+            (410, Some("approval_expired")) => {
+                VaultError::ApprovalTerminal(ApprovalState::Expired, None)
+            }
+            (status, _) => VaultError::Portal(LinkError::HttpRefused(status, response.retry_after)),
+        })
+    }
     /// The saved request's status, and the portal's clock when it replied
     /// (Unix seconds, display only), if it said.
     #[cfg(feature = "portal-linking")]
@@ -398,6 +480,54 @@ mod native {
             .and_then(|challenge| verify_challenge(link, attempt, challenge, false).ok())
             .map_or(attempt.expires_at, |c| c.expires_at.min(attempt.expires_at))
     }
+    /// The `approval_kind` of a challenge that asks the patient for the code
+    /// their clinic emailed (clinic code v1).
+    const CODE_KIND: &str = "code";
+    /// Whether this request's saved challenge, as verified, asks for an
+    /// emailed code.
+    fn asks_for_code(link: &StoredLink, attempt: &Attempt, current: bool) -> bool {
+        attempt
+            .challenge
+            .as_deref()
+            .and_then(|challenge| verify_challenge(link, attempt, challenge, current).ok())
+            .is_some_and(|c| c.approval_kind == CODE_KIND)
+    }
+    /// Whether the device card is about a code request: the request that
+    /// approved this device, when one did, else the current one.
+    pub(crate) fn approval_by_code(link: &StoredLink) -> bool {
+        if currently_approved(link) {
+            link.approval
+                .iter()
+                .chain(link.approval_history.iter())
+                .filter(|attempt| {
+                    matches!((&attempt.challenge, &attempt.acceptance), (Some(challenge), Some(acceptance))
+                        if verify_acceptance(link, attempt, challenge, acceptance, true).is_ok())
+                })
+                .any(|attempt| asks_for_code(link, attempt, true))
+        } else {
+            link.approval
+                .as_ref()
+                .is_some_and(|attempt| asks_for_code(link, attempt, true))
+        }
+    }
+    /// The clinic key id that signed this request's code challenge, checked
+    /// against the link's pinned, active clinic keys as every challenge is.
+    /// Refused when the clinic has not asked this request for a code.
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn code_challenge_kid(
+        link: &StoredLink,
+        attempt: &Attempt,
+    ) -> Result<String, VaultError> {
+        let challenge = attempt
+            .challenge
+            .as_deref()
+            .ok_or(VaultError::ApprovalCodeNotOpen)?;
+        let c = verify_challenge(link, attempt, challenge, true)?;
+        if c.approval_kind != CODE_KIND {
+            return Err(VaultError::ApprovalCodeNotOpen);
+        }
+        Ok(c.kid)
+    }
     fn verify_challenge(
         link: &StoredLink,
         attempt: &Attempt,
@@ -426,7 +556,9 @@ mod native {
             || c.candidate_x25519_public_key != B64.encode(x)
             || c.candidate_ed25519_public_key != B64.encode(ed)
             || c.candidate_intent_sha256 != wire::sha256(attempt.intent.as_bytes())
-            || c.approval_kind != "staff_first"
+            // Staff approval, or a code the clinic emailed (clinic code v1).
+            // Neither has a predecessor.
+            || !matches!(c.approval_kind.as_str(), "staff_first" | CODE_KIND)
             || c.predecessor_device_key_id.is_some()
             || c.predecessor_version.is_some()
             || c.expires_at <= c.issued_at
@@ -467,7 +599,7 @@ mod native {
             || a.candidate_device_key_id != c.candidate_device_key_id
             || a.candidate_x25519_public_key != c.candidate_x25519_public_key
             || a.candidate_ed25519_public_key != c.candidate_ed25519_public_key
-            || a.approval_kind != "staff_first"
+            || a.approval_kind != c.approval_kind
             || a.predecessor_device_key_id.is_some()
             || a.approval_sha256.is_some()
             || a.accepted_version != "0"
@@ -670,6 +802,256 @@ mod native {
             ));
         }
         #[test]
+        fn should_compute_every_shared_clinic_code_vector() {
+            let x: serde_json::Value =
+                serde_json::from_str(include_str!("../tests/fixtures/clinic-code-v1.json"))
+                    .unwrap();
+            assert_eq!(x["version"], "clinic-code-v1");
+            assert_eq!(x["label"], "carlos-mycarlos-clinic-code-check-v1");
+            let vectors = x["vectors"].as_array().unwrap();
+            assert_eq!(vectors.len(), 5);
+            for v in vectors {
+                let field = |name: &str| v[name].as_str().unwrap();
+                let check = crate::portal_approval::code_check(
+                    field("clinic_kid"),
+                    field("device_key_id"),
+                    field("request_id"),
+                    field("code_r"),
+                );
+                assert_eq!(check.as_str(), field("check_t"), "{v}");
+                assert_eq!(
+                    format!("{}{}", field("code_r"), check.as_str()),
+                    field("code")
+                );
+                let code = field("code");
+                assert_eq!(
+                    format!("{} {} {}", &code[..3], &code[3..6], &code[6..]),
+                    field("display")
+                );
+                // The code as shown to the patient is what myCarlos reads.
+                assert_eq!(
+                    crate::portal_approval::code_digits(field("display"))
+                        .unwrap()
+                        .as_str(),
+                    code
+                );
+            }
+        }
+        #[test]
+        fn should_take_9_digits_with_or_without_spaces_and_dashes_only() {
+            for typed in [
+                "482193644",
+                "482 193 644",
+                "482-193-644",
+                " 482 193-644 ",
+                "48 21 93 64 4",
+            ] {
+                assert_eq!(
+                    crate::portal_approval::code_digits(typed).unwrap().as_str(),
+                    "482193644",
+                    "{typed}"
+                );
+            }
+            for typed in [
+                "",
+                "48219364",
+                "4821936440",
+                "482193 64a",
+                "482_193_644",
+                "482.193.644",
+                "482\u{a0}193\u{a0}644",
+                "482\t193\t644",
+                "\u{ff14}82193644",
+                "\u{0664}82193644",
+                &"4".repeat(65),
+                &format!("482193644{}", " ".repeat(60)),
+            ] {
+                assert!(
+                    matches!(
+                        crate::portal_approval::code_digits(typed),
+                        Err(VaultError::Invalid)
+                    ),
+                    "{typed:?}"
+                );
+            }
+        }
+        #[test]
+        fn should_verify_code_challenges_and_only_acceptances_of_the_same_kind() {
+            let (_, link, attempt) = crate::portal_approval::first_fixture();
+            let with_kind = |kind: &'static str| {
+                crate::portal_approval::fixture_challenge_with(|c| c["approval_kind"] = kind.into())
+            };
+            let code = with_kind("code");
+            let staff = with_kind("staff_first");
+            assert_eq!(
+                verify_challenge(&link, &attempt, &code, true)
+                    .unwrap()
+                    .approval_kind,
+                "code"
+            );
+            // Code requests have no predecessor; other kinds stay refused.
+            for refused in [
+                with_kind("accepted_device"),
+                with_kind("Code"),
+                crate::portal_approval::fixture_challenge_with(|c| {
+                    c["approval_kind"] = "code".into();
+                    c["predecessor_device_key_id"] = "FAKE-device-key-0002".into();
+                }),
+                crate::portal_approval::fixture_challenge_with(|c| {
+                    c["approval_kind"] = "code".into();
+                    c["predecessor_version"] = "1".into();
+                }),
+            ] {
+                assert!(verify_challenge(&link, &attempt, &refused, true).is_err());
+            }
+            let accept = |challenge: &str, kind: &'static str| {
+                crate::portal_approval::fixture_acceptance_with(challenge, |a| {
+                    a["approval_kind"] = kind.into()
+                })
+            };
+            assert!(
+                verify_acceptance(&link, &attempt, &code, &accept(&code, "code"), true).is_ok()
+            );
+            assert!(verify_acceptance(
+                &link,
+                &attempt,
+                &staff,
+                &accept(&staff, "staff_first"),
+                true
+            )
+            .is_ok());
+            // The acceptance must be of the kind the challenge asked for,
+            // and a code acceptance carries no approval hash either.
+            assert!(
+                verify_acceptance(&link, &attempt, &code, &accept(&code, "staff_first"), true)
+                    .is_err()
+            );
+            assert!(
+                verify_acceptance(&link, &attempt, &staff, &accept(&staff, "code"), true).is_err()
+            );
+            let hashed = crate::portal_approval::fixture_acceptance_with(&code, |a| {
+                a["approval_kind"] = "code".into();
+                a["approval_sha256"] = crate::portal_delivery::sha256(b"FAKE approval").into();
+            });
+            assert!(verify_acceptance(&link, &attempt, &code, &hashed, true).is_err());
+            // The card is about a code request, open or approved.
+            let mut open = link.clone();
+            let mut asked = attempt.clone();
+            asked.challenge = Some(code.clone());
+            asked.status = Some(ApprovalState::ChallengeReady);
+            open.approval = Some(asked.clone());
+            assert!(valid_saved(&open, &asked));
+            assert!(approval_by_code(&open));
+            assert_eq!(
+                code_challenge_kid(&open, &asked).unwrap(),
+                link.clinic.as_ref().unwrap().clinic_keys[0].kid
+            );
+            let mut approved = open.clone();
+            let mut accepted = asked.clone();
+            accepted.acceptance = Some(accept(&code, "code"));
+            accepted.status = Some(ApprovalState::Accepted);
+            approved.approval = Some(accepted.clone());
+            assert!(valid_saved(&approved, &accepted));
+            assert!(currently_approved(&approved));
+            assert!(approval_by_code(&approved));
+            let mut by_staff = link.clone();
+            let mut staff_asked = attempt.clone();
+            staff_asked.challenge = Some(staff.clone());
+            staff_asked.status = Some(ApprovalState::ChallengeReady);
+            by_staff.approval = Some(staff_asked.clone());
+            assert!(!approval_by_code(&by_staff));
+            assert!(matches!(
+                code_challenge_kid(&by_staff, &staff_asked),
+                Err(VaultError::ApprovalCodeNotOpen)
+            ));
+            assert!(matches!(
+                code_challenge_kid(&link, &attempt),
+                Err(VaultError::ApprovalCodeNotOpen)
+            ));
+        }
+        #[test]
+        fn should_send_only_the_clinics_6_digits_in_the_exact_body() {
+            let (_, _, attempt) = crate::portal_approval::first_fixture();
+            let (route, body) = code_request(&attempt, "482193").unwrap();
+            assert_eq!(
+                route,
+                format!("/api/mycarlos/device-approvals/{}/code", attempt.request_id)
+            );
+            assert!(!route.contains('?'));
+            assert_eq!(body.as_slice(), br#"{"code_r":"482193"}"#);
+            for code_r in ["48219", "4821930", "48219a", "482193644", ""] {
+                assert!(matches!(
+                    code_request(&attempt, code_r),
+                    Err(VaultError::Invalid)
+                ));
+            }
+        }
+        #[test]
+        fn should_read_every_code_route_reply() {
+            let answer = |status: u16, body: &[u8]| crate::portal_client::ApiResponse {
+                status,
+                body: zeroize::Zeroizing::new(body.to_vec()),
+                date: None,
+                retry_after: Some(60),
+            };
+            assert!(read_code_reply(&answer(202, br#"{"status":"submitted"}"#)).is_ok());
+            for body in [
+                &br#"{"status":"submitted","attempt":1}"#[..],
+                br#"{"status":"accepted"}"#,
+                br#"{}"#,
+                b"",
+            ] {
+                assert!(matches!(
+                    read_code_reply(&answer(202, body)),
+                    Err(VaultError::Portal(LinkError::InvalidResponse))
+                ));
+            }
+            // Final for the request: its generic wait is not used.
+            assert!(matches!(
+                read_code_reply(&answer(429, br#"{"code":"code_attempts"}"#)),
+                Err(VaultError::ApprovalCodeLocked)
+            ));
+            assert!(matches!(
+                read_code_reply(&answer(429, br#"{"detail":"slow down"}"#)),
+                Err(VaultError::Portal(LinkError::RateLimited(Some(60))))
+            ));
+            assert!(matches!(
+                read_code_reply(&answer(403, br#"{"code":"device_removed"}"#)),
+                Err(VaultError::Portal(LinkError::DeviceRemoved))
+            ));
+            assert!(matches!(
+                read_code_reply(&answer(404, br#"{"code":"approval_not_found"}"#)),
+                Err(VaultError::ApprovalRequestMissing)
+            ));
+            for code in ["approval_not_code", "approval_not_pending"] {
+                assert!(matches!(
+                    read_code_reply(&answer(409, format!(r#"{{"code":"{code}"}}"#).as_bytes())),
+                    Err(VaultError::ApprovalCodeNotOpen)
+                ));
+            }
+            assert!(matches!(
+                read_code_reply(&answer(410, br#"{"code":"approval_expired"}"#)),
+                Err(VaultError::ApprovalTerminal(ApprovalState::Expired, None))
+            ));
+            for (status, body) in [
+                (403, &br#"{"code":"recipient_mismatch"}"#[..]),
+                (404, br#"{"detail":"not found"}"#),
+                (400, br#"{"code":"invalid_approval"}"#),
+                (413, br#"{"detail":"request too large"}"#),
+                (409, br#"{"code":"other"}"#),
+                (200, br#"{"status":"submitted"}"#),
+                (500, b""),
+            ] {
+                assert!(
+                    matches!(
+                        read_code_reply(&answer(status, body)),
+                        Err(VaultError::Portal(LinkError::HttpRefused(s, Some(60)))) if s == status
+                    ),
+                    "{status}"
+                );
+            }
+        }
+        #[test]
         fn a_request_ends_at_the_earlier_of_its_intent_and_its_saved_challenge() {
             let (x, link, attempt) = crate::portal_approval::first_fixture();
             assert_eq!(request_expires_at(&link, &attempt), attempt.expires_at);
@@ -753,6 +1135,8 @@ mod native {
 }
 pub(crate) use native::request_expires_at;
 #[cfg(feature = "portal-linking")]
+pub(crate) use native::{code_challenge_kid, send_code};
+#[cfg(feature = "portal-linking")]
 pub(crate) use native::{create, device_removed, publish, refresh};
 
 /// How far a reply's `Date` may be from this device's clock and still be
@@ -830,7 +1214,56 @@ pub(crate) fn can_restart(link: &StoredLink, clock: u64) -> bool {
 
 #[cfg(all(test, feature = "portal-linking"))]
 pub(crate) use native::parse_status;
-pub(crate) use native::{currently_approved, valid_saved};
+pub(crate) use native::{approval_by_code, currently_approved, valid_saved};
+
+/// Clinic code v1 (mycarlos#141). The patient's code is the 6 digits the
+/// clinic made and 3 check digits that bind it to the clinic key that signed
+/// the request's code challenge, this device and this request. myCarlos
+/// checks them before anything is sent, so a code read from a look-alike
+/// portal, or for another device or request, is never sent.
+#[cfg(feature = "portal-linking")]
+const CODE_CHECK_LABEL: &str = "carlos-mycarlos-clinic-code-check-v1";
+
+/// The 3 check digits: the first 8 bytes of SHA-256 over the label and the
+/// four fields joined by LF, as a big-endian number, mod 1000, zero-padded.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn code_check(
+    clinic_kid: &str,
+    device_key_id: &str,
+    request_id: &str,
+    code_r: &str,
+) -> zeroize::Zeroizing<String> {
+    use sha2::{Digest, Sha256};
+    let input = zeroize::Zeroizing::new(
+        [
+            CODE_CHECK_LABEL,
+            clinic_kid,
+            device_key_id,
+            request_id,
+            code_r,
+        ]
+        .join("\n"),
+    );
+    let digest = Sha256::digest(input.as_bytes());
+    let mut first = [0_u8; 8];
+    first.copy_from_slice(&digest[..8]);
+    zeroize::Zeroizing::new(format!("{:03}", u64::from_be_bytes(first) % 1000))
+}
+
+/// The 9 digits of a code as typed, with spaces and dashes taken out.
+/// Anything else is refused before it is checked.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn code_digits(typed: &str) -> Result<zeroize::Zeroizing<String>, VaultError> {
+    if typed.len() > 64 {
+        return Err(VaultError::Invalid);
+    }
+    let digits: zeroize::Zeroizing<String> =
+        zeroize::Zeroizing::new(typed.chars().filter(|c| !matches!(*c, ' ' | '-')).collect());
+    if digits.len() != 9 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(VaultError::Invalid);
+    }
+    Ok(digits)
+}
 
 #[cfg(all(test, feature = "portal-linking"))]
 pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredLink, Attempt) {
@@ -929,6 +1362,30 @@ pub(crate) fn signed_challenge(
     sign_fixture_claims(&claims)
 }
 
+/// The fixture's first-device challenge, changed by `change` and signed
+/// again with the fixture's FAKE clinic key (clinic code v1 tests).
+#[cfg(all(test, feature = "portal-linking"))]
+pub(crate) fn fixture_challenge_with(change: impl FnOnce(&mut serde_json::Value)) -> String {
+    let (x, _, _) = first_fixture();
+    let mut claims = x["flows"]["first"]["challenge"]["claims"].clone();
+    change(&mut claims);
+    sign_fixture_claims(&claims)
+}
+
+/// The fixture's first-device acceptance of `challenge` (its hash put in),
+/// changed by `change` and signed again with the fixture's FAKE clinic key.
+#[cfg(all(test, feature = "portal-linking"))]
+pub(crate) fn fixture_acceptance_with(
+    challenge: &str,
+    change: impl FnOnce(&mut serde_json::Value),
+) -> String {
+    let (x, _, _) = first_fixture();
+    let mut claims = x["flows"]["first"]["acceptance"]["claims"].clone();
+    claims["challenge_sha256"] = crate::portal_delivery::sha256(challenge.as_bytes()).into();
+    change(&mut claims);
+    sign_fixture_claims(&claims)
+}
+
 #[cfg(all(test, feature = "portal-linking"))]
 fn sign_fixture_claims(claims: &serde_json::Value) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
@@ -973,6 +1430,15 @@ pub(crate) trait ApprovalExchange {
         anchor: &str,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<crate::portal_approval::Attempt, VaultError>;
+    /// Sends a code already checked against this clinic (clinic code v1).
+    fn submit_code(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        code_r: &str,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError>;
     /// The portal's clock (Unix seconds) when it last answered a status read
     /// through this exchange, if it said. It only shows how long a request
     /// has left, by the portal's clock rather than this device's (#131).
@@ -1018,5 +1484,15 @@ impl ApprovalExchange for ApprovalHttp {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<crate::portal_approval::Attempt, VaultError> {
         crate::portal_approval::publish(link, attempt, anchor, cancelled)
+    }
+    fn submit_code(
+        &self,
+        link: &StoredLink,
+        attempt: &crate::portal_approval::Attempt,
+        code_r: &str,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
+        crate::portal_approval::send_code(link, attempt, code_r, anchor, cancelled)
     }
 }
