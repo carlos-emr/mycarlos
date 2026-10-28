@@ -50,10 +50,11 @@ const focusOnPage = async (page: Page) =>
     "focus after the pointer action",
   ).toBe("the page");
 
-/** Forty more documents, scrolled down to the last of them. */
-async function longList(page: Page) {
+/** Forty more documents in an unlocked vault, in the folders given (none:
+ * at the top). */
+async function fortyMore(page: Page, folderIds: string[] = []) {
   await fakeVault(page, "unlocked");
-  await page.addInitScript(() => {
+  await page.addInitScript((folderIds) => {
     const internals = Reflect.get(window, "__TAURI_INTERNALS__");
     const invoke = internals.invoke;
     internals.invoke = async (command: string, args?: unknown) => {
@@ -63,7 +64,7 @@ async function longList(page: Page) {
           result.records.push({
             id: `many${i}`,
             profileId: "profile",
-            folderIds: [],
+            folderIds,
             displayName: `FAKE Many ${String(i).padStart(2, "0")}.pdf`,
             sourceLabel: "Manual import — unverified",
             mediaType: "application/pdf",
@@ -73,7 +74,12 @@ async function longList(page: Page) {
           });
       return result;
     };
-  });
+  }, folderIds);
+}
+
+/** Forty more documents, scrolled down to the last of them. */
+async function longList(page: Page) {
+  await fortyMore(page);
   await page.goto("/");
   const heading = page.getByRole("heading", { name: "My records", level: 1 });
   await expect(heading).toBeVisible();
@@ -206,10 +212,11 @@ test("after typing in Search, pointer actions leave focus on the page (#90)", as
 // reader says where the user now is. Either that heading or the page itself
 // is fine; any other control is not. Left on the page, nothing may scroll it;
 // on the heading, the page may only scroll as far as showing that heading.
+// The folder is long, so a scroll away from its heading would hide it.
 test("opening a folder with a pointer leaves focus on the new heading or the page (#90)", async ({
   page,
 }) => {
-  await fakeVault(page, "unlocked");
+  await fortyMore(page, ["letters"]);
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "My records", level: 1 }),
