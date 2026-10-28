@@ -290,7 +290,7 @@ describe("SecuritySettings recovery key", () => {
       within(
         screen.getByRole("region", { name: "Vos anciennes sauvegardes" }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent(
+    ).toHaveHumanTextContent(
       `Votre nouvelle sauvegarde est celle que vous venez d’enregistrer, le September 30, 2026 vers ${time} (`,
     );
   });
