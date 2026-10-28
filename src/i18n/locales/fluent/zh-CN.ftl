@@ -1343,8 +1343,6 @@ portal-serviceDate = 服务日期：{ $date }
 
 portal-serviceDateLabel = 服务日期
 
-portal-sourceVerified = 来自 { $clinic } · 已验证
-
 portal-title = 诊所文档
 
 rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
@@ -1531,3 +1529,11 @@ portal-unlockCheckNotRun = 由于另一项诊所操作正在进行，myCarlos �
 portal-unlockCheckWaiting = 由于诊所门户网站要求稍候，myCarlos 在解锁后未检查新的诊所文档。
 
 portal-unlockRefused = { $count } 份诊所文档无法验证，因此未添加。请联系诊所。
+
+library-source-clinic = 来自 { $clinic }
+
+library-source-manualImport = 手动导入
+
+library-status-unverified = 未验证
+
+library-status-verified = 已验证

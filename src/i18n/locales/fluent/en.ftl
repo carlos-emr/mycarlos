@@ -1471,8 +1471,6 @@ portal-serviceDate = Service date: { $date }
 
 portal-serviceDateLabel = Service date
 
-portal-sourceVerified = From { $clinic } · Verified
-
 portal-title = Clinic documents
 
 rename-help-profile = This changes only the displayed folder name. The person's folders and documents stay where they are.
@@ -1675,3 +1673,11 @@ portal-unlockRefused =
     [one] { $count } clinic document could not be verified, so it was not added. Contact your clinic.
     *[other] { $count } clinic documents could not be verified, so they were not added. Contact your clinic.
     }
+
+library-source-clinic = From { $clinic }
+
+library-source-manualImport = Manual import
+
+library-status-unverified = Unverified
+
+library-status-verified = Verified

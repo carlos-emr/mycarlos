@@ -666,7 +666,6 @@ export const MESSAGE_KEYS = [
   "portal.routing",
   "portal.serviceDate",
   "portal.serviceDateLabel",
-  "portal.sourceVerified",
   "portal.title",
   "rename.help.profile",
   "rename.label.profile",
@@ -760,6 +759,10 @@ export const MESSAGE_KEYS = [
   "portal.unlockCheckNotRun",
   "portal.unlockCheckWaiting",
   "portal.unlockRefused",
+  "library.source.clinic",
+  "library.source.manualImport",
+  "library.status.unverified",
+  "library.status.verified",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1538,7 +1541,6 @@ const FLUENT_IDS_BY_KEY = {
   "portal.routing": "portal-routing",
   "portal.serviceDate": "portal-serviceDate",
   "portal.serviceDateLabel": "portal-serviceDateLabel",
-  "portal.sourceVerified": "portal-sourceVerified",
   "portal.title": "portal-title",
   "rename.help.profile": "rename-help-profile",
   "rename.label.profile": "rename-label-profile",
@@ -1646,6 +1648,10 @@ const FLUENT_IDS_BY_KEY = {
   "portal.unlockCheckNotRun": "portal-unlockCheckNotRun",
   "portal.unlockCheckWaiting": "portal-unlockCheckWaiting",
   "portal.unlockRefused": "portal-unlockRefused",
+  "library.source.clinic": "library-source-clinic",
+  "library.source.manualImport": "library-source-manualImport",
+  "library.status.unverified": "library-status-unverified",
+  "library.status.verified": "library-status-verified",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2396,7 +2402,6 @@ export interface MessageArgsByKey {
   "portal.routing": undefined;
   "portal.serviceDate": { date: FluentArgument };
   "portal.serviceDateLabel": undefined;
-  "portal.sourceVerified": { clinic: FluentArgument };
   "portal.title": undefined;
   "rename.help.profile": undefined;
   "rename.label.profile": undefined;
@@ -2493,6 +2498,10 @@ export interface MessageArgsByKey {
   "portal.unlockCheckNotRun": undefined;
   "portal.unlockCheckWaiting": undefined;
   "portal.unlockRefused": { count: FluentArgument };
+  "library.source.clinic": { clinic: FluentArgument };
+  "library.source.manualImport": undefined;
+  "library.status.unverified": undefined;
+  "library.status.verified": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

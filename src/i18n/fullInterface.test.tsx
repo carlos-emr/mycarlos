@@ -237,8 +237,12 @@ describe("the installed interface in the selected language", () => {
         }),
       ).toBeVisible();
       expect(dialog).toHaveTextContent(record.displayName);
+      // #135: the status first, then the source, each in the language in use.
       expect(dialog).toHaveTextContent(
-        translate(locale, "record.source.manual"),
+        translate(locale, "library.status.unverified"),
+      );
+      expect(dialog).toHaveTextContent(
+        translate(locale, "library.source.manualImport"),
       );
       const size = `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(record.plaintextSize / (1024 * 1024))} MB`;
       expect(dialog).toHaveTextContent(size);

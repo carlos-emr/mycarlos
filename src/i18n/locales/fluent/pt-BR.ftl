@@ -1503,8 +1503,6 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-sourceVerified = De { $clinic } · Verificado
-
 portal-title = Documentos da clínica
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
@@ -1711,3 +1709,11 @@ portal-unlockRefused =
     [many] Não foi possível verificar { $count } de documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
     *[other] Não foi possível verificar { $count } documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
     }
+
+library-source-clinic = De { $clinic }
+
+library-source-manualImport = Importação manual
+
+library-status-unverified = Não verificado
+
+library-status-verified = Verificado

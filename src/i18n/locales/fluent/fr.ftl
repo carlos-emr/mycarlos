@@ -1503,8 +1503,6 @@ portal-serviceDate = Date du service : { $date }
 
 portal-serviceDateLabel = Date du service
 
-portal-sourceVerified = De { $clinic } · Vérifié
-
 portal-title = Documents de la clinique
 
 rename-help-profile = Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.
@@ -1711,3 +1709,11 @@ portal-unlockRefused =
     [many] { $count } de documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.
     *[other] { $count } documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.
     }
+
+library-source-clinic = De { $clinic }
+
+library-source-manualImport = Importation manuelle
+
+library-status-unverified = Non vérifié
+
+library-status-verified = Vérifié

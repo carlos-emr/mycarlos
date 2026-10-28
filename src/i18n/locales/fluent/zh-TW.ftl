@@ -1343,8 +1343,6 @@ portal-serviceDate = 服務日期：{ $date }
 
 portal-serviceDateLabel = 服務日期
 
-portal-sourceVerified = 來自 { $clinic } · 已驗證
-
 portal-title = 診所文件
 
 rename-help-profile = 這只會變更顯示的資料夾名稱。此人的資料夾和文件仍會留在原處。
@@ -1531,3 +1529,11 @@ portal-unlockCheckNotRun = 由於另一項診所作業正在進行，myCarlos �
 portal-unlockCheckWaiting = 由於診所入口網站要求稍候，myCarlos 在解鎖後未檢查新的診所文件。
 
 portal-unlockRefused = { $count } 份診所文件無法驗證，因此未新增。請聯絡診所。
+
+library-source-clinic = 來自 { $clinic }
+
+library-source-manualImport = 手動匯入
+
+library-status-unverified = 未驗證
+
+library-status-verified = 已驗證

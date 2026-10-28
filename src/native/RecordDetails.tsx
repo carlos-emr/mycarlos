@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
-import { formatBytes, recordKind, recordSource } from "./recordPresentation";
+import { formatBytes, recordKind } from "./recordPresentation";
+import { RecordSource } from "./RecordSource";
 import {
   MoveTargetSelect,
   moveTargetValue,
@@ -187,14 +188,10 @@ export function RecordDetails({
             <dt>{translateNow("interface.RecordDetails.kind")}</dt>
             <dd>{kind.label}</dd>
           </div>
-          <div>
+          <div className="native-source-row">
             <dt>{translateNow("library.column.source")}</dt>
             <dd>
-              {record.verifiedClinicName
-                ? translateNow("portal.sourceVerified", {
-                    clinic: record.verifiedClinicName,
-                  })
-                : recordSource(record)}
+              <RecordSource record={record} />
             </dd>
           </div>
           <div>

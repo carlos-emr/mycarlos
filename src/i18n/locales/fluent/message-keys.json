@@ -665,7 +665,6 @@
   "portal.routing",
   "portal.serviceDate",
   "portal.serviceDateLabel",
-  "portal.sourceVerified",
   "portal.title",
   "rename.help.profile",
   "rename.label.profile",
@@ -758,5 +757,9 @@
   "portal.unlockCheckIncomplete",
   "portal.unlockCheckNotRun",
   "portal.unlockCheckWaiting",
-  "portal.unlockRefused"
+  "portal.unlockRefused",
+  "library.source.clinic",
+  "library.source.manualImport",
+  "library.status.unverified",
+  "library.status.verified"
 ]

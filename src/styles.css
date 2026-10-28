@@ -436,8 +436,14 @@ h1, h2, p { margin: 0; }
 
 /* The document reader: the page picture scrolls inside it when zoomed in. */
 .record-dialog.native-reader { display: flex; flex-direction: column; width: min(1100px, 100%); max-width: none; height: 92vh; }
-.native-reader-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.native-reader-head h2 { overflow-wrap: anywhere; }
+/* #135: the status and source line, and the service date, run under the title and Close across
+   the whole header, so that Close does not squeeze the status into a narrow column. Two classes,
+   so that this wins over .dialog-head's flex row, which comes later. */
+.dialog-head.native-reader-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 12px; }
+.native-reader-head > div { display: contents; }
+.native-reader-head > div > * { grid-column: 1 / -1; }
+.native-reader-head h2 { grid-column: 1; grid-row: 1; overflow-wrap: anywhere; }
+.native-reader-head > button { grid-column: 2; grid-row: 1; }
 .native-reader-head p { margin: 2px 0 0; color: var(--ink-soft); font-size: 0.875rem; }
 .native-reader-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
 .native-reader-where { min-width: 7em; text-align: center; font-weight: 700; }
@@ -507,6 +513,23 @@ h1, h2, p { margin: 0; }
 .record-open { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 0.875rem; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .record-open:hover { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
 .file-row .column { overflow: hidden; color: var(--ink-soft); font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
+/* #135: a document's status, Verified or Unverified, comes first as a word of its own. Its source
+   follows on the same line when there is room, or goes under it; either way a long source wraps
+   or is cut short after the status and never pushes it out of view. */
+.record-source { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; }
+/* It may wrap between its words ("Nie" / "zweryfikowano"), never inside one: break-word, unlike
+   anywhere, and no max-width keep the pill at least as wide as its longest word, so the boxes
+   around it make room. */
+.record-status { padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); color: var(--ink); font-weight: 700; line-height: 1.45; white-space: normal; overflow-wrap: break-word; }
+.record-source.verified .record-status { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); }
+.record-source-name { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+/* In the list and on a tile the source keeps to one line; Details and the reader show all of it. */
+:is(.file-row, .file-tile) .record-source-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-metadata .record-source { justify-content: flex-end; }
+/* In Details, the status and source go under the Source label when the status's longest word
+   does not fit beside it (a phone at 200% text). */
+.record-metadata .native-source-row { flex-wrap: wrap; row-gap: 4px; }
+.record-metadata .native-source-row dd { flex: 1 1 0%; }
 .more-button { display: grid; place-items: center; padding: 6px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-faint); }
 .more-button:hover { background: var(--canvas-2); color: var(--ink); }
 
@@ -524,6 +547,8 @@ h1, h2, p { margin: 0; }
 .tile-caption > span:last-child { min-width: 0; }
 .tile-caption strong { display: -webkit-box; overflow: hidden; font-size: 0.875rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .tile-caption small { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 0.875rem; }
+/* #135: a tile shows the status and source under its caption, as the list does. */
+.file-tile > .record-source { padding: 0 12px 10px; color: var(--ink-soft); font-size: 0.875rem; }
 .empty-state { grid-column: 1 / -1; display: grid; justify-items: center; gap: 5px; padding: 42px 20px; color: var(--ink-soft); text-align: center; }
 .empty-state .icon { width: 28px; height: 28px; color: var(--ink-faint); }
 .empty-state span { font-size: 0.875rem; }
@@ -938,7 +963,14 @@ h1, h2, p { margin: 0; }
 .native-dialog-actions { align-items: end; }
 .native-rename-button { min-height: 36px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--teal); font: inherit; font-size: 0.875rem; cursor: pointer; }
 .native-rename-button:disabled { opacity: .5; cursor: default; }
-.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem) 9.5rem minmax(4.5rem, auto); }
+/* #135: the Source column's least is the widest one-word status pill in a wide font, so no status
+   word is ever split: "Zweryfikowano" in DejaVu Sans Bold at 0.875rem is 134px with the pill's
+   padding and border, 8.375rem. The last column, Rename or Details, is never narrower than its
+   words, so the wider Source column cannot squeeze them out of the row. */
+.native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(10rem, 1fr) minmax(8.5rem, 11.875rem) 9.5rem max-content; }
+/* The last column's least, 4.5rem as before, is kept on its control instead, and on the header's
+   empty last cell, so that the header's columns stay over the rows'. */
+.native-filelist :is(.file-head, .file-row) > :last-child { min-width: 4.5rem; }
 .native-rename-dialog, .native-confirm-dialog { max-width: 480px; }
 .native-confirm-message { display: grid; gap: 8px; padding: 16px 20px; }
 .native-dialog-status { margin: 0; padding: 0 20px; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
@@ -1010,18 +1042,32 @@ h1, h2, p { margin: 0; }
 /* Zoomed in, a mouse or pen drags the photo to move around (#73). */
 .photo-viewer-frame.can-drag { cursor: grab; }
 .photo-viewer-frame.dragging { cursor: grabbing; user-select: none; }
-@media (max-width: 56.25em) {
+/* #135: from 63.5em down, not 56.25em: the five columns at their least (44px, 10rem, 8.5rem and
+   9.5rem, then the widest Rename or Details in the five languages, the Spanish "Cambiar nombre",
+   about 143px in regular DejaVu Sans; with four 12px gaps and 14px padding each side) need a 711px list,
+   and the page takes 304px around it while the sidebar is shown, so they fit from 1015px up. */
+@media (max-width: 63.5em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr) minmax(4.5rem, auto); }
+  .native-filelist :is(.file-head, .file-row) > :last-child { min-width: 0; }
+  .native-filelist :is(.file-head, .file-row) > .column { display: none; }
   /* #67: the source and date columns are hidden here, so the name is the only way to
      tell items apart. At 16px a phone leaves it about 8rem, so a folder's or a
      document's name wraps instead of being cut short. */
   .native-filelist :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
+  /* #135: without the Source column, a document's status and source go under its name, on a
+     line of their own, so that the status is still in view. A status word wider than the line
+     runs into the row's padding rather than being cut off. */
+  .native-filelist .file-row { row-gap: 4px; }
+  .native-filelist .file-row > .record-source { display: flex; grid-column: 2 / -1; grid-row: 2; overflow: visible; }
 }
 /* After the rule above, which it narrows further (see #84 above). */
 @media (max-width: 22em) {
   .native-filelist .file-head, .native-filelist .file-row { grid-template-columns: 44px minmax(0, 1fr); row-gap: 4px; }
   .native-filelist .file-row > :last-child { grid-column: 2; justify-self: start; }
   .native-filelist .file-head > :last-child:not(:nth-child(2)) { display: none; }
+  /* #135: the status line takes the row's whole width, so that a long status word, such as
+     "Zweryfikowano" at 200% text, fits whole. */
+  .native-filelist .file-row > .record-source { grid-column: 1 / -1; }
 }
 /* #119: other languages' words are longer. With large text on a phone, the
    sort choices, List and Grid, and the people's buttons wrap onto more lines
