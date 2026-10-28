@@ -81,6 +81,8 @@ export const ptBR: Record<MessageKey, Message> = {
     "Não foi possível concluir a solicitação ao portal. Verifique a conexão e o relógio do dispositivo e tente novamente.",
   "portal.errorRefused":
     "Não foi possível verificar um documento da clínica. Ele não foi adicionado e nenhum recibo de retirada foi enviado.",
+  "portal.errorDamaged":
+    "Um documento salvo desta clínica está danificado ou ausente, por isso o recibo de retirada não foi enviado. A busca pelos seus outros documentos continuou. Restaure-o a partir de um backup ou peça à clínica que o envie novamente.",
 
   "frame.banner.title": "Versão de desenvolvimento com dados fictícios",
   "frame.banner.body": "Não use informações reais de pacientes",
@@ -251,6 +253,14 @@ export const ptBR: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Renomear documento",
+  "rename.title.profile": "Renomear a pasta da pessoa",
+  "rename.label.profile": "Nome da pasta",
+  "rename.help.profile":
+    "Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.",
+  "rename.profile.controls":
+    "Os nomes não podem conter caracteres de controle.",
+  "rename.profile.saved": "O nome da pasta foi alterado para {name}.",
+  "rename.profile.action": "Renomear “{name}”",
   "rename.title.folder": "Renomear pasta",
   "rename.label.folder": "Nome da pasta",
   "rename.label.document": "Nome do arquivo",
@@ -506,6 +516,10 @@ export const ptBR: Record<MessageKey, Message> = {
     "Nenhuma cópia de segurança foi salva: o documento “{name}” ({where}) está danificado e não pode mais ser lido, e uma cópia que o contenha não poderia ser restaurada. Nada foi alterado. Guarde seus backups anteriores. Peça ajuda para recuperar este documento de uma cópia ou backup em boas condições antes de tentar novamente.",
   "error.damaged.where": "adicionado em {date}",
   "error.damaged.whereFor": "adicionado em {date}, nos documentos de {person}",
+  "error.newerFormat.vault":
+    "Este cofre foi salvo por uma versão mais recente do myCarlos. Atualize o myCarlos para abri-lo. Nada foi alterado.",
+  "error.newerFormat.backup":
+    "Esta cópia de segurança foi salva por uma versão mais recente do myCarlos. Atualize o myCarlos para restaurá-la. Nada foi alterado neste dispositivo.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -590,12 +604,15 @@ export const ptBR: Record<MessageKey, Message> = {
   "library.noMatch.title": "Nenhum documento corresponde",
   "library.noMatch.help": "Tente outra pesquisa.",
   // Optional identity details and explicit shared-document suggestions (#97).
-  "personDetails.fullName":
-    "Nome completo, como nos documentos da clínica (opcional)",
-  "personDetails.birthDate": "Data de nascimento (opcional)",
+  "personDetails.fullName": "Nome completo, como nos documentos da clínica",
+  "personDetails.birthDate": "Data de nascimento",
+  "personDetails.birthDateUnknown": "Não sei a data de nascimento desta pessoa",
   "personDetails.help":
     "Guardados neste cofre criptografado para sugerir a quem um documento compartilhado pertence. Esses dados não verificam a origem de um documento.",
   "personDetails.nameTooLong": "Este nome completo é muito longo. Encurte-o.",
+  "personDetails.fullNameRequired": "Digite o nome completo da pessoa.",
+  "personDetails.birthDateRequired":
+    "Digite a data de nascimento ou indique que não a conhece.",
   "personDetails.invalidDate":
     "Digite uma data de nascimento válida: ano, mês e dia.",
   "personDetails.futureDate": "A data de nascimento não pode estar no futuro.",

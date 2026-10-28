@@ -99,6 +99,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     }),
     restore: vi.fn().mockResolvedValue(true),
     createProfile: vi.fn().mockResolvedValue("profile-2"),
+    renameProfile: vi.fn().mockResolvedValue(undefined),
     createFolder: vi.fn().mockResolvedValue("folder-1"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
     renameRecord: vi.fn().mockResolvedValue(undefined),
