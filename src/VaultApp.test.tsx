@@ -1,4 +1,4 @@
-import { humanText } from "./test/humanText";
+import { humanText, humanValue } from "./test/humanText";
 import {
   act,
   fireEvent,
@@ -9748,7 +9748,8 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     ).toBeVisible();
   };
   /** The library's polite status line, as it reads. */
-  const said = () => screen.getByRole("status").textContent;
+  // Fluent isolates placeables; compare what a person reads.
+  const said = () => humanValue(screen.getByRole("status").textContent);
 
   it("checks once after the unlock's own message, and says what arrived without moving focus or opening it", async () => {
     const { bridge, deliver } = clinicBridge(vaultWith(approved));
@@ -9765,7 +9766,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     ).toBeVisible();
     expect(bridge.checkDocuments).not.toHaveBeenCalled();
     const search = screen.getByPlaceholderText(
-      "Search everything in My records",
+      humanText("Search everything in My records"),
     );
     search.focus();
     await pass(ANNOUNCE_DELAY_MS);
@@ -10571,7 +10572,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await lockNow();
     await unlock();
     const search = screen.getByPlaceholderText(
-      "Search everything in My records",
+      humanText("Search everything in My records"),
     );
     search.focus();
     await pass(ANNOUNCE_DELAY_MS);

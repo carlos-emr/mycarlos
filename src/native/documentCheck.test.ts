@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { humanValue } from "../test/humanText";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import {
   documentCheckText,
@@ -31,36 +32,44 @@ const OFFLINE =
 
 describe("what a check for new clinic documents says (#128)", () => {
   it("says nothing after unlocking when nothing arrived and nothing went wrong", () => {
-    expect(unlockCheckText(found(), every)).toBe("");
-    expect(unlockCheckText(found({ issues: undefined }), every)).toBe("");
+    expect(humanValue(unlockCheckText(found(), every))).toBe("");
+    expect(
+      humanValue(unlockCheckText(found({ issues: undefined }), every)),
+    ).toBe("");
   });
 
   it("says what arrived as Check for new documents says it", () => {
-    expect(documentCheckText(found({ added: 2 }))).toBe(
+    expect(humanValue(documentCheckText(found({ added: 2 })))).toBe(
       "New documents saved: 2. Documents that could not be verified: 0.",
     );
-    expect(unlockCheckText(found({ added: 2 }), every)).toBe(
+    expect(humanValue(unlockCheckText(found({ added: 2 }), every))).toBe(
       `${CHECKED} New documents saved: 2. Documents that could not be verified: 0.`,
     );
   });
 
   it("tells a check that could not finish apart from an empty one, and names the retry", () => {
     expect(
-      unlockCheckText(
-        found({ issues: [clinic("a", "portal_link_incomplete")] }),
-        every,
+      humanValue(
+        unlockCheckText(
+          found({ issues: [clinic("a", "portal_link_incomplete")] }),
+          every,
+        ),
       ),
     ).toBe(`${NOT_FINISHED} FAKE Clinic a: ${OFFLINE} ${RETRY}`);
     expect(
-      unlockCheckFailedText({ code: "storage", message: "FAKE fault." }),
+      humanValue(
+        unlockCheckFailedText({ code: "storage", message: "FAKE fault." }),
+      ),
     ).toBe(`${NOT_FINISHED} FAKE fault. ${RETRY}`);
   });
 
   it("keeps what arrived beside another clinic's problem", () => {
     expect(
-      unlockCheckText(
-        found({ added: 1, issues: [clinic("b", "approval_expired")] }),
-        every,
+      humanValue(
+        unlockCheckText(
+          found({ added: 1, issues: [clinic("b", "approval_expired")] }),
+          every,
+        ),
       ),
     ).toBe(
       `${CHECKED} Some clinic checks need attention. New documents saved: 1. Documents that could not be verified: 0. FAKE Clinic b: This approval request expired. To ask again for this device, go to Security, under Clinic documents.`,
@@ -70,9 +79,13 @@ describe("what a check for new clinic documents says (#128)", () => {
   it("speaks only for the links the check was for", () => {
     const counted = (id: string) => id === "a";
     const elsewhere = [clinic("b", "portal_link_incomplete")];
-    expect(unlockCheckText(found({ issues: elsewhere }), counted)).toBe("");
     expect(
-      unlockCheckText(found({ added: 1, issues: elsewhere }), counted),
+      humanValue(unlockCheckText(found({ issues: elsewhere }), counted)),
+    ).toBe("");
+    expect(
+      humanValue(
+        unlockCheckText(found({ added: 1, issues: elsewhere }), counted),
+      ),
     ).toBe(
       `${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
     );
@@ -81,14 +94,16 @@ describe("what a check for new clinic documents says (#128)", () => {
   it("says plainly that a document could not be verified, and to contact the clinic", () => {
     // The portal offers it again at every unlock: no receipt is sent for
     // it. No count of nothing saved, and no retry that cannot help.
-    expect(unlockCheckText(found({ refused: 1 }), every)).toBe(
+    expect(humanValue(unlockCheckText(found({ refused: 1 }), every))).toBe(
       `${CHECKED} 1 clinic document could not be verified, so it was not added. Contact your clinic.`,
     );
-    expect(unlockCheckText(found({ refused: 2 }), every)).toBe(
+    expect(humanValue(unlockCheckText(found({ refused: 2 }), every))).toBe(
       `${CHECKED} 2 clinic documents could not be verified, so they were not added. Contact your clinic.`,
     );
     // Beside saved documents, the counts say it.
-    expect(unlockCheckText(found({ added: 1, refused: 1 }), every)).toBe(
+    expect(
+      humanValue(unlockCheckText(found({ added: 1, refused: 1 }), every)),
+    ).toBe(
       `${CHECKED} New documents saved: 1. Documents that could not be verified: 1.`,
     );
   });
@@ -109,47 +124,59 @@ describe("what a check for new clinic documents says (#128)", () => {
       ],
     ])
       expect(
-        unlockCheckText(found({ issues: [clinic("a", code)] }), every),
+        humanValue(
+          unlockCheckText(found({ issues: [clinic("a", code)] }), every),
+        ),
       ).toBe(`${NOT_FINISHED} FAKE Clinic a: ${detail}`);
     // One problem that checking again can help is enough.
     expect(
-      unlockCheckText(
-        found({
-          issues: [
-            clinic("a", "portal_device_removed"),
-            clinic("b", "portal_link_incomplete"),
-          ],
-        }),
-        every,
+      humanValue(
+        unlockCheckText(
+          found({
+            issues: [
+              clinic("a", "portal_device_removed"),
+              clinic("b", "portal_link_incomplete"),
+            ],
+          }),
+          every,
+        ),
       ).endsWith(`${OFFLINE} ${RETRY}`),
     ).toBe(true);
     expect(
-      unlockCheckFailedText({
-        code: "recovery_mode",
-        message: "FAKE native recovery text.",
-      }),
+      humanValue(
+        unlockCheckFailedText({
+          code: "recovery_mode",
+          message: "FAKE native recovery text.",
+        }),
+      ),
     ).toBe(`${NOT_FINISHED} FAKE native recovery text.`);
     expect(
-      unlockCheckFailedText({
-        code: "portal_rate_limited",
-        message: "FAKE native text.",
-      }),
+      humanValue(
+        unlockCheckFailedText({
+          code: "portal_rate_limited",
+          message: "FAKE native text.",
+        }),
+      ),
     ).toBe(
       `${NOT_FINISHED} The clinic portal asked myCarlos to wait before trying again.`,
     );
   });
 
   it("says confirmations still owed, and to check again, once", () => {
-    expect(unlockCheckText(found({ receiptsPending: 2 }), every)).toBe(
+    expect(
+      humanValue(unlockCheckText(found({ receiptsPending: 2 }), every)),
+    ).toBe(
       `${NOT_FINISHED} Saved documents awaiting pickup confirmation: 2. Check again to finish confirmation. Your saved copies stay in the vault.`,
     );
     expect(
-      unlockCheckText(
-        found({
-          receiptsPending: 1,
-          issues: [clinic("a", "portal_link_incomplete")],
-        }),
-        every,
+      humanValue(
+        unlockCheckText(
+          found({
+            receiptsPending: 1,
+            issues: [clinic("a", "portal_link_incomplete")],
+          }),
+          every,
+        ),
       ),
     ).toBe(
       `${NOT_FINISHED} FAKE Clinic a: ${OFFLINE} Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.`,
@@ -158,9 +185,11 @@ describe("what a check for new clinic documents says (#128)", () => {
 
   it("says a device the portal removed whatever its approval", () => {
     expect(
-      unlockCheckText(
-        found({ issues: [clinic("waiting", "portal_device_removed")] }),
-        (id) => id !== "waiting",
+      humanValue(
+        unlockCheckText(
+          found({ issues: [clinic("waiting", "portal_device_removed")] }),
+          (id) => id !== "waiting",
+        ),
       ),
     ).toBe(
       `${NOT_FINISHED} FAKE Clinic waiting: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
@@ -168,7 +197,7 @@ describe("what a check for new clinic documents says (#128)", () => {
   });
 
   it("says a check that did not run, and how to check", () => {
-    expect(unlockCheckNotRunText()).toBe(
+    expect(humanValue(unlockCheckNotRunText())).toBe(
       `myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
     );
   });
@@ -178,35 +207,47 @@ describe("what a check for new clinic documents says (#128)", () => {
       setLocaleOverride(locale);
       const check = translate(locale, "portal.check");
       expect(
-        unlockCheckText(
-          found({ issues: [clinic("a", "portal_link_incomplete")] }),
-          every,
+        humanValue(
+          unlockCheckText(
+            found({ issues: [clinic("a", "portal_link_incomplete")] }),
+            every,
+          ),
         ),
       ).toBe(
-        [
-          translate(locale, "portal.unlockCheckIncomplete"),
-          translate(locale, "portal.clinicIssue", {
-            clinic: "FAKE Clinic a",
-            detail: translate(locale, "portal.errorIncomplete"),
-          }),
-          translate(locale, "portal.checkAgain", { button: check }),
-        ].join(" "),
+        humanValue(
+          [
+            translate(locale, "portal.unlockCheckIncomplete"),
+            translate(locale, "portal.clinicIssue", {
+              clinic: "FAKE Clinic a",
+              detail: translate(locale, "portal.errorIncomplete"),
+            }),
+            translate(locale, "portal.checkAgain", { button: check }),
+          ].join(" "),
+        ),
       );
       expect(
         translate(locale, "portal.checkAgain", { button: check }),
       ).toContain(check);
-      expect(unlockCheckText(found({ added: 1 }), every)).toBe(
-        `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.result", { added: 1, refused: 0 })}`,
+      expect(humanValue(unlockCheckText(found({ added: 1 }), every))).toBe(
+        humanValue(
+          `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.result", { added: 1, refused: 0 })}`,
+        ),
       );
       for (const count of [1, 2, 5, 22])
-        expect(unlockCheckText(found({ refused: count }), every)).toBe(
-          `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.unlockRefused", { count })}`,
+        expect(
+          humanValue(unlockCheckText(found({ refused: count }), every)),
+        ).toBe(
+          humanValue(
+            `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.unlockRefused", { count })}`,
+          ),
         );
-      expect(unlockCheckWaitingText()).toBe(
-        translate(locale, "portal.unlockCheckWaiting"),
+      expect(humanValue(unlockCheckWaitingText())).toBe(
+        humanValue(translate(locale, "portal.unlockCheckWaiting")),
       );
-      expect(unlockCheckNotRunText()).toBe(
-        `${translate(locale, "portal.unlockCheckNotRun")} ${translate(locale, "portal.checkAgain", { button: check })}`,
+      expect(humanValue(unlockCheckNotRunText())).toBe(
+        humanValue(
+          `${translate(locale, "portal.unlockCheckNotRun")} ${translate(locale, "portal.checkAgain", { button: check })}`,
+        ),
       );
     }
   });
