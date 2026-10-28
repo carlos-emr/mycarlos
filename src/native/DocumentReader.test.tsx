@@ -1,5 +1,5 @@
-import { humanText } from "../test/humanText";
-import { render, screen, within } from "@testing-library/react";
+import { humanText, visibleText } from "../test/humanText";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { cacheDrawnPage, DocumentReader } from "./DocumentReader";
@@ -129,14 +129,19 @@ describe("the document reader", () => {
     await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     expect(
       screen.getByRole("button", { name: humanText("Previous page") }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     await user.click(
       screen.getByRole("button", { name: humanText("Next page") }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     expect(
       screen.getByRole("button", { name: humanText("Next page") }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
+    // A button that cannot be used does nothing.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Next page") }),
+    );
+    expect(viewPage).toHaveBeenCalledTimes(2);
     await user.click(
       screen.getByRole("button", { name: humanText("Previous page") }),
     );
@@ -234,9 +239,11 @@ describe("the document reader", () => {
     expect(
       screen.getByRole("status").getBoundingClientRect().height,
     ).toBeGreaterThan(1);
-    // Sizes and pages cannot be asked for while one is being drawn.
-    for (const name of ["Larger", "Smaller", "Next page"])
+    // Sizes cannot be asked for while one is being drawn; the page buttons
+    // wait for the page count.
+    for (const name of ["Larger", "Smaller"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
     await user.click(screen.getByRole("button", { name: humanText("Larger") }));
     expect(viewPage).toHaveBeenCalledTimes(1);
     finish(page(0));
@@ -319,5 +326,222 @@ describe("the document reader", () => {
     expect(failure).toBeVisible();
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.queryByText(humanText("Text on this page"))).toBeNull();
+  });
+});
+
+/** A FAKE document of `count` pages. */
+const pagesOf = (count: number) =>
+  vi.fn(async (index: number, _width: number, _password?: string) => ({
+    ...page(index),
+    pageCount: count,
+  }));
+const pageButton = (name: string) =>
+  screen.getByRole("button", { name: humanText(name) });
+const bar = () => document.querySelector<HTMLElement>(".native-reader-pages")!;
+/** Each element's row on screen, as the height of its middle. */
+const rowsOf = (elements: Element[]) =>
+  elements.map((element) => {
+    const { top, bottom } = element.getBoundingClientRect();
+    return Math.round((top + bottom) / 2);
+  });
+
+// D144 (Ben, 28 Oct): the page buttons in a bar at the reader's foot, in
+// words, with First and Last; the zoom alone at the top left.
+describe("the reader's page bar", () => {
+  it("is at the foot, in words and in reading order, with the zoom alone at the top left", async () => {
+    renderReader(pagesOf(5));
+    const picture = await screen.findByRole("img", {
+      name: humanText(/^Page 1 of 5/),
+    });
+    const reader = screen.getByRole("dialog");
+    expect(reader.lastElementChild).toBe(bar());
+    expect(
+      Array.from(bar().children, (child) =>
+        visibleText(child.textContent ?? ""),
+      ),
+    ).toEqual([
+      "First page",
+      "Previous page",
+      "Page 1 of 5",
+      "Next page",
+      "Last page",
+    ]);
+    // Below the page, in one row on a wide reader.
+    expect(bar().getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      picture.parentElement!.getBoundingClientRect().bottom - 1,
+    );
+    expect(new Set(rowsOf(Array.from(bar().children))).size).toBe(1);
+    // The top row holds the zoom only, from the reader's left.
+    const controls = document.querySelector(".native-reader-controls")!;
+    expect(within(controls as HTMLElement).queryAllByRole("button")).toEqual(
+      within(controls as HTMLElement).getAllByRole("button", {
+        name: /Smaller|Larger|Fit width/,
+      }),
+    );
+    const zoom = controls.querySelector(".native-reader-zoom")!;
+    expect(
+      zoom.getBoundingClientRect().left - reader.getBoundingClientRect().left,
+    ).toBeLessThanOrEqual(24);
+    // Each button names its key, for screen readers.
+    expect(
+      ["First page", "Previous page", "Next page", "Last page"].map((name) =>
+        pageButton(name).getAttribute("aria-keyshortcuts"),
+      ),
+    ).toEqual(["Home", "PageUp", "PageDown", "End"]);
+  });
+
+  it("goes to the first and the last page", async () => {
+    const user = userEvent.setup();
+    const viewPage = pagesOf(5);
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    expect(pageButton("First page")).toHaveAttribute("aria-disabled", "true");
+    await user.click(pageButton("Last page"));
+    await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
+    expect(viewPage).toHaveBeenLastCalledWith(4, expect.any(Number), undefined);
+    for (const name of ["Next page", "Last page"])
+      expect(pageButton(name)).toHaveAttribute("aria-disabled", "true");
+    expect(pageButton("Previous page")).toHaveAttribute(
+      "aria-disabled",
+      "false",
+    );
+    await user.click(pageButton("First page"));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    // Page 1 was kept from before.
+    expect(viewPage).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the focus on a page button once it cannot be used", async () => {
+    const user = userEvent.setup();
+    renderReader(pagesOf(5));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    pageButton("Last page").focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
+    expect(pageButton("Last page")).toHaveFocus();
+    expect(pageButton("Last page")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("does not turn a page while one is being drawn", async () => {
+    const user = userEvent.setup();
+    let finish: (value: ViewedPage) => void = () => undefined;
+    const viewPage = vi.fn(
+      (index: number, _width: number, _password?: string) =>
+        index === 0
+          ? Promise.resolve({ ...page(0), pageCount: 5 })
+          : new Promise<ViewedPage>((resolve) => {
+              finish = resolve;
+            }),
+    );
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await user.click(pageButton("Next page"));
+    await screen.findByText(humanText("Opening page 2…"));
+    for (const name of [
+      "First page",
+      "Previous page",
+      "Next page",
+      "Last page",
+    ])
+      expect(pageButton(name)).toHaveAttribute("aria-disabled", "true");
+    await user.click(pageButton("Last page"));
+    await user.keyboard("{End}");
+    finish({ ...page(1), pageCount: 5 });
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    expect(viewPage).toHaveBeenCalledTimes(2);
+  });
+
+  it("turns pages with Home, End, Page Up and Page Down", async () => {
+    const user = userEvent.setup();
+    renderReader(pagesOf(5));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    screen.getByRole("region", { name: humanText("Page 1") }).focus();
+    await user.keyboard("{End}");
+    await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
+    await user.keyboard("{PageUp}");
+    await screen.findByRole("img", { name: humanText(/^Page 4 of 5/) });
+    await user.keyboard("{Home}");
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    // From a button too, and the key does not also scroll.
+    const close = within(screen.getByRole("dialog")).getByRole("button", {
+      name: humanText("Close"),
+    });
+    close.focus();
+    expect(fireEvent.keyDown(close, { key: "PageDown" })).toBe(false);
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    // With Ctrl, Alt, Shift or Cmd the key is the system's.
+    for (const modifier of ["ctrlKey", "altKey", "shiftKey", "metaKey"])
+      expect(fireEvent.keyDown(close, { key: "End", [modifier]: true })).toBe(
+        true,
+      );
+    expect(
+      screen.getByRole("img", { name: humanText(/^Page 2 of 5/) }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves Home, End, Page Up and Page Down to the password box", async () => {
+    const user = userEvent.setup();
+    const viewPage = vi
+      .fn()
+      .mockImplementationOnce(async () => ({ ...page(0), pageCount: 3 }))
+      .mockRejectedValueOnce(refusal("pdf_locked"))
+      .mockImplementation(async (index: number) => ({
+        ...page(index),
+        pageCount: 3,
+      }));
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 3/) });
+    await user.click(pageButton("Next page"));
+    const field = await screen.findByLabelText(humanText("Document password"));
+    await user.type(field, "FAKE-pw");
+    for (const key of ["Home", "End", "PageUp", "PageDown"])
+      expect(fireEvent.keyDown(field, { key })).toBe(true);
+    await user.keyboard("{Home}X");
+    expect(field).toHaveValue("XFAKE-pw");
+    expect(viewPage).toHaveBeenCalledTimes(2);
+    expect(
+      screen.getByRole("region", { name: humanText("Page 2") }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a one-page document's count only", async () => {
+    const viewPage = pagesOf(1);
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 1/) });
+    expect(visibleText(bar().textContent ?? "")).toBe("Page 1 of 1");
+    expect(within(bar()).queryAllByRole("button")).toEqual([]);
+    // Its keys scroll the page, as they would anywhere.
+    const area = screen.getByRole("region", { name: humanText("Page 1") });
+    for (const key of ["Home", "End", "PageUp", "PageDown"])
+      expect(fireEvent.keyDown(area, { key })).toBe(true);
+    expect(viewPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts the buttons two by two on a narrow reader, with the count between", async () => {
+    renderReader(pagesOf(5));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    // A phone's width: the reader is measured, not the window.
+    screen.getByRole("dialog").style.width = "360px";
+    const [first, previous, where, next, last] = Array.from(bar().children);
+    await vi.waitFor(() =>
+      expect(getComputedStyle(bar()).display).toBe("grid"),
+    );
+    const [firstRow, previousRow, whereRow, nextRow, lastRow] = rowsOf([
+      first,
+      previous,
+      where,
+      next,
+      last,
+    ]);
+    expect(previousRow).toBe(firstRow);
+    expect(lastRow).toBe(nextRow);
+    expect(whereRow).toBeGreaterThan(firstRow);
+    expect(nextRow).toBeGreaterThan(whereRow);
+    const left = (element: Element) => element.getBoundingClientRect().left;
+    expect(left(first)).toBe(left(next));
+    expect(left(previous)).toBe(left(last));
+    expect(left(previous)).toBeGreaterThan(left(first));
+    // Nothing runs off the reader's edge.
+    expect(bar().scrollWidth).toBeLessThanOrEqual(bar().clientWidth);
   });
 });

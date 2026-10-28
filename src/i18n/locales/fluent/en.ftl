@@ -182,9 +182,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Document password
 
+interface-DocumentReader-firstPage = First page
+
 interface-DocumentReader-fitWidth = Fit width
 
 interface-DocumentReader-larger = Larger
+
+interface-DocumentReader-lastPage = Last page
 
 interface-DocumentReader-nextPage = Next page
 

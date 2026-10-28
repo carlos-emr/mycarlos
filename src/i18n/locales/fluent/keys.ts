@@ -71,8 +71,10 @@ export const MESSAGE_KEYS = [
   "interface.CameraDialog.useTheCamera",
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword",
+  "interface.DocumentReader.firstPage",
   "interface.DocumentReader.fitWidth",
   "interface.DocumentReader.larger",
+  "interface.DocumentReader.lastPage",
   "interface.DocumentReader.nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis",
   "interface.DocumentReader.open",
@@ -676,8 +678,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword":
     "interface-DocumentReader-documentPassword",
+  "interface.DocumentReader.firstPage": "interface-DocumentReader-firstPage",
   "interface.DocumentReader.fitWidth": "interface-DocumentReader-fitWidth",
   "interface.DocumentReader.larger": "interface-DocumentReader-larger",
+  "interface.DocumentReader.lastPage": "interface-DocumentReader-lastPage",
   "interface.DocumentReader.nextPage": "interface-DocumentReader-nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis":
     "interface-DocumentReader-noTextCouldBeReadOnThis",
@@ -1385,8 +1389,10 @@ export interface MessageArgsByKey {
   "interface.CameraDialog.useTheCamera": undefined;
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay": undefined;
   "interface.DocumentReader.documentPassword": undefined;
+  "interface.DocumentReader.firstPage": undefined;
   "interface.DocumentReader.fitWidth": undefined;
   "interface.DocumentReader.larger": undefined;
+  "interface.DocumentReader.lastPage": undefined;
   "interface.DocumentReader.nextPage": undefined;
   "interface.DocumentReader.noTextCouldBeReadOnThis": undefined;
   "interface.DocumentReader.open": undefined;

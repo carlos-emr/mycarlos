@@ -140,9 +140,13 @@ interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay = 手機會詢問一�
 
 interface-DocumentReader-documentPassword = 文件密碼
 
+interface-DocumentReader-firstPage = 第一頁
+
 interface-DocumentReader-fitWidth = 符合寬度
 
 interface-DocumentReader-larger = 放大
+
+interface-DocumentReader-lastPage = 最後一頁
 
 interface-DocumentReader-nextPage = 下一頁
 

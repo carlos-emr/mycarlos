@@ -74,8 +74,10 @@ pub enum MessageId {
     InterfaceCameraDialogUseTheCamera,
     InterfaceCameraDialogYourPhoneAsksOnceWhetherMyCarlosMay,
     InterfaceDocumentReaderDocumentPassword,
+    InterfaceDocumentReaderFirstPage,
     InterfaceDocumentReaderFitWidth,
     InterfaceDocumentReaderLarger,
+    InterfaceDocumentReaderLastPage,
     InterfaceDocumentReaderNextPage,
     InterfaceDocumentReaderNoTextCouldBeReadOnThis,
     InterfaceDocumentReaderOpen,
@@ -670,8 +672,10 @@ impl MessageId {
         Self::InterfaceCameraDialogUseTheCamera,
         Self::InterfaceCameraDialogYourPhoneAsksOnceWhetherMyCarlosMay,
         Self::InterfaceDocumentReaderDocumentPassword,
+        Self::InterfaceDocumentReaderFirstPage,
         Self::InterfaceDocumentReaderFitWidth,
         Self::InterfaceDocumentReaderLarger,
+        Self::InterfaceDocumentReaderLastPage,
         Self::InterfaceDocumentReaderNextPage,
         Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis,
         Self::InterfaceDocumentReaderOpen,
@@ -1280,8 +1284,10 @@ impl MessageId {
             Self::InterfaceDocumentReaderDocumentPassword => {
                 "interface-DocumentReader-documentPassword"
             }
+            Self::InterfaceDocumentReaderFirstPage => "interface-DocumentReader-firstPage",
             Self::InterfaceDocumentReaderFitWidth => "interface-DocumentReader-fitWidth",
             Self::InterfaceDocumentReaderLarger => "interface-DocumentReader-larger",
+            Self::InterfaceDocumentReaderLastPage => "interface-DocumentReader-lastPage",
             Self::InterfaceDocumentReaderNextPage => "interface-DocumentReader-nextPage",
             Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis => {
                 "interface-DocumentReader-noTextCouldBeReadOnThis"
@@ -2067,8 +2073,10 @@ impl MessageId {
             "interface.DocumentReader.documentPassword" => {
                 Some(Self::InterfaceDocumentReaderDocumentPassword)
             }
+            "interface.DocumentReader.firstPage" => Some(Self::InterfaceDocumentReaderFirstPage),
             "interface.DocumentReader.fitWidth" => Some(Self::InterfaceDocumentReaderFitWidth),
             "interface.DocumentReader.larger" => Some(Self::InterfaceDocumentReaderLarger),
+            "interface.DocumentReader.lastPage" => Some(Self::InterfaceDocumentReaderLastPage),
             "interface.DocumentReader.nextPage" => Some(Self::InterfaceDocumentReaderNextPage),
             "interface.DocumentReader.noTextCouldBeReadOnThis" => {
                 Some(Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis)

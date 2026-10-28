@@ -435,18 +435,41 @@ h1, h2, p { margin: 0; }
 .bulkbar button:hover:not(:disabled) { background: var(--overlay-hover); }
 
 /* The document reader: the page picture scrolls inside it when zoomed in. */
-.record-dialog.native-reader { display: flex; flex-direction: column; width: min(1100px, 100%); max-width: none; height: 92vh; }
+.record-dialog.native-reader { display: flex; flex-direction: column; width: min(1100px, 100%); max-width: none; height: 92vh; container: native-reader / inline-size; }
 .native-reader-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .native-reader-head h2 { overflow-wrap: anywhere; }
 .native-reader-head p { margin: 2px 0 0; color: var(--ink-soft); font-size: 0.875rem; }
 .native-reader-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
 .native-reader-where { min-width: 7em; text-align: center; font-weight: 700; }
-.native-reader-zoom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.native-reader-zoom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* D144: the page buttons in a bar at the reader's foot. When large text makes the reader scroll,
+   the bar stays in view at its bottom edge. One row, centred; a webview without container
+   queries wraps the row instead of using the grid below. */
+.native-reader-pages { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--paper); }
+/* aria-disabled keeps the focus (DocumentReader.tsx); hovering does not make it look usable. */
+.native-reader-pages .button[aria-disabled="true"], .native-reader-pages .button[aria-disabled="true"]:hover { cursor: not-allowed; background: var(--disabled-bg); }
+/* A narrow reader (a phone, or large text): two by two, with the count between the rows, so the
+   order on screen is the order read out and tabbed through. In em, so that it follows the text
+   size; measured on the reader, which stops growing at 1100px, not on the window. */
+@container native-reader (max-width: 52em) {
+  .native-reader-pages { display: grid; grid-template-columns: repeat(2, minmax(0, 12em)); justify-content: center; grid-template-areas: "first previous" "where where" "next last"; padding-inline: 12px; }
+  /* A word too long for its half breaks with a hyphen where the system can, and is never cut. */
+  .native-reader-pages .button { width: 100%; padding-inline: 8px; hyphens: auto; overflow-wrap: anywhere; }
+  .native-reader-first { grid-area: first; }
+  .native-reader-previous { grid-area: previous; }
+  .native-reader-pages .native-reader-where { grid-area: where; min-width: 0; }
+  .native-reader-next { grid-area: next; }
+  .native-reader-last { grid-area: last; }
+  .native-reader-pages.one-page { display: flex; }
+}
 /* The gutter is kept, so that a page fitted to the width does not scroll sideways once a tall page
-   brings a classic scrollbar. */
-.native-reader-page { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 12px; background: var(--canvas-2); text-align: center; }
+   brings a classic scrollbar. D144: the page keeps room to be read; when the text is large for
+   the window, the reader scrolls instead, with the page bar kept at its foot. */
+.native-reader-page { flex: 1; min-height: min(16em, 40vh); overflow: auto; scrollbar-gutter: stable; padding: 12px; background: var(--canvas-2); text-align: center; }
 .native-reader-page img { display: inline-block; max-width: none; height: auto; box-shadow: var(--shadow-sm); background: var(--paper); }
-.native-reader-text { max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
+/* It scrolls itself, so without flex-shrink: 0 a reader too short for everything (large text on a
+   phone) would squeeze it to nothing; the reader scrolls instead. */
+.native-reader-text { flex-shrink: 0; max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }
 .native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
