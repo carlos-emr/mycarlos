@@ -1,6 +1,7 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
 use crate::portal_link::{self, LinkSummary, StoredLink};
+use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -235,6 +236,8 @@ fn cancelled_io_error() -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum VaultError {
+    #[error("a bundled user message could not be formatted")]
+    Localization,
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
     #[cfg(feature = "portal-linking")]
@@ -606,6 +609,8 @@ pub struct VaultRecord {
     pub folder_ids: Vec<Uuid>,
     pub display_name: String,
     pub source_label: String,
+    /// Presentation identity; the stored source label remains unchanged.
+    pub source_kind: &'static str,
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
@@ -1341,6 +1346,113 @@ impl VaultStore {
         ))
     }
 
+    /// The strict read: the whole history, or `Corrupt` when any of it does not check out.
+    /// Tests use it to hold `history_view`'s `complete` to the rules the old all-or-nothing read
+    /// enforced.
+    #[cfg(test)]
+    pub fn history_entries(&self) -> Result<Vec<HistoryEntry>, VaultError> {
+        let view = self.history_view()?;
+        if view.complete {
+            Ok(view.entries)
+        } else {
+            Err(VaultError::Corrupt)
+        }
+    }
+
+    /// The audit history as far as it checks out (Ben's D129 and D146, mycarlos#120), for
+    /// Security's view.
+    ///
+    /// Every segment is read in order. `entries` are those before the first piece that is gone or
+    /// does not authenticate, kept only while each follows the one before from the genesis value,
+    /// and never past the manifest's count. `later` are those after the last such piece, kept only
+    /// back from the end as far as the manifest's pinned head proves them (`linked_suffix`), and
+    /// never one already in `entries`. So every entry returned is authenticated by the chain from
+    /// its start or from its pinned end, in order; nothing between is shown. `complete` is true
+    /// exactly when every piece was read and `entries` are the whole chain the manifest pins (its
+    /// count and head), as `verify` checks; a damaged padding piece makes it false too.
+    pub fn history_view(&self) -> Result<HistoryView, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let cancelled = || self.cancel_io.load(Ordering::Acquire);
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        let manifest = &unlocked.manifest;
+        if manifest.history.is_empty() {
+            // A vault from before the history has none to show; a newer one must have one.
+            let complete = manifest.format_version < MANIFEST_FORMAT_HISTORY;
+            return Ok(HistoryView {
+                entries: Vec::new(),
+                later: Vec::new(),
+                complete,
+            });
+        }
+        let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
+        let mut entries = Vec::new();
+        let mut later = Vec::new();
+        let mut all_read = true;
+        for segment in &manifest.history.segments {
+            run_at_test_boundary("history-segment-read");
+            if cancelled() {
+                return Err(VaultError::Cancelled);
+            }
+            match read_history_segment_cancellable(
+                &self.root,
+                &keys,
+                manifest.vault_id,
+                segment,
+                Arc::clone(&self.cancel_io),
+            ) {
+                Ok(found) if all_read => entries.extend(found),
+                Ok(found) => later.extend(found),
+                // A damaged or missing piece: nothing in it can be checked, and what follows it
+                // only back from the pinned end.
+                Err(error) if history_piece_damaged(&error) => {
+                    all_read = false;
+                    later.clear();
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let (linked, head) = history::linked_prefix(manifest.vault_id, &entries, cancelled)
+            .map_err(|_| VaultError::Cancelled)?;
+        let pinned = usize::try_from(manifest.history.count).unwrap_or(usize::MAX);
+        // Complete exactly when the strict read passes: every piece read (padding too), every
+        // entry linked, and the chain ending at the pinned count and head.
+        let complete = all_read
+            && linked == entries.len()
+            && linked == pinned
+            && head == manifest.history.head;
+        if complete {
+            later.clear();
+        } else if all_read {
+            // No piece is damaged, but the chain breaks or does not end as pinned: what the
+            // pinned head proves, walking back from it, can still be shown.
+            later.clone_from(&entries);
+        }
+        entries.truncate(linked.min(pinned));
+        let proven = history::linked_suffix(
+            &later,
+            manifest.history.count,
+            &manifest.history.head,
+            cancelled,
+        )
+        .map_err(|_| VaultError::Cancelled)?;
+        later.drain(..later.len() - proven);
+        // Each entry once: the later ones are those after the checked start.
+        let shown = entries.len() as u64;
+        later.retain(|entry| entry.seq >= shown);
+        run_at_test_boundary("history-verified");
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(HistoryView {
+            entries,
+            later,
+            complete,
+        })
+    }
+
     fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
         VaultSnapshot {
             portal_linking_enabled: crate::portal_client::available(),
@@ -1362,6 +1474,7 @@ impl VaultStore {
                     folder_ids: record.folder_ids.clone(),
                     display_name: record.display_name.clone(),
                     source_label: record.source_label.clone(),
+                    source_kind: "manual",
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
@@ -2749,17 +2862,33 @@ impl VaultStore {
     /// The recovery kit for the key shown by `begin_recovery_key` and not yet
     /// confirmed: the key, when it was made and what it is for. It names no
     /// patient or document, so a kit someone else finds says nothing more.
+    #[cfg(test)]
     pub fn recovery_kit(&self, now_ms: u64) -> Result<Zeroizing<String>, VaultError> {
+        self.recovery_kit_in(now_ms, crate::ui_text::UiLocale::En)
+    }
+
+    pub fn recovery_kit_in(
+        &self,
+        now_ms: u64,
+        locale: crate::ui_text::UiLocale,
+    ) -> Result<Zeroizing<String>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let pending = unlocked
             .pending_recovery_key
             .as_ref()
             .ok_or(VaultError::Invalid)?;
-        Ok(recovery_kit_text(
-            &encode_recovery_key(&pending.key),
-            &recovery_key_label(pending.key_id),
-            now_ms,
+        Ok(Zeroizing::new(
+            locale
+                .render_raw(
+                    MessageId::NativeKitText,
+                    &[
+                        ("key", &encode_recovery_key(&pending.key)),
+                        ("label", &recovery_key_label(pending.key_id)),
+                        ("date", &utc_date_text(now_ms)),
+                    ],
+                )
+                .map_err(|_| VaultError::Localization)?,
         ))
     }
 
@@ -2813,13 +2942,23 @@ impl VaultStore {
     /// Saves the recovery kit to a file the patient chose, as an export is
     /// saved: never inside the vault home, private to the user, and replacing
     /// a link at the destination rather than writing through it.
+    #[cfg(test)]
     pub fn save_recovery_kit(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
+        self.save_recovery_kit_in(destination, now_ms, crate::ui_text::UiLocale::En)
+    }
+
+    pub fn save_recovery_kit_in(
+        &self,
+        destination: &Path,
+        now_ms: u64,
+        locale: crate::ui_text::UiLocale,
+    ) -> Result<(), VaultError> {
         let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
         }
-        let kit = self.recovery_kit(now_ms)?;
+        let kit = self.recovery_kit_in(now_ms, locale)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -4681,32 +4820,6 @@ fn recovery_key_label(key_id: Uuid) -> String {
 
 /// The text of a recovery kit. Plain text, so that it prints and opens
 /// anywhere; the date is UTC.
-fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
-    let (year, month, day) = utc_date(now_ms);
-    Zeroizing::new(format!(
-        "myCarlos recovery kit\n\
-         =====================\n\
-         \n\
-         Recovery key:  {key}\n\
-         Key label:     {label} (not secret: it tells kits apart)\n\
-         Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
-         \n\
-         What it is for\n\
-         If you forget your myCarlos passphrase, this key opens your vault on\n\
-         this device and lets you choose a new passphrase. It works once you\n\
-         have finished the check in myCarlos that follows saving this kit.\n\
-         \n\
-         Keep it safe\n\
-         - Keep this kit somewhere private and away from the device, for\n  \
-         example printed and stored with your important papers. Anyone with\n  \
-         this key and a copy of your vault can open it.\n\
-         - If you set up a new recovery key, this one no longer opens the\n  \
-         vault on this device.\n\
-         - Neither your clinic nor the makers of myCarlos can open your vault\n  \
-         for you.\n"
-    ))
-}
-
 /// The UTC date of `ms`, as `YYYY-MM-DD`.
 pub(crate) fn utc_date_text(ms: u64) -> String {
     let (year, month, day) = utc_date(ms);
@@ -5487,6 +5600,25 @@ fn write_history_segment(
     })
 }
 
+/// Whether a history piece failed to read because it is damaged or gone (`Corrupt`: missing, cut
+/// short, or not authenticating), as opposed to a failed storage operation (or a full disk) that a
+/// retry can get past and that says nothing about damage: those fail the whole read, as before
+/// D129, instead of being shown as damage.
+fn history_piece_damaged(error: &VaultError) -> bool {
+    matches!(error, VaultError::Corrupt)
+}
+
+/// The audit history as far as it checks out; see `VaultStore::history_view`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct HistoryView {
+    /// Entries authenticated from the start of the chain, in order.
+    pub entries: Vec<HistoryEntry>,
+    /// Entries after a damaged part that the manifest's pinned head proves, in order (D146).
+    pub later: Vec<HistoryEntry>,
+    /// Whether they are the whole chain the manifest pins.
+    pub complete: bool,
+}
+
 /// The entries in one segment. `Corrupt` when its object is gone or does not
 /// authenticate, or holds other entries than the manifest says.
 fn read_history_segment(
@@ -5494,6 +5626,16 @@ fn read_history_segment(
     keys: &DerivedKeys,
     vault_id: Uuid,
     segment: &HistorySegment,
+) -> Result<Vec<HistoryEntry>, VaultError> {
+    read_history_segment_cancellable(root, keys, vault_id, segment, Arc::default())
+}
+
+fn read_history_segment_cancellable(
+    root: &Path,
+    keys: &DerivedKeys,
+    vault_id: Uuid,
+    segment: &HistorySegment,
+    cancelled: Arc<AtomicBool>,
 ) -> Result<Vec<HistoryEntry>, VaultError> {
     let segment_key = unwrap_secret(
         &keys.object_wrap,
@@ -5503,7 +5645,7 @@ fn read_history_segment(
     let mut plaintext = Zeroizing::new(Vec::with_capacity(history::SEGMENT_PLAINTEXT_BYTES));
     verify_object(
         &root.join("objects").join(&segment.object_name),
-        &mut *plaintext,
+        CancellableWriter::new(&mut *plaintext, cancelled),
         vault_id,
         segment.id,
         &segment_key,
@@ -7052,11 +7194,11 @@ pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
-/// A person's name: a valid name, and not the shared folder's, which would read
-/// as the folder (#61).
+/// A person's name: a valid name, and not the shared folder's in any language
+/// the app shows it in, which would read as the folder (#61).
 fn validate_person_name(name: &str) -> Result<(), VaultError> {
     validate_name(name)?;
-    if name.trim().to_lowercase() == SHARED_PROFILE_NAME.to_lowercase() {
+    if crate::ui_text::names_shared_folder(name) {
         return Err(VaultError::Invalid);
     }
     Ok(())
@@ -7731,7 +7873,7 @@ pub(crate) fn record_object_path_for_test(store: &VaultStore, record_id: Uuid) -
     store.root.join("objects").join(&record.object_name)
 }
 
-// Shared by native command and vault tests; no production history-read command.
+// Shared by native command and vault tests.
 #[cfg(test)]
 pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
     let guard = store.session();
@@ -8795,7 +8937,27 @@ mod tests {
         aside.lock();
 
         // The next vault made in this run names where the last one went.
-        store.create(PASSWORD, "New profile", 4).unwrap();
+        let new_password = "orchard-lantern-violet-monsoon-735";
+        store.create(new_password, "New profile", 4).unwrap();
+        let new_key = store.begin_recovery_key(new_password).unwrap().to_string();
+        let new_groups = recovery_key_groups(&new_key);
+        store
+            .confirm_recovery_key(&typed_back(&new_groups), 5)
+            .unwrap();
+        // This new vault uses different credentials. Neither its
+        // passphrase nor its recovery key opens the encrypted vault kept aside.
+        assert!(matches!(
+            aside.unlock(new_password),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(matches!(
+            aside.recover(&new_key, new_password),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        // The retained vault's own current passphrase still opens its records.
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
         let created = history_events(&store).remove(0);
         assert_eq!(created.event, HistoryEvent::Created);
         assert_eq!(
@@ -8805,6 +8967,27 @@ mod tests {
         // A second reset sets the second vault aside beside the first.
         store.reset().unwrap();
         assert_eq!(set_aside_folders(&root).len(), 2);
+
+        // Reuse is allowed: the same passphrase value can open both the
+        // new vault and the retained old one. Creation does not rewrite the
+        // old vault's headers or replace its matching recovery key.
+        let old_headers: Vec<_> = HEADER_SLOTS
+            .iter()
+            .map(|slot| fs::read(folders[0].join(slot)).unwrap())
+            .collect();
+        store
+            .create(PASSPHRASE_REPLACEMENT, "FAKE reused passphrase", 6)
+            .unwrap();
+        for (slot, bytes) in HEADER_SLOTS.iter().zip(&old_headers) {
+            assert_eq!(&fs::read(folders[0].join(slot)).unwrap(), bytes);
+        }
+        store.lock();
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
+        assert!(aside.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        aside.lock();
     }
 
     #[test]
@@ -9883,6 +10066,37 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn no_person_takes_the_shared_folders_name_in_any_language() {
+        // The stored name is one of the names refused.
+        assert!(crate::ui_text::names_shared_folder(SHARED_PROFILE_NAME));
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(matches!(
+            store.create(PASSWORD, " PARTAGÉS avec moi ", 1),
+            Err(VaultError::Invalid)
+        ));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        // The folder as each language shows it, in another case or with an
+        // accent typed as a separate mark.
+        for name in [
+            "Partage\u{301}s avec moi",
+            "compartido CONMIGO",
+            "UDOSTĘPNIONE MI",
+            "compartilhados comigo",
+        ] {
+            assert!(
+                matches!(store.create_profile(name, 2), Err(VaultError::Invalid)),
+                "{name}"
+            );
+        }
+        // A name that only holds one, or differs by a letter, is a person's.
+        for name in ["Partagés avec moi 2", "Compartido", "Udostępnione mu"] {
+            store.create_profile(name, 3).unwrap();
+        }
+        assert_eq!(store.snapshot().unwrap().profiles.len(), 4);
     }
 
     #[test]
@@ -11446,10 +11660,49 @@ mod tests {
         assert!(label
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
-        assert!(kit.contains(&format!("Key label:     {label}")));
+        assert!(kit.contains(&format!("Key label: {label}")));
         assert!(!name.contains("Jamie"));
         // The page asks for it to print it on the kit.
         assert_eq!(store.pending_recovery_key_label().unwrap(), label);
+
+        // Every language keeps the native-held key, label and date exact;
+        // the person's name never enters any kit.
+        for locale in [
+            crate::ui_text::UiLocale::En,
+            crate::ui_text::UiLocale::Fr,
+            crate::ui_text::UiLocale::Es,
+            crate::ui_text::UiLocale::Pl,
+            crate::ui_text::UiLocale::PtBr,
+            crate::ui_text::UiLocale::ZhCn,
+            crate::ui_text::UiLocale::ZhTw,
+        ] {
+            let localized = store.recovery_kit_in(1_790_553_600_000, locale).unwrap();
+            assert!(
+                localized.contains(&key)
+                    && localized.contains(&label)
+                    && localized.contains("2026-09-28")
+            );
+            assert!(!localized.contains("Jamie"));
+            assert!(!localized
+                .chars()
+                .any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            let line = localized
+                .lines()
+                .find(|line| line.contains(key.as_str()))
+                .unwrap();
+            let start = line.find(key.as_str()).unwrap();
+            let copied = &line[start..start + key.len()];
+            assert_eq!(
+                *decode_recovery_key(copied).unwrap(),
+                *decode_recovery_key(&key).unwrap()
+            );
+        }
+        let polish_file = temp.path().join("kit-pl.txt");
+        store
+            .save_recovery_kit_in(&polish_file, 1, crate::ui_text::UiLocale::Pl)
+            .unwrap();
+        let polish = fs::read_to_string(&polish_file).unwrap();
+        assert!(polish.contains("Klucz odzyskiwania") && polish.contains(&key));
 
         // Saved as an export is: outside the vault home, and private.
         let outside = temp.path().join("kit.txt");
@@ -15161,6 +15414,405 @@ mod tests {
                 (Some("FAKE scan.pdf".to_owned()), Some("picked".to_owned())),
             ]
         );
+    }
+
+    /// These tests create fresh synthetic vaults; never open a developer vault.
+    #[test]
+    fn audit_history_is_verified_read_only_and_requires_an_unlocked_session() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct SavedEntry {
+            path: PathBuf,
+            directory: bool,
+            length: u64,
+            modified: std::time::SystemTime,
+            contents: Option<Vec<u8>>,
+        }
+        fn files(root: &Path, coordination_lock: &Path) -> Vec<SavedEntry> {
+            let mut result = Vec::new();
+            for child in fs::read_dir(root).unwrap() {
+                let path = child.unwrap().path();
+                let metadata = fs::metadata(&path).unwrap();
+                if metadata.is_dir() {
+                    result.extend(files(&path, coordination_lock));
+                }
+                // Windows enforces the store's byte-range lock on this one
+                // protocol file. Keep its metadata/existence in the snapshot;
+                // every vault/data file still has its complete bytes checked.
+                let contents = if metadata.is_file() && path != coordination_lock {
+                    Some(fs::read(&path).unwrap())
+                } else {
+                    None
+                };
+                result.push(SavedEntry {
+                    path,
+                    directory: metadata.is_dir(),
+                    length: metadata.len(),
+                    modified: metadata.modified().unwrap(),
+                    contents,
+                });
+            }
+            result.sort_by(|a, b| a.path.cmp(&b.path));
+            result
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("FAKE-vault"));
+        assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        let coordination_lock = sibling_path(&store.root, ".lock").unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE history.pdf", b"%PDF-1.7 FAKE")],
+                2,
+            )
+            .unwrap();
+        let expected = history_events(&store);
+        let before = files(temp.path(), &coordination_lock);
+        assert_eq!(store.history_entries().unwrap(), expected);
+        assert_eq!(
+            files(temp.path(), &coordination_lock),
+            before,
+            "reading must not append, rewrite or export"
+        );
+        // A missing document makes the real next unlock read-only. Its intact
+        // encrypted history is still readable, without repairing or appending.
+        let record = store.snapshot().unwrap().records[0].id;
+        fs::remove_file(record_object_path_for_test(&store, record)).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::LostObjects)
+        );
+        let before = files(temp.path(), &coordination_lock);
+        assert_eq!(store.history_entries().unwrap(), history_events(&store));
+        assert_eq!(files(temp.path(), &coordination_lock), before);
+        store.lock();
+        assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn audit_history_rejects_damage_anywhere_including_padding_and_chain_end() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            let entries = (0..400)
+                .map(|index| {
+                    let mut entry = HistoryEntry::new(HistoryEvent::Imported, index + 2);
+                    entry.name = Some(format!("FAKE {index} {}", "x".repeat(220)));
+                    entry
+                })
+                .collect();
+            assert!(record_in_session(&root, unlocked, entries));
+        }
+        let expected = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        assert!(history.segments.len() >= 4);
+        assert_eq!(
+            history.segments.last().unwrap().entry_count,
+            0,
+            "exercise padding too"
+        );
+        for segment in &history.segments {
+            let path = root.join("objects").join(&segment.object_name);
+            let bytes = fs::read(&path).unwrap();
+            let mut damaged = bytes.clone();
+            *damaged.last_mut().unwrap() ^= 1;
+            fs::write(&path, damaged).unwrap();
+            assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+            fs::write(&path, &bytes).unwrap();
+            fs::remove_file(&path).unwrap();
+            assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+            fs::write(&path, bytes).unwrap();
+        }
+        for change_count in [true, false] {
+            {
+                let mut guard = store.session();
+                let state = &mut guard.as_mut().unwrap().manifest.history;
+                if change_count {
+                    state.count += 1;
+                } else {
+                    state.head = "0".repeat(64);
+                }
+            }
+            assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+            store.session().as_mut().unwrap().manifest.history = history.clone();
+        }
+        assert_eq!(store.history_entries().unwrap(), expected);
+    }
+
+    /// A vault whose history spans several segments, the last one padding (as above).
+    fn store_with_long_history(root: &Path) -> VaultStore {
+        let store = VaultStore::new(root.to_path_buf());
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            let entries = (0..400)
+                .map(|index| {
+                    let mut entry = HistoryEntry::new(HistoryEvent::Imported, index + 2);
+                    entry.name = Some(format!("FAKE {index} {}", "x".repeat(220)));
+                    entry
+                })
+                .collect();
+            assert!(record_in_session(root, unlocked, entries));
+        }
+        store
+    }
+
+    fn damage_segment(root: &Path, segment: &HistorySegment) -> Vec<u8> {
+        let path = root.join("objects").join(&segment.object_name);
+        let bytes = fs::read(&path).unwrap();
+        let mut damaged = bytes.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        fs::write(&path, damaged).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn history_view_intact_is_the_whole_pinned_chain() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = store_with_long_history(&temp.path().join("FAKE-vault"));
+        let view = store.history_view().unwrap();
+        assert!(view.complete);
+        assert!(view.later.is_empty());
+        let guard = store.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        // Every entry, ending at the pinned count and head.
+        history::verify(
+            manifest.vault_id,
+            &view.entries,
+            manifest.history.count,
+            &manifest.history.head,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn history_view_shows_every_entry_but_warns_when_a_padding_piece_is_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_view().unwrap().entries;
+        let padding = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .clone();
+        let padding = padding.last().unwrap();
+        assert_eq!(padding.entry_count, 0, "the last piece is padding");
+        damage_segment(&root, padding);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all);
+        assert!(view.later.is_empty());
+    }
+
+    #[test]
+    fn only_a_damaged_or_missing_piece_is_shown_as_damage() {
+        // A storage error or a full disk says nothing about damage: the read fails, as before.
+        assert!(history_piece_damaged(&VaultError::Corrupt));
+        assert!(!history_piece_damaged(&VaultError::Unreadable));
+        assert!(!history_piece_damaged(&VaultError::Storage));
+        assert!(!history_piece_damaged(&VaultError::NoSpace));
+        assert!(!history_piece_damaged(&VaultError::Cancelled));
+        assert!(!history_piece_damaged(&VaultError::Locked));
+    }
+
+    #[test]
+    fn history_view_shows_both_checked_ends_around_a_damaged_or_missing_middle_piece() {
+        // D129 and D146: what checks out from the start, and what the pinned end proves after
+        // the damage; nothing in the damaged piece.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        let middle = &history.segments[1];
+        assert!(middle.entry_count > 0 && history.segments[2].entry_count > 0);
+        let before = usize::try_from(middle.first_seq).unwrap();
+        let after = usize::try_from(history.segments[2].first_seq).unwrap();
+        assert!(before > 0 && after == before + middle.entry_count as usize && after < all.len());
+        let original = damage_segment(&root, middle);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        let path = root.join("objects").join(&middle.object_name);
+        fs::remove_file(&path).unwrap();
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        // Later pieces that do not end at the pinned head prove nothing, so none is shown.
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        let view = store.history_view().unwrap();
+        assert_eq!(view.entries, all[..before]);
+        assert!(view.later.is_empty());
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        fs::write(&path, original).unwrap();
+        let view = store.history_view().unwrap();
+        assert!(view.complete && view.later.is_empty());
+        assert_eq!(view.entries, all);
+    }
+
+    #[test]
+    fn history_view_shows_only_the_start_when_the_last_piece_with_entries_is_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        let last = history
+            .segments
+            .iter()
+            .rev()
+            .find(|s| s.entry_count > 0)
+            .unwrap();
+        damage_segment(&root, last);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(
+            view.entries,
+            all[..usize::try_from(last.first_seq).unwrap()]
+        );
+        assert!(view.later.is_empty());
+    }
+
+    #[test]
+    fn history_view_shows_all_entries_but_not_complete_when_the_chain_is_cut_short() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        // The manifest pins more entries than the chain holds: the end was cut off.
+        store.session().as_mut().unwrap().manifest.history.count += 1;
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all);
+        assert!(view.later.is_empty());
+        // The chain does not end at the pinned head.
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all);
+        assert!(view.later.is_empty());
+        // Entries past the pinned count are never shown.
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.count -= 1;
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..all.len() - 1]);
+        assert!(view.later.is_empty());
+    }
+
+    #[test]
+    fn history_view_shows_only_what_the_end_proves_when_the_first_piece_is_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let segments = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .clone();
+        damage_segment(&root, &segments[0]);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert!(view.entries.is_empty());
+        assert_eq!(
+            view.later,
+            all[usize::try_from(segments[1].first_seq).unwrap()..]
+        );
+    }
+
+    #[test]
+    fn history_view_empty_history_is_complete_only_for_a_legacy_format() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("FAKE-vault"));
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        store.session().as_mut().unwrap().manifest.history = HistoryState::default();
+        let view = store.history_view().unwrap();
+        assert!(!view.complete && view.entries.is_empty());
+        store.session().as_mut().unwrap().manifest.format_version = MANIFEST_FORMAT_HIDDEN;
+        assert_eq!(
+            store.history_view().unwrap(),
+            HistoryView {
+                entries: Vec::new(),
+                later: Vec::new(),
+                complete: true
+            }
+        );
+    }
+
+    #[test]
+    fn audit_history_empty_is_only_allowed_for_a_legacy_format() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("FAKE-vault"));
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        store.session().as_mut().unwrap().manifest.history = HistoryState::default();
+        assert!(matches!(store.history_entries(), Err(VaultError::Corrupt)));
+        store.session().as_mut().unwrap().manifest.format_version = MANIFEST_FORMAT_HIDDEN;
+        assert!(store.history_entries().unwrap().is_empty());
+    }
+
+    #[test]
+    fn audit_history_stops_for_a_concurrent_lock_before_read_or_publication() {
+        for boundary in ["history-segment-read", "history-verified"] {
+            let temp = tempfile::tempdir().unwrap();
+            let store = Arc::new(VaultStore::new(temp.path().join("FAKE-vault")));
+            store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+            let (reached, wait) = mpsc::sync_channel(1);
+            let reading = {
+                let store = Arc::clone(&store);
+                std::thread::spawn(move || {
+                    let cancelled = Arc::clone(&store.cancel_io);
+                    AT_TEST_BOUNDARY.with(|slot| {
+                        *slot.borrow_mut() = Some((
+                            boundary,
+                            Box::new(move || {
+                                reached.send(()).unwrap();
+                                let deadline = Instant::now() + Duration::from_secs(5);
+                                while !cancelled.load(Ordering::Acquire) {
+                                    assert!(
+                                        Instant::now() < deadline,
+                                        "lock did not request cancellation"
+                                    );
+                                    std::thread::yield_now();
+                                }
+                            }),
+                        ))
+                    });
+                    store.history_entries()
+                })
+            };
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            let locking = {
+                let store = Arc::clone(&store);
+                std::thread::spawn(move || store.lock())
+            };
+            assert!(
+                matches!(reading.join().unwrap(), Err(VaultError::Cancelled)),
+                "{boundary}"
+            );
+            locking.join().unwrap();
+            assert!(matches!(store.history_entries(), Err(VaultError::Locked)));
+        }
     }
 
     fn history_events(store: &VaultStore) -> Vec<HistoryEntry> {

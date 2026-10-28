@@ -1,19 +1,17 @@
+import { t } from "../i18n";
 import type { ReceiveNotice } from "../vault";
 
-/** What to tell the patient about shared items that could not be received,
- * or "" when everything shared was received. */
+/** No user content is interpreted as a translation template. */
 export function receiveNoticeText({
   dropped,
   refusedShares,
 }: ReceiveNotice): string {
-  const parts: string[] = [];
-  if (refusedShares > 0)
-    parts.push(
-      `${refusedShares === 1 ? "A share was" : `${refusedShares} shares were`} not received: no more than 100 shared files can wait at once. Unlock, so the waiting files go into Shared with me, then share again.`,
-    );
-  if (dropped > 0)
-    parts.push(
-      `${dropped === 1 ? "One shared item was" : `${dropped} shared items were`} not received: myCarlos accepts PDF files only.`,
-    );
-  return parts.join(" ");
+  return [
+    refusedShares > 0
+      ? t("interface.receive.refused", { count: refusedShares })
+      : "",
+    dropped > 0 ? t("interface.receive.dropped", { count: dropped }) : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

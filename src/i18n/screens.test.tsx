@@ -9,6 +9,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import {
   LOCALES,
+  formatDate,
   setLocaleOverride,
   translate,
   withElements,
@@ -27,15 +28,23 @@ import { AppearanceProvider } from "../AppearanceProvider";
 import { startAppearance } from "../appearance";
 import { LibraryItems } from "../native/LibraryItems";
 import type { VaultDragDrop } from "../native/useVaultDragDrop";
+import { setDeviceLocale } from "../test/deviceLocale";
 import type { VaultFolder, VaultRecord } from "../vault";
 
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 
 afterEach(() => setLocaleOverride(null));
 
-/** The text around a `{label}` placeholder, as the page shows it. */
+/** Semantic copy checks ignore only the formatter's FSI/PDI boundaries.
+ * Dedicated formatter tests separately require those boundaries for RTL text. */
+const visibleText = (text: string) => text.replace(/[\u2068\u2069]/g, "");
+const visibleTranslation = (...args: Parameters<typeof translate>) =>
+  visibleText(translate(...args));
 const around = (locale: Locale, key: Parameters<typeof translate>[1]) =>
-  translate(locale, key, { date: "DATE" }).split("{label}");
+  visibleTranslation(locale, key, {
+    label: "LABEL_MARKER",
+    date: formatDate(Date.UTC(2026, 9, 1), { dateStyle: "long" }),
+  }).split("LABEL_MARKER");
 
 function renderSecurity() {
   render(
@@ -48,6 +57,10 @@ function renderSecurity() {
       onLock={vi.fn().mockResolvedValue(undefined)}
       onChangePassphrase={vi.fn().mockResolvedValue(undefined)}
       onCreateProfile={vi.fn().mockResolvedValue(true)}
+      hiddenCount={0}
+      hiddenScopeName="FAKE Avery"
+      onOpenHidden={vi.fn()}
+      onOpenAuditHistory={vi.fn()}
       recoveryKeySetAtMs={Date.UTC(2026, 9, 1)}
       recoveryKeyLabel="BEAD"
       onSetUpRecoveryKey={vi.fn()}
@@ -79,18 +92,40 @@ function renderRecoverySetup() {
 }
 
 describe("withElements", () => {
-  it("puts elements where their placeholders are and keeps the rest as text", () => {
+  it("keeps untrusted argument braces and markup as text, never catalogue slots", () => {
+    setLocaleOverride("en");
+    const hostile = "FAKE <b>{label}</b> {$label}";
     const { container } = render(
       <p>
-        {withElements("Label <b>{label}</b> and {missing}.", {
-          label: <strong>BEAD</strong>,
-        })}
+        {withElements(
+          "security.recoveryKey.current",
+          {
+            label: <strong>BEAD</strong>,
+          },
+          { date: hostile },
+        )}
       </p>,
     );
+    expect(container.querySelectorAll("strong")).toHaveLength(1);
     expect(container.querySelector("strong")?.textContent).toBe("BEAD");
-    // Markup in the text stays text, and an unknown placeholder stays visible.
     expect(container.querySelector("b")).toBeNull();
-    expect(container.textContent).toBe("Label <b>BEAD</b> and {missing}.");
+    expect(container.textContent).toContain(hostile);
+  });
+  it("shows a recoverable formatting failure when a required slot is missing", () => {
+    setLocaleOverride("en");
+    render(<p>{withElements("recoveryKey.label", {})}</p>);
+    expect(
+      screen.getByText(translate("en", "language.error.formatting")),
+    ).toBeVisible();
+  });
+  it("reports invalid rich-message keys and empty required slots without crashing", () => {
+    setLocaleOverride("en");
+    expect(withElements("__proto__" as never, {})).toBe(
+      translate("en", "language.error.formatting"),
+    );
+    expect(withElements("recoveryKey.label", { label: null })).toBe(
+      translate("en", "language.error.formatting"),
+    );
   });
 });
 
@@ -129,11 +164,9 @@ describe("Settings > Security in each language", () => {
       const [before, after] = around(locale, "security.recoveryKey.current");
       const label = screen.getByText("BEAD").closest("strong")!;
       const sentence = label.closest("p")!;
-      expect(sentence.textContent).toContain(before);
+      expect(sentence.textContent?.startsWith(before)).toBe(true);
       expect(sentence.textContent).toContain("B E A D");
-      expect(sentence.textContent?.trimEnd()).toContain(
-        after.replace("DATE", "").split(" ").slice(0, 4).join(" "),
-      );
+      expect(sentence.textContent?.endsWith(after)).toBe(true);
       // The delay's minus and plus (#67), named in the same language.
       expect(
         screen.getByText(translate(locale, "security.autoLock.body")),
@@ -168,7 +201,7 @@ describe("Settings > Security in each language", () => {
       );
       const text = container.querySelector(".auto-lock-value")?.textContent;
       unmount();
-      return text;
+      return visibleText(text ?? "");
     };
     expect([1, 2, 5, 12, 14].map(shown)).toEqual([
       "1 minuta",
@@ -231,8 +264,6 @@ describe("the person-folder sidebar in each language", () => {
         } as unknown as VaultDragDrop,
         onOpenPerson: vi.fn(),
         onOpenFolder: vi.fn(),
-        hiddenCount: 0,
-        onOpenHidden: vi.fn(),
         onOpenSecurity: vi.fn(),
         onOpenPreferences: vi.fn(),
       };
@@ -243,7 +274,12 @@ describe("the person-folder sidebar in each language", () => {
       const shown = render(<LibrarySidebar {...props} />);
       const nav = screen.getByRole("navigation", { name: tr("sidebar.label") });
       expect(
-        within(nav).getByRole("button", { name: "Shared with me, 2 new" }),
+        within(nav).getByRole("button", {
+          name: tr("interface.sidebar.sharedNew", {
+            shared: tr("interface.LibrarySidebar.sharedWithMe"),
+            new: tr("interface.count.new", { count: 2 }),
+          }),
+        }),
       ).toHaveAttribute("aria-current", "page");
       const folder = within(nav).getByRole("button", {
         name: "FAKE Results (FAKE Blake) 0",
@@ -302,8 +338,9 @@ describe("recovery key setup in each language", () => {
         }),
       );
       const label = await screen.findByText("7F3A");
-      const [before] = around(locale, "recoveryKey.label");
-      expect(label.closest("p")?.textContent).toContain(before);
+      const [before, after] = around(locale, "recoveryKey.label");
+      expect(label.closest("p")?.textContent?.startsWith(before)).toBe(true);
+      expect(label.closest("p")?.textContent?.endsWith(after)).toBe(true);
       expect(
         screen.getByRole("button", {
           name: translate(locale, "recoveryKey.next"),
@@ -328,14 +365,14 @@ describe("recovery key setup in each language", () => {
 
     await user.type(field, "ABC");
     await user.click(checkAndSave);
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(visibleText(screen.getByRole("alert").textContent ?? "")).toContain(
       "Wpisano 3 litery lub cyfry.",
     );
 
     await user.clear(field);
     await user.type(field, "ABCDE");
     await user.click(checkAndSave);
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(visibleText(screen.getByRole("alert").textContent ?? "")).toContain(
       "Wpisano 5 liter lub cyfr.",
     );
   });
@@ -349,7 +386,9 @@ describe("text size messages", () => {
     });
     setLocaleOverride("es");
     const between = readTypedZoom("117");
-    expect("note" in between && between.note).toMatch(/^117% está entre/);
+    expect("note" in between && visibleText(between.note)).toMatch(
+      /^117% está entre/,
+    );
   });
 });
 
@@ -507,13 +546,13 @@ describe("the lock warning, Preferences and the photo viewer in each language", 
   }
 
   it("counts the last seconds and zooms with each language's forms", () => {
-    expect(translate("pl", "lockWarning.left", { count: 10 })).toBe(
+    expect(visibleTranslation("pl", "lockWarning.left", { count: 10 })).toBe(
       "Zostało 10 sekund.",
     );
-    expect(translate("pl", "lockWarning.title", { count: 2 })).toBe(
+    expect(visibleTranslation("pl", "lockWarning.title", { count: 2 })).toBe(
       "myCarlos zablokuje się za 2 sekundy, aby chronić prywatność dokumentów.",
     );
-    expect(translate("fr", "photo.zoomed", { percent: 200 })).toBe(
+    expect(visibleTranslation("fr", "photo.zoomed", { percent: 200 })).toBe(
       "Agrandie à 200\u00a0%.",
     );
   });
@@ -638,13 +677,15 @@ describe("the library list and grid in each language", () => {
           name: tr("library.folder.open", { name }),
         }),
       ).toHaveAccessibleDescription(
-        `${tr("library.folder.items", { count: 3 })} In FAKE Avery / FAKE Parent`,
+        `${tr("library.folder.items", { count: 3 })} ${tr("interface.inLocation", { location: "FAKE Avery / FAKE Parent" })}`,
       );
       for (const buttonName of [file, tr("library.select", { name: file })])
         expect(
           screen.getByRole("button", { name: buttonName }),
         ).toHaveAccessibleDescription(
-          "In FAKE Avery / FAKE Parent / FAKE Labs",
+          tr("interface.inLocation", {
+            location: "FAKE Avery / FAKE Parent / FAKE Labs",
+          }),
         );
       expect(
         screen.getAllByText(new Date(added).toLocaleDateString()),
@@ -652,7 +693,11 @@ describe("the library list and grid in each language", () => {
       results.unmount();
 
       const grid = renderItems("grid", undefined, true);
-      expect(screen.getByText("In FAKE Avery / FAKE Parent")).toBeVisible();
+      expect(
+        screen.getByText(
+          tr("interface.inLocation", { location: "FAKE Avery / FAKE Parent" }),
+        ),
+      ).toBeVisible();
       expect(
         screen.getByRole("button", {
           name: tr("library.select", { name: file }),
@@ -683,37 +728,44 @@ describe("the library list and grid in each language", () => {
 
   it("keeps the device's date format while the language follows the system", () => {
     // As the rest of the app does (Settings > Security, the recovery kit):
-    // a Canadian device writes 2026-01-15 whatever language is shown.
-    setLocaleOverride("fr");
-    renderItems("list");
-    expect(
-      screen.getAllByText(new Date(added).toLocaleDateString()),
-    ).toHaveLength(2);
+    // a Canadian device writes 2026-01-15 whatever language is shown (Ben,
+    // 21 Oct, kept 28 Oct).
+    setDeviceLocale("en-CA");
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      const list = renderItems("list");
+      // The folder's date added and the document's.
+      expect(screen.getAllByText("2026-01-15"), locale).toHaveLength(2);
+      list.unmount();
+      const grid = renderItems("grid");
+      expect(screen.getAllByText("2026-01-15"), locale).toHaveLength(1);
+      grid.unmount();
+    }
   });
 
   it("counts items with each language's forms", () => {
-    expect(translate("en", "library.folder.items", { count: 1 })).toBe(
+    expect(visibleTranslation("en", "library.folder.items", { count: 1 })).toBe(
       "1 item",
     );
-    expect(translate("en", "library.items", { count: 1 })).toBe(
+    expect(visibleTranslation("en", "library.items", { count: 1 })).toBe(
       "1 visible library item",
     );
-    expect(translate("pl", "library.folder.items", { count: 3 })).toBe(
+    expect(visibleTranslation("pl", "library.folder.items", { count: 3 })).toBe(
       "3 elementy",
     );
-    expect(translate("pl", "library.folder.items", { count: 5 })).toBe(
+    expect(visibleTranslation("pl", "library.folder.items", { count: 5 })).toBe(
       "5 elementów",
     );
-    expect(translate("pl", "library.items", { count: 22 })).toBe(
+    expect(visibleTranslation("pl", "library.items", { count: 22 })).toBe(
       "22 widoczne elementy biblioteki",
     );
     // French counts 0 as singular.
-    expect(translate("fr", "library.items", { count: 0 })).toBe(
+    expect(visibleTranslation("fr", "library.items", { count: 0 })).toBe(
       "0 élément visible dans la bibliothèque",
     );
-    expect(translate("es", "library.folder.items", { count: 1_000_000 })).toBe(
-      "1.000.000 de elementos",
-    );
+    expect(
+      visibleTranslation("es", "library.folder.items", { count: 1_000_000 }),
+    ).toBe("1.000.000 de elementos");
   });
 });
 
@@ -757,7 +809,7 @@ describe("appearance problems in the language in use", () => {
         <PreferencesSettings />
       </AppearanceProvider>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(visibleText(screen.getByRole("alert").textContent ?? "")).toContain(
       "Nie udało się odczytać zapisanego wyglądu. W tej sesji używana jest opcja „Systemowy”.",
     );
   });

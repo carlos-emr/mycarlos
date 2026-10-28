@@ -1,3 +1,4 @@
+import { translate } from "./support/fluent";
 import {
   expect,
   test,
@@ -350,7 +351,9 @@ async function walkTheVault(large: LargeText) {
     .fill("FAKE passphrase for the mock");
   await page.getByRole("button", { name: "Unlock" }).click();
   const letter = page.getByRole("article", {
-    name: "FAKE Letter.pdf document",
+    name: translate("en", "library.document.label", {
+      name: "FAKE Letter.pdf",
+    }),
   });
   await expect(letter).toBeVisible();
   await expectNoViolations(page, "library", large.cutOff);
@@ -370,7 +373,11 @@ async function walkTheVault(large: LargeText) {
   ).toBeVisible();
   await expectNoViolations(page, "Shared with me", large.cutOff);
   await page
-    .getByRole("button", { name: "Details for FAKE Referral.pdf" })
+    .getByRole("button", {
+      name: translate("en", "library.document.details", {
+        name: "FAKE Referral.pdf",
+      }),
+    })
     .click();
   const shared = page.getByRole("dialog", { name: "FAKE Referral.pdf" });
   await expect(shared.getByRole("combobox", { name: "Move to" })).toBeVisible();
