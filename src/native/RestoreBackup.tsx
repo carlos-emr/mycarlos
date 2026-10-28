@@ -1,6 +1,14 @@
+import {
+  useTextState,
+  deferredText,
+  t as translateCurrent,
+  translate,
+  getLocale,
+  useI18n,
+  MessageKey,
+} from "../i18n";
 import { SecretInput } from "./SecretInput";
-import { translate, getLocale, useI18n } from "../i18n";
-import type { MessageKey } from "../i18n";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   MAX_PASSPHRASE_BYTES,
@@ -51,8 +59,8 @@ export function RestoreBackup({
   const [preview, setPreview] = useState<RestorePreview | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
+  const [error, setError] = useTextState();
+  const [status, setStatus] = useTextState();
   const [shown, setShown] = useState(false);
   // State is a render behind: two clicks in one tick must not both restore.
   const working = useRef(false);
@@ -126,9 +134,10 @@ export function RestoreBackup({
     try {
       const picked = await bridge.pickRestoreSource();
       setPickId(picked);
-      if (picked) setStatus(t("restore.chosen"));
+      if (picked)
+        setStatus(deferredText(() => translateCurrent("restore.chosen")));
     } catch (failure) {
-      setError(vaultErrorMessage(failure));
+      setError(deferredText(() => vaultErrorMessage(failure)));
     } finally {
       setBusy(false);
     }
@@ -139,21 +148,23 @@ export function RestoreBackup({
     if (!pickId || !secret || busy) return;
     setBusy(true);
     setError("");
-    setStatus(t("restore.checking"));
+    setStatus(deferredText(() => translateCurrent("restore.checking")));
     setAgreed(false);
     try {
       const found = await bridge.inspectRestore(pickId, credential());
       setPreview(found);
       setStatus(
-        t("restore.checked", {
-          count: found.documentCount,
-          consequence: consequence(found),
-        }),
+        deferredText(() =>
+          translateCurrent("restore.checked", {
+            count: found.documentCount,
+            consequence: consequence(found),
+          }),
+        ),
       );
     } catch (failure) {
       setPreview(null);
       setStatus("");
-      setError(vaultErrorMessage(failure, [typedBox]));
+      setError(deferredText(() => vaultErrorMessage(failure, [typedBox])));
     } finally {
       setBusy(false);
     }
@@ -165,7 +176,7 @@ export function RestoreBackup({
     working.current = true;
     setBusy(true);
     setError("");
-    setStatus(t("restore.restoring"));
+    setStatus(deferredText(() => translateCurrent("restore.restoring")));
     try {
       const restored = await bridge.restore(
         pickId,
@@ -174,7 +185,7 @@ export function RestoreBackup({
       );
       if (!restored) {
         // Cancelled in the native confirmation: the backup is still chosen.
-        setStatus(t("restore.cancelled"));
+        setStatus(deferredText(() => translateCurrent("restore.cancelled")));
         return;
       }
       // Back to the start: the pick is used up, and the unlock screen this
@@ -188,7 +199,7 @@ export function RestoreBackup({
       onRestored();
     } catch (failure) {
       setStatus("");
-      setError(vaultErrorMessage(failure, [typedBox]));
+      setError(deferredText(() => vaultErrorMessage(failure, [typedBox])));
       // Start again from the file: the pick may be used up.
       setSecret("");
       setShown(false);
