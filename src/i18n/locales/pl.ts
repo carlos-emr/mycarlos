@@ -22,6 +22,8 @@ export const pl: Record<MessageKey, Message> = {
   "portal.dateNotRecorded": "Data nie została zapisana",
   "portal.restartApproval": "Rozpocznij nową prośbę o zatwierdzenie",
   "portal.approvalExpired":
+    "Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Dokumenty z przychodni.",
+  "portal.approvalExpiredCard":
     "Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego samego urządzenia, wybierz Rozpocznij nową prośbę o zatwierdzenie. Dokumenty i połączenie tego urządzenia pozostają bez zmian.",
   "portal.approvalCancelled":
     "Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
@@ -33,8 +35,8 @@ export const pl: Record<MessageKey, Message> = {
     "Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.",
   "portal.awaitingClinic":
     "Przychodnia otrzymała prośbę o zatwierdzenie. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.",
-  "portal.approvalStarted":
-    "Przychodnia zaczęła zatwierdzać to urządzenie. Oczekiwanie, aż przychodnia to zakończy.",
+  "portal.approvalPickedUp":
+    "System dokumentacji przychodni przyjął tę prośbę. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.",
   "portal.approvalTimeLeft": {
     one: "Pozostały czas na tę prośbę: około {count} minuty.",
     few: "Pozostały czas na tę prośbę: około {count} minut.",
@@ -42,10 +44,15 @@ export const pl: Record<MessageKey, Message> = {
     other: "Pozostały czas na tę prośbę: około {count} minuty.",
   },
   "portal.approvalTimeUp": "Czas na tę prośbę minął. Sprawdzanie w przychodni…",
+  "portal.approvalTimeOver": "Czas na tę prośbę minął.",
+  "portal.approvalReplyInvalid":
+    "Nie udało się zweryfikować odpowiedzi portalu przychodni na temat tej prośby, więc nie została użyta. Skontaktuj się z przychodnią.",
+  "portal.approvalStillOpen":
+    "Ta prośba o zatwierdzenie jest nadal otwarta w portalu przychodni. Poczekaj, aż się zakończy, zanim rozpoczniesz nową.",
   "portal.approvalUnreachable":
-    "myCarlos nie mógł połączyć się z portalem przychodni, więc stan tej prośby nie jest jeszcze znany. Spróbuje ponownie.",
+    "myCarlos nie mógł połączyć się z portalem przychodni, więc stan tej prośby nie jest jeszcze znany.",
   "portal.approvalWait":
-    "Portal przychodni poprosił myCarlos o rzadsze sprawdzanie. myCarlos spróbuje ponownie później.",
+    "Portal przychodni poprosił myCarlos o rzadsze sprawdzanie.",
   "portal.autoChecking":
     "Dopóki ta strona jest otwarta, myCarlos automatycznie sprawdza, czy przychodnia odpowiedziała.",
   "portal.autoCheckStopped":

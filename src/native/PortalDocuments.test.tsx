@@ -554,7 +554,9 @@ describe("automatic approval status checks (#131)", () => {
   const AUTO =
     "While this page is open, myCarlos checks for your clinic's answer automatically.";
   const UNREACHABLE =
-    "myCarlos could not reach the clinic portal, so this request's status is not known yet. It will try again.";
+    "myCarlos could not reach the clinic portal, so this request's status is not known yet.";
+  const STOPPED =
+    "Automatic checks have stopped. To check again, choose Check for new documents.";
   const EXPIRED =
     "This approval request expired. To ask again for this same device, choose Start a new approval request. Your documents and this device's link stay as they are.";
 
@@ -671,7 +673,7 @@ describe("automatic approval status checks (#131)", () => {
     expect(status()).toBeEmptyDOMElement();
     await pass(20_000);
     const started =
-      "Your clinic has started approving this device. Waiting for the clinic to finish.";
+      "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.";
     expect(status()).toHaveTextContent(started);
     expect(screen.getAllByText(started)).toHaveLength(2);
     // Heard, not shown twice: the card already shows it.
@@ -795,8 +797,7 @@ describe("automatic approval status checks (#131)", () => {
     expect(screen.getAllByText(UNREACHABLE)).toHaveLength(2);
     await pass(60_000);
     expect(poll).toHaveBeenCalledTimes(4);
-    const wait =
-      "The clinic portal asked myCarlos to check less often. It will try again later.";
+    const wait = "The clinic portal asked myCarlos to check less often.";
     expect(status()).toHaveTextContent(wait);
     // Not before the five minutes the portal asked for.
     await pass(299_999);
@@ -927,6 +928,162 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledOnce();
     await pass(1);
     expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("says a reply that did not verify, stops checking it, and never calls it approved", async () => {
+    const invalid =
+      "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.";
+    const { poll } = checked(() =>
+      reply(pending, {
+        issue: { code: "approval_reply_invalid", message: "Native text." },
+      }),
+    );
+    await pass(10_000);
+    expect(screen.getAllByText(invalid)).toHaveLength(2);
+    expect(screen.getByText(STOPPED)).toBeVisible();
+    for (const wrong of [UNREACHABLE, AUTO, "The clinic approved this device."])
+      expect(screen.queryByText(wrong)).not.toBeInTheDocument();
+    await pass(10 * 60_000);
+    expect(poll).toHaveBeenCalledOnce();
+  });
+
+  it("says a local fault as it is, not as a connection failure, and stops checking", async () => {
+    const { poll } = checked(() => ({
+      error: { code: "storage", message: "FAKE storage fault text." },
+    }));
+    await pass(10_000);
+    expect(screen.getAllByText("FAKE storage fault text.")).toHaveLength(2);
+    expect(screen.getByText(STOPPED)).toBeVisible();
+    expect(screen.queryByText(UNREACHABLE)).not.toBeInTheDocument();
+    await pass(10 * 60_000);
+    expect(poll).toHaveBeenCalledOnce();
+  });
+
+  it("stops at once when the portal asks for a wait past the end of the checks", async () => {
+    for (const retryAfterMs of [
+      20 * 60_000,
+      2 ** 31,
+      Number.MAX_SAFE_INTEGER,
+    ]) {
+      const { poll, unmount } = checked(() =>
+        reply(pending, {
+          issue: { code: "portal_rate_limited", retryAfterMs },
+        }),
+      );
+      await pass(10_000);
+      expect(poll).toHaveBeenCalledOnce();
+      expect(
+        screen.getAllByText(
+          "The clinic portal asked myCarlos to check less often.",
+        ),
+      ).toHaveLength(2);
+      expect(screen.getByText(STOPPED)).toBeVisible();
+      // No timer fires at once, nor later.
+      await pass(1_000);
+      await pass(30 * 60_000);
+      expect(poll).toHaveBeenCalledOnce();
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the portal's wait across the patient's own action, which it does not hold", async () => {
+    const answers: ApprovalPoll[] = [
+      reply(pending, {
+        issue: { code: "portal_rate_limited", retryAfterMs: 5 * 60_000 },
+      }),
+      reply(pending),
+    ];
+    const { poll, bridge } = checked((call) => answers[call - 1]);
+    await pass(10_000);
+    expect(poll).toHaveBeenCalledOnce();
+    await pass(10_000);
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      );
+    });
+    await pass(0);
+    expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+    // Not 10 s after the action: 5 minutes after the portal asked.
+    await pass(289_999);
+    expect(poll).toHaveBeenCalledOnce();
+    await pass(1);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks every open request, says which clinic changed, and keeps checking the others", async () => {
+    fakeClock();
+    const second: PortalLinkSummary = {
+      ...pending,
+      id: "fake-link-2",
+      clinicName: "FAKE Second Clinic",
+      deviceKeyId: "FAKE_SECOND_DEVICE",
+    };
+    const shown = { ...snapshot, portalLinks: [pending, second] };
+    const poll = vi.fn<PollApproval>(async (linkId) =>
+      linkId === second.id
+        ? reply(second, { issue: { code: "approval_missing" } })
+        : reply(pending),
+    );
+    fixture({ snapshot: shown, poll });
+    await pass(10_000);
+    expect(poll.mock.calls).toEqual([[pending.id], [second.id]]);
+    expect(status()).toHaveTextContent(
+      "FAKE Second Clinic: Your saved approval request was not found on the portal. Send the saved request again.",
+    );
+    await pass(20_000);
+    expect(poll.mock.calls).toEqual([[pending.id], [second.id], [pending.id]]);
+  });
+
+  it("moves focus to the device's heading only when a check removes or disables the focused control", async () => {
+    for (const [first, next, control] of [
+      [
+        pending,
+        { ...link, approvalStatus: "accepted", clinicApproved: true },
+        "Retry saved approval request",
+      ],
+      [
+        pending,
+        { ...link, approvalStatus: "expired", approvalCanRestart: true },
+        "Retry saved approval request",
+      ],
+      [
+        { ...pending, approvalCanRestart: true },
+        { ...pending, approvalCanRestart: true },
+        "Start a new approval request",
+      ],
+    ] as const) {
+      const { unmount } = checked(
+        () => reply(next, { expiresInMs: 5 * 60_000 }),
+        first,
+      );
+      screen.getByRole("button", { name: control }).focus();
+      expect(screen.getByRole("button", { name: control })).toHaveFocus();
+      await pass(10_000);
+      expect(
+        screen.getByRole("heading", { name: "FAKE Clinic", level: 3 }),
+      ).toHaveFocus();
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not say it is checking once the time runs out after checks stopped", async () => {
+    // Clocks apart: the portal gives this request 16 minutes, more than
+    // automatic checks last.
+    const end = 16 * 60_000;
+    checked(() =>
+      reply(pending, { expiresInMs: Math.max(end - performance.now(), 0) }),
+    );
+    await pass(end + 60_000);
+    expect(screen.getByText(STOPPED)).toBeVisible();
+    expect(
+      screen.getByText("The time for this request has run out."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Checking with your clinic/),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the new states in every supported language", async () => {

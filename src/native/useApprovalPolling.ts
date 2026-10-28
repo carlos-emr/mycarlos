@@ -26,7 +26,11 @@ export type LiveApproval =
   | { kind: "wait" }
   /** The portal does not have the saved request: it must be sent again,
    * which only the patient does. */
-  | { kind: "missing" };
+  | { kind: "missing" }
+  /** The check failed for another reason (a reply that did not verify, a
+   * local storage fault, read-only recovery…): said as it is, and this
+   * request is not checked again automatically. */
+  | { kind: "failed"; error: unknown };
 
 /** The first check comes this long after the view opens or a request is
  * saved; later ones back off, and never come sooner than the first. */
@@ -39,6 +43,9 @@ export const CHECK_WINDOW_MS = 15 * 60_000;
 export const AFTER_EXPIRY_MS = 2_000;
 /** Back on screen after a pause, a check that was due comes this soon. */
 const RESUME_MS = 1_000;
+/** The longest delay a browser timer keeps (2^31 - 1 ms); longer ones fire
+ * at once. Checks stop long before it (`CHECK_WINDOW_MS`). */
+export const MAX_TIMER_MS = 2_147_483_647;
 /** A countdown on screen moves this often. It is not read out. */
 const COUNTDOWN_STEP_MS = 15_000;
 
@@ -61,6 +68,16 @@ export function isAwaitingApproval(link: PortalLinkSummary): boolean {
     link.approvalRequested &&
     !link.clinicApproved &&
     ["pending", "challenge_ready"].includes(link.approvalStatus ?? "pending")
+  );
+}
+
+/** An open request that automatic checks still ask about: not one the
+ * portal does not have, nor one whose check failed for good. */
+function checked(link: PortalLinkSummary, found?: LiveApproval): boolean {
+  return (
+    isAwaitingApproval(link) &&
+    found?.kind !== "missing" &&
+    found?.kind !== "failed"
   );
 }
 
@@ -103,7 +120,10 @@ function found(
     // Another clinic operation took the native guard first: nothing is
     // known or said; the next check comes as planned.
     if (hasCode(outcome.error, "portal_busy")) return { retryAfterMs: 0 };
-    return { live: { kind: "unreachable" }, retryAfterMs: 0 };
+    return {
+      live: { kind: "failed", error: outcome.error },
+      retryAfterMs: 0,
+    };
   }
   const { link, issue, expiresInMs } = outcome.check;
   if (issue) {
@@ -115,7 +135,11 @@ function found(
         live: { kind: "wait" },
         retryAfterMs: Math.max(issue.retryAfterMs ?? 0, 0),
       };
-    return { link, live: { kind: "unreachable" }, retryAfterMs: 0 };
+    // Only a failure to reach the portal is retried; a reply that did not
+    // verify, or any other fault, is said and not asked again.
+    if (hasCode(issue, "portal_link_incomplete"))
+      return { link, live: { kind: "unreachable" }, retryAfterMs: 0 };
+    return { link, live: { kind: "failed", error: issue }, retryAfterMs: 0 };
   }
   return {
     link,
@@ -183,6 +207,10 @@ export function useApprovalPolling({
   const stepRef = useRef(0);
   // The patient's own clinic work is under way (see `hold`).
   const heldRef = useRef(false);
+  // No automatic check before this time (the steady clock): the portal
+  // asked to wait. It outlasts `restart`; the patient's own actions are not
+  // held by it.
+  const notBeforeRef = useRef(0);
   // When the latest check began (or the view opened, or the patient acted),
   // and when this run of checks began.
   const lastStartRef = useRef(steadyNow());
@@ -195,9 +223,7 @@ export function useApprovalPolling({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  const watched = links.filter(
-    (link) => isAwaitingApproval(link) && live[link.id]?.kind !== "missing",
-  );
+  const watched = links.filter((link) => checked(link, live[link.id]));
   const active =
     enabled && Boolean(poll) && visible && !stopped && watched.length > 0;
 
@@ -205,8 +231,18 @@ export function useApprovalPolling({
     if (!active) return;
     let cancelled = false;
     let timer: number | undefined;
+    // No timer runs past the end of this run of checks: when the next check
+    // would come after it (the portal asked for a long wait), checks stop.
     const later = (delay: number) => {
-      timer = window.setTimeout(() => void tick(), delay);
+      const wait = Math.max(delay, notBeforeRef.current - steadyNow());
+      if (steadyNow() + wait - windowStartRef.current >= CHECK_WINDOW_MS) {
+        setStopped(true);
+        return;
+      }
+      timer = window.setTimeout(
+        () => void tick(),
+        Math.min(wait, MAX_TIMER_MS),
+      );
     };
     const tick = async () => {
       if (cancelled) return;
@@ -223,11 +259,7 @@ export function useApprovalPolling({
       lastStartRef.current = steadyNow();
       let retryAfterMs = 0;
       for (const link of linksRef.current) {
-        if (
-          !isAwaitingApproval(link) ||
-          liveRef.current[link.id]?.kind === "missing"
-        )
-          continue;
+        if (!checked(link, liveRef.current[link.id])) continue;
         const outcome = await pollRef.current?.(link.id);
         // The view closed, the page was hidden, or the patient acted: this
         // reply is not this schedule's to show.
@@ -248,6 +280,11 @@ export function useApprovalPolling({
         });
       }
       if (cancelled) return;
+      if (retryAfterMs > 0)
+        notBeforeRef.current = Math.max(
+          notBeforeRef.current,
+          steadyNow() + retryAfterMs,
+        );
       stepRef.current += 1;
       const lefts = Object.values(liveRef.current)
         .map((entry) => timeLeft(entry, steadyNow()))

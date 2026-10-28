@@ -8170,6 +8170,61 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ["a save that reached one copy", "result"],
+    ["a refusal in recovery mode", "error"],
+  ] as const)(
+    "shows read-only recovery after %s during a check, and stops checking",
+    async (_, how) => {
+      let current = vaultWith(pending);
+      const bridge = clinicBridge({
+        snapshot: vi.fn().mockImplementation(async () => current),
+        refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+          current = { ...vaultWith(pending), recovery: "writeFailed" };
+          if (how === "error")
+            throw {
+              code: "recovery_mode",
+              message: "FAKE native recovery text.",
+            };
+          return found(pending, { recovery: true });
+        }),
+      });
+      await openClinicView(bridge);
+      expect(
+        screen.getByRole("button", { name: "Connect and request approval" }),
+      ).toBeEnabled();
+      const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
+      await pass(10_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+      // Read again, once: the vault on screen is read-only now.
+      expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots + 1);
+      expect(
+        screen.getByRole("button", { name: "Connect and request approval" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeDisabled();
+      await pass(5 * 60_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not offer automatic checks when this build cannot check", async () => {
+    const bridge = clinicBridge({ refreshDeviceApproval: undefined });
+    await openClinicView(bridge);
+    await pass(60_000);
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(
+        "While this page is open, myCarlos checks for your clinic's answer automatically.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("says nothing for a busy refusal, and keeps a check from before a lock out of the next session", async () => {
     let finishOld!: (value: PortalApprovalCheck) => void;
     const bridge = clinicBridge({

@@ -372,6 +372,16 @@ describe("errors the app words itself, in the language in use (#46)", () => {
     expect(vaultErrorMessage(asked)).toBe(
       "Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.",
     );
+    expect(
+      vaultErrorMessage({ code: "approval_reply_invalid", message: "Native." }),
+    ).toBe(
+      "La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.",
+    );
+    expect(
+      vaultErrorMessage({ code: "approval_still_open", message: "Native." }),
+    ).toBe(
+      "Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.",
+    );
     setLocaleOverride("en");
     expect(vaultErrorMessage({ ...asked, retryAfterMs: 30_000 })).toBe(
       "The clinic portal asked myCarlos to wait before trying again. Try again in 30 seconds.",

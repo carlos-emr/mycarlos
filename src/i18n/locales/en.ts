@@ -21,6 +21,8 @@ export const en = {
   "portal.dateNotRecorded": "Date not recorded",
   "portal.restartApproval": "Start a new approval request",
   "portal.approvalExpired":
+    "This approval request expired. To ask again for this device, go to Security, under Clinic documents.",
+  "portal.approvalExpiredCard":
     "This approval request expired. To ask again for this same device, choose Start a new approval request. Your documents and this device's link stay as they are.",
   "portal.approvalCancelled":
     "This approval request was cancelled. Check for updates before starting a new request.",
@@ -32,18 +34,23 @@ export const en = {
     "Your saved approval request was not found on the portal. Send the saved request again.",
   "portal.awaitingClinic":
     "Your clinic has the approval request. Waiting for clinic staff to approve this device.",
-  "portal.approvalStarted":
-    "Your clinic has started approving this device. Waiting for the clinic to finish.",
+  "portal.approvalPickedUp":
+    "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.",
   "portal.approvalTimeLeft": {
     one: "Time left for this request: about {count} minute.",
     other: "Time left for this request: about {count} minutes.",
   },
   "portal.approvalTimeUp":
     "The time for this request has run out. Checking with your clinic…",
+  "portal.approvalTimeOver": "The time for this request has run out.",
+  "portal.approvalReplyInvalid":
+    "The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.",
+  "portal.approvalStillOpen":
+    "This approval request is still open on the clinic portal. Wait until it ends before starting a new one.",
   "portal.approvalUnreachable":
-    "myCarlos could not reach the clinic portal, so this request's status is not known yet. It will try again.",
+    "myCarlos could not reach the clinic portal, so this request's status is not known yet.",
   "portal.approvalWait":
-    "The clinic portal asked myCarlos to check less often. It will try again later.",
+    "The clinic portal asked myCarlos to check less often.",
   "portal.autoChecking":
     "While this page is open, myCarlos checks for your clinic's answer automatically.",
   "portal.autoCheckStopped":

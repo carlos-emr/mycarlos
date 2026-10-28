@@ -27,33 +27,50 @@ interface Props {
   compact?: boolean;
 }
 
-/** What a device's card says about its approval. Only the saved, verified
- * state says the clinic approved it; what the latest automatic check found
- * (`live`) only describes a request that is still open. */
-function approvalKey(link: PortalLinkSummary, live?: LiveApproval): MessageKey {
-  if (link.incomplete) return "portal.incomplete";
-  if (link.clinicApproved) return "portal.approved";
-  if (link.approvalRequestLimitReached) return "portal.approvalContact";
-  if (link.approvalStatus === "expired") return "portal.approvalExpired";
-  if (link.approvalStatus === "cancelled") return "portal.approvalCancelled";
+/** What a device's card says about its approval: a message, or the error
+ * an automatic check failed with. Only the saved, verified state says the
+ * clinic approved it; what the latest automatic check found (`live`) only
+ * describes a request that is still open. */
+type CardState = { key: MessageKey } | { failed: unknown };
+function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
+  const say = (key: MessageKey) => ({ key });
+  if (link.incomplete) return say("portal.incomplete");
+  if (link.clinicApproved) return say("portal.approved");
+  if (link.approvalRequestLimitReached) return say("portal.approvalContact");
+  if (link.approvalStatus === "expired")
+    return say("portal.approvalExpiredCard");
+  if (link.approvalStatus === "cancelled")
+    return say("portal.approvalCancelled");
   if (
     link.approvalStatus === "accepted" ||
     ["staff_required", "no_accepted_approver"].includes(
       link.approvalReason ?? "",
     )
   )
-    return "portal.approvalContact";
-  if (link.approvalStatus === "refused") return "portal.approvalRefused";
-  if (!link.approvalRequested) return "portal.notRequested";
-  // A network failure or a portal asking to wait says only that the state
-  // is not known: never that the request expired or was refused.
-  if (live?.kind === "missing") return "portal.approvalMissing";
-  if (live?.kind === "unreachable") return "portal.approvalUnreachable";
-  if (live?.kind === "wait") return "portal.approvalWait";
+    return say("portal.approvalContact");
+  if (link.approvalStatus === "refused") return say("portal.approvalRefused");
+  if (!link.approvalRequested) return say("portal.notRequested");
+  // A check that failed says why; a network failure or a portal asking to
+  // wait says only that the state is not known: never that the request
+  // expired or was refused.
+  if (live?.kind === "failed") return { failed: live.error };
+  if (live?.kind === "missing") return say("portal.approvalMissing");
+  if (live?.kind === "unreachable") return say("portal.approvalUnreachable");
+  if (live?.kind === "wait") return say("portal.approvalWait");
   if (link.approvalStatus === "challenge_ready")
-    return "portal.approvalStarted";
-  if (live?.kind === "waiting") return "portal.awaitingClinic";
-  return "portal.awaiting";
+    return say("portal.approvalPickedUp");
+  if (live?.kind === "waiting") return say("portal.awaitingClinic");
+  return say("portal.awaiting");
+}
+/** Two card states are the same when they say the same thing. */
+function sameState(a: CardState, b: CardState): boolean {
+  if ("key" in a || "key" in b)
+    return "key" in a && "key" in b && a.key === b.key;
+  const code = (value: unknown) =>
+    typeof value === "object" && value !== null
+      ? (value as { code?: unknown }).code
+      : value;
+  return code(a.failed) === code(b.failed);
 }
 
 export function PortalDocuments({
@@ -127,15 +144,29 @@ export function PortalDocuments({
       bridge.checkDocuments,
   );
   const links = snapshot.portalLinks ?? [];
+  const stateText = (state: CardState) =>
+    "key" in state ? t(state.key) : vaultErrorMessage(state.failed);
+  // A control an automatic check is about to remove or disable, if it has
+  // focus: focus then goes to its device's heading, not to the page.
+  const checkFocus = useRef<{ linkId: string; control: Element } | null>(null);
   // Said once, when an automatic check changes what a card says (#131). A
   // check that finds nothing new says nothing; nor does the first check
   // confirming that the portal has a request the card already calls saved.
   const said = ({ before, after }: CheckChange) => {
-    const was = approvalKey(before.link, before.live);
-    const now = approvalKey(after.link, after.live);
+    const focused = document.activeElement;
     if (
-      was === now ||
-      (was === "portal.awaiting" && now === "portal.awaitingClinic")
+      focused &&
+      document.getElementById(`portal-link-${after.link.id}`)?.contains(focused)
+    )
+      checkFocus.current = { linkId: after.link.id, control: focused };
+    const was = cardState(before.link, before.live);
+    const now = cardState(after.link, after.live);
+    if (
+      sameState(was, now) ||
+      ("key" in was &&
+        "key" in now &&
+        was.key === "portal.awaiting" &&
+        now.key === "portal.awaitingClinic")
     )
       return;
     setStatusLine({
@@ -143,12 +174,25 @@ export function PortalDocuments({
         links.length > 1
           ? t("portal.clinicIssue", {
               clinic: after.link.clinicName ?? after.link.portalBase,
-              detail: t(now),
+              detail: stateText(now),
             })
-          : t(now),
+          : stateText(now),
       heardOnly: true,
     });
   };
+  useEffect(() => {
+    // After the render that follows a check: was the focused control removed
+    // or disabled by it? Only then is focus moved, and only to that device.
+    const remembered = checkFocus.current;
+    if (!remembered) return;
+    checkFocus.current = null;
+    const { linkId, control } = remembered;
+    const active = document.activeElement;
+    if (active !== control && active !== document.body && active !== null)
+      return;
+    if (control.isConnected && !(control as HTMLButtonElement).disabled) return;
+    document.getElementById(`portal-link-title-${linkId}`)?.focus();
+  });
   const polling = useApprovalPolling({
     links,
     poll,
@@ -377,28 +421,37 @@ export function PortalDocuments({
           ? timeLeft(live, polling.now)
           : null;
         return (
-          <div className="portal-link" key={link.id}>
+          <div
+            className="portal-link"
+            id={`portal-link-${link.id}`}
+            key={link.id}
+          >
             <h3 id={`portal-link-title-${link.id}`} tabIndex={-1}>
               {link.clinicName ?? link.portalBase}
             </h3>
             <p className="portal-address">{link.portalBase}</p>
-            <p>{t(approvalKey(link, live))}</p>
+            <p>{stateText(cardState(link, live))}</p>
             {left !== null && (
               <p>
                 {left > 0
                   ? t("portal.approvalTimeLeft", {
                       count: Math.ceil(left / 60_000),
                     })
-                  : t("portal.approvalTimeUp")}
+                  : // "Checking" only while checks run.
+                    t(
+                      polling.checking?.has(link.id)
+                        ? "portal.approvalTimeUp"
+                        : "portal.approvalTimeOver",
+                    )}
               </p>
             )}
             {polling.checking?.has(link.id) && (
               <p>{t("portal.autoChecking")}</p>
             )}
-            {polling.stopped &&
-              !readOnly &&
+            {!readOnly &&
               isAwaitingApproval(link) &&
-              live?.kind !== "missing" && (
+              ((polling.stopped && live?.kind !== "missing") ||
+                live?.kind === "failed") && (
                 <p>
                   {t("portal.autoCheckStopped", { button: t("portal.check") })}
                 </p>

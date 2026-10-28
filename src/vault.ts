@@ -127,6 +127,9 @@ export interface PortalApprovalCheck {
    * asked to wait, or it does not have the saved request. Nothing saved was
    * changed because of it. */
   issue?: PublicError | null;
+  /** The vault went into read-only recovery during the check: read the
+   * vault again. */
+  recovery?: boolean;
 }
 
 export interface PortalLinkInput {
@@ -484,6 +487,8 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     approval_refused: "portal.approvalRefused",
     approval_contact_clinic: "portal.approvalContact",
     approval_missing: "portal.approvalMissing",
+    approval_reply_invalid: "portal.approvalReplyInvalid",
+    approval_still_open: "portal.approvalStillOpen",
     portal_link_address: "portal.errorAddress",
     portal_link_code: "portal.errorCode",
     portal_link_device_name: "portal.errorDeviceName",
@@ -589,6 +594,10 @@ export function hasVaultErrorCode(error: unknown, code: string): boolean {
 /** True when the native side reports that the vault is locked, for example by
  * its own idle deadline while this screen was not running. */
 export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
+
+/** True when the vault is in read-only recovery mode. */
+export const isRecoveryModeError = (error: unknown) =>
+  hasErrorCode(error, "recovery_mode");
 
 /** True when a password did not open a locked PDF (#54): the patient may try
  * again. */

@@ -20,6 +20,8 @@ export const fr: Record<MessageKey, Message> = {
   "portal.dateNotRecorded": "Date non consignée",
   "portal.restartApproval": "Créer une nouvelle demande d’approbation",
   "portal.approvalExpired":
+    "Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Documents de la clinique.",
+  "portal.approvalExpiredCard":
     "Cette demande d’approbation a expiré. Pour en faire une autre pour ce même appareil, choisissez Créer une nouvelle demande d’approbation. Vos documents et le lien de cet appareil restent tels quels.",
   "portal.approvalCancelled":
     "Cette demande d’approbation a été annulée. Vérifiez les mises à jour avant de créer une nouvelle demande.",
@@ -31,8 +33,8 @@ export const fr: Record<MessageKey, Message> = {
     "Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.",
   "portal.awaitingClinic":
     "Votre clinique a reçu la demande d’approbation. En attente de l’approbation de cet appareil par le personnel de la clinique.",
-  "portal.approvalStarted":
-    "Votre clinique a commencé à approuver cet appareil. En attente de la fin de l’approbation par la clinique.",
+  "portal.approvalPickedUp":
+    "Le système de dossiers de votre clinique a pris en charge cette demande. En attente de l’approbation de cet appareil par le personnel de la clinique.",
   "portal.approvalTimeLeft": {
     one: "Temps restant pour cette demande : environ {count} minute.",
     many: "Temps restant pour cette demande : environ {count} de minutes.",
@@ -40,10 +42,15 @@ export const fr: Record<MessageKey, Message> = {
   },
   "portal.approvalTimeUp":
     "Le délai de cette demande est écoulé. Vérification auprès de votre clinique…",
+  "portal.approvalTimeOver": "Le délai de cette demande est écoulé.",
+  "portal.approvalReplyInvalid":
+    "La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.",
+  "portal.approvalStillOpen":
+    "Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.",
   "portal.approvalUnreachable":
-    "myCarlos n’a pas pu joindre le portail de la clinique : l’état de cette demande n’est donc pas encore connu. myCarlos réessaiera.",
+    "myCarlos n’a pas pu joindre le portail de la clinique : l’état de cette demande n’est donc pas encore connu.",
   "portal.approvalWait":
-    "Le portail de la clinique a demandé à myCarlos de vérifier moins souvent. myCarlos réessaiera plus tard.",
+    "Le portail de la clinique a demandé à myCarlos de vérifier moins souvent.",
   "portal.autoChecking":
     "Tant que cette page est ouverte, myCarlos vérifie automatiquement si votre clinique a répondu.",
   "portal.autoCheckStopped":

@@ -19,6 +19,8 @@ export const es: Record<MessageKey, Message> = {
   "portal.dateNotRecorded": "Fecha no registrada",
   "portal.restartApproval": "Iniciar otra solicitud de aprobación",
   "portal.approvalExpired":
+    "Esta solicitud de aprobación caducó. Para pedirla de nuevo para este dispositivo, vaya a la página Seguridad, sección Documentos de la clínica.",
+  "portal.approvalExpiredCard":
     "Esta solicitud de aprobación caducó. Para pedirla de nuevo para este mismo dispositivo, elija Iniciar otra solicitud de aprobación. Sus documentos y el vínculo de este dispositivo no cambian.",
   "portal.approvalCancelled":
     "Esta solicitud de aprobación se canceló. Busque actualizaciones antes de iniciar otra solicitud.",
@@ -30,8 +32,8 @@ export const es: Record<MessageKey, Message> = {
     "No se encontró su solicitud de aprobación guardada en el portal. Vuelva a enviar la solicitud guardada.",
   "portal.awaitingClinic":
     "Su clínica recibió la solicitud de aprobación. Esperando a que el personal de la clínica apruebe este dispositivo.",
-  "portal.approvalStarted":
-    "Su clínica empezó a aprobar este dispositivo. Esperando a que la clínica termine.",
+  "portal.approvalPickedUp":
+    "El sistema de expedientes de su clínica recibió esta solicitud. Esperando a que el personal de la clínica apruebe este dispositivo.",
   "portal.approvalTimeLeft": {
     one: "Tiempo restante para esta solicitud: aproximadamente {count} minuto.",
     many: "Tiempo restante para esta solicitud: aproximadamente {count} de minutos.",
@@ -40,10 +42,15 @@ export const es: Record<MessageKey, Message> = {
   },
   "portal.approvalTimeUp":
     "Se acabó el tiempo de esta solicitud. Consultando con su clínica…",
+  "portal.approvalTimeOver": "Se acabó el tiempo de esta solicitud.",
+  "portal.approvalReplyInvalid":
+    "No se pudo verificar la respuesta del portal de la clínica sobre esta solicitud, así que no se usó. Comuníquese con su clínica.",
+  "portal.approvalStillOpen":
+    "Esta solicitud de aprobación sigue abierta en el portal de la clínica. Espere a que termine antes de iniciar otra.",
   "portal.approvalUnreachable":
-    "myCarlos no pudo comunicarse con el portal de la clínica, así que aún no se sabe el estado de esta solicitud. Lo volverá a intentar.",
+    "myCarlos no pudo comunicarse con el portal de la clínica, así que aún no se sabe el estado de esta solicitud.",
   "portal.approvalWait":
-    "El portal de la clínica pidió a myCarlos que consulte con menos frecuencia. Lo volverá a intentar más tarde.",
+    "El portal de la clínica pidió a myCarlos que consulte con menos frecuencia.",
   "portal.autoChecking":
     "Mientras esta página esté abierta, myCarlos consulta automáticamente si su clínica respondió.",
   "portal.autoCheckStopped":

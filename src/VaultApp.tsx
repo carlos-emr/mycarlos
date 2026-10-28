@@ -6,6 +6,7 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isRecoveryModeError,
   isRestoreUnfinished,
   vaultErrorMessage,
   vaultErrorNote,
@@ -790,7 +791,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           // An automatic status check under way finishes first: the native
           // side admits one clinic operation at a time, and the patient's own
           // action must not be refused because of a check they did not ask
-          // for. It is a read with its own time limit.
+          // for. A check only reads from the portal (it saves the clinic's
+          // answer), and its HTTP has its own time limit.
           const poll = portalPollRef.current;
           if (poll?.session === startedIn) await poll.promise;
           if (sessionRef.current !== startedIn || lockingRef.current) return;
@@ -847,6 +849,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             ),
           };
         });
+        // A save during the check reached only one copy: the vault is now
+        // read-only, and everything on screen must show it.
+        if (result.recovery) void refresh().catch(() => undefined);
         return { check: result };
       },
       (error): ApprovalPoll => {
@@ -858,6 +863,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           requestLock(true);
           return null;
         }
+        if (isRecoveryModeError(error)) void refresh().catch(() => undefined);
         return { error };
       },
     );
@@ -1164,7 +1170,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         run={run}
         portalBusy={portalBusy}
         runPortal={runPortal}
-        pollApproval={pollApproval}
+        pollApproval={bridge.refreshDeviceApproval ? pollApproval : undefined}
         setPortalNotice={setPortalNotice}
         refresh={refresh}
         onLock={lockAsked}
