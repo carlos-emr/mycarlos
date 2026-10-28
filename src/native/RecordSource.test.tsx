@@ -5,6 +5,7 @@ import { LOCALES, setLocaleOverride, translate, type Locale } from "../i18n";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
 import { DocumentReader } from "./DocumentReader";
 import { MANUAL_IMPORT_LABEL } from "./RecordSource";
+import vaultRs from "../../src-tauri/src/vault.rs?raw";
 import { VaultLibrary } from "./VaultLibrary";
 
 // #135: a document's status, Verified or Unverified, comes before its source,
@@ -190,6 +191,19 @@ function expectWholeStatus(shown: HTMLElement) {
   }
   expect(status.right).toBeLessThanOrEqual(window.innerWidth);
 }
+
+describe("the source the vault stores (#135)", () => {
+  it("matches vault.rs's MANUAL_IMPORT_LABEL byte for byte", () => {
+    // The page swaps this one stored text for a translated name, so the two
+    // copies must not drift apart: if vault.rs changes it, this fails.
+    const stored = /const MANUAL_IMPORT_LABEL: &str = "([^"\\]*)";/.exec(
+      vaultRs,
+    );
+    expect(stored?.[1]).toBe(MANUAL_IMPORT_LABEL);
+    const bytes = (text: string) => Array.from(new TextEncoder().encode(text));
+    expect(bytes(stored![1])).toEqual(bytes(MANUAL_IMPORT_LABEL));
+  });
+});
 
 describe("a document's status before its source (#135)", () => {
   it("decides Verified from the vault's check, never from the source text", () => {
