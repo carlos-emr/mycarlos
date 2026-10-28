@@ -5,6 +5,7 @@ import { LOCALES, setLocaleOverride, translate, type Locale } from "../i18n";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
 import { DocumentReader } from "./DocumentReader";
 import { MANUAL_IMPORT_LABEL } from "./RecordSource";
+import { humanText, humanValue } from "../test/humanText";
 import vaultRs from "../../src-tauri/src/vault.rs?raw";
 import { VaultLibrary } from "./VaultLibrary";
 
@@ -325,7 +326,9 @@ describe("a document's status before its source (#135)", () => {
           for (const layout of ["list", "grid"]) {
             if (layout === "grid")
               fireEvent.click(
-                screen.getByRole("button", { name: "Grid view" }),
+                screen.getByRole("button", {
+                  name: translate(locale, "interface.VaultLibrary.gridView"),
+                }),
               );
             for (const [shownRecord, status, source] of expected(locale)) {
               const item = row(locale, shownRecord);
@@ -376,8 +379,9 @@ describe("a document's status before its source (#135)", () => {
                 }),
               }),
             );
+            // Details labels the row in the language in use (the chain translates it).
             const sourceRow = within(screen.getByRole("dialog")).getByText(
-              "Source",
+              translate(locale, "library.column.source"),
               { exact: true },
             ).parentElement!;
             expectWholeSource(sourceRow, status, source);
@@ -389,7 +393,19 @@ describe("a document's status before its source (#135)", () => {
               status,
               source,
             );
-            await screen.findByRole("img", { name: /^Page 1 of 1/ });
+            // The page's name is translated too, with its numbers isolated.
+            await screen.findByRole("img", {
+              name: humanText(
+                new RegExp(
+                  `^${humanValue(
+                    translate(locale, "interface.reader.where", {
+                      page: "1",
+                      total: "1",
+                    }),
+                  ).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+                ),
+              ),
+            });
             reader.unmount();
           }
         }

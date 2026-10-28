@@ -53,11 +53,13 @@ describe("the document reader", () => {
     const clinic =
       "FAKE Northern Riverside Family Health Team and Community Wellness Clinic";
     renderReader(undefined, { ...record, verifiedClinicName: clinic });
-    const reader = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
-    expect(reader).toHaveAccessibleDescription(`Verified From ${clinic}`);
+    const reader = screen.getByRole("dialog", {
+      name: humanText("FAKE_Bloodwork.pdf"),
+    });
+    expect(reader).toHaveHumanAccessibleDescription(`Verified From ${clinic}`);
     const trust = document.getElementById("reader-trust")!;
     const status = within(trust).getByText("Verified", { exact: true });
-    const source = within(trust).getByText(`From ${clinic}`, { exact: true });
+    const source = within(trust).getByText(humanText(`From ${clinic}`));
     // First: left of the source on its line, or on a line above it.
     const [first, then] = [status, source].map((part) =>
       part.getBoundingClientRect(),
@@ -67,7 +69,7 @@ describe("the document reader", () => {
     ).toBe(true);
     // All of the source is shown: it wraps.
     expect(source.scrollWidth).toBeLessThanOrEqual(source.clientWidth);
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
   });
 
   it.each([undefined, "", "2024-02-29"])(
