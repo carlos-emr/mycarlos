@@ -234,10 +234,12 @@ export function SecuritySettings({
         <section className="setting-row native-setting-form">
           <div>
             <div className="native-auto-lock-heading">
-              <h2>{t("security.autoLock.title")}</h2>
-              <span className="state-pill">
-                {t("security.autoLock.minutes", { count: autoLockMinutes })}
-              </span>
+              <h2>
+                {t("security.autoLock.title")}{" "}
+                <span className="state-pill">
+                  {t("security.autoLock.minutes", { count: autoLockMinutes })}
+                </span>
+              </h2>
               <button
                 className="button"
                 type="button"
