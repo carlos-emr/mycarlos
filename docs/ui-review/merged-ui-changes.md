@@ -4,13 +4,73 @@ For Ben’s review of the myCarlos screen changes merged since 20 October 2026 w
 
 - All screenshots use FAKE data. They are not re-hosted: each image link is copied exactly from the pull request and is pinned to the commit it was published from, so it keeps working after that commit was removed from its branch. The exception is #124, which published none: its screenshots were made for this review and are pinned to a commit on this branch.
 - Tick **Reviewed by Ben** in the pull request description. In this file the boxes are display only.
-- Listed on 28 October 2026, from main at 891a963. Newest first; stacked pull requests follow the one that took them to main.
+- Listed on 28 October 2026, from main at 3c82d8a. Newest first; stacked pull requests follow the one that took them to main.
 
-**With screenshots:** #126, #95, #79, #81, #82, #62, #64, #58, #61, #59, #75, #77, #87, #83, #60
+**With screenshots:** #124, #104, #126, #95, #79, #81, #82, #62, #64, #58, #61, #59, #75, #77, #87, #83, #60
 
 **No screenshots published:** #106, #116, #115, #113, #112, #103, #102, #65, #93
 
-**To add after merge:** #104, #124. **Left out** (no visible change): see the end.
+**To add after merge:** #136. **Left out** (no visible change): see the end.
+
+---
+
+### [#124](https://github.com/carlos-emr/mycarlos/pull/124) Add gated clinic approval and durable document pickup
+
+- [ ] Reviewed by Ben
+
+Linking a clinic with first-device approval, and picking up documents from the portal; off unless the portal-linking build option is turned on. Merged 28 Oct.
+
+**Screenshots made for this review** (28 Oct, pinned to 0cfd122; #124 published none). The built app with a FAKE native side and FAKE data, not a real clinic, portal or device. Before = main 891a963. After = #124 at 31c2246 merged onto that main locally (its one screen-code conflict, in `src/vault.ts`, kept both sides). #124 later merged from a newer head (8c0f014), so details may differ slightly from the merged app. “200% text” is the browser’s default text size at 32 px.
+
+| | Before: main | After: #124 |
+|---|---|---|
+| Security | ![before, Security](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-1-security.png) | ![after, Security with Clinic documents](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-1-security.png) |
+| Library (after: once Check for new documents ran) | ![before, library](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-2-library.png) | ![after, verified clinic document beside a manual import](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-4-library-checked.png) |
+| Phone, 360 px, 200% text: library | ![before, phone library](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-360-200-library.png) | ![after, phone library after a check](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-360-200-library-checked.png) |
+
+| After: Clinic documents | |
+|---|---|
+| 1. No link yet: the link form | ![link form](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-2-link-form.png) |
+| 2. Linked; approval request saved | ![approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-3-awaiting-approval.png) |
+| 3. The clinic approved this device | ![approved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-6-approved.png) |
+| The verified document’s details | ![verified document details](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-5-details.png) |
+| French: approval request saved | ![French, approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-fr-3-awaiting-approval.png) |
+| Phone, 360 px, 200% text: approval request saved | ![phone, approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-360-200-awaiting-approval.png) |
+
+---
+
+### [#104](https://github.com/carlos-emr/mycarlos/pull/104) Add encrypted profile identity details and explicit PDF suggestions
+
+- [ ] Reviewed by Ben
+
+Profile forms in Security ask for the full name as on clinic documents and a birth date (or “I don’t know”); a PDF in Shared with me can suggest who it belongs to, filed only when Move is pressed. Merged 28 Oct.
+
+**[comment](https://github.com/carlos-emr/mycarlos/pull/104#issuecomment-6433076715)** — 27 Oct, pinned to 127fb2a: the profile form before and after, wide and narrow, at enlarged text; the built app with FAKE data.
+
+**Before, wider enlarged-text view**
+
+![Before, wider enlarged-text view](https://raw.githubusercontent.com/carlos-emr/mycarlos/127fb2acab9482ef140d303d36981186dab6a62d/docs/ui-tests/pr-104/screenshots/before-profiles-wide-enlarged.png)
+
+**After, wider enlarged-text view**
+
+![After, wider enlarged-text view](https://raw.githubusercontent.com/carlos-emr/mycarlos/127fb2acab9482ef140d303d36981186dab6a62d/docs/ui-tests/pr-104/screenshots/after-profiles-wide-enlarged.png)
+
+**Before, narrow enlarged-text view**
+
+![Before, narrow enlarged-text view](https://raw.githubusercontent.com/carlos-emr/mycarlos/127fb2acab9482ef140d303d36981186dab6a62d/docs/ui-tests/pr-104/screenshots/before-profiles-narrow-enlarged.png)
+
+**After, narrow enlarged-text view**
+
+![After, narrow enlarged-text view](https://raw.githubusercontent.com/carlos-emr/mycarlos/127fb2acab9482ef140d303d36981186dab6a62d/docs/ui-tests/pr-104/screenshots/after-profiles-narrow-enlarged.png)
+
+**After, add with unknown birth date**
+
+![After, add with unknown birth date](https://raw.githubusercontent.com/carlos-emr/mycarlos/127fb2acab9482ef140d303d36981186dab6a62d/docs/ui-tests/pr-104/screenshots/after-add-unknown-ready.png)
+
+**After, editing with unknown birth date**
+
+![After, editing with unknown birth date](https://raw.githubusercontent.com/carlos-emr/mycarlos/127fb2acab9482ef140d303d36981186dab6a62d/docs/ui-tests/pr-104/screenshots/after-edit-narrow-enlarged.png)
+
 
 ---
 
@@ -551,38 +611,15 @@ Not repeated here: [the 16 Oct round](https://github.com/carlos-emr/mycarlos/pul
 
 ## To add after merge
 
-Ben approved merging #126 (merged 28 Oct, now above), then [#104](https://github.com/carlos-emr/mycarlos/pull/104), then [#124](https://github.com/carlos-emr/mycarlos/pull/124). Once each is merged, move it up with its screenshots.
+Still open. Once each is merged, move it up with its screenshots. (#126, #104 and #124, merged on 28 Oct in Ben’s approved order, are now above.)
 
-### [#104](https://github.com/carlos-emr/mycarlos/pull/104) Add encrypted profile identity details and explicit PDF suggestions
-
-- [ ] Reviewed by Ben
-
-Profile forms in Security ask for the full name as on clinic documents and a birth date (or “I don’t know”); a PDF in Shared with me can suggest who it belongs to, filed only when Move is pressed.
-
-Screenshots: [27 Oct comment: the profile form before and after, wide and narrow, at enlarged text](https://github.com/carlos-emr/mycarlos/pull/104#issuecomment-6433076715).
-
-### [#124](https://github.com/carlos-emr/mycarlos/pull/124) Add gated clinic approval and durable document pickup
+### [#136](https://github.com/carlos-emr/mycarlos/pull/136) Connect and request clinic approval in one action
 
 - [ ] Reviewed by Ben
 
-Linking a clinic with first-device approval, and picking up documents from the portal; off unless the portal-linking build option is turned on.
+One button, Connect and request approval, links this device and sends its approval request for that exact device; clinic staff still compare the fingerprint and approve.
 
-**Screenshots made for this review** (28 Oct, pinned to 0cfd122; #124 published none). The built app with a FAKE native side and FAKE data, not a real clinic, portal or device. Before = main 891a963. After = #124 (31c2246) merged onto that main locally, since #124 does not include #126 yet; its one screen-code conflict (`src/vault.ts`) kept both sides. “200% text” is the browser’s default text size at 32 px.
-
-| | Before: main | After: #124 |
-|---|---|---|
-| Security | ![before, Security](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-1-security.png) | ![after, Security with Clinic documents](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-1-security.png) |
-| Library (after: once Check for new documents ran) | ![before, library](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-2-library.png) | ![after, verified clinic document beside a manual import](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-4-library-checked.png) |
-| Phone, 360 px, 200% text: library | ![before, phone library](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/before-en-360-200-library.png) | ![after, phone library after a check](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-360-200-library-checked.png) |
-
-| After: Clinic documents | |
-|---|---|
-| 1. No link yet: the link form | ![link form](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-2-link-form.png) |
-| 2. Linked; approval request saved | ![approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-3-awaiting-approval.png) |
-| 3. The clinic approved this device | ![approved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-6-approved.png) |
-| The verified document’s details | ![verified document details](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-5-details.png) |
-| French: approval request saved | ![French, approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-fr-3-awaiting-approval.png) |
-| Phone, 360 px, 200% text: approval request saved | ![phone, approval request saved](https://raw.githubusercontent.com/carlos-emr/mycarlos/0cfd12201a3613326bf0c045661e2b3dde6bd82f/docs/ui-tests/pr-124/after-en-360-200-awaiting-approval.png) |
+Screenshots: [27 Oct comment: before (#124's two buttons) and after (one action), in English and French](https://github.com/carlos-emr/mycarlos/pull/136#issuecomment-6455648875).
 
 ---
 
