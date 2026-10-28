@@ -879,6 +879,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       };
       if (deferIfPrivate()) return;
       if (outcome.imported.length) {
+        // Numbered like `refresh`: a library action that refreshes after this
+        // request was issued has the newer vault, and this reply must not roll
+        // it back (a photo hidden meanwhile would reappear).
+        const request = ++refreshIssuedRef.current;
         let next: VaultSnapshot;
         try {
           next = await bridge.snapshot();
@@ -889,7 +893,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           return;
         }
         if (!current() || deferIfPrivate()) return;
-        setSnapshot(next);
+        if (request > refreshAppliedRef.current) {
+          refreshAppliedRef.current = request;
+          setSnapshot(next);
+        }
         setSharedNew((count) => count + outcome.imported.length);
       }
       if (outcome.notPdf.length || outcome.skippedDuplicates.length)
