@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { formatDate, setLocaleOverride, translate } from "../i18n";
-import type { AuditHistoryEntry, VaultBridge } from "../vault";
+import type {
+  AuditHistoryEntry,
+  AuditHistoryView,
+  VaultBridge,
+} from "../vault";
 import { AuditHistory } from "./AuditHistory";
 
 const entry = (
@@ -31,7 +35,13 @@ function pending<T>() {
   });
   return { promise, resolve, reject };
 }
-function bridge(history = vi.fn().mockResolvedValue([])) {
+/** A whole history, as native code returns it when every piece checks out. */
+const complete = (entries: AuditHistoryEntry[]): AuditHistoryView => ({
+  entries,
+  complete: true,
+  checkedUntilMs: null,
+});
+function bridge(history = vi.fn().mockResolvedValue(complete([]))) {
   return { history } as unknown as VaultBridge;
 }
 function props(native = bridge()) {
@@ -49,7 +59,7 @@ const unverified = {
 
 describe("AuditHistory verified native results", () => {
   it("focuses its heading, shows loading, then the empty result", async () => {
-    const request = pending<AuditHistoryEntry[]>();
+    const request = pending<AuditHistoryView>();
     const shown = props(bridge(vi.fn().mockReturnValue(request.promise)));
     render(<AuditHistory {...shown} />);
     expect(
@@ -59,7 +69,7 @@ describe("AuditHistory verified native results", () => {
       "Checking and reading the complete history…",
     );
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
-    await act(async () => request.resolve([]));
+    await act(async () => request.resolve(complete([])));
     expect(screen.getByText("There are no history events.")).toBeVisible();
     expect(shown.bridge.history).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: /Back to Security/i }));
@@ -86,7 +96,9 @@ describe("AuditHistory verified native results", () => {
     ];
     const original = structuredClone(rows);
     const view = render(
-      <AuditHistory {...props(bridge(vi.fn().mockResolvedValue(rows)))} />,
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+      />,
     );
     await screen.findByText(malicious);
     const articles = screen.getAllByRole("article");
@@ -118,7 +130,9 @@ describe("AuditHistory verified native results", () => {
   it.each(["fr", "pl", "pt-BR", "es"] as const)(
     "updates labels, counts and dates in %s without fetching again",
     async (locale) => {
-      const shown = props(bridge(vi.fn().mockResolvedValue([entry()])));
+      const shown = props(
+        bridge(vi.fn().mockResolvedValue(complete([entry()]))),
+      );
       render(<AuditHistory {...shown} />);
       await screen.findByText("FAKE Avery");
       await act(async () => setLocaleOverride(locale));
@@ -169,12 +183,12 @@ describe("AuditHistory verified native results", () => {
   it.each(["success", "locked", "cancelled", "unverified"])(
     "ignores late %s after unmount",
     async (outcome) => {
-      const request = pending<AuditHistoryEntry[]>();
+      const request = pending<AuditHistoryView>();
       const shown = props(bridge(vi.fn().mockReturnValue(request.promise)));
       const view = render(<AuditHistory {...shown} />);
       view.unmount();
       await act(async () => {
-        if (outcome === "success") request.resolve([entry()]);
+        if (outcome === "success") request.resolve(complete([entry()]));
         else
           request.reject(
             outcome === "unverified" ? unverified : { code: outcome },
@@ -189,12 +203,12 @@ describe("AuditHistory verified native results", () => {
   it.each(["rows", "error"])(
     "clears old %s when the bridge changes and ignores the old request",
     async (oldResult) => {
-      const old = pending<AuditHistoryEntry[]>();
-      const next = pending<AuditHistoryEntry[]>();
+      const old = pending<AuditHistoryView>();
+      const next = pending<AuditHistoryView>();
       const shown = props(bridge(vi.fn().mockReturnValue(old.promise)));
       const view = render(<AuditHistory {...shown} />);
       await act(async () => {
-        if (oldResult === "rows") old.resolve([entry()]);
+        if (oldResult === "rows") old.resolve(complete([entry()]));
         else old.reject(unverified);
       });
       const nextProps = props(bridge(vi.fn().mockReturnValue(next.promise)));
@@ -202,7 +216,9 @@ describe("AuditHistory verified native results", () => {
       expect(screen.queryByText("FAKE Avery")).not.toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("Checking");
-      await act(async () => next.resolve([entry({ name: "FAKE Blake" })]));
+      await act(async () =>
+        next.resolve(complete([entry({ name: "FAKE Blake" })])),
+      );
       expect(screen.getByText("FAKE Blake")).toBeVisible();
       expect(nextProps.onLock).not.toHaveBeenCalled();
     },
@@ -211,11 +227,13 @@ describe("AuditHistory verified native results", () => {
   it.each(["locked", "cancelled"])(
     "ignores a previous bridge's late %s rejection after switching sessions",
     async (code) => {
-      const old = pending<AuditHistoryEntry[]>();
+      const old = pending<AuditHistoryView>();
       const shown = props(bridge(vi.fn().mockReturnValue(old.promise)));
       const view = render(<AuditHistory {...shown} />);
       const current = props(
-        bridge(vi.fn().mockResolvedValue([entry({ name: "FAKE Blake" })])),
+        bridge(
+          vi.fn().mockResolvedValue(complete([entry({ name: "FAKE Blake" })])),
+        ),
       );
       view.rerender(<AuditHistory {...current} />);
       await screen.findByText("FAKE Blake");
@@ -225,6 +243,109 @@ describe("AuditHistory verified native results", () => {
       expect(screen.getByText("FAKE Blake")).toBeVisible();
     },
   );
+});
+
+/** A history native code could check only up to a damaged or missing piece (D129). */
+const damaged = (entries: AuditHistoryEntry[]): AuditHistoryView => ({
+  entries,
+  complete: false,
+  checkedUntilMs: entries.at(-1)?.atMs ?? null,
+});
+const shownDate = (ms: number) =>
+  formatDate(ms, { dateStyle: "medium", timeStyle: "short" });
+
+describe("AuditHistory damaged history (D129)", () => {
+  it("shows the entries that check out, newest first, under a dated warning", async () => {
+    const rows = [
+      entry(),
+      entry({ seq: 1, event: "unlocked", atMs: Date.UTC(2026, 1, 3, 9) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(damaged(rows))))}
+      />,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `Part of this history is damaged. Events after ${shownDate(rows[1].atMs)} can't be checked and aren't shown.`,
+    );
+    const articles = screen.getAllByRole("article");
+    expect(articles).toHaveLength(2);
+    expect(within(articles[0]).getByRole("heading")).toHaveTextContent(
+      "Vault opened",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("2 events");
+    expect(
+      alert.compareDocumentPosition(screen.getByRole("list")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await act(async () => setLocaleOverride("fr"));
+    expect(alert).toHaveTextContent(
+      translate("fr", "interface.history.damaged", {
+        date: shownDate(rows[1].atMs),
+      }),
+    );
+  });
+
+  it("shows nothing but the warning when no entry checks out", async () => {
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(damaged([]))))}
+      />,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Part of this history is damaged. Its events can't be checked, so none are shown.",
+    );
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("There are no history events."),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([[[]], [[entry()]]])(
+    "shows no warning for a complete history (%#)",
+    async (rows) => {
+      render(
+        <AuditHistory
+          {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+        />,
+      );
+      await screen.findByText(
+        rows.length ? "FAKE Avery" : "There are no history events.",
+      );
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it("follows the native result, never the rows, for the warning", async () => {
+    // A complete history is trusted as complete even if native also sent a date.
+    const view = render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi.fn().mockResolvedValue({
+              entries: [entry()],
+              complete: true,
+              checkedUntilMs: entry().atMs,
+            }),
+          ),
+        )}
+      />,
+    );
+    await screen.findByText("FAKE Avery");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    view.unmount();
+    // An incomplete history warns even when it looks whole to the screen.
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(damaged([entry()]))))}
+      />,
+    );
+    await screen.findByText("FAKE Avery");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      shownDate(entry().atMs),
+    );
+  });
 });
 
 describe("AuditHistory recorded semantics", () => {
@@ -244,7 +365,9 @@ describe("AuditHistory recorded semantics", () => {
         entry({ seq: 5, event: "moved", from: ["FAKE Folder"], fromTotal: 2 }),
       ];
       render(
-        <AuditHistory {...props(bridge(vi.fn().mockResolvedValue(rows)))} />,
+        <AuditHistory
+          {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+        />,
       );
       await screen.findByText(
         translate(locale, "interface.history.how.camera"),

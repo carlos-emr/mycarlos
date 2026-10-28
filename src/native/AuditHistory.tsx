@@ -12,6 +12,7 @@ import {
   isCancelledError,
   vaultErrorMessage,
   type AuditHistoryEntry,
+  type AuditHistoryView,
   type VaultBridge,
 } from "../vault";
 
@@ -124,8 +125,9 @@ function details(entry: AuditHistoryEntry): [MessageKey, string][] {
   return rows;
 }
 
-/** Read-only view of the encrypted audit history. Native code returns rows
- * only after verifying the complete chain. */
+/** Read-only view of the encrypted audit history. Native code returns only the entries it
+ * authenticated from the start of the chain, and says whether they are all of it; when they
+ * aren't, a warning comes first (D129). */
 export function AuditHistory({
   bridge,
   onBack,
@@ -141,12 +143,13 @@ export function AuditHistory({
   onLockRef.current = onLock;
   const [result, setResult] = useState<{
     bridge: VaultBridge;
-    entries: AuditHistoryEntry[] | null;
+    view: AuditHistoryView | null;
     error: UiText;
   } | null>(null);
   // A different native session must never display the previous request's rows
   // or error, including the render before its effect starts.
-  const entries = result?.bridge === bridge ? result.entries : null;
+  const view = result?.bridge === bridge ? result.view : null;
+  const entries = view?.entries ?? null;
   const error = result?.bridge === bridge ? result.error : "";
   useEffect(() => {
     headingRef.current?.focus();
@@ -154,8 +157,8 @@ export function AuditHistory({
   useEffect(() => {
     let current = true;
     void bridge.history().then(
-      (verifiedEntries) => {
-        if (current) setResult({ bridge, entries: verifiedEntries, error: "" });
+      (verified) => {
+        if (current) setResult({ bridge, view: verified, error: "" });
       },
       (cause: unknown) => {
         if (!current) return;
@@ -165,7 +168,7 @@ export function AuditHistory({
         }
         setResult({
           bridge,
-          entries: null,
+          view: null,
           error: deferredText(() => vaultErrorMessage(cause)),
         });
       },
@@ -196,41 +199,60 @@ export function AuditHistory({
         <p className="purpose-note warning" role="alert">
           {typeof error === "string" ? error : error.render()}
         </p>
-      ) : entries === null ? (
+      ) : view === null || entries === null ? (
         <p className="status-line" role="status" aria-live="polite">
           {translateNow("interface.history.loading")}
         </p>
-      ) : entries.length === 0 ? (
-        <p>{translateNow("interface.history.empty")}</p>
       ) : (
         <>
-          <p className="status-line" role="status">
-            {translateNow("interface.history.events", {
-              count: entries.length,
-            })}
-          </p>
-          <ol className="audit-history-list">
-            {[...entries].reverse().map((entry) => (
-              <li key={entry.seq}>
-                <article className="audit-history-entry">
-                  <h2>{translateNow(eventLabels[entry.event])}</h2>
-                  <p className="audit-history-date">
-                    {formatTimestamp(entry.atMs)}
-                  </p>
-                  <dl>
-                    {details(entry).map(([label, value], index) => (
-                      <div key={`${label}-${index}`}>
-                        <dt>{translateNow(label)}</dt>
-                        <dd>{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </article>
-              </li>
-            ))}
-          </ol>
+          {!view.complete && (
+            <p className="purpose-note warning" role="alert">
+              {view.checkedUntilMs === null
+                ? translateNow("interface.history.damagedAll")
+                : translateNow("interface.history.damaged", {
+                    date: formatTimestamp(view.checkedUntilMs),
+                  })}
+            </p>
+          )}
+          {entries.length === 0 ? (
+            view.complete && <p>{translateNow("interface.history.empty")}</p>
+          ) : (
+            <HistoryList entries={entries} />
+          )}
         </>
       )}
     </main>
+  );
+}
+
+function HistoryList({ entries }: { entries: AuditHistoryEntry[] }) {
+  return (
+    <>
+      <p className="status-line" role="status">
+        {translateNow("interface.history.events", {
+          count: entries.length,
+        })}
+      </p>
+      <ol className="audit-history-list">
+        {[...entries].reverse().map((entry) => (
+          <li key={entry.seq}>
+            <article className="audit-history-entry">
+              <h2>{translateNow(eventLabels[entry.event])}</h2>
+              <p className="audit-history-date">
+                {formatTimestamp(entry.atMs)}
+              </p>
+              <dl>
+                {details(entry).map(([label, value], index) => (
+                  <div key={`${label}-${index}`}>
+                    <dt>{translateNow(label)}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }

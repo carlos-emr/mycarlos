@@ -543,8 +543,15 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 unlock, and every backup saved, adds to the history.
 
 **Verified read-only view, kept on the device.** While the vault is unlocked, the Security
-screen can request the complete history. Native code authenticates every encrypted segment
-and verifies the whole chain against the manifest before returning any display rows over IPC.
+screen can request the history. Native code reads the encrypted segments in order and returns
+display rows over IPC only for entries it has authenticated and linked from the chain's start: it
+stops at the first segment that is missing or does not authenticate, at the first entry that does
+not follow the one before, and at the manifest's count. With the rows it returns `complete`, true
+only when they are the whole chain the manifest pins (its count and head). When it is false,
+Security shows the rows that checked out under a warning, "Part of this history is damaged.
+Events after <date> can't be checked and aren't shown.", dated from the last row returned, or
+says none are shown when no entry checked out (Ben's D129, mycarlos#120). The warning follows
+`complete` only; the renderer never works it out. A damaged segment is never opened or shown.
 Those rows include recorded names, folder labels, times, methods, session notes and saved
 locations (including file paths or provider addresses). Native record/profile/folder identifiers,
 chain hashes, wrapped keys and object paths are not returned. Some entries lack person context;

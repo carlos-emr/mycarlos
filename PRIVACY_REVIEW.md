@@ -57,11 +57,14 @@ backups were saved, and where. It also records when the passphrase was changed (
 passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
 (its names then). It keeps the names as they were at each moment, so a document
 renamed or hidden can still be read off the history. Security now offers a verified read-only
-view while the vault is unlocked. Native code checks every encrypted segment and the whole
-manifest-pinned chain before sending display names, folder labels, times, methods, session notes
-and saved locations over local main-window IPC. Record/profile/folder identifiers, chain hashes,
-wrapped keys and object paths stay native. Folder labels do not establish complete paths or
-unrecorded historical person attribution; saved locations can be shortened. Locking conceals
+view while the vault is unlocked. Native code sends display names, folder labels, times, methods,
+session notes and saved locations over local main-window IPC only for entries it has
+authenticated and linked from the start of the manifest-pinned chain. If a piece is damaged or the
+chain is cut short, Security shows the entries before that point with a warning that later events
+can't be checked; damaged pieces are never opened or shown (D129). Record/profile/folder
+identifiers, chain hashes, wrapped keys and object paths stay native. Folder labels do not
+establish complete paths or unrecorded historical person attribution; saved locations can be
+shortened. Locking conceals
 the view while native confirmation is pending and late results cannot restore it. The app never
 changes or removes an entry. It is in every backup. The app tells the patient this in Security,
 under "What myCarlos keeps". There is no separate history-file export outside the vault:

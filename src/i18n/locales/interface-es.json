@@ -402,6 +402,8 @@
   "interface.history.event.folderMoved": "Carpeta movida",
   "interface.history.event.setAside": "Bóveda apartada",
   "interface.history.error.unverified": "No se pudo leer ni verificar el historial. No se muestra ningún evento.",
+  "interface.history.damaged": "Parte de este historial está dañada. Los eventos posteriores al {date} no se pueden verificar y no se muestran.",
+  "interface.history.damagedAll": "Parte de este historial está dañada. Sus eventos no se pueden verificar, así que no se muestra ninguno.",
   "interface.history.personRootFolder": "Nivel superior de una persona",
   "interface.history.sessionLockedByApp": "Bloqueada por la aplicación el {date}",
   "interface.history.laterSessionNotRecorded": "No se registró al menos una sesión posterior.",

@@ -71,7 +71,9 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     setAutoLock: vi.fn().mockResolvedValue(undefined),
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(emptySnapshot),
-    history: vi.fn().mockResolvedValue([]),
+    history: vi
+      .fn()
+      .mockResolvedValue({ entries: [], complete: true, checkedUntilMs: null }),
     changePassphrase: vi.fn().mockResolvedValue(undefined),
     // Tests that set up a recovery key say so; the others get a vault without
     // one, as when making the key fails after the vault was created.
@@ -331,7 +333,7 @@ describe("durable vault UI", () => {
     "conceals %s audit history while a manual native lock is still pending",
     async (kind) => {
       let finishLock!: () => void;
-      let finishHistory!: (rows: unknown[]) => void;
+      let finishHistory!: (view: unknown) => void;
       const rows = [
         {
           seq: 0,
@@ -353,7 +355,11 @@ describe("durable vault UI", () => {
         status: vi.fn().mockResolvedValue("unlocked"),
         history:
           kind === "verified"
-            ? vi.fn().mockResolvedValue(rows)
+            ? vi.fn().mockResolvedValue({
+                entries: rows,
+                complete: true,
+                checkedUntilMs: null,
+              })
             : vi.fn().mockImplementation(
                 () =>
                   new Promise((resolve) => {
@@ -389,7 +395,14 @@ describe("durable vault UI", () => {
       ).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
       expect(screen.getByText("Locking", { exact: true })).toBeVisible();
-      if (kind === "pending") await act(async () => finishHistory(rows));
+      if (kind === "pending")
+        await act(async () =>
+          finishHistory({
+            entries: rows,
+            complete: true,
+            checkedUntilMs: null,
+          }),
+        );
       expect(document.body).not.toHaveTextContent("FAKE pending lock secret");
       await act(async () => finishLock());
       expect(await screen.findByLabelText("Passphrase")).toBeVisible();
@@ -443,7 +456,7 @@ describe("durable vault UI", () => {
   it.each(["success", "locked", "cancelled"])(
     "discards a pending audit history %s after lock and a new unlock",
     async (outcome) => {
-      let finish!: (rows: import("./vault").AuditHistoryEntry[]) => void;
+      let finish!: (view: import("./vault").AuditHistoryView) => void;
       let fail!: (cause: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
@@ -456,7 +469,11 @@ describe("durable vault UI", () => {
                 fail = reject;
               }),
           )
-          .mockResolvedValue([]),
+          .mockResolvedValue({
+            entries: [],
+            complete: true,
+            checkedUntilMs: null,
+          }),
       });
       render(<VaultApp bridge={bridge} />);
       await screen.findByRole("heading", { name: "My records" });
@@ -483,23 +500,27 @@ describe("durable vault UI", () => {
       await act(async () => {
         if (outcome !== "success") fail({ code: outcome });
         else
-          finish([
-            {
-              seq: 0,
-              atMs: 1,
-              app: "FAKE",
-              event: "created",
-              name: "FAKE old session secret",
-              oldName: null,
-              from: null,
-              fromTotal: null,
-              to: null,
-              toTotal: null,
-              how: null,
-              place: null,
-              previousSession: null,
-            },
-          ]);
+          finish({
+            entries: [
+              {
+                seq: 0,
+                atMs: 1,
+                app: "FAKE",
+                event: "created",
+                name: "FAKE old session secret",
+                oldName: null,
+                from: null,
+                fromTotal: null,
+                to: null,
+                toTotal: null,
+                how: null,
+                place: null,
+                previousSession: null,
+              },
+            ],
+            complete: true,
+            checkedUntilMs: null,
+          });
       });
       expect(bridge.lock).toHaveBeenCalledOnce();
       expect(
@@ -512,23 +533,27 @@ describe("durable vault UI", () => {
   it("removes verified audit history plaintext from the document when the vault locks", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      history: vi.fn().mockResolvedValue([
-        {
-          seq: 0,
-          atMs: 1,
-          app: "FAKE",
-          event: "created",
-          name: "FAKE verified session secret",
-          oldName: null,
-          from: null,
-          fromTotal: null,
-          to: null,
-          toTotal: null,
-          how: null,
-          place: null,
-          previousSession: null,
-        },
-      ]),
+      history: vi.fn().mockResolvedValue({
+        entries: [
+          {
+            seq: 0,
+            atMs: 1,
+            app: "FAKE",
+            event: "created",
+            name: "FAKE verified session secret",
+            oldName: null,
+            from: null,
+            fromTotal: null,
+            to: null,
+            toTotal: null,
+            how: null,
+            place: null,
+            previousSession: null,
+          },
+        ],
+        complete: true,
+        checkedUntilMs: null,
+      }),
     });
     render(<VaultApp bridge={bridge} />);
     await screen.findByRole("heading", { name: "My records" });

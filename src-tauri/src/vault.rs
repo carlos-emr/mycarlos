@@ -1209,10 +1209,28 @@ impl VaultStore {
         ))
     }
 
-    /// Reads the whole encrypted audit history and verifies it against the
-    /// manifest before returning any entries. A caller never receives a
-    /// partial chain.
+    /// The strict read: the whole history, or `Corrupt` when any of it does not check out.
+    /// Tests use it to hold `history_view`'s `complete` to the rules the old all-or-nothing read
+    /// enforced.
+    #[cfg(test)]
     pub fn history_entries(&self) -> Result<Vec<HistoryEntry>, VaultError> {
+        let view = self.history_view()?;
+        if view.complete {
+            Ok(view.entries)
+        } else {
+            Err(VaultError::Corrupt)
+        }
+    }
+
+    /// The audit history as far as it checks out (Ben's D129, mycarlos#120), for Security's view.
+    ///
+    /// Segments are read in order, and reading stops at the first that is gone or does not
+    /// authenticate. Entries are kept only while each follows the one before from the genesis
+    /// value, and never past the manifest's count. So only entries the chain authenticates from
+    /// its start are returned, in order, and nothing after a break. `complete` is true exactly
+    /// when every piece was read and the entries are the whole chain the manifest pins (its
+    /// count and head), as `verify` checks; a damaged padding piece makes it false too.
+    pub fn history_view(&self) -> Result<HistoryView, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let cancelled = || self.cancel_io.load(Ordering::Acquire);
@@ -1221,43 +1239,52 @@ impl VaultStore {
         }
         let manifest = &unlocked.manifest;
         if manifest.history.is_empty() {
-            return if manifest.format_version < MANIFEST_FORMAT_HISTORY {
-                Ok(Vec::new())
-            } else {
-                Err(VaultError::Corrupt)
-            };
+            // A vault from before the history has none to show; a newer one must have one.
+            let complete = manifest.format_version < MANIFEST_FORMAT_HISTORY;
+            return Ok(HistoryView {
+                entries: Vec::new(),
+                complete,
+            });
         }
         let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
         let mut entries = Vec::new();
+        let mut all_read = true;
         for segment in &manifest.history.segments {
             run_at_test_boundary("history-segment-read");
             if cancelled() {
                 return Err(VaultError::Cancelled);
             }
-            entries.extend(read_history_segment_cancellable(
+            match read_history_segment_cancellable(
                 &self.root,
                 &keys,
                 manifest.vault_id,
                 segment,
                 Arc::clone(&self.cancel_io),
-            )?);
+            ) {
+                Ok(found) => entries.extend(found),
+                // A damaged or missing piece: nothing in it or after it can be checked.
+                Err(error) if history_piece_damaged(&error) => {
+                    all_read = false;
+                    break;
+                }
+                Err(error) => return Err(error),
+            }
         }
-        history::verify_cancellable(
-            manifest.vault_id,
-            &entries,
-            manifest.history.count,
-            &manifest.history.head,
-            cancelled,
-        )
-        .map_err(|error| match error {
-            history::ChainBreak::Cancelled => VaultError::Cancelled,
-            _ => VaultError::Corrupt,
-        })?;
+        let (linked, head) = history::linked_prefix(manifest.vault_id, &entries, cancelled)
+            .map_err(|_| VaultError::Cancelled)?;
+        let pinned = usize::try_from(manifest.history.count).unwrap_or(usize::MAX);
+        // Complete exactly when the strict read passes: every piece read (padding too), every
+        // entry linked, and the chain ending at the pinned count and head.
+        let complete = all_read
+            && linked == entries.len()
+            && linked == pinned
+            && head == manifest.history.head;
+        entries.truncate(linked.min(pinned));
         run_at_test_boundary("history-verified");
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
-        Ok(entries)
+        Ok(HistoryView { entries, complete })
     }
 
     fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
@@ -4905,6 +4932,22 @@ fn write_history_segment(
         first_seq: entries.first().map_or(0, |entry| entry.seq),
         entry_count: entries.len() as u64,
     })
+}
+
+/// Whether a history piece failed to read because it is damaged or gone, as opposed to a failed
+/// storage operation (or a full disk) that a retry can get past and that says nothing about
+/// damage: those fail the whole read, as before D129, instead of being shown as damage.
+fn history_piece_damaged(error: &VaultError) -> bool {
+    matches!(error, VaultError::Corrupt | VaultError::Unreadable)
+}
+
+/// The audit history as far as it checks out; see `VaultStore::history_view`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct HistoryView {
+    /// Entries authenticated from the start of the chain, in order.
+    pub entries: Vec<HistoryEntry>,
+    /// Whether they are the whole chain the manifest pins.
+    pub complete: bool,
 }
 
 /// The entries in one segment. `Corrupt` when its object is gone or does not
@@ -14088,6 +14131,166 @@ mod tests {
             store.session().as_mut().unwrap().manifest.history = history.clone();
         }
         assert_eq!(store.history_entries().unwrap(), expected);
+    }
+
+    /// A vault whose history spans several segments, the last one padding (as above).
+    fn store_with_long_history(root: &Path) -> VaultStore {
+        let store = VaultStore::new(root.to_path_buf());
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            let entries = (0..400)
+                .map(|index| {
+                    let mut entry = HistoryEntry::new(HistoryEvent::Imported, index + 2);
+                    entry.name = Some(format!("FAKE {index} {}", "x".repeat(220)));
+                    entry
+                })
+                .collect();
+            assert!(record_in_session(root, unlocked, entries));
+        }
+        store
+    }
+
+    fn damage_segment(root: &Path, segment: &HistorySegment) -> Vec<u8> {
+        let path = root.join("objects").join(&segment.object_name);
+        let bytes = fs::read(&path).unwrap();
+        let mut damaged = bytes.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        fs::write(&path, damaged).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn history_view_intact_is_the_whole_pinned_chain() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = store_with_long_history(&temp.path().join("FAKE-vault"));
+        let view = store.history_view().unwrap();
+        assert!(view.complete);
+        let guard = store.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        // Every entry, ending at the pinned count and head.
+        history::verify(
+            manifest.vault_id,
+            &view.entries,
+            manifest.history.count,
+            &manifest.history.head,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn history_view_shows_every_entry_but_warns_when_a_padding_piece_is_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_view().unwrap().entries;
+        let padding = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .clone();
+        let padding = padding.last().unwrap();
+        assert_eq!(padding.entry_count, 0, "the last piece is padding");
+        damage_segment(&root, padding);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all);
+    }
+
+    #[test]
+    fn only_a_damaged_or_missing_piece_is_shown_as_damage() {
+        // A storage error or a full disk says nothing about damage: the read fails, as before.
+        assert!(history_piece_damaged(&VaultError::Corrupt));
+        assert!(history_piece_damaged(&VaultError::Unreadable));
+        assert!(!history_piece_damaged(&VaultError::Storage));
+        assert!(!history_piece_damaged(&VaultError::NoSpace));
+        assert!(!history_piece_damaged(&VaultError::Cancelled));
+        assert!(!history_piece_damaged(&VaultError::Locked));
+    }
+
+    #[test]
+    fn history_view_shows_only_entries_before_a_damaged_or_missing_middle_piece() {
+        // D129: entries that check out from the start, then nothing after the damage.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        let middle = &history.segments[1];
+        assert!(middle.entry_count > 0 && history.segments[2].entry_count > 0);
+        let before = usize::try_from(middle.first_seq).unwrap();
+        assert!(before > 0 && before < all.len());
+        let original = damage_segment(&root, middle);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        let path = root.join("objects").join(&middle.object_name);
+        fs::remove_file(&path).unwrap();
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        fs::write(&path, original).unwrap();
+        assert_eq!(store.history_view().unwrap().entries, all);
+    }
+
+    #[test]
+    fn history_view_shows_all_entries_but_not_complete_when_the_chain_is_cut_short() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        // The manifest pins more entries than the chain holds: the end was cut off.
+        store.session().as_mut().unwrap().manifest.history.count += 1;
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all);
+        // The chain does not end at the pinned head.
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all);
+        // Entries past the pinned count are never shown.
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.count -= 1;
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..all.len() - 1]);
+    }
+
+    #[test]
+    fn history_view_shows_nothing_when_the_first_piece_is_damaged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let first = store.session().as_ref().unwrap().manifest.history.segments[0].clone();
+        damage_segment(&root, &first);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert!(view.entries.is_empty());
+    }
+
+    #[test]
+    fn history_view_empty_history_is_complete_only_for_a_legacy_format() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("FAKE-vault"));
+        store.create(PASSWORD, "FAKE Avery", 1).unwrap();
+        store.session().as_mut().unwrap().manifest.history = HistoryState::default();
+        let view = store.history_view().unwrap();
+        assert!(!view.complete && view.entries.is_empty());
+        store.session().as_mut().unwrap().manifest.format_version = MANIFEST_FORMAT_HIDDEN;
+        assert_eq!(
+            store.history_view().unwrap(),
+            HistoryView {
+                entries: Vec::new(),
+                complete: true
+            }
+        );
     }
 
     #[test]

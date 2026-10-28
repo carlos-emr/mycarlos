@@ -1285,8 +1285,34 @@ struct SpeedTestReport {
     app_version: String,
 }
 
-/// The history shown in Security, after the native side has verified its
-/// complete chain. IDs and chain hashes stay native.
+/// What `vault_history` returns: entries checked from the start of the chain, and whether
+/// they are all of it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuditHistory {
+    entries: Vec<AuditHistoryEntry>,
+    complete: bool,
+    checked_until_ms: Option<u64>,
+}
+
+impl From<vault::HistoryView> for AuditHistory {
+    fn from(view: vault::HistoryView) -> Self {
+        // The warning's date is the last entry shown, and only when the history is not complete.
+        let checked_until_ms = if view.complete {
+            None
+        } else {
+            view.entries.last().map(|entry| entry.at_ms)
+        };
+        Self {
+            entries: view.entries.into_iter().map(Into::into).collect(),
+            complete: view.complete,
+            checked_until_ms,
+        }
+    }
+}
+
+/// One history entry shown in Security, after native code authenticated it from the start of
+/// the chain. IDs and chain hashes stay native.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AuditHistoryEntry {
@@ -1548,12 +1574,14 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
     run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
-/// Reads and verifies the complete audit history before returning it. Any
-/// damaged or unreadable segment makes the read fail as a whole.
+/// The audit history for Security, as far as it checks out (Ben's D129, mycarlos#120). Only
+/// entries native code authenticated from the start of the chain are returned. `complete` says
+/// whether they are the whole chain; when not, `checkedUntilMs` is the time of the last one
+/// returned (null when none is), so the screen can warn that later events can't be checked.
 #[tauri::command]
-async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vec<AuditHistoryEntry>> {
-    match run_blocking(store.inner(), VaultStore::history_entries).await {
-        Ok(entries) => Ok(entries.into_iter().map(Into::into).collect()),
+async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
+    match run_blocking(store.inner(), VaultStore::history_view).await {
+        Ok(view) => Ok(view.into()),
         Err(error) if matches!(error.code, "corrupt" | "unreadable" | "storage") => {
             Err(PublicError {
                 code: "history_unverified",
@@ -5476,6 +5504,30 @@ mod audit_history_ipc_tests {
         }
     }
 
+    /// D129: the warning's date is the last entry shown, and there is one only when the history
+    /// is not complete and something is shown.
+    #[test]
+    fn audit_history_dates_the_warning_from_the_last_entry_shown() {
+        let entries = || {
+            vec![
+                history::HistoryEntry::new(history::HistoryEvent::Created, 1_000),
+                history::HistoryEntry::new(history::HistoryEvent::Unlocked, 2_000),
+            ]
+        };
+        let shown =
+            |entries, complete| AuditHistory::from(vault::HistoryView { entries, complete });
+        let partial = shown(entries(), false);
+        assert!(!partial.complete);
+        assert_eq!(partial.entries.len(), 2);
+        assert_eq!(partial.checked_until_ms, Some(2_000));
+        let whole = shown(entries(), true);
+        assert!(whole.complete);
+        assert_eq!(whole.checked_until_ms, None);
+        let nothing = shown(Vec::new(), false);
+        assert!(!nothing.complete && nothing.entries.is_empty());
+        assert_eq!(nothing.checked_until_ms, None);
+    }
+
     /// Use the real generated production capability authority, not mock_context's
     /// empty/permissive authority. Only the OS runtime is mocked; vault I/O is real.
     #[test]
@@ -5513,10 +5565,21 @@ mod audit_history_ipc_tests {
             .create("river-azimuth-cobalt-sparrow-934", "FAKE Avery", 1)
             .unwrap();
         store.create_profile("FAKE Blake", 2).unwrap();
-        let rows = tauri::test::get_ipc_response(&main, request(local))
+        let response = tauri::test::get_ipc_response(&main, request(local))
             .unwrap()
             .deserialize::<serde_json::Value>()
             .unwrap();
+        // An intact history is complete, with no "checked until" time (D129).
+        let top: std::collections::BTreeSet<_> = response
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(top, ["checkedUntilMs", "complete", "entries"].into());
+        assert_eq!(response["complete"], true);
+        assert!(response["checkedUntilMs"].is_null());
+        let rows = &response["entries"];
         assert_eq!(rows[0]["event"], "created");
         assert!(rows[0]["name"].is_null());
         assert_eq!(rows[1]["event"], "profileCreated");
@@ -5547,19 +5610,19 @@ mod audit_history_ipc_tests {
             .into_iter()
             .collect()
         );
-        // Corrupt every encrypted object in this disposable synthetic vault.
+        // Corrupt every encrypted object in this disposable synthetic vault. Its only history
+        // piece no longer authenticates, so nothing is shown and the view is not complete (D129).
         for file in std::fs::read_dir(root.join("objects")).unwrap() {
             std::fs::write(file.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
         }
-        let Err(failure) = tauri::test::get_ipc_response(&main, request(local)) else {
-            panic!("IPC must fail");
-        };
-        assert_eq!(failure["code"], "history_unverified");
-        assert_eq!(failure["messageKey"], "interface.history.error.unverified");
-        assert!(!failure
-            .to_string()
-            .contains(&temp.path().to_string_lossy().to_string()));
-        assert!(!failure.to_string().contains("FAKE Avery"));
+        let damaged = tauri::test::get_ipc_response(&main, request(local))
+            .unwrap()
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(
+            damaged,
+            serde_json::json!({ "entries": [], "complete": false, "checkedUntilMs": null })
+        );
         store.lock();
         let Err(locked) = tauri::test::get_ipc_response(&main, request(local)) else {
             panic!("IPC must fail");

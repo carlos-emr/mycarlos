@@ -402,6 +402,8 @@
   "interface.history.event.folderMoved": "Dossier déplacé",
   "interface.history.event.setAside": "Coffre mis de côté",
   "interface.history.error.unverified": "L’historique n’a pas pu être lu et vérifié. Aucun événement ne s’affiche.",
+  "interface.history.damaged": "Une partie de cet historique est endommagée. Les événements après le {date} ne peuvent pas être vérifiés et ne s’affichent pas.",
+  "interface.history.damagedAll": "Une partie de cet historique est endommagée. Ses événements ne peuvent pas être vérifiés, donc aucun ne s’affiche.",
   "interface.history.personRootFolder": "Premier niveau d’une personne",
   "interface.history.sessionLockedByApp": "Verrouillé par l’application le {date}",
   "interface.history.laterSessionNotRecorded": "Au moins une session ultérieure n’a pas été enregistrée.",

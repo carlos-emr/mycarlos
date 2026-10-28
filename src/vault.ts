@@ -186,8 +186,17 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
-/** An audit event returned only after native code verifies the complete
- * encrypted history chain. */
+/** Security's audit history (D129, mycarlos#120): entries native code authenticated from the
+ * start of the encrypted chain, in order. `complete` says whether they are all of it; when not,
+ * `checkedUntilMs` is the time of the last entry returned (null when none is). The screen's
+ * warning follows `complete` only; it is never worked out here. */
+export interface AuditHistoryView {
+  entries: AuditHistoryEntry[];
+  complete: boolean;
+  checkedUntilMs: number | null;
+}
+
+/** An audit event that native code authenticated from the start of the history chain. */
 export interface AuditHistoryEntry {
   seq: number;
   atMs: number;
@@ -250,8 +259,8 @@ export interface VaultBridge {
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
-  /** Reads the whole audit history only if its encrypted chain verifies. */
-  history(): Promise<AuditHistoryEntry[]>;
+  /** Reads the audit history as far as its encrypted chain checks out. */
+  history(): Promise<AuditHistoryView>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -596,7 +605,7 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
-    history: () => invoke<AuditHistoryEntry[]>("vault_history"),
+    history: () => invoke<AuditHistoryView>("vault_history"),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },

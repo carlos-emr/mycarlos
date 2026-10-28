@@ -420,6 +420,8 @@
   "interface.history.event.folderMoved": "Przeniesiono folder",
   "interface.history.event.setAside": "Odłożono sejf",
   "interface.history.error.unverified": "Nie udało się odczytać ani zweryfikować historii. Nie wyświetlono żadnych zdarzeń.",
+  "interface.history.damaged": "Część tej historii jest uszkodzona. Zdarzeń po {date} nie można zweryfikować i nie są wyświetlane.",
+  "interface.history.damagedAll": "Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc żadne nie są wyświetlane.",
   "interface.history.personRootFolder": "Poziom główny dokumentów osoby",
   "interface.history.sessionLockedByApp": "Zablokowano przez aplikację: {date}",
   "interface.history.laterSessionNotRecorded": "Co najmniej jedna późniejsza sesja nie została zapisana.",

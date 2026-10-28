@@ -384,6 +384,8 @@
   "interface.history.event.folderMoved": "Folder moved",
   "interface.history.event.setAside": "Vault set aside",
   "interface.history.error.unverified": "The history could not be read and verified. No events are shown.",
+  "interface.history.damaged": "Part of this history is damaged. Events after {date} can't be checked and aren't shown.",
+  "interface.history.damagedAll": "Part of this history is damaged. Its events can't be checked, so none are shown.",
   "interface.history.personRootFolder": "A person’s top level",
   "interface.history.sessionLockedByApp": "Locked by the app at {date}",
   "interface.history.laterSessionNotRecorded": "At least one later session was not recorded.",

@@ -286,6 +286,28 @@ pub fn verify_cancellable(
     Ok(())
 }
 
+/// How many entries, from the first, follow the chain from the genesis value, and the head
+/// after them. Unlike `verify`, a break is not an error: the entries before it still check out
+/// (Ben's D129, mycarlos#120). Only a requested stop is an error. Each entry's content is
+/// authenticated by its segment's encryption; this fixes their order from the start.
+pub fn linked_prefix(
+    vault_id: Uuid,
+    entries: &[HistoryEntry],
+    cancelled: impl Fn() -> bool,
+) -> Result<(usize, String), ChainBreak> {
+    let mut expected = genesis(vault_id);
+    for (index, entry) in entries.iter().enumerate() {
+        if cancelled() {
+            return Err(ChainBreak::Cancelled);
+        }
+        if entry.seq != index as u64 || entry.prev != expected {
+            return Ok((index, expected));
+        }
+        expected = entry.hash();
+    }
+    Ok((entries.len(), expected))
+}
+
 /// One segment's plaintext: its entries, one per line, then spaces to
 /// exactly `SEGMENT_PLAINTEXT_BYTES`. None if they do not fit. Built in a
 /// buffer of that size, wiped when dropped, so that no copy of the names in
@@ -387,6 +409,53 @@ mod tests {
         assert_eq!(
             verify(Uuid::nil(), &entries, 3, &head),
             Err(ChainBreak::At(0))
+        );
+    }
+
+    #[test]
+    fn the_linked_prefix_stops_at_the_first_entry_that_does_not_follow() {
+        let vault = Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
+        let mut entries = vec![
+            entry(HistoryEvent::Created, 1),
+            entry(HistoryEvent::Unlocked, 2),
+            entry(HistoryEvent::Imported, 3),
+        ];
+        let head = chain(&mut entries, 0, genesis(vault));
+        let after = |count: usize| {
+            entries[..count]
+                .last()
+                .map_or_else(|| genesis(vault), HistoryEntry::hash)
+        };
+        assert_eq!(linked_prefix(vault, &entries, || false), Ok((3, head)));
+        assert_eq!(linked_prefix(vault, &[], || false), Ok((0, genesis(vault))));
+        let mut changed = entries.clone();
+        changed[1].at_ms = 99;
+        assert_eq!(
+            linked_prefix(vault, &changed, || false),
+            Ok((2, changed[1].hash()))
+        );
+        let mut removed = entries.clone();
+        removed.remove(1);
+        assert_eq!(linked_prefix(vault, &removed, || false), Ok((1, after(1))));
+        let mut reordered = entries.clone();
+        reordered.swap(1, 2);
+        assert_eq!(
+            linked_prefix(vault, &reordered, || false),
+            Ok((1, after(1)))
+        );
+        let mut renumbered = entries.clone();
+        renumbered[2].seq = 7;
+        assert_eq!(
+            linked_prefix(vault, &renumbered, || false),
+            Ok((2, after(2)))
+        );
+        assert_eq!(
+            linked_prefix(Uuid::nil(), &entries, || false),
+            Ok((0, genesis(Uuid::nil())))
+        );
+        assert_eq!(
+            linked_prefix(vault, &entries, || true),
+            Err(ChainBreak::Cancelled)
         );
     }
 
