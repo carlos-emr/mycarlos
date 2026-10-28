@@ -262,6 +262,14 @@ export function LibraryItems({
           <button
             className="tile-open"
             type="button"
+            aria-label={translateNow("library.folder.open", {
+              name: folder.name,
+            })}
+            aria-describedby={
+              folderLocation
+                ? `tile-folder-items-${folder.id} tile-folder-path-${folder.id}`
+                : `tile-folder-items-${folder.id}`
+            }
             onClick={() => onOpenFolder(folder.id)}
           >
             <span className="tile-preview folder">
@@ -270,13 +278,16 @@ export function LibraryItems({
             <span className="tile-caption">
               <span>
                 <strong>{folder.name}</strong>
-                <small>
+                <small id={`tile-folder-items-${folder.id}`}>
                   {translateNow("library.folder.items", {
                     count: folderCount(folder.id),
                   })}
                 </small>
                 {folderLocation && (
-                  <small className="native-result-path">
+                  <small
+                    className="native-result-path"
+                    id={`tile-folder-path-${folder.id}`}
+                  >
                     {translateNow("interface.inLocation", {
                       location: folderLocation(folder),
                     })}

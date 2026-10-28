@@ -489,7 +489,7 @@ describe("VaultLibrary search", () => {
     ]);
     expect(
       within(rows[0]).getByRole("button", {
-        name: humanText("Open FAKE June"),
+        name: humanText("FAKE June, open folder"),
       }),
     ).toHaveHumanAccessibleDescription(
       "1 item In My records / FAKE Lab results / FAKE 2026",
@@ -732,7 +732,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
     // Whose folder it is, for a screen reader.
-    expect(letters).toHaveHumanAccessibleName("FAKE Letters (FAKE Avery) 0");
+    expect(letters).toHaveHumanAccessibleName(
+      "FAKE Letters (FAKE Avery) 0 documents",
+    );
     const avery = within(library).getByRole("button", {
       name: humanText(/^FAKE Avery/),
     });

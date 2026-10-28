@@ -668,7 +668,7 @@ library-folder-items =
 
 library-folder-label = Pasta { $name }
 
-library-folder-open = Abrir { $name }
+library-folder-open = { $name }, abrir pasta
 
 library-folder-rename = Renomear a pasta { $name }
 
@@ -882,7 +882,7 @@ notice-created = Cofre criptografado criado. Configure uma chave de recuperaçã
 
 notice-createdThenLocked = Seu cofre foi criado e depois bloqueado antes que a chave de recuperação pudesse ser gerada. Desbloqueie-o para configurar uma.
 
-notice-dropRefused = Para importar PDFs, desbloqueie seu cofre e use { $button }. Arrastar e soltar move documentos que já estão no myCarlos.
+notice-dropRefused = Para importar PDFs, desbloqueie seu cofre e use “{ $button }”. Arrastar e soltar move documentos que já estão no myCarlos.
 
 notice-eraseCancelled = Nada mudou: o cofre não foi deixado de lado.
 

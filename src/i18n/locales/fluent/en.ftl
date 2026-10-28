@@ -650,7 +650,7 @@ library-folder-items =
 
 library-folder-label = { $name } folder
 
-library-folder-open = Open { $name }
+library-folder-open = { $name }, open folder
 
 library-folder-rename = Rename folder { $name }
 
@@ -860,7 +860,7 @@ notice-created = Encrypted vault created. Set up a recovery key, so that a forgo
 
 notice-createdThenLocked = Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.
 
-notice-dropRefused = To import PDFs, unlock your vault and use { $button }. Drag and drop moves documents already in myCarlos.
+notice-dropRefused = To import PDFs, unlock your vault and use “{ $button }”. Drag and drop moves documents already in myCarlos.
 
 notice-eraseCancelled = Nothing changed: the vault was not set aside.
 

@@ -202,6 +202,7 @@ export function SecuritySettings({
   };
   const [profileName, setProfileName] = useState("");
   const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
+  const [profileFormKey, setProfileFormKey] = useState(0);
   const [profileBirthDateUnknown, setProfileBirthDateUnknown] = useState(false);
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
@@ -246,6 +247,9 @@ export function SecuritySettings({
         setProfileName("");
         setProfileDetails({});
         setProfileBirthDateUnknown(false);
+        // New fields, not emptied ones: what a new person needs is shown again
+        // without being read out straight after "added".
+        setProfileFormKey((key) => key + 1);
       }
     });
   };
@@ -569,6 +573,7 @@ export function SecuritySettings({
             {onUpdateProfileDetails && (
               <fieldset disabled={busy || readOnly}>
                 <PersonDetailsFields
+                  key={profileFormKey}
                   details={profileDetails}
                   onChange={setProfileDetails}
                   birthDateUnknown={profileBirthDateUnknown}

@@ -296,7 +296,7 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
   await after("unlocking");
 
-  await page.getByRole("button", { name: "Choose files to import" }).focus();
+  await page.getByRole("button", { name: "New", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),

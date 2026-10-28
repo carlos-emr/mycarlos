@@ -30,6 +30,12 @@ import type {
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import { setLocaleOverride, translate } from "./i18n";
 
+// The library's import button: named by its visible word, described by what it does.
+const IMPORT_BUTTON = {
+  name: "New",
+  description: humanText("Choose files to import"),
+};
+
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
 const IOS_PAUSE = "Keep myCarlos open: switching apps pauses this transfer.";
@@ -237,7 +243,7 @@ async function holdLockForImport(bridge: VaultBridge, finish: () => void) {
   const user = userEvent.setup();
   await user.click(
     await screen.findByRole("button", {
-      name: humanText("Choose files to import"),
+      ...IMPORT_BUTTON,
     }),
   );
   await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -588,7 +594,7 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Choose files to import"),
+        ...IMPORT_BUTTON,
       }),
     );
 
@@ -940,7 +946,7 @@ describe("durable vault UI", () => {
       ).toBeVisible(),
     );
     // Nothing is made in it.
-    for (const name of ["Choose files to import", "New folder"])
+    for (const name of ["New", "New folder"])
       expect(screen.queryByRole("button", { name })).toBeNull();
     expect(screen.queryByText(humanText("New folder"))).toBeNull();
 
@@ -1477,7 +1483,9 @@ describe("durable vault UI", () => {
       );
       if (folderId)
         await user.click(
-          screen.getByRole("button", { name: humanText("Open FAKE Results") }),
+          screen.getByRole("button", {
+            name: humanText("FAKE Results, open folder"),
+          }),
         );
       expect(
         await screen.findByRole("article", {
@@ -2013,7 +2021,9 @@ describe("durable vault UI", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: humanText("Open FAKE Test Results") }),
+      screen.getByRole("button", {
+        name: humanText("FAKE Test Results, open folder"),
+      }),
     );
     expect(
       screen.getByRole("heading", { name: humanText("FAKE Test Results") }),
@@ -2103,7 +2113,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Open FAKE Parent"),
+          name: humanText("FAKE Parent, open folder"),
         }),
       );
       if (view === "grid")
@@ -2154,7 +2164,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Open FAKE Parent"),
+        name: humanText("FAKE Parent, open folder"),
       }),
     );
     await user.click(
@@ -2207,7 +2217,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Open FAKE Parent"),
+        name: humanText("FAKE Parent, open folder"),
       }),
     );
     await user.click(
@@ -2275,7 +2285,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Open FAKE Parent"),
+        name: humanText("FAKE Parent, open folder"),
       }),
     );
 
@@ -2388,7 +2398,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Open FAKE Parent"),
+        name: humanText("FAKE Parent, open folder"),
       }),
     );
     await user.click(
@@ -3752,7 +3762,7 @@ describe("durable vault UI", () => {
     await act(async () => {
       fireEvent.click(
         screen.getByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
     });
@@ -3892,7 +3902,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -3925,7 +3935,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -4128,7 +4138,9 @@ describe("durable vault UI", () => {
       }),
     ).toBeDisabled();
     await user.click(
-      screen.getByRole("button", { name: humanText("Open FAKE Parent") }),
+      screen.getByRole("button", {
+        name: humanText("FAKE Parent, open folder"),
+      }),
     );
     expect(
       screen.getByRole("button", { name: humanText("Rename folder") }),
@@ -4169,9 +4181,7 @@ describe("durable vault UI", () => {
       );
       expect(
         await screen.findByText(
-          humanText(
-            /To import PDFs, unlock your vault and use Choose files to import/,
-          ),
+          humanText(/To import PDFs, unlock your vault and use “New”/),
         ),
       ).toBeVisible();
       const urlTransfer = new DataTransfer();
@@ -4215,7 +4225,7 @@ describe("durable vault UI", () => {
 
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(importPickedFiles).toHaveBeenCalled());
@@ -4252,7 +4262,7 @@ describe("durable vault UI", () => {
       // The held lock is spent: a transfer in the next session does not lock.
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await act(async () =>
@@ -4305,15 +4315,13 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Choose files to import"),
+        ...IMPORT_BUTTON,
       }),
     );
     expect(
       await screen.findByText(humanText("1 document encrypted and added.")),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: humanText("Choose files to import") }),
-    );
+    await user.click(screen.getByRole("button", IMPORT_BUTTON));
     await waitFor(() =>
       expect(bridge.importPickedFiles).toHaveBeenCalledTimes(2),
     );
@@ -4350,7 +4358,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -4587,7 +4595,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
@@ -4713,7 +4721,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
@@ -4756,7 +4764,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -4781,7 +4789,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -4814,7 +4822,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -4847,7 +4855,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -4938,7 +4946,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Choose files to import"),
+        ...IMPORT_BUTTON,
       }),
     );
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -4986,7 +4994,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -5036,7 +5044,7 @@ describe("durable vault UI", () => {
       await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
       await user.click(
         screen.getByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -5097,7 +5105,7 @@ describe("durable vault UI", () => {
         await act(async () => {
           fireEvent.click(
             screen.getByRole("button", {
-              name: humanText("Choose files to import"),
+              ...IMPORT_BUTTON,
             }),
           );
         });
@@ -5162,7 +5170,7 @@ describe("durable vault UI", () => {
         await act(async () => {
           fireEvent.click(
             screen.getByRole("button", {
-              name: humanText("Choose files to import"),
+              ...IMPORT_BUTTON,
             }),
           );
         });
@@ -5205,7 +5213,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -5231,7 +5239,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -5272,7 +5280,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -5317,7 +5325,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -5365,7 +5373,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -5471,7 +5479,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -5513,7 +5521,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
       });
@@ -5585,7 +5593,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -5613,7 +5621,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -5810,7 +5818,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -5870,7 +5878,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -5931,7 +5939,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -5996,7 +6004,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -6160,7 +6168,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -6263,7 +6271,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -6366,7 +6374,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -6469,7 +6477,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -6572,7 +6580,7 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
         await user.click(
           await screen.findByRole("button", {
-            name: humanText("Choose files to import"),
+            ...IMPORT_BUTTON,
           }),
         );
         await waitFor(() =>
@@ -6647,7 +6655,7 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", {
-          name: humanText("Choose files to import"),
+          ...IMPORT_BUTTON,
         }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
@@ -6667,11 +6675,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: humanText(/Choose files to import/),
-      }),
-    );
+    await user.click(await screen.findByRole("button", IMPORT_BUTTON));
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
     // Locking is what cancels streaming I/O, so it must stay reachable.
     expect(
@@ -6867,7 +6871,7 @@ describe("durable vault UI", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Choose files to import"),
+        ...IMPORT_BUTTON,
       }),
     );
     await waitFor(() =>
@@ -7920,9 +7924,7 @@ describe("durable vault UI", () => {
     expect(screen.getByRole("alert")).toHaveHumanTextContent(
       "Changes are paused.",
     );
-    expect(
-      screen.getByRole("button", { name: humanText("Choose files to import") }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", IMPORT_BUTTON)).toBeDisabled();
   });
 
   it("has no automatically detectable WCAG A or AA violations in durable states", async () => {
@@ -8288,9 +8290,10 @@ describe("the app's notices in the language in use (#46)", () => {
     expect(
       await screen.findByText(
         humanText(
+          // findByText collapses the no-break spaces inside « » to spaces.
           translate("fr", "notice.dropRefused", {
-            button: translate("fr", "interface.VaultApp.chooseFilesToImport"),
-          }),
+            button: translate("fr", "interface.VaultLibrary.new"),
+          }).replace(/\s+/g, " "),
         ),
       ),
     ).toBeVisible();

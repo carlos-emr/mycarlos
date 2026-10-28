@@ -1628,9 +1628,10 @@ export function VaultLibrary({
                         type="button"
                         disabled={busy || readOnly || !profileId}
                         onClick={() => void importFiles()}
-                        aria-label={translateNow(
-                          "interface.VaultApp.chooseFilesToImport",
-                        )}
+                        // The name is the visible word ("New"); what it does
+                        // is the description, so voice control still finds it
+                        // by what it shows (WCAG 2.5.3).
+                        aria-describedby="native-import-hint"
                       >
                         <Icon name="plus" />
                         <span>
@@ -1639,6 +1640,9 @@ export function VaultLibrary({
                             : translateNow("interface.VaultLibrary.new")}
                         </span>
                       </button>
+                      <span id="native-import-hint" hidden>
+                        {translateNow("interface.VaultApp.chooseFilesToImport")}
+                      </span>
                     </div>
                   )}
                 </div>

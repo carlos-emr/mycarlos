@@ -4,6 +4,7 @@ import {
   expectAnnounced,
   expectEveryControlNamed,
   expectHeadingsInOrder,
+  expectVisibleWordsLeadNames,
   recordAnnouncements,
   tabRound,
 } from "./support/a11y";
@@ -107,6 +108,41 @@ test("the name check finds a control without a name", async ({ page }) => {
   await expect(
     expectEveryControlNamed(page.locator("body"), "fixture"),
   ).rejects.toThrow(/controls without a name/);
+});
+
+test("the label-in-name check passes names that start with the shown words", async ({
+  page,
+}) => {
+  await show(
+    page,
+    `<button>New</button>
+     <button aria-label="Next: check your recovery key">Next: check your recovery key</button>
+     <button aria-label="Don't forget &quot;FAKE&quot; file, open folder">Don't forget "FAKE" file<br><small>2 items</small></button>
+     <button aria-label="Close"><svg width="16" height="16"></svg></button>`,
+  );
+  await expectVisibleWordsLeadNames(page.locator("body"), "fixture");
+});
+
+test("the label-in-name check finds a name that does not start with the shown words", async ({
+  page,
+}) => {
+  await show(
+    page,
+    `<button aria-label="Choose files to import">New</button>
+     <button aria-label="Open: FAKE Results">FAKE Results</button>
+     <button aria-label="It's 'FAKE'">Rename</button>`,
+  );
+  const failure = expectVisibleWordsLeadNames(page.locator("body"), "fixture");
+  // The report lists each case in quotes; they come back escaped (\").
+  await expect(failure).rejects.toThrow(
+    /shows \\*"New\\*", named \\*"Choose files to import/,
+  );
+  await expect(failure).rejects.toThrow(
+    /shows \\*"FAKE Results\\*", named \\*"Open: FAKE Results/,
+  );
+  await expect(failure).rejects.toThrow(
+    /shows \\*"Rename\\*", named \\*"It's 'FAKE'/,
+  );
 });
 
 test("the heading check finds a skipped level", async ({ page }) => {

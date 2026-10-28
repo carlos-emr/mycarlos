@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import {
   localDateText,
@@ -48,6 +48,15 @@ export function PersonDetailsFields({
 }) {
   const { t } = useI18n();
   const problem = detailsProblem(details, birthDateUnknown);
+  // What is still missing is shown from the start, but read out only when it
+  // changes: a polite region kept on the page (not an alert on an empty form),
+  // and each field's description, so it is heard when the field is reached.
+  const problemId = useId();
+  const nameProblem =
+    problem === "personDetails.fullNameRequired" ||
+    problem === "personDetails.nameTooLong";
+  const nameDescribed = nameProblem ? problemId : undefined;
+  const dateDescribed = problem && !nameProblem ? problemId : undefined;
   return (
     <>
       <label>
@@ -55,6 +64,7 @@ export function PersonDetailsFields({
         <input
           autoComplete="off"
           maxLength={NAME_INPUT_MAX_LENGTH}
+          aria-describedby={nameDescribed}
           required
           value={details.fullName ?? ""}
           onChange={(e) => onChange({ ...details, fullName: e.target.value })}
@@ -64,6 +74,7 @@ export function PersonDetailsFields({
         {t("personDetails.birthDate")}
         <input
           type="date"
+          aria-describedby={dateDescribed}
           max={localDateText(new Date())}
           required={!birthDateUnknown}
           disabled={birthDateUnknown}
@@ -74,6 +85,7 @@ export function PersonDetailsFields({
       <label className="native-person-date-unknown">
         <input
           type="checkbox"
+          aria-describedby={dateDescribed}
           checked={birthDateUnknown}
           onChange={(e) => {
             onBirthDateUnknownChange(e.target.checked);
@@ -83,7 +95,9 @@ export function PersonDetailsFields({
         <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
-      {problem && <p role="alert">{t(problem)}</p>}
+      <p id={problemId} aria-live="polite">
+        {problem ? t(problem) : ""}
+      </p>
     </>
   );
 }

@@ -668,7 +668,7 @@ library-folder-items =
 
 library-folder-label = Carpeta { $name }
 
-library-folder-open = Abrir { $name }
+library-folder-open = { $name }, abrir carpeta
 
 library-folder-rename = Cambiar el nombre de la carpeta { $name }
 
@@ -882,7 +882,7 @@ notice-created = Bóveda cifrada creada. Configure una clave de recuperación pa
 
 notice-createdThenLocked = Su bóveda se creó y luego se bloqueó antes de poder crear su clave de recuperación. Desbloquéela para configurar una.
 
-notice-dropRefused = Para importar archivos PDF, desbloquee su bóveda y use { $button }. Arrastrar y soltar mueve los documentos que ya están en myCarlos.
+notice-dropRefused = Para importar archivos PDF, desbloquee su bóveda y use «{ $button }». Arrastrar y soltar mueve los documentos que ya están en myCarlos.
 
 notice-eraseCancelled = No cambió nada: la bóveda no se dejó aparte.
 

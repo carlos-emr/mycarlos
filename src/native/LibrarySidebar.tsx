@@ -5,6 +5,22 @@ import { Icon } from "../Icon";
 import type { PatientProfile, VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 
+/** A sidebar count: the bare number is shown; a screen reader hears what it
+ * counts ("3 documents"), after the visible name, so the button's name still
+ * starts with its visible words (WCAG 2.5.3). */
+function NavCount({ count }: { count: number }) {
+  return (
+    <>
+      <span className="nav-count" aria-hidden="true">
+        {formatNumber(count)}
+      </span>
+      <span className="sr-only">
+        {translateNow("sidebar.documents", { count })}
+      </span>
+    </>
+  );
+}
+
 interface LibrarySidebarProps {
   /** The brand line: the open person's name, or the vault's while Shared
    * with me is open. */
@@ -168,9 +184,7 @@ export function LibrarySidebar({
                     ? person.displayName
                     : translateNow("sidebar.myRecords")}
                 </span>
-                <span className="nav-count">
-                  {formatNumber(counts.loose.get(person.id) ?? 0)}
-                </span>
+                <NavCount count={counts.loose.get(person.id) ?? 0} />
               </button>
               {(trees.get(person.id) ?? []).map(({ folder, depth }) => {
                 const zone = `sidebar:${folder.id}`;
@@ -193,7 +207,7 @@ export function LibrarySidebar({
                     // Two people can each have a "Lab results": say whose.
                     aria-label={
                       several
-                        ? `${folder.name} (${person.displayName}) ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
+                        ? `${folder.name} (${person.displayName}) ${translateNow("sidebar.documents", { count: counts.byFolder.get(folder.id) ?? 0 })}`
                         : undefined
                     }
                     draggable={movable || undefined}
@@ -208,9 +222,7 @@ export function LibrarySidebar({
                   >
                     <Icon name="folder" />{" "}
                     <span className="native-nav-name">{folder.name}</span>
-                    <span className="nav-count">
-                      {formatNumber(counts.byFolder.get(folder.id) ?? 0)}
-                    </span>
+                    <NavCount count={counts.byFolder.get(folder.id) ?? 0} />
                   </button>
                 );
               })}
@@ -258,6 +270,7 @@ export function LibrarySidebar({
         <button
           className={section === "security" ? "selected" : ""}
           type="button"
+          aria-current={section === "security" ? "page" : undefined}
           onClick={onOpenSecurity}
         >
           <Icon name="shield" /> {translateNow("security.title")}
@@ -265,6 +278,7 @@ export function LibrarySidebar({
         <button
           className={section === "preferences" ? "selected" : ""}
           type="button"
+          aria-current={section === "preferences" ? "page" : undefined}
           onClick={onOpenPreferences}
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}
@@ -274,11 +288,12 @@ export function LibrarySidebar({
         <button
           className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
           type="button"
+          aria-current={section === "hidden" ? "page" : undefined}
           onClick={onOpenHidden}
         >
           <Icon name="hidden" />
           {translateNow("interface.HiddenDocuments.hidden")}{" "}
-          <span className="nav-count">{formatNumber(hiddenCount)}</span>
+          <NavCount count={hiddenCount} />
         </button>
       </nav>
       <div className="storage">

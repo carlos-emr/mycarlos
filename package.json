@@ -29,14 +29,16 @@
     "i18n:check": "node scripts/generate-fluent-bindings.mjs --check && node --test scripts/generate-fluent-bindings.test.mjs"
   },
   "dependencies": {
+    "@fluent/bundle": "0.19.1",
     "@tauri-apps/api": "^2.11.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "@fluent/bundle": "0.19.1"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@cyclonedx/cyclonedx-npm": "6.0.1",
+    "@fluent/syntax": "0.19.0",
+    "@guidepup/virtual-screen-reader": "0.33.0",
     "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^7.0.1",
@@ -51,7 +53,6 @@
     "prettier": "3.6.2",
     "typescript": "~6.0.3",
     "vite": "^8.2.2",
-    "vitest": "^4.1.11",
-    "@fluent/syntax": "0.19.0"
+    "vitest": "^4.1.11"
   }
 }
