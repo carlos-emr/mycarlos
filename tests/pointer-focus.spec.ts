@@ -201,17 +201,53 @@ test("after typing in Search, pointer actions leave focus on the page (#90)", as
   await expectOnlyFakedCommands(page);
 });
 
-test("opening a folder with a pointer leaves focus on the page (#90)", async ({
+// Opening a folder or place is not an in-page action: it may put focus on the
+// new page's heading for every input, mouse and touch included, so a screen
+// reader says where the user now is. Either that heading or the page itself
+// is fine; any other control is not. Left on the page, nothing may scroll it;
+// on the heading, the page may only scroll as far as showing that heading.
+test("opening a folder with a pointer leaves focus on the new heading or the page (#90)", async ({
   page,
 }) => {
   await fakeVault(page, "unlocked");
   await page.goto("/");
-  await press(page.getByRole("button", { name: "Open FAKE Letters" }));
   await expect(
-    page.getByRole("heading", { name: "FAKE Letters", level: 1 }),
+    page.getByRole("heading", { name: "My records", level: 1 }),
   ).toBeVisible();
+  const opener = page.getByRole("button", { name: "Open FAKE Letters" });
+  // A tap scrolls the folder into view first (phone): measure from there.
+  await opener.scrollIntoViewIfNeeded();
   await settle(page);
-  await focusOnPage(page);
+  const before = await page.evaluate(() => window.scrollY);
+  await press(opener);
+  const heading = page.getByRole("heading", { name: "FAKE Letters", level: 1 });
+  await expect(heading).toBeVisible();
+  await settle(page);
+
+  const focus = await page.evaluate(() => {
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) return "the page";
+    if (focused.matches("h1"))
+      return `the heading ${focused.textContent?.trim()}`;
+    return `${focused.tagName} ${focused.getAttribute("aria-label") ?? focused.textContent?.trim()}`;
+  });
+  expect(focus, "focus after opening the folder").toMatch(
+    /^(the page|the heading FAKE Letters)$/,
+  );
+  if (focus === "the page") {
+    const after = await page.evaluate(() => {
+      const scroller = document.scrollingElement ?? document.documentElement;
+      return {
+        y: window.scrollY,
+        furthest: scroller.scrollHeight - scroller.clientHeight,
+      };
+    });
+    // A shorter new page can't stay scrolled as far down, and that's all.
+    expect(after.y, "page scroll").toBeCloseTo(
+      Math.min(before, after.furthest),
+      0,
+    );
+  } else await expect(heading).toBeInViewport();
   await expectOnlyFakedCommands(page);
 });
 
