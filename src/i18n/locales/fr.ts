@@ -112,7 +112,7 @@ export const fr: Record<MessageKey, Message> = {
     "Entrez le code à 9 chiffres que votre clinique vous a envoyé par courriel. N’utilisez jamais un code affiché sur un site Web.",
   "portal.codeSubmit": "Confirmer le code",
   "portal.codeSubmitted":
-    "Code envoyé. En attente de la confirmation de cet appareil par votre clinique.",
+    "Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.",
   "portal.codeMismatch":
     "Ce code ne correspond pas à cette clinique. Vérifiez que vous avez lié l’adresse réelle du portail de votre clinique, puis réessayez.",
   "portal.codeLocked":

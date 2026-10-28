@@ -112,7 +112,7 @@ export const es: Record<MessageKey, Message> = {
     "Escriba el código de 9 dígitos que su clínica le envió por correo electrónico. Nunca use un código que aparezca en un sitio web.",
   "portal.codeSubmit": "Confirmar código",
   "portal.codeSubmitted":
-    "Código enviado. Esperando a que su clínica confirme este dispositivo.",
+    "Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.",
   "portal.codeMismatch":
     "Este código no corresponde a esta clínica. Compruebe que vinculó la dirección real del portal de su clínica y vuelva a intentarlo.",
   "portal.codeLocked":

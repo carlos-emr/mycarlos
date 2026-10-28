@@ -1436,7 +1436,7 @@ describe("the code a clinic emails (#141)", () => {
       ],
       [
         { approvalCodeSubmitted: true },
-        "Code sent. Waiting for your clinic to confirm this device.",
+        "Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.",
       ],
       [{ approvalCodeLocked: true }, locked],
       [{ approvalStatus: "refused", approvalReason: "code_attempts" }, locked],
@@ -1477,7 +1477,7 @@ describe("the code a clinic emails (#141)", () => {
     await waitFor(() => expect(codeBox()).not.toBeInTheDocument());
     expect(failures).toEqual([]);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Code sent. Waiting for your clinic to confirm this device.",
+      "Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.",
     );
     // The form went with focus in it: focus moves to this device's
     // heading, not to the page.

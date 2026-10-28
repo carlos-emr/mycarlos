@@ -109,7 +109,7 @@ export const en = {
     "Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.",
   "portal.codeSubmit": "Confirm code",
   "portal.codeSubmitted":
-    "Code sent. Waiting for your clinic to confirm this device.",
+    "Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.",
   "portal.codeMismatch":
     "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.",
   "portal.codeLocked":

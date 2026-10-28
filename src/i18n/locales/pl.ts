@@ -113,7 +113,7 @@ export const pl: Record<MessageKey, Message> = {
     "Wpisz 9-cyfrowy kod, który przychodnia wysłała e-mailem. Nigdy nie używaj kodu wyświetlonego na stronie internetowej.",
   "portal.codeSubmit": "Potwierdź kod",
   "portal.codeSubmitted":
-    "Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię.",
+    "Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.",
   "portal.codeMismatch":
     "Ten kod nie pasuje do tej przychodni. Sprawdź, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbuj ponownie.",
   "portal.codeLocked":

@@ -111,7 +111,7 @@ export const ptBR: Record<MessageKey, Message> = {
     "Digite o código de 9 dígitos que sua clínica enviou por e-mail. Nunca use um código mostrado em um site.",
   "portal.codeSubmit": "Confirmar código",
   "portal.codeSubmitted":
-    "Código enviado. Aguardando sua clínica confirmar este dispositivo.",
+    "Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.",
   "portal.codeMismatch":
     "Este código não corresponde a esta clínica. Verifique se você vinculou o endereço real do portal da sua clínica e tente novamente.",
   "portal.codeLocked":
