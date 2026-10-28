@@ -36,7 +36,7 @@ export const pl: Record<MessageKey, Message> = {
   "portal.awaitingClinic":
     "Przychodnia otrzymała prośbę o zatwierdzenie. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.",
   "portal.approvalPickedUp":
-    "System dokumentacji przychodni przyjął tę prośbę. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.",
+    "System dokumentacji przychodni odebrał tę prośbę. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.",
   "portal.approvalTimeLeft": {
     one: "Pozostały czas na tę prośbę: około {count} minuty.",
     few: "Pozostały czas na tę prośbę: około {count} minut.",
