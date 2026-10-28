@@ -250,6 +250,21 @@ The glib source fix is verified separately as described above. The unmaintained
 packages still need an upstream migration or replacement review before release;
 a passing default audit does not establish that every dependency is maintained.
 
+### Tokio I/O safety advisory (RUSTSEC-2026-0386)
+
+Tokio is locked to 1.53.3, the patched release on the existing 1.53 line for
+[RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386.html).
+The update preserves the other locked packages, dependency edges and features.
+Tauri and its transitive dependencies use Tokio; the application uses Tauri's
+async runtime.
+
+The affected `AsyncFd` APIs are Unix-specific. The upstream change deprecates the
+old constructors and adds unsafe registration APIs: callers must keep the file
+descriptor valid, open and unchanged throughout the registration. Upgrading does
+not itself enforce that ownership requirement in callers. Source inspection found
+no application `AsyncFd` use; this is not proof of exploitability or its absence.
+Other advisory warnings remain visible through the existing native audit command.
+
 ### Previous removal validation (historical)
 
 All seven jobs passed in the linked run for code commit `c5f682b`: Windows, macOS,
@@ -289,3 +304,72 @@ unknown descriptive metadata (CARLOS `DocumentManifest` Javadoc, lines 35–54).
 reader accepts those null values but still requires every member; unknown members, missing
 members and wrong value types fail closed. Neither an absent clinic claim nor an absent
 recipient can become Verified. This changes no outer portal delivery schema or vault format.
+
+## Future native linking dependency selection (#55)
+
+This separate evaluation branch selects exact `ed25519-dalek` 2.2.0 and
+`x25519-dalek` 2.0.1 (BSD-3-Clause). Their 2.x APIs share the existing rand_core
+0.6 / rand 0.8 and SHA-256 0.10 lines. Signing uses a seed-derived public key;
+`hazmat`, legacy compatibility and batch verification are not enabled. Zeroize
+is explicit on both libraries. RustSec RUSTSEC-2022-0093 is fixed from Ed25519
+2.0; this selection does not assert the dependency graph has no other advisories.
+
+The optional network feature selects `reqwest` 0.13.5 (MIT OR Apache-2.0),
+default features off and rustls-no-provider only. Its async exchange is cancelled
+by dropping the send/body future after a native session change. The upstream
+patch also fixes a blocking timeout panic used by other consumers. It shares Tauri's existing reqwest 0.13 line
+but adds a production TLS graph when explicitly enabled. The already locked
+Tokio runtime is a direct optional dependency for the cancellation timer/select. `rustls` 0.23.46
+(Apache-2.0 OR ISC OR MIT) selects ring/std/TLS1.2; no aws-lc build or HTTP/3,
+compression, cookies, HTTP/2 or system-proxy feature is requested. The explicit
+crypto provider avoids process-global provider installation.
+`rustls-platform-verifier` 0.7.1 (MIT OR Apache-2.0) uses the platform trust
+services and requires a JNI 0.22 integration on Android. Its fixes to Android CRL
+fetching, disabled trust anchors and Windows hostname verification take priority
+over retaining the existing JNI 0.21 line.
+The Android Kotlin verifier component and native initialization must be wired
+and tested before Android linking is claimed to work.
+
+The resolved graph, licenses and feature unification require independent review
+before compiling this feature. No HPKE implementation or delivery-v2 dependency
+is introduced by the initial linking slice. Primary selection sources:
+- https://docs.rs/crate/ed25519-dalek/2.2.0
+- https://docs.rs/crate/ed25519-dalek/2.2.0/source/LICENSE
+- https://docs.rs/crate/x25519-dalek/2.0.1/features
+- https://rustsec.org/advisories/RUSTSEC-2022-0093.html
+- https://github.com/seanmonstar/reqwest/releases/tag/v0.13.5
+- https://crates.io/crates/rustls/0.23.46
+- https://github.com/rustls/rustls-platform-verifier/releases/tag/v/0.7.1
+
+Resolved source-only graph review: 576 packages on the integrated baseline,
+602 now (27 additions, one old reqwest entry removed; 26 net). The inherited
+Tauri edges also enable reqwest JSON/stream; default application features remain
+empty and do not enable TLS. With portal-linking, only rustls-no-provider/TLS
+are added to that reqwest edge. ring is 0.17.14 (Apache-2.0 AND ISC); other new
+licenses are BSD-3-Clause, MIT/Apache-2.0, ISC and the bundled root data's
+CDLA-Permissive-2.0. Source metadata/lock resolution is not a build or advisory
+scan. No independent final dependency approval or feature build has passed yet.
+
+### Gated native pickup and first-device approval (26 October 2026)
+
+The `portal-linking` feature now also selects pinned `hpke = 0.13.0`
+(MIT OR Apache-2.0), with defaults disabled and only `std,x25519`. The frozen
+suite is DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305, base mode,
+sequence zero. Curve operations and HPKE composition use the upstream library;
+there is no custom curve or HPKE implementation. Its optional P256 KEM is OFF,
+so it does not restore the older P256/crypto-bigint stack removed in #122.
+
+The resolved additions are hpke 0.13.0, aes 0.8.4, aes-gcm 0.10.3, ctr 0.9.2,
+ghash 0.5.1 and polyval 0.6.2. AES-GCM is a nonoptional upstream dependency even
+though this application selects ChaCha20-Poly1305 only. Existing X25519, SHA256,
+HKDF, HMAC, ChaCha20Poly1305 and zeroize lines are reused. HPKE private keys,
+shared secrets, AEAD keys/nonces and exporter secrets zeroize on drop; opened
+plaintext is held in `Zeroizing` buffers. The upstream crate reports a review
+of its earlier 0.8 implementation, not a paid audit of this pinned version.
+
+Primary source: https://github.com/rozbb/rust-hpke/tree/v0.13.0
+and https://docs.rs/crate/hpke/0.13.0/source/Cargo.toml.orig .
+Unchanged shared M0 package vectors and RFC 9180 A.2.1 sequence zero have passed
+on Linux. Actual Java-produced PAdES package opening and retained receipt
+verification have also passed with explicit FAKE test trust. This is neither
+an independent dependency approval nor Windows/native portal enablement.

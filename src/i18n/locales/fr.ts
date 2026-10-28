@@ -3,6 +3,76 @@ import type { MessageKey } from "./en";
 
 /** Canadian French, formal register ("vous"). */
 export const fr: Record<MessageKey, Message> = {
+  "portal.serviceDateLabel": "Date du service",
+  "portal.serviceDate": "Date du service : {date}",
+  "portal.dateNotRecorded": "Date non consignée",
+  "portal.restartApproval": "Créer une nouvelle demande d’approbation",
+  "portal.approvalExpired":
+    "Cette demande d’approbation a expiré. Vérifiez les mises à jour avant de créer une nouvelle demande.",
+  "portal.approvalCancelled":
+    "Cette demande d’approbation a été annulée. Vérifiez les mises à jour avant de créer une nouvelle demande.",
+  "portal.approvalRefused":
+    "La clinique a refusé cette demande d’approbation de l’appareil. Contactez votre clinique pour connaître les prochaines étapes.",
+  "portal.approvalContact":
+    "L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.",
+  "portal.approvalMissing":
+    "Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.",
+  "portal.confirmationsPending":
+    "Documents enregistrés en attente de confirmation de réception : {count}. Vérifiez à nouveau pour terminer la confirmation. Vos copies enregistrées restent dans le coffre.",
+  "portal.partialResult":
+    "Certaines vérifications auprès des cliniques nécessitent votre attention. Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
+  "portal.clinicIssue": "{clinic} : {detail}",
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Documents de la clinique",
+  "portal.intro":
+    "Associez myCarlos avec l’adresse et le code affichés dans votre portail patient.",
+  "portal.address": "Adresse HTTPS du portail",
+  "portal.code": "Code d’association",
+  "portal.deviceName": "Nom de cet appareil",
+  "portal.person": "Dossiers de quelle personne",
+  "portal.matchPerson": "Utiliser les renseignements du document",
+  "portal.routing":
+    "Les documents sont classés sous la personne dont le nom complet et la date de naissance correspondent. Les autres vont dans Partagés avec moi.",
+  "portal.link": "Associer à la clinique",
+  "portal.check": "Rechercher de nouveaux documents",
+  "portal.result":
+    "Nouveaux documents enregistrés : {added}. Documents non vérifiés : {refused}.",
+  "portal.incomplete":
+    "Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.",
+  "portal.approved": "La clinique a approuvé cet appareil.",
+  "portal.notRequested":
+    "Demandez l’approbation de la clinique pour recevoir des documents sur cet appareil.",
+  "portal.awaiting":
+    "Demande d’approbation enregistrée. Vérifiez les mises à jour ou renvoyez-la.",
+  "portal.deviceCode": "Code de l’appareil",
+  "portal.copy": "Copier le code de l’appareil",
+  "portal.copied": "Code de l’appareil copié.",
+  "portal.copyFailed":
+    "Sélectionnez le code entier de l’appareil et copiez-le.",
+  "portal.fingerprint": "Empreinte complète de l’appareil",
+  "portal.compare":
+    "Demandez au personnel de la clinique de comparer cette empreinte entière sur cet écran avant d’approuver cet appareil.",
+  "portal.requestApproval": "Demander l’approbation de la clinique",
+  "portal.sourceVerified": "De {clinic} · Vérifié",
+  "portal.errorAddress":
+    "Saisissez l’adresse HTTPS du portail sans nom d’utilisateur, mot de passe, paramètres de requête ni fragment.",
+  "portal.errorCode":
+    "Saisissez le code d’association complet affiché dans votre portail patient.",
+  "portal.errorDeviceName":
+    "Choisissez un nom d’appareil de 1 à 64 caractères sans caractères de contrôle.",
+  "portal.errorCodeRejected":
+    "Le portail a refusé ce code. Créez un nouveau code d’association dans votre portail patient.",
+  "portal.errorKeys":
+    "La clinique n’a pas encore publié de clé de signature. L’association est incomplète.",
+  "portal.errorExists":
+    "Cet appareil est déjà enregistré. Consultez les appareils associés dans votre portail patient.",
+  "portal.errorIncomplete":
+    "La demande au portail n’a pas abouti. Vérifiez votre connexion et l’horloge de l’appareil, puis réessayez.",
+  "portal.errorRefused":
+    "Un document de la clinique n’a pas pu être vérifié. Il n’a pas été ajouté et aucun accusé de réception n’a été envoyé.",
+  "portal.errorDamaged":
+    "Un document enregistré de cette clinique est endommagé ou manquant. Son accusé de réception n’a donc pas été envoyé. La recherche de vos autres documents s’est poursuivie. Restaurez-le à partir d’une sauvegarde ou demandez à la clinique de vous le renvoyer.",
+
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
     "N’utilisez pas de véritables renseignements sur des patients",
@@ -174,6 +244,14 @@ export const fr: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Renommer le document",
+  "rename.title.profile": "Renommer le dossier de la personne",
+  "rename.label.profile": "Nom du dossier",
+  "rename.help.profile":
+    "Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.",
+  "rename.profile.controls":
+    "Les noms ne peuvent pas contenir de caractères de contrôle.",
+  "rename.profile.saved": "Le dossier s’appelle maintenant {name}.",
+  "rename.profile.action": "Renommer « {name} »",
   "rename.title.folder": "Renommer le dossier",
   "rename.label.folder": "Nom du dossier",
   "rename.label.document": "Nom du fichier",
@@ -434,6 +512,10 @@ export const fr: Record<MessageKey, Message> = {
     "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Conservez vos anciennes sauvegardes. Demandez de l’aide pour récupérer ce document à partir d’une copie ou d’une sauvegarde en bon état avant de réessayer.",
   "error.damaged.where": "ajouté le {date}",
   "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
+  "error.newerFormat.vault":
+    "Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.",
+  "error.newerFormat.backup":
+    "Cette sauvegarde a été enregistrée par une version plus récente de myCarlos. Mettez myCarlos à jour pour la restaurer. Rien n’a été modifié sur cet appareil.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -517,4 +599,42 @@ export const fr: Record<MessageKey, Message> = {
     "Recherche effacée. Dossiers à cet emplacement : {folders}. Documents : {documents}.",
   "library.noMatch.title": "Aucun document correspondant",
   "library.noMatch.help": "Essayez une autre recherche.",
+  // Optional identity details and explicit shared-document suggestions (#97).
+  "personDetails.fullName":
+    "Nom complet, comme sur les documents de la clinique",
+  "personDetails.birthDate": "Date de naissance",
+  "personDetails.birthDateUnknown":
+    "Je ne connais pas la date de naissance de cette personne",
+  "personDetails.help":
+    "Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.",
+  "personDetails.nameTooLong":
+    "Ce nom complet est trop long. Raccourcissez-le.",
+  "personDetails.fullNameRequired": "Saisissez le nom complet de la personne.",
+  "personDetails.birthDateRequired":
+    "Saisissez la date de naissance ou indiquez que vous ne la connaissez pas.",
+  "personDetails.invalidDate":
+    "Saisissez une date de naissance valide : année, mois et jour.",
+  "personDetails.futureDate":
+    "La date de naissance ne peut pas être dans le futur.",
+  "personDetails.list": "Renseignements des personnes",
+  "personDetails.for": "Renseignements pour {name}",
+  "personDetails.save": "Enregistrer les renseignements",
+  "personDetails.cancel": "Annuler",
+  "personDetails.noName": "Aucun nom complet",
+  "personDetails.noDate": "Aucune date de naissance",
+  "personDetails.editFor": "Modifier les renseignements pour {name}",
+  "personDetails.edit": "Modifier les renseignements",
+  "personDetails.saved": "Renseignements pour {name} enregistrés.",
+  "personSuggestion.byDate": "la date de naissance sur le document correspond",
+  "personSuggestion.byBoth":
+    "la date de naissance et le nom sur le document correspondent",
+  "personSuggestion.byName": "le nom sur le document correspond",
+  "personSuggestion.for": "Personne suggérée pour {document}",
+  "personSuggestion.offer":
+    "Ce document semble être destiné à {name} ({why}). Le déplacer dans ses dossiers ?",
+  "personSuggestion.moveLabel":
+    "Déplacer {document} dans les dossiers de {name}",
+  "personSuggestion.move": "Déplacer",
+  "personSuggestion.dismissLabel": "Pas cette personne : {document}",
+  "personSuggestion.dismiss": "Pas cette personne",
 };
