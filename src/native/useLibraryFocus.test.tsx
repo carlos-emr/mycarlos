@@ -45,10 +45,10 @@ function Library({
 }
 
 const frame = () => act(() => vi.advanceTimersToNextFrame());
-const keyPress = (key = "Enter") =>
-  document.body.dispatchEvent(
-    new KeyboardEvent("keydown", { key, bubbles: true }),
-  );
+// A key pressed on the control that has focus, as a keyboard user's is. A key
+// pressed with nothing focused (on the page itself) is no keyboard use.
+const keyPress = (key = "Enter", on: Element = document.activeElement!) =>
+  on.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
 // As in WebKit (macOS, iOS): a click or tap does not focus the button pressed,
 // and takes focus from whatever had it.
 const webkitPress = (element: Element) => {
@@ -62,8 +62,13 @@ beforeEach(() => {
     toFake: ["requestAnimationFrame", "cancelAnimationFrame"],
   });
   // Resets the hook's input record: a keyboard user's journeys, unless a test
-  // presses with a pointer.
-  keyPress();
+  // presses with a pointer. The key is pressed on a focused control, as only
+  // that counts as keyboard use.
+  const control = document.createElement("button");
+  document.body.append(control);
+  control.focus();
+  keyPress("Enter", control);
+  control.remove();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -168,6 +173,19 @@ describe("library focus recovery", () => {
   it("leaves focus on the page when a key closes a dialog opened with a pointer", () => {
     const { rerender } = openWithPointer();
     keyPress("Escape");
+    rerender(<Library />);
+    frame();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not count a key pressed with nothing focused as keyboard use", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    webkitPress(screen.getByRole("button", { name: "Import" }));
+    // Scrolling or copying after a click: the page itself has the key.
+    keyPress("PageDown", document.body);
+    keyPress("c", document.documentElement);
+    rerender(<Library busy />);
     rerender(<Library />);
     frame();
     expect(document.activeElement).toBe(document.body);

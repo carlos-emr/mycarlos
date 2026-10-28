@@ -12,8 +12,10 @@ const available = (element: Element) =>
 // itself as a matter of course; moving it would also scroll the page. The last
 // key or pointer press before an action starts decides, so a dialog opened with
 // a pointer and closed with Escape, or a lock warning put off with any key,
-// stays a pointer action. A modifier key alone is no keyboard use. Watched from
-// the start: the unlock key is pressed before the library opens.
+// stays a pointer action. A modifier key alone is no keyboard use, nor is a key
+// pressed while nothing has focus (scrolling with PageDown, copying with
+// Ctrl+C after a click): that leaves a pointer user a pointer user. Watched
+// from the start: the unlock key is pressed before the library opens.
 const MODIFIERS = new Set([
   "Shift",
   "Control",
@@ -21,13 +23,27 @@ const MODIFIERS = new Set([
   "AltGraph",
   "Meta",
   "CapsLock",
+  "Fn",
+  "FnLock",
+  "Hyper",
+  "Super",
+  "Symbol",
+  "SymbolLock",
+  "NumLock",
+  "ScrollLock",
+  "OS",
 ]);
 let keyboardLast = false;
 if (typeof window !== "undefined") {
   window.addEventListener(
     "keydown",
     (event) => {
-      if (!MODIFIERS.has(event.key)) keyboardLast = true;
+      if (
+        !MODIFIERS.has(event.key) &&
+        event.target !== document.body &&
+        event.target !== document.documentElement
+      )
+        keyboardLast = true;
     },
     true,
   );
