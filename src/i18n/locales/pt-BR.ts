@@ -161,6 +161,8 @@ export const ptBR: Record<MessageKey, Message> = {
   },
   "library.location.summary": "Em {context}: {folders}, {files}.",
   "library.location.files": "Em {context}: {files}.",
+  "library.sort.label": "Ordenar por",
+  "library.lock.unlocked": "Desbloqueado",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Tamanho do texto",

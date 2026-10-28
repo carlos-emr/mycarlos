@@ -171,6 +171,8 @@ export const pl: Record<MessageKey, Message> = {
   },
   "library.location.summary": "W {context}: {folders}, {files}.",
   "library.location.files": "W {context}: {files}.",
+  "library.sort.label": "Sortuj według",
+  "library.lock.unlocked": "Odblokowany",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Rozmiar tekstu",

@@ -1148,13 +1148,19 @@ export function VaultLibrary({
               <i />
             </span>
             <span className="window-title">myCarlos</span>
+            {/* Named by its visible words, so voice control's "click Lock
+                now" works in every language (WCAG 2.5.3); the state before
+                them is not read out with the button (#121). */}
             <button
               className="unlock-pill native-lock-button"
               type="button"
-              aria-label={t("security.lockNow")}
               onClick={() => void onLock()}
             >
-              <Icon name="lock-open" /> Unlocked · Lock now
+              <Icon name="lock-open" />
+              <span>
+                <span aria-hidden="true">{t("library.lock.unlocked")} · </span>
+                {t("security.lockNow")}
+              </span>
             </button>
           </header>
 
@@ -1606,23 +1612,32 @@ export function VaultLibrary({
                     and choose Move to.
                   </span>
                   <div className="view-controls">
-                    {/* Both choices in view, with words (#67). */}
+                    {/* Both choices in view, with words (#67), under a label
+                        that stays in view and names the group (#121). */}
                     <div
-                      className="segment native-sort-choice"
+                      className="native-sort-choice"
                       role="group"
-                      aria-label="Sort by"
+                      aria-labelledby="native-sort-label"
                     >
-                      {SORT_CHOICES.map(([value, label]) => (
-                        <button
-                          className={sort === value ? "selected" : ""}
-                          type="button"
-                          key={value}
-                          aria-pressed={sort === value}
-                          onClick={() => setSort(value)}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                      <span
+                        className="native-sort-label"
+                        id="native-sort-label"
+                      >
+                        {t("library.sort.label")}
+                      </span>
+                      <span className="segment native-sort-segment">
+                        {SORT_CHOICES.map(([value, label]) => (
+                          <button
+                            className={sort === value ? "selected" : ""}
+                            type="button"
+                            key={value}
+                            aria-pressed={sort === value}
+                            onClick={() => setSort(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </span>
                     </div>
                     <span
                       className="segment native-view-segment"

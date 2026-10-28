@@ -900,8 +900,17 @@ h1, h2, p { margin: 0; }
 /* #67: all choices in view, and words on every button. */
 .native-sort { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .native-sort .icon { width: 16px; height: 16px; }
-.native-sort-choice { flex: none; overflow: visible; }
-.native-sort-choice button { width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; color: var(--ink); font: inherit; font-weight: 600; }
+/* #121: "Sort by" stays in view before its choices. With large text on a
+   narrow window, the choices go under the label and then under each other,
+   each whole: the window hides what runs past its edge. A 1px gap over the
+   line colour draws the dividers both across and down. */
+.native-sort-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; max-width: 100%; }
+.native-sort-label { color: var(--ink-soft); font-weight: 700; }
+.native-sort-segment { flex-wrap: wrap; gap: 1px; max-width: 100%; background: var(--line); }
+.native-sort-segment button { flex: 1 1 auto; width: auto; min-width: 44px; max-width: 100%; min-height: 44px; padding-inline: 12px; background: var(--paper); color: var(--ink); font: inherit; font-weight: 600; }
+.native-sort-segment button + button { border-left: 0; }
+/* Drawn inside the button, so the segment's rounded corners do not cut it off. */
+.native-sort-segment button:focus-visible { outline-offset: -4px; }
 /* With words on List and Grid, the sort choices and view segment can need more
    than a narrow window's width, so the segment moves to its own line, whole. */
 .native-vault-page .view-controls { flex-wrap: wrap; row-gap: 0; }

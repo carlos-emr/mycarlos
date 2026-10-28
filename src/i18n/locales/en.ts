@@ -153,6 +153,8 @@ export const en = {
   "sidebar.fileCount": { one: "{count} file", other: "{count} files" },
   "library.location.summary": "In {context}: {folders}, {files}.",
   "library.location.files": "In {context}: {files}.",
+  "library.sort.label": "Sort by",
+  "library.lock.unlocked": "Unlocked",
 
   // Text size (Settings > Preferences)
   "textSize.title": "Text size",
