@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
+import { humanText } from "../test/humanText";
 import type { VaultBridge, VaultSnapshot, FoundIdentity } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 const people = [
@@ -75,11 +76,11 @@ describe("shared PDF suggestions use explicit Move", () => {
       screen.getAllByRole("button", { name: /^Shared with me/ })[0],
     );
     const suggestion = await screen.findByRole("group", {
-      name: "Suggested person for FAKE Referral letter.pdf",
+      name: humanText("Suggested person for FAKE Referral letter.pdf"),
     });
     expect(
       screen.queryByRole("group", {
-        name: "Suggested person for FAKE Pharmacy receipt.pdf",
+        name: humanText("Suggested person for FAKE Pharmacy receipt.pdf"),
       }),
     ).toBeNull();
     expect(bridge.moveToPerson).not.toHaveBeenCalled();
@@ -99,7 +100,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     );
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Details for FAKE Referral letter.pdf",
+        name: humanText("Details for FAKE Referral letter.pdf"),
       }),
     );
     const details = screen.getByRole("dialog", {
@@ -107,7 +108,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     });
     await userEvent.click(
       await within(details).findByRole("button", {
-        name: "Not this person: FAKE Referral letter.pdf",
+        name: humanText("Not this person: FAKE Referral letter.pdf"),
       }),
     );
     expect(
@@ -145,7 +146,7 @@ describe("shared PDF suggestions use explicit Move", () => {
       screen.getAllByRole("button", { name: /^Shared with me/ })[0],
     );
     await screen.findByRole("group", {
-      name: "Suggested person for FAKE Referral letter.pdf",
+      name: humanText("Suggested person for FAKE Referral letter.pdf"),
     });
     fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
     expect(
@@ -153,7 +154,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
-        name: /^FAKE Referral letter\.pdf /,
+        name: humanText(/^FAKE Referral letter\.pdf /),
       }),
     );
     expect(
@@ -217,9 +218,13 @@ describe("shared PDF suggestions use explicit Move", () => {
     renderLibrary({ updateProfileDetails: vi.fn() });
     fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
     fireEvent.click(
-      screen.getByRole("button", { name: "Edit details for FAKE Mom" }),
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Mom"),
+      }),
     );
-    const form = screen.getByRole("form", { name: "Details for FAKE Mom" });
+    const form = screen.getByRole("form", {
+      name: humanText("Details for FAKE Mom"),
+    });
     const unknown = within(form).getByRole("checkbox", {
       name: "I don't know this person's date of birth",
     });

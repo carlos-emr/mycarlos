@@ -1,6 +1,7 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
 use crate::portal_link::{self, LinkSummary, StoredLink};
+use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -235,6 +236,8 @@ fn cancelled_io_error() -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum VaultError {
+    #[error("a bundled user message could not be formatted")]
+    Localization,
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
     #[cfg(feature = "portal-linking")]
@@ -606,6 +609,8 @@ pub struct VaultRecord {
     pub folder_ids: Vec<Uuid>,
     pub display_name: String,
     pub source_label: String,
+    /// Presentation identity; the stored source label remains unchanged.
+    pub source_kind: &'static str,
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
@@ -1362,6 +1367,7 @@ impl VaultStore {
                     folder_ids: record.folder_ids.clone(),
                     display_name: record.display_name.clone(),
                     source_label: record.source_label.clone(),
+                    source_kind: "manual",
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
@@ -2749,17 +2755,33 @@ impl VaultStore {
     /// The recovery kit for the key shown by `begin_recovery_key` and not yet
     /// confirmed: the key, when it was made and what it is for. It names no
     /// patient or document, so a kit someone else finds says nothing more.
+    #[cfg(test)]
     pub fn recovery_kit(&self, now_ms: u64) -> Result<Zeroizing<String>, VaultError> {
+        self.recovery_kit_in(now_ms, crate::ui_text::UiLocale::En)
+    }
+
+    pub fn recovery_kit_in(
+        &self,
+        now_ms: u64,
+        locale: crate::ui_text::UiLocale,
+    ) -> Result<Zeroizing<String>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let pending = unlocked
             .pending_recovery_key
             .as_ref()
             .ok_or(VaultError::Invalid)?;
-        Ok(recovery_kit_text(
-            &encode_recovery_key(&pending.key),
-            &recovery_key_label(pending.key_id),
-            now_ms,
+        Ok(Zeroizing::new(
+            locale
+                .render_raw(
+                    MessageId::NativeKitText,
+                    &[
+                        ("key", &encode_recovery_key(&pending.key)),
+                        ("label", &recovery_key_label(pending.key_id)),
+                        ("date", &utc_date_text(now_ms)),
+                    ],
+                )
+                .map_err(|_| VaultError::Localization)?,
         ))
     }
 
@@ -2813,13 +2835,23 @@ impl VaultStore {
     /// Saves the recovery kit to a file the patient chose, as an export is
     /// saved: never inside the vault home, private to the user, and replacing
     /// a link at the destination rather than writing through it.
+    #[cfg(test)]
     pub fn save_recovery_kit(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
+        self.save_recovery_kit_in(destination, now_ms, crate::ui_text::UiLocale::En)
+    }
+
+    pub fn save_recovery_kit_in(
+        &self,
+        destination: &Path,
+        now_ms: u64,
+        locale: crate::ui_text::UiLocale,
+    ) -> Result<(), VaultError> {
         let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
         }
-        let kit = self.recovery_kit(now_ms)?;
+        let kit = self.recovery_kit_in(now_ms, locale)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -4681,32 +4713,6 @@ fn recovery_key_label(key_id: Uuid) -> String {
 
 /// The text of a recovery kit. Plain text, so that it prints and opens
 /// anywhere; the date is UTC.
-fn recovery_kit_text(key: &str, label: &str, now_ms: u64) -> Zeroizing<String> {
-    let (year, month, day) = utc_date(now_ms);
-    Zeroizing::new(format!(
-        "myCarlos recovery kit\n\
-         =====================\n\
-         \n\
-         Recovery key:  {key}\n\
-         Key label:     {label} (not secret: it tells kits apart)\n\
-         Saved on:      {year:04}-{month:02}-{day:02} (UTC)\n\
-         \n\
-         What it is for\n\
-         If you forget your myCarlos passphrase, this key opens your vault on\n\
-         this device and lets you choose a new passphrase. It works once you\n\
-         have finished the check in myCarlos that follows saving this kit.\n\
-         \n\
-         Keep it safe\n\
-         - Keep this kit somewhere private and away from the device, for\n  \
-         example printed and stored with your important papers. Anyone with\n  \
-         this key and a copy of your vault can open it.\n\
-         - If you set up a new recovery key, this one no longer opens the\n  \
-         vault on this device.\n\
-         - Neither your clinic nor the makers of myCarlos can open your vault\n  \
-         for you.\n"
-    ))
-}
-
 /// The UTC date of `ms`, as `YYYY-MM-DD`.
 pub(crate) fn utc_date_text(ms: u64) -> String {
     let (year, month, day) = utc_date(ms);
@@ -7052,11 +7058,11 @@ pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
-/// A person's name: a valid name, and not the shared folder's, which would read
-/// as the folder (#61).
+/// A person's name: a valid name, and not the shared folder's in any language
+/// the app shows it in, which would read as the folder (#61).
 fn validate_person_name(name: &str) -> Result<(), VaultError> {
     validate_name(name)?;
-    if name.trim().to_lowercase() == SHARED_PROFILE_NAME.to_lowercase() {
+    if crate::ui_text::names_shared_folder(name) {
         return Err(VaultError::Invalid);
     }
     Ok(())
@@ -8795,7 +8801,27 @@ mod tests {
         aside.lock();
 
         // The next vault made in this run names where the last one went.
-        store.create(PASSWORD, "New profile", 4).unwrap();
+        let new_password = "orchard-lantern-violet-monsoon-735";
+        store.create(new_password, "New profile", 4).unwrap();
+        let new_key = store.begin_recovery_key(new_password).unwrap().to_string();
+        let new_groups = recovery_key_groups(&new_key);
+        store
+            .confirm_recovery_key(&typed_back(&new_groups), 5)
+            .unwrap();
+        // This new vault uses different credentials. Neither its
+        // passphrase nor its recovery key opens the encrypted vault kept aside.
+        assert!(matches!(
+            aside.unlock(new_password),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(matches!(
+            aside.recover(&new_key, new_password),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        // The retained vault's own current passphrase still opens its records.
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
         let created = history_events(&store).remove(0);
         assert_eq!(created.event, HistoryEvent::Created);
         assert_eq!(
@@ -8805,6 +8831,27 @@ mod tests {
         // A second reset sets the second vault aside beside the first.
         store.reset().unwrap();
         assert_eq!(set_aside_folders(&root).len(), 2);
+
+        // Reuse is allowed: the same passphrase value can open both the
+        // new vault and the retained old one. Creation does not rewrite the
+        // old vault's headers or replace its matching recovery key.
+        let old_headers: Vec<_> = HEADER_SLOTS
+            .iter()
+            .map(|slot| fs::read(folders[0].join(slot)).unwrap())
+            .collect();
+        store
+            .create(PASSPHRASE_REPLACEMENT, "FAKE reused passphrase", 6)
+            .unwrap();
+        for (slot, bytes) in HEADER_SLOTS.iter().zip(&old_headers) {
+            assert_eq!(&fs::read(folders[0].join(slot)).unwrap(), bytes);
+        }
+        store.lock();
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
+        assert!(aside.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        aside.lock();
     }
 
     #[test]
@@ -9883,6 +9930,37 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn no_person_takes_the_shared_folders_name_in_any_language() {
+        // The stored name is one of the names refused.
+        assert!(crate::ui_text::names_shared_folder(SHARED_PROFILE_NAME));
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert!(matches!(
+            store.create(PASSWORD, " PARTAGÉS avec moi ", 1),
+            Err(VaultError::Invalid)
+        ));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        // The folder as each language shows it, in another case or with an
+        // accent typed as a separate mark.
+        for name in [
+            "Partage\u{301}s avec moi",
+            "compartido CONMIGO",
+            "UDOSTĘPNIONE MI",
+            "compartilhados comigo",
+        ] {
+            assert!(
+                matches!(store.create_profile(name, 2), Err(VaultError::Invalid)),
+                "{name}"
+            );
+        }
+        // A name that only holds one, or differs by a letter, is a person's.
+        for name in ["Partagés avec moi 2", "Compartido", "Udostępnione mu"] {
+            store.create_profile(name, 3).unwrap();
+        }
+        assert_eq!(store.snapshot().unwrap().profiles.len(), 4);
     }
 
     #[test]
@@ -11446,10 +11524,49 @@ mod tests {
         assert!(label
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
-        assert!(kit.contains(&format!("Key label:     {label}")));
+        assert!(kit.contains(&format!("Key label: {label}")));
         assert!(!name.contains("Jamie"));
         // The page asks for it to print it on the kit.
         assert_eq!(store.pending_recovery_key_label().unwrap(), label);
+
+        // Every language keeps the native-held key, label and date exact;
+        // the person's name never enters any kit.
+        for locale in [
+            crate::ui_text::UiLocale::En,
+            crate::ui_text::UiLocale::Fr,
+            crate::ui_text::UiLocale::Es,
+            crate::ui_text::UiLocale::Pl,
+            crate::ui_text::UiLocale::PtBr,
+            crate::ui_text::UiLocale::ZhCn,
+            crate::ui_text::UiLocale::ZhTw,
+        ] {
+            let localized = store.recovery_kit_in(1_790_553_600_000, locale).unwrap();
+            assert!(
+                localized.contains(&key)
+                    && localized.contains(&label)
+                    && localized.contains("2026-09-28")
+            );
+            assert!(!localized.contains("Jamie"));
+            assert!(!localized
+                .chars()
+                .any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            let line = localized
+                .lines()
+                .find(|line| line.contains(key.as_str()))
+                .unwrap();
+            let start = line.find(key.as_str()).unwrap();
+            let copied = &line[start..start + key.len()];
+            assert_eq!(
+                *decode_recovery_key(copied).unwrap(),
+                *decode_recovery_key(&key).unwrap()
+            );
+        }
+        let polish_file = temp.path().join("kit-pl.txt");
+        store
+            .save_recovery_kit_in(&polish_file, 1, crate::ui_text::UiLocale::Pl)
+            .unwrap();
+        let polish = fs::read_to_string(&polish_file).unwrap();
+        assert!(polish.contains("Klucz odzyskiwania") && polish.contains(&key));
 
         // Saved as an export is: outside the vault home, and private.
         let outside = temp.path().join("kit.txt");

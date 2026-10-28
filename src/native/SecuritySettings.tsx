@@ -1,4 +1,13 @@
 import {
+  t as translateNow,
+  useI18n,
+  withElements,
+  formatNumber,
+  type UiText,
+  resolveText,
+  deferredText,
+} from "../i18n";
+import {
   PersonDetailsFields,
   PersonDetailsList,
   detailsProblem,
@@ -14,7 +23,7 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../Icon";
-import { useI18n, withElements, type MessageKey, type Params } from "../i18n";
+
 import {
   MAX_PASSPHRASE_BYTES,
   isLockedError,
@@ -25,7 +34,6 @@ import {
 import { AutoLockSetting } from "./AutoLockSetting";
 import {
   NAME_INPUT_MAX_LENGTH,
-  SHARED_NAME_TAKEN,
   nameIsShared,
   nameTooLong,
 } from "./recordPresentation";
@@ -66,12 +74,33 @@ interface SecuritySettingsProps {
 
 /** One line a tester can copy into the benchmark record. */
 export function speedTestLine(report: SpeedTestReport): string {
+  const build = translateNow(
+    report.release
+      ? "interface.SecuritySettings.releaseBuild"
+      : "interface.SecuritySettings.evaluationBuild",
+  );
   return [
-    `${report.samplesMs.length} runs: ${report.samplesMs.join(", ")} ms.`,
-    `Median ${report.medianMs} ms, longest ${report.maxMs} ms.`,
-    `Argon2id, ${report.memoryKib / 1024} MiB, ${report.iterations} passes, ${report.lanes} lanes.`,
-    `${report.platform} ${report.architecture}, myCarlos ${report.appVersion}.`,
-    `${report.release ? "Release build" : "Evaluation build"}${report.simulator ? ", Simulator" : ""}.`,
+    translateNow("interface.speed.runs", {
+      count: report.samplesMs.length,
+      samples: report.samplesMs.map((value) => formatNumber(value)).join(", "),
+    }),
+    translateNow("interface.speed.median", {
+      median: report.medianMs,
+      max: report.maxMs,
+    }),
+    translateNow("interface.speed.parameters", {
+      memory: report.memoryKib / 1024,
+      iterations: report.iterations,
+      lanes: report.lanes,
+    }),
+    translateNow("interface.speed.platform", {
+      platform: report.platform,
+      architecture: report.architecture,
+      version: report.appVersion,
+    }),
+    report.simulator
+      ? translateNow("interface.speed.simulator", { build })
+      : build + ".",
   ].join(" ");
 }
 
@@ -79,7 +108,6 @@ export function speedTestLine(report: SpeedTestReport): string {
  * when it was saved. Its size, as the platform's file app counts it, tells it
  * from an empty or partial one. */
 function newBackupText(
-  t: (key: MessageKey, params?: Params) => string,
   guide: Extract<OldBackupsGuide, { step: "delete" }>,
   in1024s: boolean,
 ): string {
@@ -87,8 +115,11 @@ function newBackupText(
     guide.bytes === null ? null : formatFileSize(guide.bytes, in1024s);
   if (guide.keep) {
     return size === null
-      ? t("security.oldBackups.named", { name: guide.keep })
-      : t("security.oldBackups.namedWithSize", { name: guide.keep, size });
+      ? translateNow("security.oldBackups.named", { name: guide.keep })
+      : translateNow("security.oldBackups.namedWithSize", {
+          name: guide.keep,
+          size,
+        });
   }
   const saved = new Date(guide.savedAtMs);
   const date = printedDate(saved);
@@ -99,8 +130,12 @@ function newBackupText(
     minute: "2-digit",
   });
   return size === null
-    ? t("security.oldBackups.justSaved", { date, time })
-    : t("security.oldBackups.justSavedWithSize", { date, time, size });
+    ? translateNow("security.oldBackups.justSaved", { date, time })
+    : translateNow("security.oldBackups.justSavedWithSize", {
+        date,
+        time,
+        size,
+      });
 }
 
 export function SecuritySettings({
@@ -127,8 +162,8 @@ export function SecuritySettings({
   const { t } = useI18n();
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
-    result: string;
-    failed: string;
+    result: UiText;
+    failed: UiText;
   }>({ running: false, result: "", failed: "" });
   // Whether this screen is still shown: once the app has locked by itself,
   // a test's late "locked" answer must not lock again.
@@ -146,7 +181,7 @@ export function SecuritySettings({
       const report = await onSpeedTest();
       setSpeedTest({
         running: false,
-        result: speedTestLine(report),
+        result: deferredText(() => speedTestLine(report)),
         failed: "",
       });
     } catch (error) {
@@ -161,7 +196,7 @@ export function SecuritySettings({
       setSpeedTest({
         running: false,
         result: "",
-        failed: vaultErrorMessage(error),
+        failed: deferredText(() => vaultErrorMessage(error)),
       });
     }
   };
@@ -218,15 +253,15 @@ export function SecuritySettings({
     <main className="library-main purpose-screen">
       <div className="main-head">
         <div>
-          <h1>{t("security.title")}</h1>
-          <p>{t("security.subtitle")}</p>
+          <h1>{translateNow("security.title")}</h1>
+          <p>{translateNow("security.subtitle")}</p>
         </div>
       </div>
       <div className="purpose-note warning">
         <Icon name="info" />
         <span>
-          <strong>{t("security.devBuild.title")}</strong>{" "}
-          {t("security.devBuild.body")}
+          <strong>{translateNow("security.devBuild.title")}</strong>{" "}
+          {translateNow("security.devBuild.body")}
         </span>
       </div>
       <p className="status-line" role="status" aria-live="polite">
@@ -237,49 +272,48 @@ export function SecuritySettings({
         <section className="setting-row">
           <div>
             <h2>
-              {t("security.encryption.title")}{" "}
+              {translateNow("security.encryption.title")}{" "}
               <span className="state-pill">
-                {t("security.encryption.state")}
+                {translateNow("security.encryption.state")}
               </span>
             </h2>
-            <p>{t("security.encryption.body")}</p>
+            <p>{translateNow("security.encryption.body")}</p>
           </div>
         </section>
         {/* #71: the privacy notice says what is kept. */}
         <section className="setting-row" aria-labelledby="what-is-kept">
           <div>
-            <h2 id="what-is-kept">What myCarlos keeps</h2>
+            <h2 id="what-is-kept">
+              {translateNow("interface.SecuritySettings.whatMyCarlosKeeps")}
+            </h2>
             <p>
-              myCarlos never deletes a document. Hiding one takes it out of
-              view: it stays in the encrypted vault, listed under Hidden, and
-              can be restored. Readable copies you save outside myCarlos are
-              yours to keep or delete.
+              {translateNow(
+                "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
+              )}
             </p>
             <p>
-              myCarlos also keeps a history: when the vault was opened; when its
-              passphrase or recovery key was set or changed, and when a backup
-              was saved or restored; when each patient profile was added and
-              each folder made, renamed or moved; and when each document was
-              added, renamed, moved, hidden, restored or saved outside myCarlos,
-              and where. It is encrypted with everything else. myCarlos does not
-              show it, and never changes or removes it.
+              {translateNow(
+                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
+              )}
             </p>
             <p>
-              Starting again, or restoring a backup over this vault, sets the
-              vault aside: it stays on this device, encrypted. myCarlos never
-              deletes a vault.
+              {translateNow(
+                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
+              )}
             </p>
           </div>
         </section>
         <section className="setting-row native-setting-form">
           <div>
             <h2>
-              {t("security.autoLock.title")}{" "}
+              {translateNow("security.autoLock.title")}{" "}
               <span className="state-pill">
-                {t("security.autoLock.minutes", { count: autoLockMinutes })}
+                {translateNow("security.autoLock.minutes", {
+                  count: autoLockMinutes,
+                })}
               </span>
             </h2>
-            <p>{t("security.autoLock.body")}</p>
+            <p>{translateNow("security.autoLock.body")}</p>
           </div>
           <div>
             <AutoLockSetting
@@ -291,30 +325,29 @@ export function SecuritySettings({
               type="button"
               onClick={() => void onLock()}
             >
-              {t("security.lockNow")}
+              {translateNow("security.lockNow")}
             </button>
           </div>
         </section>
         <section className="setting-row">
           <div>
             <h2>
-              {t("security.recoveryKey.title")}{" "}
+              {translateNow("security.recoveryKey.title")}{" "}
               <span className="state-pill">
                 {recoveryKeySetAtMs
-                  ? t("security.recoveryKey.setUpOn", {
+                  ? translateNow("security.recoveryKey.setUpOn", {
                       date: printedDate(new Date(recoveryKeySetAtMs)),
                     })
-                  : t("security.recoveryKey.notSetUp")}
+                  : translateNow("security.recoveryKey.notSetUp")}
               </span>
             </h2>
-            <p>{t("security.recoveryKey.body")}</p>
+            <p>{translateNow("security.recoveryKey.body")}</p>
             {recoveryKeySetAtMs && recoveryKeyLabel && (
               <p>
                 {withElements(
-                  t("security.recoveryKey.current", {
-                    date: printedDate(new Date(recoveryKeySetAtMs)),
-                  }),
+                  "security.recoveryKey.current",
                   { label: <KeyLabel label={recoveryKeyLabel} /> },
+                  { date: printedDate(new Date(recoveryKeySetAtMs)) },
                 )}
               </p>
             )}
@@ -327,32 +360,34 @@ export function SecuritySettings({
               onClick={onSetUpRecoveryKey}
             >
               {recoveryKeySetAtMs
-                ? t("security.recoveryKey.replace")
-                : t("security.recoveryKey.setUp")}
+                ? translateNow("security.recoveryKey.replace")
+                : translateNow("security.recoveryKey.setUp")}
             </button>
           </div>
         </section>
         <section className="setting-row native-backup-settings">
           <div>
-            <h2>{t("security.backup.title")}</h2>
-            <p>{t("security.backup.body")}</p>
+            <h2>{translateNow("security.backup.title")}</h2>
+            <p>{translateNow("security.backup.body")}</p>
             {oldBackupsGuide && (
               <section
                 className="old-backups-guide"
                 aria-labelledby="old-backups-title"
               >
-                <h3 id="old-backups-title">{t("security.oldBackups.title")}</h3>
-                <p>{t("security.oldBackups.intro")}</p>
+                <h3 id="old-backups-title">
+                  {translateNow("security.oldBackups.title")}
+                </h3>
+                <p>{translateNow("security.oldBackups.intro")}</p>
                 {oldBackupsGuide.step === "save" ? (
                   <>
                     <ol>
                       <li>
                         {readOnly
-                          ? t("security.oldBackups.saveWhenWritable")
-                          : t("security.oldBackups.saveNow")}{" "}
-                        {t("security.oldBackups.keepCopy")}
+                          ? translateNow("security.oldBackups.saveWhenWritable")
+                          : translateNow("security.oldBackups.saveNow")}{" "}
+                        {translateNow("security.oldBackups.keepCopy")}
                       </li>
-                      <li>{t("security.oldBackups.thenDelete")}</li>
+                      <li>{translateNow("security.oldBackups.thenDelete")}</li>
                     </ol>
                     <button
                       className="button"
@@ -360,18 +395,18 @@ export function SecuritySettings({
                       disabled={busy}
                       onClick={onOldBackupsGuideDone}
                     >
-                      {t("security.oldBackups.none")}
+                      {translateNow("security.oldBackups.none")}
                     </button>
                   </>
                 ) : (
                   <>
                     <ol>
                       <li>
-                        {newBackupText(t, oldBackupsGuide, sizesIn1024s)}{" "}
-                        {t("security.oldBackups.keepCopy")}
+                        {newBackupText(oldBackupsGuide, sizesIn1024s)}{" "}
+                        {translateNow("security.oldBackups.keepCopy")}
                       </li>
-                      <li>{t("security.oldBackups.deleteOlder")}</li>
-                      <li>{t("security.oldBackups.inPlace")}</li>
+                      <li>{translateNow("security.oldBackups.deleteOlder")}</li>
+                      <li>{translateNow("security.oldBackups.inPlace")}</li>
                     </ol>
                     <button
                       className="button"
@@ -379,7 +414,7 @@ export function SecuritySettings({
                       disabled={busy}
                       onClick={onOldBackupsGuideDone}
                     >
-                      {t("security.oldBackups.done")}
+                      {translateNow("security.oldBackups.done")}
                     </button>
                   </>
                 )}
@@ -393,23 +428,25 @@ export function SecuritySettings({
               disabled={busy || readOnly}
               onClick={() => void onSaveBackup()}
             >
-              {t("security.backup.save")}
+              {translateNow("security.backup.save")}
             </button>
           </div>
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>{t("security.passphrase.title")}</h2>
+            <h2>{translateNow("security.passphrase.title")}</h2>
             <p>
-              {t("security.passphrase.rules", { min: MIN_PASSPHRASE_CHARS })}
+              {translateNow("security.passphrase.rules", {
+                min: MIN_PASSPHRASE_CHARS,
+              })}
             </p>
-            <p>{t("security.passphrase.copies")}</p>
+            <p>{translateNow("security.passphrase.copies")}</p>
           </div>
           <form onSubmit={submitPassphrase}>
             <label>
-              {t("security.passphrase.current")}
+              {translateNow("security.passphrase.current")}
               <SecretInput
-                aria-label={t("security.passphrase.current")}
+                aria-label={translateNow("security.passphrase.current")}
                 required
                 type="password"
                 autoComplete="current-password"
@@ -418,9 +455,9 @@ export function SecuritySettings({
               />
             </label>
             <label>
-              {t("passphrase.new.label")}
+              {translateNow("passphrase.new.label")}
               <SecretInput
-                aria-label={t("passphrase.new.label")}
+                aria-label={translateNow("passphrase.new.label")}
                 required
                 type="password"
                 autoComplete="new-password"
@@ -429,9 +466,9 @@ export function SecuritySettings({
               />
             </label>
             <label>
-              {t("passphrase.confirmNew.label")}
+              {translateNow("passphrase.confirmNew.label")}
               <SecretInput
-                aria-label={t("passphrase.confirmNew.label")}
+                aria-label={translateNow("passphrase.confirmNew.label")}
                 required
                 type="password"
                 autoComplete="new-password"
@@ -442,18 +479,24 @@ export function SecuritySettings({
               />
             </label>
             {currentPassphraseTooLong && (
-              <p role="alert">{t("security.passphrase.currentTooLong")}</p>
+              <p role="alert">
+                {translateNow("security.passphrase.currentTooLong")}
+              </p>
             )}
             {newPassphraseConfirmation &&
               newPassphrase !== newPassphraseConfirmation && (
-                <p role="alert">{t("security.passphrase.mismatch")}</p>
+                <p role="alert">
+                  {translateNow("security.passphrase.mismatch")}
+                </p>
               )}
             {newPassphraseTooLong && (
-              <p role="alert">{t("security.passphrase.newTooLong")}</p>
+              <p role="alert">
+                {translateNow("security.passphrase.newTooLong")}
+              </p>
             )}
             {newPassphraseTooShort && newPassphraseConfirmation && (
               <p role="alert">
-                {t("security.passphrase.newTooShort", {
+                {translateNow("security.passphrase.newTooShort", {
                   min: MIN_PASSPHRASE_CHARS,
                 })}
               </p>
@@ -462,7 +505,7 @@ export function SecuritySettings({
               className="button"
               disabled={busy || readOnly || passphraseFormInvalid}
             >
-              {t("security.passphrase.submit")}
+              {translateNow("security.passphrase.submit")}
             </button>
           </form>
         </section>
@@ -470,8 +513,8 @@ export function SecuritySettings({
             command, before a release to patients. */}
         <section className="setting-row native-setting-form">
           <div>
-            <h2>{t("security.speed.title")}</h2>
-            <p>{t("security.speed.body")}</p>
+            <h2>{translateNow("security.speed.title")}</h2>
+            <p>{translateNow("security.speed.body")}</p>
           </div>
           <div>
             <button
@@ -480,32 +523,32 @@ export function SecuritySettings({
               disabled={busy || speedTest.running}
               onClick={() => void runSpeedTest()}
             >
-              {t("security.speed.run")}
+              {translateNow("security.speed.run")}
             </button>
             <p className="native-dialog-status" role="status">
-              {/* The result stays in English: testers copy it into the
-                  benchmark record. */}
               {speedTest.running
-                ? t("security.speed.measuring")
-                : speedTest.result}
+                ? translateNow("security.speed.measuring")
+                : resolveText(speedTest.result)}
             </p>
-            {speedTest.failed && <p role="alert">{speedTest.failed}</p>}
+            {speedTest.failed && (
+              <p role="alert">{resolveText(speedTest.failed)}</p>
+            )}
           </div>
         </section>
         <section className="setting-row">
           <div>
-            <h2>{t("security.copies.title")}</h2>
-            <p>{t("security.copies.body")}</p>
+            <h2>{translateNow("security.copies.title")}</h2>
+            <p>{translateNow("security.copies.body")}</p>
           </div>
         </section>
         <section className="setting-row native-setting-form native-profile-settings">
           <div>
-            <h2>{t("security.profiles.title")}</h2>
-            <p>{t("security.profiles.body")}</p>
+            <h2>{translateNow("security.profiles.title")}</h2>
+            <p>{translateNow("security.profiles.body")}</p>
           </div>
           <form onSubmit={submitProfile}>
             <label>
-              {t("security.profiles.label")}
+              {translateNow("security.profiles.label")}
               <input
                 required
                 maxLength={NAME_INPUT_MAX_LENGTH}
@@ -514,10 +557,14 @@ export function SecuritySettings({
               />
             </label>
             {nameTooLong(profileName) && (
-              <p role="alert">{t("create.profile.tooLong")}</p>
+              <p role="alert">{translateNow("create.profile.tooLong")}</p>
             )}
             {nameIsShared(profileName) && (
-              <p role="alert">{SHARED_NAME_TAKEN}</p>
+              <p role="alert">
+                {t("create.profile.sharedTaken", {
+                  folder: t("interface.LibrarySidebar.sharedWithMe"),
+                })}
+              </p>
             )}
             {onUpdateProfileDetails && (
               <fieldset disabled={busy || readOnly}>
@@ -543,7 +590,7 @@ export function SecuritySettings({
                 nameIsShared(profileName)
               }
             >
-              {t("security.profiles.add")}
+              {translateNow("security.profiles.add")}
             </button>
           </form>
           {onUpdateProfileDetails && (

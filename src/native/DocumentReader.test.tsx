@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -57,11 +58,13 @@ describe("the document reader", () => {
       } else {
         expect(
           screen.getByText(
-            `Service date: ${serviceDate === "" ? "Date not recorded" : serviceDate}`,
+            humanText(
+              `Service date: ${serviceDate === "" ? "Date not recorded" : serviceDate}`,
+            ),
           ),
         ).toBeVisible();
       }
-      await screen.findByRole("img", { name: /^Page 1 of 2/ });
+      await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     },
   );
   it("shows reader-only line boundaries without changing legacy text", async () => {
@@ -71,8 +74,10 @@ describe("the document reader", () => {
       "FAKE Imaging Report\nPatient: FAKE Morgan Patient\nFinding: HbA1c 1.5 mg 120/80";
     const supplied = { ...page(0), text: raw, readableText: readable };
     renderReader(vi.fn(async () => supplied));
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
-    await userEvent.setup().click(screen.getByText("Text on this page"));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    await userEvent
+      .setup()
+      .click(screen.getByText(humanText("Text on this page")));
     const text = document.querySelector(".native-reader-text div")!;
     expect(text.textContent).toBe(readable);
     expect(getComputedStyle(text).whiteSpace).toBe("pre-wrap");
@@ -92,10 +97,14 @@ describe("the document reader", () => {
 
   it("shows the first page, its text and where the document came from", async () => {
     const { viewPage } = renderReader();
-    const reader = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
-    expect(reader).toHaveAccessibleDescription("Manual import — unverified");
+    const reader = screen.getByRole("dialog", {
+      name: humanText("FAKE_Bloodwork.pdf"),
+    });
+    expect(reader).toHaveHumanAccessibleDescription(
+      "Manual import — unverified",
+    );
     const picture = await screen.findByRole("img", {
-      name: "Page 1 of 2. The page's text follows.",
+      name: humanText("Page 1 of 2. The page's text follows."),
     });
     expect(picture).toHaveAttribute("src", PNG);
     // Fitted to the reader, the page does not scroll sideways.
@@ -112,14 +121,14 @@ describe("the document reader", () => {
       Math.abs(picture.getBoundingClientRect().width - available),
     ).toBeLessThanOrEqual(1);
     // One visible count beside the buttons; the completion is still announced.
-    const counts = screen.getAllByText("Page 1 of 2");
+    const counts = screen.getAllByText(humanText("Page 1 of 2"));
     expect(
       counts.filter((count) => {
         const bounds = count.getBoundingClientRect();
         return bounds.width > 1 && bounds.height > 1;
       }),
     ).toHaveLength(1);
-    expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
     expect(viewPage).toHaveBeenCalledTimes(1);
     const [index, width, password] = viewPage.mock.calls[0];
     expect(index).toBe(0);
@@ -127,39 +136,49 @@ describe("the document reader", () => {
       Math.min(4096, Math.round(available * window.devicePixelRatio)),
     );
     expect(password).toBeUndefined();
-    await userEvent.setup().click(screen.getByText("Text on this page"));
-    expect(screen.getByText("FAKE text on page 1")).toBeVisible();
+    await userEvent
+      .setup()
+      .click(screen.getByText(humanText("Text on this page")));
+    expect(screen.getByText(humanText("FAKE text on page 1"))).toBeVisible();
   });
 
   it("goes from page to page, keeping pages it has drawn", async () => {
     const user = userEvent.setup();
     const { viewPage } = renderReader();
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     expect(
-      screen.getByRole("button", { name: "Previous page" }),
+      screen.getByRole("button", { name: humanText("Previous page") }),
     ).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Next page" }));
-    await screen.findByRole("img", { name: /^Page 2 of 2/ });
-    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Previous page" }));
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Next page") }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    expect(
+      screen.getByRole("button", { name: humanText("Next page") }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Previous page") }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     expect(viewPage).toHaveBeenCalledTimes(2);
   });
 
   it("draws a larger page when zoomed in, and fits it again", async () => {
     const user = userEvent.setup();
     const { viewPage } = renderReader();
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     const fitted = viewPage.mock.calls[0][1];
-    expect(screen.getByRole("button", { name: "Fit width" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Larger" }));
-    expect(screen.getByText("125%")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: humanText("Fit width") }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: humanText("Larger") }));
+    expect(screen.getByText(humanText("125%"))).toBeVisible();
     await vi.waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
     expect(viewPage.mock.calls[1][1]).toBeGreaterThan(fitted);
-    const fit = screen.getByRole("button", { name: "Fit width" });
+    const fit = screen.getByRole("button", { name: humanText("Fit width") });
     await vi.waitFor(() => expect(fit).toBeEnabled());
     await user.click(fit);
-    expect(screen.getByText("100%")).toBeVisible();
+    expect(screen.getByText(humanText("100%"))).toBeVisible();
     // Back to the width already drawn.
     expect(viewPage).toHaveBeenCalledTimes(2);
   });
@@ -172,25 +191,27 @@ describe("the document reader", () => {
       .mockRejectedValueOnce(refusal("pdf_wrong_password"))
       .mockImplementation(async (index: number) => page(index));
     renderReader(viewPage);
-    const field = await screen.findByLabelText("Document password");
+    const field = await screen.findByLabelText(humanText("Document password"));
     expect(screen.queryByRole("img")).toBeNull();
     await user.type(field, "FAKE-wrong{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "That password did not open the document.",
     );
     await user.type(
-      screen.getByLabelText("Document password"),
+      screen.getByLabelText(humanText("Document password")),
       "FAKE-portal-2026{Enter}",
     );
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     expect(viewPage).toHaveBeenLastCalledWith(
       0,
       expect.any(Number),
       "FAKE-portal-2026",
     );
     // Later pages use the same password, without asking.
-    await user.click(screen.getByRole("button", { name: "Next page" }));
-    await screen.findByRole("img", { name: /^Page 2 of 2/ });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Next page") }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     expect(viewPage).toHaveBeenLastCalledWith(
       1,
       expect.any(Number),
@@ -204,10 +225,12 @@ describe("the document reader", () => {
       vi.fn().mockRejectedValue(refusal("pdf_view_failed")),
     );
     const failure = await screen.findByRole("alert");
-    expect(failure).toHaveTextContent("FAKE pdf_view_failed");
+    expect(failure).toHaveHumanTextContent("FAKE pdf_view_failed");
     expect(failure).toBeVisible();
     await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: humanText("Close"),
+      }),
     );
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(2);
@@ -223,20 +246,22 @@ describe("the document reader", () => {
         }),
     );
     const { cancelView, unmount } = renderReader(viewPage);
-    expect(await screen.findByText("Opening page 1…")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent("Opening page 1…");
+    expect(await screen.findByText(humanText("Opening page 1…"))).toBeVisible();
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
+      "Opening page 1…",
+    );
     expect(
       screen.getByRole("status").getBoundingClientRect().height,
     ).toBeGreaterThan(1);
     // Sizes and pages cannot be asked for while one is being drawn.
     for (const name of ["Larger", "Smaller", "Next page"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Larger" }));
+    await user.click(screen.getByRole("button", { name: humanText("Larger") }));
     expect(viewPage).toHaveBeenCalledTimes(1);
     finish(page(0));
     // Once shown, the page is said, for screen readers.
     await vi.waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2"),
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2"),
     );
     expect(cancelView).not.toHaveBeenCalled();
     unmount();
@@ -252,14 +277,22 @@ describe("the document reader", () => {
       }),
     );
     renderReader(viewPage);
-    await screen.findByRole("img", { name: /^Page 1 of 10/ });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 10/) });
     for (let next = 2; next <= 8; next++) {
-      await user.click(screen.getByRole("button", { name: "Next page" }));
-      await screen.findByRole("img", { name: new RegExp(`^Page ${next} of`) });
+      await user.click(
+        screen.getByRole("button", { name: humanText("Next page") }),
+      );
+      await screen.findByRole("img", {
+        name: humanText(new RegExp(`^Page ${next} of`)),
+      });
     }
     for (let back = 7; back >= 1; back--) {
-      await user.click(screen.getByRole("button", { name: "Previous page" }));
-      await screen.findByRole("img", { name: new RegExp(`^Page ${back} of`) });
+      await user.click(
+        screen.getByRole("button", { name: humanText("Previous page") }),
+      );
+      await screen.findByRole("img", {
+        name: humanText(new RegExp(`^Page ${back} of`)),
+      });
     }
     // Pages 3 to 8 were kept; 1 and 2 had to be drawn again.
     expect(viewPage).toHaveBeenCalledTimes(10);
@@ -282,8 +315,8 @@ describe("the document reader", () => {
 
   it("lets the keyboard reach a zoomed page, to move it with the arrow keys", async () => {
     renderReader();
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
-    const area = screen.getByRole("region", { name: "Page 1" });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    const area = screen.getByRole("region", { name: humanText("Page 1") });
     expect(area).toHaveAttribute("tabindex", "0");
     area.focus();
     expect(area).toHaveFocus();
@@ -296,12 +329,14 @@ describe("the document reader", () => {
       .mockImplementationOnce(async () => page(0))
       .mockRejectedValueOnce(refusal("pdf_view_failed"));
     renderReader(viewPage);
-    await screen.findByRole("img", { name: /^Page 1 of 2/ });
-    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Next page") }),
+    );
     const failure = await screen.findByRole("alert");
-    expect(failure).toHaveTextContent("FAKE pdf_view_failed");
+    expect(failure).toHaveHumanTextContent("FAKE pdf_view_failed");
     expect(failure).toBeVisible();
     expect(screen.queryByRole("img")).toBeNull();
-    expect(screen.queryByText("Text on this page")).toBeNull();
+    expect(screen.queryByText(humanText("Text on this page"))).toBeNull();
   });
 });
