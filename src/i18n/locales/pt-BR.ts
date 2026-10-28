@@ -173,6 +173,14 @@ export const ptBR: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Renomear documento",
+  "rename.title.profile": "Renomear a pasta da pessoa",
+  "rename.label.profile": "Nome da pasta",
+  "rename.help.profile":
+    "Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.",
+  "rename.profile.controls":
+    "Os nomes não podem conter caracteres de controle.",
+  "rename.profile.saved": "O nome da pasta foi alterado para {name}.",
+  "rename.profile.action": "Renomear “{name}”",
   "rename.title.folder": "Renomear pasta",
   "rename.label.folder": "Nome da pasta",
   "rename.label.document": "Nome do arquivo",

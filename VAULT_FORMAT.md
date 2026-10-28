@@ -489,7 +489,15 @@ how, place, placeSha256, previousSession, prev`
 `hidden`, `restored`, `copySaved`, `recoveryKeySet`, `backupSaved`, `backupRestored`,
 `passphraseChanged`, `profileCreated`, `folderCreated`, `folderRenamed`, `folderMoved`, `setAside`. A folder is
 `{"id", "name"}`. A profile's or folder's entry gives its `profileId` (a folder's also its
-`folderId`) and its `name` afterwards. Shared intake also gives the reserved source
+`folderId`) and its `name` afterwards. Renaming a person's top-level folder label is
+`folderRenamed` with `how: "personFolder"`, the unchanged person's `profileId`, and
+`oldName`/`name`. It has no `folderId` or `recordId`: no ordinary folder or document
+was changed. Only the profile's displayed label changes; its identity details, IDs,
+document bytes, signatures and previous history stay untouched. This uses existing
+event and optional fields without changing manifest format or canonical entry order;
+older readers can parse, verify and append it. A reader that does not label this
+method specially can show “Folder renamed” with its old/new names and the method
+marker. Shared intake also gives the reserved source
 `profileId`; its move to a person records `moved` with `how: "shared"` and the destination
 `profileId`, even when both locations have no folders. The move and its history entry commit
 together. For folder events, `folderCreated` gives in `to` the folder it was made in,

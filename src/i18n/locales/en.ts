@@ -168,6 +168,13 @@ export const en = {
 
   // Rename a document or folder
   "rename.title.document": "Rename document",
+  "rename.title.profile": "Rename person's folder",
+  "rename.label.profile": "Folder name",
+  "rename.help.profile":
+    "This changes only the displayed folder name. The person's folders and documents stay where they are.",
+  "rename.profile.controls": "Names cannot contain control characters.",
+  "rename.profile.saved": "Folder name changed to {name}.",
+  "rename.profile.action": "Rename “{name}”",
   "rename.title.folder": "Rename folder",
   "rename.label.folder": "Folder name",
   "rename.label.document": "File name",

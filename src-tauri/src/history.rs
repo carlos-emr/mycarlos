@@ -62,6 +62,8 @@ pub enum HistoryEvent {
     ProfileCreated,
     /// A folder was made; `to` says in which folder ("My records" is none).
     FolderCreated,
+    /// An ordinary folder, or a person's top-level folder label when `how`
+    /// is "personFolder" (profile id only; there is no ordinary folder id).
     FolderRenamed,
     /// A folder moved; `from` and `to` are the folder it was in and the one
     /// it is in now.

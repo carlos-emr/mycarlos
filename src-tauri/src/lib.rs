@@ -517,6 +517,13 @@ struct NameRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenameProfileRequest {
+    profile_id: Uuid,
+    display_name: String,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FolderRequest {
     profile_id: Uuid,
@@ -2111,6 +2118,17 @@ async fn vault_create_profile(
 }
 
 #[tauri::command]
+async fn vault_rename_profile(
+    store: State<'_, Arc<VaultStore>>,
+    request: RenameProfileRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.rename_profile(request.profile_id, &request.display_name, now_ms())
+    })
+    .await
+}
+
+#[tauri::command]
 async fn vault_create_folder(
     store: State<'_, Arc<VaultStore>>,
     request: FolderRequest,
@@ -3024,6 +3042,7 @@ pub fn run() {
             vault_restore_inspect,
             vault_restore,
             vault_create_profile,
+            vault_rename_profile,
             vault_create_folder,
             vault_update_folder,
             vault_rename_record,
@@ -4214,6 +4233,25 @@ mod tests {
     }
 
     #[test]
+    fn profile_rename_payload_identifies_the_person_and_refuses_identity_fields() {
+        let id = Uuid::new_v4();
+        let request: RenameProfileRequest = serde_json::from_value(serde_json::json!({
+            "profileId": id, "displayName": "FAKE Corrected"
+        }))
+        .unwrap();
+        assert_eq!(request.profile_id, id);
+        assert_eq!(request.display_name, "FAKE Corrected");
+        for invalid in [
+            serde_json::json!({"profileId":"not-a-uuid", "displayName":"FAKE Corrected"}),
+            serde_json::json!({"folderId":id,"displayName":"FAKE Corrected"}),
+            serde_json::json!({"profileId":id,"displayName":"FAKE Corrected","fullName":"FAKE Identity"}),
+            serde_json::json!({"profileId":id,"displayName":"FAKE Corrected","birthDate":"2000-01-01"}),
+        ] {
+            assert!(serde_json::from_value::<RenameProfileRequest>(invalid).is_err());
+        }
+    }
+
+    #[test]
     fn production_webview_configuration_has_no_development_network_access() {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
@@ -4277,6 +4315,7 @@ mod tests {
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
             let _ = serde_json::from_slice::<NameRequest>(&payload);
+            let _ = serde_json::from_slice::<RenameProfileRequest>(&payload);
             let _ = serde_json::from_slice::<FolderRequest>(&payload);
             let _ = serde_json::from_slice::<UpdateFolderRequest>(&payload);
             let _ = serde_json::from_slice::<AssignFoldersRequest>(&payload);

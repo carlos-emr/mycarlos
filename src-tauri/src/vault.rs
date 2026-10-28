@@ -1259,6 +1259,39 @@ impl VaultStore {
         })
     }
 
+    /// Corrects the person's top-level folder label, without moving its contents.
+    pub fn rename_profile(
+        &self,
+        profile_id: Uuid,
+        display_name: &str,
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
+        validate_person_name(display_name)?;
+        self.mutate_recorded(|manifest, entries| {
+            if profile_id == shared_profile_id(manifest.vault_id) {
+                return Err(VaultError::Invalid);
+            }
+            let profile = manifest
+                .profiles
+                .iter_mut()
+                .find(|profile| profile.id == profile_id)
+                .ok_or(VaultError::NotFound)?;
+            let name = display_name.trim();
+            if profile.display_name != name {
+                let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, now_ms);
+                entry.profile_id = Some(profile_id);
+                entry.old_name = Some(std::mem::replace(
+                    &mut profile.display_name,
+                    name.to_owned(),
+                ));
+                entry.name = Some(name.to_owned());
+                entry.how = Some("personFolder".to_owned());
+                entries.push(entry);
+            }
+            Ok(())
+        })
+    }
+
     pub fn create_folder(
         &self,
         profile_id: Uuid,
@@ -15267,6 +15300,292 @@ mod tests {
             }
         }
         files
+    }
+
+    #[test]
+    fn profile_rename_keeps_ids_signed_bytes_hidden_contents_and_survives_restore() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("original").join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Patietn", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let other = store.create_profile("FAKE Patient", 2).unwrap();
+        let folder = store
+            .create_folder(profile, None, "FAKE Results", 3)
+            .unwrap();
+        store
+            .create_folder(profile, Some(folder), "FAKE Nested", 4)
+            .unwrap();
+        let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
+        ))
+        .unwrap();
+        let document = &fixture["documents"][0];
+        let signed = BASE64
+            .decode(document["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        let signed_manifest = BASE64
+            .decode(document["manifest_bytes_b64"].as_str().unwrap())
+            .unwrap();
+        let layout = crate::signed_pdf::SignatureLayout {
+            byte_ranges: serde_json::from_value(document["byte_ranges"].clone()).unwrap(),
+            ..Default::default()
+        };
+        let pins = [crate::signed_pdf::PinnedLink {
+            clinic_id: fixture["link"]["clinic_id"].as_str().unwrap().to_owned(),
+            recipient_id: fixture["link"]["recipient_id"].as_str().unwrap().to_owned(),
+            signer_kids: vec![fixture["link"]["signer_kid"].as_str().unwrap().to_owned()],
+        }];
+        let verdict =
+            crate::signed_pdf::check(&signed, &layout, Some(&signed_manifest), &pins).unwrap();
+        assert!(matches!(
+            verdict,
+            crate::signed_pdf::Verdict::Verified { .. }
+        ));
+        let record = store
+            .import(
+                profile,
+                vec![folder],
+                vec![source("FAKE Signed.pdf", &signed)],
+                5,
+            )
+            .unwrap()
+            .imported[0];
+        let hidden = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE Hidden.pdf", b"FAKE hidden bytes")],
+                6,
+            )
+            .unwrap()
+            .imported[0];
+        store.hide_record(hidden, 7).unwrap();
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let object_bytes: Vec<_> = before
+            .records
+            .iter()
+            .map(|record| {
+                (
+                    record.object_name.clone(),
+                    fs::read(root.join("objects").join(&record.object_name)).unwrap(),
+                )
+            })
+            .collect();
+        let prior_history = history_events(&store);
+        store
+            .rename_profile(profile, "  FAKE Patient  ", 8)
+            .unwrap();
+        let after = store.session().as_ref().unwrap().manifest.clone();
+        assert!(before.folders == after.folders && before.records == after.records);
+        let mut expected_profiles = before.profiles.clone();
+        expected_profiles
+            .iter_mut()
+            .find(|p| p.id == profile)
+            .unwrap()
+            .display_name = "FAKE Patient".into();
+        assert!(after.profiles == expected_profiles);
+        assert_ne!(profile, other); // Equal labels never merge people.
+        let history = history_events(&store);
+        assert_eq!(&history[..prior_history.len()], prior_history);
+        let renamed = history.last().unwrap();
+        assert_eq!(renamed.event, HistoryEvent::FolderRenamed);
+        assert_eq!(
+            (renamed.profile_id, renamed.folder_id, renamed.record_id),
+            (Some(profile), None, None)
+        );
+        assert_eq!(
+            (
+                renamed.old_name.as_deref(),
+                renamed.name.as_deref(),
+                renamed.how.as_deref()
+            ),
+            (
+                Some("FAKE Patietn"),
+                Some("FAKE Patient"),
+                Some("personFolder")
+            )
+        );
+        if let Some(path) = std::env::var_os("MYCARLOS_RENAME108_HISTORY_FIXTURE") {
+            let path = PathBuf::from(path);
+            fs::write(&path, history::pack(&history).unwrap().as_slice()).unwrap();
+            fs::write(path.with_extension("vault-id"), after.vault_id.to_string()).unwrap();
+        }
+        store.rename_profile(profile, "FAKE Patient", 9).unwrap();
+        assert_eq!(history_events(&store), history);
+        let check_contents = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            assert_eq!(
+                snapshot
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == profile)
+                    .unwrap()
+                    .display_name,
+                "FAKE Patient"
+            );
+            assert_eq!(
+                snapshot
+                    .records
+                    .iter()
+                    .find(|r| r.id == hidden)
+                    .unwrap()
+                    .hidden,
+                before
+                    .records
+                    .iter()
+                    .find(|r| r.id == hidden)
+                    .unwrap()
+                    .hidden
+            );
+            assert!(snapshot.records.iter().all(|r| r.profile_id == profile));
+            let mut exported = Vec::new();
+            store.export(record, &mut exported).unwrap();
+            assert_eq!(exported, signed);
+            assert_eq!(
+                crate::signed_pdf::check(&exported, &layout, Some(&signed_manifest), &pins),
+                Ok(verdict.clone())
+            );
+            for (name, bytes) in &object_bytes {
+                assert_eq!(
+                    &fs::read(store.root.join("objects").join(name)).unwrap(),
+                    bytes
+                );
+            }
+            let all = history_events(store);
+            assert_eq!(&all[..history.len()], history);
+        };
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        check_contents(&store);
+        store.lock();
+        drop(store);
+        let reopened = VaultStore::new(root);
+        reopened.unlock(PASSWORD).unwrap();
+        check_contents(&reopened);
+        let mut backup = Vec::new();
+        reopened.backup(&mut backup, 10).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored").join("vault"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        check_contents(&restored);
+    }
+
+    #[test]
+    fn profile_rename_enforces_person_rules_and_refuses_unwritable_or_shared_targets() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = every_file(&root);
+        for invalid in [
+            "".to_owned(),
+            "   ".into(),
+            "a\u{0000}b".into(),
+            "a\u{0085}b".into(),
+            "a".repeat(121),
+            "🪻".repeat(121),
+            "  sHaReD WiTh Me ".into(),
+        ] {
+            assert!(
+                matches!(
+                    store.rename_profile(profile, &invalid, 2),
+                    Err(VaultError::Invalid)
+                ),
+                "{invalid:?}"
+            );
+        }
+        assert!(matches!(
+            store.rename_profile(Uuid::new_v4(), "FAKE Other", 2),
+            Err(VaultError::NotFound)
+        ));
+        let shared = store.snapshot().unwrap().shared_profile_id;
+        assert!(matches!(
+            store.rename_profile(shared, "FAKE Other", 2),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(every_file(&root), before);
+        store.rename_profile(profile, &"🪻".repeat(120), 3).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0]
+                .display_name
+                .chars()
+                .count(),
+            120
+        );
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+        let readonly = every_file(&root);
+        assert!(matches!(
+            store.rename_profile(profile, "FAKE Corrected", 4),
+            Err(VaultError::RecoveryMode)
+        ));
+        assert_eq!(every_file(&root), readonly);
+        store.lock();
+        assert!(matches!(
+            store.rename_profile(profile, "FAKE Corrected", 4),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn profile_rename_failure_keeps_label_and_history_in_the_same_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Patietn", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let history = history_events(&store);
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
+            {
+                let _fail = FailAt::new(boundary);
+                assert!(
+                    store.rename_profile(profile, "FAKE Patient", 2).is_err(),
+                    "{boundary}"
+                );
+            }
+            assert!(store.session().as_ref().unwrap().manifest == before);
+            assert_eq!(history_events(&store), history);
+        }
+        {
+            let _fail = FailAt::new("manifest.after-first-write");
+            store.rename_profile(profile, "FAKE Patient", 3).unwrap();
+        }
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::WriteFailed)
+        );
+        assert_eq!(
+            history_events(&store).last().unwrap().name.as_deref(),
+            Some("FAKE Patient")
+        );
+        store.lock();
+        drop(store);
+        let reopened = VaultStore::new(root);
+        reopened.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            reopened.snapshot().unwrap().profiles[0].display_name,
+            "FAKE Patient"
+        );
+        let all = history_events(&reopened);
+        assert_eq!(&all[..history.len()], history);
+        assert_eq!(
+            all.iter()
+                .filter(|e| e.how.as_deref() == Some("personFolder"))
+                .count(),
+            1
+        );
     }
 
     #[test]

@@ -172,6 +172,14 @@ export const es: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Cambiar el nombre del documento",
+  "rename.title.profile": "Cambiar el nombre de la carpeta de la persona",
+  "rename.label.profile": "Nombre de la carpeta",
+  "rename.help.profile":
+    "Esto solo cambia el nombre que se muestra para la carpeta. Las carpetas y los documentos de la persona se quedan donde están.",
+  "rename.profile.controls":
+    "Los nombres no pueden contener caracteres de control.",
+  "rename.profile.saved": "El nombre de la carpeta se ha cambiado a {name}.",
+  "rename.profile.action": "Renombrar «{name}»",
   "rename.title.folder": "Cambiar el nombre de la carpeta",
   "rename.label.folder": "Nombre de la carpeta",
   "rename.label.document": "Nombre del archivo",
