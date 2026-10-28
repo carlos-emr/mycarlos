@@ -1,9 +1,11 @@
+import interfaceMessages from "./interface-pt-BR.json" with { type: "json" };
 import type { Message } from "../types";
 import type { MessageKey } from "./en";
 
 /** Brazilian Portuguese, polite register: the "você" imperative ("use",
  * "escolha") without titles. */
 export const ptBR: Record<MessageKey, Message> = {
+  ...interfaceMessages,
   "portal.serviceDateLabel": "Data do atendimento",
   "portal.serviceDate": "Data do atendimento: {date}",
   "portal.dateNotRecorded": "Data não registrada",

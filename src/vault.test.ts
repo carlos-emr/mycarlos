@@ -4,6 +4,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { setLocaleOverride } from "./i18n";
+import { setDeviceLocale } from "./test/deviceLocale";
 import {
   boxesWithControlCharacters,
   createVaultBridge,
@@ -379,6 +380,82 @@ describe("errors the app words itself, in the language in use (#46)", () => {
     expect(named.message).toContain(
       `Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan.pdf” (adicionado em ${date}, nos documentos de Avery)`,
     );
+    // A Canadian computer writes 2026-01-15 whatever language myCarlos uses
+    // (Ben, 21 Oct, kept 28 Oct), and the message is worded when it is read.
+    setDeviceLocale("en-CA");
+    for (const locale of ["fr", "pt-BR"] as const) {
+      setLocaleOverride(locale);
+      expect(named.message, locale).toContain("2026-01-15");
+    }
+  });
+});
+
+describe("localized native presentation contracts", () => {
+  it("sends only the selected locale and operation data to native confirmations", async () => {
+    invoke.mockReset();
+    invoke.mockResolvedValue(null);
+    setLocaleOverride("fr");
+    const bridge = createVaultBridge();
+    await bridge.confirmRecoveryKey([{ index: 0, value: "FAKE" }]);
+    await bridge.saveRecoveryKit();
+    await bridge.pickRestoreSource();
+    await bridge.restore("pick", { passphrase: "FAKE" }, true);
+    await bridge.pickImportFiles("person", []);
+    await bridge.reset("RESET MYCARLOS VAULT");
+    expect(invoke.mock.calls).toEqual([
+      [
+        "vault_recovery_key_confirm",
+        { locale: "fr", request: { groups: [{ index: 0, value: "FAKE" }] } },
+      ],
+      ["vault_recovery_kit_save", { locale: "fr" }],
+      ["vault_restore_pick", { locale: "fr" }],
+      [
+        "vault_restore",
+        {
+          locale: "fr",
+          request: { pickId: "pick", passphrase: "FAKE", replace: true },
+        },
+      ],
+      [
+        "vault_import_pick",
+        { locale: "fr", request: { profileId: "person", folderIds: [] } },
+      ],
+      [
+        "vault_reset",
+        { locale: "fr", request: { confirmation: "RESET MYCARLOS VAULT" } },
+      ],
+    ]);
+  });
+  it("retains a damaged document identity and resolves its existing message again on language change", () => {
+    setLocaleOverride("en");
+    const error = namedDamage(
+      { code: "damaged_document", recordId: "record", message: "Native" },
+      {
+        profiles: [
+          { id: "person", displayName: "FAKE {where}", createdAtMs: 1 },
+        ],
+        records: [
+          {
+            id: "record",
+            profileId: "person",
+            folderIds: [],
+            displayName: "FAKE_{where}.pdf",
+            sourceLabel: "Manual import",
+            mediaType: "application/pdf",
+            plaintextSize: 1,
+            importedAtMs: Date.UTC(2026, 0, 15, 12),
+            available: false,
+          },
+        ],
+      },
+    ) as { message: string };
+    expect(error.message).toContain(
+      'No backup was saved: the document "FAKE_{where}.pdf"',
+    );
+    setLocaleOverride("pt-BR");
+    expect(error.message).toContain("Nenhuma cópia de segurança foi salva");
+    expect(error.message).toContain("FAKE_{where}.pdf");
+    expect(vaultErrorMessage(error)).toBe(error.message);
   });
 
   it("says a vault or backup a newer myCarlos saved needs an update, not that it is damaged", () => {

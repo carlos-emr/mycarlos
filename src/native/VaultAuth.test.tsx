@@ -1,3 +1,4 @@
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreateVault, ResetConfirmation, UnlockVault } from "./VaultAuth";
@@ -533,3 +534,39 @@ describe("ResetConfirmation", () => {
     expect(onReset).toHaveBeenCalledWith("RESET MYCARLOS VAULT");
   });
 });
+
+for (const locale of LOCALES) {
+  it(`keeps reset consent disabled for wrong or stale language text in ${locale}`, () => {
+    setLocaleOverride(locale);
+    const onReset = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResetConfirmation
+        busy={false}
+        actionLabel="FAKE action"
+        onReset={onReset}
+      />,
+    );
+    const field = screen.getByRole("textbox");
+    const action = screen.getByRole("button", { name: "FAKE action" });
+    const phrase = translate(locale, "native.reset.phrase");
+    expect(
+      screen.getByLabelText(translate(locale, "reset.type", { phrase })),
+    ).toBe(field);
+    fireEvent.change(field, { target: { value: phrase.toLowerCase() } });
+    expect(action).toBeDisabled();
+    fireEvent.change(field, { target: { value: " " + phrase } });
+    expect(action).toBeDisabled();
+    fireEvent.change(field, { target: { value: phrase.normalize("NFD") } });
+    expect(action).toBeEnabled();
+    fireEvent.click(action);
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onReset).toHaveBeenCalledWith(phrase.normalize("NFD"));
+    const next = locale === "en" ? "fr" : "en";
+    act(() => setLocaleOverride(next));
+    expect(screen.getByRole("textbox")).toBe(field);
+    expect(field).toHaveValue(phrase.normalize("NFD"));
+    expect(action).toBeDisabled();
+    fireEvent.click(action);
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+}

@@ -398,6 +398,13 @@ jobs:
       # macOS is a supported target with its own filesystem and locking
       # behaviour, so the vault tests run here as they do on Windows.
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - name: Upload actual macOS confirmation event evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-macos-confirmation-evidence
+          path: test-results/native-dialog-macos.json
+          if-no-files-found: error
       - run: npm run tauri build -- --debug --bundles app
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       # upload-artifact drops Unix permissions, which would leave the app's

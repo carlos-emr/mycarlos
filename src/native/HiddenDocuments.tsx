@@ -1,3 +1,4 @@
+import { useI18n, t as translateNow } from "../i18n";
 import { Icon } from "../Icon";
 import type { VaultRecord } from "../vault";
 import { formatBytes, recordKind } from "./recordPresentation";
@@ -10,7 +11,7 @@ import { formatBytes, recordKind } from "./recordPresentation";
 export function HiddenDocuments({
   records,
   folderNameById,
-  rootName = "My records",
+  rootName = translateNow("sidebar.myRecords"),
   busy,
   readOnly,
   notice,
@@ -24,6 +25,7 @@ export function HiddenDocuments({
   notice: string;
   onRestore: (record: VaultRecord) => void;
 }) {
+  useI18n();
   const total = records.reduce((sum, record) => sum + record.plaintextSize, 0);
   // Most recently hidden first.
   const sorted = [...records].sort(
@@ -33,18 +35,21 @@ export function HiddenDocuments({
     <main className="library-main purpose-screen native-hidden">
       <div className="main-head">
         <div>
-          <h1>Hidden</h1>
+          <h1>{translateNow("interface.HiddenDocuments.hidden")}</h1>
           <p>
-            {records.length} document{records.length === 1 ? "" : "s"} ·{" "}
-            {formatBytes(total)}
+            {translateNow("interface.count.documents", {
+              count: records.length,
+            })}{" "}
+            · {formatBytes(total)}
           </p>
         </div>
       </div>
       <div className="purpose-note">
         <Icon name="info" />
         <span>
-          Hidden documents stay in your encrypted vault: myCarlos never deletes
-          a document. Restore one to put it back where it was.
+          {translateNow(
+            "interface.HiddenDocuments.hiddenDocumentsStayInYourEncryptedVault",
+          )}
         </span>
       </div>
       <p className="status-line" role="status" aria-live="polite">
@@ -52,13 +57,19 @@ export function HiddenDocuments({
       </p>
       <div
         className="filelist trash-list native-hidden-list"
-        aria-label={`${records.length} hidden document${records.length === 1 ? "" : "s"}`}
+        aria-label={translateNow("interface.count.hidden", {
+          count: records.length,
+        })}
       >
         <div className="file-head" aria-hidden="true">
           <span />
-          <span className="sorted">Name</span>
-          <span className="column">Was in</span>
-          <span className="column">Hidden</span>
+          <span className="sorted">{translateNow("library.column.name")}</span>
+          <span className="column">
+            {translateNow("interface.HiddenDocuments.wasIn")}
+          </span>
+          <span className="column">
+            {translateNow("interface.HiddenDocuments.hidden")}
+          </span>
           <span />
         </div>
         {sorted.map((record) => {
@@ -74,7 +85,9 @@ export function HiddenDocuments({
             <article
               className="file-row"
               key={record.id}
-              aria-label={`${record.displayName}, hidden`}
+              aria-label={translateNow("interface.hidden.record", {
+                name: record.displayName,
+              })}
             >
               <span className="trash-marker">
                 <Icon name="hidden" />
@@ -89,8 +102,8 @@ export function HiddenDocuments({
                     {formatBytes(record.plaintextSize)} · {kind.label}
                     {damaged &&
                       (record.available
-                        ? " · Its file is back"
-                        : " · Damaged: file missing")}
+                        ? " · " + translateNow("interface.hidden.fileBack")
+                        : " · " + translateNow("interface.hidden.fileMissing"))}
                   </small>
                 </span>
               </div>
@@ -104,11 +117,13 @@ export function HiddenDocuments({
                 <button
                   className="restore-button"
                   type="button"
-                  aria-label={`Restore ${record.displayName}`}
+                  aria-label={translateNow("interface.hidden.restore", {
+                    name: record.displayName,
+                  })}
                   disabled={busy || readOnly}
                   onClick={() => onRestore(record)}
                 >
-                  Restore
+                  {translateNow("interface.HiddenDocuments.restore")}
                 </button>
               ) : (
                 <span />
@@ -119,8 +134,14 @@ export function HiddenDocuments({
         {records.length === 0 && (
           <div className="empty-state">
             <Icon name="hidden" />
-            <strong>Nothing is hidden</strong>
-            <span>Documents you hide are listed here.</span>
+            <strong>
+              {translateNow("interface.HiddenDocuments.nothingIsHidden")}
+            </strong>
+            <span>
+              {translateNow(
+                "interface.HiddenDocuments.documentsYouHideAreListedHere",
+              )}
+            </span>
           </div>
         )}
       </div>

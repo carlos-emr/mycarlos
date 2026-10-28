@@ -114,7 +114,7 @@ test("takes a photo with the camera, saves it and shows it", async ({
   const details = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
   await expect(details).toBeVisible();
   await expect(details.getByRole("status")).toHaveText(
-    /^Photo saved as Photo, \d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg\.$/,
+    /^Photo, \d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg was saved in myCarlos\.$/,
   );
   const saved = await page.evaluate(() => Reflect.get(window, "__savedPhoto"));
   expect(saved.start).toEqual([0xff, 0xd8, 0xff]);

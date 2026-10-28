@@ -1,3 +1,4 @@
+import { setLocaleOverride, translate } from "../i18n";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -324,6 +325,10 @@ describe("RecoveryKeySetup", () => {
     await user.click(screen.getByRole("button", { name: "Check and save" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "You typed 24 letters and digits. Your recovery key has 28 letters and digits: 7 groups of 4.",
+    );
+    act(() => setLocaleOverride("pl"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      translate("pl", "recoveryKey.typedCount", { count: 24, total: 28 }),
     );
     expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
   });

@@ -1,3 +1,4 @@
+import { t as translateNow } from "../i18n";
 import {
   OLD_BACKUPS_EXPOSED,
   OLD_BACKUPS_KEEP,
@@ -79,13 +80,26 @@ export function unfinishedRecoveryKeyMessage(
 ): string | null {
   if (setAtMsNow === unfinished.setAtMs)
     return unfinished.setAtMs === null
-      ? "Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key. If you saved or wrote down the key it showed, destroy it: that key does not open the vault."
-      : "Your recovery key was not replaced: setup ended when the vault locked or myCarlos closed, and your earlier key still works. If you saved or wrote down the new key it showed, destroy it: that key does not open the vault.";
+      ? translateNow(
+          "interface.unfinishedRecoveryKey.recoveryKeySetupEndedWhenTheVault",
+        )
+      : translateNow(
+          "interface.unfinishedRecoveryKey.yourRecoveryKeyWasNotReplacedSetup",
+        );
   if (setAtMsNow === null) return null;
   const backups = exposedKeyReplaced(unfinished, setAtMsNow)
     ? readOnly
       ? OLD_BACKUPS_KEEP
       : OLD_BACKUPS_EXPOSED
     : OLD_BACKUPS_ROUTINE;
-  return `The recovery key you were shown was saved just before the vault locked or myCarlos closed, so it is now your recovery key: keep what you saved or wrote down for it.${unfinished.setAtMs === null ? "" : ` Your earlier recovery key no longer opens this vault. ${backups}`}`;
+  return [
+    translateNow("interface.recovery.savedBeforeLock"),
+    unfinished.setAtMs === null
+      ? ""
+      : translateNow("interface.recovery.earlierStopped", {
+          backups: translateNow(backups),
+        }),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

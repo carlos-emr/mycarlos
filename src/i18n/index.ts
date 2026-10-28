@@ -36,3 +36,13 @@ export function useI18n() {
   );
   return { locale, t: tr };
 }
+
+export {
+  deferredText,
+  resolveText,
+  message,
+  joinText,
+  useTextState,
+  UiError,
+} from "./text";
+export type { UiText } from "./text";

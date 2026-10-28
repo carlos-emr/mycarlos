@@ -1,7 +1,16 @@
+import {
+  useTextState,
+  message,
+  type UiText,
+  deferredText,
+  t as translateCurrent,
+  useI18n,
+  withElements,
+} from "../i18n";
 import { SecretInput } from "./SecretInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { useI18n, withElements } from "../i18n";
+
 import { useModalFocus } from "../useModalFocus";
 import {
   isLockedError,
@@ -85,8 +94,8 @@ export function RecoveryKeySetup({
   const [key, setKey] = useState(initialKey ?? "");
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [error, setError] = useTextState();
+  const [notice, setNotice] = useTextState();
   const [typed, setTyped] = useState("");
   // Why a key is being replaced: whether its kit may have been lost or seen
   // decides what the patient is told to do with older backups.
@@ -145,7 +154,9 @@ export function RecoveryKeySetup({
       window.print();
     } catch {
       setPrinting(false);
-      setError(t("recoveryKey.printUnavailable"));
+      setError(
+        deferredText(() => translateCurrent("recoveryKey.printUnavailable")),
+      );
     }
     return () => {
       window.removeEventListener("afterprint", done);
@@ -189,9 +200,9 @@ export function RecoveryKeySetup({
   // An error about what was typed goes as the patient types again, so that
   // the same error after another try is read out again. Others stay.
   const typedWrongRef = useRef(false);
-  const typedWrong = (message: string) => {
+  const typedWrong = (message: UiText) => {
     typedWrongRef.current = true;
-    setError(message);
+    setError(deferredText(() => message));
   };
   const failed = (failure: unknown) => {
     if (isLockedError(failure)) {
@@ -199,7 +210,7 @@ export function RecoveryKeySetup({
       return;
     }
     typedWrongRef.current = false;
-    setError(vaultErrorMessage(failure));
+    setError(deferredText(() => vaultErrorMessage(failure)));
   };
   // The buttons are disabled while the kit is saved, which drops the focus
   // that was on one of them.
@@ -240,7 +251,9 @@ export function RecoveryKeySetup({
     event.preventDefault();
     if (busy || !passphrase) return;
     if (replacing && exposed === null) {
-      setError(t("recoveryKey.chooseReason"));
+      setError(
+        deferredText(() => translateCurrent("recoveryKey.chooseReason")),
+      );
       return;
     }
     const secret = passphrase;
@@ -252,7 +265,10 @@ export function RecoveryKeySetup({
       setStep("key");
     } catch (failure) {
       if (isLockedError(failure)) onLocked();
-      else setError(vaultErrorMessage(failure, ["box.passphrase"]));
+      else
+        setError(
+          deferredText(() => vaultErrorMessage(failure, ["box.passphrase"])),
+        );
     } finally {
       setBusy(false);
     }
@@ -264,7 +280,8 @@ export function RecoveryKeySetup({
     setError("");
     setNotice("");
     try {
-      if (await bridge.saveRecoveryKit()) setNotice(t("recoveryKey.kitSaved"));
+      if (await bridge.saveRecoveryKit())
+        setNotice(deferredText(() => translateCurrent("recoveryKey.kitSaved")));
     } catch (failure) {
       failed(failure);
     } finally {
@@ -291,7 +308,7 @@ export function RecoveryKeySetup({
     const symbols = typed.replace(/[^\p{L}\p{N}]/gu, "");
     if (symbols.length !== KEY_SYMBOLS) {
       typedWrong(
-        t("recoveryKey.typedCount", {
+        message("recoveryKey.typedCount", {
           count: symbols.length,
           total: KEY_SYMBOLS,
         }),
@@ -317,7 +334,9 @@ export function RecoveryKeySetup({
       // up, and can be checked again.
       else {
         refocusCheck.current = true;
-        setNotice(t("recoveryKey.notChanged"));
+        setNotice(
+          deferredText(() => translateCurrent("recoveryKey.notChanged")),
+        );
       }
     } catch (failure) {
       // A lock closed this: it says so itself.
@@ -333,10 +352,12 @@ export function RecoveryKeySetup({
         setStep("key");
         // An alert, as it arrives with the step: a status line would not be
         // read out.
-        setError(t("recoveryKey.threeMisses"));
+        setError(
+          deferredText(() => translateCurrent("recoveryKey.threeMisses")),
+        );
       } else {
         setWrongTries(tries);
-        typedWrong(vaultErrorMessage(failure));
+        typedWrong(deferredText(() => vaultErrorMessage(failure)));
       }
     } finally {
       setBusy(false);

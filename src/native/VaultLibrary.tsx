@@ -1,10 +1,19 @@
+import {
+  useTextState,
+  deferredText,
+  useI18n,
+  t as translateNow,
+  message,
+  UiError,
+  type UiText,
+  type MessageKey,
+} from "../i18n";
 import type { PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
-import { useI18n } from "../i18n";
 import {
   isWrongPdfPassword,
   localDateText,
@@ -60,11 +69,11 @@ type NativeSection =
   | "preferences";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
-const PHONE_TABS: ReadonlyArray<[NativeSection, string]> = [
-  ["records", "Records"],
-  ["hidden", "Hidden"],
-  ["security", "Security"],
-  ["preferences", "Preferences"],
+const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
+  ["records", "interface.VaultLibrary.records"],
+  ["hidden", "interface.HiddenDocuments.hidden"],
+  ["security", "security.title"],
+  ["preferences", "sidebar.preferences"],
 ];
 
 /** The people a vault keeps records for: every profile but Shared with me's
@@ -75,9 +84,9 @@ const peopleOf = (snapshot: VaultSnapshot) =>
   );
 type NativeView = "list" | "grid";
 type NativeSort = "newest" | "name";
-const SORT_CHOICES: ReadonlyArray<[NativeSort, string]> = [
-  ["newest", "Newest first"],
-  ["name", "Name A–Z"],
+const SORT_CHOICES: ReadonlyArray<[NativeSort, MessageKey]> = [
+  ["newest", "interface.VaultLibrary.newestFirst"],
+  ["name", "interface.VaultLibrary.nameAZ"],
 ];
 
 export function VaultLibrary({
@@ -109,7 +118,7 @@ export function VaultLibrary({
   snapshot: VaultSnapshot;
   busy: boolean;
   notice: string;
-  setNotice: (value: string) => void;
+  setNotice: (value: UiText) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
   run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
   /** Reloads the snapshot and resolves to it, so a caller can report the
@@ -211,7 +220,7 @@ export function VaultLibrary({
   // dialog has closed (see the effect below), and the document whose details
   // it was started from, if any.
   const [dialogResult, setDialogResult] = useState<{
-    message: string;
+    message: UiText;
     recordId: string | null;
   } | null>(null);
   // Bound to one record so a stale prompt can never apply to a different document.
@@ -513,7 +522,7 @@ export function VaultLibrary({
   } | null>(null);
   const unlockPdf = (password: string) => {
     if (!unlocking) return;
-    const { recordId, name } = unlocking;
+    const { recordId } = unlocking;
     void run(async () => {
       try {
         const unlocked = await bridge.unlockPdf(recordId, password);
@@ -522,7 +531,11 @@ export function VaultLibrary({
         // The details show the copy, which opens without the password.
         setActiveRecordId(unlocked.recordId);
         setNotice(
-          `${name} unlocked. The locked original is kept as ${unlocked.originalName}.`,
+          deferredText(() =>
+            translateNow("interface.notice.pdfUnlocked", {
+              name: unlocked.originalName,
+            }),
+          ),
         );
       } catch (failure) {
         if (isWrongPdfPassword(failure)) {
@@ -645,10 +658,14 @@ export function VaultLibrary({
     // The dialog closes when this resolves, so a refusal has to reject: a
     // silent return would look like a saved name.
     if (busy || readOnly)
-      throw new Error(
-        readOnly
-          ? "The vault is read-only, so the name was not changed."
-          : "Another vault operation is still running. Try again when it finishes.",
+      throw new UiError(
+        deferredText(() =>
+          readOnly
+            ? translateNow("interface.VaultLibrary.theVaultIsReadonlySoTheName")
+            : translateNow(
+                "interface.VaultLibrary.anotherVaultOperationIsStillRunningTry",
+              ),
+        ),
       );
     if (renameTarget.kind === "profile") {
       await bridge.renameProfile(renameTarget.id, name);
@@ -656,7 +673,14 @@ export function VaultLibrary({
       const folder = folders.find(
         (candidate) => candidate.id === renameTarget.id,
       );
-      if (!folder) throw new Error("That folder is no longer available.");
+      if (!folder)
+        throw new UiError(
+          deferredText(() =>
+            translateNow(
+              "interface.VaultLibrary.thatFolderIsNoLongerAvailable",
+            ),
+          ),
+        );
       await bridge.updateFolder(folder.id, folder.parentId, name);
     } else {
       await bridge.renameRecord(renameTarget.id, name);
@@ -669,23 +693,28 @@ export function VaultLibrary({
     setDialogResult({
       message:
         renameTarget.kind === "profile"
-          ? t("rename.profile.saved", { name })
-          : `${renameTarget.kind === "folder" ? "Folder" : "Document"} renamed to ${name}.`,
+          ? message("rename.profile.saved", { name })
+          : message(
+              renameTarget.kind === "folder"
+                ? "interface.notice.renamedFolder"
+                : "interface.notice.renamedDocument",
+              { name },
+            ),
       recordId: activeRecordId,
     });
   };
 
   // A shared file an add refused as not a PDF, marked in the list.
   // Said politely when files are added to Shared with me (#61).
-  const [sharedAnnouncement, setSharedAnnouncement] = useState("");
+  const [sharedAnnouncement, setSharedAnnouncement] = useTextState();
   const sharedSeen = useRef(0);
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
     if (added > 0)
       setSharedAnnouncement(
-        added === 1
-          ? "A shared file was added to Shared with me."
-          : `${added} shared files were added to Shared with me.`,
+        deferredText(() =>
+          translateNow("interface.notice.sharedAdded", { count: added }),
+        ),
       );
     sharedSeen.current = sharedNew;
   }, [sharedNew]);
@@ -699,7 +728,13 @@ export function VaultLibrary({
       const folderIds = currentFolderId ? [currentFolderId] : [];
       const pickId = await bridge.pickImportFiles(profileId, folderIds);
       if (!pickId) {
-        setNotice("No files selected. Nothing changed.");
+        setNotice(
+          deferredText(() =>
+            translateNow(
+              "interface.VaultLibrary.noFilesSelectedNothingChanged",
+            ),
+          ),
+        );
         return;
       }
       const outcome = await bridge.importPickedFiles(
@@ -708,15 +743,29 @@ export function VaultLibrary({
         folderIds,
       );
       if (!outcome.imported.length && !outcome.skippedDuplicates.length) {
-        setNotice("No files selected. Nothing changed.");
+        setNotice(
+          deferredText(() =>
+            translateNow(
+              "interface.VaultLibrary.noFilesSelectedNothingChanged",
+            ),
+          ),
+        );
         return;
       }
       await refresh();
-      const skipped = outcome.skippedDuplicates.length
-        ? ` ${outcome.skippedDuplicates.length} duplicate(s) skipped.`
-        : "";
+      const skipped = () =>
+        outcome.skippedDuplicates.length
+          ? translateNow("interface.notice.duplicates", {
+              count: outcome.skippedDuplicates.length,
+            })
+          : "";
       setNotice(
-        `${outcome.imported.length} file(s) encrypted and imported.${skipped}`,
+        deferredText(
+          () =>
+            translateNow("interface.notice.imported", {
+              count: outcome.imported.length,
+            }) + (skipped() ? " " + skipped() : ""),
+        ),
       );
     });
 
@@ -738,7 +787,9 @@ export function VaultLibrary({
       );
       if (!saved) {
         setNotice(
-          "This photo is already in the vault, so it was not saved again.",
+          deferredText(() =>
+            translateNow("interface.VaultLibrary.thisPhotoIsAlreadyInTheVault"),
+          ),
         );
         return;
       }
@@ -746,7 +797,9 @@ export function VaultLibrary({
       // Cleared now, so that the result is a change even when it repeats.
       setNotice("");
       setDialogResult({
-        message: `Photo saved as ${saved.displayName}.`,
+        message: message("interface.notice.photoSaved", {
+          name: saved.displayName,
+        }),
         recordId: saved.id,
       });
     });
@@ -767,7 +820,11 @@ export function VaultLibrary({
       await refresh();
       setSelectedIds([]);
       setNotice(
-        `${selectedRecords.length} document${selectedRecords.length === 1 ? "" : "s"} moved.`,
+        deferredText(() =>
+          translateNow("interface.notice.moved", {
+            count: selectedRecords.length,
+          }),
+        ),
       );
     });
 
@@ -803,7 +860,11 @@ export function VaultLibrary({
     // Folders stay with their person; documents can move between people.
     if (toProfileId !== profileId) {
       setNotice(
-        "Folders stay with their person. Move individual documents to another person instead.",
+        deferredText(() =>
+          translateNow(
+            "interface.VaultLibrary.foldersStayWithTheirPersonMoveIndividual",
+          ),
+        ),
       );
       return;
     }
@@ -813,23 +874,45 @@ export function VaultLibrary({
         await bridge.assignFoldersBatch(item.ids, folderId ? [folderId] : []);
         setSelectedIds([]);
         setNotice(
-          `${item.ids.length} document${item.ids.length === 1 ? "" : "s"} moved to ${folderId ? folderNameById.get(folderId) : "My records"}.`,
+          deferredText(() =>
+            translateNow("interface.notice.movedMany", {
+              count: item.ids.length,
+              where: folderId
+                ? (folderNameById.get(folderId) ?? "")
+                : translateNow("sidebar.myRecords"),
+            }),
+          ),
         );
       } else {
         const folder = folders.find((candidate) => candidate.id === item.id);
         if (!folder) {
-          setNotice("That folder is no longer available.");
+          setNotice(
+            deferredText(() =>
+              translateNow(
+                "interface.VaultLibrary.thatFolderIsNoLongerAvailable",
+              ),
+            ),
+          );
           return;
         }
         // The sidebar lists every folder, so a folder can be dropped on one
         // of its own subfolders. The vault refuses that as a cycle.
         if (folderId && folderSubtree(folders, folder.id).has(folderId)) {
-          setNotice("A folder cannot be moved into itself or its subfolders.");
+          setNotice(
+            deferredText(() => translateNow("interface.notice.folderCycle")),
+          );
           return;
         }
         await bridge.updateFolder(folder.id, folderId, folder.name);
         setNotice(
-          `${folder.name} moved to ${folderId ? folderNameById.get(folderId) : "My records"}.`,
+          deferredText(() =>
+            translateNow("interface.notice.movedNamed", {
+              name: folder.name,
+              where: folderId
+                ? (folderNameById.get(folderId) ?? "")
+                : translateNow("sidebar.myRecords"),
+            }),
+          ),
         );
       }
       await refresh();
@@ -855,7 +938,13 @@ export function VaultLibrary({
         localDateText(new Date()),
       );
       if (!pickId) {
-        setNotice("No location chosen. Nothing changed.");
+        setNotice(
+          deferredText(() =>
+            translateNow(
+              "interface.VaultLibrary.noLocationChosenNothingChanged",
+            ),
+          ),
+        );
         return;
       }
       let saved: SavedBackup | undefined;
@@ -880,12 +969,20 @@ export function VaultLibrary({
           bytes: saved?.bytes ?? null,
         });
         setNotice(
-          "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
+          deferredText(() =>
+            translateNow(
+              "interface.VaultLibrary.encryptedBackupSavedThisIsYourNew",
+            ),
+          ),
         );
         return;
       }
       setNotice(
-        "Encrypted backup saved. Keep it somewhere other than this device.",
+        deferredText(() =>
+          translateNow(
+            "interface.VaultLibrary.encryptedBackupSavedKeepItSomewhereOther",
+          ),
+        ),
       );
     });
 
@@ -894,11 +991,15 @@ export function VaultLibrary({
     void run(async () => {
       const pickId = await bridge.pickExportDestination(record.id);
       if (!pickId) {
-        setNotice("Save cancelled. Nothing changed.");
+        setNotice(
+          deferredText(() =>
+            translateNow("interface.VaultLibrary.saveCancelledNothingChanged"),
+          ),
+        );
         return;
       }
       await bridge.exportToPicked(pickId, record.id);
-      setNotice("A readable copy was saved to this computer.");
+      setNotice(deferredText(() => translateNow("interface.notice.copySaved")));
     });
   };
 
@@ -910,8 +1011,10 @@ export function VaultLibrary({
   const damagedIds = damaged.map((record) => record.id);
   const damagedCount = damagedIds.length;
   const profileName = (id: string) =>
-    snapshot.profiles.find((candidate) => candidate.id === id)?.displayName ??
-    "";
+    id === sharedProfileId
+      ? translateNow("interface.LibrarySidebar.sharedWithMe")
+      : (snapshot.profiles.find((candidate) => candidate.id === id)
+          ?.displayName ?? "");
   const hideDamaged = () => {
     setConfirmHideDamaged(false);
     void run(async () => {
@@ -930,17 +1033,23 @@ export function VaultLibrary({
         current.filter((id) => !removed.includes(id)),
       );
       const next = await refresh();
-      const outcome =
+      const outcome = () =>
         removed.length === 0
-          ? "Every file is back on this device. Nothing was hidden."
-          : `${removed.length} damaged document${removed.length === 1 ? "" : "s"} hidden. ${removed.length === 1 ? "It is" : "They are"} listed under Hidden.`;
+          ? translateNow("interface.VaultLibrary.everyFileIsBackOnThisDevice")
+          : translateNow("interface.notice.damagedHidden", {
+              count: removed.length,
+            });
       // The removal can commit and still leave the vault read-only, when its
       // redundant write fails. The banner then says why; only claim the vault
       // is writable when it is.
       setNotice(
-        next.recovery === null
-          ? `${outcome} The vault accepts changes again.`
-          : outcome,
+        deferredText(() =>
+          next.recovery === null
+            ? translateNow("interface.notice.changesResumed", {
+                outcome: outcome(),
+              })
+            : outcome(),
+        ),
       );
     });
   };
@@ -954,7 +1063,9 @@ export function VaultLibrary({
       setSelectedIds((current) => current.filter((id) => id !== record.id));
       await refresh();
       setNotice(
-        `${record.displayName} was hidden. It is listed under Hidden, where you can restore it.`,
+        deferredText(() =>
+          translateNow("interface.notice.hidden", { name: record.displayName }),
+        ),
       );
     });
   };
@@ -962,7 +1073,13 @@ export function VaultLibrary({
     void run(async () => {
       await bridge.unhideRecord(record.id);
       await refresh();
-      setNotice(`${record.displayName} was restored to where it was.`);
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.notice.restored", {
+            name: record.displayName,
+          }),
+        ),
+      );
     });
   };
 
@@ -970,7 +1087,11 @@ export function VaultLibrary({
     run(async () => {
       await bridge.changePassphrase(current, replacement);
       await refresh();
-      setNotice("Passphrase changed.");
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.VaultLibrary.passphraseChanged"),
+        ),
+      );
     }, ["box.currentPassphrase", "box.newPassphrase"]);
   const createProfile = async (name: string, details?: PersonDetails) => {
     let created = false;
@@ -980,7 +1101,11 @@ export function VaultLibrary({
         : bridge.createProfile(name));
       created = true;
       await refresh();
-      setNotice(`${name} was added.`);
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.notice.personAdded", { name }),
+        ),
+      );
     }, ["box.profileName"]);
     return created;
   };
@@ -1037,31 +1162,53 @@ export function VaultLibrary({
       const folder = snapshot.folders.find(
         (candidate) => candidate.id === folderId,
       );
-      const theirs =
-        people.length > 1
-          ? `${profileName(toProfileId)}'s records`
-          : "My records";
-      const where = folder ? `${theirs}, folder ${folder.name}` : theirs;
-      const source = inShared
-        ? "Shared with me"
-        : `${profileName(profileId)}'s records`;
       if (outcome.moved.includes(activeRecordId ?? "")) setActiveRecordId(null);
       setSelectedIds((current) =>
         current.filter((id) => !outcome.moved.includes(id)),
       );
       await refresh();
-      const said = [
-        outcome.moved.length === 1
-          ? `${names.get(outcome.moved[0]) ?? "The document"} moved to ${where}.`
-          : outcome.moved.length > 1
-            ? `${outcome.moved.length} documents moved to ${where}.`
-            : "",
-        ...outcome.alreadyThere.map(
-          (name) =>
-            `${name} was already in ${theirs}, so it stayed in ${source}.`,
-        ),
-      ];
-      setNotice(said.filter(Boolean).join(" "));
+      const said = () => {
+        const theirs =
+          people.length > 1
+            ? translateNow("interface.person.records", {
+                name: profileName(toProfileId),
+              })
+            : translateNow("sidebar.myRecords");
+        const where = folder
+          ? translateNow("interface.notice.whereFolder", {
+              person: theirs,
+              folder: folder.name,
+            })
+          : theirs;
+        const source = inShared
+          ? translateNow("interface.LibrarySidebar.sharedWithMe")
+          : translateNow("interface.person.records", {
+              name: profileName(profileId),
+            });
+        return [
+          outcome.moved.length === 1
+            ? translateNow("interface.notice.movedNamed", {
+                name:
+                  names.get(outcome.moved[0]) ??
+                  translateNow("interface.RecordDetails.encryptedDocument"),
+                where,
+              })
+            : outcome.moved.length > 1
+              ? translateNow("interface.notice.movedMany", {
+                  count: outcome.moved.length,
+                  where,
+                })
+              : "",
+          ...outcome.alreadyThere.map((name) =>
+            translateNow("interface.notice.alreadyFiled", {
+              name,
+              person: theirs,
+              source,
+            }),
+          ),
+        ];
+      };
+      setNotice(deferredText(() => said().filter(Boolean).join(" ")));
       focusPageIfLost();
     });
 
@@ -1069,7 +1216,11 @@ export function VaultLibrary({
     run(async () => {
       await bridge.assignFolders(recordId, folderId ? [folderId] : []);
       await refresh();
-      setNotice("Document moved.");
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.VaultLibrary.documentMoved"),
+        ),
+      );
     });
 
   const submitFolder = (event: FormEvent) => {
@@ -1081,7 +1232,11 @@ export function VaultLibrary({
       setFolderName("");
       await refresh();
       setShowFolderForm(false);
-      setNotice(`${name} was created.`);
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.notice.folderCreated", { name }),
+        ),
+      );
     }, ["box.folderName"]);
   };
   const moveFolder = () =>
@@ -1096,7 +1251,13 @@ export function VaultLibrary({
         folder.name,
       );
       await refresh();
-      setNotice(`${folder.name} moved.`);
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.notice.folderMovedNamed", {
+            name: folder.name,
+          }),
+        ),
+      );
     });
 
   // A folder cannot move into itself or anything beneath it, so those are not
@@ -1117,18 +1278,18 @@ export function VaultLibrary({
   }, [records]);
   const folderCount = (id: string) => folderCounts.get(id) ?? 0;
   const rootLocationTitle = inShared
-    ? "Shared with me"
+    ? translateNow("interface.LibrarySidebar.sharedWithMe")
     : profile
       ? personFolderName(profile, people)
-      : "My records";
+      : translateNow("sidebar.myRecords");
   const locationTitle = inShared
     ? rootLocationTitle
     : (currentFolder?.name ?? rootLocationTitle);
   const searchLabel = inShared
-    ? "Search Shared with me"
+    ? translateNow("interface.VaultLibrary.searchSharedWithMe")
     : currentFolder
-      ? "Search this folder and its subfolders"
-      : `Search everything in ${rootLocationTitle}`;
+      ? translateNow("interface.VaultLibrary.searchThisFolderAndItsSubfolders")
+      : translateNow("interface.search.all", { location: rootLocationTitle });
 
   return (
     <div className="evaluation-page native-vault-page" inert={covered}>
@@ -1137,15 +1298,19 @@ export function VaultLibrary({
         {sharedAnnouncement}
       </p>
       <div className="evaluation-banner" role="note">
-        <strong>Synthetic-data development build</strong>
+        <strong>{translateNow("frame.banner.title")}</strong>
         <span>
-          Files and record details are encrypted and saved on this device
+          {translateNow(
+            "interface.VaultLibrary.filesAndRecordDetailsAreEncryptedAnd",
+          )}
         </span>
       </div>
       <div className="page-wrap">
         <section
           className="app-window"
-          aria-label="myCarlos encrypted record library"
+          aria-label={translateNow(
+            "interface.VaultLibrary.myCarlosEncryptedRecordLibrary",
+          )}
         >
           <header
             className="titlebar"
@@ -1168,7 +1333,8 @@ export function VaultLibrary({
               type="button"
               onClick={() => void onLock()}
             >
-              <Icon name="lock-open" /> Unlocked · Lock now
+              <Icon name="lock-open" />
+              {translateNow("interface.VaultLibrary.unlockedLockNow")}
             </button>
           </header>
 
@@ -1176,7 +1342,7 @@ export function VaultLibrary({
               tabs instead of a dropdown (#67). */}
           <nav
             className="mobile-section-picker native-section-tabs"
-            aria-label="Section"
+            aria-label={translateNow("interface.VaultLibrary.section")}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
@@ -1199,8 +1365,13 @@ export function VaultLibrary({
                 }
               >
                 {value === "records" && sharedNew
-                  ? `${label} (${sharedNew} new)`
-                  : label}
+                  ? translateNow("interface.tab.withNew", {
+                      section: translateNow(label),
+                      new: translateNow("interface.count.new", {
+                        count: sharedNew,
+                      }),
+                    })
+                  : translateNow(label)}
               </button>
             ))}
           </nav>
@@ -1223,7 +1394,7 @@ export function VaultLibrary({
                     hiddenLocationProfileId === sharedProfileId
                   ) &&
                   profile?.displayName) ||
-                "Private vault"
+                translateNow("interface.VaultLibrary.privateVault")
               }
               people={people}
               profileId={profileId}
@@ -1286,7 +1457,9 @@ export function VaultLibrary({
                 <div className="native-profile-row">
                   {/* Shared with me is no one's: no person's path above it. */}
                   {inShared ? (
-                    <strong>Shared with me</strong>
+                    <strong>
+                      {translateNow("interface.LibrarySidebar.sharedWithMe")}
+                    </strong>
                   ) : (
                     <>
                       <button
@@ -1318,7 +1491,7 @@ export function VaultLibrary({
                       top-level folders, the people and Shared with me. */}
                   <nav
                     className="native-top-level-narrow"
-                    aria-label="Record library"
+                    aria-label={translateNow("sidebar.label")}
                   >
                     {people.map((person) => (
                       <button
@@ -1345,8 +1518,14 @@ export function VaultLibrary({
                         setCurrentFolderId(null);
                       }}
                     >
-                      <Icon name="letter" /> Shared with me
-                      {sharedNew > 0 && ` (${sharedNew} new)`}
+                      <Icon name="letter" />
+                      {translateNow("interface.LibrarySidebar.sharedWithMe")}
+                      {sharedNew > 0 &&
+                        " (" +
+                          translateNow("interface.count.new", {
+                            count: sharedNew,
+                          }) +
+                          ")"}
                     </button>
                   </nav>
                 </div>
@@ -1357,8 +1536,29 @@ export function VaultLibrary({
                     </h1>
                     <p>
                       {inShared
-                        ? `${visibleRecords.length} documents${normalizedQuery ? " found" : ""}`
-                        : `${visibleFolders.length} folders · ${visibleRecords.length} documents ${normalizedQuery ? "found" : "in this location"}`}
+                        ? normalizedQuery
+                          ? translateNow("interface.count.found", {
+                              items: translateNow("interface.count.documents", {
+                                count: visibleRecords.length,
+                              }),
+                            })
+                          : translateNow("interface.count.documents", {
+                              count: visibleRecords.length,
+                            })
+                        : translateNow(
+                            normalizedQuery
+                              ? "interface.count.foundInLocation"
+                              : "interface.count.inLocation",
+                            {
+                              folders: translateNow("interface.count.folders", {
+                                count: visibleFolders.length,
+                              }),
+                              documents: translateNow(
+                                "interface.count.documents",
+                                { count: visibleRecords.length },
+                              ),
+                            },
+                          )}
                     </p>
                   </div>
                   {/* Shared with me is one fixed folder: files arrive in it
@@ -1372,7 +1572,7 @@ export function VaultLibrary({
                           disabled={busy || readOnly}
                           onClick={() => renameFolder(currentFolder)}
                         >
-                          Rename folder
+                          {translateNow("rename.title.folder")}
                         </button>
                       )}
                       {!currentFolder && profile && (
@@ -1400,7 +1600,9 @@ export function VaultLibrary({
                         onClick={() => setShowFolderForm((current) => !current)}
                       >
                         <Icon name="folder-plus" />
-                        <span>New folder</span>
+                        <span>
+                          {translateNow("interface.VaultLibrary.newFolder")}
+                        </span>
                       </button>
                       {cameraPlatform && (
                         <button
@@ -1416,7 +1618,9 @@ export function VaultLibrary({
                           }}
                         >
                           <Icon name="camera" />
-                          <span>Take a photo</span>
+                          <span>
+                            {translateNow("interface.CameraDialog.takeAPhoto")}
+                          </span>
                         </button>
                       )}
                       <button
@@ -1424,10 +1628,16 @@ export function VaultLibrary({
                         type="button"
                         disabled={busy || readOnly || !profileId}
                         onClick={() => void importFiles()}
-                        aria-label="Choose files to import"
+                        aria-label={translateNow(
+                          "interface.VaultApp.chooseFilesToImport",
+                        )}
                       >
                         <Icon name="plus" />
-                        <span>{busy ? "Working…" : "New"}</span>
+                        <span>
+                          {busy
+                            ? translateNow("interface.VaultLibrary.working")
+                            : translateNow("interface.VaultLibrary.new")}
+                        </span>
                       </button>
                     </div>
                   )}
@@ -1438,11 +1648,19 @@ export function VaultLibrary({
                     <Icon name="info" />
                     <span>
                       {computer
-                        ? "Files you open with myCarlos arrive here, encrypted."
-                        : "Files you share to myCarlos from another app arrive here, encrypted."}{" "}
+                        ? translateNow(
+                            "interface.VaultLibrary.filesYouOpenWithMyCarlosArriveHere",
+                          )
+                        : translateNow(
+                            "interface.VaultLibrary.filesYouShareToMyCarlosFromAnother",
+                          )}{" "}
                       {people.length > 1
-                        ? "They are in no one's records until you move each one to the person it is for."
-                        : "Move them into your folders whenever you like."}
+                        ? translateNow(
+                            "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
+                          )
+                        : translateNow(
+                            "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou",
+                          )}
                     </span>
                   </p>
                 )}
@@ -1450,7 +1668,7 @@ export function VaultLibrary({
                 {showFolderForm && !inShared && (
                   <form className="native-inline-form" onSubmit={submitFolder}>
                     <label>
-                      Folder name
+                      {translateNow("rename.label.folder")}
                       <input
                         autoFocus
                         required
@@ -1460,7 +1678,9 @@ export function VaultLibrary({
                       />
                     </label>
                     {nameTooLong(folderName) && (
-                      <p role="alert">This name is too long. Shorten it.</p>
+                      <p role="alert">
+                        {translateNow("create.profile.tooLong")}
+                      </p>
                     )}
                     <button
                       className="button primary"
@@ -1471,24 +1691,28 @@ export function VaultLibrary({
                         nameTooLong(folderName)
                       }
                     >
-                      Create
+                      {translateNow("interface.VaultLibrary.create")}
                     </button>
                     <button
                       className="button"
                       type="button"
                       onClick={() => setShowFolderForm(false)}
                     >
-                      Cancel
+                      {translateNow("common.cancel")}
                     </button>
                   </form>
                 )}
 
                 {folders.length > 0 && !inShared && (
                   <details className="native-folder-move">
-                    <summary>Move a folder with the keyboard</summary>
+                    <summary>
+                      {translateNow(
+                        "interface.VaultLibrary.moveAFolderWithTheKeyboard",
+                      )}
+                    </summary>
                     <div>
                       <label>
-                        Folder
+                        {translateNow("interface.RecordDetails.folder")}
                         <select
                           value={folderToMoveId}
                           onChange={(event) => {
@@ -1497,7 +1721,11 @@ export function VaultLibrary({
                             setFolderDestinationId("");
                           }}
                         >
-                          <option value="">Choose a folder</option>
+                          <option value="">
+                            {translateNow(
+                              "interface.VaultLibrary.chooseAFolder",
+                            )}
+                          </option>
                           {folders.map((folder) => (
                             <option value={folder.id} key={folder.id}>
                               {folder.name}
@@ -1506,14 +1734,16 @@ export function VaultLibrary({
                         </select>
                       </label>
                       <label>
-                        Destination
+                        {translateNow("interface.VaultLibrary.destination")}
                         <select
                           value={folderDestinationId}
                           onChange={(event) =>
                             setFolderDestinationId(event.target.value)
                           }
                         >
-                          <option value="">My records</option>
+                          <option value="">
+                            {translateNow("sidebar.myRecords")}
+                          </option>
                           {folderDestinations.map((folder) => (
                             <option value={folder.id} key={folder.id}>
                               {folder.name}
@@ -1527,7 +1757,7 @@ export function VaultLibrary({
                         disabled={busy || readOnly || !folderToMoveId}
                         onClick={() => void moveFolder()}
                       >
-                        Move folder
+                        {translateNow("interface.VaultLibrary.moveFolder")}
                       </button>
                     </div>
                   </details>
@@ -1537,11 +1767,14 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Changes are paused.</strong> Some encrypted files
-                      are missing from this device. Documents marked damaged
-                      cannot be opened or copied; save copies of the others now.
-                      To make changes again, restore the myCarlos data folder
-                      from a backup, or hide the damaged documents.
+                      <strong>
+                        {translateNow(
+                          "interface.VaultLibrary.changesArePaused",
+                        )}
+                      </strong>{" "}
+                      {translateNow(
+                        "interface.VaultLibrary.someEncryptedFilesAreMissingFromThis",
+                      )}
                     </span>
                     <button
                       className="button"
@@ -1549,7 +1782,9 @@ export function VaultLibrary({
                       disabled={busy}
                       onClick={() => setConfirmHideDamaged(true)}
                     >
-                      Hide damaged documents
+                      {translateNow(
+                        "interface.VaultLibrary.hideDamagedDocuments",
+                      )}
                     </button>
                   </div>
                 )}
@@ -1557,15 +1792,14 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Changes are paused.</strong> Some of the vault's
-                      files could not be read, and they may be newer or intact,
-                      so nothing can be changed for now, including your
-                      passphrase and recovery key. Your documents can still be
-                      opened and saved as copies, except any marked “File
-                      unavailable”. Check that the drive holding the myCarlos
-                      data folder is connected, that no other program holds the
-                      folder, and that a cloud sync tool keeps its files on this
-                      device, then lock and unlock again.
+                      <strong>
+                        {translateNow(
+                          "interface.VaultLibrary.changesArePaused",
+                        )}
+                      </strong>{" "}
+                      {translateNow(
+                        "interface.VaultLibrary.someOfTheVaultsFilesCouldNot",
+                      )}
                     </span>
                   </div>
                 )}
@@ -1573,10 +1807,14 @@ export function VaultLibrary({
                   <div className="purpose-note warning" role="alert">
                     <Icon name="info" />
                     <span>
-                      <strong>Changes are paused.</strong> myCarlos could not
-                      save a change to this computer. Free up storage or check
-                      the disk, then lock and unlock again; the vault repairs
-                      itself when it can write.
+                      <strong>
+                        {translateNow(
+                          "interface.VaultLibrary.changesArePaused",
+                        )}
+                      </strong>{" "}
+                      {translateNow(
+                        "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo",
+                      )}
                     </span>
                   </div>
                 )}
@@ -1584,9 +1822,14 @@ export function VaultLibrary({
                   <div className="purpose-note warning">
                     <Icon name="info" />
                     <span>
-                      <strong>No recovery key yet.</strong> If you forget your
-                      passphrase without one, the only way back in is to set the
-                      vault aside and start again.
+                      <strong>
+                        {translateNow(
+                          "interface.VaultLibrary.noRecoveryKeyYet",
+                        )}
+                      </strong>{" "}
+                      {translateNow(
+                        "interface.VaultLibrary.ifYouForgetYourPassphraseWithoutOne",
+                      )}
                     </span>
                     <button
                       className="button"
@@ -1594,7 +1837,7 @@ export function VaultLibrary({
                       disabled={busy}
                       onClick={() => setRecoverySetup({ required: false })}
                     >
-                      Set up recovery key
+                      {translateNow("security.recoveryKey.setUp")}
                     </button>
                   </div>
                 )}
@@ -1629,16 +1872,21 @@ export function VaultLibrary({
                 </label>
                 <div className="viewbar">
                   <span className="native-location-chip">
-                    {currentFolder ? "Inside folder" : "Top level"}
+                    {currentFolder
+                      ? translateNow("interface.VaultLibrary.insideFolder")
+                      : translateNow("interface.VaultLibrary.topLevel")}
                   </span>
                   <span className="native-drag-hint">
-                    Hold and drag a document or folder to move it, or open it
-                    and choose Move to.
+                    {translateNow(
+                      "interface.VaultLibrary.holdAndDragADocumentOrFolder",
+                    )}
                   </span>
                   <div className="view-controls">
                     {/* Both choices in view, with words (#67). */}
                     <fieldset className="native-sort-choice">
-                      <legend>Sort by</legend>
+                      <legend>
+                        {translateNow("interface.VaultLibrary.sortBy")}
+                      </legend>
                       {SORT_CHOICES.map(([value, label]) => (
                         <label key={value}>
                           <input
@@ -1648,31 +1896,39 @@ export function VaultLibrary({
                             checked={sort === value}
                             onChange={() => setSort(value)}
                           />
-                          {label}
+                          {translateNow(label)}
                         </label>
                       ))}
                     </fieldset>
                     <span
                       className="segment native-view-segment"
-                      aria-label="Choose record view"
+                      aria-label={translateNow(
+                        "interface.VaultLibrary.chooseRecordView",
+                      )}
                     >
                       <button
                         className={view === "list" ? "selected" : ""}
                         type="button"
-                        aria-label="List view"
+                        aria-label={translateNow(
+                          "interface.VaultLibrary.listView",
+                        )}
                         aria-pressed={view === "list"}
                         onClick={() => setView("list")}
                       >
-                        <Icon name="list" /> List
+                        <Icon name="list" />
+                        {translateNow("interface.VaultLibrary.list")}
                       </button>
                       <button
                         className={view === "grid" ? "selected" : ""}
                         type="button"
-                        aria-label="Grid view"
+                        aria-label={translateNow(
+                          "interface.VaultLibrary.gridView",
+                        )}
                         aria-pressed={view === "grid"}
                         onClick={() => setView("grid")}
                       >
-                        <Icon name="grid" /> Grid
+                        <Icon name="grid" />
+                        {translateNow("interface.VaultLibrary.grid")}
                       </button>
                     </span>
                   </div>
@@ -1680,25 +1936,39 @@ export function VaultLibrary({
 
                 {selectedIds.length > 0 && (
                   <div className="bulkbar" role="status">
-                    <strong>{selectedIds.length} selected</strong>
-                    <span>Move the selected documents.</span>
+                    <strong>
+                      {translateNow("interface.count.selected", {
+                        count: selectedIds.length,
+                      })}
+                    </strong>
+                    <span>
+                      {translateNow(
+                        "interface.VaultLibrary.moveTheSelectedDocuments",
+                      )}
+                    </span>
                     <div className="bulk-actions native-move-actions">
                       {inShared ? (
                         <MoveTargetSelect
-                          label="Move selected to"
+                          label={translateNow(
+                            "interface.VaultLibrary.moveSelectedTo",
+                          )}
                           targets={moveTargets}
                           value={sharedTarget || `${profile?.id ?? ""}|`}
                           onChange={setSharedTarget}
                         />
                       ) : (
                         <select
-                          aria-label="Move selected to"
+                          aria-label={translateNow(
+                            "interface.VaultLibrary.moveSelectedTo",
+                          )}
                           value={moveFolderId}
                           onChange={(event) =>
                             setMoveFolderId(event.target.value)
                           }
                         >
-                          <option value="">My records</option>
+                          <option value="">
+                            {translateNow("sidebar.myRecords")}
+                          </option>
                           {folders.map((folder) => (
                             <option value={folder.id} key={folder.id}>
                               {folder.name}
@@ -1717,10 +1987,10 @@ export function VaultLibrary({
                           moveToPerson(selectedIds, to, folderId);
                         }}
                       >
-                        Move
+                        {translateNow("interface.RecordDetails.move")}
                       </button>
                       <button type="button" onClick={() => setSelectedIds([])}>
-                        Clear
+                        {translateNow("interface.VaultLibrary.clear")}
                       </button>
                     </div>
                   </div>
@@ -1755,8 +2025,10 @@ export function VaultLibrary({
                   }
                   unavailableLabel={
                     snapshot.recovery === "unreadableSlot"
-                      ? "File unavailable"
-                      : "Damaged: file missing"
+                      ? translateNow("interface.VaultLibrary.fileUnavailable")
+                      : translateNow(
+                          "interface.VaultLibrary.damagedFileMissing",
+                        )
                   }
                   drag={drag}
                   recordDragItem={recordDragItem}
@@ -1779,8 +2051,8 @@ export function VaultLibrary({
                 records={hiddenRecords}
                 rootName={
                   hiddenLocationProfileId === sharedProfileId
-                    ? "Shared with me"
-                    : "My records"
+                    ? translateNow("interface.LibrarySidebar.sharedWithMe")
+                    : translateNow("sidebar.myRecords")
                 }
                 folderNameById={folderNameById}
                 busy={busy}
@@ -1857,14 +2129,18 @@ export function VaultLibrary({
                     : OLD_BACKUPS_EXPOSED;
                 if (replaced && exposed) setOldBackupsGuide({ step: "save" });
                 const saved = replaced
-                  ? `Recovery key replaced. The old one no longer opens this vault. ${backups}`
-                  : "Recovery key saved. Keep your kit somewhere safe.";
+                  ? message("interface.recovery.replaced", () => ({
+                      backups: translateNow(backups),
+                    }))
+                  : message(
+                      "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere",
+                    );
                 setRecoverySetup(null);
                 setNotice("");
                 // The setup is finished once the patient is told so. Until
                 // then a lock leaves it unfinished, and the next unlock says
                 // the key was saved.
-                const tell = (message: string) => {
+                const tell = (message: UiText) => {
                   if (!mountedRef.current) return;
                   onUnfinishedRecoveryKey?.(null);
                   setDialogResult({ message, recordId: activeRecordId });
@@ -1883,15 +2159,23 @@ export function VaultLibrary({
                 // unlock's own result, which waited for the dialog.
                 if (offered && !keyShown)
                   setDialogResult({
-                    message: "Vault unlocked.",
+                    message: deferredText(() =>
+                      translateNow("notice.unlocked"),
+                    ),
                     recordId: activeRecordId,
                   });
                 if (keyShown) {
                   setNotice("");
                   setDialogResult({
-                    message: snapshot.recoveryKeySetAtMs
-                      ? "Recovery key setup was not finished. The key you were shown does not open the vault; your earlier key still does. Destroy any kit saved or printed just now."
-                      : "Recovery key setup was not finished. The key you were shown does not open the vault. Destroy any kit saved or printed just now.",
+                    message: deferredText(() =>
+                      snapshot.recoveryKeySetAtMs
+                        ? translateNow(
+                            "interface.VaultLibrary.recoveryKeySetupWasNotFinishedThe",
+                          )
+                        : translateNow(
+                            "interface.VaultLibrary.recoveryKeySetupWasNotFinishedTheAlternative",
+                          ),
+                    ),
                     recordId: activeRecordId,
                   });
                 }
@@ -2020,8 +2304,10 @@ export function VaultLibrary({
           )}
           {confirmHideDamaged && (
             <ConfirmDialog
-              title={`Hide ${damagedCount} damaged document${damagedCount === 1 ? "" : "s"}?`}
-              confirmLabel="Hide"
+              title={translateNow("interface.hideDamaged.title", {
+                count: damagedCount,
+              })}
+              confirmLabel={translateNow("interface.RecordDetails.hide")}
               onConfirm={hideDamaged}
               onCancel={() => setConfirmHideDamaged(false)}
               details={
@@ -2030,7 +2316,9 @@ export function VaultLibrary({
                 // dialog: the title counts the documents.
                 <ul
                   className="native-confirm-list"
-                  aria-label="Documents to hide"
+                  aria-label={translateNow(
+                    "interface.VaultLibrary.documentsToHide",
+                  )}
                   tabIndex={0}
                 >
                   {damaged.map((record) => (
@@ -2044,31 +2332,28 @@ export function VaultLibrary({
               }
             >
               <p>
-                Their encrypted files are missing from this device. Hiding them
-                lets the vault take changes again. They stay listed under
-                Hidden, with their names and details, and if a file comes back
-                its document can be restored.
+                {translateNow(
+                  "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis",
+                )}
               </p>
               <p>
-                First check that the files are not just out of reach: if the
-                myCarlos data folder is on a drive that is disconnected, or
-                another program is using it, fix that, then lock and unlock
-                again. If you have a backup of the data folder, restore it
-                first: any file that comes back is kept.
+                {translateNow(
+                  "interface.VaultLibrary.firstCheckThatTheFilesAreNot",
+                )}
               </p>
             </ConfirmDialog>
           )}
           {activeRecord && pendingAction === "export" && (
             <ConfirmDialog
-              title="Save a readable copy?"
-              confirmLabel="Save a copy"
+              title={translateNow("interface.VaultLibrary.saveAReadableCopy")}
+              confirmLabel={translateNow("interface.VaultLibrary.saveACopy")}
               onConfirm={() => exportRecord(activeRecord)}
               onCancel={() => setConfirmation(null)}
             >
               <p>
-                Saving creates a readable file outside the encrypted vault.
-                myCarlos cannot erase that copy later, and hiding this record
-                will not remove it.
+                {translateNow(
+                  "interface.VaultLibrary.savingCreatesAReadableFileOutsideThe",
+                )}
               </p>
             </ConfirmDialog>
           )}

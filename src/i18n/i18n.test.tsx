@@ -24,7 +24,6 @@ import {
 import { en } from "./locales/en";
 import { CreateVault, VaultAuthFrame, UnlockVault } from "../native/VaultAuth";
 import { MIN_PASSPHRASE_CHARS } from "../native/PassphraseChecklist";
-import { SHARED_FOLDER_NAME } from "../native/recordPresentation";
 
 const placeholders = (text: string) =>
   [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -53,15 +52,22 @@ describe("catalogue", () => {
       });
       it("uses the same placeholders as English", () => {
         for (const key of keys) {
-          const wanted = placeholders(forms(en[key as keyof typeof en])[0][1]);
+          const source: Message = en[key as keyof typeof en];
           const message = catalogue[key];
-          // A plural message in one language is plain in another only if it
-          // never needed a count; keep the shapes alike.
+          // A lexical singular can say “A file” while its plural shows
+          // {count}. Compare the corresponding English form; categories
+          // English lacks (few/many) inherit its other-form contract.
           expect(typeof message === "string", key).toBe(
-            typeof (en as Record<string, Message>)[key] === "string",
+            typeof source === "string",
           );
           for (const [form, text] of forms(message)) {
-            expect(placeholders(text), `${key} ${form}`).toEqual(wanted);
+            const sourceText =
+              typeof source === "string"
+                ? source
+                : (source[form as keyof typeof source] ?? source.other);
+            expect(placeholders(text), `${key} ${form}`).toEqual(
+              placeholders(sourceText),
+            );
           }
         }
       });
@@ -301,14 +307,35 @@ describe("a rendered screen in each language", () => {
           name: `${say("passphrase.show")} ${say("passphrase.show.inConfirm")}`,
         }),
       ).toBeInTheDocument();
-      // No person may take Shared with me's name (#61).
-      fireEvent.change(
-        form.getByRole("textbox", { name: say("create.profile.label") }),
-        { target: { value: "shared with ME" } },
-      );
-      expect(form.getByRole("alert").textContent).toBe(
-        say("create.profile.sharedTaken", { folder: SHARED_FOLDER_NAME }),
-      );
+      // No person may take Shared with me's name (#61), as any language
+      // shows it: the refusal names it in this one.
+      const profileBox = form.getByRole("textbox", {
+        name: say("create.profile.label"),
+      });
+      for (const other of LOCALES) {
+        const shared = translate(
+          other,
+          "interface.LibrarySidebar.sharedWithMe",
+        );
+        for (const typed of [
+          ` ${shared.toUpperCase()} `,
+          shared.toLowerCase().normalize("NFD"),
+        ]) {
+          fireEvent.change(profileBox, { target: { value: typed } });
+          expect(form.getByRole("alert").textContent, typed).toBe(
+            say("create.profile.sharedTaken", {
+              folder: say("interface.LibrarySidebar.sharedWithMe"),
+            }),
+          );
+        }
+      }
+      // A name that only holds it is a person's.
+      fireEvent.change(profileBox, {
+        target: {
+          value: `${say("interface.LibrarySidebar.sharedWithMe")} FAKE`,
+        },
+      });
+      expect(form.queryByRole("alert")).toBeNull();
     });
     it(`counts the shared files waiting at unlock in ${locale} (#61)`, () => {
       setLocaleOverride(locale);
@@ -328,7 +355,7 @@ describe("a rendered screen in each language", () => {
       const { container, rerender } = render(unlock(1));
       const said = () =>
         container.querySelector(".native-received-waiting")?.textContent;
-      const folder = SHARED_FOLDER_NAME;
+      const folder = translate(locale, "interface.LibrarySidebar.sharedWithMe");
       expect(said()).toBe(translate(locale, "unlock.waiting.one", { folder }));
       for (const count of [2, 5, 22]) {
         rerender(unlock(count));
@@ -341,7 +368,7 @@ describe("a rendered screen in each language", () => {
     });
   }
   it("keeps the English of the shared-file messages (#61)", () => {
-    const folder = SHARED_FOLDER_NAME;
+    const folder = "Shared with me";
     expect(translate("en", "unlock.waiting.one", { folder })).toBe(
       "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
     );

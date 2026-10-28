@@ -1,3 +1,7 @@
+#[cfg(target_os = "macos")]
+mod native_confirmation_macos;
+mod ui_text;
+use ui_text::UiLocale;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod document_identity;
@@ -74,6 +78,7 @@ struct RuntimeInfo {
 struct PublicError {
     code: &'static str,
     message: &'static str,
+    message_key: &'static str,
     /// The document a failure is about, for the renderer to name: a name is
     /// never put in an error.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +87,8 @@ struct PublicError {
     /// how the failure came about rather than on what it was.
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
     #[serde(skip_serializing_if = "Option::is_none")]
     retry_after_ms: Option<u64>,
@@ -91,6 +98,7 @@ struct PublicError {
 struct PublicText {
     code: &'static str,
     message: &'static str,
+    message_key: &'static str,
 }
 
 type CommandResult<T> = Result<T, PublicError>;
@@ -112,12 +120,12 @@ impl PublicError {
     /// for it to check, and the older backups are to be kept. Where it was
     /// being saved adds what may be left there, whatever the failure.
     fn of_backup(self, destination: BackupDestination) -> Self {
-        let message = match self.code {
-            "unreadable" => "myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
-            "no_space" => "There is not enough space where you chose to save it. No backup was saved. Keep your older backups.",
-            "storage" => "The backup could not be saved there. No backup was saved. Keep your older backups.",
-            "cancelled" => "The backup stopped because the vault locked. No backup was saved. Keep your older backups.",
-            _ => self.message,
+        let (message, message_key) = match self.code {
+            "unreadable" => ("myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.", "native.error.01"),
+            "no_space" => ("There is not enough space where you chose to save it. No backup was saved. Keep your older backups.", "native.error.02"),
+            "storage" => ("The backup could not be saved there. No backup was saved. Keep your older backups.", "native.error.03"),
+            "cancelled" => ("The backup stopped because the vault locked. No backup was saved. Keep your older backups.", "native.error.04"),
+            _ => (self.message, self.message_key),
         };
         // An Android document provider's document. Nothing is written to it
         // before it is open, so until then it is whole or empty (the provider
@@ -132,9 +140,16 @@ impl PublicError {
                 "The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups.",
             ),
         };
+        let note_key = match destination {
+            BackupDestination::Path => None,
+            BackupDestination::ProviderUntouched => Some("native.backup.noteUntouched"),
+            BackupDestination::ProviderEmptied => Some("native.backup.noteEmptied"),
+        };
         Self {
             message,
+            message_key,
             note,
+            note_key,
             ..self
         }
     }
@@ -145,8 +160,10 @@ impl PublicError {
         Self {
             code: "too_many_attempts",
             message: "There have been several wrong tries in a row. To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked.",
+                message_key: "native.error.05",
             record_id: None,
             note: None,
+            note_key: None,
             retry_after_ms: Some(left_ms),
         }
     }
@@ -155,8 +172,10 @@ impl PublicError {
         Self {
             code: "partial_export",
             message: "The selected destination may contain a partial readable copy. Delete that copy before retrying.",
+                message_key: "native.error.06",
             record_id: None,
             note: None,
+            note_key: None,
             retry_after_ms: None,
         }
     }
@@ -165,12 +184,16 @@ impl PublicError {
     /// the credentials its vault had when it was saved, which need not be
     /// the ones the vault has now.
     fn of_restore(self) -> Self {
-        let message = match self.code {
-            "wrong_recovery_key" => "That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved, if it had one (not a key set up or replaced since), or with the passphrase it was made with.",
-            "wrong_passphrase" => "That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved, if it had one.",
+        let (message, message_key) = match self.code {
+            "wrong_recovery_key" => ("That recovery key does not open this backup. A backup opens with the recovery key the vault had when it was saved, if it had one (not a key set up or replaced since), or with the passphrase it was made with.", "native.error.07"),
+            "wrong_passphrase" => ("That passphrase does not open this backup. A backup opens with the passphrase it was made with (not one changed since), or with the recovery key the vault had when it was saved, if it had one.", "native.error.08"),
             _ => return self,
         };
-        Self { message, ..self }
+        Self {
+            message,
+            message_key,
+            ..self
+        }
     }
 
     /// The photo did not reach the vault as the camera window sent it. The
@@ -181,8 +204,10 @@ impl PublicError {
         Self {
             code,
             message: "The photo did not reach the vault, so it was not saved. Choose Use photo to try again.",
+                message_key: "native.error.09",
             record_id: None,
             note: None,
+            note_key: None,
             retry_after_ms: None,
         }
     }
@@ -191,8 +216,10 @@ impl PublicError {
         Self {
             code: "recovery_mode",
             message: "Nothing was hidden. The vault cannot be changed right now; the notice above the documents says why.",
+                message_key: "native.error.10",
             record_id: None,
             note: None,
+            note_key: None,
             retry_after_ms: None,
         }
     }
@@ -203,192 +230,232 @@ impl From<VaultError> for PublicText {
         match error {
             #[cfg(feature="portal-linking")]
             VaultError::ApprovalTerminal(state,reason) => match state {
-                portal_approval::ApprovalState::Expired => Self {code:"approval_expired",message:"This clinic approval request expired. Check for updates before starting a new request."},
-                portal_approval::ApprovalState::Cancelled => Self {code:"approval_cancelled",message:"This clinic approval request was cancelled. Check for updates before starting a new request."},
-                _ if reason.is_some_and(|r|r.needs_clinic()) => Self {code:"approval_contact_clinic",message:"The clinic cannot approve this request here. Contact your clinic for next steps."},
-                _ => Self {code:"approval_refused",message:"The clinic refused this device approval request. Contact your clinic before trying again."},
+                portal_approval::ApprovalState::Expired => Self { code: "approval_expired", message: "This clinic approval request expired. Check for updates before starting a new request.", message_key: "portal.approvalExpired" },
+                portal_approval::ApprovalState::Cancelled => Self { code: "approval_cancelled", message: "This clinic approval request was cancelled. Check for updates before starting a new request.", message_key: "portal.approvalCancelled" },
+                _ if reason.is_some_and(|r|r.needs_clinic()) => Self { code: "approval_contact_clinic", message: "The clinic cannot approve this request here. Contact your clinic for next steps.", message_key: "portal.approvalContact" },
+                _ => Self { code: "approval_refused", message: "The clinic refused this device approval request. Contact your clinic before trying again.", message_key: "portal.approvalRefused" },
             },
             #[cfg(feature="portal-linking")]
-            VaultError::ApprovalRequestMissing => Self {code:"approval_missing",message:"Your saved approval request was not found on the portal. Send the saved request again."},
+            VaultError::ApprovalRequestMissing => Self { code: "approval_missing", message: "Your saved approval request was not found on the portal. Send the saved request again.", message_key: "portal.approvalMissing" },
             #[cfg(feature="portal-linking")]
-            VaultError::ApprovalNeedsClinic => Self {code:"approval_contact_clinic",message:"Clinic approval needs to be checked before another request. Contact your clinic for next steps."},
+            VaultError::ApprovalNeedsClinic => Self { code: "approval_contact_clinic", message: "Clinic approval needs to be checked before another request. Contact your clinic for next steps.", message_key: "portal.approvalContact" },
             #[cfg(feature="portal-linking")]
-            VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
+            VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent.", message_key: "portal.errorRefused" },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
-                    LinkError::Disabled => Self { code: "portal_link_disabled", message: "Portal linking is not enabled in this build." },
-                    LinkError::Unavailable => Self { code: "portal_link_unavailable", message: "Portal linking is not available on this device yet." },
-                    LinkError::InvalidPortal => Self { code: "portal_link_address", message: "Enter the portal's HTTPS address, without a username, password, query or fragment." },
-                    LinkError::InvalidCode => Self { code: "portal_link_code", message: "Enter the complete code shown by the portal." },
-                    LinkError::InvalidDeviceName => Self { code: "portal_link_device_name", message: "Choose a device name of 1 to 64 characters without control characters." },
-                    LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code." },
-                    LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed." },
-                    LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again." },
-                    LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
-                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
+                    LinkError::Disabled => Self { code: "portal_link_disabled", message: "Portal linking is not enabled in this build.", message_key: "portal.errorDisabled" },
+                    LinkError::Unavailable => Self { code: "portal_link_unavailable", message: "Portal linking is not available on this device yet.", message_key: "portal.errorUnavailable" },
+                    LinkError::InvalidPortal => Self { code: "portal_link_address", message: "Enter the portal's HTTPS address, without a username, password, query or fragment.", message_key: "portal.errorAddress" },
+                    LinkError::InvalidCode => Self { code: "portal_link_code", message: "Enter the complete code shown by the portal.", message_key: "portal.errorCode" },
+                    LinkError::InvalidDeviceName => Self { code: "portal_link_device_name", message: "Choose a device name of 1 to 64 characters without control characters.", message_key: "portal.errorDeviceName" },
+                    LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code.", message_key: "portal.errorCodeRejected" },
+                    LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed.", message_key: "portal.errorKeys" },
+                    LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again.", message_key: "portal.errorExists" },
+                    LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again.", message_key: "portal.errorCancelled" },
+                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again.", message_key: "portal.errorIncomplete" },
                 }
             },
             VaultError::Busy => Self {
                 code: "busy",
                 message: "A passphrase check or speed test is running. Wait for it to finish, then try again.",
+                message_key: "native.error.11",
             },
             VaultError::AlreadyExists => Self {
                 code: "already_exists",
                 message: "A vault already exists on this device.",
+                message_key: "native.error.12",
             },
             VaultError::Missing => Self {
                 code: "missing",
                 message: "No vault exists on this device.",
+                message_key: "native.error.13",
             },
             VaultError::Locked => Self {
                 code: "locked",
                 message: "Unlock the vault to continue.",
+                message_key: "native.error.14",
             },
             VaultError::InUse => Self {
                 code: "in_use",
                 message: "This vault is open in another myCarlos window. Lock or close that window, then try again.",
+                message_key: "native.error.15",
             },
             VaultError::WrongPassphrase => Self {
                 code: "wrong_passphrase",
                 message: "That passphrase didn't open myCarlos. Check Caps Lock and try again.",
+                message_key: "native.error.16",
             },
             VaultError::Corrupt => Self {
                 code: "corrupt",
                 message: "The vault is damaged or incomplete. No data was changed.",
+                message_key: "native.error.17",
             },
             VaultError::NewerFormat => Self {
                 code: "vault_newer_format",
                 message: "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+                message_key: "error.newerFormat.vault",
             },
             VaultError::NotFound => Self {
                 code: "not_found",
                 message: "That item is no longer available.",
+                message_key: "native.error.18",
             },
             VaultError::Invalid => Self {
                 code: "invalid",
                 message: "Something you typed wasn't accepted. Check it and try again.",
+                message_key: "native.error.19",
             },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
                 message: "Choose a less predictable passphrase that is not based on common passwords, names, or myCarlos.",
+                message_key: "native.error.20",
             },
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
                 message: "Choose no more than 100 files in one import.",
+                message_key: "native.error.21",
             },
             VaultError::NotPdf => Self {
                 code: "not_pdf",
                 message: "One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.",
+                message_key: "native.error.22",
             },
             // The reader asks for the document's password on this code (#64).
             VaultError::PdfLocked => Self {
                 code: "pdf_locked",
                 message: "This document is locked with a password. Enter the document password from your patient portal.",
+                message_key: "native.error.23",
             },
             VaultError::PdfNotLocked => Self {
                 code: "pdf_not_locked",
                 message: "This document is not locked with a password, so it opens as it is.",
+                message_key: "native.error.24",
             },
             VaultError::PdfAlreadyUnlocked => Self {
                 code: "pdf_already_unlocked",
                 message: "An unlocked copy of this document is already here, so nothing was added.",
+                message_key: "native.error.25",
             },
             VaultError::PdfWrongPassword => Self {
                 code: "pdf_wrong_password",
                 message: "That password did not open the document. Check the document password in your patient portal, then try again.",
+                message_key: "native.error.26",
             },
             VaultError::PdfUnlockFailed => Self {
                 code: "pdf_unlock_failed",
                 message: "myCarlos could not open this locked document. It may be damaged, or locked in a way myCarlos cannot open. The document is unchanged.",
+                message_key: "native.error.27",
             },
             VaultError::PdfUnlockUnavailable => Self {
                 code: "pdf_unlock_unavailable",
                 message: "myCarlos cannot open password-protected documents on this device yet. The document is unchanged.",
+                message_key: "native.error.28",
             },
             VaultError::PdfUnlockNoSandbox => Self {
                 code: "pdf_unlock_no_sandbox",
                 message: "myCarlos cannot open locked documents safely on this system, so this one was not opened. The document is unchanged.",
+                message_key: "native.error.29",
             },
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message: "This locked document is larger than 100 MB, so myCarlos cannot open it. The document is unchanged.",
+                message_key: "native.error.30",
             },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
                 message: "myCarlos could not show this document. It may be damaged, or use features myCarlos cannot show yet. Save a copy to read it in another app.",
+                message_key: "native.error.31",
             },
             VaultError::PdfViewUnavailable => Self {
                 code: "pdf_view_unavailable",
                 message: "myCarlos cannot show documents on this device yet. Save a copy to read it in another app.",
+                message_key: "native.error.32",
             },
             VaultError::PdfViewNoSandbox => Self {
                 code: "pdf_view_no_sandbox",
                 message: "myCarlos cannot show documents safely on this system. Save a copy to read it in another app.",
+                message_key: "native.error.33",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
                 message: "There is not enough storage to complete this operation.",
+                message_key: "native.error.34",
             },
             VaultError::Storage => Self {
                 code: "storage",
                 message: "myCarlos couldn't read or write its files on this computer. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.",
+                message_key: "native.error.35",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",
                 message: "The operation stopped because the vault was locked.",
+                message_key: "native.error.36",
             },
             VaultError::UnsupportedStorage => Self {
                 code: "unsupported_storage",
                 message: "myCarlos cannot keep a vault safely on this device's storage, because it does not confirm when files are durably written (for example, a network home folder). Use myCarlos on a device with local storage.",
+                message_key: "native.error.37",
             },
             VaultError::RemovalChanged => Self {
                 code: "removal_changed",
                 message: "The list of damaged documents has changed. Nothing was removed. Check the list, then try again.",
+                message_key: "native.error.38",
             },
             VaultError::Unreadable => Self {
                 code: "unreadable",
                 message: "myCarlos could not read some of its files just now. Your documents have not been changed or deleted, so do not set the vault aside. Check what you typed and try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.",
+                message_key: "native.error.39",
             },
             VaultError::RecoveryMode => Self {
                 code: "recovery_mode",
                 message: "The vault is in read-only recovery mode. Export important records and free storage before retrying.",
+                message_key: "native.error.40",
             },
             VaultError::RecoveryKeyTypo => Self {
                 code: "recovery_key_typo",
                 message: "That doesn't match the recovery key. Check each group of characters and try again.",
+                message_key: "native.error.41",
             },
             VaultError::BackupChanged => Self {
                 code: "backup_changed",
                 message: "The backup file, or the vault on this device, changed after you chose to restore. Nothing on this device was changed. Choose the backup file again.",
+                message_key: "native.error.42",
             },
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
                 message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
+                message_key: "native.error.43",
             },
             VaultError::BackupNewerFormat => Self {
                 code: "backup_newer_format",
                 message: "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
+                message_key: "error.newerFormat.backup",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
                 message: "That recovery key does not open this vault. If you replaced your recovery key, use the newest one.",
+                message_key: "native.error.44",
             },
             VaultError::BackupNotOpened => Self {
                 code: "backup_not_opened",
                 message: "myCarlos could not open that file. If it is in a cloud or shared folder, copy it to a folder on this device and choose it there. Nothing on this device was changed.",
+                message_key: "native.error.45",
             },
             VaultError::DamagedDocument(_) => Self {
                 code: "damaged_document",
                 message: "A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.",
+                message_key: "native.error.46",
             },
             VaultError::NotPhoto => Self {
                 code: "not_a_photo",
                 message: "This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.",
+                message_key: "native.error.47",
             },
             VaultError::RestoreUnfinished => Self {
                 code: "restore_unfinished",
                 message: "The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.",
+                message_key: "native.error.48",
             },
         }
     }
@@ -400,12 +467,18 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
-        let PublicText { code, message } = PublicText::from(error);
+        let PublicText {
+            code,
+            message,
+            message_key,
+        } = PublicText::from(error);
         Self {
             code,
             message,
+            message_key,
             record_id,
             note: None,
+            note_key: None,
             retry_after_ms: None,
         }
     }
@@ -1290,6 +1363,8 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
         .await
         .map_err(|_| PublicError {
             code: "speed_test_failed",
+            message_key: "native.error.speedTest",
+            note_key: None,
             message: "The speed test stopped before it finished. Nothing was changed. Try again.",
             record_id: None,
             note: None,
@@ -1657,6 +1732,7 @@ async fn vault_recovery_key_begin(
 }
 
 /// The button of a native confirmation that closes it and changes nothing.
+#[cfg(test)]
 const NATIVE_CANCEL: &str = "Cancel";
 
 /// Asks in a trusted native dialog, which page code cannot press, before
@@ -1666,13 +1742,14 @@ const NATIVE_CANCEL: &str = "Cancel";
 /// the Enter/Return default, and a dialog can appear while the patient is
 /// typing. Linux has no explicit default and needs device testing. The button
 /// that goes ahead comes second, and Cancel, which does what the first does,
-/// third.
+/// third. macOS assigns both safe keyboard shortcuts explicitly, independently
+/// of these localized titles.
 ///
 /// Three buttons, though two do the same, because each slot has a meaning
 /// of its own on some platform. With two buttons and the safe one first,
 /// the button that goes ahead would take the slot that Android reports
-/// for the back button and a tap outside. And the third is titled "Cancel"
-/// because that title is what gives a button the Escape key on macOS.
+/// for the back button and a tap outside. The third keeps that platform
+/// cancellation role; macOS assigns its keyboard equivalent explicitly.
 ///
 /// On a computer the dialog is given the app's window. On Windows and
 /// macOS it then cannot end up behind it, and macOS shows it as an alert of
@@ -1684,29 +1761,44 @@ fn confirmed_natively<R: tauri::Runtime>(
     message: impl Into<String>,
     keep: &str,
     go_ahead: &str,
+    locale: UiLocale,
 ) -> bool {
     // The dialog reports these words as answers of its own, not as the
     // button that was given them.
-    debug_assert!(
-        keep != go_ahead && !["Yes", "No", "Ok", NATIVE_CANCEL].contains(&go_ahead),
-        "a button that goes ahead needs a label of its own"
-    );
-    let dialog = app
-        .dialog()
-        .message(message)
-        .title(title)
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::YesNoCancelCustom(
-            keep.to_owned(),
-            go_ahead.to_owned(),
-            NATIVE_CANCEL.to_owned(),
-        ));
-    #[cfg(desktop)]
-    let dialog = match app.get_webview_window(MAIN_WINDOW) {
-        Some(window) => dialog.parent(&window),
-        None => dialog,
-    };
-    agreed_natively(&dialog.blocking_show_with_result(), go_ahead)
+    if !native_labels_safe(keep, go_ahead, locale.text("native.cancel")) {
+        return false;
+    }
+    let message = message.into();
+    #[cfg(target_os = "macos")]
+    {
+        return native_confirmation_macos::confirm(
+            app,
+            title,
+            &message,
+            keep,
+            go_ahead,
+            locale.text("native.cancel"),
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let dialog = app
+            .dialog()
+            .message(message)
+            .title(title)
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::YesNoCancelCustom(
+                keep.to_owned(),
+                go_ahead.to_owned(),
+                locale.text("native.cancel").to_owned(),
+            ));
+        #[cfg(desktop)]
+        let dialog = match app.get_webview_window(MAIN_WINDOW) {
+            Some(window) => dialog.parent(&window),
+            None => dialog,
+        };
+        agreed_natively(&dialog.blocking_show_with_result(), go_ahead)
+    }
 }
 
 /// The label of the app's one window, which is the default one.
@@ -1721,6 +1813,7 @@ fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
 
 /// What the native confirmation says before a new recovery key takes the
 /// place of the one the vault has.
+#[cfg(test)]
 const REPLACE_RECOVERY_KEY_WARNING: &str = "Your current recovery key will stop working once the new one is saved: a kit you saved or printed for it will no longer open this vault. Backups saved before now still open with the passphrase or recovery key they were saved with, the current key among them; once this is done, myCarlos says what to do about them. Before you continue, make sure you have written down or saved the new key. If you did not ask to replace your recovery key, choose Keep current key.";
 
 impl ConfirmRecoveryKeyRequest {
@@ -1749,19 +1842,33 @@ async fn vault_recovery_key_confirm(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     request: ConfirmRecoveryKeyRequest,
+    locale: Option<UiLocale>,
 ) -> CommandResult<Option<VaultSnapshot>> {
+    let locale = locale.unwrap_or_default();
     run_blocking(store.inner(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
             confirmed_natively(
                 &app,
-                "Replace your recovery key?",
-                REPLACE_RECOVERY_KEY_WARNING,
-                "Keep current key",
-                "Replace key",
+                locale.text("native.recovery.title"),
+                locale.text("native.recovery.warning"),
+                locale.text("native.recovery.keep"),
+                locale.text("native.recovery.replace"),
+                locale,
             )
         })
     })
     .await
+}
+
+/// A catalogue error cannot turn a safe or cancel response into consent.
+fn native_labels_safe(keep: &str, go_ahead: &str, cancel: &str) -> bool {
+    !keep.trim().is_empty()
+        && !go_ahead.trim().is_empty()
+        && !cancel.trim().is_empty()
+        && keep != go_ahead
+        && keep != cancel
+        && go_ahead != cancel
+        && !["Yes", "No", "Ok", "Cancel"].contains(&go_ahead)
 }
 
 /// What `vault_recovery_key_confirm` decides, apart from the dialog, which
@@ -1803,7 +1910,9 @@ async fn vault_recovery_key_label(store: State<'_, Arc<VaultStore>>) -> CommandR
 async fn vault_recovery_kit_save(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
+    locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let locale = locale.unwrap_or_default();
     // Nothing is asked for unless a key is waiting to be confirmed.
     let name = run_blocking(store.inner(), |store| store.recovery_kit_name(now_ms())).await?;
     // Held until the kit is written, so that the automatic lock cannot fall
@@ -1824,14 +1933,16 @@ async fn vault_recovery_kit_save(
     };
     if let Ok(path) = destination.clone().into_path() {
         return run_blocking(store.inner(), move |store| {
-            store.save_recovery_kit(&path, now_ms()).map(|()| true)
+            store
+                .save_recovery_kit_in(&path, now_ms(), locale)
+                .map(|()| true)
         })
         .await;
     }
     // Android content providers return a URI rather than a path.
     run_blocking(store.inner(), move |store| {
         use std::io::Write as _;
-        let kit = store.recovery_kit(now_ms())?;
+        let kit = store.recovery_kit_in(now_ms(), locale)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let mut output = app
@@ -2100,7 +2211,9 @@ async fn vault_restore_pick(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
+    locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let locale = locale.unwrap_or_default();
     let session = picks.session();
     run_blocking(store.inner(), |store| match store.status()? {
         VaultStatus::Unlocked => Err(VaultError::Invalid),
@@ -2112,7 +2225,7 @@ async fn vault_restore_pick(
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
-        let picker = picker.add_filter("myCarlos backups", &["mycarlosbackup"]);
+        let picker = picker.add_filter(locale.text("native.filter.backups"), &["mycarlosbackup"]);
         picker.blocking_pick_file()
     })
     .await
@@ -2173,26 +2286,27 @@ async fn vault_restore_inspect(
 /// What the native confirmation says before a restore replaces a vault. It
 /// is worked out here from the backup and the vault themselves, never taken
 /// from the renderer.
+#[cfg(test)]
 fn restore_warning(preview: &RestorePreview) -> Option<String> {
-    let documents = match preview.document_count {
-        1 => "1 document".to_owned(),
-        count => format!("{count} documents"),
+    restore_warning_in(preview, UiLocale::En)
+}
+
+fn restore_warning_in(preview: &RestorePreview, locale: UiLocale) -> Option<String> {
+    let documents = locale.documents(preview.document_count);
+    let key = match preview.replaces {
+        RestoreReplaces::Nothing => return None,
+        RestoreReplaces::OtherVault => "native.restore.other",
+        RestoreReplaces::Unreadable => "native.restore.unreadable",
+        RestoreReplaces::SameVault if preview.differs_from_this_device => "native.restore.changed",
+        RestoreReplaces::SameVault => "native.restore.same",
     };
-    match preview.replaces {
-        RestoreReplaces::Nothing => None,
-        RestoreReplaces::OtherVault => Some(format!(
-            "The vault on this device is not the vault this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
-        )),
-        RestoreReplaces::Unreadable => Some(format!(
-            "The vault on this device could not be read, so myCarlos cannot tell whether it is the one this backup was made from. Restoring sets the vault on this device aside and puts the backup ({documents}) in its place. {SET_ASIDE_KEPT}"
-        )),
-        RestoreReplaces::SameVault if preview.differs_from_this_device => Some(format!(
-            "The vault on this device may not be the same as this backup ({documents}): it may have changed since, or part of it could not be read. Restoring sets it aside and puts the backup in its place: anything that is not in the backup is no longer in the vault you use, and the passphrase and recovery key become the ones the backup was made with. {SET_ASIDE_KEPT}"
-        )),
-        RestoreReplaces::SameVault => Some(format!(
-            "Restoring sets the vault on this device aside and puts the backup in its place, which holds the same {documents}. {SET_ASIDE_KEPT}"
-        )),
-    }
+    Some(locale.render(
+        key,
+        &[
+            ("documents", &documents),
+            ("kept", locale.text("native.setAside.kept")),
+        ],
+    ))
 }
 
 /// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
@@ -2206,7 +2320,9 @@ async fn vault_restore(
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     request: RestoreRequest,
+    locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
     let source = picks
@@ -2226,7 +2342,7 @@ async fn vault_restore(
         .await
         .map_err(PublicError::of_restore)?
     };
-    if let Some(warning) = restore_warning(&preview) {
+    if let Some(warning) = restore_warning_in(&preview, locale) {
         // The renderer must have asked for a replacement too.
         if !request.replace {
             return Err(PublicError::from(VaultError::AlreadyExists));
@@ -2235,10 +2351,11 @@ async fn vault_restore(
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
             confirmed_natively(
                 &dialog_app,
-                "Replace the vault on this device?",
+                locale.text("native.restore.title"),
                 warning,
-                "Keep this vault",
-                "Replace with backup",
+                locale.text("native.vault.keep"),
+                locale.text("native.restore.replace"),
+                locale,
             )
         })
         .await
@@ -2434,7 +2551,9 @@ async fn vault_import_pick(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ImportRequest,
+    locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let locale = locale.unwrap_or_default();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let session = picks.session();
     // Refuse before the picker opens; `import` still re-checks under its own lock.
@@ -2447,7 +2566,7 @@ async fn vault_import_pick(
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("PDF documents", &["pdf"])
+            .add_filter(locale.text("native.filter.pdf"), &["pdf"])
             .blocking_pick_files()
     })
     .await
@@ -3017,6 +3136,7 @@ async fn vault_unhide_record(
 }
 
 /// What a vault set aside (#71) keeps, said wherever one is set aside.
+#[cfg(test)]
 const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
 
 /// What starting again does (#71), who can still open the vault set aside,
@@ -3024,17 +3144,26 @@ const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypte
 /// folder, named here (the dialog is native, never the screen); on a phone,
 /// where the folder is private to the app, only by clearing the app's data
 /// or uninstalling it, which removes every vault.
+#[cfg(test)]
 fn set_aside_vault_warning(folder: &std::path::Path) -> String {
+    set_aside_vault_warning_in(folder, UiLocale::En)
+}
+
+fn set_aside_vault_warning_in(folder: &std::path::Path, locale: UiLocale) -> String {
     let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
-        "On this phone, vaults set aside stay in myCarlos's private storage, and myCarlos cannot remove them: the only way is to clear myCarlos's data in the phone's settings, or to uninstall it, and that removes every vault on the phone.".to_owned()
+        locale.text("native.setAside.mobile").to_owned()
     } else {
-        format!(
-            "To remove a vault set aside, and free its space, close myCarlos and delete its folder in {}.",
-            folder.display()
+        locale.render(
+            "native.setAside.desktop",
+            &[("folder", &folder.display().to_string())],
         )
     };
-    format!(
-        "This sets the whole vault aside and starts again with an empty one. {SET_ASIDE_KEPT} myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. {removal}"
+    locale.render(
+        "native.setAside.warning",
+        &[
+            ("kept", locale.text("native.setAside.kept")),
+            ("removal", &removal),
+        ],
     )
 }
 
@@ -3045,19 +3174,25 @@ async fn vault_reset(
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     request: ResetRequest,
+    locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
-    if request.confirmation != "RESET MYCARLOS VAULT" {
+    let locale = locale.unwrap_or_default();
+    if !locale.reset_phrase_matches(&request.confirmation) {
         return Err(PublicError::from(VaultError::Invalid));
     }
-    let warning = set_aside_vault_warning(&store.set_aside_folder().ok_or(VaultError::Storage)?);
+    let warning = set_aside_vault_warning_in(
+        &store.set_aside_folder().ok_or(VaultError::Storage)?,
+        locale,
+    );
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
         confirmed_natively(
             &dialog_app,
-            "Set this myCarlos vault aside and start again?",
+            locale.text("native.setAside.title"),
             warning,
-            "Keep this vault",
-            "Set it aside",
+            locale.text("native.vault.keep"),
+            locale.text("native.setAside.confirm"),
+            locale,
         )
     })
     .await
@@ -5427,5 +5562,132 @@ mod locked_pdf_command_tests {
         assert!(unlock.contains("Zeroizing::new(std::mem::take(&mut request.password))"));
         assert!(body("async fn vault_is_locked_pdf(").contains("run_blocking("));
         assert!(body("impl Drop for UnlockPdfRequest").contains("self.password.zeroize()"));
+    }
+}
+
+#[cfg(test)]
+mod native_localization_tests {
+    use super::*;
+
+    #[test]
+    fn native_localization_confirmations_keep_cancel_and_action_distinct_in_every_locale() {
+        for locale in [
+            UiLocale::En,
+            UiLocale::Fr,
+            UiLocale::Es,
+            UiLocale::Pl,
+            UiLocale::PtBr,
+        ] {
+            for (keep, action) in [
+                ("native.recovery.keep", "native.recovery.replace"),
+                ("native.vault.keep", "native.restore.replace"),
+                ("native.vault.keep", "native.setAside.confirm"),
+            ] {
+                let (keep, action, cancel) = (
+                    locale.text(keep),
+                    locale.text(action),
+                    locale.text("native.cancel"),
+                );
+                assert!(native_labels_safe(keep, action, cancel));
+                assert!(agreed_natively(
+                    &MessageDialogResult::Custom(action.to_owned()),
+                    action
+                ));
+                for refused in [
+                    MessageDialogResult::Custom(keep.to_owned()),
+                    MessageDialogResult::Custom(cancel.to_owned()),
+                    MessageDialogResult::Cancel,
+                    MessageDialogResult::Yes,
+                    MessageDialogResult::No,
+                    MessageDialogResult::Ok,
+                ] {
+                    assert!(!agreed_natively(&refused, action));
+                }
+            }
+        }
+        for (keep, action, cancel) in [
+            ("Keep", "Keep", "Cancel"),
+            ("Keep", "Cancel", "Cancel"),
+            ("Keep", "Yes", "Cancel"),
+            ("Keep", "No", "Cancel"),
+            ("Keep", "Ok", "Cancel"),
+            (" ", "Go", "Cancel"),
+            ("Keep", "\n", "Cancel"),
+            ("Keep", "Go", " "),
+        ] {
+            assert!(!native_labels_safe(keep, action, cancel));
+        }
+    }
+
+    #[test]
+    fn native_localization_errors_retain_context_and_destination_warning_identities() {
+        for error in [
+            VaultError::Busy,
+            VaultError::AlreadyExists,
+            VaultError::Missing,
+            VaultError::Locked,
+            VaultError::InUse,
+            VaultError::WrongPassphrase,
+            VaultError::Corrupt,
+            VaultError::NotFound,
+            VaultError::Invalid,
+            VaultError::WeakPassphrase,
+            VaultError::ImportBatchLimit,
+            VaultError::NotPdf,
+            VaultError::PdfLocked,
+            VaultError::PdfNotLocked,
+            VaultError::PdfAlreadyUnlocked,
+            VaultError::PdfWrongPassword,
+            VaultError::PdfUnlockFailed,
+            VaultError::PdfUnlockUnavailable,
+            VaultError::PdfUnlockNoSandbox,
+            VaultError::PdfTooLarge,
+            VaultError::PdfViewFailed,
+            VaultError::PdfViewUnavailable,
+            VaultError::PdfViewNoSandbox,
+            VaultError::NoSpace,
+            VaultError::Storage,
+            VaultError::Cancelled,
+            VaultError::UnsupportedStorage,
+            VaultError::RemovalChanged,
+            VaultError::Unreadable,
+            VaultError::RecoveryMode,
+            VaultError::RecoveryKeyTypo,
+            VaultError::BackupChanged,
+            VaultError::BackupUnreadable,
+            VaultError::WrongRecoveryKey,
+            VaultError::BackupNotOpened,
+            VaultError::DamagedDocument(Uuid::nil()),
+            VaultError::NotPhoto,
+            VaultError::RestoreUnfinished,
+        ] {
+            let text = PublicText::from(error);
+            assert_eq!(UiLocale::En.text(text.message_key), text.message);
+        }
+        for destination in [
+            BackupDestination::Path,
+            BackupDestination::ProviderUntouched,
+            BackupDestination::ProviderEmptied,
+        ] {
+            let error = PublicError::from(VaultError::Storage).of_backup(destination);
+            assert_eq!(UiLocale::En.text(error.message_key), error.message);
+            assert_eq!(error.message_key, "native.error.03");
+            if let Some(note_key) = error.note_key {
+                assert_eq!(UiLocale::En.text(note_key), error.note.unwrap());
+            }
+            let json = serde_json::to_value(error).unwrap();
+            assert_eq!(json["messageKey"], "native.error.03");
+            assert_eq!(
+                json.get("noteKey").is_some(),
+                destination != BackupDestination::Path
+            );
+        }
+        for error in [VaultError::WrongPassphrase, VaultError::WrongRecoveryKey] {
+            let error = PublicError::from(error).of_restore();
+            assert_eq!(UiLocale::En.text(error.message_key), error.message);
+        }
+        let waited = PublicError::wait(1234);
+        assert_eq!(UiLocale::En.text(waited.message_key), waited.message);
+        assert_eq!(waited.retry_after_ms, Some(1234));
     }
 }

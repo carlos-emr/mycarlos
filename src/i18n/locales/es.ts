@@ -1,8 +1,10 @@
+import interfaceMessages from "./interface-es.json" with { type: "json" };
 import type { Message } from "../types";
 import type { MessageKey } from "./en";
 
 /** Spanish, formal register ("usted"). */
 export const es: Record<MessageKey, Message> = {
+  ...interfaceMessages,
   "portal.serviceDateLabel": "Fecha del servicio",
   "portal.serviceDate": "Fecha del servicio: {date}",
   "portal.dateNotRecorded": "Fecha no registrada",

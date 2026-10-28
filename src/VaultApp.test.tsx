@@ -553,9 +553,7 @@ describe("durable vault UI", () => {
 
     expect(await screen.findByText("report.pdf")).toBeVisible();
     expect(
-      screen.getByText(
-        "1 file(s) encrypted and imported. 1 duplicate(s) skipped.",
-      ),
+      screen.getByText("1 document encrypted and added. 1 duplicate skipped."),
     ).toBeVisible();
     expect(bridge.setAutoLock).toHaveBeenCalledWith(5);
     expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []);
@@ -723,7 +721,7 @@ describe("durable vault UI", () => {
     await user.click(screen.getByText("FAKE_Camera.jpg"));
     await user.click(screen.getByRole("button", { name: "Hide" }));
     await screen.findByText(
-      "FAKE_Camera.jpg was hidden. It is listed under Hidden, where you can restore it.",
+      "FAKE_Camera.jpg was hidden. It stays in the vault under Hidden.",
     );
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     expect(
@@ -751,7 +749,7 @@ describe("durable vault UI", () => {
     await user.click(screen.getByText("FAKE_Report.pdf"));
     await user.click(screen.getByRole("button", { name: "Hide" }));
     await screen.findByText(
-      "FAKE_Report.pdf was hidden. It is listed under Hidden, where you can restore it.",
+      "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
     );
     await user.click(screen.getByRole("button", { name: /^Hidden/ }));
     expect(
@@ -3289,7 +3287,7 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
-  const HELD_OUTCOME = "1 file(s) encrypted and imported.";
+  const HELD_OUTCOME = "1 document encrypted and added.";
 
   // Backgrounds the app during an import, so that the vault locks when the
   // import ends and its outcome is held for the next unlock. Fake timers.
@@ -3753,7 +3751,7 @@ describe("durable vault UI", () => {
       ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
       // Whoever unlocks next learns how the import went.
-      await expectOutcomeAfterUnlock("1 file(s) encrypted and imported.");
+      await expectOutcomeAfterUnlock("1 document encrypted and added.");
 
       // The held lock is spent: a transfer in the next session does not lock.
       await user.click(
@@ -3803,7 +3801,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Choose files to import" }),
     );
     expect(
-      await screen.findByText("1 file(s) encrypted and imported."),
+      await screen.findByText("1 document encrypted and added."),
     ).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "Choose files to import" }),
@@ -3943,7 +3941,7 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(hideRecord).toHaveBeenCalledWith("record-1"));
     expect(
       await screen.findByText(
-        "FAKE_Report.pdf was hidden. It is listed under Hidden, where you can restore it.",
+        "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
       ),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -4182,7 +4180,7 @@ describe("durable vault UI", () => {
       );
       expect(bridge.lock).not.toHaveBeenCalled();
       expect(
-        await screen.findByText("1 file(s) encrypted and imported."),
+        await screen.findByText("1 document encrypted and added."),
       ).toBeVisible();
     } finally {
       visibility.mockRestore();
@@ -4541,7 +4539,7 @@ describe("durable vault UI", () => {
 
         await act(async () => finishRefresh(emptySnapshot));
         expect(bridge.lock).toHaveBeenCalledOnce();
-        await expectOutcomeAfterUnlock("1 file(s) encrypted and imported.");
+        await expectOutcomeAfterUnlock("1 document encrypted and added.");
       } finally {
         vi.useRealTimers();
       }
@@ -4604,7 +4602,7 @@ describe("durable vault UI", () => {
 
         await act(async () => finishRefresh(emptySnapshot));
         expect(bridge.lock).toHaveBeenCalledOnce();
-        await expectOutcomeAfterUnlock("1 file(s) encrypted and imported.");
+        await expectOutcomeAfterUnlock("1 document encrypted and added.");
       } finally {
         vi.useRealTimers();
       }
@@ -4720,7 +4718,7 @@ describe("durable vault UI", () => {
       // The import's outcome is kept; the failed lock's error is not.
       await passAnnounceDelay();
       expect(
-        screen.getByText("Vault unlocked. 1 file(s) encrypted and imported."),
+        screen.getByText("Vault unlocked. 1 document encrypted and added."),
       ).toBeVisible();
       await act(async () => {
         fireEvent.click(
@@ -6091,6 +6089,9 @@ describe("durable vault UI", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(
         "the vault is still open",
       );
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "myCarlos could not lock the vault. Its content is hidden, but the vault is still open. The storage operation could not be completed.",
+      );
       expect(
         screen.queryByRole("heading", { name: "My records" }),
       ).not.toBeInTheDocument();
@@ -7131,7 +7132,7 @@ describe("durable vault UI", () => {
       finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
     );
     await screen.findByRole("heading", { name: "Unlock your vault" });
-    await expectOutcomeAfterUnlock("1 file(s) encrypted and imported.");
+    await expectOutcomeAfterUnlock("1 document encrypted and added.");
     await user.click(screen.getByRole("button", { name: /Lock now/ }));
     await screen.findByLabelText("Passphrase");
     await expectNothingKeptAfterUnlock();
@@ -7205,7 +7206,7 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: "Try locking again" }),
     );
     await screen.findByRole("heading", { name: "Unlock your vault" });
-    await expectOutcomeAfterUnlock("1 file(s) encrypted and imported.");
+    await expectOutcomeAfterUnlock("1 document encrypted and added.");
   });
 
   // A notice from something else during the transfer is not how it went.
@@ -7385,7 +7386,11 @@ describe("the app's notices in the language in use (#46)", () => {
     ).toBeVisible();
     expect(screen.queryByText(/Automatic locking set/)).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await user.click(
+      screen.getByRole("button", {
+        name: pl("interface.VaultLibrary.unlockedLockNow"),
+      }),
+    );
     expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
     expect(screen.queryByText("Vault locked.")).toBeNull();
   });
@@ -7400,7 +7405,9 @@ describe("the app's notices in the language in use (#46)", () => {
     fireDragEvent("drop", document.body, { dataTransfer: files });
     expect(
       await screen.findByText(
-        "Pour importer des PDF, déverrouillez votre coffre-fort et utilisez Choose files to import. Le glisser-déposer déplace les documents déjà dans myCarlos.",
+        translate("fr", "notice.dropRefused", {
+          button: translate("fr", "interface.VaultApp.chooseFilesToImport"),
+        }),
       ),
     ).toBeVisible();
   });
