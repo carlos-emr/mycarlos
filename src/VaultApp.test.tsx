@@ -74,6 +74,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     setAutoLock: vi.fn().mockResolvedValue(undefined),
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(emptySnapshot),
+    history: vi.fn().mockResolvedValue({
+      entries: [],
+      laterEntries: [],
+      complete: true,
+      checkedUntilMs: null,
+      checkedFromMs: null,
+    }),
     changePassphrase: vi.fn().mockResolvedValue(undefined),
     // Tests that set up a recovery key say so; the others get a vault without
     // one, as when making the key fails after the vault was created.
@@ -340,6 +347,253 @@ function renameBridge() {
 }
 
 describe("durable vault UI", () => {
+  it.each(["verified", "pending"])(
+    "conceals %s audit history while a manual native lock is still pending",
+    async (kind) => {
+      let finishLock!: () => void;
+      let finishHistory!: (view: unknown) => void;
+      const rows = [
+        {
+          seq: 0,
+          atMs: 1,
+          app: "FAKE",
+          event: "created",
+          name: "FAKE pending lock secret",
+          oldName: null,
+          from: null,
+          fromTotal: null,
+          to: null,
+          toTotal: null,
+          how: null,
+          place: null,
+          previousSession: null,
+        },
+      ];
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        history:
+          kind === "verified"
+            ? vi.fn().mockResolvedValue({
+                entries: rows,
+                complete: true,
+                checkedUntilMs: null,
+                checkedFromMs: null,
+                laterEntries: [],
+              })
+            : vi.fn().mockImplementation(
+                () =>
+                  new Promise((resolve) => {
+                    finishHistory = resolve;
+                  }),
+              ),
+        lock: vi.fn().mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              finishLock = resolve;
+            }),
+        ),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: "My records" });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText(
+        kind === "verified"
+          ? "FAKE pending lock secret"
+          : "Checking and reading the complete history…",
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Unlocked · Lock now" }),
+      );
+      expect(
+        screen.getByText(
+          "Vault content is hidden while myCarlos finishes locking…",
+        ),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("navigation", { name: "Record library" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+      expect(screen.getByText("Locking", { exact: true })).toBeVisible();
+      if (kind === "pending")
+        await act(async () =>
+          finishHistory({
+            entries: rows,
+            complete: true,
+            checkedUntilMs: null,
+            checkedFromMs: null,
+            laterEntries: [],
+          }),
+        );
+      expect(document.body).not.toHaveTextContent("FAKE pending lock secret");
+      await act(async () => finishLock());
+      expect(await screen.findByLabelText("Passphrase")).toBeVisible();
+    },
+  );
+
+  it("conceals and confirms a native-cancelled audit history without a frontend lock request", async () => {
+    let failLock!: (cause: unknown) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      history: vi.fn().mockRejectedValue(CANCELLED),
+      lock: vi
+        .fn()
+        .mockResolvedValue(undefined)
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              failLock = reject;
+            }),
+        ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "My records" });
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+    await vi.waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    expect(
+      screen.getByText(
+        "Vault content is hidden while myCarlos finishes locking…",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("navigation", { name: "Record library" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+    expect(screen.getByText("Locking", { exact: true })).toBeVisible();
+    await act(async () =>
+      failLock({
+        code: "storage",
+        message: "FAKE synthetic confirmation failed",
+      }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "the vault is still open",
+    );
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try locking again" }));
+    expect(await screen.findByLabelText("Passphrase")).toBeVisible();
+    expect(bridge.lock).toHaveBeenCalledTimes(2);
+  });
+  it.each(["success", "locked", "cancelled"])(
+    "discards a pending audit history %s after lock and a new unlock",
+    async (outcome) => {
+      let finish!: (view: import("./vault").AuditHistoryView) => void;
+      let fail!: (cause: unknown) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        history: vi
+          .fn()
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve, reject) => {
+                finish = resolve;
+                fail = reject;
+              }),
+          )
+          .mockResolvedValue({
+            entries: [],
+            complete: true,
+            checkedUntilMs: null,
+            checkedFromMs: null,
+            laterEntries: [],
+          }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: "My records" });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText("Checking and reading the complete history…");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Unlocked · Lock now" }),
+      );
+      await screen.findByLabelText("Passphrase");
+      expect(
+        screen.queryByRole("heading", { name: "Audit history" }),
+      ).not.toBeInTheDocument();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Passphrase"), {
+          target: { value: "river-azimuth-cobalt-sparrow-934" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+      });
+      await screen.findByRole("heading", { name: "My records" });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+      await screen.findByText("There are no history events.");
+      await act(async () => {
+        if (outcome !== "success") fail({ code: outcome });
+        else
+          finish({
+            entries: [
+              {
+                seq: 0,
+                atMs: 1,
+                app: "FAKE",
+                event: "created",
+                name: "FAKE old session secret",
+                oldName: null,
+                from: null,
+                fromTotal: null,
+                to: null,
+                toTotal: null,
+                how: null,
+                place: null,
+                previousSession: null,
+              },
+            ],
+            complete: true,
+            checkedUntilMs: null,
+            checkedFromMs: null,
+            laterEntries: [],
+          });
+      });
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.queryByText("FAKE old session secret"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("There are no history events.")).toBeVisible();
+    },
+  );
+
+  it("removes verified audit history plaintext from the document when the vault locks", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      history: vi.fn().mockResolvedValue({
+        entries: [
+          {
+            seq: 0,
+            atMs: 1,
+            app: "FAKE",
+            event: "created",
+            name: "FAKE verified session secret",
+            oldName: null,
+            from: null,
+            fromTotal: null,
+            to: null,
+            toTotal: null,
+            how: null,
+            place: null,
+            previousSession: null,
+          },
+        ],
+        complete: true,
+        checkedUntilMs: null,
+        checkedFromMs: null,
+        laterEntries: [],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: "My records" });
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+    await screen.findByText("FAKE verified session secret");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlocked · Lock now" }),
+    );
+    await screen.findByLabelText("Passphrase");
+    expect(document.body).not.toHaveTextContent("FAKE verified session secret");
+  });
   beforeEach(() => {
     window.localStorage.clear();
     // Most tests here are not about the recovery key offer, which opens
@@ -768,6 +1022,7 @@ describe("durable vault UI", () => {
         "FAKE_Camera.jpg was hidden. It stays in the vault under Hidden.",
       ),
     );
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(
       screen.getByRole("button", { name: humanText(/^Hidden/) }),
     );
@@ -804,6 +1059,7 @@ describe("durable vault UI", () => {
         "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
       ),
     );
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(
       screen.getByRole("button", { name: humanText(/^Hidden/) }),
     );
@@ -1066,6 +1322,7 @@ describe("durable vault UI", () => {
       expect(
         screen.queryByText(humanText("FAKE_Shared.pdf")),
       ).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(
         screen.getByRole("button", { name: humanText(/^Hidden/) }),
       );
@@ -1078,17 +1335,17 @@ describe("durable vault UI", () => {
       expect(
         screen.getByRole("complementary", { hidden: true }),
       ).toHaveHumanTextContent("1 document · 0 folders");
-      // Reopening the selected Hidden entry must retain Shared as its source.
+      // Returning through Security and reopening Hidden retains Shared as its source.
+      await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(
         screen.getByRole("button", { name: humanText(/^Hidden/) }),
       );
+      const reopenedRow = screen.getByRole("article", {
+        name: humanText("FAKE_Shared.pdf, hidden"),
+      });
+      expect(reopenedRow).toBeVisible();
       expect(
-        screen.getByRole("article", {
-          name: humanText("FAKE_Shared.pdf, hidden"),
-        }),
-      ).toBeVisible();
-      expect(
-        within(row).getByText(humanText("Shared with me")),
+        within(reopenedRow).getByText(humanText("Shared with me")),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("complementary", { hidden: true }),
@@ -1097,7 +1354,7 @@ describe("durable vault UI", () => {
         screen.queryByText(humanText("FAKE_Jamie_hidden.pdf")),
       ).not.toBeInTheDocument();
       await user.click(
-        within(row).getByRole("button", {
+        within(reopenedRow).getByRole("button", {
           name: humanText("Restore FAKE_Shared.pdf"),
         }),
       );
@@ -1124,6 +1381,7 @@ describe("durable vault UI", () => {
       await user.click(
         within(nav()).getByRole("button", { name: humanText(/^Jamie/) }),
       );
+      await user.click(screen.getByRole("button", { name: "Security" }));
       await user.click(
         screen.getByRole("button", { name: humanText(/^Hidden/) }),
       );
@@ -4484,6 +4742,7 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
 
     // Under Hidden, with its size, and back with Restore.
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(
       screen.getByRole("button", { name: humanText(/^Hidden/) }),
     );
@@ -4910,7 +5169,7 @@ describe("durable vault UI", () => {
     }
   });
 
-  it("tells at once what a backup cut off by a lock left, when that lock fails", async () => {
+  it("keeps a cut-off backup warning private until unlock after a manual lock failure", async () => {
     const user = userEvent.setup();
     const note = "Delete that one, not your other backups.";
     let failTransfer!: (error: unknown) => void;
@@ -4922,18 +5181,21 @@ describe("durable vault UI", () => {
             failTransfer = reject;
           }),
       ),
-      lock: vi.fn(async () => {
-        failTransfer({
-          code: "locked",
-          message: "Unlock the vault to continue.",
-          note,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        throw {
-          code: "storage",
-          message: "The storage operation could not be completed.",
-        };
-      }),
+      lock: vi
+        .fn()
+        .mockResolvedValue(undefined)
+        .mockImplementationOnce(async () => {
+          failTransfer({
+            code: "locked",
+            message: "Unlock the vault to continue.",
+            note,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          throw {
+            code: "storage",
+            message: "The storage operation could not be completed.",
+          };
+        }),
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
@@ -4945,17 +5207,21 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: humanText(/Lock now/) }),
     );
-    // The vault stays open, and the patient is here: told now, not after
-    // some later unlock.
+    // Lock intent conceals immediately, including when native confirmation
+    // fails. The actionable copy warning is preserved for the next unlock.
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "the vault is still open",
+    );
+    expect(document.body).not.toHaveTextContent(note);
     expect(
-      await screen.findByText(
-        humanText(
-          new RegExp(
-            `The backup stopped because the vault locked\\. No backup was saved\\. Keep your older backups\\. ${note.replace(/\./g, "\\.")}`,
-          ),
-        ),
-      ),
-    ).toBeVisible();
+      screen.queryByRole("heading", { name: "My records" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try locking again" }));
+    await screen.findByLabelText("Passphrase");
+    await expectOutcomeAfterUnlock(
+      `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`,
+    );
+    expect(bridge.lock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps what was held hidden when a lock fails on the hidden screen", async () => {
@@ -5017,7 +5283,11 @@ describe("durable vault UI", () => {
     };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      lock: vi.fn().mockRejectedValue(storageError),
+      lock: vi
+        .fn()
+        .mockRejectedValue(storageError)
+        .mockRejectedValueOnce(storageError)
+        .mockResolvedValueOnce(undefined),
       importPickedFiles: vi.fn(
         () =>
           new Promise<ImportOutcome>((resolve) => {
@@ -5034,6 +5304,19 @@ describe("durable vault UI", () => {
         await screen.findByRole("button", { name: humanText(/Lock now/) }),
       );
       await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "the vault is still open",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Try locking again" }),
+      );
+      await screen.findByLabelText("Passphrase");
+      await user.type(
+        screen.getByLabelText("Passphrase"),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      await screen.findByRole("heading", { name: "My records" });
       await user.click(
         screen.getByRole("button", {
           name: humanText("Choose files to import"),
@@ -5051,7 +5334,7 @@ describe("durable vault UI", () => {
       await act(async () =>
         finishImport({ imported: [], skippedDuplicates: [] }),
       );
-      expect(bridge.lock).toHaveBeenCalledTimes(2);
+      expect(bridge.lock).toHaveBeenCalledTimes(3);
       expect(screen.getByRole("alert")).toHaveHumanTextContent(
         "myCarlos could not lock the vault.",
       );
@@ -6882,7 +7165,7 @@ describe("durable vault UI", () => {
     expect(details).not.toHaveHumanTextContent(earlierNotice);
   });
 
-  it("does not show an earlier manual lock failure while a later automatic lock is pending", async () => {
+  it("keeps the failed lock status honest while a concealed automatic retry is pending", async () => {
     vi.useFakeTimers();
     try {
       let finishLock: () => void = () => undefined;
@@ -6914,8 +7197,13 @@ describe("durable vault UI", () => {
 
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(lock).toHaveBeenCalledTimes(2);
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-      expect(screen.getByText(humanText(/finishes locking/))).toBeVisible();
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(
+        "the vault is still open",
+      );
+      expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: "My records" }),
+      ).not.toBeInTheDocument();
 
       await act(async () => finishLock());
       expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
@@ -7389,8 +7677,12 @@ describe("durable vault UI", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: humanText(/Lock now/) }),
+      screen.getByRole("button", { name: "Try locking again" }),
     ).toBeEnabled();
+    expect(
+      screen.queryByRole("heading", { name: "My records" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
   });
 
   it("marks a document whose encrypted file is missing and blocks saving it", async () => {
@@ -7515,6 +7807,7 @@ describe("durable vault UI", () => {
     expect(
       screen.getByRole("button", { name: humanText("New folder") }),
     ).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(
       screen.getByRole("button", { name: humanText(/^Hidden/) }),
     );

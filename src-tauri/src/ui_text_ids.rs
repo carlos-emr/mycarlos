@@ -60,6 +60,7 @@ pub enum MessageId {
     FrameStateOpening,
     FrameStateSettingUp,
     FrameWindowLabel,
+    HiddenBackToSecurity,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
     InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -209,6 +210,61 @@ pub enum MessageId {
     InterfaceHiddenRecord,
     InterfaceHiddenRestore,
     InterfaceHideDamagedTitle,
+    InterfaceHistoryAppVersion,
+    InterfaceHistoryDamaged,
+    InterfaceHistoryDamagedAll,
+    InterfaceHistoryDamagedBefore,
+    InterfaceHistoryDamagedBetween,
+    InterfaceHistoryEmpty,
+    InterfaceHistoryErrorUnverified,
+    InterfaceHistoryEventBackupRestored,
+    InterfaceHistoryEventBackupSaved,
+    InterfaceHistoryEventCopySaved,
+    InterfaceHistoryEventCreated,
+    InterfaceHistoryEventFolderCreated,
+    InterfaceHistoryEventFolderMoved,
+    InterfaceHistoryEventFolderRenamed,
+    InterfaceHistoryEventHidden,
+    InterfaceHistoryEventHistoryStarted,
+    InterfaceHistoryEventImported,
+    InterfaceHistoryEventMoved,
+    InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventProfileCreated,
+    InterfaceHistoryEventRecoveryKeySet,
+    InterfaceHistoryEventRenamed,
+    InterfaceHistoryEventRestored,
+    InterfaceHistoryEventSetAside,
+    InterfaceHistoryEventUnlocked,
+    InterfaceHistoryEvents,
+    InterfaceHistoryFrom,
+    InterfaceHistoryGap,
+    InterfaceHistoryHow,
+    InterfaceHistoryHowCamera,
+    InterfaceHistoryHowDamaged,
+    InterfaceHistoryHowImportedShared,
+    InterfaceHistoryHowMovedFromShared,
+    InterfaceHistoryHowPassphrase,
+    InterfaceHistoryHowPatient,
+    InterfaceHistoryHowPicked,
+    InterfaceHistoryHowRecoveryKey,
+    InterfaceHistoryHowReplaced,
+    InterfaceHistoryIntro,
+    InterfaceHistoryLaterSessionNotRecorded,
+    InterfaceHistoryLoading,
+    InterfaceHistoryMoreFolders,
+    InterfaceHistoryName,
+    InterfaceHistoryPersonRootFolder,
+    InterfaceHistoryPlace,
+    InterfaceHistoryPreviousName,
+    InterfaceHistoryPreviousSession,
+    InterfaceHistoryRootFolder,
+    InterfaceHistoryScopeNote,
+    InterfaceHistorySessionLockedAutomatically,
+    InterfaceHistorySessionLockedByApp,
+    InterfaceHistorySessionLockedByPerson,
+    InterfaceHistorySessionNotRecorded,
+    InterfaceHistoryTitle,
+    InterfaceHistoryTo,
     InterfaceInLocation,
     InterfaceNoticeAlreadyFiled,
     InterfaceNoticeAlreadyShared,
@@ -738,6 +794,7 @@ impl MessageId {
         Self::FrameStateOpening,
         Self::FrameStateSettingUp,
         Self::FrameWindowLabel,
+        Self::HiddenBackToSecurity,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
         Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -887,6 +944,61 @@ impl MessageId {
         Self::InterfaceHiddenRecord,
         Self::InterfaceHiddenRestore,
         Self::InterfaceHideDamagedTitle,
+        Self::InterfaceHistoryAppVersion,
+        Self::InterfaceHistoryDamaged,
+        Self::InterfaceHistoryDamagedAll,
+        Self::InterfaceHistoryDamagedBefore,
+        Self::InterfaceHistoryDamagedBetween,
+        Self::InterfaceHistoryEmpty,
+        Self::InterfaceHistoryErrorUnverified,
+        Self::InterfaceHistoryEventBackupRestored,
+        Self::InterfaceHistoryEventBackupSaved,
+        Self::InterfaceHistoryEventCopySaved,
+        Self::InterfaceHistoryEventCreated,
+        Self::InterfaceHistoryEventFolderCreated,
+        Self::InterfaceHistoryEventFolderMoved,
+        Self::InterfaceHistoryEventFolderRenamed,
+        Self::InterfaceHistoryEventHidden,
+        Self::InterfaceHistoryEventHistoryStarted,
+        Self::InterfaceHistoryEventImported,
+        Self::InterfaceHistoryEventMoved,
+        Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventProfileCreated,
+        Self::InterfaceHistoryEventRecoveryKeySet,
+        Self::InterfaceHistoryEventRenamed,
+        Self::InterfaceHistoryEventRestored,
+        Self::InterfaceHistoryEventSetAside,
+        Self::InterfaceHistoryEventUnlocked,
+        Self::InterfaceHistoryEvents,
+        Self::InterfaceHistoryFrom,
+        Self::InterfaceHistoryGap,
+        Self::InterfaceHistoryHow,
+        Self::InterfaceHistoryHowCamera,
+        Self::InterfaceHistoryHowDamaged,
+        Self::InterfaceHistoryHowImportedShared,
+        Self::InterfaceHistoryHowMovedFromShared,
+        Self::InterfaceHistoryHowPassphrase,
+        Self::InterfaceHistoryHowPatient,
+        Self::InterfaceHistoryHowPicked,
+        Self::InterfaceHistoryHowRecoveryKey,
+        Self::InterfaceHistoryHowReplaced,
+        Self::InterfaceHistoryIntro,
+        Self::InterfaceHistoryLaterSessionNotRecorded,
+        Self::InterfaceHistoryLoading,
+        Self::InterfaceHistoryMoreFolders,
+        Self::InterfaceHistoryName,
+        Self::InterfaceHistoryPersonRootFolder,
+        Self::InterfaceHistoryPlace,
+        Self::InterfaceHistoryPreviousName,
+        Self::InterfaceHistoryPreviousSession,
+        Self::InterfaceHistoryRootFolder,
+        Self::InterfaceHistoryScopeNote,
+        Self::InterfaceHistorySessionLockedAutomatically,
+        Self::InterfaceHistorySessionLockedByApp,
+        Self::InterfaceHistorySessionLockedByPerson,
+        Self::InterfaceHistorySessionNotRecorded,
+        Self::InterfaceHistoryTitle,
+        Self::InterfaceHistoryTo,
         Self::InterfaceInLocation,
         Self::InterfaceNoticeAlreadyFiled,
         Self::InterfaceNoticeAlreadyShared,
@@ -1416,6 +1528,7 @@ impl MessageId {
             Self::FrameStateOpening => "frame-state-opening",
             Self::FrameStateSettingUp => "frame-state-settingUp",
             Self::FrameWindowLabel => "frame-window-label",
+            Self::HiddenBackToSecurity => "hidden-backToSecurity",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
             Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos => {
@@ -1717,6 +1830,69 @@ impl MessageId {
             Self::InterfaceHiddenRecord => "interface-hidden-record",
             Self::InterfaceHiddenRestore => "interface-hidden-restore",
             Self::InterfaceHideDamagedTitle => "interface-hideDamaged-title",
+            Self::InterfaceHistoryAppVersion => "interface-history-appVersion",
+            Self::InterfaceHistoryDamaged => "interface-history-damaged",
+            Self::InterfaceHistoryDamagedAll => "interface-history-damagedAll",
+            Self::InterfaceHistoryDamagedBefore => "interface-history-damagedBefore",
+            Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
+            Self::InterfaceHistoryEmpty => "interface-history-empty",
+            Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
+            Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
+            Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
+            Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
+            Self::InterfaceHistoryEventCreated => "interface-history-event-created",
+            Self::InterfaceHistoryEventFolderCreated => "interface-history-event-folderCreated",
+            Self::InterfaceHistoryEventFolderMoved => "interface-history-event-folderMoved",
+            Self::InterfaceHistoryEventFolderRenamed => "interface-history-event-folderRenamed",
+            Self::InterfaceHistoryEventHidden => "interface-history-event-hidden",
+            Self::InterfaceHistoryEventHistoryStarted => "interface-history-event-historyStarted",
+            Self::InterfaceHistoryEventImported => "interface-history-event-imported",
+            Self::InterfaceHistoryEventMoved => "interface-history-event-moved",
+            Self::InterfaceHistoryEventPassphraseChanged => {
+                "interface-history-event-passphraseChanged"
+            }
+            Self::InterfaceHistoryEventProfileCreated => "interface-history-event-profileCreated",
+            Self::InterfaceHistoryEventRecoveryKeySet => "interface-history-event-recoveryKeySet",
+            Self::InterfaceHistoryEventRenamed => "interface-history-event-renamed",
+            Self::InterfaceHistoryEventRestored => "interface-history-event-restored",
+            Self::InterfaceHistoryEventSetAside => "interface-history-event-setAside",
+            Self::InterfaceHistoryEventUnlocked => "interface-history-event-unlocked",
+            Self::InterfaceHistoryEvents => "interface-history-events",
+            Self::InterfaceHistoryFrom => "interface-history-from",
+            Self::InterfaceHistoryGap => "interface-history-gap",
+            Self::InterfaceHistoryHow => "interface-history-how",
+            Self::InterfaceHistoryHowCamera => "interface-history-how-camera",
+            Self::InterfaceHistoryHowDamaged => "interface-history-how-damaged",
+            Self::InterfaceHistoryHowImportedShared => "interface-history-how-importedShared",
+            Self::InterfaceHistoryHowMovedFromShared => "interface-history-how-movedFromShared",
+            Self::InterfaceHistoryHowPassphrase => "interface-history-how-passphrase",
+            Self::InterfaceHistoryHowPatient => "interface-history-how-patient",
+            Self::InterfaceHistoryHowPicked => "interface-history-how-picked",
+            Self::InterfaceHistoryHowRecoveryKey => "interface-history-how-recoveryKey",
+            Self::InterfaceHistoryHowReplaced => "interface-history-how-replaced",
+            Self::InterfaceHistoryIntro => "interface-history-intro",
+            Self::InterfaceHistoryLaterSessionNotRecorded => {
+                "interface-history-laterSessionNotRecorded"
+            }
+            Self::InterfaceHistoryLoading => "interface-history-loading",
+            Self::InterfaceHistoryMoreFolders => "interface-history-moreFolders",
+            Self::InterfaceHistoryName => "interface-history-name",
+            Self::InterfaceHistoryPersonRootFolder => "interface-history-personRootFolder",
+            Self::InterfaceHistoryPlace => "interface-history-place",
+            Self::InterfaceHistoryPreviousName => "interface-history-previousName",
+            Self::InterfaceHistoryPreviousSession => "interface-history-previousSession",
+            Self::InterfaceHistoryRootFolder => "interface-history-rootFolder",
+            Self::InterfaceHistoryScopeNote => "interface-history-scopeNote",
+            Self::InterfaceHistorySessionLockedAutomatically => {
+                "interface-history-sessionLockedAutomatically"
+            }
+            Self::InterfaceHistorySessionLockedByApp => "interface-history-sessionLockedByApp",
+            Self::InterfaceHistorySessionLockedByPerson => {
+                "interface-history-sessionLockedByPerson"
+            }
+            Self::InterfaceHistorySessionNotRecorded => "interface-history-sessionNotRecorded",
+            Self::InterfaceHistoryTitle => "interface-history-title",
+            Self::InterfaceHistoryTo => "interface-history-to",
             Self::InterfaceInLocation => "interface-inLocation",
             Self::InterfaceNoticeAlreadyFiled => "interface-notice-alreadyFiled",
             Self::InterfaceNoticeAlreadyShared => "interface-notice-alreadyShared",
@@ -3114,6 +3290,88 @@ impl MessageId {
             "rename.profile.controls" => Some(Self::RenameProfileControls),
             "rename.profile.saved" => Some(Self::RenameProfileSaved),
             "rename.title.profile" => Some(Self::RenameTitleProfile),
+            "hidden.backToSecurity" => Some(Self::HiddenBackToSecurity),
+            "interface.history.appVersion" => Some(Self::InterfaceHistoryAppVersion),
+            "interface.history.damaged" => Some(Self::InterfaceHistoryDamaged),
+            "interface.history.damagedAll" => Some(Self::InterfaceHistoryDamagedAll),
+            "interface.history.damagedBefore" => Some(Self::InterfaceHistoryDamagedBefore),
+            "interface.history.damagedBetween" => Some(Self::InterfaceHistoryDamagedBetween),
+            "interface.history.empty" => Some(Self::InterfaceHistoryEmpty),
+            "interface.history.error.unverified" => Some(Self::InterfaceHistoryErrorUnverified),
+            "interface.history.event.backupRestored" => {
+                Some(Self::InterfaceHistoryEventBackupRestored)
+            }
+            "interface.history.event.backupSaved" => Some(Self::InterfaceHistoryEventBackupSaved),
+            "interface.history.event.copySaved" => Some(Self::InterfaceHistoryEventCopySaved),
+            "interface.history.event.created" => Some(Self::InterfaceHistoryEventCreated),
+            "interface.history.event.folderCreated" => {
+                Some(Self::InterfaceHistoryEventFolderCreated)
+            }
+            "interface.history.event.folderMoved" => Some(Self::InterfaceHistoryEventFolderMoved),
+            "interface.history.event.folderRenamed" => {
+                Some(Self::InterfaceHistoryEventFolderRenamed)
+            }
+            "interface.history.event.hidden" => Some(Self::InterfaceHistoryEventHidden),
+            "interface.history.event.historyStarted" => {
+                Some(Self::InterfaceHistoryEventHistoryStarted)
+            }
+            "interface.history.event.imported" => Some(Self::InterfaceHistoryEventImported),
+            "interface.history.event.moved" => Some(Self::InterfaceHistoryEventMoved),
+            "interface.history.event.passphraseChanged" => {
+                Some(Self::InterfaceHistoryEventPassphraseChanged)
+            }
+            "interface.history.event.profileCreated" => {
+                Some(Self::InterfaceHistoryEventProfileCreated)
+            }
+            "interface.history.event.recoveryKeySet" => {
+                Some(Self::InterfaceHistoryEventRecoveryKeySet)
+            }
+            "interface.history.event.renamed" => Some(Self::InterfaceHistoryEventRenamed),
+            "interface.history.event.restored" => Some(Self::InterfaceHistoryEventRestored),
+            "interface.history.event.setAside" => Some(Self::InterfaceHistoryEventSetAside),
+            "interface.history.event.unlocked" => Some(Self::InterfaceHistoryEventUnlocked),
+            "interface.history.events" => Some(Self::InterfaceHistoryEvents),
+            "interface.history.from" => Some(Self::InterfaceHistoryFrom),
+            "interface.history.gap" => Some(Self::InterfaceHistoryGap),
+            "interface.history.how" => Some(Self::InterfaceHistoryHow),
+            "interface.history.how.camera" => Some(Self::InterfaceHistoryHowCamera),
+            "interface.history.how.damaged" => Some(Self::InterfaceHistoryHowDamaged),
+            "interface.history.how.importedShared" => Some(Self::InterfaceHistoryHowImportedShared),
+            "interface.history.how.movedFromShared" => {
+                Some(Self::InterfaceHistoryHowMovedFromShared)
+            }
+            "interface.history.how.passphrase" => Some(Self::InterfaceHistoryHowPassphrase),
+            "interface.history.how.patient" => Some(Self::InterfaceHistoryHowPatient),
+            "interface.history.how.picked" => Some(Self::InterfaceHistoryHowPicked),
+            "interface.history.how.recoveryKey" => Some(Self::InterfaceHistoryHowRecoveryKey),
+            "interface.history.how.replaced" => Some(Self::InterfaceHistoryHowReplaced),
+            "interface.history.intro" => Some(Self::InterfaceHistoryIntro),
+            "interface.history.laterSessionNotRecorded" => {
+                Some(Self::InterfaceHistoryLaterSessionNotRecorded)
+            }
+            "interface.history.loading" => Some(Self::InterfaceHistoryLoading),
+            "interface.history.moreFolders" => Some(Self::InterfaceHistoryMoreFolders),
+            "interface.history.name" => Some(Self::InterfaceHistoryName),
+            "interface.history.personRootFolder" => Some(Self::InterfaceHistoryPersonRootFolder),
+            "interface.history.place" => Some(Self::InterfaceHistoryPlace),
+            "interface.history.previousName" => Some(Self::InterfaceHistoryPreviousName),
+            "interface.history.previousSession" => Some(Self::InterfaceHistoryPreviousSession),
+            "interface.history.rootFolder" => Some(Self::InterfaceHistoryRootFolder),
+            "interface.history.scopeNote" => Some(Self::InterfaceHistoryScopeNote),
+            "interface.history.sessionLockedAutomatically" => {
+                Some(Self::InterfaceHistorySessionLockedAutomatically)
+            }
+            "interface.history.sessionLockedByApp" => {
+                Some(Self::InterfaceHistorySessionLockedByApp)
+            }
+            "interface.history.sessionLockedByPerson" => {
+                Some(Self::InterfaceHistorySessionLockedByPerson)
+            }
+            "interface.history.sessionNotRecorded" => {
+                Some(Self::InterfaceHistorySessionNotRecorded)
+            }
+            "interface.history.title" => Some(Self::InterfaceHistoryTitle),
+            "interface.history.to" => Some(Self::InterfaceHistoryTo),
             _ => None,
         }
     }

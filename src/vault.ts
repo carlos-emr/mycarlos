@@ -241,6 +241,55 @@ export interface SpeedTestReport {
   appVersion: string;
 }
 
+/** Security's audit history (D129 and D146, mycarlos#120). `entries` are those native code
+ * authenticated from the start of the encrypted chain, in order; `complete` says whether they are
+ * all of it. When not, `laterEntries` are those after the damaged part that the vault's pinned end
+ * proves, in order, and `checkedUntilMs` / `checkedFromMs` date the gap (the last entry from the
+ * start, the first later entry; null when there is none). The screen's notice follows these
+ * native fields only; it is never worked out here. */
+export interface AuditHistoryView {
+  entries: AuditHistoryEntry[];
+  laterEntries: AuditHistoryEntry[];
+  complete: boolean;
+  checkedUntilMs: number | null;
+  checkedFromMs: number | null;
+}
+
+/** An audit event that native code authenticated from the start of the history chain. */
+export interface AuditHistoryEntry {
+  seq: number;
+  atMs: number;
+  app: string;
+  event:
+    | "created"
+    | "historyStarted"
+    | "unlocked"
+    | "imported"
+    | "renamed"
+    | "moved"
+    | "hidden"
+    | "restored"
+    | "copySaved"
+    | "recoveryKeySet"
+    | "backupSaved"
+    | "backupRestored"
+    | "passphraseChanged"
+    | "profileCreated"
+    | "folderCreated"
+    | "folderRenamed"
+    | "folderMoved"
+    | "setAside";
+  name: string | null;
+  oldName: string | null;
+  from: string[] | null;
+  fromTotal: number | null;
+  to: string[] | null;
+  toTotal: number | null;
+  how: string | null;
+  place: string | null;
+  previousSession: string | null;
+}
+
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
 export interface PassphraseRules {
   longEnough: boolean;
@@ -269,6 +318,8 @@ export interface VaultBridge {
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
   snapshot(): Promise<VaultSnapshot>;
+  /** Reads the audit history as far as its encrypted chain checks out. */
+  history(): Promise<AuditHistoryView>;
   linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
   checkDocuments?(): Promise<{
     added: number;
@@ -658,6 +709,7 @@ export function createVaultBridge(): VaultBridge {
         (info) => info.platform,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
+    history: () => invoke<AuditHistoryView>("vault_history"),
     checkDocuments: () => invoke("vault_check_documents"),
     restartDeviceApproval: (linkId) =>
       invoke("vault_restart_device_approval", { linkId }),
