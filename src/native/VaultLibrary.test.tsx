@@ -41,6 +41,7 @@ const snapshot: VaultSnapshot = {
 
 function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
   const bridge = {
+    platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
     renameProfile: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
@@ -182,6 +183,50 @@ const record = (id: string, displayName: string, folderIds: string[]) => ({
   plaintextSize: 2048,
   importedAtMs: 1,
   available: true,
+});
+
+describe("clinic service dates", () => {
+  it.each(["", "2024-02-29"])(
+    "keeps service date %s in list, grid and details without using Date added",
+    (serviceDate) => {
+      const dateAdded = Date.UTC(2023, 10, 29, 14);
+      const document = {
+        ...record("clinic-record", "FAKE Clinic document.pdf", []),
+        importedAtMs: dateAdded,
+        verifiedClinicName: "FAKE Clinic",
+        clinicServiceDate: serviceDate,
+      };
+      renderLibrary({ ...snapshot, records: [document] });
+      const value = serviceDate === "" ? "Date not recorded" : serviceDate;
+      expect(screen.getByText(`Service date: ${value}`)).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+      expect(screen.getByText(`Service date: ${value}`)).toBeVisible();
+      expect(
+        screen.getByText(
+          `Date added: ${new Date(dateAdded).toLocaleDateString()}`,
+        ),
+      ).toBeVisible();
+      fireEvent.click(screen.getByText(document.displayName));
+      const serviceRow = screen.getByText("Service date", {
+        exact: true,
+      }).parentElement!;
+      expect(
+        within(serviceRow).getByText(value, { exact: true }),
+      ).toBeVisible();
+      expect(serviceRow).not.toHaveTextContent(
+        new Date(dateAdded).toLocaleDateString(),
+      );
+    },
+  );
+  it("does not invent clinic date metadata for a manual import", () => {
+    const document = record("manual-record", "FAKE Manual document.pdf", []);
+    renderLibrary({ ...snapshot, records: [document] });
+    expect(screen.queryByText(/^Service date:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(document.displayName));
+    expect(
+      screen.queryByText("Service date", { exact: true }),
+    ).not.toBeInTheDocument();
+  });
 });
 const filed: VaultSnapshot = {
   profiles: snapshot.profiles,

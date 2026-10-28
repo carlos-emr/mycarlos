@@ -1,5 +1,6 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
+use crate::portal_link::{self, LinkSummary, StoredLink};
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -22,7 +23,7 @@ use std::{
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, MutexGuard, PoisonError,
     },
     time::{Duration, Instant},
@@ -33,13 +34,18 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
+mod delivery;
+#[cfg(all(test, feature = "portal-linking"))]
+mod native_portal_flow;
+mod original_pdf;
+
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details.
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 4;
+const VAULT_FORMAT: u32 = 7;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -229,6 +235,23 @@ fn cancelled_io_error() -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum VaultError {
+    #[error("the portal link could not be completed")]
+    Portal(portal_link::LinkError),
+    #[cfg(feature = "portal-linking")]
+    #[error("a document from the clinic could not be verified; no receipt was sent")]
+    PickupRefused,
+    #[cfg(feature = "portal-linking")]
+    #[error("the clinic approval request is no longer pending")]
+    ApprovalTerminal(
+        crate::portal_approval::ApprovalState,
+        Option<crate::portal_approval::ApprovalReason>,
+    ),
+    #[cfg(feature = "portal-linking")]
+    #[error("the saved approval request was not found on the portal")]
+    ApprovalRequestMissing,
+    #[cfg(feature = "portal-linking")]
+    #[error("clinic approval needs review before another request")]
+    ApprovalNeedsClinic,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
@@ -447,6 +470,50 @@ struct StoredRecord {
     /// document keeps its encrypted file; nothing is ever deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     hidden: Option<Hidden>,
+    /// A second independently encrypted copy of the incoming PDF bytes. Keep
+    /// it even when no linked signer can authenticate the document yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    original_pdf: Option<StoredOriginalPdf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivery: Option<crate::portal_delivery::Custody>,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredOriginalPdf {
+    id: Uuid,
+    object_name: String,
+    plaintext_size: u64,
+    sha256: String,
+    wrapped_object_key: WrappedSecret,
+}
+
+#[derive(Clone, Copy)]
+struct RecordObject<'a> {
+    id: Uuid,
+    object_name: &'a str,
+    plaintext_size: u64,
+    wrapped_key: &'a WrappedSecret,
+    sha256: Option<&'a str>,
+}
+
+impl StoredRecord {
+    fn objects(&self) -> impl Iterator<Item = RecordObject<'_>> {
+        std::iter::once(RecordObject {
+            id: self.id,
+            object_name: &self.object_name,
+            plaintext_size: self.plaintext_size,
+            wrapped_key: &self.wrapped_object_key,
+            sha256: None,
+        })
+        .chain(self.original_pdf.as_ref().map(|original| RecordObject {
+            id: original.id,
+            object_name: &original.object_name,
+            plaintext_size: original.plaintext_size,
+            wrapped_key: &original.wrapped_object_key,
+            sha256: Some(&original.sha256),
+        }))
+    }
 }
 
 /// When, and why, a document was hidden.
@@ -489,6 +556,9 @@ struct Manifest {
     profiles: Vec<PatientProfile>,
     folders: Vec<VaultFolder>,
     records: Vec<StoredRecord>,
+    /// Format 5. Includes incomplete attempts, whose clinic is absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    portal_links: Vec<StoredLink>,
     /// The history (#71): where its segments are, and the end of its chain.
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
@@ -540,6 +610,14 @@ pub struct VaultRecord {
     pub available: bool,
     /// Set while the document is hidden (#71).
     pub hidden: Option<Hidden>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_pdf_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verified_clinic_name: Option<String>,
+    /// Exact service date from a clinic delivery; an empty string means the
+    /// clinic did not record one. This is independent of the date added here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clinic_service_date: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -548,6 +626,8 @@ pub struct VaultSnapshot {
     pub profiles: Vec<PatientProfile>,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
+    pub portal_linking_enabled: bool,
+    pub portal_links: Vec<LinkSummary>,
     /// Why the session is read-only, if it is.
     pub recovery: Option<RecoveryReason>,
     /// When the vault's recovery key was set up, if it has one.
@@ -745,6 +825,11 @@ pub struct VaultStore {
     root: PathBuf,
     unlocked: Mutex<Option<UnlockedVault>>,
     kdf_running: AtomicBool,
+    /// Changes when a session opens or begins locking. Network work never
+    /// holds the vault mutex and may not apply across this boundary.
+    portal_session: AtomicU64,
+    #[cfg(feature = "portal-linking")]
+    portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -763,6 +848,9 @@ impl VaultStore {
             root,
             unlocked: Mutex::new(None),
             kdf_running: AtomicBool::new(false),
+            portal_session: AtomicU64::new(0),
+            #[cfg(feature = "portal-linking")]
+            portal_check_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -822,6 +910,7 @@ impl VaultStore {
     fn session(&self) -> MutexGuard<'_, Option<UnlockedVault>> {
         self.unlocked.lock().unwrap_or_else(|poisoned| {
             let mut guard = poisoned.into_inner();
+            self.portal_session.fetch_add(1, Ordering::AcqRel);
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
@@ -948,6 +1037,7 @@ impl VaultStore {
                 folders: Vec::new(),
                 records: Vec::new(),
                 history: HistoryState::default(),
+                portal_links: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -1185,6 +1275,7 @@ impl VaultStore {
     /// Every unlocked session has an idle deadline, started with it under the
     /// session lock.
     fn open_session(&self, guard: &mut Option<UnlockedVault>, vault: UnlockedVault) {
+        self.portal_session.fetch_add(1, Ordering::AcqRel);
         *guard = Some(vault);
         self.idle.arm(Instant::now());
     }
@@ -1206,6 +1297,8 @@ impl VaultStore {
     /// a new session starts, or activity arrives, while it waits, it can stop
     /// a transfer without locking.
     fn lock_if(&self, due: impl Fn() -> bool, by: &str) -> bool {
+        self.portal_session.fetch_add(1, Ordering::AcqRel);
+        run_at_test_boundary("portal.lock-after-ticket");
         self.cancel_io.store(true, Ordering::Release);
         let locked = {
             let mut guard = self.session();
@@ -1246,6 +1339,13 @@ impl VaultStore {
 
     fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
         VaultSnapshot {
+            portal_linking_enabled: crate::portal_client::available(),
+            portal_links: unlocked
+                .manifest
+                .portal_links
+                .iter()
+                .map(StoredLink::summary)
+                .collect(),
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
             records: unlocked
@@ -1269,6 +1369,17 @@ impl VaultStore {
                         object_is_present(root, record)
                     },
                     hidden: record.hidden,
+                    verified_clinic_name: delivery::verified_clinic(
+                        record,
+                        &unlocked.manifest.portal_links,
+                    ),
+                    clinic_service_date: record
+                        .delivery
+                        .as_ref()
+                        .map(|delivery| delivery.manifest.document.service_date.clone()),
+                    original_pdf_available: record.original_pdf.as_ref().map(|original| {
+                        object_presence_name(root, &original.object_name) == ObjectPresence::Present
+                    }),
                 })
                 .collect(),
             recovery: unlocked.recovery,
@@ -1286,6 +1397,134 @@ impl VaultStore {
             &utc_date_text(now_ms),
             now_ms,
         )
+    }
+
+    /// The feature check precedes key generation, vault writes and HTTP. The
+    /// one-use code is transient: only the pending private seeds are persisted.
+    pub fn portal_link_ticket(&self) -> u64 {
+        self.portal_session.load(Ordering::Acquire)
+    }
+
+    pub fn link_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<LinkSummary, VaultError> {
+        self.link_portal_using(
+            portal,
+            code,
+            device_name,
+            profile_id,
+            (now_ms, session),
+            |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
+        )
+    }
+
+    fn link_portal_using(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        context: (u64, u64),
+        post: impl FnOnce(
+            portal_link::LinkRequest,
+            &str,
+            &dyn Fn() -> bool,
+        ) -> Result<portal_link::LinkedClinic, portal_link::LinkError>,
+    ) -> Result<LinkSummary, VaultError> {
+        use portal_link::LinkError;
+        let (now_ms, session) = context;
+        if !portal_link::enabled() {
+            return Err(VaultError::Portal(LinkError::Disabled));
+        }
+        if !crate::portal_client::available() {
+            return Err(VaultError::Portal(LinkError::Unavailable));
+        }
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let normalized = portal_link::normalize_code(code).map_err(VaultError::Portal)?;
+        let pending = StoredLink::pending(portal, device_name, profile_id, now_ms)
+            .map_err(VaultError::Portal)?;
+        let pending = self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            if manifest.portal_links.len() >= portal_link::MAX_LINKS {
+                return Err(VaultError::Invalid);
+            }
+            if let Some(profile) = profile_id {
+                require_profile(manifest, profile)?;
+                if profile == shared_profile_id(manifest.vault_id) {
+                    return Err(VaultError::Invalid);
+                }
+            }
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkStarted, now_ms);
+            entry.portal_link_id = Some(pending.id);
+            entry.profile_id = profile_id;
+            entries.push(entry);
+            manifest.portal_links.push(pending.clone());
+            run_at_test_boundary("portal.pending-before-commit");
+            Ok(pending)
+        })?;
+        // A degraded redundant write may have committed pending state but made
+        // the vault read-only. Do not consume a code unless success can be saved.
+        {
+            let guard = self.session();
+            let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+            if unlocked.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+        }
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let request = pending
+            .request(&normalized, now_ms / 1000)
+            .map_err(VaultError::Portal)?;
+        let pending_id = pending.id;
+        let device_key_id = pending.keys.device_key_id();
+        drop(pending);
+        drop(normalized);
+        let clinic = post(request, &device_key_id, &cancelled).map_err(VaultError::Portal)?;
+        clinic
+            .validate_initial(&device_key_id)
+            .map_err(VaultError::Portal)?;
+        // The HTTP exchange held no vault lock. Check the session again under
+        // that lock before committing pins, with the same history transaction.
+        self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            let link = manifest
+                .portal_links
+                .iter_mut()
+                .find(|link| link.id == pending_id)
+                .ok_or(VaultError::NotFound)?;
+            if link.clinic.is_some() || link.keys.device_key_id() != device_key_id {
+                return Err(VaultError::Invalid);
+            }
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinked, crate::now_ms());
+            entry.portal_link_id = Some(link.id);
+            entry.profile_id = link.profile_id;
+            entry.name = Some(clinic.clinic_name.clone());
+            entry.clinic_key_ids = Some(
+                clinic
+                    .clinic_keys
+                    .iter()
+                    .map(|key| key.kid.clone())
+                    .collect(),
+            );
+            entries.push(entry);
+            link.clinic = Some(clinic);
+            Ok(link.summary())
+        })
     }
 
     pub fn create_profile_with_details(
@@ -1676,30 +1915,42 @@ impl VaultStore {
                     &object_key,
                     encrypted.plaintext_size,
                 )?;
+                let wrapped_object_key =
+                    wrap_secret(&keys.object_wrap, &object_key, record_id.as_bytes())?;
+                let mut record = StoredRecord {
+                    id: record_id,
+                    profile_id,
+                    folder_ids: folder_ids.clone(),
+                    display_name: sanitize_basename(&source.display_name),
+                    source_label: MANUAL_IMPORT_LABEL.to_owned(),
+                    media_type: "application/octet-stream".to_owned(),
+                    plaintext_size: encrypted.plaintext_size,
+                    imported_at_ms: now_ms,
+                    object_name,
+                    fingerprint,
+                    wrapped_object_key,
+                    hidden: None,
+                    original_pdf: None,
+                    delivery: None,
+                };
+                // Preserve raw bytes before helper parsing/rendering, including
+                // unsigned or too-large PDFs whose signatures cannot be ruled
+                // out here. This costs a second PDF object, never a plaintext file.
+                if signature_probe.is_pdf() {
+                    record.original_pdf = Some(self.stage_original_pdf(
+                        unlocked.manifest.vault_id,
+                        &keys,
+                        &record,
+                        &object_path,
+                        &stage,
+                    )?);
+                }
                 if let Some(reason) =
                     signature_probe.finish(&|| self.cancel_io.load(Ordering::Acquire))
                 {
                     unverified_signatures.push(ImportVerification { record_id, reason });
                 }
-                let wrapped_object_key =
-                    wrap_secret(&keys.object_wrap, &object_key, record_id.as_bytes())?;
-                staged.push((
-                    object_path,
-                    StoredRecord {
-                        id: record_id,
-                        profile_id,
-                        folder_ids: folder_ids.clone(),
-                        display_name: sanitize_basename(&source.display_name),
-                        source_label: MANUAL_IMPORT_LABEL.to_owned(),
-                        media_type: "application/octet-stream".to_owned(),
-                        plaintext_size: encrypted.plaintext_size,
-                        imported_at_ms: now_ms,
-                        object_name,
-                        fingerprint,
-                        wrapped_object_key,
-                        hidden: None,
-                    },
-                ));
+                staged.push((object_path, record));
             }
             if self.cancel_io.load(Ordering::Acquire) {
                 return Err(VaultError::Cancelled);
@@ -1717,9 +1968,23 @@ impl VaultStore {
             terminate_at_test_boundary("import.after-staging");
 
             let objects = self.root.join("objects");
-            for (path, record) in &staged {
-                let destination = objects.join(&record.object_name);
-                fs::rename(path, &destination)?;
+            for (_, record) in &staged {
+                for object in record.objects() {
+                    // atomicwrites uses MoveFileExW(MOVEFILE_WRITE_THROUGH)
+                    // on Windows and syncs both directories on Unix. The
+                    // receipt path must never outrun publication of an object.
+                    publish_object(
+                        &stage.join(object.object_name),
+                        &objects.join(object.object_name),
+                    )?;
+                    let boundary = if object.id == record.id {
+                        "import.after-display-publication"
+                    } else {
+                        "import.after-original-publication"
+                    };
+                    terminate_at_test_boundary(boundary);
+                    fail_at_test_boundary(boundary)?;
+                }
             }
             // The manifest about to be committed references these objects. If
             // their directory entries are not durable, a power loss could leave
@@ -1770,10 +2035,12 @@ impl VaultStore {
         if result.is_err() {
             let objects = self.root.join("objects");
             for (_, record) in &staged {
-                let _ = remove_owned_file(
-                    objects.join(&record.object_name),
-                    Removable::UncommittedObject,
-                );
+                for object in record.objects() {
+                    let _ = remove_owned_file(
+                        objects.join(object.object_name),
+                        Removable::UncommittedObject,
+                    );
+                }
             }
             sync_parent(&objects);
         }
@@ -1786,6 +2053,53 @@ impl VaultStore {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         Ok(shared_profile_id(unlocked.manifest.vault_id))
+    }
+
+    fn stage_original_pdf(
+        &self,
+        vault_id: Uuid,
+        keys: &DerivedKeys,
+        record: &StoredRecord,
+        source: &Path,
+        stage: &Path,
+    ) -> Result<StoredOriginalPdf, VaultError> {
+        let source_key = unwrap_secret(
+            &keys.object_wrap,
+            &record.wrapped_object_key,
+            record.id.as_bytes(),
+        )?;
+        let id = Uuid::new_v4();
+        let object_name = format!("{}.mcobj", Uuid::new_v4());
+        let mut original_key = Zeroizing::new([0; 32]);
+        OsRng.fill_bytes(original_key.as_mut());
+        let mut writer = original_pdf::OriginalWriter::new(
+            &stage.join(&object_name),
+            ObjectContext {
+                vault_id,
+                record_id: id,
+                profile_id: record.profile_id,
+            },
+            &original_key,
+        )?;
+        verify_object(
+            source,
+            CancellableWriter::new(&mut writer, Arc::clone(&self.cancel_io)),
+            vault_id,
+            record.id,
+            &source_key,
+            record.plaintext_size,
+        )?;
+        let (plaintext_size, sha256) = writer.finish()?;
+        if plaintext_size != record.plaintext_size {
+            return Err(VaultError::Corrupt);
+        }
+        Ok(StoredOriginalPdf {
+            id,
+            object_name,
+            plaintext_size,
+            sha256,
+            wrapped_object_key: wrap_secret(&keys.object_wrap, &original_key, id.as_bytes())?,
+        })
     }
 
     /// Moves files to another person, into the folders chosen. A file's
@@ -1920,17 +2234,27 @@ impl VaultStore {
     }
 
     pub fn export<W: Write>(&self, record_id: Uuid, writer: W) -> Result<(), VaultError> {
-        self.read_record(record_id, writer, true)
+        self.read_record(record_id, writer, true, true)
     }
 
-    /// Background suggestions are not patient activity. Keep cancellation and
-    /// object authentication, but do not postpone the native idle deadline.
+    /// A rendered page is never a replacement for a signed original on save.
+    /// Views may still use intact display bytes when an original is unavailable.
+    pub(crate) fn read_for_view<W: Write>(
+        &self,
+        record_id: Uuid,
+        writer: W,
+    ) -> Result<(), VaultError> {
+        self.read_record(record_id, writer, true, false)
+    }
+
+    /// Identity comes from the original raw PDF, never a rendered copy or
+    /// readableText. Background suggestions do not postpone the idle deadline.
     pub(crate) fn read_for_suggestion<W: Write>(
         &self,
         record_id: Uuid,
         writer: W,
     ) -> Result<(), VaultError> {
-        self.read_record(record_id, writer, false)
+        self.read_record(record_id, writer, false, true)
     }
 
     fn read_record<W: Write>(
@@ -1938,6 +2262,7 @@ impl VaultStore {
         record_id: Uuid,
         writer: W,
         report_progress: bool,
+        prefer_original: bool,
     ) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -1947,28 +2272,40 @@ impl VaultStore {
             .iter()
             .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
-        if unlocked.unavailable.contains(&record.id) {
+        let original = prefer_original
+            .then_some(record.original_pdf.as_ref())
+            .flatten();
+        if original.is_none() && unlocked.unavailable.contains(&record.id) {
             return Err(VaultError::Corrupt);
         }
         let keys = derive_keys(unlocked.manifest.vault_id, &unlocked.master_key)?;
-        let object_key = unwrap_secret(
-            &keys.object_wrap,
-            &record.wrapped_object_key,
-            record.id.as_bytes(),
-        )?;
+        let object = original
+            .map(|original| RecordObject {
+                id: original.id,
+                object_name: &original.object_name,
+                plaintext_size: original.plaintext_size,
+                wrapped_key: &original.wrapped_object_key,
+                sha256: Some(&original.sha256),
+            })
+            .unwrap_or(RecordObject {
+                id: record.id,
+                object_name: &record.object_name,
+                plaintext_size: record.plaintext_size,
+                wrapped_key: &record.wrapped_object_key,
+                sha256: None,
+            });
         let writer = CancellableWriter::new(writer, Arc::clone(&self.cancel_io));
         let writer = if report_progress {
             writer.with_progress(&self.idle)
         } else {
             writer
         };
-        verify_object(
-            &self.root.join("objects").join(&record.object_name),
-            writer,
+        read_object_ref(
+            &self.root.join("objects").join(object.object_name),
             unlocked.manifest.vault_id,
-            record.id,
-            &object_key,
-            record.plaintext_size,
+            &keys,
+            object,
+            writer,
         )
     }
 
@@ -2676,6 +3013,7 @@ impl VaultStore {
     /// recovery key it had still opens it. Nothing is erased. An open,
     /// writable vault records it in its history first.
     pub fn reset(&self) -> Result<(), VaultError> {
+        self.portal_session.fetch_add(1, Ordering::AcqRel);
         self.cancel_io.store(true, Ordering::Release);
         let mut guard = self.session();
         // Holding the mutex means the cancelled operation has stopped. Clear the
@@ -2724,9 +3062,7 @@ impl VaultStore {
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
         for record in &unlocked.manifest.records {
-            if self.backs_up_object(record) {
-                self.verify_for_backup_object(unlocked, &parts.keys, record)?;
-            }
+            self.verify_for_backup_object(unlocked, &parts.keys, record)?;
         }
         Ok(())
     }
@@ -2755,17 +3091,24 @@ impl VaultStore {
             &mut parts.manifest_data.as_slice(),
         )?;
         for record in &manifest.records {
-            if !self.backs_up_object(record) {
-                continue;
-            }
             // A restore refuses the whole backup over one object that does not
             // authenticate, so a damaged one is found now, while the vault
             // and its other documents are still here, not when it is needed.
             self.verify_for_backup_object(unlocked, &parts.keys, record)?;
-            let path = self.root.join("objects").join(&record.object_name);
-            let mut object = open_regular_read(&path)?;
-            let length = object.metadata()?.len();
-            backup.entry(BACKUP_KIND_OBJECT, &record.object_name, length, &mut object)?;
+            for reference in record
+                .objects()
+                .filter(|object| self.backs_up_record_object(record, *object))
+            {
+                let path = self.root.join("objects").join(reference.object_name);
+                let mut object = open_regular_read(&path)?;
+                let length = object.metadata()?.len();
+                backup.entry(
+                    BACKUP_KIND_OBJECT,
+                    reference.object_name,
+                    length,
+                    &mut object,
+                )?;
+            }
         }
         // The history's segments (#71). One that is gone or damaged is left
         // out rather than failing the backup: a restore takes segments as
@@ -2796,8 +3139,9 @@ impl VaultStore {
 
     /// Whether a backup carries a record's object: every one the vault needs,
     /// and a document hidden as damaged only if its file came back (#71).
-    fn backs_up_object(&self, record: &StoredRecord) -> bool {
-        object_required(record) || object_is_present(&self.root, record)
+    fn backs_up_record_object(&self, record: &StoredRecord, object: RecordObject<'_>) -> bool {
+        object_required(record)
+            || object_presence_name(&self.root, object.object_name) == ObjectPresence::Present
     }
 
     /// Every check that refuses a backup before its documents are read, and
@@ -2838,24 +3182,24 @@ impl VaultStore {
         record: &StoredRecord,
     ) -> Result<(), VaultError> {
         let vault_id = unlocked.manifest.vault_id;
-        let object_key = unwrap_secret(
-            &keys.object_wrap,
-            &record.wrapped_object_key,
-            record.id.as_bytes(),
-        )?;
-        verify_object(
-            &self.root.join("objects").join(&record.object_name),
-            CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
-                .with_progress(&self.idle),
-            vault_id,
-            record.id,
-            &object_key,
-            record.plaintext_size,
-        )
-        .map_err(|error| match error {
-            VaultError::Corrupt => VaultError::DamagedDocument(record.id),
-            error => error,
-        })
+        for object in record
+            .objects()
+            .filter(|object| self.backs_up_record_object(record, *object))
+        {
+            read_object_ref(
+                &self.root.join("objects").join(object.object_name),
+                vault_id,
+                keys,
+                object,
+                CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io))
+                    .with_progress(&self.idle),
+            )
+            .map_err(|error| match error {
+                VaultError::Corrupt => VaultError::DamagedDocument(record.id),
+                error => error,
+            })?;
+        }
+        Ok(())
     }
 
     /// Saves a backup to a file the patient chose, as an export is saved:
@@ -3083,7 +3427,11 @@ impl VaultStore {
             let mut wanted: HashMap<&str, u64> = manifest
                 .records
                 .iter()
-                .map(|record| (record.object_name.as_str(), record.plaintext_size))
+                .flat_map(|record| {
+                    record
+                        .objects()
+                        .map(|object| (object.object_name, object.plaintext_size))
+                })
                 .chain(segments.iter().map(|segment| {
                     (
                         segment.object_name.as_str(),
@@ -3097,7 +3445,7 @@ impl VaultStore {
                 .records
                 .iter()
                 .filter(|record| !object_required(record))
-                .map(|record| record.object_name.as_str())
+                .flat_map(|record| record.objects().map(|object| object.object_name))
                 .chain(segments.iter().map(|segment| segment.object_name.as_str()))
                 .collect();
             while let Some((kind, name, length)) = reader.next_entry()? {
@@ -3141,26 +3489,25 @@ impl VaultStore {
             }
             let keys = derive_keys(header.vault_id, &master_key)?;
             for record in &manifest.records {
-                if !object_required(record) && !object_is_present(&stage, record) {
-                    continue;
+                for object in record.objects() {
+                    if !object_required(record)
+                        && object_presence_name(&stage, object.object_name)
+                            != ObjectPresence::Present
+                    {
+                        continue;
+                    }
+                    read_object_ref(
+                        &stage.join("objects").join(object.object_name),
+                        header.vault_id,
+                        &keys,
+                        object,
+                        CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io)),
+                    )
+                    .map_err(|error| match error {
+                        VaultError::Cancelled => error,
+                        _ => VaultError::BackupUnreadable,
+                    })?;
                 }
-                let object_key = unwrap_secret(
-                    &keys.object_wrap,
-                    &record.wrapped_object_key,
-                    record.id.as_bytes(),
-                )?;
-                verify_object(
-                    &stage.join("objects").join(&record.object_name),
-                    CancellableWriter::new(io::sink(), Arc::clone(&self.cancel_io)),
-                    header.vault_id,
-                    record.id,
-                    &object_key,
-                    record.plaintext_size,
-                )
-                .map_err(|error| match error {
-                    VaultError::Cancelled => error,
-                    _ => VaultError::BackupUnreadable,
-                })?;
             }
             for segment in segments {
                 if fs::symlink_metadata(stage.join("objects").join(&segment.object_name)).is_err() {
@@ -3607,8 +3954,12 @@ enum ObjectPresence {
 }
 
 fn object_presence(root: &Path, record: &StoredRecord) -> ObjectPresence {
+    object_presence_name(root, &record.object_name)
+}
+
+fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
     let objects = root.join("objects");
-    match fs::symlink_metadata(objects.join(&record.object_name)) {
+    match fs::symlink_metadata(objects.join(object_name)) {
         Ok(metadata) if is_regular_non_reparse(&metadata) => ObjectPresence::Present,
         // A link, or a Windows reparse point such as a cloud placeholder, is
         // refused when opened, but the content may be intact behind it.
@@ -3701,10 +4052,38 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     }
 
     let mut record_ids = HashSet::new();
+    let mut object_ids = HashSet::new();
+    if manifest.portal_links.len() > portal_link::MAX_LINKS
+        || (manifest.format_version < 5 && !manifest.portal_links.is_empty())
+    {
+        return Err(VaultError::Corrupt);
+    }
+    let mut link_ids = HashSet::new();
+    let mut device_ids = HashSet::new();
+    for link in &manifest.portal_links {
+        if (manifest.format_version < 6 && link.approval.is_some())
+            || (manifest.format_version < 7
+                && (!link.approval_history.is_empty()
+                    || link
+                        .approval
+                        .as_ref()
+                        .is_some_and(|a| a.status.is_some() || a.reason.is_some())))
+            || !link_ids.insert(link.id)
+            || !device_ids.insert(link.keys.device_key_id())
+            || link.validate().is_err()
+            || link
+                .profile_id
+                .is_some_and(|id| !profile_ids.contains(&id) || id == shared_profile_id(vault_id))
+        {
+            return Err(VaultError::Corrupt);
+        }
+    }
     let mut object_names = HashSet::new();
+    let mut delivery_ids = HashSet::new();
     for record in &manifest.records {
         if record.id.is_nil()
             || !record_ids.insert(record.id)
+            || !object_ids.insert(record.id)
             || !profile_ids.contains(&record.profile_id)
             || !valid_record_name(&record.display_name)
             || record.source_label != MANUAL_IMPORT_LABEL
@@ -3715,6 +4094,31 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !valid_wrapped_secret(&record.wrapped_object_key)
             // Format 1 has no hidden documents.
             || (record.hidden.is_some() && manifest.format_version < MANIFEST_FORMAT_HIDDEN)
+        {
+            return Err(VaultError::Corrupt);
+        }
+        if let Some(original) = &record.original_pdf {
+            if manifest.format_version < 5
+                || original.id.is_nil()
+                || !object_ids.insert(original.id)
+                || !valid_object_name(&original.object_name)
+                || !object_names.insert(original.object_name.as_str())
+                || !valid_wrapped_secret(&original.wrapped_object_key)
+                || original.sha256.len() != 64
+                || !original
+                    .sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                return Err(VaultError::Corrupt);
+            }
+        }
+        if (manifest.format_version < 6 && record.delivery.is_some())
+            || record
+                .delivery
+                .as_ref()
+                .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
+            || !delivery::valid_custody(record, &manifest.portal_links)
         {
             return Err(VaultError::Corrupt);
         }
@@ -3729,7 +4133,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             return Err(VaultError::Corrupt);
         }
     }
-    validate_history(manifest, &mut object_names)
+    validate_history(manifest, &mut object_names, &mut object_ids)
 }
 
 /// The history's place in the manifest (#71): format 3 only; its data
@@ -3739,6 +4143,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
 fn validate_history<'a>(
     manifest: &'a Manifest,
     object_names: &mut HashSet<&'a str>,
+    object_ids: &mut HashSet<Uuid>,
 ) -> Result<(), VaultError> {
     let state = &manifest.history;
     if state.is_empty() {
@@ -3755,6 +4160,7 @@ fn validate_history<'a>(
         let filler = index >= data;
         if segment.id.is_nil()
             || !ids.insert(segment.id)
+            || !object_ids.insert(segment.id)
             || !valid_object_name(&segment.object_name)
             || !object_names.insert(segment.object_name.as_str())
             || !valid_wrapped_secret(&segment.wrapped_key)
@@ -4988,7 +5394,11 @@ fn write_history_segment(
     let mut segment_key = Zeroizing::new([0_u8; 32]);
     OsRng.fill_bytes(segment_key.as_mut());
     let wrapped_key = wrap_secret(&keys.object_wrap, &segment_key, &segment_key_aad(id))?;
-    let path = root.join("objects").join(&object_name);
+    // Publish only after sync_all in encrypt_object. Windows cannot fsync a
+    // directory through std, so use the same write-through move as documents.
+    let path = root
+        .join("objects")
+        .join(format!("{}.mcobj", Uuid::new_v4()));
     let written = encrypt_object(
         Box::new(io::Cursor::new(plaintext)),
         &path,
@@ -5003,6 +5413,10 @@ fn write_history_segment(
     if let Err(error) = written {
         let _ = remove_owned_file(&path, Removable::UncommittedObject);
         return Err(error);
+    }
+    if let Err(error) = publish_object(&path, &root.join("objects").join(&object_name)) {
+        let _ = remove_owned_file(&path, Removable::UncommittedObject);
+        return Err(error.into());
     }
     Ok(HistorySegment {
         id,
@@ -5699,6 +6113,40 @@ fn encrypt_object(
     })
 }
 
+fn read_object_ref<W: Write>(
+    path: &Path,
+    vault_id: Uuid,
+    keys: &DerivedKeys,
+    object: RecordObject<'_>,
+    writer: W,
+) -> Result<(), VaultError> {
+    let key = unwrap_secret(&keys.object_wrap, object.wrapped_key, object.id.as_bytes())?;
+    if let Some(expected) = object.sha256 {
+        let mut hashed = original_pdf::HashWriter::new(writer);
+        verify_object(
+            path,
+            &mut hashed,
+            vault_id,
+            object.id,
+            &key,
+            object.plaintext_size,
+        )?;
+        if hashed.digest() != expected {
+            return Err(VaultError::Corrupt);
+        }
+        Ok(())
+    } else {
+        verify_object(
+            path,
+            writer,
+            vault_id,
+            object.id,
+            &key,
+            object.plaintext_size,
+        )
+    }
+}
+
 fn verify_object<W: Write>(
     path: &Path,
     mut writer: W,
@@ -6345,6 +6793,27 @@ fn open_private_new(path: &Path) -> Result<File, VaultError> {
     options.open(path).map_err(Into::into)
 }
 
+/// Keep std's extended Windows path handling when calling atomicwrites' raw
+/// MoveFileExW. Both parents already exist; canonicalizing each supplies the
+/// verbatim absolute prefix without requiring the destination file to exist.
+fn publish_object(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        let absolute = |path: &Path| -> io::Result<PathBuf> {
+            let parent = path
+                .parent()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            let name = path
+                .file_name()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            Ok(fs::canonicalize(parent)?.join(name))
+        };
+        atomicwrites::move_atomic(&absolute(source)?, &absolute(destination)?)
+    }
+    #[cfg(not(windows))]
+    atomicwrites::move_atomic(source, destination)
+}
+
 /// Makes renames into `directory` durable, reporting failure. Windows cannot
 /// open a directory this way; there the renames rely on the filesystem journal.
 ///
@@ -6461,7 +6930,7 @@ fn quarantine_orphan_objects(root: &Path, manifest: &Manifest) {
     let referenced: HashSet<&str> = manifest
         .records
         .iter()
-        .map(|record| record.object_name.as_str())
+        .flat_map(|record| record.objects().map(|object| object.object_name))
         .chain(
             manifest
                 .history
@@ -7235,6 +7704,111 @@ pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[cfg(not(feature = "portal-linking"))]
+    #[test]
+    fn portal_link_default_off_refuses_before_creating_files_or_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("not-created");
+        let store = VaultStore::new(root.clone());
+        assert!(matches!(
+            store.link_portal(
+                "https://fake.example",
+                "FAKE0001-FAKE7-Q2M4K",
+                "myCarlos",
+                None,
+                1,
+                store.portal_link_ticket()
+            ),
+            Err(VaultError::Portal(portal_link::LinkError::Disabled))
+        ));
+        assert!(!root.exists());
+    }
+
+    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[test]
+    fn portal_link_lock_started_during_pending_commit_never_sends_http() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault")));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let ticket = store.portal_link_ticket();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (handle_tx, handle_rx) = mpsc::channel();
+        let locker = Arc::clone(&store);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "portal.pending-before-commit",
+                Box::new(move || {
+                    let locker = Arc::clone(&locker);
+                    let started_tx = started_tx.clone();
+                    let (gate_tx, gate_rx) = mpsc::channel();
+                    let handle = std::thread::spawn(move || {
+                        AT_TEST_BOUNDARY.with(|slot| {
+                            *slot.borrow_mut() = Some((
+                                "portal.lock-after-ticket",
+                                Box::new(move || {
+                                    started_tx.send(()).unwrap();
+                                    gate_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                                }),
+                            ));
+                        });
+                        locker.lock();
+                    });
+                    started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                    handle_tx.send((handle, gate_tx)).unwrap();
+                }),
+            ));
+        });
+        let sent = AtomicUsize::new(0);
+        let result = store.link_portal_using(
+            "https://fake.example",
+            "FAKE0001-FAKE7-Q2M4K",
+            "myCarlos",
+            None,
+            (2, ticket),
+            |_, _, _| {
+                sent.fetch_add(1, Ordering::SeqCst);
+                Err(portal_link::LinkError::Network)
+            },
+        );
+        let (handle, gate) = handle_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        gate.send(()).unwrap();
+        handle.join().unwrap();
+        assert!(matches!(
+            result,
+            Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+        ));
+        assert_eq!(sent.load(Ordering::SeqCst), 0);
+        store.unlock(PASSWORD).unwrap();
+        let summary = store.snapshot().unwrap().portal_links;
+        assert_eq!(summary.len(), 1);
+        assert!(summary[0].incomplete);
+    }
+
+    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[test]
+    fn portal_link_queued_old_session_ticket_does_not_mutate_new_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let old = store.portal_link_ticket();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let result = store.link_portal_using(
+            "https://fake.example",
+            "FAKE0001-FAKE7-Q2M4K",
+            "myCarlos",
+            None,
+            (2, old),
+            |_, _, _| panic!("an old IPC ticket cannot send HTTP"),
+        );
+        assert!(matches!(
+            result,
+            Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+        ));
+        assert!(before == store.session().as_ref().unwrap().manifest);
+    }
     use std::{
         io::Cursor,
         process::{Command, Stdio},
@@ -7286,6 +7860,284 @@ mod tests {
         }
     }
 
+    fn original_pdf_fixture() -> (tempfile::TempDir, VaultStore, Uuid, Vec<u8>) {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let bytes = b"%PDF-1.7\r\nFAKE verbatim source\n\x00\xff\r\n%%EOF".to_vec();
+        let id = store
+            .import(profile, vec![], vec![source("FAKE source.pdf", &bytes)], 2)
+            .unwrap()
+            .imported[0];
+        (temp, store, id, bytes)
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn should_import_original_and_history_when_windows_staging_exceeds_max_path() {
+        use std::os::windows::ffi::OsStrExt;
+        let temp = tempfile::tempdir().unwrap();
+        // The destination manifest fits MAX_PATH; the staging UUID + two
+        // object UUIDs takes object publication past it. No verbatim prefix
+        // is supplied by the caller, as with an ordinary selected vault.
+        let root = temp.path().join("long-root-".repeat(16)).join("vault");
+        fs::create_dir_all(root.parent().unwrap()).unwrap();
+        let extended = fs::canonicalize(root.parent().unwrap())
+            .unwrap()
+            .join("vault");
+        let setup = VaultStore::new(extended);
+        setup.create(PASSWORD, "FAKE Person", 1).unwrap();
+        setup.lock();
+        drop(setup);
+        assert!(root.as_os_str().encode_wide().count() < 260);
+        assert!(
+            root.join("manifest-0.bin")
+                .as_os_str()
+                .encode_wide()
+                .count()
+                < 260
+        );
+        assert!(
+            root.join("staging")
+                .join(Uuid::new_v4().to_string())
+                .join(format!("{}.mcobj", Uuid::new_v4()))
+                .as_os_str()
+                .encode_wide()
+                .count()
+                >= 260
+        );
+        let store = VaultStore::new(root.clone());
+        store.unlock(PASSWORD).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let bytes = b"%PDF-1.7\nFAKE Windows long path\n%%EOF";
+        let id = store
+            .import(profile, vec![], vec![source("FAKE.pdf", bytes)], 2)
+            .unwrap()
+            .imported[0];
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let mut original = Vec::new();
+        store.export(id, &mut original).unwrap();
+        assert_eq!(original, bytes);
+        assert_eq!(
+            history_events(&store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::Imported)
+                .count(),
+            1
+        );
+        store.verify_for_backup().unwrap();
+    }
+
+    #[test]
+    fn should_retain_both_pdf_objects_and_history_when_restarted_after_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let template = temp.path().join("template");
+        let store = VaultStore::new(template.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        store.lock();
+        for (boundary, committed) in [
+            ("original.after-chunk-write", false),
+            ("import.after-display-publication", false),
+            ("import.after-original-publication", false),
+            ("history.after-segment-write", false),
+            ("manifest.after-first-write", true),
+            ("manifest.after-second-write", true),
+        ] {
+            let root = temp.path().join(boundary);
+            copy_directory(&template, &root);
+            run_termination_child(&root, "original-import", boundary);
+            let restarted = VaultStore::new(root.clone());
+            restarted.unlock(PASSWORD).unwrap();
+            let snapshot = restarted.snapshot().unwrap();
+            assert_eq!(snapshot.records.len(), usize::from(committed), "{boundary}");
+            assert_eq!(
+                document_files(&root),
+                2 * usize::from(committed),
+                "{boundary}"
+            );
+            assert_eq!(fs::read_dir(root.join("staging")).unwrap().count(), 0);
+            let imports: Vec<_> = history_events(&restarted)
+                .into_iter()
+                .filter(|entry| entry.event == HistoryEvent::Imported)
+                .collect();
+            assert_eq!(imports.len(), usize::from(committed), "{boundary}");
+            if committed {
+                assert_eq!(imports[0].record_id, Some(snapshot.records[0].id));
+                let mut original = Vec::new();
+                restarted
+                    .export(snapshot.records[0].id, &mut original)
+                    .unwrap();
+                assert_eq!(
+                    original,
+                    b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF"
+                );
+                restarted.verify_for_backup().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn should_refuse_object_id_collision_between_original_and_history() {
+        let (_temp, store, _id, _bytes) = original_pdf_fixture();
+        let guard = store.session();
+        let unlocked = guard.as_ref().unwrap();
+        let mut manifest = unlocked.manifest.clone();
+        manifest.records[0].original_pdf.as_mut().unwrap().id = manifest.history.segments[0].id;
+        assert!(matches!(
+            validate_manifest_structure(&manifest, manifest.vault_id),
+            Err(VaultError::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn original_pdf_raw_bytes_have_an_independent_encrypted_object_and_key() {
+        use sha2::Digest;
+        let (_temp, store, id, bytes) = original_pdf_fixture();
+        {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            let record = &open.manifest.records[0];
+            let original = record.original_pdf.as_ref().unwrap();
+            assert_ne!(record.id, original.id);
+            assert_ne!(record.object_name, original.object_name);
+            assert_eq!(original.plaintext_size, bytes.len() as u64);
+            assert_eq!(
+                original.sha256,
+                Sha256::digest(&bytes)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            );
+            let keys = derive_keys(open.manifest.vault_id, &open.master_key).unwrap();
+            let display_key = unwrap_secret(
+                &keys.object_wrap,
+                &record.wrapped_object_key,
+                record.id.as_bytes(),
+            )
+            .unwrap();
+            let original_key = unwrap_secret(
+                &keys.object_wrap,
+                &original.wrapped_object_key,
+                original.id.as_bytes(),
+            )
+            .unwrap();
+            assert!(display_key.as_slice() != original_key.as_slice());
+            assert_ne!(
+                fs::read(store.root.join("objects").join(&record.object_name)).unwrap(),
+                fs::read(store.root.join("objects").join(&original.object_name)).unwrap()
+            );
+        }
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(
+            store.snapshot().unwrap().records[0].original_pdf_available,
+            Some(true)
+        );
+        let mut saved = Vec::new();
+        store.export(id, &mut saved).unwrap();
+        assert_eq!(saved, bytes);
+    }
+
+    #[test]
+    fn original_pdf_references_survive_move_hide_unlock_backup_and_restore() {
+        let (temp, store, id, bytes) = original_pdf_fixture();
+        let original_name = store.session().as_ref().unwrap().manifest.records[0]
+            .original_pdf
+            .as_ref()
+            .unwrap()
+            .object_name
+            .clone();
+        let other = store.create_profile("FAKE Other", 3).unwrap();
+        store.move_to_profile(vec![id], other, vec![]).unwrap();
+        store.hide_record(id, 4).unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(
+            store.root.join("objects").join(&original_name).is_file(),
+            "unlock must not quarantine a referenced original"
+        );
+        assert!(store.snapshot().unwrap().records[0].hidden.is_some());
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 5).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert!(restored.root.join("objects").join(&original_name).is_file());
+        assert_eq!(restored.snapshot().unwrap().records[0].profile_id, other);
+        restored.unhide_record(id).unwrap();
+        let mut saved = Vec::new();
+        restored.export(id, &mut saved).unwrap();
+        assert_eq!(saved, bytes);
+    }
+
+    #[test]
+    fn original_pdf_missing_or_corrupt_does_not_remove_the_intact_view() {
+        for corrupt in [false, true] {
+            let (_temp, store, id, bytes) = original_pdf_fixture();
+            let original_name = store.session().as_ref().unwrap().manifest.records[0]
+                .original_pdf
+                .as_ref()
+                .unwrap()
+                .object_name
+                .clone();
+            let path = store.root.join("objects").join(original_name);
+            if corrupt {
+                let mut data = fs::read(&path).unwrap();
+                let last = data.len() - 1;
+                data[last] ^= 1;
+                fs::write(&path, data).unwrap();
+            } else {
+                fs::remove_file(&path).unwrap();
+            }
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            assert!(store.snapshot().unwrap().records[0].available);
+            assert_eq!(
+                store.snapshot().unwrap().records[0].original_pdf_available,
+                Some(corrupt)
+            );
+            let mut view = Vec::new();
+            store.read_for_view(id, &mut view).unwrap();
+            assert_eq!(view, bytes);
+            assert!(matches!(
+                store.export(id, io::sink()),
+                Err(VaultError::Corrupt)
+            ));
+            assert!(
+                matches!(store.verify_for_backup(), Err(VaultError::DamagedDocument(owner)) if owner == id)
+            );
+        }
+    }
+
+    #[test]
+    fn original_pdf_write_failure_does_not_commit_half_an_import() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        {
+            let _fail = FailAt::new("original.after-chunk-write");
+            assert!(store
+                .import(
+                    profile,
+                    vec![],
+                    vec![source("FAKE.pdf", b"%PDF-1.7\nFAKE bytes")],
+                    2
+                )
+                .is_err());
+        }
+        assert!(store.session().as_ref().unwrap().manifest == before);
+        assert_eq!(fs::read_dir(store.root.join("staging")).unwrap().count(), 0);
+    }
+
     #[test]
     #[ignore = "requires the real built helper; set MYCARLOS_TEST_SIGNED_HELPER_EXE and run explicitly"]
     fn signed_import_analysis_preserves_original_bytes_and_never_invents_a_clinic_link() {
@@ -7328,6 +8180,16 @@ mod tests {
         assert_eq!(exported, original);
         let snapshot = store.snapshot().unwrap();
         assert_eq!(snapshot.records[0].source_label, MANUAL_IMPORT_LABEL);
+        assert_eq!(snapshot.records[0].original_pdf_available, Some(true));
+        {
+            let guard = store.session();
+            let record = &guard.as_ref().unwrap().manifest.records[0];
+            assert!(record
+                .original_pdf
+                .as_ref()
+                .is_some_and(|original| original.id != record.id
+                    && original.object_name != record.object_name));
+        }
         let report = serde_json::to_string(&imported).unwrap();
         assert!(!report.contains("recipient_id"));
         assert!(!report.contains("birth_date"));
@@ -7410,6 +8272,8 @@ mod tests {
                     fingerprint: BASE64.encode([0x33_u8; 32]),
                     wrapped_object_key: wrapped.clone(),
                     hidden: None,
+                    original_pdf: None,
+                    delivery: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -7424,9 +8288,12 @@ mod tests {
                     fingerprint: BASE64.encode([0x44_u8; 32]),
                     wrapped_object_key: wrapped,
                     hidden: None,
+                    original_pdf: None,
+                    delivery: None,
                 },
             ],
             history: HistoryState::default(),
+            portal_links: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -7560,12 +8427,17 @@ mod tests {
         unlock_with_boundaries_held(&store);
         let snapshot = store.snapshot().unwrap();
         match operation.as_str() {
-            "import" => {
+            "import" | "original-import" => {
+                let bytes: &[u8] = if operation == "original-import" {
+                    b"%PDF-1.7\nFAKE original crash boundary record\n%%EOF"
+                } else {
+                    b"synthetic crash boundary record"
+                };
                 store
                     .import(
                         snapshot.profiles[0].id,
                         vec![],
-                        vec![source("crash-test.pdf", b"synthetic crash boundary record")],
+                        vec![source("crash-test.pdf", bytes)],
                         2,
                     )
                     .unwrap();
@@ -8190,7 +9062,9 @@ mod tests {
         store.create(PASSWORD, "Jamie", 1).unwrap();
         let lock = sibling_path(&root, ".lock").unwrap();
         let inode_before = fs::metadata(&lock).unwrap();
+        let portal_ticket = store.portal_link_ticket();
         store.reset().unwrap();
+        assert_ne!(store.portal_link_ticket(), portal_ticket);
         assert_eq!(store.status().unwrap(), VaultStatus::Absent);
         assert!(same_file(&inode_before, &fs::metadata(&lock).unwrap()));
     }
@@ -9106,7 +9980,7 @@ mod tests {
             .len();
         assert_eq!(
             fs::read_dir(root.join("objects")).unwrap().count(),
-            1 + history_objects
+            2 + history_objects // Working PDF and independently encrypted original.
         );
         let history = history_events_for_test(&store);
         assert_eq!(history.len(), history_before + 1);
@@ -12599,7 +13473,9 @@ mod tests {
         assert!(store.unlocked.is_poisoned());
 
         // The interrupted session is not trusted: the vault reports locked.
+        let portal_ticket = store.portal_link_ticket();
         assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        assert_ne!(store.portal_link_ticket(), portal_ticket);
         assert!(!store.unlocked.is_poisoned());
         // And, as after any lock, it has no idle deadline.
         assert!(!store.idle().is_due(idle_past(Instant::now())));
@@ -12842,9 +13718,12 @@ mod tests {
                         ciphertext: String::new(),
                     },
                     hidden: None,
+                    original_pdf: None,
+                    delivery: None,
                 })
                 .collect(),
             history: HistoryState::default(),
+            portal_links: Vec::new(),
         }
     }
 
@@ -17018,16 +17897,16 @@ mod tests {
     }
 
     #[test]
-    fn identity_format_four_migrates_all_older_formats_without_record_loss() {
+    fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3] {
+        for version in [1, 2, 3, 4, 5, 6] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);
             let before = slots(&root, &key, vault_id);
             store.unlock(PASSWORD).unwrap();
             let after = slots(&root, &key, vault_id);
-            assert!(after.iter().all(|(format, _, _)| *format == 4));
+            assert!(after.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
             assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
             assert_eq!(store.snapshot().unwrap().records.len(), ids.len());
             assert!(store

@@ -5,6 +5,74 @@ import type { MessageKey } from "./en";
  * short imperatives for buttons and headings, as is usual in Polish interfaces.
  * Plural forms: one, few, many, other (fractions). */
 export const pl: Record<MessageKey, Message> = {
+  "portal.serviceDateLabel": "Data świadczenia",
+  "portal.serviceDate": "Data świadczenia: {date}",
+  "portal.dateNotRecorded": "Data nie została zapisana",
+  "portal.restartApproval": "Rozpocznij nową prośbę o zatwierdzenie",
+  "portal.approvalExpired":
+    "Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+  "portal.approvalCancelled":
+    "Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.",
+  "portal.approvalRefused":
+    "Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
+  "portal.approvalContact":
+    "Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.",
+  "portal.approvalMissing":
+    "Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.",
+  "portal.confirmationsPending":
+    "Zapisane dokumenty oczekujące na potwierdzenie odbioru: {count}. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.",
+  "portal.partialResult":
+    "Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
+  "portal.clinicIssue": "{clinic}: {detail}",
+  // Native clinic linking and explicit document pickup.
+  "portal.title": "Dokumenty z przychodni",
+  "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",
+  "portal.address": "Adres HTTPS portalu",
+  "portal.code": "Kod połączenia",
+  "portal.deviceName": "Nazwa tego urządzenia",
+  "portal.person": "Czyja dokumentacja",
+  "portal.matchPerson": "Dopasuj dane z dokumentu",
+  "portal.routing":
+    "Dokumenty trafiają do osoby o zgodnym pełnym imieniu i nazwisku oraz dacie urodzenia. Pozostałe trafiają do Udostępnionych mi.",
+  "portal.link": "Połącz z przychodnią",
+  "portal.check": "Sprawdź nowe dokumenty",
+  "portal.result":
+    "Zapisano nowych dokumentów: {added}. Nie udało się zweryfikować dokumentów: {refused}.",
+  "portal.incomplete":
+    "Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.",
+  "portal.approved": "Przychodnia zatwierdziła to urządzenie.",
+  "portal.notRequested":
+    "Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.",
+  "portal.awaiting":
+    "Zapisano prośbę o zatwierdzenie. Sprawdź aktualizacje lub wyślij ją ponownie.",
+  "portal.deviceCode": "Kod urządzenia",
+  "portal.copy": "Kopiuj kod urządzenia",
+  "portal.copied": "Skopiowano kod urządzenia.",
+  "portal.copyFailed": "Zaznacz cały kod urządzenia i skopiuj go.",
+  "portal.fingerprint": "Pełny odcisk urządzenia",
+  "portal.compare":
+    "Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.",
+  "portal.requestApproval": "Poproś przychodnię o zatwierdzenie",
+  "portal.sourceVerified": "Z {clinic} · Zweryfikowano",
+  "portal.errorAddress":
+    "Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.",
+  "portal.errorCode":
+    "Wpisz pełny kod połączenia wyświetlany w portalu pacjenta.",
+  "portal.errorDeviceName":
+    "Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.",
+  "portal.errorCodeRejected":
+    "Portal nie zaakceptował kodu. Utwórz nowy kod połączenia w portalu pacjenta.",
+  "portal.errorKeys":
+    "Przychodnia nie opublikowała jeszcze klucza podpisu. Połączenie jest nieukończone.",
+  "portal.errorExists":
+    "To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.",
+  "portal.errorIncomplete":
+    "Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.",
+  "portal.errorRefused":
+    "Nie udało się zweryfikować dokumentu z przychodni. Nie dodano go ani nie wysłano potwierdzenia odbioru.",
+  "portal.errorDamaged":
+    "Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Przywróć go z kopii zapasowej albo poproś przychodnię o ponowne wysłanie.",
+
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
   "frame.window.label": "Prywatny sejf myCarlos",

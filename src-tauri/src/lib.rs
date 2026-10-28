@@ -6,6 +6,11 @@ mod idle;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod portal_approval;
+mod portal_client;
+mod portal_delivery;
+mod portal_link;
+mod portal_pickup;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
@@ -196,6 +201,34 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            #[cfg(feature="portal-linking")]
+            VaultError::ApprovalTerminal(state,reason) => match state {
+                portal_approval::ApprovalState::Expired => Self {code:"approval_expired",message:"This clinic approval request expired. Check for updates before starting a new request."},
+                portal_approval::ApprovalState::Cancelled => Self {code:"approval_cancelled",message:"This clinic approval request was cancelled. Check for updates before starting a new request."},
+                _ if reason.is_some_and(|r|r.needs_clinic()) => Self {code:"approval_contact_clinic",message:"The clinic cannot approve this request here. Contact your clinic for next steps."},
+                _ => Self {code:"approval_refused",message:"The clinic refused this device approval request. Contact your clinic before trying again."},
+            },
+            #[cfg(feature="portal-linking")]
+            VaultError::ApprovalRequestMissing => Self {code:"approval_missing",message:"Your saved approval request was not found on the portal. Send the saved request again."},
+            #[cfg(feature="portal-linking")]
+            VaultError::ApprovalNeedsClinic => Self {code:"approval_contact_clinic",message:"Clinic approval needs to be checked before another request. Contact your clinic for next steps."},
+            #[cfg(feature="portal-linking")]
+            VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
+            VaultError::Portal(reason) => {
+                use portal_link::LinkError;
+                match reason {
+                    LinkError::Disabled => Self { code: "portal_link_disabled", message: "Portal linking is not enabled in this build." },
+                    LinkError::Unavailable => Self { code: "portal_link_unavailable", message: "Portal linking is not available on this device yet." },
+                    LinkError::InvalidPortal => Self { code: "portal_link_address", message: "Enter the portal's HTTPS address, without a username, password, query or fragment." },
+                    LinkError::InvalidCode => Self { code: "portal_link_code", message: "Enter the complete code shown by the portal." },
+                    LinkError::InvalidDeviceName => Self { code: "portal_link_device_name", message: "Choose a device name of 1 to 64 characters without control characters." },
+                    LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code." },
+                    LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed." },
+                    LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again." },
+                    LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
+                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
+                }
+            },
             VaultError::Busy => Self {
                 code: "busy",
                 message: "A passphrase check or speed test is running. Wait for it to finish, then try again.",
@@ -801,7 +834,7 @@ impl std::io::Write for FileStart {
 /// checks the whole file.
 fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     let mut start = FileStart::default();
-    let exported = store.export(record_id, &mut start);
+    let exported = store.read_for_view(record_id, &mut start);
     if start.complete() {
         return Ok(start.bytes == photo::JPEG_START);
     }
@@ -847,7 +880,7 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
 /// shown. The record is unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
-    let exported = store.export(record_id, &mut buffer);
+    let exported = store.read_for_view(record_id, &mut buffer);
     if buffer.refused {
         return Err(VaultError::NotPhoto);
     }
@@ -865,7 +898,7 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
 /// the helper decides when the patient unlocks it.
 fn is_locked_pdf(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
     let mut scan = pdf_unlock::LockScan::default();
-    let exported = store.export(record_id, &mut scan);
+    let exported = store.read_for_view(record_id, &mut scan);
     if scan.found() {
         return Ok(true);
     }
@@ -919,7 +952,7 @@ fn unlock_pdf(
         .find(|record| record.id == record_id)
         .ok_or(VaultError::NotFound)?;
     let mut locked = LimitedBuffer::new(pdf_unlock::MAX_LOCKED_PDF_BYTES);
-    let exported = store.export(record_id, &mut locked);
+    let exported = store.read_for_view(record_id, &mut locked);
     if locked.over {
         return Err(VaultError::PdfTooLarge);
     }
@@ -1456,6 +1489,115 @@ where
 #[tauri::command]
 async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PortalLinkRequest {
+    portal_base: String,
+    code: String,
+    device_name: String,
+    profile_id: Option<Uuid>,
+}
+
+impl Drop for PortalLinkRequest {
+    fn drop(&mut self) {
+        self.code.zeroize();
+    }
+}
+
+#[tauri::command]
+async fn vault_portal_link(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<portal_link::LinkSummary> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Capture before queuing work: an old IPC request must not begin linking
+    // in a session opened while it waited for a blocking worker.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    // User input already touches the native deadline. HTTP completion is not
+    // new activity and must not keep an unattended or newly unlocked vault open.
+    tauri::async_runtime::spawn_blocking(move || {
+        store.link_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_request_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
+}
+
+#[tauri::command]
+async fn vault_restart_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
+}
+
+#[tauri::command]
+async fn vault_check_documents(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<portal_pickup::CheckResult> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = store;
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let session = store.portal_link_ticket();
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
 }
 
 #[tauri::command]
@@ -2616,7 +2758,7 @@ async fn vault_view_page(
         }
         // Sized up front, so the document is never copied by a growing buffer.
         let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
-        store.export(record_id, &mut *document)?;
+        store.read_for_view(record_id, &mut *document)?;
         match pdf_view::view_in_helper(&document, &password, page, width, &ticket) {
             pdf_view::Outcome::Shown(shown) => ViewedPage::from_rendered(shown, &ticket),
             pdf_view::Outcome::Refused(Refusal::WrongPassword) if given => {
@@ -3125,6 +3267,10 @@ pub fn run() {
             vault_touch,
             vault_set_auto_lock,
             vault_snapshot,
+            vault_portal_link,
+            vault_check_documents,
+            vault_request_device_approval,
+            vault_restart_device_approval,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
