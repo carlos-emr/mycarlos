@@ -185,7 +185,7 @@ export const pl: Record<MessageKey, Message> = {
   "rename.title.profile": "Zmień nazwę folderu osoby",
   "rename.label.profile": "Nazwa folderu",
   "rename.help.profile":
-    "Zmienia to tylko wyświetlaną nazwę folderu. Imię i nazwisko osoby używane w przychodni, data urodzenia i dokumenty pozostają bez zmian.",
+    "Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.",
   "rename.profile.controls": "Nazwy nie mogą zawierać znaków sterujących.",
   "rename.profile.saved": "Nazwa folderu została zmieniona na {name}.",
   "rename.profile.action": "Zmień nazwę „{name}”",

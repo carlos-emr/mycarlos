@@ -171,7 +171,7 @@ export const en = {
   "rename.title.profile": "Rename person's folder",
   "rename.label.profile": "Folder name",
   "rename.help.profile":
-    "This changes only the displayed folder name. The person's clinic name, birth date and documents stay unchanged.",
+    "This changes only the displayed folder name. The person's folders and documents stay where they are.",
   "rename.profile.controls": "Names cannot contain control characters.",
   "rename.profile.saved": "Folder name changed to {name}.",
   "rename.profile.action": "Rename “{name}”",

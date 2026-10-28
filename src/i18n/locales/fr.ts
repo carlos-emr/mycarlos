@@ -177,7 +177,7 @@ export const fr: Record<MessageKey, Message> = {
   "rename.title.profile": "Renommer le dossier de la personne",
   "rename.label.profile": "Nom du dossier",
   "rename.help.profile":
-    "Cela change uniquement le nom affiché du dossier. Le nom de la personne utilisé à la clinique, sa date de naissance et ses documents restent inchangés.",
+    "Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.",
   "rename.profile.controls":
     "Les noms ne peuvent pas contenir de caractères de contrôle.",
   "rename.profile.saved": "Le dossier s’appelle maintenant {name}.",

@@ -70,7 +70,7 @@ describe("RenameDialog", () => {
     const input = screen.getByLabelText("Folder name");
     expect(input).toHaveValue("FAKE Patietn.pdf");
     expect(
-      screen.getByText(/clinic name, birth date and documents stay unchanged/),
+      screen.getByText(/folders and documents stay where they are/),
     ).toBeVisible();
     fireEvent.change(input, { target: { value: "  FAKE Patient  " } });
     fireEvent.click(screen.getByRole("button", { name: "Save name" }));

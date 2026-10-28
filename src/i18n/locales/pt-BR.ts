@@ -176,7 +176,7 @@ export const ptBR: Record<MessageKey, Message> = {
   "rename.title.profile": "Renomear a pasta da pessoa",
   "rename.label.profile": "Nome da pasta",
   "rename.help.profile":
-    "Isso altera apenas o nome exibido da pasta. O nome da pessoa usado na clínica, a data de nascimento e os documentos permanecem iguais.",
+    "Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.",
   "rename.profile.controls":
     "Os nomes não podem conter caracteres de controle.",
   "rename.profile.saved": "O nome da pasta foi alterado para {name}.",
