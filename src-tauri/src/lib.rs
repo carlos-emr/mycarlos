@@ -1580,7 +1580,13 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// returned (null when none is), so the screen can warn that later events can't be checked.
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
-    match run_blocking(store.inner(), VaultStore::history_view).await {
+    audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
+}
+
+/// What Security receives for a history read: the view, or `history_unverified` when the read
+/// itself failed (a storage error, say), which is never shown as damage; other errors as they are.
+fn audit_history_result(result: CommandResult<vault::HistoryView>) -> CommandResult<AuditHistory> {
+    match result {
         Ok(view) => Ok(view.into()),
         Err(error) if matches!(error.code, "corrupt" | "unreadable" | "storage") => {
             Err(PublicError {
@@ -5501,6 +5507,38 @@ mod audit_history_ipc_tests {
             body: tauri::ipc::InvokeBody::default(),
             headers: Default::default(),
             invoke_key: tauri::test::INVOKE_KEY.into(),
+        }
+    }
+
+    /// D129: a read that fails, as on a storage error, gives the fixed "could not be read and
+    /// verified" error and never a damage warning; other errors (a lock, say) pass through.
+    #[test]
+    fn audit_history_turns_a_failed_read_into_history_unverified() {
+        for error in [
+            VaultError::Storage,
+            VaultError::Corrupt,
+            VaultError::Unreadable,
+        ] {
+            let Err(failure) = audit_history_result(Err(PublicError::from(error))) else {
+                panic!("a failed read must stay a failure");
+            };
+            assert_eq!(failure.code, "history_unverified");
+            assert_eq!(failure.message_key, "interface.history.error.unverified");
+        }
+        for (error, code) in [
+            (
+                VaultError::Locked,
+                PublicError::from(VaultError::Locked).code,
+            ),
+            (
+                VaultError::Cancelled,
+                PublicError::from(VaultError::Cancelled).code,
+            ),
+        ] {
+            let Err(failure) = audit_history_result(Err(PublicError::from(error))) else {
+                panic!("a failed read must stay a failure");
+            };
+            assert_eq!(failure.code, code);
         }
     }
 

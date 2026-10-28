@@ -4934,11 +4934,12 @@ fn write_history_segment(
     })
 }
 
-/// Whether a history piece failed to read because it is damaged or gone, as opposed to a failed
-/// storage operation (or a full disk) that a retry can get past and that says nothing about
-/// damage: those fail the whole read, as before D129, instead of being shown as damage.
+/// Whether a history piece failed to read because it is damaged or gone (`Corrupt`: missing, cut
+/// short, or not authenticating), as opposed to a failed storage operation (or a full disk) that a
+/// retry can get past and that says nothing about damage: those fail the whole read, as before
+/// D129, instead of being shown as damage.
 fn history_piece_damaged(error: &VaultError) -> bool {
-    matches!(error, VaultError::Corrupt | VaultError::Unreadable)
+    matches!(error, VaultError::Corrupt)
 }
 
 /// The audit history as far as it checks out; see `VaultStore::history_view`.
@@ -14205,7 +14206,7 @@ mod tests {
     fn only_a_damaged_or_missing_piece_is_shown_as_damage() {
         // A storage error or a full disk says nothing about damage: the read fails, as before.
         assert!(history_piece_damaged(&VaultError::Corrupt));
-        assert!(history_piece_damaged(&VaultError::Unreadable));
+        assert!(!history_piece_damaged(&VaultError::Unreadable));
         assert!(!history_piece_damaged(&VaultError::Storage));
         assert!(!history_piece_damaged(&VaultError::NoSpace));
         assert!(!history_piece_damaged(&VaultError::Cancelled));
