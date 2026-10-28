@@ -111,6 +111,13 @@ privacy, accessibility, or clinical review.
       machine with Android Studio's emulator (see the Android section in `README.md`), then check
       that choosing PDFs imports them, that Save a copy writes the file, and that pressing Home
       while the picker is open locks the vault when the app returns.
+- [ ] Verify the phone camera (D97, #73) on an Android device and a real iPhone, with step 12
+      of TESTING.md. It is written against Wry's Android web chrome client and iOS WebKit
+      delegate and covered by renderer, script and build checks, but it has not been run on a
+      phone. In particular: that Android asks for the camera and the page then gets it; that
+      iOS treats the app's `tauri://` page as secure enough for the camera; that the vault does
+      not lock under the phone's camera question but does once it closes with the app hidden; and
+      that no photo reaches Photos, the Gallery or Files.
 - [x] The native session has its own idle deadline, the automatic lock delay plus 15 seconds after
       the last activity it hears of, so the vault's keys are dropped even if the webview crashes or
       hangs, or is suspended while the app keeps running. Commands, user input the renderer

@@ -1,3 +1,4 @@
+import { humanValue } from "../test/humanText";
 import {
   afterEach,
   beforeEach,
@@ -549,14 +550,18 @@ describe("a size typed as a percent", () => {
     ["401", 4, "The largest size is 400%."],
     ["10000", 4, "The largest size is 400%."],
   ])("reads %j as %s", (typed, level, note) => {
-    expect(readTypedZoom(typed)).toEqual({ level, note });
+    expect(humanValue(readTypedZoom(typed))).toEqual(
+      humanValue({ level, note }),
+    );
   });
 
   it("caps a run of digits too long for a number at the largest size", () => {
-    expect(readTypedZoom("9".repeat(400))).toEqual({
-      level: 4,
-      note: "The largest size is 400%.",
-    });
+    expect(humanValue(readTypedZoom("9".repeat(400)))).toEqual(
+      humanValue({
+        level: 4,
+        note: "The largest size is 400%.",
+      }),
+    );
   });
 
   it.each([
@@ -572,9 +577,11 @@ describe("a size typed as a percent", () => {
     "NaN",
     "125 125",
   ])("refuses %j", (typed) => {
-    expect(readTypedZoom(typed)).toEqual({
-      error: "Type a number from 80 to 400.",
-    });
+    expect(humanValue(readTypedZoom(typed))).toEqual(
+      humanValue({
+        error: "Type a number from 80 to 400.",
+      }),
+    );
   });
 });
 

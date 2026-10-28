@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RenameDialog } from "./RenameDialog";
@@ -13,29 +14,191 @@ const reserved = (word: string) =>
 const cp = (codePoint: number) => String.fromCodePoint(codePoint);
 
 // Renders the dialog for a stored name and returns what a test needs.
-function open(name: string, kind: "document" | "folder" = "document") {
+function open(
+  name: string,
+  kind: "document" | "folder" = "document",
+  photo = false,
+) {
   const onSave = vi.fn().mockResolvedValue(undefined);
   render(
     <RenameDialog
-      target={{ kind, id: "target-1", name }}
+      target={{ kind, id: "target-1", name, photo }}
       readOnly={false}
       onSave={onSave}
       onClose={vi.fn()}
     />,
   );
   const input = screen.getByLabelText<HTMLInputElement>(
-    kind === "folder" ? "Folder name" : "File name",
+    humanText(kind === "folder" ? "Folder name" : "File name"),
   );
   return {
     input,
     onSave,
-    save: screen.getByRole("button", { name: "Save name" }),
+    save: screen.getByRole("button", { name: humanText("Save name") }),
     type: (value: string) => fireEvent.change(input, { target: { value } }),
     submit: () => fireEvent.submit(input.closest("form")!),
   };
 }
 
 describe("RenameDialog", () => {
+  it("closes an unchanged person's folder name without reporting a saved mutation", () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patient" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("corrects a person's folder label without applying document extension rules", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patietn.pdf" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    const input = screen.getByLabelText("Folder name");
+    expect(input).toHaveValue("FAKE Patietn.pdf");
+    expect(
+      screen.getByText(/folders and documents stay where they are/),
+    ).toBeVisible();
+    fireEvent.change(input, { target: { value: "  FAKE Patient  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledExactlyOnceWith("FAKE Patient");
+  });
+
+  it("rejects the shared name, control characters and excessive Unicode length for a person", () => {
+    const onSave = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patient" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("Folder name");
+    for (const value of [
+      " sHaReD wItH mE ",
+      "FAKE\u0085Patient",
+      "🪻".repeat(121),
+      "  ",
+    ]) {
+      fireEvent.change(input, { target: { value } });
+      expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+      fireEvent.submit(input.closest("form")!);
+      expect(onSave).not.toHaveBeenCalled();
+    }
+    fireEvent.change(input, { target: { value: "🪻".repeat(120) } });
+    expect(screen.getByRole("button", { name: "Save name" })).toBeEnabled();
+  });
+
+  it("keeps a refused person correction open, and Cancel never saves", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("FAKE native refusal"));
+    const onClose = vi.fn();
+    render(
+      <RenameDialog
+        target={{ kind: "profile", id: "person-1", name: "FAKE Patietn" }}
+        readOnly={false}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Folder name"), {
+      target: { value: "FAKE Patient" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "FAKE native refusal",
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["Holiday.jpg", "Holiday", ".jpg"],
+    ["Holiday.JPEG", "Holiday", ".JPEG"],
+    ["Legacy photo.png", "Legacy photo.png", ".jpg"],
+  ])(
+    "keeps a verified photo's JPEG suffix outside the name field: %s",
+    (stored, stem, extension) => {
+      const { input } = open(stored, "document", true);
+      expect(input).toHaveValue(stem);
+      expect(
+        screen.getByText(humanText(extension), { exact: true }),
+      ).toHaveAttribute("aria-hidden", "true");
+      expect(input).toHaveHumanAccessibleDescription(
+        `${HELP} The ${extension} extension stays the same.`,
+      );
+    },
+  );
+
+  it.each([
+    ["Holiday.jpg", "Family", "Family.jpg"],
+    ["Holiday.jpg", "Family.JPG", "Family.jpg"],
+    ["Holiday.jpg", "Family.jpeg", "Family.jpg"],
+    ["Holiday.JPEG", "Family.jpeg", "Family.JPEG"],
+    ["Holiday.jpg", "Family.png", "Family.png.jpg"],
+    ["Holiday.jpg.jpg", "Family.jpg", "Family.jpg.jpg"],
+    ["Legacy photo.png", "Family", "Family.jpg"],
+  ])(
+    "saves the photo name %s typed as %s with its JPEG suffix",
+    (stored, typed, saved) => {
+      const { onSave, type, submit } = open(stored, "document", true);
+      type(typed);
+      submit();
+      expect(onSave).toHaveBeenCalledWith(saved);
+    },
+  );
+
+  it.each([
+    ".jpg",
+    ".JPEG",
+    "  ",
+    "../Holiday",
+    "Holiday/scan",
+    "Holiday\\scan",
+  ])("refuses an empty or unsafe photo basename: %s", (typed) => {
+    const { onSave, type, submit, save } = open(
+      "Holiday.jpg",
+      "document",
+      true,
+    );
+    type(typed);
+    expect(save).toBeDisabled();
+    submit();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("counts the fixed JPEG suffix toward the photo name's UTF-8 limit", () => {
+    const { onSave, type, submit, save } = open(
+      "Holiday.jpg",
+      "document",
+      true,
+    );
+    type("字".repeat(79));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(TOO_LONG);
+    expect(save).toBeDisabled();
+    submit();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it.each([
     // stored name, field value, extension shown beside it
     ["Results.pdf", "Results", ".pdf"],
@@ -53,15 +216,15 @@ describe("RenameDialog", () => {
     expect(input).toHaveValue(value);
     if (extension) {
       // Shown beside the field but not announced: the help text names it.
-      const shown = screen.getByText(extension, { exact: true });
+      const shown = screen.getByText(humanText(extension), { exact: true });
       expect(shown).toBeVisible();
       expect(shown).toHaveAttribute("aria-hidden", "true");
-      expect(input).toHaveAccessibleDescription(
+      expect(input).toHaveHumanAccessibleDescription(
         `${HELP} The ${extension} extension stays the same.`,
       );
     } else {
-      expect(screen.queryByText(/^\.\w+$/)).not.toBeInTheDocument();
-      expect(input).toHaveAccessibleDescription(HELP);
+      expect(screen.queryByText(humanText(/^\.\w+$/))).not.toBeInTheDocument();
+      expect(input).toHaveHumanAccessibleDescription(HELP);
     }
   });
 
@@ -177,7 +340,7 @@ describe("RenameDialog", () => {
   ])("refuses %j, typed %j: %j", (stored, typed, alert) => {
     const { onSave, save, type, submit } = open(stored);
     type(typed);
-    if (alert) expect(screen.getByRole("alert")).toHaveTextContent(alert);
+    if (alert) expect(screen.getByRole("alert")).toHaveHumanTextContent(alert);
     else expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(save).toBeDisabled();
     submit();
@@ -214,18 +377,20 @@ describe("RenameDialog", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(save).toBeEnabled();
       submit();
-      expect(screen.getByRole("alert")).toHaveTextContent(reserved(word));
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(reserved(word));
       expect(onSave).not.toHaveBeenCalled();
       // Returning to the field says why it was refused.
       expect(input).toHaveAttribute("aria-invalid", "true");
-      expect(input).toHaveAccessibleDescription(
+      expect(input).toHaveHumanAccessibleDescription(
         expect.stringContaining(reserved(word)),
       );
       // Editing the name clears it.
       type(`${typed}x`);
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(input).not.toHaveAttribute("aria-invalid");
-      expect(input).toHaveAccessibleDescription(expect.stringContaining(HELP));
+      expect(input).toHaveHumanAccessibleDescription(
+        expect.stringContaining(HELP),
+      );
     },
   );
 
@@ -236,12 +401,12 @@ describe("RenameDialog", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     submit();
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent(reserved("CON"));
+    expect(alert).toHaveHumanTextContent(reserved("CON"));
     expect(onSave).not.toHaveBeenCalled();
     // Saving again says so again, for screen readers too.
     submit();
     expect(screen.getByRole("alert")).not.toBe(alert);
-    expect(screen.getByRole("alert")).toHaveTextContent(reserved("CON"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(reserved("CON"));
   });
 
   it.each([
@@ -250,7 +415,7 @@ describe("RenameDialog", () => {
     ["X. ", UNSAFE],
   ])("refuses to save an unedited %j: %j", (stored, alert) => {
     const { onSave, save, submit } = open(stored);
-    expect(screen.getByRole("alert")).toHaveTextContent(alert);
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(alert);
     expect(save).toBeDisabled();
     submit();
     expect(onSave).not.toHaveBeenCalled();
@@ -268,7 +433,7 @@ describe("RenameDialog", () => {
     expect(save).toBeEnabled();
 
     type("a".repeat(121));
-    expect(screen.getByRole("alert")).toHaveTextContent(TOO_LONG);
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(TOO_LONG);
     expect(save).toBeDisabled();
     submit();
     expect(onSave).not.toHaveBeenCalled();
@@ -282,7 +447,9 @@ describe("RenameDialog", () => {
   ])("renames folder %j to %j", (stored, typed) => {
     const { input, onSave, type, submit } = open(stored, "folder");
     expect(input).toHaveValue(stored);
-    expect(screen.queryByText(".pdf", { exact: true })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(humanText(".pdf"), { exact: true }),
+    ).not.toBeInTheDocument();
     type(typed);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     submit();

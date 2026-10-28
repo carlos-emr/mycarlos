@@ -44,6 +44,31 @@ has been suppressed or marked acceptable.
   serve component and end-to-end accessibility checks respectively.
 - SBOM generators, the formatter, compiler, and build tools retain their specific
   development/CI roles.
+- Project Fluent formats the same seven checked-in catalogues in the renderer
+  and Rust native boundary: exact pins `@fluent/bundle` 0.19.1 (Apache-2.0) and
+  `fluent-bundle` 0.16.0 (Apache-2.0 OR MIT). Exact pin `@fluent/syntax` 0.19.0
+  (Apache-2.0) is used only by development catalogue validation and tests.
+  Catalogue text is bundled and never fetched at runtime. The existing build
+  and check commands validate all seven resources, generated TypeScript/Rust
+  bindings, rich slots and emergency copy, and run negative validator tests.
+  Relative to the #119 parent, existing package versions, npm integrity values
+  and Rust checksums stay unchanged; two npm and nine Rust packages are added.
+  The Rust additions are:
+
+  | Package | Version | License offered |
+  | --- | --- | --- |
+  | fluent-bundle | 0.16.0 | Apache-2.0 OR MIT |
+  | fluent-langneg | 0.13.1 | Apache-2.0 OR MIT |
+  | fluent-syntax | 0.12.0 | Apache-2.0 OR MIT |
+  | intl-memoizer | 0.5.3 | Apache-2.0 OR MIT |
+  | intl_pluralrules | 7.0.2 | Apache-2.0 OR MIT |
+  | self_cell | 1.3.0 | Apache-2.0 OR GPL-2.0-only |
+  | type-map | 0.5.1 | MIT OR Apache-2.0 |
+  | unic-langid | 0.9.6 | MIT OR Apache-2.0 |
+  | unic-langid-impl | 0.9.6 | MIT OR Apache-2.0 |
+
+  `self_cell` can be used under its Apache-2.0 option. OpenCC was an offline
+  translation preparation aid only; it is absent from both application graphs.
 - `unicode-normalization` (0.1.25, the unicode-rs project, pure Rust) is now a
   direct dependency: passphrases are normalized to NFC before key derivation so
   the same visible passphrase derives the same key whichever composition form a
@@ -53,6 +78,24 @@ has been suppressed or marked acceptable.
   already use, as `webview2-com` is on Windows: the camera dialog needs WebKitGTK's media-stream
   setting turned on and its permission requests answered (`src-tauri/src/camera_permission.rs`).
   It adds no package to the Rust lockfile.
+- RustCrypto `cms` (=0.2.3), `x509-cert` (=0.2.5), `p256` (=0.14.0), `ecdsa` (=0.17.0) and
+  `der` (=0.7.10) are direct dependencies, pinned exactly. They are pure Rust and all
+  Apache-2.0 OR MIT. They check the signature on PDFs CARLOS signed for a patient
+  (`src-tauri/src/signed_pdf.rs`, #55): the CMS SignedData, its certificate and the
+  ECDSA P-256 signature, which is what "Verified" rests on. Writing a DER and ECDSA
+  parser here instead would add custom security-sensitive code.
+  - The CMS/X.509 format stack stays on `der` 0.7, `spki` 0.7 and `const-oid` 0.9.
+    P-256 verification moves to `p256` 0.14 / `ecdsa` 0.17 / `elliptic-curve` 0.14,
+    whose `crypto-bigint` 0.7.10 satisfies RUSTSEC-2026-0387 (fixed in 0.7.6+).
+    The compatible 0.7.6 release is yanked; Cargo selects non-yanked 0.7.10.
+  - The previous `p256` 0.13 / `elliptic-curve` 0.13 line requires `crypto-bigint` 0.5,
+    so it cannot use the fixed 0.7 line through a lockfile-only update. No patched 0.5
+    release is listed by RustSec.
+  - `cms` 0.3 is still a pre-release; revisit the CMS/X.509 format stack separately when
+    it is stable. That upgrade is not needed to remove the vulnerable EC dependency.
+  - They add 22 packages to the Rust lockfile alongside the current PDF dependencies. Two of them, `tls_codec` and
+    `tls_codec_derive`, are only locked: they serve `x509-cert`'s optional SCT feature, which
+    nothing enables, so they are never built.
 
 ## Added for password-protected PDFs (#54)
 
@@ -86,6 +129,7 @@ input, and it runs only in the separate PDF helper (`src-tauri/src/pdf_view.rs`)
 as `lopdf` does.
 
 **Where there is unsafe code:**
+
 - `hayro` and `hayro-interpret` forbid unsafe code in their own crates.
 - `hayro-syntax`, the PDF parser underneath them, does not.
   - It has an unsafe lifetime extension of its own (`page.rs`).
@@ -232,6 +276,21 @@ The glib source fix is verified separately as described above. The unmaintained
 packages still need an upstream migration or replacement review before release;
 a passing default audit does not establish that every dependency is maintained.
 
+### Tokio I/O safety advisory (RUSTSEC-2026-0386)
+
+Tokio is locked to 1.53.3, the patched release on the existing 1.53 line for
+[RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386.html).
+The update preserves the other locked packages, dependency edges and features.
+Tauri and its transitive dependencies use Tokio; the application uses Tauri's
+async runtime.
+
+The affected `AsyncFd` APIs are Unix-specific. The upstream change deprecates the
+old constructors and adds unsafe registration APIs: callers must keep the file
+descriptor valid, open and unchanged throughout the registration. Upgrading does
+not itself enforce that ownership requirement in callers. Source inspection found
+no application `AsyncFd` use; this is not proof of exploitability or its absence.
+Other advisory warnings remain visible through the existing native audit command.
+
 ### Previous removal validation (historical)
 
 All seven jobs passed in the linked run for code commit `c5f682b`: Windows, macOS,
@@ -242,3 +301,101 @@ backport regressions. Windows installation and the GUI subsystem check passed.
 This run predates restoration of mobile live reload and is historical evidence.
 The restoration triggers fresh checks, including both mobile development builds.
 Device testing and release review remain separate gates.
+
+## Current signed-PDF digest and import analysis (#101)
+
+The pinned RustCrypto versions remain unchanged. CMS signed attributes are decoded as
+strict DER `Any`/`SET OF` values, preserving their exact encoded bytes, so the agreed UUID
+OID `2.25.132515939282652475535231260060469025505` does not pass through const-oid 0.9's
+`u32` arc conversion. OID values must be minimally encoded and terminated; duplicate OIDs,
+multiple values and a manifest digest other than one 32-byte OCTET STRING fail closed.
+ECDSA verifies the original signed-attribute values under the SET tag; no attribute is
+substituted or dropped. The digest is SHA-256 of the exact extracted manifest bytes.
+
+The existing confined PDF helper has a bounded two-stage protocol. A conservative range
+preflight supplies no manifest and uses no PDF password. Main authenticates CMS and a
+trusted pin before the second stage can parse full PDF structure and decrypt/extract the
+matching AF/Data + EmbeddedFiles attachment. Existing lopdf is reused only in that helper.
+Input is capped at 100 MiB, output at 128 KiB, the manifest at 16 KiB and decompressed
+object streams at 16 MiB; existing helper time/memory/confinement limits still apply.
+
+The import pipeline captures its already authenticated object-verification read within
+the same input cap. It preserves the original object and returns optional ephemeral
+unverified diagnostics, without raw manifest/name/date-of-birth/key data. No authenticated
+clinic links exist in the app yet: production supplies no pins and cannot grant Verified.
+FAKE fixture pins are test inputs only. No new network access or vault format is introduced.
+
+The embedded v1 producer contract permits explicit null for clinic/recipient IDs and
+unknown descriptive metadata (CARLOS `DocumentManifest` Javadoc, lines 35–54). The Rust
+reader accepts those null values but still requires every member; unknown members, missing
+members and wrong value types fail closed. Neither an absent clinic claim nor an absent
+recipient can become Verified. This changes no outer portal delivery schema or vault format.
+
+## Future native linking dependency selection (#55)
+
+This separate evaluation branch selects exact `ed25519-dalek` 2.2.0 and
+`x25519-dalek` 2.0.1 (BSD-3-Clause). Their 2.x APIs share the existing rand_core
+0.6 / rand 0.8 and SHA-256 0.10 lines. Signing uses a seed-derived public key;
+`hazmat`, legacy compatibility and batch verification are not enabled. Zeroize
+is explicit on both libraries. RustSec RUSTSEC-2022-0093 is fixed from Ed25519
+2.0; this selection does not assert the dependency graph has no other advisories.
+
+The optional network feature selects `reqwest` 0.13.5 (MIT OR Apache-2.0),
+default features off and rustls-no-provider only. Its async exchange is cancelled
+by dropping the send/body future after a native session change. The upstream
+patch also fixes a blocking timeout panic used by other consumers. It shares Tauri's existing reqwest 0.13 line
+but adds a production TLS graph when explicitly enabled. The already locked
+Tokio runtime is a direct optional dependency for the cancellation timer/select. `rustls` 0.23.46
+(Apache-2.0 OR ISC OR MIT) selects ring/std/TLS1.2; no aws-lc build or HTTP/3,
+compression, cookies, HTTP/2 or system-proxy feature is requested. The explicit
+crypto provider avoids process-global provider installation.
+`rustls-platform-verifier` 0.7.1 (MIT OR Apache-2.0) uses the platform trust
+services and requires a JNI 0.22 integration on Android. Its fixes to Android CRL
+fetching, disabled trust anchors and Windows hostname verification take priority
+over retaining the existing JNI 0.21 line.
+The Android Kotlin verifier component and native initialization must be wired
+and tested before Android linking is claimed to work.
+
+The resolved graph, licenses and feature unification require independent review
+before compiling this feature. No HPKE implementation or delivery-v2 dependency
+is introduced by the initial linking slice. Primary selection sources:
+- https://docs.rs/crate/ed25519-dalek/2.2.0
+- https://docs.rs/crate/ed25519-dalek/2.2.0/source/LICENSE
+- https://docs.rs/crate/x25519-dalek/2.0.1/features
+- https://rustsec.org/advisories/RUSTSEC-2022-0093.html
+- https://github.com/seanmonstar/reqwest/releases/tag/v0.13.5
+- https://crates.io/crates/rustls/0.23.46
+- https://github.com/rustls/rustls-platform-verifier/releases/tag/v/0.7.1
+
+Resolved source-only graph review: 576 packages on the integrated baseline,
+602 now (27 additions, one old reqwest entry removed; 26 net). The inherited
+Tauri edges also enable reqwest JSON/stream; default application features remain
+empty and do not enable TLS. With portal-linking, only rustls-no-provider/TLS
+are added to that reqwest edge. ring is 0.17.14 (Apache-2.0 AND ISC); other new
+licenses are BSD-3-Clause, MIT/Apache-2.0, ISC and the bundled root data's
+CDLA-Permissive-2.0. Source metadata/lock resolution is not a build or advisory
+scan. No independent final dependency approval or feature build has passed yet.
+
+### Gated native pickup and first-device approval (26 October 2026)
+
+The `portal-linking` feature now also selects pinned `hpke = 0.13.0`
+(MIT OR Apache-2.0), with defaults disabled and only `std,x25519`. The frozen
+suite is DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305, base mode,
+sequence zero. Curve operations and HPKE composition use the upstream library;
+there is no custom curve or HPKE implementation. Its optional P256 KEM is OFF,
+so it does not restore the older P256/crypto-bigint stack removed in #122.
+
+The resolved additions are hpke 0.13.0, aes 0.8.4, aes-gcm 0.10.3, ctr 0.9.2,
+ghash 0.5.1 and polyval 0.6.2. AES-GCM is a nonoptional upstream dependency even
+though this application selects ChaCha20-Poly1305 only. Existing X25519, SHA256,
+HKDF, HMAC, ChaCha20Poly1305 and zeroize lines are reused. HPKE private keys,
+shared secrets, AEAD keys/nonces and exporter secrets zeroize on drop; opened
+plaintext is held in `Zeroizing` buffers. The upstream crate reports a review
+of its earlier 0.8 implementation, not a paid audit of this pinned version.
+
+Primary source: https://github.com/rozbb/rust-hpke/tree/v0.13.0
+and https://docs.rs/crate/hpke/0.13.0/source/Cargo.toml.orig .
+Unchanged shared M0 package vectors and RFC 9180 A.2.1 sequence zero have passed
+on Linux. Actual Java-produced PAdES package opening and retained receipt
+verification have also passed with explicit FAKE test trust. This is neither
+an independent dependency approval nor Windows/native portal enablement.

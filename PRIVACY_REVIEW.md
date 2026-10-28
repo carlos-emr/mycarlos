@@ -35,7 +35,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 
 | What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
+| Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
@@ -56,9 +56,19 @@ with where it was saved (a file path, or a document provider's address on Androi
 backups were saved, and where. It also records when the passphrase was changed (never the
 passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
 (its names then). It keeps the names as they were at each moment, so a document
-renamed or hidden can still be read off the history. The history is never shown in the app, and
-the app never changes or removes an entry. It is in every backup. The app tells the patient this
-in Security, under "What myCarlos keeps". There is no way to save the history outside the vault:
+renamed or hidden can still be read off the history. Security now offers a verified read-only
+view while the vault is unlocked. Native code sends display names, folder labels, times, methods,
+session notes and saved locations over local main-window IPC only for entries it has
+authenticated and linked from the start of the manifest-pinned chain, or back from its pinned end.
+If a piece is damaged or the chain is cut short, Security shows the entries those ends prove with
+a notice that the events between can't be checked; damaged pieces are never opened or shown
+(D129, D146). Record/profile/folder
+identifiers, chain hashes, wrapped keys and object paths stay native. Folder labels do not
+establish complete paths or unrecorded historical person attribution; saved locations can be
+shortened. Locking conceals
+the view while native confirmation is pending and late results cannot restore it. The app never
+changes or removes an entry. It is in every backup. The app tells the patient this in Security,
+under "What myCarlos keeps". There is no separate history-file export outside the vault:
 Ben chose (19 October) to keep it on the device only, tamper-evident.
 
 **Nothing erases a vault either** (#71's third part). Starting again ("Set vault aside", under
@@ -98,7 +108,9 @@ details: the app makes the JPEG itself, and the vault removes any such details a
 encrypting it. Its name gives the date and time it was taken, and it is labelled like any added
 document ("Manual import — unverified"). The camera is turned on only after the patient chooses to
 use it, never records sound, and turns off as soon as the photo is taken or the camera window
-closes.
+closes. On a phone, the phone itself asks once whether myCarlos may use the camera; the app says
+so before it asks, and never opens the phone's own camera app, so no photo reaches the phone's
+Photos or Gallery app.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:
@@ -337,7 +349,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   it that the app cannot overwrite; it overwrites its own copy and lets go of the rest when the
   camera or photo window closes, and the engine frees them later. A photo is shown by the app's
   own display engine, not by a separate viewer.
-- **Phones.** Taking photos is built for computers only; phones and tablets come later.
+- **Phones.** Taking photos on Android and iPhone is written but has not yet been tried on a
+  phone (see MVP_STATUS); document scanning on phones and tablets comes later.
 - **Guessing on the device.** A wait after repeated wrong passphrases or recovery keys is being
   added in a change still under review (none for the first five, then a little longer each time,
   up to a minute). It slows guessing only through the app on the device, not against a copied

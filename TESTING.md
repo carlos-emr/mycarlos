@@ -144,7 +144,10 @@ On every platform:
    the two Bloodwork files are identical.
 5. Create a folder with **New folder**, open a document and use **Move to** to put it in the
    folder, then rename the document (**Rename document** in its details) and the folder
-   (**Rename folder**).
+   (**Rename folder**). With two people in the vault, open a filed document's details,
+   choose the other person's records or one of their folders under **Move to**, then press
+   **Move**. Check it appears there and its saved copy is unchanged. If that person already
+   has the same file, the document stays with its original person and the notice says so.
 6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
 7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
@@ -177,6 +180,26 @@ On every platform:
     says where to turn it back on, and the rest of the app keeps working. Also check that the
     light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
     is on, or let the vault lock.
+    **On a phone** (Android, or a real iPhone: the iOS Simulator has no camera), **Take a photo**
+    is next to **New** too. The first time, the window says the phone asks once; choose **Use the
+    camera**, and the phone asks whether myCarlos may use the camera (an iPhone with the reason
+    "myCarlos uses the camera to save photos of your health documents…"). Allow it. The vault
+    stays unlocked while the phone asks, the back camera's view shows, and the steps above work
+    the same. Then check:
+    - **No copy anywhere:** after saving a photo, nothing new is in the phone's Photos or Gallery
+      app, or in its Files app.
+    - **Refused:** in the phone's Settings, turn the camera off for myCarlos (Android: Apps →
+      myCarlos → Permissions → Camera; iPhone: myCarlos → Camera) and choose **Take a photo**:
+      the window says where to turn it back on, and the rest of the app keeps working. Turn it
+      on and choose **Try again**. On Android, also choose **Don't allow** twice when asked:
+      Android then stops asking, and the window still says where to allow it.
+    - **Leaving:** with the camera on, go to the home screen and come back: the camera indicator
+      went off and the vault is locked. Do the same while the phone's question is showing: the
+      vault is locked when you come back.
+    - **The indicator:** the camera dot (green on both phones) goes off when you take the photo,
+      choose **Cancel**, or the vault locks.
+    - **TalkBack or VoiceOver:** the shutter is read as "Take photo", and after a photo the focus
+      is on **Use photo**. At the largest text size, every button can be reached.
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
@@ -486,6 +509,42 @@ with Escape; no destructive operation may occur. These checks cover the tested W
 and Linux desktop configurations. macOS/mobile behavior, screen-reader announcements,
 and the documented upstream URL-parsing limitations still need their own checks.
 
+The macOS CI job also runs `native_dialog_macos` on the OS main thread, inside
+AppKit's actual application run loop. The Cargo-launched harness uses the pinned
+objc2 example's unbundled-app activation call; this is not production app policy.
+Per-case diagnostics record running/active state, real key-window identity,
+parent/sheet key eligibility, first responder and default-button-cell identity.
+These observations do not replace any keyboard-property or actual-event gate.
+The production sheet observes only its own parent's close notification, ends
+only its own attached sheet, and clamps a late response to cancellation once
+that parent starts closing; completion is delivered at most once.
+
+The harness presents
+an owned test window and the production AppKit sheet in all seven languages, posts
+native Return and Escape events, and deliberately activates the second button.
+It checks the exact response for each role and also refuses unknown responses,
+cancellation and closing the parent. All 24 cases are attempted, including actual
+key events after a keyboard-property mismatch; any metadata or behavior failure
+still fails the report. Each appearance, key-window, and completion wait has its
+own five-second deadline, allowing about fifteen seconds per case or 360 seconds
+of waits across 24 cases, plus framework calls and cleanup.
+
+A timeout fails before cleanup; cleanup cannot
+satisfy an expected response. The job uploads `test-results/native-dialog-macos.json`,
+and a missing report fails the upload step. Linux and Windows print an unsupported
+message for this harness and provide no AppKit evidence. These in-process events
+supplement physical keyboard, Tauri window integration and mobile device checks;
+the report and its CI outcome must be reviewed before claiming platform coverage.
+
+New camera filenames use the computer's date and time formats; their prefix
+follows the UI language when they are created. Changing the UI language leaves
+those date/time parts unchanged, and never renames existing records. This is an
+intentional change from the earlier UI-locale date selection (English used
+en-GB). Camera browser checks fix the computer locale (en-US and en-GB), timezone
+(UTC), and clock, then compare the complete stored filename exactly. Human
+status text uses Fluent isolation; the stored filename contains no formatter
+controls.
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
@@ -587,3 +646,42 @@ including phone layout, live system changes, contrast checks and forced-colours 
 is separate from actual Windows/macOS native appearance testing and the text-size checks on
 real devices (#40). Capture fresh light/dark/forced-colours screenshots at the reviewed head;
 old screenshots and successful CI do not establish Ben's UI approval.
+
+## Signed-PDF checker draft (#101)
+
+The current CARLOS #5135 fixture is copied without regeneration from commit
+`1f30d9bef74c4a5206244db21a367e94f24188df`; its SHA-256 is
+`f26a292a7ba9ca52e5251b65fb46345c959d784fc3190435ca6b67a024b47169`. All keys and patients
+are FAKE. The fixture includes 12 cases, including the encrypted email copy, missing/null
+recipient, tampering, extra update, incomplete ranges, wrong kid, RSA and two signatures.
+
+Focused native tests exercise CMS/current manifest digest and complete helper extraction;
+`tests/pdf_helper.rs` also starts the real confined executable for both plaintext and
+encrypted attachment reports. Import tests check preserved original bytes and honest
+unverified diagnostics. The password is passed for extraction only after signature/pin
+authentication. An unverified or malformed document still imports with its existing
+unverified source label; helper refusal never creates a Verified result.
+
+This is not completion of #55: authenticated portal linking, key replacement/revocation,
+durable trust metadata and rechecking stored documents remain separate work. The app has
+no authenticated clinic pins, so real production imports cannot become Verified yet.
+
+For the explicit real-helper import check, first build/run the signature helper integration
+case (`cargo test --manifest-path src-tauri/Cargo.toml --test pdf_helper
+the_confined_signature_helper_reports`). Then set
+`MYCARLOS_TEST_SIGNED_HELPER_EXE` to that build's absolute app-executable path and run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib signed_import_analysis --
+--ignored --test-threads=1`. It requires the exact `unknown_signer` refusal from the real
+helper path, alongside byte preservation. The executable override exists only in unit-test
+builds, never production; a generic helper failure cannot satisfy this test.
+
+Nullable v1 tests cover explicit null, missing members, wrong types, size bounds and the
+clinic/recipient binding policy. An optional ignored private-producer test reads only a
+FAKE captured PDF and its public certificate from metadata named by
+`MYCARLOS_TEST_PRIVATE_INTEROP_INPUT`; with the real helper configured as above, run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib
+private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
+--test-threads=1`. It requires signed-but-unbound under an explicit FAKE test pin and
+`unknown_signer` with no pins. Private captures, metadata and certificates are not committed
+or published, and the public fixture is not regenerated. This opt-in check is separate from
+the public fixture tests and does not establish a production authenticated clinic link.

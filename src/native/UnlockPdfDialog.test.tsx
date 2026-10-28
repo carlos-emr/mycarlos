@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { UnlockPdfDialog } from "./UnlockPdfDialog";
@@ -81,3 +82,34 @@ describe("the password prompt for a locked PDF", () => {
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 });
+
+for (const locale of LOCALES) {
+  it(`separates the translated unlock action from the literal file name in ${locale}`, () => {
+    setLocaleOverride(locale);
+    const name = "FAKE {name} Hidden.pdf";
+    const onCancel = vi.fn();
+    render(
+      <UnlockPdfDialog
+        name={name}
+        wrongTries={0}
+        busy={false}
+        onUnlock={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+    const heading = `${translate(locale, "unlock.submit")} ${name}`;
+    expect(
+      screen.getByRole("dialog", { name: heading }),
+    ).toHaveAccessibleDescription(
+      translate(
+        locale,
+        "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
+      ),
+    );
+    expect(screen.getByRole("heading", { name: heading })).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: translate(locale, "common.cancel") }),
+    );
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+}

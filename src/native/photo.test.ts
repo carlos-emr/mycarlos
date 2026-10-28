@@ -1,10 +1,14 @@
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
+import { humanValue } from "../test/humanText";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CAMERA_PLATFORMS,
   MAX_CAMERA_JPEG_BYTES,
   MAX_PHOTO_SIDE_PX,
   PHOTO_QUALITY,
   cameraFailure,
   cameraFailureMessage,
+  isPhone,
   namedAsPdf,
   photoName,
   encodePhoto,
@@ -13,13 +17,67 @@ import {
 
 describe("photo names", () => {
   it.each([
-    [new Date(2026, 9, 17, 15, 5), "Photo, 17 Oct 2026, 3.05 PM.jpg"],
-    [new Date(2026, 0, 1, 0, 0), "Photo, 1 Jan 2026, 12.00 AM.jpg"],
-    [new Date(2026, 11, 31, 12, 30), "Photo, 31 Dec 2026, 12.30 PM.jpg"],
-    [new Date(2027, 4, 9, 9, 7), "Photo, 9 May 2027, 9.07 AM.jpg"],
-    [new Date(2027, 4, 9, 23, 59), "Photo, 9 May 2027, 11.59 PM.jpg"],
-  ])("names a photo taken at %s %j", (taken, name) => {
-    expect(photoName(taken)).toBe(name);
+    new Date(2026, 9, 17, 15, 5),
+    new Date(2026, 0, 1, 0, 0),
+    new Date(2026, 11, 31, 12, 30),
+    new Date(2027, 4, 9, 9, 7),
+    new Date(2027, 4, 9, 23, 59),
+  ])("names a photo using computer date/time at %s", (taken) => {
+    const date = new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(taken);
+    const time = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+      .format(taken)
+      .replace(/:/g, ".");
+    expect(photoName(taken)).toBe(`Photo, ${date}, ${time}.jpg`);
+  });
+  it("keeps generated filename bytes free of formatter controls in every UI language", () => {
+    const taken = new Date(2026, 9, 17, 15, 5);
+    const date = new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(taken);
+    const time = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+      .format(taken)
+      .replace(/:/g, ".");
+    try {
+      for (const locale of LOCALES) {
+        setLocaleOverride(locale);
+        const name = photoName(taken);
+        expect(name).not.toMatch(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/u);
+        const prefix = {
+          en: "Photo, ",
+          fr: "Photo, ",
+          es: "Foto, ",
+          pl: "Zdjęcie, ",
+          "pt-BR": "Foto, ",
+          "zh-CN": "相片，",
+          "zh-TW": "相片，",
+        }[locale];
+        const separator = locale.startsWith("zh-") ? "，" : ", ";
+        // Only the prefix/punctuation follows the UI language. The generated
+        // date/time parts and the complete raw filename remain exact.
+        expect(name).toBe(`${prefix}${date}${separator}${time}.jpg`);
+        expect(new TextDecoder().decode(new TextEncoder().encode(name))).toBe(
+          name,
+        );
+        expect(name.endsWith(".jpg")).toBe(true);
+        expect(
+          translate(locale, "interface.photo.name", { date, time }),
+        ).toContain("\u2068");
+      }
+    } finally {
+      setLocaleOverride(null);
+    }
   });
 
   it("uses no character the vault refuses in a document name", () => {
@@ -210,20 +268,78 @@ describe("camera failures", () => {
   });
 
   it("says where to allow the camera on each computer", () => {
-    expect(cameraFailureMessage("denied", "windows")).toBe(
-      "myCarlos can't use the camera. In Windows Settings, open Privacy & security, then Camera, and turn on camera access for desktop apps. Then choose Try again.",
+    expect(humanValue(cameraFailureMessage("denied", "windows"))).toBe(
+      humanValue(
+        "myCarlos can't use the camera. In Windows Settings, open Privacy & security, then Camera, and turn on camera access for desktop apps. Then choose Try again.",
+      ),
     );
-    expect(cameraFailureMessage("denied", "macos")).toBe(
-      "myCarlos can't use the camera. In System Settings, open Privacy & Security, then Camera, and turn on myCarlos. Then choose Try again.",
+    expect(humanValue(cameraFailureMessage("denied", "macos"))).toBe(
+      humanValue(
+        "myCarlos can't use the camera. In System Settings, open Privacy & Security, then Camera, and turn on myCarlos. Then choose Try again.",
+      ),
     );
-    expect(cameraFailureMessage("denied", "linux")).toBe(
-      "myCarlos can't use the camera. Check your computer's camera privacy settings and let myCarlos use the camera. Then choose Try again.",
+    expect(humanValue(cameraFailureMessage("denied", "linux"))).toBe(
+      humanValue(
+        "myCarlos can't use the camera. Check your computer's camera privacy settings and let myCarlos use the camera. Then choose Try again.",
+      ),
     );
-    expect(cameraFailureMessage("missing", "windows")).toBe(
-      "No camera was found. Connect a camera, then choose Try again.",
+    expect(humanValue(cameraFailureMessage("missing", "windows"))).toBe(
+      humanValue(
+        "No camera was found. Connect a camera, then choose Try again.",
+      ),
     );
-    expect(cameraFailureMessage("busy", "windows")).toBe(
-      "The camera is in use by another app. Close it, then choose Try again.",
+    expect(humanValue(cameraFailureMessage("busy", "windows"))).toBe(
+      humanValue(
+        "The camera is in use by another app. Close it, then choose Try again.",
+      ),
     );
+  });
+
+  it("says where to allow the camera on each phone, and asks no one to connect one (D97)", () => {
+    expect(humanValue(cameraFailureMessage("denied", "android"))).toBe(
+      humanValue(
+        "myCarlos can't use the camera. Open your phone's Settings, then Apps, then myCarlos, then Permissions, and allow Camera. Then choose Try again.",
+      ),
+    );
+    expect(humanValue(cameraFailureMessage("denied", "ios"))).toBe(
+      humanValue(
+        "myCarlos can't use the camera. Open your phone's Settings, then myCarlos, and turn on Camera. Then choose Try again.",
+      ),
+    );
+    for (const phone of ["android", "ios"]) {
+      expect(humanValue(cameraFailureMessage("missing", phone))).toBe(
+        humanValue("This phone's camera could not be found. Choose Try again."),
+      );
+      expect(humanValue(cameraFailureMessage("stopped", phone))).toBe(
+        humanValue("The camera stopped. Choose Try again."),
+      );
+      expect(humanValue(cameraFailureMessage("busy", phone))).toBe(
+        humanValue(
+          "The camera is in use by another app. Close it, then choose Try again.",
+        ),
+      );
+    }
+    // A computer's stays as it was.
+    expect(humanValue(cameraFailureMessage("stopped", "linux"))).toBe(
+      humanValue(
+        "The camera stopped. Check that it is connected, then choose Try again.",
+      ),
+    );
+  });
+});
+
+describe("where the camera is offered (D97)", () => {
+  it("is offered on the computers and the phones", () => {
+    for (const platform of ["windows", "macos", "linux", "android", "ios"])
+      expect(CAMERA_PLATFORMS.has(platform), platform).toBe(true);
+    expect(CAMERA_PLATFORMS.has("freebsd")).toBe(false);
+    expect(CAMERA_PLATFORMS.has("")).toBe(false);
+  });
+
+  it("knows a phone from a computer", () => {
+    expect(isPhone("android")).toBe(true);
+    expect(isPhone("ios")).toBe(true);
+    for (const computer of ["windows", "macos", "linux", ""])
+      expect(isPhone(computer), computer).toBe(false);
   });
 });

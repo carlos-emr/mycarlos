@@ -1,28 +1,30 @@
+import { t as translateNow, formatDate, getLocale } from "../i18n";
+import { formatPhotoName } from "../i18n/core";
 // Taking a photo with the camera (CameraDialog) and showing one (PhotoViewer).
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** A new photo's name, on the patient's own clock, such as "Photo, 17 Oct
- * 2026, 3.05 PM.jpg". The vault refuses ":" in a document name, as Windows
- * does in a file name, so the time is written with a dot. */
+/** A new photo gets a localized name once. Existing document names are user
+ * data and never change when the language changes. Colons are invalid in
+ * Windows file names, so the formatted clock uses dots. */
 export function photoName(now: Date): string {
-  const hours = now.getHours();
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  return `Photo, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}, ${hours % 12 || 12}.${minutes} ${hours < 12 ? "AM" : "PM"}.jpg`;
+  const date = formatDate(now, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const time = formatDate(now, { hour: "numeric", minute: "2-digit" }).replace(
+    /:/g,
+    ".",
+  );
+  // Intl may supply directional presentation marks for some computer locales.
+  // These generated date/time fields are filename metadata, not user input.
+  const filenameText = (value: string) =>
+    value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+  return formatPhotoName(getLocale(), filenameText(date), filenameText(time));
 }
+
+/** The JPEG suffix of a photo name, with its stored case, after a nonempty name. */
+export const photoExtension = (name: string) =>
+  /^[\s\S]+(\.jpe?g)$/i.exec(name)?.[1] ?? "";
 
 /** The longest side a photo is saved at; a larger camera frame is scaled
  * down. The vault refuses more than 8192 pixels a side (photo.rs). */
@@ -117,6 +119,21 @@ export function photoSize(
  * it is called, as the vault decides by the file's first bytes. */
 export const namedAsPdf = (name: string) => /\.pdf$/i.test(name.trim());
 
+/** Where the camera dialog is offered: the computers (#83) and, since D97,
+ * the phones. */
+export const CAMERA_PLATFORMS: ReadonlySet<string> = new Set([
+  "windows",
+  "macos",
+  "linux",
+  "android",
+  "ios",
+]);
+
+/** Phones: their own words for where the camera is allowed, and the system's
+ * permission question can hide the app while it is asked. */
+export const isPhone = (platform: string) =>
+  platform === "android" || platform === "ios";
+
 /** Why the camera could not be used. */
 export type CameraFailure = "denied" | "missing" | "busy" | "stopped" | "other";
 
@@ -132,29 +149,49 @@ export function cameraFailure(error: unknown): CameraFailure {
   return "other";
 }
 
-/** What to tell the patient, with where to look on their computer when the
- * camera was refused. */
+/** What to tell the patient, with where to look on their computer or phone
+ * when the camera was refused. */
 export function cameraFailureMessage(
   failure: CameraFailure,
   platform: string,
 ): string {
   switch (failure) {
     case "denied":
-      return `myCarlos can't use the camera. ${
-        platform === "windows"
-          ? "In Windows Settings, open Privacy & security, then Camera, and turn on camera access for desktop apps."
-          : platform === "macos"
-            ? "In System Settings, open Privacy & Security, then Camera, and turn on myCarlos."
-            : "Check your computer's camera privacy settings and let myCarlos use the camera."
-      } Then choose Try again.`;
+      return translateNow("interface.camera.denied", {
+        help:
+          platform === "windows"
+            ? translateNow(
+                "interface.photo.inWindowsSettingsOpenPrivacySecurityThen",
+              )
+            : platform === "macos"
+              ? translateNow(
+                  "interface.photo.inSystemSettingsOpenPrivacySecurityThen",
+                )
+              : platform === "android"
+                ? translateNow(
+                    "interface.photo.openYourPhonesSettingsThenAppsThen",
+                  )
+                : platform === "ios"
+                  ? translateNow(
+                      "interface.photo.openYourPhonesSettingsThenMyCarlosAnd",
+                    )
+                  : translateNow(
+                      "interface.photo.checkYourComputersCameraPrivacySettingsAnd",
+                    ),
+      });
     case "missing":
-      return "No camera was found. Connect a camera, then choose Try again.";
+      // A phone's camera is built in: nothing to connect.
+      return isPhone(platform)
+        ? translateNow("interface.photo.thisPhonesCameraCouldNotBeFound")
+        : translateNow("interface.photo.noCameraWasFoundConnectACamera");
     case "busy":
-      return "The camera is in use by another app. Close it, then choose Try again.";
+      return translateNow("interface.photo.theCameraIsInUseByAnother");
     case "stopped":
-      return "The camera stopped. Check that it is connected, then choose Try again.";
+      return isPhone(platform)
+        ? translateNow("interface.photo.theCameraStoppedChooseTryAgain")
+        : translateNow("interface.photo.theCameraStoppedCheckThatItIs");
     case "other":
-      return "The camera could not be started. Choose Try again.";
+      return translateNow("interface.photo.theCameraCouldNotBeStartedChoose");
   }
 }
 

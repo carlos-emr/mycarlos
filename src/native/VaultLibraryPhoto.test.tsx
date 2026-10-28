@@ -1,4 +1,7 @@
+import { humanText } from "../test/humanText";
+import { useTextState } from "../i18n";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -15,7 +18,7 @@ import {
 } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
-const NAME = /^Photo, \d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg$/;
+const NAME = /^Photo, [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg$/;
 const PHOTO_URL = "data:image/jpeg;base64,/9j/FAKE";
 
 const record = (id: string, displayName: string, folderIds: string[] = []) =>
@@ -79,6 +82,7 @@ function renderLibrary(
 ) {
   let current = initial;
   const bridge = {
+    platform: vi.fn().mockResolvedValue("windows"),
     savePhoto: vi.fn(async () => {
       current = {
         ...current,
@@ -99,7 +103,7 @@ function renderLibrary(
   } as unknown as VaultBridge;
   function Harness() {
     const [snapshot, setSnapshot] = useState(initial);
-    const [notice, setNotice] = useState(initialNotice);
+    const [notice, setNotice] = useTextState(initialNotice);
     return (
       <VaultLibrary
         bridge={bridge}
@@ -131,17 +135,78 @@ function renderLibrary(
 }
 
 describe("taking a photo from the library", () => {
+  it("does not reopen Rename when the details close during the photo check", async () => {
+    let answer!: (photo: boolean) => void;
+    const pending = new Promise<boolean>((resolve) => {
+      answer = resolve;
+    });
+    renderLibrary(
+      { ...base, records: [record("other", "Other.jpg")] },
+      {
+        isPhoto: vi.fn(() => pending),
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Other.jpg") }),
+    );
+    const details = screen.getByRole("dialog", {
+      name: humanText("Other.jpg"),
+    });
+    fireEvent.click(
+      within(details).getByRole("button", {
+        name: humanText("Rename document"),
+      }),
+    );
+    fireEvent.click(
+      within(details).getByRole("button", {
+        name: humanText("Close document details"),
+      }),
+    );
+    await act(async () => answer(true));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps an unknown unreadable document's metadata-only rename available", async () => {
+    renderLibrary(
+      { ...base, records: [record("other", "Other.txt")] },
+      {
+        isPhoto: vi.fn().mockRejectedValue({
+          code: "storage",
+          message: "FAKE unavailable object",
+        }),
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Other.txt") }),
+    );
+    const details = screen.getByRole("dialog", {
+      name: humanText("Other.txt"),
+    });
+    fireEvent.click(
+      within(details).getByRole("button", {
+        name: humanText("Rename document"),
+      }),
+    );
+    expect(
+      await screen.findByRole("textbox", { name: humanText("File name") }),
+    ).toHaveValue("Other.txt");
+  });
+
   it("opens with no message left over from the library", async () => {
     renderLibrary(base, {}, "windows", "Vault unlocked.");
-    expect(screen.getByText("Vault unlocked.")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
-    const camera = screen.getByRole("dialog", { name: "Take a photo" });
+    expect(screen.getByText(humanText("Vault unlocked."))).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Take a photo") }),
+    );
+    const camera = screen.getByRole("dialog", {
+      name: humanText("Take a photo"),
+    });
     await waitFor(() =>
-      expect(within(camera).getByRole("status")).not.toHaveTextContent(
+      expect(within(camera).getByRole("status")).not.toHaveHumanTextContent(
         "Vault unlocked.",
       ),
     );
-    expect(screen.queryByText("Vault unlocked.")).toBeNull();
+    expect(screen.queryByText(humanText("Vault unlocked."))).toBeNull();
   });
 
   it("shows a save that failed in the camera window, which stays open", async () => {
@@ -150,14 +215,22 @@ describe("taking a photo from the library", () => {
         throw { code: "storage", message: "FAKE" };
       }),
     });
-    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
-    const camera = screen.getByRole("dialog", { name: "Take a photo" });
-    const shutter = within(camera).getByRole("button", { name: "Take photo" });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Take a photo") }),
+    );
+    const camera = screen.getByRole("dialog", {
+      name: humanText("Take a photo"),
+    });
+    const shutter = within(camera).getByRole("button", {
+      name: humanText("Take photo"),
+    });
     await waitFor(() => expect(shutter).toBeEnabled());
     fireEvent.click(shutter);
-    fireEvent.click(within(camera).getByRole("button", { name: "Use photo" }));
+    fireEvent.click(
+      within(camera).getByRole("button", { name: humanText("Use photo") }),
+    );
     await waitFor(() =>
-      expect(within(camera).getByRole("status")).toHaveTextContent(
+      expect(within(camera).getByRole("status")).toHaveHumanTextContent(
         vaultErrorMessage({ code: "storage", message: "FAKE" }),
       ),
     );
@@ -166,22 +239,30 @@ describe("taking a photo from the library", () => {
 
   it("is offered on a computer", () => {
     renderLibrary(base);
-    expect(screen.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Take a photo") }),
+    ).toBeEnabled();
   });
 
   it("keeps the library out of reach while open, and gives the focus back", async () => {
     renderLibrary(base);
-    const take = screen.getByRole("button", { name: "Take a photo" });
+    const take = screen.getByRole("button", {
+      name: humanText("Take a photo"),
+    });
     take.focus();
     fireEvent.click(take);
-    const camera = screen.getByRole("dialog", { name: "Take a photo" });
+    const camera = screen.getByRole("dialog", {
+      name: humanText("Take a photo"),
+    });
     expect(take.closest("[inert]")).not.toBeNull();
     await waitFor(() =>
       expect(
-        within(camera).getByRole("button", { name: "Take photo" }),
+        within(camera).getByRole("button", { name: humanText("Take photo") }),
       ).toBeEnabled(),
     );
-    fireEvent.click(within(camera).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      within(camera).getByRole("button", { name: humanText("Cancel") }),
+    );
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(take.closest("[inert]")).toBeNull();
     await waitFor(() => expect(take).toHaveFocus());
@@ -189,26 +270,40 @@ describe("taking a photo from the library", () => {
 
   it("is not offered on a phone or tablet", () => {
     renderLibrary(base, {}, null);
-    expect(screen.queryByRole("button", { name: "Take a photo" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: humanText("Take a photo") }),
+    ).toBeNull();
   });
 
   it("is not offered while the vault is read-only", () => {
     renderLibrary({ ...base, recovery: "writeFailed" });
-    expect(screen.getByRole("button", { name: "Take a photo" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Take a photo") }),
+    ).toBeDisabled();
   });
 
   it("saves into the open folder, then opens the new photo to be renamed", async () => {
     const bridge = renderLibrary(base);
-    const sidebar = screen.getByRole("navigation", { name: "Record library" });
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
     fireEvent.click(
-      within(sidebar).getByRole("button", { name: /^FAKE Cards/ }),
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Cards/) }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
-    const camera = screen.getByRole("dialog", { name: "Take a photo" });
-    const shutter = within(camera).getByRole("button", { name: "Take photo" });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Take a photo") }),
+    );
+    const camera = screen.getByRole("dialog", {
+      name: humanText("Take a photo"),
+    });
+    const shutter = within(camera).getByRole("button", {
+      name: humanText("Take photo"),
+    });
     await waitFor(() => expect(shutter).toBeEnabled());
     fireEvent.click(shutter);
-    fireEvent.click(within(camera).getByRole("button", { name: "Use photo" }));
+    fireEvent.click(
+      within(camera).getByRole("button", { name: humanText("Use photo") }),
+    );
 
     await waitFor(() => expect(bridge.savePhoto).toHaveBeenCalledTimes(1));
     const [profileId, folderIds, name, jpeg] = vi.mocked(bridge.savePhoto).mock
@@ -221,16 +316,33 @@ describe("taking a photo from the library", () => {
     expect(jpeg.every((byte) => byte === 0)).toBe(true);
 
     const details = await screen.findByRole("dialog", {
-      name: "Photo, 17 Oct 2026, 3.05 PM.jpg",
+      name: humanText("Photo, 17 Oct 2026, 3.05 PM.jpg"),
     });
-    expect(screen.queryByRole("dialog", { name: "Take a photo" })).toBeNull();
     expect(
-      within(details).getByRole("button", { name: "Rename document" }),
+      screen.queryByRole("dialog", { name: humanText("Take a photo") }),
+    ).toBeNull();
+    expect(
+      within(details).getByRole("button", {
+        name: humanText("Rename document"),
+      }),
     ).toBeEnabled();
     await waitFor(() =>
-      expect(within(details).getByRole("status")).toHaveTextContent(
-        "Photo saved as Photo, 17 Oct 2026, 3.05 PM.jpg.",
+      expect(within(details).getByRole("status")).toHaveHumanTextContent(
+        "Photo, 17 Oct 2026, 3.05 PM.jpg was saved in myCarlos.",
       ),
+    );
+
+    fireEvent.click(
+      within(details).getByRole("button", {
+        name: humanText("Rename document"),
+      }),
+    );
+    const nameField = await screen.findByRole("textbox", {
+      name: humanText("File name"),
+    });
+    expect(nameField).toHaveValue("Photo, 17 Oct 2026, 3.05 PM");
+    expect(nameField).toHaveHumanAccessibleDescription(
+      "This changes the name in myCarlos and the suggested export name. The .jpg extension stays the same.",
     );
   });
 
@@ -241,14 +353,22 @@ describe("taking a photo from the library", () => {
         skippedDuplicates: ["Photo, 17 Oct 2026, 3.05 PM.jpg"],
       })),
     });
-    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
-    const shutter = screen.getByRole("button", { name: "Take photo" });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Take a photo") }),
+    );
+    const shutter = screen.getByRole("button", {
+      name: humanText("Take photo"),
+    });
     await waitFor(() => expect(shutter).toBeEnabled());
     fireEvent.click(shutter);
-    fireEvent.click(screen.getByRole("button", { name: "Use photo" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Use photo") }),
+    );
     expect(
       await screen.findByText(
-        "This photo is already in the vault, so it was not saved again.",
+        humanText(
+          "This photo is already in the vault, so it was not saved again.",
+        ),
       ),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -266,7 +386,7 @@ describe("viewing a photo", () => {
 
   const openDetails = (name: string) => {
     fireEvent.click(
-      screen.getByRole("button", { name: `Details for ${name}` }),
+      screen.getByRole("button", { name: humanText(`Details for ${name}`) }),
     );
     return screen.getByRole("dialog", { name });
   };
@@ -275,7 +395,7 @@ describe("viewing a photo", () => {
     const bridge = renderLibrary(withRecords);
     const details = openDetails("FAKE insurance card");
     const view = await within(details).findByRole("button", {
-      name: "View photo",
+      name: humanText("View photo"),
     });
     expect(bridge.isPhoto).toHaveBeenCalledWith("card");
     // The details only ask whether it is a photo; the photo stays native.
@@ -285,31 +405,41 @@ describe("viewing a photo", () => {
 
     // The viewer replaces the details, under the same name.
     const photo = await screen.findByRole("img", {
-      name: "Photo: FAKE insurance card",
+      name: humanText("Photo: FAKE insurance card"),
     });
     const viewer = photo.closest<HTMLElement>('[role="dialog"]')!;
-    expect(viewer).toHaveAccessibleName("FAKE insurance card");
+    expect(viewer).toHaveHumanAccessibleName("FAKE insurance card");
     expect(photo).toHaveAttribute("src", PHOTO_URL);
     await waitFor(() =>
       expect(
-        within(viewer).getByRole("button", { name: "Close" }),
+        within(viewer).getByRole("button", { name: humanText("Close") }),
       ).toHaveFocus(),
     );
     expect(
-      within(viewer).getByRole("button", { name: "Zoom out" }),
+      within(viewer).getByRole("button", { name: humanText("Zoom out") }),
     ).toBeDisabled();
-    fireEvent.click(within(viewer).getByRole("button", { name: "Zoom in" }));
-    expect(within(viewer).getByRole("status")).toHaveTextContent(
+    fireEvent.click(
+      within(viewer).getByRole("button", { name: humanText("Zoom in") }),
+    );
+    expect(within(viewer).getByRole("status")).toHaveHumanTextContent(
       "Zoomed to 150%.",
     );
-    fireEvent.click(within(viewer).getByRole("button", { name: "Close" }));
+    fireEvent.click(
+      within(viewer).getByRole("button", { name: humanText("Close") }),
+    );
     expect(
-      screen.getByRole("dialog", { name: "FAKE insurance card" }),
+      screen.getByRole("dialog", { name: humanText("FAKE insurance card") }),
     ).toHaveAttribute("aria-describedby", "native-record-about");
     // Closed, the photo is dropped; showing it again fetches it again.
-    expect(screen.queryByRole("img", { name: /^Photo: / })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "View photo" }));
-    await screen.findByRole("img", { name: "Photo: FAKE insurance card" });
+    expect(
+      screen.queryByRole("img", { name: humanText(/^Photo: /) }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("View photo") }),
+    );
+    await screen.findByRole("img", {
+      name: humanText("Photo: FAKE insurance card"),
+    });
     expect(bridge.viewPhoto).toHaveBeenCalledTimes(2);
   });
 
@@ -321,14 +451,18 @@ describe("viewing a photo", () => {
     });
     const details = openDetails("FAKE insurance card");
     fireEvent.click(
-      await within(details).findByRole("button", { name: "View photo" }),
+      await within(details).findByRole("button", {
+        name: humanText("View photo"),
+      }),
     );
     await waitFor(() =>
-      expect(within(details).getByRole("status")).toHaveTextContent(
+      expect(within(details).getByRole("status")).toHaveHumanTextContent(
         "FAKE This is not a photo.",
       ),
     );
-    expect(screen.queryByRole("img", { name: /^Photo: / })).toBeNull();
+    expect(
+      screen.queryByRole("img", { name: humanText(/^Photo: /) }),
+    ).toBeNull();
   });
 
   it("is not offered when the file is not a photo, and a PDF is not asked about", async () => {
@@ -338,14 +472,18 @@ describe("viewing a photo", () => {
     });
     openDetails("FAKE insurance card");
     await waitFor(() => expect(bridge.isPhoto).toHaveBeenCalledWith("card"));
-    expect(screen.queryByRole("button", { name: "View photo" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: humanText("View photo") }),
+    ).toBeNull();
     fireEvent.click(
-      screen.getByRole("button", { name: "Close document details" }),
+      screen.getByRole("button", { name: humanText("Close document details") }),
     );
 
     openDetails("FAKE results.pdf");
     expect(bridge.isPhoto).toHaveBeenCalledTimes(1);
     expect(bridge.viewPhoto).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "View photo" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: humanText("View photo") }),
+    ).toBeNull();
   });
 });

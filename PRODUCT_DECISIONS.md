@@ -116,10 +116,10 @@ settled for the pilot:
   structured health data rather than a document vault, and anything written to them leaves
   myCarlos's vault protection; if used at all, they would be a separate feature, not vault storage.
 - Ingest other than manual import and documents from CARLOS: document scanning (page edges,
-  several pages, one PDF), photo capture on phones and tablets, and documents from other EMRs.
-  Taking a photo with a computer's camera is being built (#73): the photo is a JPEG, stored as an
-  added document with the same label, and shown in a photo view; its label, and whether it ships
-  before phone capture, are for the product owner. (A verified CARLOS document requires the signed package decided above. CARLOS
+  several pages, one PDF) and documents from other EMRs.
+  Taking a photo with the camera is being built (#73), on computers and, as the product owner
+  asked (D97), on Android and iPhone: the photo is a JPEG, stored as an added document with the
+  same label, and shown in a photo view; its label is for the product owner. (A verified CARLOS document requires the signed package decided above. CARLOS
   can also email a patient an encrypted PDF; how that file reaches myCarlos in the pilot is open in
   #23, and imported without a signed package it is labelled **Patient imported · Unverified**.)
 - Organization beyond what is built (folders, search and sort; see `MVP_STATUS.md`): categories, a

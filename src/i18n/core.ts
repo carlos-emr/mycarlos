@@ -1,11 +1,6 @@
-import { CATALOGUES, type MessageKey } from "./locales";
-import {
-  DEFAULT_LOCALE,
-  LOCALES,
-  type Locale,
-  type Message,
-  type PluralForms,
-} from "./types";
+import { fluentBundle, formattingFailure } from "./catalogues";
+import { type MessageKey, fluentId } from "./locales/fluent/keys";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "./types";
 
 export type Params = Record<string, string | number>;
 
@@ -18,6 +13,20 @@ export function matchLocale(tag: string): Locale | null {
   const exact = LOCALES.find((locale) => locale.toLowerCase() === wanted);
   if (exact) return exact;
   const primary = wanted.split("-")[0];
+  if (primary === "zh") {
+    // Script and region belong to the core tag. Extension/private-use payload
+    // can contain the same words without requesting that script or region.
+    try {
+      const locale = new Intl.Locale(wanted);
+      if (locale.script === "Hant") return "zh-TW";
+      if (locale.script === "Hans") return "zh-CN";
+      return ["TW", "HK", "MO"].includes(locale.region ?? "")
+        ? "zh-TW"
+        : "zh-CN";
+    } catch {
+      return null;
+    }
+  }
   return (
     LOCALES.find((locale) => locale.toLowerCase().split("-")[0] === primary) ??
     null
@@ -44,10 +53,19 @@ function systemLanguages(): readonly string[] {
 }
 
 // --- the current language -------------------------------------------------
-// Chosen by the patient (a later Settings control calls setLocaleOverride),
-// otherwise by the system. Kept in module state so any component can read it.
+// Chosen on this device, otherwise by the system. The transient setter is
+// also used by previews/tests; only rememberLocale writes the device choice.
 
-let override: Locale | null = null;
+export const LANGUAGE_STORAGE_KEY = "mycarlos.language.v1";
+export type LanguageError =
+  | ""
+  | "language.error.unreadable"
+  | "language.error.notRemembered";
+export interface LanguagePreference {
+  choice: Locale | null;
+  error: LanguageError;
+}
+let preference: LanguagePreference = { choice: null, error: "" };
 const listeners = new Set<() => void>();
 
 function applyToDocument(locale: Locale) {
@@ -58,77 +76,129 @@ function applyToDocument(locale: Locale) {
 }
 
 export function getLocale(): Locale {
-  return override ?? resolveLocale(systemLanguages());
+  return preference.choice ?? resolveLocale(systemLanguages());
 }
 
 /** Use this language whatever the system says, or null to follow the system
  * again. Anything that is not a shipped language is ignored. */
 export function setLocaleOverride(locale: Locale | null): void {
   if (locale !== null && !LOCALES.includes(locale)) return;
-  override = locale;
-  applyToDocument(getLocale());
-  listeners.forEach((listener) => listener());
+  updatePreference(locale, "");
 }
 
 export function getLocaleOverride(): Locale | null {
-  return override;
+  return preference.choice;
+}
+
+export function getLanguagePreference(): LanguagePreference {
+  return preference;
+}
+
+function publishLocale() {
+  applyToDocument(getLocale());
+  listeners.forEach((listener) => listener());
+}
+function updatePreference(choice: Locale | null, error: LanguageError) {
+  preference = { choice, error };
+  publishLocale();
+}
+
+/** A device preference, separate from every vault and document. A failed save
+ * keeps the chosen language usable for this session and reports that limit. */
+export function rememberLocale(locale: Locale | null): void {
+  if (locale !== null && !LOCALES.includes(locale)) return;
+  let error: LanguageError = "";
+  try {
+    if (locale === null) window.localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+    else window.localStorage.setItem(LANGUAGE_STORAGE_KEY, locale);
+  } catch {
+    error = "language.error.notRemembered";
+  }
+  updatePreference(locale, error);
 }
 
 export function subscribeLocale(listener: () => void): () => void {
+  if (!listeners.size && typeof window !== "undefined")
+    window.addEventListener("languagechange", publishLocale);
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size && typeof window !== "undefined")
+      window.removeEventListener("languagechange", publishLocale);
+  };
 }
 
 /** Sets the page's `lang` for the language now in use. Call once at start-up. */
 export function initLocale(): Locale {
-  const locale = getLocale();
-  applyToDocument(locale);
-  return locale;
+  let choice: Locale | null = null;
+  let error: LanguageError = "";
+  try {
+    const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored && LOCALES.includes(stored as Locale)) choice = stored as Locale;
+  } catch {
+    error = "language.error.unreadable";
+  }
+  updatePreference(choice, error);
+  return getLocale();
 }
 
 // --- translating ----------------------------------------------------------
 
-function pluralForm(message: PluralForms, locale: Locale, count: number) {
-  const category = new Intl.PluralRules(locale).select(count);
-  return message[category] ?? message.other;
-}
-
-/** Fills {name} placeholders in a single pass, so a value that itself contains
- * braces is never read as another placeholder. The result is plain text for a
- * React text node: nothing here builds HTML. A placeholder with no value is
- * left as written. */
-export function interpolate(
-  template: string,
-  params: Params,
-  locale: Locale,
-): string {
-  return template.replace(/\{(\w+)\}/g, (whole, name: string) => {
-    if (!Object.prototype.hasOwnProperty.call(params, name)) return whole;
-    const value = params[name];
-    return typeof value === "number"
-      ? formatNumber(value, locale)
-      : String(value);
-  });
-}
-
-/** The text for a key in a language. A missing key or form falls back to
- * English, and a key unknown even there shows the key itself, so a gap is
- * visible rather than blank. A message with plural forms needs `count`. */
+/** Human-facing text isolates inserted values. Missing messages or arguments
+ * show a recoverable formatting failure without logging the arguments. */
 export function translate(
   locale: Locale,
   key: MessageKey,
   params: Params = {},
 ): string {
-  const message: Message | undefined =
-    CATALOGUES[locale]?.[key] ?? CATALOGUES[DEFAULT_LOCALE][key];
-  if (message === undefined) return key;
-  if (typeof message === "string") return interpolate(message, params, locale);
-  const count = params.count;
-  const form =
-    typeof count === "number"
-      ? pluralForm(message, locale, count)
-      : message.other;
-  return interpolate(form, params, locale);
+  return formatMessage(locale, key, params, true);
+}
+
+/** Only the printed kit metadata bypasses bidi isolation, so copied labels
+ * and dates contain no invisible formatter characters. Recovery bytes are
+ * rendered directly, outside translated messages. */
+export function translatePrintedKit(
+  locale: Locale,
+  key: "kit.labelPrinted" | "kit.printed",
+  params: Params,
+): string {
+  return formatMessage(locale, key, params, false);
+}
+
+/** A generated filename is stored data, not a human sentence. Do not add bidi
+ * delimiters to it or turn a formatter fault into a saved document name. */
+export function formatPhotoName(
+  locale: Locale,
+  date: string,
+  time: string,
+): string {
+  const value = formatMessage(
+    locale,
+    "interface.photo.name",
+    { date, time },
+    false,
+  );
+  if (value === formattingFailure(locale)) throw new Error(value);
+  return value;
+}
+
+function formatMessage(
+  locale: Locale,
+  key: MessageKey,
+  params: Params,
+  useIsolating: boolean,
+): string {
+  try {
+    const bundle = fluentBundle(locale, useIsolating);
+    const message = bundle.getMessage(fluentId(key));
+    if (!message?.value) return formattingFailure(locale);
+    const errors: Error[] = [];
+    const formatted = bundle.formatPattern(message.value, params, errors);
+    return errors.length ? formattingFailure(locale) : formatted;
+  } catch {
+    // A bundled resource/format fault remains visible and recoverable. Never log arguments.
+    return formattingFailure(locale);
+  }
 }
 
 /** Text in the language now in use. */
@@ -149,7 +219,7 @@ export function formatNumber(
 export function formatDate(
   value: Date | number,
   options: Intl.DateTimeFormatOptions = { dateStyle: "medium" },
-  locale: Locale = getLocale(),
+  locale?: string,
 ): string {
   return new Intl.DateTimeFormat(locale, options).format(value);
 }

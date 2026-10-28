@@ -1,3 +1,4 @@
+import { messagePattern, translate } from "./support/fluent";
 import { expect, test, type Page } from "@playwright/test";
 import {
   expectAnnounced,
@@ -83,7 +84,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
-  await expectAnnounced(page, "1 file(s) encrypted and imported.");
+  await expectAnnounced(page, "1 document encrypted and added.");
 
   // A document's details, and a move from there.
   await page
@@ -102,13 +103,19 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
 
   // A folder's rename dialog, and a folder's own view.
   await page
-    .getByRole("button", { name: "Rename folder FAKE Results" })
+    .getByRole("button", {
+      name: translate("en", "library.folder.rename", { name: "FAKE Results" }),
+    })
     .click();
   const rename = page.getByRole("dialog", { name: /Rename/ });
   await expect(rename).toBeVisible();
   await screenReaderSmoke(page, "rename a folder", rename);
   await rename.press("Escape");
-  await page.getByRole("button", { name: "Open FAKE Results" }).click();
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Results" }),
+    })
+    .click();
   await expect(
     page.getByRole("heading", { name: "FAKE Results", level: 1 }),
   ).toBeVisible();
@@ -157,23 +164,100 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
   await expectOnlyFakedCommands(page);
 });
 
-// #92: typing in the search box changes what is listed and the
-// count above it ("… documents found", or "No matching records"), but none
-// of it is a status message, so a screen reader is not told (WCAG 4.1.3).
+// #92: announce settled search results without moving focus or reading every
+// keystroke. This browser check observes live-region changes, not real speech.
 test("a search's result is read out (#92)", async ({ page }) => {
-  test.fail(true, "#92: search results are not read out");
+  // Load normally before the captured pause target. This two-minute head start
+  // exceeds the 90-second test budget and stays below the five-minute idle lock,
+  // so controller/browser scheduling cannot make pauseAt move backwards.
+  const pauseTarget = Date.now();
+  await page.clock.install({ time: pauseTarget - 120_000 });
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
   const search = page.getByRole("searchbox", {
-    name: "Search everything in My records",
+    name: translate("en", "interface.search.all", { location: "My records" }),
   });
+  const status = page.locator("[data-search-status]");
+  await expect(search).toBeVisible();
+  await page.clock.pauseAt(pauseTarget);
+  await page.clock.runFor(600);
+  await expect(status).toBeEmpty();
+  await expect(status).toHaveAttribute("aria-live", "polite");
+  await expect(status).toHaveAttribute("aria-atomic", "true");
+  await search.fill("Letter");
+  await page.clock.runFor(300);
+  await expect(status).toBeEmpty();
   await search.fill("Letter.pdf");
+  await page.clock.runFor(499);
+  await expect(status).toBeEmpty();
+  await page.clock.runFor(1);
   await expect(page.getByRole("article")).toHaveCount(1);
-  await expectAnnounced(page, "documents found");
+  await expectAnnounced(page, "Search results. Folders: 0. Documents: 1.");
+  await expect(search).toBeFocused();
+
+  // A different query with the same count still changes the live region.
+  await search.fill("Bloodwork.pdf");
+  await expect(status).toBeEmpty();
+  await page.clock.runFor(500);
+  const messages = () =>
+    page.evaluate(() =>
+      (Reflect.get(window, "__announced") as string[]).filter((text) =>
+        text.startsWith("Search results."),
+      ),
+    );
+  await expect.poll(messages).toHaveLength(2);
   await search.fill("FAKE nothing like this");
-  await expect(page.getByText("No matching records")).toBeVisible();
+  await page.clock.runFor(500);
+  await expect(page.locator(".empty-state strong")).toHaveText(
+    "No matching records",
+  );
   await expectAnnounced(page, "No matching records");
+  await expect(search).toBeFocused();
+
+  await search.fill("");
+  await page.clock.runFor(500);
+  await expectAnnounced(
+    page,
+    "Search cleared. Folders in this location: 2. Documents: 1.",
+  );
+  await expect(search).toBeFocused();
+  await expectOnlyFakedCommands(page);
+});
+
+test("pending search announcements stop when leaving the location (#92)", async ({
+  page,
+}) => {
+  // Load normally before the captured pause target. This two-minute head start
+  // exceeds the 90-second test budget and stays below the five-minute idle lock,
+  // so controller/browser scheduling cannot make pauseAt move backwards.
+  const pauseTarget = Date.now();
+  await page.clock.install({ time: pauseTarget - 120_000 });
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await page.goto("/");
+  const search = page.getByRole("searchbox", {
+    name: translate("en", "interface.search.all", { location: "My records" }),
+  });
+  await expect(search).toBeVisible();
+  await page.clock.pauseAt(pauseTarget);
+  await search.fill("Results");
+  await page
+    .getByRole("button", {
+      name: translate("en", "library.folder.open", { name: "FAKE Results" }),
+    })
+    .click();
+  await page.clock.runFor(600);
+  await expect(
+    page.getByRole("heading", { name: "FAKE Results", level: 1 }),
+  ).toBeVisible();
+  await expect(page.locator("[data-search-status]")).toBeEmpty();
+  await expect(
+    page.evaluate(() => Reflect.get(window, "__announced") as string[]),
+  ).resolves.not.toContainEqual(
+    expect.stringMatching(/Search results|Search cleared/),
+  );
+  await expectOnlyFakedCommands(page);
 });
 
 test("the lock warning is named, read once, and the lock says why", async ({
@@ -186,11 +270,11 @@ test("the lock warning is named, read once, and the lock says why", async ({
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
   await page.clock.runFor(4.5 * 60 * 1000 + 1000);
   const warning = page.getByRole("alertdialog", {
-    name: "myCarlos will lock in 30 seconds to keep your records private.",
+    name: translate("en", "lockWarning.title", { count: 30 }),
   });
   await expect(warning).toBeVisible();
   await expect(warning).toHaveAccessibleDescription(
-    "To keep it open, press Keep open, or any key.",
+    translate("en", "lockWarning.help", { keepOpen: "Keep open" }),
   );
   await screenReaderSmoke(page, "lock warning", warning);
   // The heading counts down on screen only; a status says once that 10
@@ -198,13 +282,13 @@ test("the lock warning is named, read once, and the lock says why", async ({
   await page.clock.runFor(21 * 1000);
   await expectAnnounced(page, "10 seconds left.");
   await expect(warning).toHaveAccessibleName(
-    "myCarlos will lock in 30 seconds to keep your records private.",
+    translate("en", "lockWarning.title", { count: 30 }),
   );
   await page.clock.runFor(10 * 1000);
   const passphrase = page.getByLabel("Passphrase", { exact: true });
   await expect(passphrase).toBeFocused();
   await expect(passphrase).toHaveAccessibleDescription(
-    /Locked after 5 minutes without use\./,
+    messagePattern("en", "notice.lockedIdle", { count: 5 }),
   );
   await expectOnlyFakedCommands(page);
 });

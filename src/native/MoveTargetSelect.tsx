@@ -1,7 +1,8 @@
+import { useI18n, t as translateNow } from "../i18n";
 import type { Ref } from "react";
 import type { VaultFolder } from "../vault";
 
-/** A person a document in Shared with me can go to, with their folders. */
+/** A person a document can go to, with their folders. */
 export interface MoveTarget {
   profileId: string;
   name: string;
@@ -20,7 +21,7 @@ export function parseMoveTarget(value: string): {
   return { profileId, folderId: folderId || null };
 }
 
-/** Where a document in Shared with me goes (#61): a person's records or one of
+/** Where a document goes: a person's records or one of
  * their folders. With one person, their folders as on the sidebar; with
  * several, a group for each. */
 export function MoveTargetSelect({
@@ -42,12 +43,15 @@ export function MoveTargetSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  useI18n();
   const options = (target: MoveTarget) => [
     <option
       key={target.profileId}
       value={moveTargetValue(target.profileId, null)}
     >
-      {targets.length > 1 ? `${target.name}'s records` : "My records"}
+      {targets.length > 1
+        ? translateNow("interface.person.records", { name: target.name })
+        : translateNow("sidebar.myRecords")}
     </option>,
     ...target.folders.map((folder) => (
       <option

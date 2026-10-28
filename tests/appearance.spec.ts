@@ -1,3 +1,4 @@
+import { translate } from "./support/fluent";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -121,7 +122,7 @@ async function radioRingsReadable(page: Page) {
       (await radio.screenshot({ animations: "disabled" })).toString("base64"),
     ),
   );
-  expect(shots).toHaveLength(2);
+  expect(shots).toHaveLength(3);
   // A blank page decodes them, out of reach of the app's own policies.
   const scratch = await page.context().newPage();
   try {
@@ -167,13 +168,14 @@ async function radioRingsReadable(page: Page) {
   }
 }
 
-/** The three Appearance radio buttons (#67), by the mode each one chooses. */
+/** The four Appearance radio buttons (#67), by the mode each one chooses. */
 function appearanceChoices(page: Page) {
   const group = page.getByRole("group", { name: "Appearance" });
   return {
     system: group.getByRole("radio", { name: "System" }),
     light: group.getByRole("radio", { name: "Light" }),
     dark: group.getByRole("radio", { name: "Dark" }),
+    highContrast: group.getByRole("radio", { name: "High contrast" }),
   };
 }
 
@@ -368,6 +370,140 @@ test("remembers appearance and follows live system changes without vault mutatio
   else expect(themes).toContain(null);
 });
 
+test("manual high contrast persists with readable controls and yields to OS colors", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone";
+  await fakeVault(page, phone ? "ios" : "windows", false, "writeFailed");
+  await page.emulateMedia({ colorScheme: "light", forcedColors: "none" });
+  await page.goto("/");
+  await section(page, info, "preferences");
+  const { system, highContrast } = appearanceChoices(page);
+  await system.focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  await expect(highContrast).toBeChecked();
+  await expect(highContrast).toBeFocused();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme",
+    "high-contrast",
+  );
+  await expect(page.locator("html")).toHaveCSS(
+    "background-color",
+    "rgb(0, 0, 0)",
+  );
+  await contrast(page, text, "color", 7);
+  await contrast(page, ".appearance-choice input:focus", "outline-color", 3);
+  await radioRingsReadable(page);
+  await accessible(page);
+  await screenshot(page, info, "manual-high-contrast-preferences");
+  await section(page, info, "records");
+  await expect(
+    page.getByRole("button", { name: "Choose files to import" }),
+  ).toBeDisabled();
+  await contrast(page, text, "color", 7);
+  await contrast(page, fields, "border-top-color", 3);
+  await page.reload();
+  await section(page, info, "preferences");
+  await expect(highContrast).toBeChecked();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme",
+    "high-contrast",
+  );
+  // The current native screens contain no links. A normal link fixture checks
+  // the palette's link styling without adding product copy or a navigation path.
+  await page
+    .getByRole("group", { name: "Appearance", exact: true })
+    .evaluate((group) => {
+      const link = document.createElement("a");
+      link.href = "#fake-contrast-target";
+      link.textContent = "FAKE test link";
+      group.append(link);
+    });
+  const link = page.getByRole("link", { name: "FAKE test link" });
+  await contrast(page, "a", "color", 7);
+  await expect(link).toHaveCSS("text-decoration-line", "underline");
+  await page.emulateMedia({ forcedColors: "active" });
+  const colors = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "Canvas";
+    probe.style.color = "CanvasText";
+    document.body.append(probe);
+    const value = {
+      background: getComputedStyle(probe).backgroundColor,
+      text: getComputedStyle(probe).color,
+    };
+    probe.remove();
+    return value;
+  });
+  await expect(page.locator("html")).toHaveCSS(
+    "background-color",
+    colors.background,
+  );
+  await expect(page.locator("html")).toHaveCSS("color", colors.text);
+  await expect(highContrast).toBeChecked();
+  await readableOnBackplate(page);
+  expect(
+    await page
+      .locator("button,input,select")
+      .evaluateAll((controls) =>
+        controls.some(
+          (element) => getComputedStyle(element).forcedColorAdjust === "none",
+        ),
+      ),
+  ).toBe(false);
+  await page.emulateMedia({ forcedColors: "none" });
+  await expect(page.locator("html")).toHaveCSS(
+    "background-color",
+    "rgb(0, 0, 0)",
+  );
+  const nativeThemes = await page.evaluate(
+    () => Reflect.get(window, "__appearanceNativeThemes") as unknown[],
+  );
+  if (phone) expect(nativeThemes).toEqual([]);
+  else {
+    expect(nativeThemes).toContain("dark");
+    expect(nativeThemes).not.toContain("high-contrast");
+  }
+});
+
+test("manual high contrast choice wraps at 320px with enlarged text", async ({
+  page,
+}, info) => {
+  await fakeVault(page, info.project.name === "phone" ? "ios" : "windows");
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/");
+  await section(page, info, "preferences");
+  await page.locator("html").evaluate((element) => {
+    element.style.fontSize = "200%";
+  });
+  const choice = appearanceChoices(page).highContrast;
+  await choice.check();
+  await choice.scrollIntoViewIfNeeded();
+  await expect(choice).toBeChecked();
+  const bounds = await choice.locator("..").evaluate((label) => {
+    const box = label.getBoundingClientRect();
+    const span = label.querySelector("span")!;
+    return {
+      left: box.left,
+      right: box.right,
+      height: box.height,
+      width: innerWidth,
+      textFits: span.scrollWidth <= span.clientWidth,
+    };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.width);
+  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(bounds.textFits).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await screenshot(page, info, "manual-high-contrast-320-enlarged");
+});
+
 // The browser preview's screens, as the smoke test's axe run walks them, in
 // dark mode too: System follows the device, so a dark device gets them dark.
 test("the browser preview has no WCAG A/AA violations in dark mode", async ({
@@ -429,7 +565,7 @@ for (const theme of ["light", "dark"] as const) {
     await screenshot(page, info, `${theme}-library`);
     await contrast(page, fields, "border-top-color", 3);
     const selected = page.getByRole("button", {
-      name: "Select FAKE Example.pdf",
+      name: translate("en", "library.select", { name: "FAKE Example.pdf" }),
     });
     await selected.click();
     await expect(selected).toHaveAttribute("aria-pressed", "true");
@@ -442,7 +578,11 @@ for (const theme of ["light", "dark"] as const) {
     await accessible(page);
     await screenshot(page, info, `${theme}-grid`);
     await page
-      .getByRole("button", { name: "Rename folder FAKE Results" })
+      .getByRole("button", {
+        name: translate("en", "library.folder.rename", {
+          name: "FAKE Results",
+        }),
+      })
       .click();
     const dialog = page.getByRole("dialog", {
       name: "Rename folder",
@@ -516,7 +656,7 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
     page.getByText("Changes are paused.", { exact: true }),
   ).toBeVisible();
   const selected = page.getByRole("button", {
-    name: "Select FAKE Example.pdf",
+    name: translate("en", "library.select", { name: "FAKE Example.pdf" }),
   });
   await selected.click();
   await expect(selected).toHaveAttribute("aria-pressed", "true");
@@ -570,7 +710,9 @@ test("forced colours keep the library's controls and a dialog's field and button
   await readableOnBackplate(page);
   await screenshot(page, info, "forced-library");
   await page
-    .getByRole("button", { name: "Rename folder FAKE Results" })
+    .getByRole("button", {
+      name: translate("en", "library.folder.rename", { name: "FAKE Results" }),
+    })
     .click();
   const dialog = page.getByRole("dialog", {
     name: "Rename folder",

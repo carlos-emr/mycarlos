@@ -1,6 +1,6 @@
 //! The vault's history (#71): one entry per event, hash-chained, kept inside
 //! the vault in encrypted segments that look like documents. The app only
-//! ever appends to it, and never shows it in its screens.
+//! ever appends to it; Security can show a verified, read-only view.
 //!
 //! An entry's canonical form is the UTF-8 JSON `serde_json` writes for
 //! [`HistoryEntry`]: its fields in the order declared here, absent optional
@@ -60,8 +60,12 @@ pub enum HistoryEvent {
     PassphraseChanged,
     /// A patient profile was added.
     ProfileCreated,
+    /// Identity details changed; only the profile id is recorded.
+    ProfileDetailsChanged,
     /// A folder was made; `to` says in which folder ("My records" is none).
     FolderCreated,
+    /// An ordinary folder, or a person's top-level folder label when `how`
+    /// is "personFolder" (profile id only; there is no ordinary folder id).
     FolderRenamed,
     /// A folder moved; `from` and `to` are the folder it was in and the one
     /// it is in now.
@@ -69,6 +73,14 @@ pub enum HistoryEvent {
     /// This vault was set aside (#71's third part): moved, whole and still
     /// encrypted, into `set-aside/`, never erased.
     SetAside,
+    PortalLinkStarted,
+    PortalLinked,
+    DeviceApprovalRequested,
+    DeviceApprovalVerified,
+    DeviceApprovalStatusChanged,
+    DeviceApprovalRequestRestarted,
+    DeliveryFiled,
+    DeliveryReceiptSettled,
 }
 
 /// A folder as it was named at the time of the event.
@@ -91,7 +103,7 @@ pub struct HistoryEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_id: Option<Uuid>,
     /// For a profile's event, a folder's owner, shared intake's source profile,
-    /// or a shared document move's destination person.
+    /// or a document move's destination person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<Uuid>,
     /// For a folder's event.
@@ -131,6 +143,14 @@ pub struct HistoryEntry {
     /// the app knows ("lockedAt:<ms>:<by>"), or "notRecorded".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portal_link_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinic_key_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ciphertext_sha256: Option<String>,
     /// The hash of the entry before this one.
     pub prev: String,
 }
@@ -156,6 +176,10 @@ impl HistoryEntry {
             place: None,
             place_sha256: None,
             previous_session: None,
+            portal_link_id: None,
+            clinic_key_ids: None,
+            delivery_id: None,
+            ciphertext_sha256: None,
             prev: String::new(),
         }
     }
@@ -231,11 +255,13 @@ pub fn chain(entries: &mut [HistoryEntry], mut next_seq: u64, mut head: String) 
 
 /// Where a chain first goes wrong.
 // The history stays on the device with no save step (Ben, 19 October), so
-// only the tests check the chain with this and `verify`; VAULT_FORMAT.md
+// Security checks the complete chain before showing events; VAULT_FORMAT.md
 // states the same rules for checking a copy without the app.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChainBreak {
+    /// The caller requested that verification stop.
+    Cancelled,
     /// The entry at this position does not follow the one before it: its
     /// number or its `prev` is not what the chain says.
     At(u64),
@@ -253,18 +279,87 @@ pub fn verify(
     count: u64,
     head: &str,
 ) -> Result<(), ChainBreak> {
+    verify_cancellable(vault_id, entries, count, head, || false)
+}
+
+/// The same complete-chain check, stopping between entries when a lock is requested.
+pub fn verify_cancellable(
+    vault_id: Uuid,
+    entries: &[HistoryEntry],
+    count: u64,
+    head: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<(), ChainBreak> {
     let mut expected = genesis(vault_id);
     for (index, entry) in entries.iter().enumerate() {
+        if cancelled() {
+            return Err(ChainBreak::Cancelled);
+        }
         let index = index as u64;
         if entry.seq != index || entry.prev != expected {
             return Err(ChainBreak::At(index));
         }
         expected = entry.hash();
     }
+    if cancelled() {
+        return Err(ChainBreak::Cancelled);
+    }
     if entries.len() as u64 != count || expected != head {
         return Err(ChainBreak::End);
     }
     Ok(())
+}
+
+/// How many entries, from the first, follow the chain from the genesis value, and the head
+/// after them. Unlike `verify`, a break is not an error: the entries before it still check out
+/// (Ben's D129, mycarlos#120). Only a requested stop is an error. Each entry's content is
+/// authenticated by its segment's encryption; this fixes their order from the start.
+pub fn linked_prefix(
+    vault_id: Uuid,
+    entries: &[HistoryEntry],
+    cancelled: impl Fn() -> bool,
+) -> Result<(usize, String), ChainBreak> {
+    let mut expected = genesis(vault_id);
+    for (index, entry) in entries.iter().enumerate() {
+        if cancelled() {
+            return Err(ChainBreak::Cancelled);
+        }
+        if entry.seq != index as u64 || entry.prev != expected {
+            return Ok((index, expected));
+        }
+        expected = entry.hash();
+    }
+    Ok((entries.len(), expected))
+}
+
+/// How many entries, from the last, end the chain at the pinned end (Ben's D146, mycarlos#120):
+/// the last one is number `count - 1` and its hash is `head`, and each earlier one is the `prev`
+/// of the one after it, with the number before it. Each of them is then proven by the pinned
+/// head, whatever came before them. Only a requested stop is an error.
+pub fn linked_suffix(
+    entries: &[HistoryEntry],
+    count: u64,
+    head: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<usize, ChainBreak> {
+    let Some(last) = entries.last() else {
+        return Ok(0);
+    };
+    if last.seq.checked_add(1) != Some(count) || last.hash() != head {
+        return Ok(0);
+    }
+    let mut linked = 1;
+    for pair in entries.windows(2).rev() {
+        if cancelled() {
+            return Err(ChainBreak::Cancelled);
+        }
+        let (earlier, later) = (&pair[0], &pair[1]);
+        if earlier.seq.checked_add(1) != Some(later.seq) || later.prev != earlier.hash() {
+            break;
+        }
+        linked += 1;
+    }
+    Ok(linked)
 }
 
 /// One segment's plaintext: its entries, one per line, then spaces to
@@ -369,6 +464,114 @@ mod tests {
             verify(Uuid::nil(), &entries, 3, &head),
             Err(ChainBreak::At(0))
         );
+    }
+
+    #[test]
+    fn the_linked_prefix_stops_at_the_first_entry_that_does_not_follow() {
+        let vault = Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
+        let mut entries = vec![
+            entry(HistoryEvent::Created, 1),
+            entry(HistoryEvent::Unlocked, 2),
+            entry(HistoryEvent::Imported, 3),
+        ];
+        let head = chain(&mut entries, 0, genesis(vault));
+        let after = |count: usize| {
+            entries[..count]
+                .last()
+                .map_or_else(|| genesis(vault), HistoryEntry::hash)
+        };
+        assert_eq!(linked_prefix(vault, &entries, || false), Ok((3, head)));
+        assert_eq!(linked_prefix(vault, &[], || false), Ok((0, genesis(vault))));
+        let mut changed = entries.clone();
+        changed[1].at_ms = 99;
+        assert_eq!(
+            linked_prefix(vault, &changed, || false),
+            Ok((2, changed[1].hash()))
+        );
+        let mut removed = entries.clone();
+        removed.remove(1);
+        assert_eq!(linked_prefix(vault, &removed, || false), Ok((1, after(1))));
+        let mut reordered = entries.clone();
+        reordered.swap(1, 2);
+        assert_eq!(
+            linked_prefix(vault, &reordered, || false),
+            Ok((1, after(1)))
+        );
+        let mut renumbered = entries.clone();
+        renumbered[2].seq = 7;
+        assert_eq!(
+            linked_prefix(vault, &renumbered, || false),
+            Ok((2, after(2)))
+        );
+        assert_eq!(
+            linked_prefix(Uuid::nil(), &entries, || false),
+            Ok((0, genesis(Uuid::nil())))
+        );
+        assert_eq!(
+            linked_prefix(vault, &entries, || true),
+            Err(ChainBreak::Cancelled)
+        );
+    }
+
+    #[test]
+    fn the_linked_suffix_is_only_what_the_pinned_head_proves() {
+        let vault = Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
+        let mut entries = vec![
+            entry(HistoryEvent::Created, 1),
+            entry(HistoryEvent::Unlocked, 2),
+            entry(HistoryEvent::Imported, 3),
+            entry(HistoryEvent::Renamed, 4),
+        ];
+        let head = chain(&mut entries, 0, genesis(vault));
+        let never = || false;
+        assert_eq!(linked_suffix(&entries, 4, &head, never), Ok(4));
+        // The later pieces alone, as after a damaged earlier one.
+        assert_eq!(linked_suffix(&entries[2..], 4, &head, never), Ok(2));
+        assert_eq!(linked_suffix(&[], 4, &head, never), Ok(0));
+        // Not ending at the pinned end: cut short, too long, or another head.
+        assert_eq!(linked_suffix(&entries[..3], 4, &head, never), Ok(0));
+        assert_eq!(linked_suffix(&entries, 5, &head, never), Ok(0));
+        assert_eq!(linked_suffix(&entries, 4, &"0".repeat(64), never), Ok(0));
+        // A spliced-in entry: only what follows it is proven.
+        let mut spliced = entries.clone();
+        spliced[1].at_ms = 99;
+        assert_eq!(linked_suffix(&spliced, 4, &head, never), Ok(2));
+        // Numbers that skip, as when a piece is left out.
+        let mut skipped = entries.clone();
+        skipped.remove(2);
+        assert_eq!(linked_suffix(&skipped, 4, &head, never), Ok(1));
+        // Another vault's chain is not this vault's end, even of the same length.
+        let mut foreign = entries.clone();
+        foreign.iter_mut().for_each(|e| e.app = "0.1.1".to_owned());
+        let foreign_head = chain(&mut foreign, 0, genesis(Uuid::nil()));
+        assert_ne!(foreign_head, head);
+        assert_eq!(linked_suffix(&foreign, 4, &head, never), Ok(0));
+        assert_eq!(
+            linked_suffix(&entries, 4, &head, || true),
+            Err(ChainBreak::Cancelled)
+        );
+    }
+
+    #[test]
+    fn verification_stops_after_progress_or_at_the_pinned_end_when_cancelled() {
+        let vault = Uuid::new_v4();
+        let mut entries = vec![
+            entry(HistoryEvent::Created, 1),
+            entry(HistoryEvent::Unlocked, 2),
+        ];
+        let head = chain(&mut entries, 0, genesis(vault));
+        for stop_at in [1, entries.len()] {
+            let calls = std::cell::Cell::new(0);
+            assert_eq!(
+                verify_cancellable(vault, &entries, entries.len() as u64, &head, || {
+                    let call = calls.get();
+                    calls.set(call + 1);
+                    call >= stop_at
+                }),
+                Err(ChainBreak::Cancelled)
+            );
+        }
+        assert_eq!(verify(vault, &entries, entries.len() as u64, &head), Ok(()));
     }
 
     #[test]

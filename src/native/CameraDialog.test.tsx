@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,8 +81,10 @@ async function startCamera() {
 describe("CameraDialog", () => {
   it("explains first, asks for video only after the tap, and saves a JPEG", async () => {
     const { onUse, saved } = open();
-    const dialog = screen.getByRole("dialog", { name: "Take a photo" });
-    expect(dialog).toHaveAccessibleDescription(
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Take a photo"),
+    });
+    expect(dialog).toHaveHumanAccessibleDescription(
       "myCarlos uses the camera to save photos of your health documents. Photos stay locked in myCarlos. The camera is on only while you take the photo. It turns off when you take it, close this window, or myCarlos locks.",
     );
     expect(button("Use the camera")).toHaveFocus();
@@ -94,20 +97,20 @@ describe("CameraDialog", () => {
       video: expect.objectContaining({ facingMode: "environment" }),
       audio: false,
     });
-    expect(screen.getByLabelText("Camera view")).toBeVisible();
+    expect(screen.getByLabelText(humanText("Camera view"))).toBeVisible();
     await waitFor(() => expect(shutter()).toHaveFocus());
-    expect(screen.getByRole("status")).toHaveTextContent("Camera ready.");
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Camera ready.");
     expect((await axe.run(dialog, AXE)).violations).toEqual([]);
 
     fireEvent.click(shutter());
     // The live view stops once the photo is taken.
     expect(ended(streams[0])).toBe(true);
     expect(
-      screen.getByRole("img", { name: "The photo you took" }),
+      screen.getByRole("img", { name: humanText("The photo you took") }),
     ).toBeVisible();
-    expect(screen.getByLabelText("Camera view")).not.toBeVisible();
+    expect(screen.getByLabelText(humanText("Camera view"))).not.toBeVisible();
     await waitFor(() => expect(button("Use photo")).toHaveFocus());
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
       "Photo taken. Retake or use the photo.",
     );
     expect((await axe.run(dialog, AXE)).violations).toEqual([]);
@@ -140,7 +143,9 @@ describe("CameraDialog", () => {
     expect(ended(streams[0])).toBe(true);
 
     open();
-    expect(screen.queryByRole("button", { name: "Use the camera" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: humanText("Use the camera") }),
+    ).toBeNull();
     await waitFor(() => expect(shutter()).toBeEnabled());
     expect(getUserMedia).toHaveBeenCalledTimes(2);
   });
@@ -212,7 +217,7 @@ describe("CameraDialog", () => {
       delete (document as { visibilityState?: unknown }).visibilityState;
     }
     expect(ended(streams[0])).toBe(true);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "The camera stopped. Check that it is connected, then choose Try again.",
     );
     fireEvent.click(button("Try again"));
@@ -258,7 +263,7 @@ describe("CameraDialog", () => {
     getUserMedia.mockRejectedValueOnce(new DOMException("FAKE", name));
     const { onClose } = open({ platform });
     fireEvent.click(button("Use the camera"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(message);
     await waitFor(() => expect(button("Try again")).toHaveFocus());
     expect((await axe.run(screen.getByRole("dialog"), AXE)).violations).toEqual(
       [],
@@ -275,18 +280,58 @@ describe("CameraDialog", () => {
     const { rerender, props, onClose } = open();
     await startCamera();
     fireEvent.click(shutter());
+    button("Use photo").focus();
     rerender(<CameraDialog {...props} saving />);
-    expect(button("Saving…")).toBeDisabled();
-    expect(button("Retake")).toBeDisabled();
+    // Not disabled, so the focus stays in the dialog; they do nothing.
+    expect(button("Saving…")).toHaveAttribute("aria-disabled", "true");
+    expect(button("Saving…")).toHaveFocus();
+    expect(button("Retake")).toHaveAttribute("aria-disabled", "true");
+    const asked = getUserMedia.mock.calls.length;
+    fireEvent.click(button("Retake"));
+    fireEvent.click(button("Saving…"));
+    expect(getUserMedia).toHaveBeenCalledTimes(asked);
+    expect(props.onUse).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     rerender(
       <CameraDialog {...props} notice="FAKE The photo was not saved." />,
     );
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
       "FAKE The photo was not saved.",
     );
-    expect(button("Use photo")).toBeEnabled();
+    expect(button("Use photo")).toHaveAttribute("aria-disabled", "false");
+  });
+
+  it("on a phone, says the phone asks once, and holds the lock while it asks (D97)", async () => {
+    const asked: Promise<unknown>[] = [];
+    const holds = vi.fn();
+    const whileAsking = <T,>(question: Promise<T>) => {
+      holds();
+      asked.push(question);
+      return question;
+    };
+    open({ platform: "android", whileAsking });
+    expect(screen.getByRole("dialog")).toHaveHumanAccessibleDescription(
+      /Your phone asks once whether myCarlos may use the camera\. The camera is on only while you take the photo\. It turns off when you take it, cancel, or myCarlos locks\./,
+    );
+    expect(holds).not.toHaveBeenCalled();
+    await startCamera();
+    // The very request for the camera went through it, and nothing else.
+    expect(holds).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(await asked[0]).toBe(streams[0]);
+  });
+
+  it("tells a phone where to allow the camera after it was refused (D97)", async () => {
+    getUserMedia.mockRejectedValueOnce(
+      new DOMException("FAKE", "NotAllowedError"),
+    );
+    open({ platform: "ios" });
+    fireEvent.click(button("Use the camera"));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "myCarlos can't use the camera. Open your phone's Settings, then myCarlos, and turn on Camera. Then choose Try again.",
+    );
+    await waitFor(() => expect(button("Try again")).toHaveFocus());
   });
 
   it("fits a phone-width window at twice the text size, with 44-pixel controls", async () => {

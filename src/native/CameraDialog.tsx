@@ -1,3 +1,9 @@
+import {
+  useTextState,
+  deferredText,
+  useI18n,
+  t as translateNow,
+} from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
@@ -6,12 +12,17 @@ import {
   cameraExplained,
   cameraFailure,
   cameraFailureMessage,
+  isPhone,
   photoSize,
   rememberCameraExplained,
   type CameraFailure,
 } from "./photo";
 
 type Stage = "explain" | "starting" | "live" | "preview" | "failed";
+
+// On a computer the question needs no holding. Stable, so `start` (and the
+// camera an opening starts) is not made again on every render.
+const asked = <T,>(question: Promise<T>) => question;
 
 // The camera is used for this dialog only. It is asked for after the patient
 // chooses Use the camera (or opens the dialog once they have before), for
@@ -22,6 +33,7 @@ type Stage = "explain" | "starting" | "live" | "preview" | "failed";
 // (photo.rs) before encrypting it.
 export function CameraDialog({
   platform,
+  whileAsking = asked,
   notice,
   saving,
   onUse,
@@ -29,6 +41,11 @@ export function CameraDialog({
 }: {
   /** The operating system, for where to look when the camera is refused. */
   platform: string;
+  /** On a phone, the system asks whether myCarlos may use the camera, and
+   * Android hides the app while it does. The vault must not lock under that
+   * question, as under a file picker; the caller holds the lock until it is
+   * answered, then looks again (D97). */
+  whileAsking?: <T>(question: Promise<T>) => Promise<T>;
   /** Result of the last vault operation: a failed save is reported here. */
   notice: string;
   /** Whether the photo is being saved. */
@@ -38,12 +55,13 @@ export function CameraDialog({
   onUse: (jpeg: Uint8Array) => Promise<void>;
   onClose: () => void;
 }) {
+  useI18n();
   // Opened again after the camera worked once: straight to the camera.
   const [autoStart] = useState(cameraExplained);
   const [stage, setStage] = useState<Stage>(autoStart ? "starting" : "explain");
   const [failure, setFailure] = useState<CameraFailure | null>(null);
   const [ready, setReady] = useState(false);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useTextState();
   const [preparing, setPreparing] = useState(false);
   const dialogRef = useRef<HTMLElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
@@ -78,18 +96,24 @@ export function CameraDialog({
     const attempt = attemptRef.current;
     setFailure(null);
     setStage("starting");
-    setStatus("Starting the camera…");
+    setStatus(
+      deferredText(() =>
+        translateNow("interface.CameraDialog.startingTheCamera"),
+      ),
+    );
     try {
       if (!navigator.mediaDevices?.getUserMedia)
         throw new DOMException("No camera interface", "NotFoundError");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
+      const stream = await whileAsking(
+        navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        }),
+      );
       if (attempt !== attemptRef.current) {
         for (const track of stream.getTracks()) track.stop();
         return;
@@ -111,7 +135,7 @@ export function CameraDialog({
       setStage("failed");
       setStatus("");
     }
-  }, [clearPhoto, stopCamera]);
+  }, [clearPhoto, stopCamera, whileAsking]);
 
   useEffect(() => {
     if (!autoStart) return;
@@ -186,7 +210,11 @@ export function CameraDialog({
     // The still is all that is needed now.
     stopCamera();
     setStage("preview");
-    setStatus("Photo taken. Retake or use the photo.");
+    setStatus(
+      deferredText(() =>
+        translateNow("interface.CameraDialog.photoTakenRetakeOrUseThePhoto"),
+      ),
+    );
   };
 
   const use = async () => {
@@ -198,7 +226,13 @@ export function CameraDialog({
       const blob = await encodePhoto(canvas);
       if (!blob) {
         if (openRef.current)
-          setStatus("The photo could not be prepared. Choose Retake.");
+          setStatus(
+            deferredText(() =>
+              translateNow(
+                "interface.CameraDialog.thePhotoCouldNotBePreparedChoose",
+              ),
+            ),
+          );
         return;
       }
       const jpeg = new Uint8Array(await blob.arrayBuffer());
@@ -226,34 +260,52 @@ export function CameraDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
-          <h2 id="camera-title">Take a photo</h2>
+          <h2 id="camera-title">
+            {translateNow("interface.CameraDialog.takeAPhoto")}
+          </h2>
         </header>
         <div className="camera-body">
           {stage === "explain" && (
             <div id="camera-about" className="camera-about">
               <p>
-                myCarlos uses the camera to save photos of your health
-                documents. Photos stay locked in myCarlos.
+                {translateNow(
+                  "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos",
+                )}
               </p>
-              <p>
-                The camera is on only while you take the photo. It turns off
-                when you take it, close this window, or myCarlos locks.
-              </p>
+              {isPhone(platform) ? (
+                <p>
+                  {translateNow(
+                    "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay",
+                  )}
+                </p>
+              ) : (
+                <p>
+                  {translateNow(
+                    "interface.CameraDialog.theCameraIsOnOnlyWhileYou",
+                  )}
+                </p>
+              )}
             </div>
           )}
-          {stage === "starting" && <p>Starting the camera…</p>}
+          {stage === "starting" && (
+            <p>{translateNow("interface.CameraDialog.startingTheCamera")}</p>
+          )}
           <video
             ref={videoRef}
             className="camera-view"
             hidden={stage !== "live"}
-            aria-label="Camera view"
+            aria-label={translateNow("interface.CameraDialog.cameraView")}
             autoPlay
             muted
             playsInline
             onPlaying={() => {
               if (streamRef.current) {
                 setReady(true);
-                setStatus("Camera ready.");
+                setStatus(
+                  deferredText(() =>
+                    translateNow("interface.CameraDialog.cameraReady"),
+                  ),
+                );
               }
             }}
           />
@@ -262,7 +314,7 @@ export function CameraDialog({
             className="camera-view"
             hidden={stage !== "preview"}
             role="img"
-            aria-label="The photo you took"
+            aria-label={translateNow("interface.CameraDialog.thePhotoYouTook")}
           />
           {stage === "failed" && failure && (
             <p className="camera-failure" role="alert">
@@ -277,7 +329,7 @@ export function CameraDialog({
           {stage === "explain" && (
             <>
               <button className="button" type="button" onClick={close}>
-                Cancel
+                {translateNow("common.cancel")}
               </button>
               <button
                 ref={firstRef}
@@ -286,14 +338,16 @@ export function CameraDialog({
                 onClick={() => void start()}
               >
                 <Icon name="camera" />
-                <span>Use the camera</span>
+                <span>
+                  {translateNow("interface.CameraDialog.useTheCamera")}
+                </span>
               </button>
             </>
           )}
           {(stage === "starting" || stage === "live") && (
             <>
               <button className="button" type="button" onClick={close}>
-                Cancel
+                {translateNow("common.cancel")}
               </button>
               <button
                 ref={shutterRef}
@@ -303,35 +357,41 @@ export function CameraDialog({
                 onClick={take}
               >
                 <Icon name="camera" />
-                <span>Take photo</span>
+                <span>{translateNow("interface.CameraDialog.takePhoto")}</span>
               </button>
             </>
           )}
           {stage === "preview" && (
             <>
+              {/* Not disabled while saving: the focus would fall out of the
+                  dialog. They do nothing until the save is over. */}
               <button
                 className="button"
                 type="button"
-                disabled={working}
-                onClick={() => void start()}
+                aria-disabled={working}
+                onClick={() => {
+                  if (!working) void start();
+                }}
               >
-                Retake
+                {translateNow("interface.CameraDialog.retake")}
               </button>
               <button
                 ref={confirmRef}
                 className="button primary"
                 type="button"
-                disabled={working}
+                aria-disabled={working}
                 onClick={() => void use()}
               >
-                {working ? "Saving…" : "Use photo"}
+                {working
+                  ? translateNow("rename.saving")
+                  : translateNow("interface.CameraDialog.usePhoto")}
               </button>
             </>
           )}
           {stage === "failed" && (
             <>
               <button className="button" type="button" onClick={close}>
-                Close
+                {translateNow("photo.close")}
               </button>
               <button
                 ref={retryRef}
@@ -339,7 +399,7 @@ export function CameraDialog({
                 type="button"
                 onClick={() => void start()}
               >
-                Try again
+                {translateNow("interface.CameraDialog.tryAgain")}
               </button>
             </>
           )}
