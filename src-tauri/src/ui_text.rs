@@ -19,6 +19,26 @@ pub(crate) enum UiLocale {
     PtBr,
 }
 
+/// Every shipped locale, for checks that must hold in all of them.
+pub(crate) const ALL: [UiLocale; 5] = [
+    UiLocale::En,
+    UiLocale::Fr,
+    UiLocale::Es,
+    UiLocale::Pl,
+    UiLocale::PtBr,
+];
+
+/// Whether a name is "Shared with me" as any language shows it, ignoring case,
+/// space around it and how its accents are typed. The folder is shown in the
+/// app's language, so a person by any of these names would read as it (#61).
+pub(crate) fn names_shared_folder(name: &str) -> bool {
+    use unicode_normalization::UnicodeNormalization;
+    let key = |text: &str| text.trim().nfc().collect::<String>().to_lowercase();
+    let typed = key(name);
+    ALL.iter()
+        .any(|locale| key(locale.text("interface.LibrarySidebar.sharedWithMe")) == typed)
+}
+
 impl UiLocale {
     fn catalogue(self) -> &'static Value {
         static EN: OnceLock<Value> = OnceLock::new();

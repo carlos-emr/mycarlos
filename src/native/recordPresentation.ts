@@ -1,4 +1,9 @@
-import { t as translateNow, formatNumber, type MessageKey } from "../i18n";
+import {
+  CATALOGUES,
+  t as translateNow,
+  formatNumber,
+  type MessageKey,
+} from "../i18n";
 import type { IconName } from "../Icon";
 
 export function formatBytes(value: number): string {
@@ -85,13 +90,17 @@ export const NAME_INPUT_MAX_LENGTH = 2 * MAX_NAME_CHARS;
 export const nameTooLong = (name: string) =>
   [...name.trim()].length > MAX_NAME_CHARS;
 
-/** "Shared with me" is the folder shared files go into (#61), so no person
- * may be called that. */
-/** The name Shared with me goes by in the library (#61). */
-export const SHARED_FOLDER_NAME = "Shared with me";
-export const SHARED_NAME_TAKEN = `${SHARED_FOLDER_NAME} is where shared files go. Choose another name.`;
-export const nameIsShared = (name: string) =>
-  name.trim().toLowerCase() === "shared with me";
+/** "Shared with me" is the folder shared files go into (#61), shown in the
+ * app's language, so no person may be called it in any of them. Case, space
+ * around it and how its accents are typed don't matter. The native side
+ * refuses the same names, read from the same catalogues. */
+const sharedKey = (name: string) => name.trim().normalize("NFC").toLowerCase();
+const SHARED_NAMES = new Set(
+  Object.values(CATALOGUES).map((messages) =>
+    sharedKey(String(messages["interface.LibrarySidebar.sharedWithMe"])),
+  ),
+);
+export const nameIsShared = (name: string) => SHARED_NAMES.has(sharedKey(name));
 
 // Search compares text in one form whatever the device's locale: with a
 // Turkish default locale, toLocaleLowerCase() turns "I" into a dotless "ı",
