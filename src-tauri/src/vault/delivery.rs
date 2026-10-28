@@ -2863,7 +2863,7 @@ mod approval_recovery_tests {
     }
     /// Ben's D132c: the check after unlocking, and Check for new documents,
     /// ask only clinics that approved this device or have a request still
-    /// open. A refused, ended or never-sent request is no reason to ask.
+    /// open. No saved request, or one refused or ended, is no reason to ask.
     #[test]
     fn should_ask_only_clinics_that_approved_this_device_or_have_an_open_request() {
         for (state, asked) in [
@@ -2936,6 +2936,9 @@ mod approval_recovery_tests {
         let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
         attempt.status = Some(State::ChallengeReady);
         other.approval = Some(attempt);
+        assert!(crate::portal_pickup::worth_asking(&other));
+        // So is a saved request with no status yet: it reads as pending.
+        other.approval.as_mut().unwrap().status = None;
         assert!(crate::portal_pickup::worth_asking(&other));
     }
     fn empty_page() -> crate::portal_client::ApiResponse {

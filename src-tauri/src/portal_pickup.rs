@@ -70,20 +70,35 @@ fn add_issue(
 }
 /// Whether a check for new documents contacts this link's clinic (Ben,
 /// D132c): only for a device the clinic approved, or with a request still
-/// open as last saved (pending, or ready for the clinic). A refused, ended
-/// or never-sent request is no reason to ask. The check after unlocking and
-/// Check for new documents both go by it.
+/// open as last saved (pending, or ready for the clinic). A link with no
+/// saved request, or whose request was refused or has ended, is no reason to
+/// ask; a saved request with no status yet reads as pending, and is asked.
+/// The check after unlocking and Check for new documents both go by it.
+///
+/// "Approved" is judged by the clinic's current keys (`currently_approved`).
+/// That holds while a link's clinic keys are fixed when it is made; when key
+/// refresh or revocation comes, decide whether an acceptance signed by a
+/// retired key still counts here, or an approved device stops being asked.
 #[cfg(feature = "portal-linking")]
 pub(crate) fn worth_asking(link: &crate::portal_link::StoredLink) -> bool {
-    use crate::portal_approval::ApprovalState;
     crate::portal_approval::currently_approved(link)
-        || link.approval.as_ref().is_some_and(|attempt| {
-            attempt.acceptance.is_none()
-                && matches!(
-                    attempt.state(),
-                    ApprovalState::Pending | ApprovalState::ChallengeReady
-                )
-        })
+        || link
+            .approval
+            .as_ref()
+            .is_some_and(|attempt| attempt.acceptance.is_none() && still_open(attempt.state()))
+}
+/// Whether a request in this state can still be approved. Every state is
+/// named, so that a new one has to be decided here.
+#[cfg(feature = "portal-linking")]
+fn still_open(state: crate::portal_approval::ApprovalState) -> bool {
+    use crate::portal_approval::ApprovalState;
+    match state {
+        ApprovalState::Pending | ApprovalState::ChallengeReady => true,
+        ApprovalState::Accepted
+        | ApprovalState::Refused
+        | ApprovalState::Expired
+        | ApprovalState::Cancelled => false,
+    }
 }
 #[cfg(feature = "portal-linking")]
 pub(crate) fn check(

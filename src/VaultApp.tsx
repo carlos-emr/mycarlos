@@ -1015,7 +1015,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       !bridge.connectPortal ||
       !bridge.checkDocuments ||
       snapshot.recovery ||
-      // A refused, ended or never-sent request is not a reason to ask.
+      // No saved request, or one refused or ended, is not a reason to ask.
       (approved.size === 0 && !links.some(isAwaitingApproval)) ||
       // A check for new documents since this unlock, the patient's own,
       // stands in for it.
