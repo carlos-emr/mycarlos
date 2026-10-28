@@ -6,7 +6,8 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
 
@@ -48,7 +49,12 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe("SecuritySettings profile layout", () => {
-  it("keeps the profile name and Add profile action inside their section with enlarged text", () => {
+  afterEach(async () => {
+    document.documentElement.style.fontSize = "";
+    await page.viewport(1100, 760);
+  });
+
+  it("keeps the profile name and Add profile action inside their section on a phone with enlarged text", async () => {
     renderSettings();
     const input = screen.getByRole("textbox", { name: "New profile name" });
     const button = screen.getByRole("button", { name: "Add profile" });
@@ -61,39 +67,45 @@ describe("SecuritySettings profile layout", () => {
     const overlaps = (a: DOMRect, b: DOMRect) =>
       Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
       Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
-    try {
+    for (const width of [360, 320]) {
+      await page.viewport(width, 800);
       for (const fontSize of ["16px", "24px", "32px"]) {
         document.documentElement.style.fontSize = fontSize;
-        for (const width of [760, 320]) {
-          section.style.width = `${width}px`;
-          section.style.maxWidth = "100%";
-          const row = section.getBoundingClientRect();
-          const introduction = intro.getBoundingClientRect();
-          expect(introduction.width).toBeGreaterThanOrEqual(
-            Math.min(220, row.width - 4),
-          );
-          for (const control of [form, input, button]) {
-            const box = control.getBoundingClientRect();
-            expect(box.left).toBeGreaterThanOrEqual(row.left - 1);
-            expect(box.right).toBeLessThanOrEqual(row.right + 1);
-          }
-          expect(overlaps(introduction, form.getBoundingClientRect())).toBe(
-            false,
-          );
-          expect(button.scrollWidth).toBeLessThanOrEqual(
-            button.clientWidth + 1,
-          );
-          expect(button.scrollHeight).toBeLessThanOrEqual(
-            button.clientHeight + 1,
-          );
-          expect(section.scrollWidth).toBeLessThanOrEqual(
-            section.clientWidth + 1,
-          );
+        const row = section.getBoundingClientRect();
+        const introduction = intro.getBoundingClientRect();
+        expect(introduction.width).toBeGreaterThanOrEqual(
+          Math.min(220, row.width - 4),
+        );
+        for (const control of [form, input, button]) {
+          const box = control.getBoundingClientRect();
+          expect(box.left).toBeGreaterThanOrEqual(row.left - 1);
+          expect(box.right).toBeLessThanOrEqual(row.right + 1);
         }
+        expect(overlaps(introduction, form.getBoundingClientRect())).toBe(
+          false,
+        );
+        expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
+        expect(button.scrollHeight).toBeLessThanOrEqual(
+          button.clientHeight + 1,
+        );
+        expect(section.scrollWidth).toBeLessThanOrEqual(
+          section.clientWidth + 1,
+        );
       }
-    } finally {
-      document.documentElement.style.fontSize = "";
     }
+  });
+
+  it("keeps the profile form as wide as the other setting forms on a wide screen", () => {
+    renderSettings();
+    const input = screen.getByRole("textbox", { name: "New profile name" });
+    input.closest("main")!.classList.add("native-vault-page");
+    const profile = input.closest("form")!.getBoundingClientRect();
+    const passphrase = screen
+      .getByLabelText("Current passphrase")
+      .closest("form")!
+      .getBoundingClientRect();
+    expect(Math.abs(profile.width - passphrase.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(profile.right - passphrase.right)).toBeLessThanOrEqual(1);
   });
 });
 

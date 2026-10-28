@@ -916,10 +916,14 @@ h1, h2, p { margin: 0; }
 .native-file-open { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
 .native-setting-form { align-items: start; }
 .native-setting-form form { display: grid; min-width: min(100%, 330px); gap: 9px; }
-.native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-.native-profile-settings > form { width: 100%; min-width: 0; }
-.native-profile-settings label, .native-profile-settings input { min-width: 0; }
-.native-profile-settings input { width: 100%; }
+/* Narrow screens only: on a wide one the profile form keeps the same width as the other
+   setting forms, beside its text. */
+@media (max-width: 40em) {
+  .native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+  .native-profile-settings > form { width: 100%; min-width: 0; }
+  .native-profile-settings label, .native-profile-settings input { min-width: 0; }
+  .native-profile-settings input { width: 100%; }
+}
 .native-danger-setting { align-items: start; }
 .native-danger-setting details { width: min(100%, 330px); }
 .native-danger-setting summary { margin-bottom: 10px; cursor: pointer; font-weight: 700; }
