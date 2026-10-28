@@ -269,6 +269,10 @@ pub enum VaultError {
     WrongPassphrase,
     #[error("the vault data is damaged or incomplete")]
     Corrupt,
+    /// Every manifest this build could open was written by a newer build, in
+    /// a format this one does not know. Not damage: nothing was changed.
+    #[error("the vault was saved by a newer version of the app")]
+    NewerFormat,
     #[error("the requested item does not exist")]
     NotFound,
     #[error("the requested change is not valid")]
@@ -321,6 +325,10 @@ pub enum VaultError {
     WrongRecoveryKey,
     #[error("the file is not a complete, unchanged myCarlos backup")]
     BackupUnreadable,
+    /// The backup's manifest is authentic but in a format newer than this
+    /// build's: a newer build saved it.
+    #[error("the backup was saved by a newer version of the app")]
+    BackupNewerFormat,
     #[error("the backup or the vault is not what was confirmed")]
     BackupChanged,
     #[error("the backup file could not be opened")]
@@ -1628,6 +1636,39 @@ impl VaultStore {
                 profile.birth_date = birth_date;
                 let mut entry = HistoryEntry::new(HistoryEvent::ProfileDetailsChanged, now_ms);
                 entry.profile_id = Some(id);
+                entries.push(entry);
+            }
+            Ok(())
+        })
+    }
+
+    /// Corrects the person's top-level folder label, without moving its contents.
+    pub fn rename_profile(
+        &self,
+        profile_id: Uuid,
+        display_name: &str,
+        now_ms: u64,
+    ) -> Result<(), VaultError> {
+        validate_person_name(display_name)?;
+        self.mutate_recorded(|manifest, entries| {
+            if profile_id == shared_profile_id(manifest.vault_id) {
+                return Err(VaultError::Invalid);
+            }
+            let profile = manifest
+                .profiles
+                .iter_mut()
+                .find(|profile| profile.id == profile_id)
+                .ok_or(VaultError::NotFound)?;
+            let name = display_name.trim();
+            if profile.display_name != name {
+                let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, now_ms);
+                entry.profile_id = Some(profile_id);
+                entry.old_name = Some(std::mem::replace(
+                    &mut profile.display_name,
+                    name.to_owned(),
+                ));
+                entry.name = Some(name.to_owned());
+                entry.how = Some("personFolder".to_owned());
                 entries.push(entry);
             }
             Ok(())
@@ -5712,6 +5753,13 @@ enum SlotReading {
     Absent,
     /// Present but not an authentic manifest: damage that a repair may replace.
     Damaged,
+    /// An authentic manifest in a format newer than this build's: a newer
+    /// build wrote it. It counts as damaged when the other slot can be opened,
+    /// as after a crash between the two writes of a newer build's upgrade,
+    /// which leaves nothing in it that the other slot lacks (see
+    /// `upgrade_manifest`). When nothing else can be opened, the unlock is
+    /// refused as `NewerFormat`, not as damage.
+    Newer,
     /// Exists but could not be read (sharing violation, permission or device
     /// error). It may hold the newest committed state, so nothing may replace
     /// it and no orphan cleanup may run.
@@ -5773,8 +5821,10 @@ fn read_manifest_slot_reading(
             };
         }
     };
-    let Some(manifest) = decrypt_manifest(&data, manifest_key, vault_id) else {
-        return SlotReading::Damaged;
+    let manifest = match open_manifest(&data, manifest_key, vault_id) {
+        Ok(manifest) => manifest,
+        Err(ManifestRefusal::Damaged) => return SlotReading::Damaged,
+        Err(ManifestRefusal::Newer) => return SlotReading::Newer,
     };
     let mut missing = HashSet::new();
     let mut unknown = HashSet::new();
@@ -5802,8 +5852,29 @@ fn read_manifest_slot_reading(
 }
 
 fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Option<Manifest> {
+    open_manifest(data, manifest_key, vault_id).ok()
+}
+
+/// Why a manifest file was not opened.
+#[derive(Debug, PartialEq, Eq)]
+enum ManifestRefusal {
+    /// Not an authentic manifest that this build can read.
+    Damaged,
+    /// Authentic, but its format is newer than this build's: a newer build
+    /// wrote it. Only its format number is read.
+    Newer,
+}
+
+/// Decrypts and checks a manifest. One that decrypts under the vault's key
+/// but declares a newer format is told apart from damage, so an older build
+/// can say to update instead of calling the vault damaged.
+fn open_manifest(
+    data: &[u8],
+    manifest_key: &[u8; 32],
+    vault_id: Uuid,
+) -> Result<Manifest, ManifestRefusal> {
     if data.len() < 40 {
-        return None;
+        return Err(ManifestRefusal::Damaged);
     }
     let aad = manifest_aad(vault_id);
     let plaintext = XChaCha20Poly1305::new(manifest_key.into())
@@ -5814,11 +5885,31 @@ fn decrypt_manifest(data: &[u8], manifest_key: &[u8; 32], vault_id: Uuid) -> Opt
                 aad: &aad,
             },
         )
-        .ok()?;
+        .map_err(|_| ManifestRefusal::Damaged)?;
     let plaintext = Zeroizing::new(plaintext);
-    let manifest = serde_json::from_slice::<Manifest>(&plaintext).ok()?;
-    validate_manifest_structure(&manifest, vault_id).ok()?;
-    Some(manifest)
+    if let Ok(manifest) = serde_json::from_slice::<Manifest>(&plaintext) {
+        if validate_manifest_structure(&manifest, vault_id).is_ok() {
+            return Ok(manifest);
+        }
+    }
+    Err(if newer_build_manifest(&plaintext) {
+        ManifestRefusal::Newer
+    } else {
+        ManifestRefusal::Damaged
+    })
+}
+
+/// Whether an authenticated manifest's plaintext declares a format newer
+/// than this build's. Only the format number is parsed; the rest of a
+/// format this build does not know is skipped unread.
+fn newer_build_manifest(plaintext: &[u8]) -> bool {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct FormatOnly {
+        format_version: u64,
+    }
+    serde_json::from_slice::<FormatOnly>(plaintext)
+        .is_ok_and(|manifest| manifest.format_version > u64::from(VAULT_FORMAT))
 }
 
 /// Which generation an unlock opens, and what the session may do with it.
@@ -5856,9 +5947,13 @@ fn select_manifest(slots: &[SlotReading; 2]) -> Result<SelectedManifest, VaultEr
         // No generation has all of its objects.
         let (manifest, missing) = newest(slots.iter().filter_map(SlotReading::authentic))?
             .ok_or_else(|| {
-                // Nothing to open, but not for certain nothing there: a slot
-                // that could not be read may hold the vault's state.
-                if slots
+                // Nothing to open. A slot a newer build wrote says why, and
+                // updating opens the vault whatever an unreadable slot holds.
+                if slots.iter().any(|slot| matches!(slot, SlotReading::Newer)) {
+                    VaultError::NewerFormat
+                // Not for certain nothing there: a slot that could not be
+                // read may hold the vault's state.
+                } else if slots
                     .iter()
                     .any(|slot| matches!(slot, SlotReading::Unreadable))
                 {
@@ -7523,8 +7618,13 @@ fn open_backup<R: Read>(
     let (header, master_key) = open_backup_header(&header_data, credential)?;
     let manifest_data = reader.small_entry(BACKUP_KIND_MANIFEST, MAX_MANIFEST_BYTES)?;
     let keys = derive_keys(header.vault_id, &master_key)?;
-    let manifest = decrypt_manifest(&manifest_data, &keys.manifest, header.vault_id)
-        .ok_or(VaultError::BackupUnreadable)?;
+    let manifest =
+        open_manifest(&manifest_data, &keys.manifest, header.vault_id).map_err(|refusal| {
+            match refusal {
+                ManifestRefusal::Newer => VaultError::BackupNewerFormat,
+                ManifestRefusal::Damaged => VaultError::BackupUnreadable,
+            }
+        })?;
     Ok(OpenedBackup {
         reader,
         header,
@@ -14923,10 +15023,12 @@ mod tests {
         assert!(store.snapshot().unwrap().records[0].hidden.is_none());
     }
 
-    /// A vault as an earlier build left it: both manifest slots `format`,
-    /// with no history; a format 1 one unpadded, a format 2 one with its
-    /// first document hidden. Returns its master key and id, for reading the
-    /// slots back without an unlock, which would upgrade it.
+    /// A vault as an earlier build left it: both manifest slots `format`.
+    /// Formats 1 and 2 have no history; a format 1 one is unpadded, a format
+    /// 2 one has its first document hidden. A format 3 one keeps the history
+    /// it was made with, which an upgrade must carry over. Returns its master
+    /// key and id, for reading the slots back without an unlock, which would
+    /// upgrade it.
     fn old_format_vault(
         root: &Path,
         names: &[&str],
@@ -14947,10 +15049,12 @@ mod tests {
                 reason: HiddenReason::Patient,
             });
         }
-        // An earlier build kept no history: its segments go, as if never
-        // written.
-        for segment in std::mem::take(&mut manifest.history).segments {
-            fs::remove_file(root.join("objects").join(segment.object_name)).unwrap();
+        // A build before format 3 kept no history: its segments go, as if
+        // never written.
+        if format < MANIFEST_FORMAT_HISTORY {
+            for segment in std::mem::take(&mut manifest.history).segments {
+                fs::remove_file(root.join("objects").join(segment.object_name)).unwrap();
+            }
         }
         for _ in 0..2 {
             manifest.generation += 1;
@@ -14975,6 +15079,53 @@ mod tests {
                 (format, generation, manifest)
             })
             .collect()
+    }
+
+    /// The history one slot names, as it stands, and its entries read from
+    /// their segments and checked against its chain, without an unlock.
+    /// Before format 3 both are empty.
+    fn slot_history(
+        root: &Path,
+        master_key: &[u8; 32],
+        vault_id: Uuid,
+        slot: u64,
+    ) -> (HistoryState, Vec<HistoryEntry>) {
+        let keys = derive_keys(vault_id, master_key).unwrap();
+        let data = fs::read(manifest_path(root, slot)).unwrap();
+        let manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
+        let entries: Vec<HistoryEntry> = manifest
+            .history
+            .segments
+            .iter()
+            .flat_map(|segment| read_history_segment(root, &keys, vault_id, segment).unwrap())
+            .collect();
+        // A vault from before format 3 has no chain to check.
+        if !manifest.history.is_empty() {
+            assert_eq!(
+                history::verify(
+                    vault_id,
+                    &entries,
+                    manifest.history.count,
+                    &manifest.history.head
+                ),
+                Ok(())
+            );
+        }
+        (manifest.history, entries)
+    }
+
+    /// What an unlock adds to an older vault's history: a format 3 one goes
+    /// on from the entries it had; an earlier one starts a history here.
+    fn assert_history_carried_over(from: u32, before: &[HistoryEntry], after: &[HistoryEntry]) {
+        if from < MANIFEST_FORMAT_HISTORY {
+            assert!(before.is_empty());
+            assert_eq!(events_of(&after[..1]), [HistoryEvent::HistoryStarted]);
+        } else {
+            assert!(!before.is_empty());
+            assert_eq!(&after[..before.len()], before, "format {from}");
+            assert!(!events_of(after).contains(&HistoryEvent::HistoryStarted));
+        }
+        assert_eq!(after.last().unwrap().event, HistoryEvent::Unlocked);
     }
 
     /// The events in the session's history, from its segments.
@@ -15023,18 +15174,23 @@ mod tests {
     #[test]
     fn an_older_vault_opens_and_is_upgraded_in_a_commit_of_its_own() {
         let temp = tempfile::tempdir().unwrap();
-        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+        for from in [
+            MANIFEST_FORMAT_V1,
+            MANIFEST_FORMAT_HIDDEN,
+            MANIFEST_FORMAT_HISTORY,
+        ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
                 old_format_vault(&root, &["a.pdf", "b.pdf"], from);
             let before = slots(&root, &master_key, vault_id);
             assert!(before.iter().all(|(format, _, _)| *format == from));
+            let (_, history_before) = slot_history(&root, &master_key, vault_id, 0);
             store.unlock(PASSWORD).unwrap();
             let snapshot = store.snapshot().unwrap();
             assert_eq!(snapshot.recovery, None);
             assert_eq!(snapshot.records.len(), imported.len());
-            // Both slots are format 3 and hold the same state: nothing but
-            // the format, the generation and the history changed.
+            // Both slots are the current format and hold the same state:
+            // nothing but the format, the generation and the history changed.
             let both = slots(&root, &master_key, vault_id);
             assert!(both.iter().all(|(format, _, _)| *format == VAULT_FORMAT));
             assert!(both[0].2 == before[0].2 && both[1].2 == before[0].2);
@@ -15044,13 +15200,19 @@ mod tests {
                 let plaintext = length - 40;
                 assert!(plaintext.is_power_of_two() && plaintext >= MANIFEST_SIZE_CLASS_MIN);
             }
-            // Its history starts at this unlock, and says so.
+            // A format 3 history goes on from where it was; an earlier
+            // vault's starts at this unlock, and says so.
             let entries = history_events(&store);
-            assert_eq!(
-                events_of(&entries),
-                [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
-            );
-            // Hiding now writes format 3 data on top.
+            if from < MANIFEST_FORMAT_HISTORY {
+                assert_eq!(
+                    events_of(&entries),
+                    [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+                );
+            } else {
+                assert_eq!(entries.len(), history_before.len() + 1);
+            }
+            assert_history_carried_over(from, &history_before, &entries);
+            // Hiding now writes data only a history-keeping format holds.
             store.hide_record(imported[1], 9).unwrap();
             store.lock();
             store.unlock(PASSWORD).unwrap();
@@ -15067,12 +15229,21 @@ mod tests {
     #[test]
     fn a_crash_between_the_upgrade_writes_leaves_nothing_an_older_build_could_lose() {
         let temp = tempfile::tempdir().unwrap();
-        for from in [MANIFEST_FORMAT_V1, MANIFEST_FORMAT_HIDDEN] {
+        for from in [
+            MANIFEST_FORMAT_V1,
+            MANIFEST_FORMAT_HIDDEN,
+            MANIFEST_FORMAT_HISTORY,
+        ] {
             let template = temp.path().join(format!("template-{from}"));
             let (_store, imported, master_key, vault_id) =
                 old_format_vault(&template, &["a.pdf", "b.pdf"], from);
             let before = slots(&template, &master_key, vault_id);
             assert!(before.iter().all(|(format, _, _)| *format == from));
+            let (history_state, history_before) = slot_history(&template, &master_key, vault_id, 0);
+            assert!(
+                slot_history(&template, &master_key, vault_id, 1)
+                    == (history_state.clone(), history_before.clone())
+            );
 
             for boundary in ["upgrade.after-first-write", "upgrade.after-second-write"] {
                 let root = temp.path().join(format!("{from}-{boundary}"));
@@ -15080,15 +15251,17 @@ mod tests {
                 run_termination_child(&root, "unlock", boundary);
                 let after = slots(&root, &master_key, vault_id);
                 // Whatever the slots hold now, it is the state from before the
-                // upgrade, with no history: an older build that opens the
-                // older slot, and drops as orphans the objects only the other
-                // slot names, loses nothing.
+                // upgrade, with the history it had (none before format 3),
+                // every segment still readable: an older build that opens
+                // the older slot, and drops as orphans the objects only the
+                // other slot names, loses nothing.
                 assert!(after.iter().all(|(_, _, state)| *state == before[0].2));
-                let keys = derive_keys(vault_id, &master_key).unwrap();
                 for slot in 0..2 {
-                    let data = fs::read(manifest_path(&root, slot)).unwrap();
-                    let manifest = decrypt_manifest(&data, &keys.manifest, vault_id).unwrap();
-                    assert!(manifest.history.is_empty(), "{from} {boundary}");
+                    assert!(
+                        slot_history(&root, &master_key, vault_id, slot)
+                            == (history_state.clone(), history_before.clone()),
+                        "{from} {boundary}"
+                    );
                 }
                 let formats: Vec<u32> = after.iter().map(|(format, _, _)| *format).collect();
                 if boundary == "upgrade.after-first-write" {
@@ -15097,16 +15270,23 @@ mod tests {
                     assert_eq!(formats, [VAULT_FORMAT, VAULT_FORMAT]);
                 }
                 // This build opens it, finishes the upgrade, and has
-                // everything, with a history from here on.
+                // everything, with the history carried on (or, before format
+                // 3, started) from here.
                 let restarted = VaultStore::new(root.clone());
                 restarted.unlock(PASSWORD).unwrap();
                 let snapshot = restarted.snapshot().unwrap();
                 assert_eq!(snapshot.recovery, None);
                 assert_eq!(snapshot.records.len(), imported.len());
-                assert_eq!(
-                    events_of(&history_events(&restarted)),
-                    [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
-                );
+                let entries = history_events(&restarted);
+                if from < MANIFEST_FORMAT_HISTORY {
+                    assert_eq!(
+                        events_of(&entries),
+                        [HistoryEvent::HistoryStarted, HistoryEvent::Unlocked]
+                    );
+                } else {
+                    assert_eq!(entries.len(), history_before.len() + 1);
+                }
+                assert_history_carried_over(from, &history_before, &entries);
                 restarted.lock();
                 assert!(slots(&root, &master_key, vault_id)
                     .iter()
@@ -15123,9 +15303,14 @@ mod tests {
             (MANIFEST_FORMAT_V1, "upgrade.after-first-write"),
             (MANIFEST_FORMAT_HIDDEN, "upgrade.before-first-write"),
             (MANIFEST_FORMAT_HIDDEN, "upgrade.after-first-write"),
+            (MANIFEST_FORMAT_HISTORY, "upgrade.before-first-write"),
+            (MANIFEST_FORMAT_HISTORY, "upgrade.after-first-write"),
         ] {
             let root = temp.path().join(format!("{from}-{boundary}"));
-            let (store, imported, _, _) = old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            let (store, imported, master_key, vault_id) =
+                old_format_vault(&root, &["a.pdf", "b.pdf"], from);
+            let before = slots(&root, &master_key, vault_id);
+            let (_, history_before) = slot_history(&root, &master_key, vault_id, 0);
             {
                 let _fail = FailAt::new(boundary);
                 store.unlock(PASSWORD).unwrap();
@@ -15141,9 +15326,14 @@ mod tests {
                 Err(VaultError::RecoveryMode)
             ));
             store.lock();
-            // The next unlock upgrades it.
+            // The next unlock upgrades it, with the same state and the
+            // history carried over.
             store.unlock(PASSWORD).unwrap();
             assert_eq!(store.snapshot().unwrap().recovery, None, "{boundary}");
+            assert!(slots(&root, &master_key, vault_id)
+                .iter()
+                .all(|(format, _, state)| *format == VAULT_FORMAT && *state == before[0].2));
+            assert_history_carried_over(from, &history_before, &history_events(&store));
             store.hide_record(imported[1], 3).unwrap();
         }
     }
@@ -15169,6 +15359,276 @@ mod tests {
             validate_manifest_structure(&manifest, vault_id),
             Err(VaultError::Corrupt)
         ));
+    }
+
+    /// The plaintext of `manifest` as a newer build might write it, at
+    /// `generation`: a format number past this build's and, if
+    /// `restructured`, a layout this build cannot read at all.
+    fn newer_manifest_plaintext(
+        manifest: &Manifest,
+        generation: u64,
+        restructured: bool,
+    ) -> Vec<u8> {
+        let mut value = serde_json::to_value(manifest).unwrap();
+        value["formatVersion"] = (VAULT_FORMAT + 1).into();
+        value["generation"] = generation.into();
+        if restructured {
+            value["records"] = serde_json::json!({ "FAKE future layout": [] });
+        }
+        serde_json::to_vec(&value).unwrap()
+    }
+
+    /// `plaintext` sealed as a manifest file under `master_key`: what a newer
+    /// build holding the vault's key would write.
+    fn sealed_manifest(master_key: &[u8; 32], vault_id: Uuid, plaintext: &[u8]) -> Vec<u8> {
+        let keys = derive_keys(vault_id, master_key).unwrap();
+        let mut nonce = [0_u8; 24];
+        rand::RngCore::fill_bytes(&mut OsRng, &mut nonce);
+        let ciphertext = XChaCha20Poly1305::new((&keys.manifest).into())
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: &manifest_aad(vault_id),
+                },
+            )
+            .unwrap();
+        [nonce.as_slice(), &ciphertext].concat()
+    }
+
+    /// A locked vault's master key and current manifest, read through an
+    /// unlock.
+    fn key_and_manifest(store: &VaultStore) -> ([u8; 32], Manifest) {
+        store.unlock(PASSWORD).unwrap();
+        let read = {
+            let guard = store.unlocked.lock().unwrap();
+            let unlocked = guard.as_ref().unwrap();
+            (*unlocked.master_key, unlocked.manifest.clone())
+        };
+        store.lock();
+        read
+    }
+
+    fn sorted_files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut files = every_file(root);
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn a_manifest_a_newer_build_wrote_is_told_apart_from_damage() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _) = vault_with_records(&temp.path().join("vault"), &["FAKE a.pdf"]);
+        let (master_key, manifest) = key_and_manifest(&store);
+        let vault_id = manifest.vault_id;
+        let keys = derive_keys(vault_id, &master_key).unwrap();
+        let open = |plaintext: &[u8]| {
+            open_manifest(
+                &sealed_manifest(&master_key, vault_id, plaintext),
+                &keys.manifest,
+                vault_id,
+            )
+            .err()
+        };
+        assert_eq!(open(&serde_json::to_vec(&manifest).unwrap()), None);
+        for restructured in [false, true] {
+            let newer = newer_manifest_plaintext(&manifest, manifest.generation, restructured);
+            assert_eq!(open(&newer), Some(ManifestRefusal::Newer));
+        }
+        // Damage stays damage: a known format that does not check out, a
+        // format number that is not newer or not a number, and text that is
+        // not a manifest.
+        let mut value = serde_json::to_value(&manifest).unwrap();
+        value["records"] = serde_json::json!({ "FAKE future layout": [] });
+        assert_eq!(
+            open(&serde_json::to_vec(&value).unwrap()),
+            Some(ManifestRefusal::Damaged)
+        );
+        for format in [serde_json::json!(0), serde_json::json!("9")] {
+            let mut value = serde_json::to_value(&manifest).unwrap();
+            value["formatVersion"] = format;
+            assert_eq!(
+                open(&serde_json::to_vec(&value).unwrap()),
+                Some(ManifestRefusal::Damaged)
+            );
+        }
+        assert_eq!(open(b"FAKE not a manifest"), Some(ManifestRefusal::Damaged));
+        // So is a newer manifest not sealed under this vault's key and id:
+        // only an authentic one says a newer build wrote it.
+        let newer = newer_manifest_plaintext(&manifest, manifest.generation, false);
+        let mut other_key = [0_u8; 32];
+        rand::RngCore::fill_bytes(&mut OsRng, &mut other_key);
+        for sealed in [
+            sealed_manifest(&other_key, vault_id, &newer),
+            sealed_manifest(&master_key, Uuid::new_v4(), &newer),
+        ] {
+            assert_eq!(
+                open_manifest(&sealed, &keys.manifest, vault_id).err(),
+                Some(ManifestRefusal::Damaged)
+            );
+        }
+    }
+
+    #[test]
+    fn nothing_to_open_but_a_slot_a_newer_build_wrote_is_refused_as_newer() {
+        use SlotReading::{Absent, Damaged, Newer, Unreadable};
+        for slots in [
+            [Newer, Newer],
+            [Newer, Damaged],
+            [Absent, Newer],
+            // Updating opens it, whatever the slot that could not be read holds.
+            [Newer, Unreadable],
+            [Unreadable, Newer],
+        ] {
+            assert!(matches!(
+                select_manifest(&slots),
+                Err(VaultError::NewerFormat)
+            ));
+        }
+        assert!(matches!(
+            select_manifest(&[Damaged, Damaged]),
+            Err(VaultError::Corrupt)
+        ));
+        assert!(matches!(
+            select_manifest(&[Absent, Unreadable]),
+            Err(VaultError::Unreadable)
+        ));
+    }
+
+    #[test]
+    fn a_vault_a_newer_build_saved_is_refused_as_newer_with_nothing_changed() {
+        let temp = tempfile::tempdir().unwrap();
+        for restructured in [false, true] {
+            let root = temp.path().join(format!("vault-{restructured}"));
+            let (store, _, key) = backed_up_vault(&root);
+            let (master_key, manifest) = key_and_manifest(&store);
+            // Both slots hold the newer format, as after a newer build's
+            // finished upgrade.
+            for generation in [manifest.generation + 1, manifest.generation + 2] {
+                let plaintext = newer_manifest_plaintext(&manifest, generation, restructured);
+                atomic_bytes(
+                    &manifest_path(&root, generation),
+                    &sealed_manifest(&master_key, manifest.vault_id, &plaintext),
+                )
+                .unwrap();
+            }
+            let before = sorted_files(&root);
+            assert!(matches!(
+                store.unlock(PASSWORD),
+                Err(VaultError::NewerFormat)
+            ));
+            assert!(matches!(
+                store.recover(&key, PASSPHRASE_REPLACEMENT),
+                Err(VaultError::NewerFormat)
+            ));
+            assert_eq!(store.status().unwrap(), VaultStatus::Locked);
+            assert!(sorted_files(&root) == before, "{restructured}");
+        }
+    }
+
+    #[test]
+    fn a_newer_builds_unfinished_upgrade_still_opens_from_the_slot_this_build_knows() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let (store, imported, _) = vault_with_records(&root, &["FAKE a.pdf", "FAKE b.pdf"]);
+        let (master_key, manifest) = key_and_manifest(&store);
+        // A newer build's upgrade wrote its first slot and stopped: the other
+        // slot holds the same state in this build's format.
+        let generation = manifest.generation + 1;
+        let plaintext = newer_manifest_plaintext(&manifest, generation, true);
+        atomic_bytes(
+            &manifest_path(&root, generation),
+            &sealed_manifest(&master_key, manifest.vault_id, &plaintext),
+        )
+        .unwrap();
+        store.unlock(PASSWORD).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.recovery, None);
+        assert_eq!(snapshot.records.len(), imported.len());
+        store.lock();
+        // As before: the newer slot held nothing the other lacks, so the
+        // redundancy repair wrote over it.
+        assert!(slots(&root, &master_key, manifest.vault_id)
+            .iter()
+            .all(|(format, _, _)| *format == VAULT_FORMAT));
+    }
+
+    #[test]
+    fn a_backup_a_newer_build_saved_is_refused_as_newer_with_nothing_changed() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home-a").join("vault");
+        let (store, _, key) = backed_up_vault(&root);
+        let (master_key, manifest) = key_and_manifest(&store);
+        let header_data = serde_json::to_vec_pretty(&read_latest_header(&root).unwrap()).unwrap();
+        let elsewhere = temp.path().join("home-b").join("vault");
+        let empty_device = VaultStore::new(elsewhere.clone());
+        for restructured in [false, true] {
+            // Whole and correctly tagged, every object included: only its
+            // manifest's format is newer.
+            let plaintext = newer_manifest_plaintext(&manifest, manifest.generation, restructured);
+            let manifest_data = sealed_manifest(&master_key, manifest.vault_id, &plaintext);
+            let mut backup = Vec::new();
+            let mut writer = BackupWriter::new(&mut backup).unwrap();
+            for (kind, name, data) in [
+                (BACKUP_KIND_HEADER, "header.json", &header_data),
+                (BACKUP_KIND_MANIFEST, "manifest.bin", &manifest_data),
+            ] {
+                writer
+                    .entry(kind, name, data.len() as u64, &mut data.as_slice())
+                    .unwrap();
+            }
+            let objects = manifest
+                .records
+                .iter()
+                .map(|record| &record.object_name)
+                .chain(manifest.history.segments.iter().map(|s| &s.object_name));
+            for name in objects {
+                let data = fs::read(root.join("objects").join(name)).unwrap();
+                writer
+                    .entry(
+                        BACKUP_KIND_OBJECT,
+                        name,
+                        data.len() as u64,
+                        &mut data.as_slice(),
+                    )
+                    .unwrap();
+            }
+            writer
+                .finish(&master_key, manifest.vault_id, manifest.generation, 5)
+                .unwrap();
+
+            let before = sorted_files(&root);
+            for by_key in [false, true] {
+                let credential = || {
+                    if by_key {
+                        RestoreCredential::RecoveryKey(&key)
+                    } else {
+                        RestoreCredential::Passphrase(PASSWORD)
+                    }
+                };
+                let refused = |result: Result<_, VaultError>| {
+                    matches!(result, Err(VaultError::BackupNewerFormat))
+                };
+                assert!(refused(
+                    store
+                        .inspect_backup(Cursor::new(backup.clone()), credential())
+                        .map(|_| ())
+                ));
+                assert!(refused(store.restore(
+                    Cursor::new(backup.clone()),
+                    credential(),
+                    true
+                )));
+                assert!(refused(empty_device.restore(
+                    Cursor::new(backup.clone()),
+                    credential(),
+                    false
+                )));
+            }
+            assert!(sorted_files(&root) == before, "{restructured}");
+            assert!(restore_leftovers(&root).is_empty());
+            assert_eq!(empty_device.status().unwrap(), VaultStatus::Absent);
+        }
     }
 
     #[test]
@@ -16404,6 +16864,292 @@ mod tests {
             }
         }
         files
+    }
+
+    #[test]
+    fn profile_rename_keeps_ids_signed_bytes_hidden_contents_and_survives_restore() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("original").join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Patietn", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let other = store.create_profile("FAKE Patient", 2).unwrap();
+        let folder = store
+            .create_folder(profile, None, "FAKE Results", 3)
+            .unwrap();
+        store
+            .create_folder(profile, Some(folder), "FAKE Nested", 4)
+            .unwrap();
+        let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/mycarlos-signed-pdf-fixtures.json"
+        ))
+        .unwrap();
+        let document = &fixture["documents"][0];
+        let signed = BASE64
+            .decode(document["pdf_b64"].as_str().unwrap())
+            .unwrap();
+        let signed_manifest = BASE64
+            .decode(document["manifest_bytes_b64"].as_str().unwrap())
+            .unwrap();
+        let layout = crate::signed_pdf::SignatureLayout {
+            byte_ranges: serde_json::from_value(document["byte_ranges"].clone()).unwrap(),
+            ..Default::default()
+        };
+        let pins = [crate::signed_pdf::PinnedLink {
+            clinic_id: fixture["link"]["clinic_id"].as_str().unwrap().to_owned(),
+            recipient_id: fixture["link"]["recipient_id"].as_str().unwrap().to_owned(),
+            signer_kids: vec![fixture["link"]["signer_kid"].as_str().unwrap().to_owned()],
+        }];
+        let verdict =
+            crate::signed_pdf::check(&signed, &layout, Some(&signed_manifest), &pins).unwrap();
+        assert!(matches!(
+            verdict,
+            crate::signed_pdf::Verdict::Verified { .. }
+        ));
+        let record = store
+            .import(
+                profile,
+                vec![folder],
+                vec![source("FAKE Signed.pdf", &signed)],
+                5,
+            )
+            .unwrap()
+            .imported[0];
+        let hidden = store
+            .import(
+                profile,
+                vec![],
+                vec![source("FAKE Hidden.pdf", b"FAKE hidden bytes")],
+                6,
+            )
+            .unwrap()
+            .imported[0];
+        store.hide_record(hidden, 7).unwrap();
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let object_bytes: Vec<_> = before
+            .records
+            .iter()
+            .map(|record| {
+                (
+                    record.object_name.clone(),
+                    fs::read(root.join("objects").join(&record.object_name)).unwrap(),
+                )
+            })
+            .collect();
+        let prior_history = history_events(&store);
+        store
+            .rename_profile(profile, "  FAKE Patient  ", 8)
+            .unwrap();
+        let after = store.session().as_ref().unwrap().manifest.clone();
+        assert!(before.folders == after.folders && before.records == after.records);
+        let mut expected_profiles = before.profiles.clone();
+        expected_profiles
+            .iter_mut()
+            .find(|p| p.id == profile)
+            .unwrap()
+            .display_name = "FAKE Patient".into();
+        assert!(after.profiles == expected_profiles);
+        assert_ne!(profile, other); // Equal labels never merge people.
+        let history = history_events(&store);
+        assert_eq!(&history[..prior_history.len()], prior_history);
+        let renamed = history.last().unwrap();
+        assert_eq!(renamed.event, HistoryEvent::FolderRenamed);
+        assert_eq!(
+            (renamed.profile_id, renamed.folder_id, renamed.record_id),
+            (Some(profile), None, None)
+        );
+        assert_eq!(
+            (
+                renamed.old_name.as_deref(),
+                renamed.name.as_deref(),
+                renamed.how.as_deref()
+            ),
+            (
+                Some("FAKE Patietn"),
+                Some("FAKE Patient"),
+                Some("personFolder")
+            )
+        );
+        if let Some(path) = std::env::var_os("MYCARLOS_RENAME108_HISTORY_FIXTURE") {
+            let path = PathBuf::from(path);
+            fs::write(&path, history::pack(&history).unwrap().as_slice()).unwrap();
+            fs::write(path.with_extension("vault-id"), after.vault_id.to_string()).unwrap();
+        }
+        store.rename_profile(profile, "FAKE Patient", 9).unwrap();
+        assert_eq!(history_events(&store), history);
+        let check_contents = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            assert_eq!(
+                snapshot
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == profile)
+                    .unwrap()
+                    .display_name,
+                "FAKE Patient"
+            );
+            assert_eq!(
+                snapshot
+                    .records
+                    .iter()
+                    .find(|r| r.id == hidden)
+                    .unwrap()
+                    .hidden,
+                before
+                    .records
+                    .iter()
+                    .find(|r| r.id == hidden)
+                    .unwrap()
+                    .hidden
+            );
+            assert!(snapshot.records.iter().all(|r| r.profile_id == profile));
+            let mut exported = Vec::new();
+            store.export(record, &mut exported).unwrap();
+            assert_eq!(exported, signed);
+            assert_eq!(
+                crate::signed_pdf::check(&exported, &layout, Some(&signed_manifest), &pins),
+                Ok(verdict.clone())
+            );
+            for (name, bytes) in &object_bytes {
+                assert_eq!(
+                    &fs::read(store.root.join("objects").join(name)).unwrap(),
+                    bytes
+                );
+            }
+            let all = history_events(store);
+            assert_eq!(&all[..history.len()], history);
+        };
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        check_contents(&store);
+        store.lock();
+        drop(store);
+        let reopened = VaultStore::new(root);
+        reopened.unlock(PASSWORD).unwrap();
+        check_contents(&reopened);
+        let mut backup = Vec::new();
+        reopened.backup(&mut backup, 10).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored").join("vault"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        check_contents(&restored);
+    }
+
+    #[test]
+    fn profile_rename_enforces_person_rules_and_refuses_unwritable_or_shared_targets() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = every_file(&root);
+        for invalid in [
+            "".to_owned(),
+            "   ".into(),
+            "a\u{0000}b".into(),
+            "a\u{0085}b".into(),
+            "a".repeat(121),
+            "🪻".repeat(121),
+            "  sHaReD WiTh Me ".into(),
+        ] {
+            assert!(
+                matches!(
+                    store.rename_profile(profile, &invalid, 2),
+                    Err(VaultError::Invalid)
+                ),
+                "{invalid:?}"
+            );
+        }
+        assert!(matches!(
+            store.rename_profile(Uuid::new_v4(), "FAKE Other", 2),
+            Err(VaultError::NotFound)
+        ));
+        let shared = store.snapshot().unwrap().shared_profile_id;
+        assert!(matches!(
+            store.rename_profile(shared, "FAKE Other", 2),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(every_file(&root), before);
+        store.rename_profile(profile, &"🪻".repeat(120), 3).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0]
+                .display_name
+                .chars()
+                .count(),
+            120
+        );
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+        let readonly = every_file(&root);
+        assert!(matches!(
+            store.rename_profile(profile, "FAKE Corrected", 4),
+            Err(VaultError::RecoveryMode)
+        ));
+        assert_eq!(every_file(&root), readonly);
+        store.lock();
+        assert!(matches!(
+            store.rename_profile(profile, "FAKE Corrected", 4),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn profile_rename_failure_keeps_label_and_history_in_the_same_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Patietn", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let before = store.session().as_ref().unwrap().manifest.clone();
+        let history = history_events(&store);
+        for boundary in [
+            "history.after-chunk-write",
+            "history.objects-sync",
+            "manifest.before-first-write",
+        ] {
+            {
+                let _fail = FailAt::new(boundary);
+                assert!(
+                    store.rename_profile(profile, "FAKE Patient", 2).is_err(),
+                    "{boundary}"
+                );
+            }
+            assert!(store.session().as_ref().unwrap().manifest == before);
+            assert_eq!(history_events(&store), history);
+        }
+        {
+            let _fail = FailAt::new("manifest.after-first-write");
+            store.rename_profile(profile, "FAKE Patient", 3).unwrap();
+        }
+        assert_eq!(
+            store.snapshot().unwrap().recovery,
+            Some(RecoveryReason::WriteFailed)
+        );
+        assert_eq!(
+            history_events(&store).last().unwrap().name.as_deref(),
+            Some("FAKE Patient")
+        );
+        store.lock();
+        drop(store);
+        let reopened = VaultStore::new(root);
+        reopened.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            reopened.snapshot().unwrap().profiles[0].display_name,
+            "FAKE Patient"
+        );
+        let all = history_events(&reopened);
+        assert_eq!(&all[..history.len()], history);
+        assert_eq!(
+            all.iter()
+                .filter(|e| e.how.as_deref() == Some("personFolder"))
+                .count(),
+            1
+        );
     }
 
     #[test]

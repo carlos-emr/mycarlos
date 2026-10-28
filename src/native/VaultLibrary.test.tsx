@@ -43,6 +43,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
+    renameProfile: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
     snapshot: vi.fn().mockResolvedValue(shown),
     isLockedPdf: vi.fn().mockResolvedValue(false),
@@ -80,6 +81,43 @@ function dragFolder(from: Element, to: Element) {
 }
 
 describe("VaultLibrary folders", () => {
+  it("sends a person's top-level name correction to that same profile, not the folder mutator", async () => {
+    const { bridge } = renderLibrary();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Rename “FAKE Avery”" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Rename person's folder" }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Avery");
+    fireEvent.change(screen.getByLabelText("Folder name"), {
+      target: { value: "FAKE Corrected" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await vi.waitFor(() =>
+      expect(bridge.renameProfile).toHaveBeenCalledExactlyOnceWith(
+        "profile-1",
+        "FAKE Corrected",
+      ),
+    );
+    expect(bridge.updateFolder).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+  });
+
+  it("cancels a person's name correction without any native mutation", () => {
+    const { bridge } = renderLibrary();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Rename “FAKE Avery”" }),
+    );
+    fireEvent.change(screen.getByLabelText("Folder name"), {
+      target: { value: "FAKE Corrected" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(bridge.renameProfile).not.toHaveBeenCalled();
+    expect(bridge.updateFolder).not.toHaveBeenCalled();
+  });
+
   it.each(["FAKE 2025 Letters", "FAKE June Letters"])(
     "does not send a drop of a folder onto its subfolder %s to the vault",
     async (destination) => {
