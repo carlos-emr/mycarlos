@@ -114,7 +114,10 @@ describe("the installed interface in the selected language", () => {
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^Masqués/ })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: /^Partagés avec moi, / }),
+      screen.getByRole("button", {
+        name: (name) =>
+          name.replace(/[\u2068\u2069]/g, "").startsWith("Partagés avec moi, "),
+      }),
     ).toBeVisible();
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(search).toHaveValue("FAKE {count}");

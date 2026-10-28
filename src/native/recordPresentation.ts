@@ -1,6 +1,7 @@
 import {
-  CATALOGUES,
+  LOCALES,
   t as translateNow,
+  translate,
   formatNumber,
   type MessageKey,
 } from "../i18n";
@@ -96,8 +97,8 @@ export const nameTooLong = (name: string) =>
  * refuses the same names, read from the same catalogues. */
 const sharedKey = (name: string) => name.trim().normalize("NFC").toLowerCase();
 const SHARED_NAMES = new Set(
-  Object.values(CATALOGUES).map((messages) =>
-    sharedKey(String(messages["interface.LibrarySidebar.sharedWithMe"])),
+  LOCALES.map((locale) =>
+    sharedKey(translate(locale, "interface.LibrarySidebar.sharedWithMe")),
   ),
 );
 export const nameIsShared = (name: string) => SHARED_NAMES.has(sharedKey(name));

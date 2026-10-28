@@ -33,6 +33,7 @@ der = { version = "=0.7.10", features = ["alloc", "oid"] }
 ecdsa = { version = "=0.17.0", features = ["der"] }
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "zeroize"] }
 hkdf = "0.12"
+fluent-bundle = "=0.16.0"
 # Only the frozen X25519 suite. Disable default P256 KEM to keep the current
 # independent P256 verifier stack and avoid old EC dependencies.
 hpke = { version = "=0.13.0", default-features = false, features = ["std", "x25519"], optional = true }

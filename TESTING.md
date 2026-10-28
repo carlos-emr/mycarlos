@@ -520,14 +520,15 @@ only its own attached sheet, and clamps a late response to cancellation once
 that parent starts closing; completion is delivered at most once.
 
 The harness presents
-an owned test window and the production AppKit sheet in all five languages, posts
+an owned test window and the production AppKit sheet in all seven languages, posts
 native Return and Escape events, and deliberately activates the second button.
 It checks the exact response for each role and also refuses unknown responses,
-cancellation and closing the parent. All 18 cases are attempted, including actual
+cancellation and closing the parent. All 24 cases are attempted, including actual
 key events after a keyboard-property mismatch; any metadata or behavior failure
 still fails the report. Each appearance, key-window, and completion wait has its
-own five-second deadline, allowing about fifteen seconds per case or 270 seconds
-of waits across 18 cases, plus framework calls and cleanup.
+own five-second deadline, allowing about fifteen seconds per case or 360 seconds
+of waits across 24 cases, plus framework calls and cleanup.
+
 A timeout fails before cleanup; cleanup cannot
 satisfy an expected response. The job uploads `test-results/native-dialog-macos.json`,
 and a missing report fails the upload step. Linux and Windows print an unsupported
@@ -535,6 +536,14 @@ message for this harness and provide no AppKit evidence. These in-process events
 supplement physical keyboard, Tauri window integration and mobile device checks;
 the report and its CI outcome must be reviewed before claiming platform coverage.
 
+New camera filenames use the computer's date and time formats; their prefix
+follows the UI language when they are created. Changing the UI language leaves
+those date/time parts unchanged, and never renames existing records. This is an
+intentional change from the earlier UI-locale date selection (English used
+en-GB). Camera browser checks fix the computer locale (en-US and en-GB), timezone
+(UTC), and clock, then compare the complete stored filename exactly. Human
+status text uses Fluent isolation; the stored filename contains no formatter
+controls.
 
 ## Password-protected PDFs
 

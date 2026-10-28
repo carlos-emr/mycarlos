@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { visibleHumanText } from "./fluent";
 
 // Shared by keyboard-walk.spec.ts and screen-reader-smoke.spec.ts (#70 step
 // 3): a fake native side for the vault screens, a Tab walk, and a record of
@@ -267,10 +268,15 @@ export async function recordAnnouncements(page: Page) {
 export async function expectAnnounced(page: Page, text: string) {
   await expect
     .poll(
-      () => page.evaluate(() => Reflect.get(window, "__announced") as string[]),
+      async () =>
+        (
+          await page.evaluate(
+            () => Reflect.get(window, "__announced") as string[],
+          )
+        ).map(visibleHumanText),
       { message: `"${text}" is read out by a live region` },
     )
-    .toContainEqual(expect.stringContaining(text));
+    .toContainEqual(expect.stringContaining(visibleHumanText(text)));
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,10 @@ mod native_confirmation_macos;
 #[allow(dead_code)]
 mod ui_text;
 #[cfg(target_os = "macos")]
+#[path = "../src/ui_text_ids.rs"]
+#[allow(dead_code)]
+mod ui_text_ids;
+#[cfg(target_os = "macos")]
 const MAIN_WINDOW: &str = "main";
 
 #[cfg(not(target_os = "macos"))]
@@ -114,7 +118,7 @@ mod lifecycle {
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use super::{native_confirmation_macos, ui_text::UiLocale};
+    use super::{native_confirmation_macos, ui_text::UiLocale, ui_text_ids::MessageId};
     use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertThirdButtonReturn,
@@ -143,7 +147,7 @@ mod platform {
         }
     }
     // Each wait has its own five-second deadline. A case can use three waits;
-    // all 18 cases allow about 270 seconds of waiting, plus calls and cleanup.
+    // all 24 cases allow about 360 seconds of waiting, plus calls and cleanup.
     fn until(app: &NSApplication, predicate: impl Fn() -> bool) -> bool {
         let deadline = Instant::now() + Duration::from_secs(5);
         while !predicate() {
@@ -210,7 +214,7 @@ mod platform {
     }
 
     pub fn run(mtm: MainThreadMarker, app: &NSApplication) -> (Vec<Value>, Option<String>) {
-        // Still attempt all 18 cases if activation fails: the strict key-window
+        // Still attempt all 24 cases if activation fails: the strict key-window
         // gates and recorded app state then expose the actual limitation.
         let _activation_observed = until(app, || app.isActive());
         let mut cases = Vec::new();
@@ -221,6 +225,8 @@ mod platform {
             ("es", UiLocale::Es),
             ("pl", UiLocale::Pl),
             ("pt-BR", UiLocale::PtBr),
+            ("zh-CN", UiLocale::ZhCn),
+            ("zh-TW", UiLocale::ZhTw),
         ] {
             for stimulus in ["Return", "Escape", "action"] {
                 if let Err(error) = case(mtm, app, tag, locale, stimulus, &mut cases) {
@@ -249,14 +255,20 @@ mod platform {
         let calls = Rc::new(Cell::new(0));
         let callback_response = response.clone();
         let callback_calls = calls.clone();
+        let text = |id| locale.text(id).map_err(|error| format!("{error:?}"));
+        let title = text(MessageId::NativeSetAsideTitle)?;
+        let warning = text(MessageId::NativeSetAsideKept)?;
+        let keep = text(MessageId::NativeVaultKeep)?;
+        let confirm = text(MessageId::NativeSetAsideConfirm)?;
+        let cancel = text(MessageId::NativeCancel)?;
         let alert = native_confirmation_macos::present(
             mtm,
             parent.clone(),
-            locale.text("native.setAside.title"),
-            locale.text("native.setAside.kept"),
-            locale.text("native.vault.keep"),
-            locale.text("native.setAside.confirm"),
-            locale.text("native.cancel"),
+            &title,
+            &warning,
+            &keep,
+            &confirm,
+            &cancel,
             move |value| {
                 callback_calls.set(callback_calls.get() + 1);
                 callback_response.set(Some(value));
@@ -307,7 +319,7 @@ mod platform {
                         .push(format!("incorrect keyboard role for button {index}"));
                 }
             }
-            if buttons.objectAtIndex(2).title().to_string() != locale.text("native.cancel") {
+            if buttons.objectAtIndex(2).title().to_string() != cancel {
                 return Err("cancel label is not localized".to_owned());
             }
             match stimulus {

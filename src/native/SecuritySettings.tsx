@@ -345,10 +345,9 @@ export function SecuritySettings({
             {recoveryKeySetAtMs && recoveryKeyLabel && (
               <p>
                 {withElements(
-                  translateNow("security.recoveryKey.current", {
-                    date: printedDate(new Date(recoveryKeySetAtMs)),
-                  }),
+                  "security.recoveryKey.current",
                   { label: <KeyLabel label={recoveryKeyLabel} /> },
+                  { date: printedDate(new Date(recoveryKeySetAtMs)) },
                 )}
               </p>
             )}

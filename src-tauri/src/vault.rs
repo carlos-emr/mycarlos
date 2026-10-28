@@ -1,6 +1,7 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
 use crate::portal_link::{self, LinkSummary, StoredLink};
+use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -235,6 +236,8 @@ fn cancelled_io_error() -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum VaultError {
+    #[error("a bundled user message could not be formatted")]
+    Localization,
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
     #[cfg(feature = "portal-linking")]
@@ -2708,14 +2711,18 @@ impl VaultStore {
             .pending_recovery_key
             .as_ref()
             .ok_or(VaultError::Invalid)?;
-        Ok(Zeroizing::new(locale.render(
-            "native.kit.text",
-            &[
-                ("key", &encode_recovery_key(&pending.key)),
-                ("label", &recovery_key_label(pending.key_id)),
-                ("date", &utc_date_text(now_ms)),
-            ],
-        )))
+        Ok(Zeroizing::new(
+            locale
+                .render_raw(
+                    MessageId::NativeKitText,
+                    &[
+                        ("key", &encode_recovery_key(&pending.key)),
+                        ("label", &recovery_key_label(pending.key_id)),
+                        ("date", &utc_date_text(now_ms)),
+                    ],
+                )
+                .map_err(|_| VaultError::Localization)?,
+        ))
     }
 
     /// The short label of the key being set up, which its kits show. Not
@@ -8719,7 +8726,27 @@ mod tests {
         aside.lock();
 
         // The next vault made in this run names where the last one went.
-        store.create(PASSWORD, "New profile", 4).unwrap();
+        let new_password = "orchard-lantern-violet-monsoon-735";
+        store.create(new_password, "New profile", 4).unwrap();
+        let new_key = store.begin_recovery_key(new_password).unwrap().to_string();
+        let new_groups = recovery_key_groups(&new_key);
+        store
+            .confirm_recovery_key(&typed_back(&new_groups), 5)
+            .unwrap();
+        // This new vault uses different credentials. Neither its
+        // passphrase nor its recovery key opens the encrypted vault kept aside.
+        assert!(matches!(
+            aside.unlock(new_password),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(matches!(
+            aside.recover(&new_key, new_password),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        // The retained vault's own current passphrase still opens its records.
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
         let created = history_events(&store).remove(0);
         assert_eq!(created.event, HistoryEvent::Created);
         assert_eq!(
@@ -8729,6 +8756,27 @@ mod tests {
         // A second reset sets the second vault aside beside the first.
         store.reset().unwrap();
         assert_eq!(set_aside_folders(&root).len(), 2);
+
+        // Reuse is allowed: the same passphrase value can open both the
+        // new vault and the retained old one. Creation does not rewrite the
+        // old vault's headers or replace its matching recovery key.
+        let old_headers: Vec<_> = HEADER_SLOTS
+            .iter()
+            .map(|slot| fs::read(folders[0].join(slot)).unwrap())
+            .collect();
+        store
+            .create(PASSPHRASE_REPLACEMENT, "FAKE reused passphrase", 6)
+            .unwrap();
+        for (slot, bytes) in HEADER_SLOTS.iter().zip(&old_headers) {
+            assert_eq!(&fs::read(folders[0].join(slot)).unwrap(), bytes);
+        }
+        store.lock();
+        store.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
+        assert!(aside.recover(&key, PASSPHRASE_REPLACEMENT).unwrap());
+        aside.lock();
     }
 
     #[test]
@@ -11414,6 +11462,8 @@ mod tests {
             crate::ui_text::UiLocale::Es,
             crate::ui_text::UiLocale::Pl,
             crate::ui_text::UiLocale::PtBr,
+            crate::ui_text::UiLocale::ZhCn,
+            crate::ui_text::UiLocale::ZhTw,
         ] {
             let localized = store.recovery_kit_in(1_790_553_600_000, locale).unwrap();
             assert!(
@@ -11422,6 +11472,19 @@ mod tests {
                     && localized.contains("2026-09-28")
             );
             assert!(!localized.contains("Jamie"));
+            assert!(!localized
+                .chars()
+                .any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            let line = localized
+                .lines()
+                .find(|line| line.contains(key.as_str()))
+                .unwrap();
+            let start = line.find(key.as_str()).unwrap();
+            let copied = &line[start..start + key.len()];
+            assert_eq!(
+                *decode_recovery_key(copied).unwrap(),
+                *decode_recovery_key(&key).unwrap()
+            );
         }
         let polish_file = temp.path().join("kit-pl.txt");
         store

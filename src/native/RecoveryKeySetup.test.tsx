@@ -60,6 +60,8 @@ async function typeKey(user: ReturnType<typeof userEvent.setup>, key: string) {
   await user.type(field, key);
 }
 
+const visibleText = (text: string) => text.replace(/[\u2068\u2069]/g, "");
+
 describe("RecoveryKeySetup", () => {
   it("keeps Tab on the controls and gives the text to screen readers with the dialog", async () => {
     const user = userEvent.setup();
@@ -76,7 +78,7 @@ describe("RecoveryKeySetup", () => {
       within(dialog).getByRole("list", { name: "Recovery key" }),
     ).getAllByRole("listitem");
     expect(groups).toHaveLength(7);
-    expect(groups[5]).toHaveTextContent(/Group 6:/);
+    expect(visibleText(groups[5].textContent ?? "")).toContain("Group 6:");
     for (const element of dialog.querySelectorAll("p, li, h2")) {
       expect(element, element.textContent ?? "").not.toHaveAttribute(
         "tabindex",
@@ -139,9 +141,9 @@ describe("RecoveryKeySetup", () => {
     ).toEqual(GROUPS);
     // Read a character at a time, so that 0 and O are not confused: the
     // group as shown is hidden from the reader, which gets this instead.
-    expect(items[5].querySelector(".sr-only")).toHaveTextContent(
-      "Group 6: Y Z 0 1",
-    );
+    expect(
+      visibleText(items[5].querySelector(".sr-only")?.textContent ?? ""),
+    ).toBe("Group 6: Y Z 0 1");
   });
 
   it("says why the passphrase was refused", async () => {
@@ -198,6 +200,8 @@ describe("RecoveryKeySetup", () => {
     );
     const kit = document.querySelector("body > .recovery-kit-print");
     expect(kit).toHaveTextContent(KEY);
+    expect(kit?.querySelector(".recovery-kit-key")?.textContent).toBe(KEY);
+    expect(kit?.textContent).not.toMatch(/[\u2066-\u2069]/u);
     expect(kit).not.toHaveTextContent(/label/i);
     // The date still tells it from other kits.
     expect(kit).toHaveTextContent(`Printed ${printedDate(new Date())}`);
@@ -224,6 +228,8 @@ describe("RecoveryKeySetup", () => {
     expect(document.body).toHaveClass("printing-recovery-kit");
     const kit = document.querySelector("body > .recovery-kit-print");
     expect(kit).toHaveTextContent(KEY);
+    expect(kit?.querySelector(".recovery-kit-key")?.textContent).toBe(KEY);
+    expect(kit?.textContent).not.toMatch(/[\u2066-\u2069]/u);
     // Its label and the date, so that kits can be told apart.
     expect(kit).toHaveTextContent(
       `Key label: 7F3A · Printed ${printedDate(new Date())}`,
@@ -310,7 +316,9 @@ describe("RecoveryKeySetup", () => {
     );
     await typeKey(user, GROUPS[0]);
     await user.click(screen.getByRole("button", { name: "Check and save" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("You typed 4");
+    expect(visibleText(screen.getByRole("alert").textContent ?? "")).toContain(
+      "You typed 4",
+    );
     await user.type(screen.getByLabelText("Your recovery key"), "-");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -323,7 +331,7 @@ describe("RecoveryKeySetup", () => {
     );
     await typeKey(user, GROUPS.slice(0, 6).join("-"));
     await user.click(screen.getByRole("button", { name: "Check and save" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(visibleText(screen.getByRole("alert").textContent ?? "")).toContain(
       "You typed 24 letters and digits. Your recovery key has 28 letters and digits: 7 groups of 4.",
     );
     act(() => setLocaleOverride("pl"));

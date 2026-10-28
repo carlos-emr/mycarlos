@@ -1,6 +1,7 @@
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { humanValue } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
@@ -262,18 +263,18 @@ describe("native clinic document controls", () => {
       .setup()
       .click(screen.getByRole("button", { name: "Check for new documents" }));
     await waitFor(() =>
-      expect(props.setNotice).toHaveBeenCalledWith(
+      expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
         expect.stringContaining("New documents saved: 1."),
-      ),
+      ]),
     );
-    expect(props.setNotice).toHaveBeenCalledWith(
+    expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
       expect.stringContaining(
         "Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.",
       ),
-    );
-    expect(props.setNotice).not.toHaveBeenCalledWith(
-      expect.stringContaining("Picked up"),
-    );
+    ]);
+    expect(
+      humanValue(vi.mocked(props.setNotice).mock.calls),
+    ).not.toContainEqual([expect.stringContaining("Picked up")]);
   });
   it("shows clinic-specific partial guidance while preserving successful progress from other links", async () => {
     const { bridge, props } = fixture();
@@ -293,17 +294,17 @@ describe("native clinic document controls", () => {
       .setup()
       .click(screen.getByRole("button", { name: "Check for new documents" }));
     await waitFor(() =>
-      expect(props.setNotice).toHaveBeenCalledWith(
+      expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
         expect.stringContaining(
           "Some clinic checks need attention. New documents saved: 2.",
         ),
-      ),
+      ]),
     );
-    expect(props.setNotice).toHaveBeenCalledWith(
+    expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
       expect.stringContaining(
         "FAKE Other Clinic: This approval request expired.",
       ),
-    );
+    ]);
   });
   it("keeps contact guidance and hides restart when the native request archive is full", () => {
     fixture({
