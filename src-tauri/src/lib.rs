@@ -230,30 +230,30 @@ impl From<VaultError> for PublicText {
         match error {
             #[cfg(feature="portal-linking")]
             VaultError::ApprovalTerminal(state,reason) => match state {
-                portal_approval::ApprovalState::Expired => Self {code:"approval_expired",message:"This clinic approval request expired. Check for updates before starting a new request."},
-                portal_approval::ApprovalState::Cancelled => Self {code:"approval_cancelled",message:"This clinic approval request was cancelled. Check for updates before starting a new request."},
-                _ if reason.is_some_and(|r|r.needs_clinic()) => Self {code:"approval_contact_clinic",message:"The clinic cannot approve this request here. Contact your clinic for next steps."},
-                _ => Self {code:"approval_refused",message:"The clinic refused this device approval request. Contact your clinic before trying again."},
+                portal_approval::ApprovalState::Expired => Self { code: "approval_expired", message: "This clinic approval request expired. Check for updates before starting a new request.", message_key: "portal.approvalExpired" },
+                portal_approval::ApprovalState::Cancelled => Self { code: "approval_cancelled", message: "This clinic approval request was cancelled. Check for updates before starting a new request.", message_key: "portal.approvalCancelled" },
+                _ if reason.is_some_and(|r|r.needs_clinic()) => Self { code: "approval_contact_clinic", message: "The clinic cannot approve this request here. Contact your clinic for next steps.", message_key: "portal.approvalContact" },
+                _ => Self { code: "approval_refused", message: "The clinic refused this device approval request. Contact your clinic before trying again.", message_key: "portal.approvalRefused" },
             },
             #[cfg(feature="portal-linking")]
-            VaultError::ApprovalRequestMissing => Self {code:"approval_missing",message:"Your saved approval request was not found on the portal. Send the saved request again."},
+            VaultError::ApprovalRequestMissing => Self { code: "approval_missing", message: "Your saved approval request was not found on the portal. Send the saved request again.", message_key: "portal.approvalMissing" },
             #[cfg(feature="portal-linking")]
-            VaultError::ApprovalNeedsClinic => Self {code:"approval_contact_clinic",message:"Clinic approval needs to be checked before another request. Contact your clinic for next steps."},
+            VaultError::ApprovalNeedsClinic => Self { code: "approval_contact_clinic", message: "Clinic approval needs to be checked before another request. Contact your clinic for next steps.", message_key: "portal.approvalContact" },
             #[cfg(feature="portal-linking")]
-            VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent." },
+            VaultError::PickupRefused => Self { code: "pickup_refused", message: "A document from the clinic could not be verified. It was not added and no pickup receipt was sent.", message_key: "portal.errorRefused" },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
-                    LinkError::Disabled => Self { code: "portal_link_disabled", message: "Portal linking is not enabled in this build." },
-                    LinkError::Unavailable => Self { code: "portal_link_unavailable", message: "Portal linking is not available on this device yet." },
-                    LinkError::InvalidPortal => Self { code: "portal_link_address", message: "Enter the portal's HTTPS address, without a username, password, query or fragment." },
-                    LinkError::InvalidCode => Self { code: "portal_link_code", message: "Enter the complete code shown by the portal." },
-                    LinkError::InvalidDeviceName => Self { code: "portal_link_device_name", message: "Choose a device name of 1 to 64 characters without control characters." },
-                    LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code." },
-                    LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed." },
-                    LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again." },
-                    LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again." },
-                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again." },
+                    LinkError::Disabled => Self { code: "portal_link_disabled", message: "Portal linking is not enabled in this build.", message_key: "portal.errorDisabled" },
+                    LinkError::Unavailable => Self { code: "portal_link_unavailable", message: "Portal linking is not available on this device yet.", message_key: "portal.errorUnavailable" },
+                    LinkError::InvalidPortal => Self { code: "portal_link_address", message: "Enter the portal's HTTPS address, without a username, password, query or fragment.", message_key: "portal.errorAddress" },
+                    LinkError::InvalidCode => Self { code: "portal_link_code", message: "Enter the complete code shown by the portal.", message_key: "portal.errorCode" },
+                    LinkError::InvalidDeviceName => Self { code: "portal_link_device_name", message: "Choose a device name of 1 to 64 characters without control characters.", message_key: "portal.errorDeviceName" },
+                    LinkError::CodeRejected => Self { code: "portal_link_code_rejected", message: "The portal did not accept that code. Sign in to the portal and make a new code.", message_key: "portal.errorCodeRejected" },
+                    LinkError::ClinicKeysMissing => Self { code: "portal_link_keys_missing", message: "The clinic has not published a signing key yet. The link has not been completed.", message_key: "portal.errorKeys" },
+                    LinkError::DeviceExists => Self { code: "portal_link_device_exists", message: "The portal already registered this device key. Check Linked devices in the portal before linking again.", message_key: "portal.errorExists" },
+                    LinkError::Cancelled => Self { code: "cancelled", message: "Linking stopped because the vault locked. Check Linked devices in the portal before trying again.", message_key: "portal.errorCancelled" },
+                    LinkError::Network | LinkError::InvalidResponse => Self { code: "portal_link_incomplete", message: "The link could not be completed on this device. The portal may have registered it. Check Linked devices in the portal before trying again.", message_key: "portal.errorIncomplete" },
                 }
             },
             VaultError::Busy => Self {
@@ -294,6 +294,7 @@ impl From<VaultError> for PublicText {
             VaultError::NewerFormat => Self {
                 code: "vault_newer_format",
                 message: "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+                message_key: "error.newerFormat.vault",
             },
             VaultError::NotFound => Self {
                 code: "not_found",
@@ -429,6 +430,7 @@ impl From<VaultError> for PublicText {
             VaultError::BackupNewerFormat => Self {
                 code: "backup_newer_format",
                 message: "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
+                message_key: "error.newerFormat.backup",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
