@@ -419,7 +419,9 @@ describe("errors the app words itself, in the language in use (#46)", () => {
       "Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.",
     );
     setLocaleOverride("en");
-    expect(vaultErrorMessage({ ...asked, retryAfterMs: 30_000 })).toBe(
+    expect(
+      humanValue(vaultErrorMessage({ ...asked, retryAfterMs: 30_000 })),
+    ).toBe(
       "The clinic portal asked myCarlos to wait before trying again. Try again in 30 seconds.",
     );
   });

@@ -3975,7 +3975,8 @@ mod tests {
         use portal_link::LinkError;
         let invalid = approval_check_issue(VaultError::Portal(LinkError::InvalidResponse));
         assert_eq!(invalid.code, "approval_reply_invalid");
-        assert!(invalid.message.contains("Contact your clinic"));
+        assert_eq!(invalid.message_key, "portal.approvalReplyInvalid");
+        assert!(public_error_text(&invalid).contains("Contact your clinic"));
         let offline = approval_check_issue(VaultError::Portal(LinkError::Network));
         assert_eq!(offline.code, "portal_link_incomplete");
         let waiting = approval_check_issue(VaultError::Portal(LinkError::RateLimited(Some(9))));

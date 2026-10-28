@@ -9010,7 +9010,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     await pass(10_000);
     expect(bridge.refreshDeviceApproval).toHaveBeenCalledWith(pending.id);
     expect(
-      screen.getByText("Time left for this request: about 4 minutes."),
+      screen.getByText(
+        humanText("Time left for this request: about 4 minutes."),
+      ),
     ).toBeVisible();
     expect(
       screen.getByText(
