@@ -63,6 +63,7 @@ function fixture(
       .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
     requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
     restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    submitApprovalCode: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   const refresh = vi.fn().mockResolvedValue(snapshot);
   const failures: unknown[] = [];
@@ -1389,6 +1390,213 @@ describe("automatic approval status checks (#131)", () => {
         translate(locale, "portal.approvalTimeLeft", { count: 4 }),
       ])
         expect(screen.getByText(text)).toBeVisible();
+    }
+    act(() => setLocaleOverride(null));
+  });
+});
+
+describe("the code a clinic emails (#141)", () => {
+  const asked: PortalLinkSummary = {
+    ...link,
+    approvalStatus: "challenge_ready",
+    approvalByCode: true,
+  };
+  const showing = (changes: Partial<PortalLinkSummary> = {}) => ({
+    ...snapshot,
+    portalLinks: [{ ...asked, ...changes }],
+  });
+  const codeBox = () =>
+    screen.queryByRole("textbox", { name: "Code from your clinic's email" });
+  const hint =
+    "Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.";
+  const mismatch =
+    "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.";
+  const locked =
+    "Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic.";
+
+  it("asks for the code only when the clinic's verified challenge asks for one", () => {
+    const { props, rerender } = fixture({ snapshot: showing() });
+    expect(
+      screen.getByText(
+        "Your clinic emailed you a code to confirm this device. Enter it below.",
+      ),
+    ).toBeVisible();
+    const box = codeBox()!;
+    expect(box).toBeVisible();
+    expect(box).toHaveAttribute("inputmode", "numeric");
+    expect(box).toHaveAttribute("autocomplete", "one-time-code");
+    expect(box).toHaveAttribute("spellcheck", "false");
+    expect(box).toHaveAccessibleDescription(hint);
+    expect(screen.getByRole("button", { name: "Confirm code" })).toBeEnabled();
+    const states: [Partial<PortalLinkSummary>, string][] = [
+      // Staff approval: no code is asked for.
+      [
+        { approvalByCode: false },
+        "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.",
+      ],
+      [
+        { approvalCodeSubmitted: true },
+        "Code sent. Waiting for your clinic to confirm this device.",
+      ],
+      [{ approvalCodeLocked: true }, locked],
+      [{ approvalStatus: "refused", approvalReason: "code_attempts" }, locked],
+      [
+        { approvalStatus: "accepted", clinicApproved: true },
+        "Your clinic confirmed this device by code.",
+      ],
+    ];
+    for (const [changes, said] of states) {
+      rerender(<PortalDocuments {...props} snapshot={showing(changes)} />);
+      expect(screen.getByText(said)).toBeVisible();
+      expect(codeBox()).not.toBeInTheDocument();
+    }
+    rerender(<PortalDocuments {...props} snapshot={showing()} readOnly />);
+    expect(codeBox()).not.toBeInTheDocument();
+  });
+
+  it("sends the code as typed to the native side only, clears it, and says it was sent", async () => {
+    const { bridge, props, rerender, failures } = fixture({
+      snapshot: showing(),
+    });
+    const user = userEvent.setup();
+    await user.type(codeBox()!, "482 193 644");
+    await user.click(screen.getByRole("button", { name: "Confirm code" }));
+    await waitFor(() =>
+      expect(bridge.submitApprovalCode).toHaveBeenCalledWith(
+        link.id,
+        "482 193 644",
+      ),
+    );
+    expect(bridge.submitApprovalCode).toHaveBeenCalledOnce();
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    expect(failures).toEqual([]);
+    expect(codeBox()).toHaveValue("");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Code sent. Waiting for your clinic to confirm this device.",
+    );
+    // The saved state then says so, and the form goes: focus moves to this
+    // device's heading, not to the page.
+    rerender(
+      <PortalDocuments
+        {...props}
+        snapshot={showing({ approvalCodeSubmitted: true })}
+      />,
+    );
+    expect(codeBox()).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.getElementById(`portal-link-title-${link.id}`),
+      ),
+    );
+  });
+
+  it("says beside it when a code does not match this clinic, and keeps it to correct", async () => {
+    const { bridge, failures } = fixture({ snapshot: showing() });
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+      code: "approval_code_mismatch",
+      message: "native text",
+    });
+    const user = userEvent.setup();
+    await user.type(codeBox()!, "482193645");
+    const confirm = screen.getByRole("button", { name: "Confirm code" });
+    await user.click(confirm);
+    await waitFor(() => expect(screen.getByText(mismatch)).toBeVisible());
+    expect(codeBox()).toHaveAttribute("aria-invalid", "true");
+    expect(codeBox()).toHaveAccessibleDescription(`${hint} ${mismatch}`);
+    expect(codeBox()).toHaveValue("482193645");
+    // Said politely where it is; nothing else is reported, and focus stays.
+    expect(screen.getByText(mismatch)).toHaveAttribute("aria-live", "polite");
+    expect(failures).toEqual([]);
+    expect(document.activeElement).toBe(confirm);
+    // Correcting it clears the message.
+    await user.type(codeBox()!, "{Backspace}4");
+    expect(screen.queryByText(mismatch)).not.toBeInTheDocument();
+    expect(codeBox()).not.toHaveAttribute("aria-invalid");
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+      code: "approval_code_format",
+    });
+    await user.click(confirm);
+    expect(
+      await screen.findByText(
+        "Enter the 9 digits of the code from your clinic's email.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("says when no more codes are taken, and passes other failures on", async () => {
+    const { bridge, failures } = fixture({ snapshot: showing() });
+    const user = userEvent.setup();
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+      code: "approval_code_locked",
+    });
+    await user.type(codeBox()!, "482193644");
+    await user.click(screen.getByRole("button", { name: "Confirm code" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(locked),
+    );
+    expect(codeBox()).toHaveValue("");
+    expect(failures).toEqual([]);
+    const offline = { code: "portal_link_incomplete" };
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce(offline);
+    await user.type(codeBox()!, "482193644");
+    await user.click(screen.getByRole("button", { name: "Confirm code" }));
+    await waitFor(() => expect(failures).toEqual([offline]));
+  });
+
+  it("fits a 360 px window at 200% text, message included", async () => {
+    const { bridge } = fixture({ snapshot: showing() });
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+      code: "approval_code_mismatch",
+    });
+    const user = userEvent.setup();
+    await user.type(codeBox()!, "482193645");
+    await user.click(screen.getByRole("button", { name: "Confirm code" }));
+    await screen.findByText(mismatch);
+    await page.viewport(360, 780);
+    const oldSize = document.documentElement.style.fontSize;
+    try {
+      document.documentElement.style.fontSize = "200%";
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(360);
+      const button = screen.getByRole("button", { name: "Confirm code" });
+      for (const control of [codeBox()!, button]) {
+        const box = control.getBoundingClientRect();
+        expect(box.left).toBeGreaterThanOrEqual(0);
+        expect(box.right).toBeLessThanOrEqual(360);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+      }
+      expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
+      if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
+        const section = screen.getByRole("region", {
+          name: "Clinic documents",
+        });
+        await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
+        await page
+          .getByRole("region", { name: "Clinic documents" })
+          .screenshot({ path: "portal-code-narrow-200.png" });
+      }
+    } finally {
+      document.documentElement.style.fontSize = oldSize;
+      await page.viewport(1100, 760);
+    }
+  });
+
+  it("asks for the code in every supported language", () => {
+    fixture({ snapshot: showing() });
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByRole("textbox", {
+          name: translate(locale, "portal.codeLabel"),
+        }),
+      ).toHaveAccessibleDescription(translate(locale, "portal.codeHint"));
+      expect(
+        screen.getByText(translate(locale, "portal.codeNeeded")),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", {
+          name: translate(locale, "portal.codeSubmit"),
+        }),
+      ).toBeVisible();
     }
     act(() => setLocaleOverride(null));
   });

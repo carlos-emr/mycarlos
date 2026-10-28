@@ -103,6 +103,26 @@ export const es: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Este intento guardado está incompleto. Revise los dispositivos vinculados en el portal o contacte con su clínica antes de volver a conectar el dispositivo. Esta aplicación no puede reanudar este intento.",
   "portal.approved": "La clínica aprobó este dispositivo.",
+  "portal.approvedByCode":
+    "Su clínica confirmó este dispositivo con un código.",
+  "portal.codeNeeded":
+    "Su clínica le envió por correo electrónico un código para confirmar este dispositivo. Escríbalo abajo.",
+  "portal.codeLabel": "Código del correo de su clínica",
+  "portal.codeHint":
+    "Escriba el código de 9 dígitos que su clínica le envió por correo electrónico. Nunca use un código que aparezca en un sitio web.",
+  "portal.codeSubmit": "Confirmar código",
+  "portal.codeSubmitted":
+    "Código enviado. Esperando a que su clínica confirme este dispositivo.",
+  "portal.codeMismatch":
+    "Este código no corresponde a esta clínica. Compruebe que vinculó la dirección real del portal de su clínica y vuelva a intentarlo.",
+  "portal.codeLocked":
+    "Se probaron demasiados códigos para esta solicitud, así que myCarlos no aceptará otro. Comuníquese con su clínica.",
+  "portal.codeFormat":
+    "Escriba los 9 dígitos del código del correo de su clínica.",
+  "portal.codeNotOpen":
+    "Esta solicitud no está esperando un código ahora. myCarlos mostrará la respuesta de su clínica en la próxima comprobación.",
+  "portal.codeRefused":
+    "El portal de la clínica no aceptó el código. Vuelva a intentarlo en unos minutos.",
   "portal.notRequested":
     "Solicite la aprobación de la clínica para recibir documentos en este dispositivo.",
   "portal.awaiting":

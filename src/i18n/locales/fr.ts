@@ -103,6 +103,26 @@ export const fr: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Cette tentative enregistrée est incomplète. Vérifiez les appareils associés dans le portail ou contactez votre clinique avant d’associer l’appareil à nouveau. Cette application ne peut pas reprendre cette tentative.",
   "portal.approved": "La clinique a approuvé cet appareil.",
+  "portal.approvedByCode":
+    "Votre clinique a confirmé cet appareil au moyen d’un code.",
+  "portal.codeNeeded":
+    "Votre clinique vous a envoyé par courriel un code pour confirmer cet appareil. Entrez-le ci-dessous.",
+  "portal.codeLabel": "Code reçu par courriel de votre clinique",
+  "portal.codeHint":
+    "Entrez le code à 9 chiffres que votre clinique vous a envoyé par courriel. N’utilisez jamais un code affiché sur un site Web.",
+  "portal.codeSubmit": "Confirmer le code",
+  "portal.codeSubmitted":
+    "Code envoyé. En attente de la confirmation de cet appareil par votre clinique.",
+  "portal.codeMismatch":
+    "Ce code ne correspond pas à cette clinique. Vérifiez que vous avez lié l’adresse réelle du portail de votre clinique, puis réessayez.",
+  "portal.codeLocked":
+    "Trop de codes ont été essayés pour cette demande. myCarlos n’en acceptera plus. Contactez votre clinique.",
+  "portal.codeFormat":
+    "Entrez les 9 chiffres du code reçu par courriel de votre clinique.",
+  "portal.codeNotOpen":
+    "Cette demande n’attend pas de code pour le moment. myCarlos affichera la réponse de votre clinique lors de sa prochaine vérification.",
+  "portal.codeRefused":
+    "Le portail de la clinique n’a pas accepté le code. Réessayez dans quelques minutes.",
   "portal.notRequested":
     "Demandez l’approbation de la clinique pour recevoir des documents sur cet appareil.",
   "portal.awaiting":

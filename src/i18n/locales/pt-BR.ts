@@ -103,6 +103,25 @@ export const ptBR: Record<MessageKey, Message> = {
   "portal.incomplete":
     "Esta tentativa salva está incompleta. Confira os dispositivos vinculados no portal ou entre em contato com sua clínica antes de conectar novamente. Este aplicativo não pode retomar esta tentativa.",
   "portal.approved": "A clínica aprovou este dispositivo.",
+  "portal.approvedByCode": "Sua clínica confirmou este dispositivo por código.",
+  "portal.codeNeeded":
+    "Sua clínica enviou por e-mail um código para confirmar este dispositivo. Digite-o abaixo.",
+  "portal.codeLabel": "Código do e-mail da sua clínica",
+  "portal.codeHint":
+    "Digite o código de 9 dígitos que sua clínica enviou por e-mail. Nunca use um código mostrado em um site.",
+  "portal.codeSubmit": "Confirmar código",
+  "portal.codeSubmitted":
+    "Código enviado. Aguardando sua clínica confirmar este dispositivo.",
+  "portal.codeMismatch":
+    "Este código não corresponde a esta clínica. Verifique se você vinculou o endereço real do portal da sua clínica e tente novamente.",
+  "portal.codeLocked":
+    "Foram tentados códigos demais para esta solicitação, então o myCarlos não aceitará outro. Entre em contato com a clínica.",
+  "portal.codeFormat":
+    "Digite os 9 dígitos do código do e-mail da sua clínica.",
+  "portal.codeNotOpen":
+    "Esta solicitação não está aguardando um código agora. O myCarlos mostrará a resposta da sua clínica na próxima verificação.",
+  "portal.codeRefused":
+    "O portal da clínica não aceitou o código. Tente novamente em alguns minutos.",
   "portal.notRequested":
     "Solicite a aprovação da clínica para receber documentos neste dispositivo.",
   "portal.awaiting":

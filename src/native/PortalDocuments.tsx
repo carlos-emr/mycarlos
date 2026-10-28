@@ -40,7 +40,10 @@ type CardState = { key: MessageKey } | { failed: unknown };
 function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
   const say = (key: MessageKey) => ({ key });
   if (link.incomplete) return say("portal.incomplete");
-  if (link.clinicApproved) return say("portal.approved");
+  if (link.clinicApproved)
+    return say(
+      link.approvalByCode ? "portal.approvedByCode" : "portal.approved",
+    );
   if (link.approvalRequestLimitReached) return say("portal.approvalContact");
   if (link.approvalStatus === "expired")
     return say("portal.approvalExpiredCard");
@@ -53,7 +56,12 @@ function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
     )
   )
     return say("portal.approvalContact");
-  if (link.approvalStatus === "refused") return say("portal.approvalRefused");
+  if (link.approvalStatus === "refused")
+    return say(
+      link.approvalReason === "code_attempts"
+        ? "portal.codeLocked"
+        : "portal.approvalRefused",
+    );
   if (!link.approvalRequested) return say("portal.notRequested");
   // A check that failed says why; a network failure or a portal asking to
   // wait says only that the state is not known: never that the request
@@ -63,8 +71,14 @@ function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
   if (live?.kind === "unreachable") return say("portal.approvalUnreachable");
   if (live?.kind === "refused") return say("portal.approvalUnanswered");
   if (live?.kind === "wait") return say("portal.approvalWait");
-  if (link.approvalStatus === "challenge_ready")
-    return say("portal.approvalPickedUp");
+  if (link.approvalStatus === "challenge_ready") {
+    // The clinic asked for the code it emailed (#141).
+    if (!link.approvalByCode) return say("portal.approvalPickedUp");
+    if (link.approvalCodeLocked) return say("portal.codeLocked");
+    return say(
+      link.approvalCodeSubmitted ? "portal.codeSubmitted" : "portal.codeNeeded",
+    );
+  }
   if (live?.kind === "waiting") return say("portal.awaitingClinic");
   return say("portal.awaiting");
 }
@@ -106,6 +120,12 @@ export function PortalDocuments({
   }>({ text: "" });
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
+  // The code each device's clinic emailed, as typed, and what the last try
+  // with it found (#141). The code is cleared once it has been sent.
+  const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
+    {},
+  );
+  const [codeIssues, setCodeIssues] = useState<Record<string, string>>({});
   const submitting = useRef(false);
   const codeRevision = useRef(0);
   const submittedRevision = useRef<number | null>(null);
@@ -212,6 +232,19 @@ export function PortalDocuments({
     checkFocus.current = null;
     if (control.isConnected && !(control as HTMLButtonElement).disabled) return;
     document.getElementById(`portal-link-title-${linkId}`)?.focus();
+  });
+  // The device whose code form had focus when a code was sent (#141). When
+  // the form goes (the code was taken, or no more are), focus moves to that
+  // device's heading, not to the page; never while it is elsewhere.
+  const codeFocus = useRef<string | null>(null);
+  useEffect(() => {
+    const linkId = codeFocus.current;
+    if (!linkId) return;
+    const form = document.getElementById(`portal-code-form-${linkId}`);
+    if (form?.contains(document.activeElement)) return;
+    codeFocus.current = null;
+    if (document.activeElement === document.body || !document.activeElement)
+      document.getElementById(`portal-link-title-${linkId}`)?.focus();
   });
   const polling = useApprovalPolling({
     links,
@@ -353,6 +386,59 @@ export function PortalDocuments({
       }
     }).finally(() => polling.restart({ [link.id]: known }));
   };
+  // The code the clinic emailed for one device's request (#141). The native
+  // side checks it against this clinic and sends it only if it matches; the
+  // clinic's answer then comes through the automatic checks.
+  const submitCode = (event: FormEvent, link: PortalLinkSummary) => {
+    event.preventDefault();
+    if (disabled || !bridge.submitApprovalCode) return;
+    const typed = approvalCodes[link.id] ?? "";
+    setCodeIssues((issues) => ({ ...issues, [link.id]: "" }));
+    if (
+      document
+        .getElementById(`portal-code-form-${link.id}`)
+        ?.contains(document.activeElement)
+    )
+      codeFocus.current = link.id;
+    polling.hold();
+    let known: LiveApproval | undefined;
+    void run(async () => {
+      const session = waits?.session();
+      try {
+        await bridge.submitApprovalCode!(link.id, typed);
+        known = waitingNow();
+        if (shown.current) {
+          setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
+          setStatusLine({ text: t("portal.codeSubmitted") });
+        }
+      } catch (error) {
+        if (isRateLimited(error))
+          waits?.wait(link.portalBase, error.retryAfterMs, session);
+        // What the code itself met is said beside it; anything else is
+        // said as for the other clinic actions.
+        const retry = ["approval_code_mismatch", "approval_code_format"].some(
+          (code) => hasVaultErrorCode(error, code),
+        );
+        const final = ["approval_code_locked", "approval_code_not_open"].some(
+          (code) => hasVaultErrorCode(error, code),
+        );
+        if (!retry && !final) throw error;
+        if (shown.current) {
+          setCodeIssues((issues) => ({
+            ...issues,
+            [link.id]: vaultErrorMessage(error),
+          }));
+          if (final) {
+            // The form may go with the next state: also said in the panel.
+            setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
+            setStatusLine({ text: vaultErrorMessage(error) });
+          }
+        }
+      } finally {
+        await refresh();
+      }
+    }).finally(() => polling.restart({ [link.id]: known }));
+  };
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
       {/* Focusable for the check after unlocking, which may disable the
@@ -479,6 +565,62 @@ export function PortalDocuments({
                 <p>
                   {t("portal.autoCheckStopped", { button: t("portal.check") })}
                 </p>
+              )}
+            {!readOnly &&
+              !removed &&
+              !link.clinicApproved &&
+              link.approvalStatus === "challenge_ready" &&
+              link.approvalByCode &&
+              !link.approvalCodeSubmitted &&
+              !link.approvalCodeLocked &&
+              bridge.submitApprovalCode && (
+                <form
+                  className="native-inline-form portal-code-form"
+                  id={`portal-code-form-${link.id}`}
+                  noValidate
+                  onSubmit={(event) => submitCode(event, link)}
+                >
+                  <label>
+                    {t("portal.codeLabel")}
+                    <input
+                      className="portal-code-input"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      maxLength={32}
+                      value={approvalCodes[link.id] ?? ""}
+                      aria-describedby={
+                        codeIssues[link.id]
+                          ? `portal-code-hint-${link.id} portal-code-issue-${link.id}`
+                          : `portal-code-hint-${link.id}`
+                      }
+                      aria-invalid={codeIssues[link.id] ? true : undefined}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setApprovalCodes((codes) => ({
+                          ...codes,
+                          [link.id]: value,
+                        }));
+                        setCodeIssues((issues) => ({
+                          ...issues,
+                          [link.id]: "",
+                        }));
+                      }}
+                      disabled={disabled}
+                    />
+                  </label>
+                  <p id={`portal-code-hint-${link.id}`}>
+                    {t("portal.codeHint")}
+                  </p>
+                  <button className="button" type="submit" disabled={disabled}>
+                    {t("portal.codeSubmit")}
+                  </button>
+                  <p id={`portal-code-issue-${link.id}`} aria-live="polite">
+                    {codeIssues[link.id] ?? ""}
+                  </p>
+                </form>
               )}
             <label>
               {t("portal.deviceCode")}

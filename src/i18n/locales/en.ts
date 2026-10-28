@@ -101,6 +101,25 @@ export const en = {
   "portal.incomplete":
     "This saved attempt is incomplete. Check linked devices in the portal or contact your clinic before connecting again. This app cannot resume this attempt.",
   "portal.approved": "The clinic approved this device.",
+  "portal.approvedByCode": "Your clinic confirmed this device by code.",
+  "portal.codeNeeded":
+    "Your clinic emailed you a code to confirm this device. Enter it below.",
+  "portal.codeLabel": "Code from your clinic's email",
+  "portal.codeHint":
+    "Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.",
+  "portal.codeSubmit": "Confirm code",
+  "portal.codeSubmitted":
+    "Code sent. Waiting for your clinic to confirm this device.",
+  "portal.codeMismatch":
+    "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.",
+  "portal.codeLocked":
+    "Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic.",
+  "portal.codeFormat":
+    "Enter the 9 digits of the code from your clinic's email.",
+  "portal.codeNotOpen":
+    "This request isn't waiting for a code now. myCarlos will show your clinic's answer when it next checks.",
+  "portal.codeRefused":
+    "The clinic portal didn't take the code. Try again in a few minutes.",
   "portal.notRequested":
     "Request clinic approval to receive documents on this device.",
   "portal.awaiting":
