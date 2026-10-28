@@ -879,6 +879,11 @@ h1, h2, p { margin: 0; }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
 .native-breadcrumb { margin: 0; padding: 3px 7px; border: 0; background: transparent; color: var(--teal-dark); font: inherit; font-weight: 700; }
 .native-breadcrumb:hover { text-decoration: underline; }
+/* A person's folder label can contain 120 characters, including one long word. */
+.native-person-location :is(.native-profile-row, .main-head, .head-actions) { flex-wrap: wrap; min-width: 0; }
+.native-person-location :is(.main-head > div, .native-top-level-narrow, .native-breadcrumb, .native-top-level-narrow .button, .native-person-rename) { min-width: 0; max-width: 100%; }
+.native-person-location :is(h1, .native-breadcrumb, .native-top-level-narrow .button, .native-person-rename) { overflow-wrap: anywhere; }
+.native-profile-rename-dialog .dialog-head h2 { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .native-sort select, .native-move-actions select, .native-dialog-actions select, .native-setting-form select {
   min-height: 35px;
   padding: 6px 28px 6px 9px;
@@ -1161,18 +1166,15 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
 
-/* Visible choices before opening a vault, wrapping instead of a dropdown. */
-.language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
-.language-title { font-size: 0.875rem; font-weight: 700; }
-.language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
-.language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
-.language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
 /* Optional identity details and explicit Shared with me suggestions. */
 .native-person-details-list { list-style: none; padding: 0; min-width: 0; }
 .native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .native-profile-settings > form { width: 100%; min-width: 0; }
 .native-profile-settings label, .native-profile-settings input { min-width: 0; }
 .native-profile-settings input { width: 100%; }
+.native-profile-settings .native-person-date-unknown { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 44px; }
+.native-profile-settings .native-person-date-unknown input { width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; }
+.native-person-date-unknown span { overflow-wrap: anywhere; }
 .native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .native-backup-settings > div > .button { max-width: 100%; }
 .native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }
@@ -1196,3 +1198,9 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 @media (max-width: 40em) {
   .portal-documents .native-inline-form { grid-template-columns: minmax(0, 1fr); }
 }
+/* Visible choices before opening a vault, wrapping instead of a dropdown. */
+.language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
+.language-title { font-size: 0.875rem; font-weight: 700; }
+.language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
+.language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
+.language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }

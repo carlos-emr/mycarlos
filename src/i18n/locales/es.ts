@@ -132,6 +132,8 @@ export const es: Record<MessageKey, Message> = {
     "No se pudo completar la solicitud al portal. Revise la conexión y el reloj del dispositivo y vuelva a intentarlo.",
   "portal.errorRefused":
     "No se pudo verificar un documento de la clínica. No se añadió ni se envió un acuse de recibo.",
+  "portal.errorDamaged":
+    "Un documento guardado de esta clínica está dañado o no se encuentra, por lo que no se envió su acuse de recibo. Sus demás documentos sí se comprobaron. Restáurelo desde una copia de seguridad o pida a la clínica que se lo vuelva a enviar.",
 
   "frame.banner.title": "Versión de desarrollo con datos ficticios",
   "frame.banner.body": "No use información real de pacientes",
@@ -302,6 +304,14 @@ export const es: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Cambiar el nombre del documento",
+  "rename.title.profile": "Cambiar el nombre de la carpeta de la persona",
+  "rename.label.profile": "Nombre de la carpeta",
+  "rename.help.profile":
+    "Esto solo cambia el nombre que se muestra para la carpeta. Las carpetas y los documentos de la persona se quedan donde están.",
+  "rename.profile.controls":
+    "Los nombres no pueden contener caracteres de control.",
+  "rename.profile.saved": "El nombre de la carpeta se ha cambiado a {name}.",
+  "rename.profile.action": "Renombrar «{name}»",
   "rename.title.folder": "Cambiar el nombre de la carpeta",
   "rename.label.folder": "Nombre de la carpeta",
   "rename.label.document": "Nombre del archivo",
@@ -559,6 +569,10 @@ export const es: Record<MessageKey, Message> = {
     "No se guardó ninguna copia de seguridad: el documento «{name}» ({where}) está dañado y ya no se puede leer, y una copia que lo contenga no se podría restaurar. No se cambió nada. Conserve sus copias de seguridad anteriores. Pida ayuda para recuperar este documento desde una copia o copia de seguridad en buen estado antes de volver a intentarlo.",
   "error.damaged.where": "añadido el {date}",
   "error.damaged.whereFor": "añadido el {date}, en los documentos de {person}",
+  "error.newerFormat.vault":
+    "Esta bóveda se guardó con una versión más reciente de myCarlos. Actualice myCarlos para abrirla. No se cambió nada.",
+  "error.newerFormat.backup":
+    "Esta copia de seguridad se guardó con una versión más reciente de myCarlos. Actualice myCarlos para restaurarla. No se cambió nada en este dispositivo.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -648,12 +662,18 @@ export const es: Record<MessageKey, Message> = {
   "library.noMatch.help": "Pruebe otra búsqueda.",
   // Optional identity details and explicit shared-document suggestions (#97).
   "personDetails.fullName":
-    "Nombre completo, como en los documentos de la clínica (opcional)",
-  "personDetails.birthDate": "Fecha de nacimiento (opcional)",
+    "Nombre completo, como en los documentos de la clínica",
+  "personDetails.birthDate": "Fecha de nacimiento",
+  "personDetails.birthDateUnknown":
+    "No conozco la fecha de nacimiento de esta persona",
   "personDetails.help":
     "Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.",
   "personDetails.nameTooLong":
     "Este nombre completo es demasiado largo. Acórtelo.",
+  "personDetails.fullNameRequired":
+    "Introduzca el nombre completo de la persona.",
+  "personDetails.birthDateRequired":
+    "Introduzca la fecha de nacimiento o indique que la desconoce.",
   "personDetails.invalidDate":
     "Introduzca una fecha de nacimiento válida: año, mes y día.",
   "personDetails.futureDate": "La fecha de nacimiento no puede ser futura.",

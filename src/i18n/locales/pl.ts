@@ -133,6 +133,8 @@ export const pl: Record<MessageKey, Message> = {
     "Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.",
   "portal.errorRefused":
     "Nie udało się zweryfikować dokumentu z przychodni. Nie dodano go ani nie wysłano potwierdzenia odbioru.",
+  "portal.errorDamaged":
+    "Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Przywróć go z kopii zapasowej albo poproś przychodnię o ponowne wysłanie.",
 
   "frame.banner.title": "Wersja deweloperska z danymi fikcyjnymi",
   "frame.banner.body": "Nie należy używać prawdziwych danych pacjentów",
@@ -311,6 +313,13 @@ export const pl: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Zmień nazwę dokumentu",
+  "rename.title.profile": "Zmień nazwę folderu osoby",
+  "rename.label.profile": "Nazwa folderu",
+  "rename.help.profile":
+    "Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.",
+  "rename.profile.controls": "Nazwy nie mogą zawierać znaków sterujących.",
+  "rename.profile.saved": "Nazwa folderu została zmieniona na {name}.",
+  "rename.profile.action": "Zmień nazwę „{name}”",
   "rename.title.folder": "Zmień nazwę folderu",
   "rename.label.folder": "Nazwa folderu",
   "rename.label.document": "Nazwa pliku",
@@ -574,6 +583,10 @@ export const pl: Record<MessageKey, Message> = {
     "Nie zapisano kopii zapasowej: dokument „{name}” ({where}) jest uszkodzony i nie da się go już odczytać, a kopii, która go zawiera, nie dałoby się przywrócić. Nic nie zostało zmienione. Proszę zachować wcześniejsze kopie zapasowe. Przed ponowną próbą proszę poprosić o pomoc w odzyskaniu tego dokumentu z nieuszkodzonej kopii lub kopii zapasowej.",
   "error.damaged.where": "dodany {date}",
   "error.damaged.whereFor": "dodany {date}, w dokumentach osoby {person}",
+  "error.newerFormat.vault":
+    "Ten sejf został zapisany przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby go otworzyć. Nic nie zostało zmienione.",
+  "error.newerFormat.backup":
+    "Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -666,12 +679,15 @@ export const pl: Record<MessageKey, Message> = {
   "library.noMatch.title": "Brak pasujących dokumentów",
   "library.noMatch.help": "Proszę spróbować innego wyszukiwania.",
   // Optional identity details and explicit shared-document suggestions (#97).
-  "personDetails.fullName":
-    "Imię i nazwisko, jak na dokumentach z przychodni (opcjonalnie)",
-  "personDetails.birthDate": "Data urodzenia (opcjonalnie)",
+  "personDetails.fullName": "Imię i nazwisko, jak na dokumentach z przychodni",
+  "personDetails.birthDate": "Data urodzenia",
+  "personDetails.birthDateUnknown": "Nie znam daty urodzenia tej osoby",
   "personDetails.help":
     "Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.",
   "personDetails.nameTooLong": "Imię i nazwisko są zbyt długie. Skróć je.",
+  "personDetails.fullNameRequired": "Wpisz imię i nazwisko tej osoby.",
+  "personDetails.birthDateRequired":
+    "Wpisz datę urodzenia lub zaznacz, że jej nie znasz.",
   "personDetails.invalidDate":
     "Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.",
   "personDetails.futureDate": "Data urodzenia nie może być w przyszłości.",

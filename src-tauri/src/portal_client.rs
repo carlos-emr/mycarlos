@@ -127,9 +127,26 @@ fn client() -> Result<reqwest::Client, LinkError> {
         .referer(false)
         .pool_max_idle_per_host(0)
         .connect_timeout(Duration::from_secs(10))
+        // A body that stops arriving fails here, whatever its size.
+        .read_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|_| LinkError::Network)
+}
+
+/// The total time allowed for one API request whose reply may be up to `max`
+/// bytes. Small replies keep 30 s. A package download also gets the time it
+/// takes at a slow but steady rate, so it isn't cut off just for being large,
+/// up to an overall cap. A stalled body still fails at the read timeout.
+#[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
+    use std::time::Duration;
+    const BASE: Duration = Duration::from_secs(30);
+    // About 256 kbit/s.
+    const SLOWEST_STEADY_BYTES_PER_SECOND: u64 = 32 * 1024;
+    const CAP: Duration = Duration::from_secs(15 * 60);
+    let transfer = Duration::from_secs((max as u64).div_ceil(SLOWEST_STEADY_BYTES_PER_SECOND));
+    BASE.max(transfer).min(CAP)
 }
 
 #[cfg(feature = "portal-linking")]
@@ -299,6 +316,7 @@ pub(crate) fn api(
         let exchange = async {
             let mut response = client
                 .request(method, endpoint)
+                .timeout(request_timeout(max))
                 .header("Content-Type", "application/json")
                 .header("X-MyCarlos-Device-Assertion", assertion)
                 .body(body)
@@ -412,5 +430,34 @@ mod tests {
         ] {
             assert_eq!(retry_after_seconds(refused), None, "{refused}");
         }
+    }
+}
+
+#[cfg(all(test, feature = "portal-linking", not(target_os = "android")))]
+mod timeout_tests {
+    use super::request_timeout;
+    use std::time::Duration;
+
+    #[test]
+    fn should_keep_30_seconds_for_listings_and_receipts() {
+        assert_eq!(request_timeout(8192), Duration::from_secs(30));
+        assert_eq!(request_timeout(524288), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn should_let_the_largest_package_arrive_over_a_slow_steady_connection() {
+        let largest = crate::portal_delivery::MAX_SEALED;
+        // At 1 Mbit/s (125,000 bytes a second) the largest package takes
+        // about 168 s, far past the old 30 s total for the whole body.
+        let at_one_megabit = Duration::from_secs_f64(largest as f64 / 125_000.0);
+        assert!(request_timeout(largest) > at_one_megabit);
+        // Also at the slowest steady rate allowed, about 256 kbit/s.
+        let at_floor = Duration::from_secs_f64(largest as f64 / 32_768.0);
+        assert!(request_timeout(largest) >= at_floor);
+    }
+
+    #[test]
+    fn should_cap_the_total_time_for_any_size() {
+        assert_eq!(request_timeout(usize::MAX), Duration::from_secs(15 * 60));
     }
 }

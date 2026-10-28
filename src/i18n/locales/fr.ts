@@ -132,6 +132,8 @@ export const fr: Record<MessageKey, Message> = {
     "La demande au portail n’a pas abouti. Vérifiez votre connexion et l’horloge de l’appareil, puis réessayez.",
   "portal.errorRefused":
     "Un document de la clinique n’a pas pu être vérifié. Il n’a pas été ajouté et aucun accusé de réception n’a été envoyé.",
+  "portal.errorDamaged":
+    "Un document enregistré de cette clinique est endommagé ou manquant. Son accusé de réception n’a donc pas été envoyé. La recherche de vos autres documents s’est poursuivie. Restaurez-le à partir d’une sauvegarde ou demandez à la clinique de vous le renvoyer.",
 
   "frame.banner.title": "Version de développement avec données fictives",
   "frame.banner.body":
@@ -304,6 +306,14 @@ export const fr: Record<MessageKey, Message> = {
 
   // Rename a document or folder
   "rename.title.document": "Renommer le document",
+  "rename.title.profile": "Renommer le dossier de la personne",
+  "rename.label.profile": "Nom du dossier",
+  "rename.help.profile":
+    "Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.",
+  "rename.profile.controls":
+    "Les noms ne peuvent pas contenir de caractères de contrôle.",
+  "rename.profile.saved": "Le dossier s’appelle maintenant {name}.",
+  "rename.profile.action": "Renommer « {name} »",
   "rename.title.folder": "Renommer le dossier",
   "rename.label.folder": "Nom du dossier",
   "rename.label.document": "Nom du fichier",
@@ -564,6 +574,10 @@ export const fr: Record<MessageKey, Message> = {
     "Aucune sauvegarde n’a été enregistrée : le document « {name} » ({where}) est endommagé et ne peut plus être lu, et une sauvegarde qui le contient ne pourrait pas être restaurée. Rien n’a été modifié. Conservez vos anciennes sauvegardes. Demandez de l’aide pour récupérer ce document à partir d’une copie ou d’une sauvegarde en bon état avant de réessayer.",
   "error.damaged.where": "ajouté le {date}",
   "error.damaged.whereFor": "ajouté le {date}, dans les documents de {person}",
+  "error.newerFormat.vault":
+    "Ce coffre-fort a été enregistré par une version plus récente de myCarlos. Mettez myCarlos à jour pour l’ouvrir. Rien n’a été modifié.",
+  "error.newerFormat.backup":
+    "Cette sauvegarde a été enregistrée par une version plus récente de myCarlos. Mettez myCarlos à jour pour la restaurer. Rien n’a été modifié sur cet appareil.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -653,12 +667,17 @@ export const fr: Record<MessageKey, Message> = {
   "library.noMatch.help": "Essayez une autre recherche.",
   // Optional identity details and explicit shared-document suggestions (#97).
   "personDetails.fullName":
-    "Nom complet, comme sur les documents de la clinique (facultatif)",
-  "personDetails.birthDate": "Date de naissance (facultative)",
+    "Nom complet, comme sur les documents de la clinique",
+  "personDetails.birthDate": "Date de naissance",
+  "personDetails.birthDateUnknown":
+    "Je ne connais pas la date de naissance de cette personne",
   "personDetails.help":
     "Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.",
   "personDetails.nameTooLong":
     "Ce nom complet est trop long. Raccourcissez-le.",
+  "personDetails.fullNameRequired": "Saisissez le nom complet de la personne.",
+  "personDetails.birthDateRequired":
+    "Saisissez la date de naissance ou indiquez que vous ne la connaissez pas.",
   "personDetails.invalidDate":
     "Saisissez une date de naissance valide : année, mois et jour.",
   "personDetails.futureDate":

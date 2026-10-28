@@ -31,7 +31,7 @@ fn check_tracing_receipts(
         }
     }
     let _running = Running(&store.portal_check_running);
-    crate::portal_pickup::check_using(
+    crate::portal_pickup::check_asking_using(
         store,
         session,
         &crate::portal_approval::ApprovalHttp::default(),
