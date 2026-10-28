@@ -1,4 +1,4 @@
-import { t as translateNow, useI18n, formatDate } from "../i18n";
+import { t as translateNow, useI18n } from "../i18n";
 import { Icon } from "../Icon";
 
 import type { VaultFolder, VaultRecord } from "../vault";
@@ -137,7 +137,9 @@ export function LibraryItems({
           <span className="column" aria-hidden="true">
             —
           </span>
-          <span className="column">{formatDate(folder.createdAtMs)}</span>
+          <span className="column">
+            {new Date(folder.createdAtMs).toLocaleDateString()}
+          </span>
           <button
             className="native-rename-button"
             type="button"
@@ -205,7 +207,9 @@ export function LibraryItems({
               </span>
             </div>
             <span className="column">{recordSource(record)}</span>
-            <span className="column">{formatDate(record.importedAtMs)}</span>
+            <span className="column">
+              {new Date(record.importedAtMs).toLocaleDateString()}
+            </span>
             <button
               className="more-button native-details-button"
               type="button"
@@ -321,7 +325,7 @@ export function LibraryItems({
                 <span>
                   <strong>{record.displayName}</strong>
                   <small>
-                    {formatDate(record.importedAtMs)}
+                    {new Date(record.importedAtMs).toLocaleDateString()}
                     {!record.available && ` · ${unavailableLabel}`}
                   </small>
                   {recordLocation && (

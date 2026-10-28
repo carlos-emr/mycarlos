@@ -1,4 +1,4 @@
-import { resolveText, formatDate } from "../i18n";
+import { resolveText } from "../i18n";
 import {
   cleanup,
   fireEvent,
@@ -121,7 +121,9 @@ describe("VaultLibrary folders", () => {
   it("shows when a folder was added in the Date added column", () => {
     renderLibrary();
     const row = screen.getByRole("article", { name: "FAKE Letters folder" });
-    expect(row).toHaveTextContent(formatDate(Date.UTC(2026, 0, 15, 12)));
+    expect(row).toHaveTextContent(
+      new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(),
+    );
     expect(row).not.toHaveTextContent(/\bFolder\b/);
   });
 });

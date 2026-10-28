@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-import { setLocaleOverride, formatDate } from "./i18n";
+import { setLocaleOverride } from "./i18n";
+import { setDeviceLocale } from "./test/deviceLocale";
 import {
   boxesWithControlCharacters,
   createVaultBridge,
@@ -374,11 +375,18 @@ describe("errors the app words itself, in the language in use (#46)", () => {
       { code: "damaged_document", message: "Native.", recordId: "record-2" },
       vault,
     ) as { message: string };
-    // The date follows the selected app language.
-    const date = formatDate(Date.UTC(2026, 0, 15, 12));
+    // The date as the computer writes it, in a Portuguese sentence.
+    const date = new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString();
     expect(named.message).toContain(
       `Nenhuma cópia de segurança foi salva: o documento “FAKE_Scan.pdf” (adicionado em ${date}, nos documentos de Avery)`,
     );
+    // A Canadian computer writes 2026-01-15 whatever language myCarlos uses
+    // (Ben, 21 Oct, kept 28 Oct), and the message is worded when it is read.
+    setDeviceLocale("en-CA");
+    for (const locale of ["fr", "pt-BR"] as const) {
+      setLocaleOverride(locale);
+      expect(named.message, locale).toContain("2026-01-15");
+    }
   });
 });
 
