@@ -117,13 +117,17 @@ const retryHelps = (error: unknown) => {
  * button is named only when checking again can help, and not twice.
  * `counted` names the links the check speaks for (those the clinic has
  * approved): a device still waiting for approval has its state on its own
- * card under Clinic documents.
+ * card under Clinic documents. A device the portal removed is said whatever
+ * its approval: that is not a state of waiting, and nothing but linking it
+ * again can help.
  */
 export function unlockCheckText(
   result: DocumentCheck,
   counted: (linkId: string) => boolean,
 ): string {
-  const issues = (result.issues ?? []).filter((issue) => counted(issue.linkId));
+  const issues = (result.issues ?? []).filter(
+    (issue) => counted(issue.linkId) || issue.code === "portal_device_removed",
+  );
   const pending = result.receiptsPending > 0;
   if (!result.added && !result.refused && !issues.length && !pending) return "";
   // The pickup confirmation line already says to check again.
@@ -164,4 +168,10 @@ export function unlockCheckFailedText(error: unknown): string {
  * run (#128). */
 export function unlockCheckNotRunText(): string {
   return [t("portal.unlockCheckNotRun"), checkAgain()].join(" ");
+}
+
+/** The check after unlocking did not run: a linked portal had asked to
+ * wait (#128). Checking again now could not help. */
+export function unlockCheckWaitingText(): string {
+  return t("portal.unlockCheckWaiting");
 }

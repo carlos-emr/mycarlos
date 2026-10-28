@@ -45,6 +45,7 @@ import {
   unlockCheckFailedText,
   unlockCheckNotRunText,
   unlockCheckText,
+  unlockCheckWaitingText,
 } from "./native/documentCheck";
 import { CAMERA_PLATFORMS, isPhone } from "./native/photo";
 import {
@@ -114,7 +115,10 @@ function headingFor(control: Element): HTMLElement | null {
   if (device) return device;
   if (control.closest(".portal-documents"))
     return document.getElementById("portal-title");
-  return document.querySelector<HTMLElement>("main h1[tabindex], h1[tabindex]");
+  return (
+    document.querySelector<HTMLElement>("main h1[tabindex]") ??
+    document.querySelector<HTMLElement>("h1[tabindex]")
+  );
 }
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
@@ -197,8 +201,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     session: number;
     promise: Promise<ApprovalPoll>;
   } | null>(null);
-  // The session in which the latest clinic operation started.
-  const portalJobSessionRef = useRef(-1);
+  // The session in which the latest check for new clinic documents began,
+  // the patient's own or the one after unlocking (#128).
+  const documentCheckSessionRef = useRef(-1);
   // Clinic work of a session that has ended. Locking cancels its HTTP, but
   // the native side admits one clinic operation at a time until that work
   // has returned: the check after the next unlock waits for it, rather than
@@ -507,6 +512,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     return {
       ...bridge,
+      // A check for new documents in this session, the patient's own or the
+      // one after unlocking, stands in for the check after unlocking (#128).
+      checkDocuments:
+        bridge.checkDocuments &&
+        (() => {
+          documentCheckSessionRef.current = sessionRef.current;
+          return bridge.checkDocuments!();
+        }),
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
@@ -849,7 +862,6 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       return Promise.resolve();
     const active = portalJobRef.current;
     if (active?.session === startedIn) return active.promise;
-    portalJobSessionRef.current = startedIn;
     const job: { session: number; promise: Promise<void> } = {
       session: startedIn,
       promise: Promise.resolve()
@@ -1005,20 +1017,42 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       snapshot.recovery ||
       // A refused, ended or never-sent request is not a reason to ask.
       (approved.size === 0 && !links.some(isAwaitingApproval)) ||
-      // Clinic work since this unlock, such as the patient's own check, has
-      // the line: the check is not run again.
-      portalJobSessionRef.current === startedIn ||
-      // The check asks every linked portal: one that asked to wait is not
-      // asked before then.
+      // A check for new documents since this unlock, the patient's own,
+      // stands in for it.
+      documentCheckSessionRef.current === startedIn
+    )
+      return;
+    // Other clinic work under way, such as linking or an approval request:
+    // the check follows it, still once.
+    const active = portalJobRef.current;
+    if (active?.session === startedIn) {
+      void active.promise.then(() =>
+        setUnlockCheck(
+          (due) => due ?? { session: startedIn, offerOpen: false },
+        ),
+      );
+      return;
+    }
+    // The check asks every linked portal: one that asked to wait is not asked
+    // before then. Said, as the check did not run; checking again now could
+    // not help.
+    if (
       links.some(
         (link) => !link.incomplete && portalWaits.waiting(link.portalBase),
       )
-    )
+    ) {
+      showPortalNotice(startedIn, unlockCheckWaitingText());
       return;
+    }
     const current = () =>
       sessionRef.current === startedIn && !lockingRef.current;
     const check = () =>
-      checkClinicDocuments({ bridge, links, waits: portalWaits, refresh });
+      checkClinicDocuments({
+        bridge: trackedBridge,
+        links,
+        waits: portalWaits,
+        refresh,
+      });
     // An ended session's work returns soon: the lock cancels its HTTP, which
     // has its own time limits too.
     const ended = endedPortalWorkRef.current;

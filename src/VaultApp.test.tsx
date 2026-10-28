@@ -8703,6 +8703,9 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(screen.queryByText("FAKE_Clinic_Letter.pdf")).toBeNull();
   });
 
+  // The native document check sends this code for a 403 device_removed,
+  // from the document list, a receipt or a status read (see the
+  // delivery tests).
   it("names a device the portal removed, without a retry that cannot help", async () => {
     const { bridge } = clinicBridge(vaultWith(approved), {
       checkDocuments: vi
@@ -8718,6 +8721,82 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(said()).toBe(
       `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
     );
+  });
+
+  it("names a device the portal removed even while its approval was still waiting", async () => {
+    const { bridge } = clinicBridge(vaultWith(waiting), {
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue(
+          found({ issues: [issue(waiting, "portal_device_removed")] }),
+        ),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${NOT_FINISHED} FAKE Second Clinic: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
+    );
+  });
+
+  it.each([
+    ["under way", true],
+    ["finished", false],
+  ] as [string, boolean][])(
+    "checks after other clinic work %s since the unlock, once",
+    async (_, slow) => {
+      const request = later<void>();
+      const { bridge } = clinicBridge(vaultWith(waiting), {
+        requestDeviceApproval: slow
+          ? vi.fn().mockReturnValue(request.promise)
+          : vi.fn().mockResolvedValue(undefined),
+      });
+      await start(bridge);
+      await unlock();
+      // The patient's own approval request, before the check would start.
+      await click(screen.getByRole("button", { name: "Security" }));
+      await click(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      );
+      expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+      await pass(ANNOUNCE_DELAY_MS);
+      if (slow) {
+        // Not beside it, and not refused: it follows.
+        expect(bridge.checkDocuments).not.toHaveBeenCalled();
+        await act(async () => request.settle());
+        await pass(0);
+      }
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      await pass(30_000);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("says the check did not run when a portal asked to wait since the unlock, without a retry", async () => {
+    const { bridge } = clinicBridge(vaultWith(waiting), {
+      requestDeviceApproval: vi.fn().mockRejectedValue({
+        code: "portal_rate_limited",
+        message: "FAKE native text.",
+        retryAfterMs: 120_000,
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    );
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    const line = screen.getByText(
+      /myCarlos did not check for new clinic documents after unlocking, because the clinic portal asked it to wait\.$/,
+    );
+    expect(line).toHaveAttribute("role", "status");
+    expect(line.textContent).not.toContain(RETRY);
+    await pass(60_000);
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
   });
 
   it("says confirmations still owed, and how to finish them, once", async () => {

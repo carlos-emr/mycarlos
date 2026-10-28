@@ -83,6 +83,8 @@ export const es: Record<MessageKey, Message> = {
   },
   "portal.unlockCheckNotRun":
     "myCarlos no buscó documentos nuevos de la clínica tras desbloquear la bóveda, porque había otra operación con la clínica en curso.",
+  "portal.unlockCheckWaiting":
+    "myCarlos no buscó documentos nuevos de la clínica tras desbloquear la bóveda, porque el portal de la clínica le pidió que esperara.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos de la clínica",
   "portal.intro":

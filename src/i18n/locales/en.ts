@@ -81,6 +81,8 @@ export const en = {
   },
   "portal.unlockCheckNotRun":
     "myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running.",
+  "portal.unlockCheckWaiting":
+    "myCarlos did not check for new clinic documents after unlocking, because the clinic portal asked it to wait.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Clinic documents",
   "portal.intro":

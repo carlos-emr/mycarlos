@@ -5,6 +5,7 @@ import {
   unlockCheckFailedText,
   unlockCheckNotRunText,
   unlockCheckText,
+  unlockCheckWaitingText,
   type DocumentCheck,
 } from "./documentCheck";
 
@@ -155,6 +156,17 @@ describe("what a check for new clinic documents says (#128)", () => {
     );
   });
 
+  it("says a device the portal removed whatever its approval", () => {
+    expect(
+      unlockCheckText(
+        found({ issues: [clinic("waiting", "portal_device_removed")] }),
+        (id) => id !== "waiting",
+      ),
+    ).toBe(
+      `${NOT_FINISHED} FAKE Clinic waiting: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
+    );
+  });
+
   it("says a check that did not run, and how to check", () => {
     expect(unlockCheckNotRunText()).toBe(
       `myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
@@ -190,6 +202,9 @@ describe("what a check for new clinic documents says (#128)", () => {
         expect(unlockCheckText(found({ refused: count }), every)).toBe(
           `${translate(locale, "portal.unlockChecked")} ${translate(locale, "portal.unlockRefused", { count })}`,
         );
+      expect(unlockCheckWaitingText()).toBe(
+        translate(locale, "portal.unlockCheckWaiting"),
+      );
       expect(unlockCheckNotRunText()).toBe(
         `${translate(locale, "portal.unlockCheckNotRun")} ${translate(locale, "portal.checkAgain", { button: check })}`,
       );

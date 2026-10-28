@@ -86,6 +86,8 @@ export const pl: Record<MessageKey, Message> = {
   },
   "portal.unlockCheckNotRun":
     "Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo trwała inna operacja związana z przychodnią.",
+  "portal.unlockCheckWaiting":
+    "Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo portal przychodni poprosił o odczekanie.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Dokumenty z przychodni",
   "portal.intro": "Połącz myCarlos, używając adresu i kodu z portalu pacjenta.",

@@ -83,6 +83,8 @@ export const ptBR: Record<MessageKey, Message> = {
   },
   "portal.unlockCheckNotRun":
     "O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque outra operação com a clínica estava em andamento.",
+  "portal.unlockCheckWaiting":
+    "O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque o portal da clínica pediu para aguardar.",
   // Native clinic linking and explicit document pickup.
   "portal.title": "Documentos da clínica",
   "portal.intro":
