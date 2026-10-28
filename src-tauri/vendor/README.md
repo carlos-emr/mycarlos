@@ -53,6 +53,14 @@ rejects legacy frames. Supported arguments retain spaces, Unicode and literal
 pipes without splitting. Non-Unicode OS arguments or working directories are
 refused before sending; replacement characters are never substituted.
 
+A second launch hands its arguments only to a window owned by this user's own
+copy of the same executable: the owning process must report the same full image
+path as this launch, the same user SID, and an integrity level no lower than this
+launch's. Windows with the right class and title but another owner are skipped.
+No working directory is sent; the receiving app does not use it. When the handoff
+cannot complete, the app's fixed-text message box (no paths or file names) says
+so before the second launch exits.
+
 A second launch waits up to ten seconds total for the first IPC window and its
 distinct acknowledgement. Reservation/creation/transport failures fail closed;
 an existing mutex never falls through to another GUI setup, nor does timeout
@@ -80,6 +88,8 @@ rustc --edition=2021 --test security-tests/windows53-wire.rs -o /tmp/mycarlos-wi
 /tmp/mycarlos-windows53-wire
 rustc --edition=2021 --test security-tests/windows53-lifecycle.rs -o /tmp/mycarlos-windows53-lifecycle
 /tmp/mycarlos-windows53-lifecycle
+rustc --edition=2021 --test security-tests/windows53-owner.rs -o /tmp/mycarlos-windows53-owner
+/tmp/mycarlos-windows53-owner
 ```
 
 The Windows application registers the plugin first and keeps one pre-created

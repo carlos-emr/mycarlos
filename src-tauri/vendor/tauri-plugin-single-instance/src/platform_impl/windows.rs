@@ -17,17 +17,27 @@ use tauri::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT,
-        WPARAM,
+        CloseHandle, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM,
+        LRESULT, WPARAM,
+    },
+    Security::{
+        GetLengthSid, GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation,
+        TokenIntegrityLevel, TokenUser, PSID, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL,
+        TOKEN_QUERY, TOKEN_USER,
     },
     System::{
         DataExchange::COPYDATASTRUCT,
         LibraryLoader::GetModuleHandleW,
-        Threading::{CreateMutexW, GetCurrentThreadId, ReleaseMutex},
+        Threading::{
+            CreateMutexW, GetCurrentProcess, GetCurrentThreadId, OpenProcess, OpenProcessToken,
+            QueryFullProcessImageNameW, ReleaseMutex, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        },
     },
     UI::WindowsAndMessaging::{
-        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW, IsWindow,
-        RegisterClassExW, SendMessageTimeoutW, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
+        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW,
+        GetWindowThreadProcessId, IsWindow, MessageBoxW, RegisterClassExW, SendMessageTimeoutW,
+        CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND,
         SMTO_ABORTIFHUNG, SMTO_BLOCK, WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY,
         WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
         WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
@@ -36,6 +46,8 @@ use windows_sys::Win32::{
 
 #[path = "windows_lifecycle.rs"]
 mod lifecycle;
+#[path = "windows_owner.rs"]
+mod owner;
 #[path = "windows_wire.rs"]
 mod wire;
 
@@ -80,9 +92,16 @@ impl<R: Runtime> UserData<R> {
     }
 }
 
-pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
+/// The title and text shown when a second launch cannot hand its arguments
+/// to the running app. Fixed text: never a path or file name.
+pub type HandoffFailedMessage = (String, String);
+
+pub fn init<R: Runtime>(
+    callback: Box<SingleInstanceCallback<R>>,
+    handoff_failed: Option<HandoffFailedMessage>,
+) -> TauriPlugin<R> {
     plugin::Builder::new("single-instance")
-        .setup(|app, _api| {
+        .setup(move |app, _api| {
             #[allow(unused_mut)]
             let mut id = app.config().identifier.clone();
             #[cfg(feature = "semver")]
@@ -105,6 +124,18 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
                 let result = forward(&class_name, &window_name);
                 if result.is_err() {
                     eprintln!("single-instance handoff failed");
+                    // Not silent: the patient's file did not reach the app.
+                    if let Some((title, text)) = &handoff_failed {
+                        let (title, text) = (encode_wide(title), encode_wide(text));
+                        unsafe {
+                            MessageBoxW(
+                                std::ptr::null_mut(),
+                                text.as_ptr(),
+                                title.as_ptr(),
+                                MB_OK | MB_ICONWARNING | MB_SETFOREGROUND,
+                            )
+                        };
+                    }
                 }
                 app.cleanup_before_exit();
                 std::process::exit(if result.is_ok() { 0 } else { 2 });
@@ -138,12 +169,12 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
 
 fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
     let invalid = || io::Error::other("single-instance handoff failed");
-    let cwd = std::env::current_dir().map_err(|_| invalid())?;
-    let bytes = wire::encode(cwd.as_os_str(), std::env::args_os()).ok_or_else(invalid)?;
+    // The running app does not use the working directory, so none is sent.
+    let bytes = wire::encode(std::ffi::OsStr::new(""), std::env::args_os()).ok_or_else(invalid)?;
+    let ours = unsafe { process_identity(GetCurrentProcess()) }.ok_or_else(invalid)?;
     let started = Instant::now();
     let hwnd = loop {
-        let hwnd = unsafe { FindWindowW(class_name.as_ptr(), window_name.as_ptr()) };
-        if !hwnd.is_null() {
+        if let Some(hwnd) = own_window(class_name, window_name, &ours) {
             break hwnd;
         }
         if started.elapsed() >= FORWARD_TIMEOUT {
@@ -181,6 +212,122 @@ fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
         return Err(invalid());
     }
     Ok(())
+}
+
+/// The first window with this class and title that this user's own copy of
+/// this executable owns, at no lower integrity level. Files go only there.
+fn own_window(class_name: &[u16], window_name: &[u16], ours: &owner::Process) -> Option<HWND> {
+    let mut after = std::ptr::null_mut();
+    loop {
+        let hwnd = unsafe {
+            FindWindowExW(
+                std::ptr::null_mut(),
+                after,
+                class_name.as_ptr(),
+                window_name.as_ptr(),
+            )
+        };
+        if hwnd.is_null() {
+            return None;
+        }
+        if window_owner(hwnd).is_some_and(|owner| owner::may_receive(ours, &owner)) {
+            return Some(hwnd);
+        }
+        after = hwnd;
+    }
+}
+
+struct OwnedHandle(HANDLE);
+
+impl Drop for OwnedHandle {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+fn window_owner(hwnd: HWND) -> Option<owner::Process> {
+    let mut process_id = 0u32;
+    unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
+    if process_id == 0 {
+        return None;
+    }
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    if process.is_null() {
+        return None;
+    }
+    let process = OwnedHandle(process);
+    unsafe { process_identity(process.0) }
+}
+
+/// The executable path, user and integrity level of a process that this
+/// process may query. `None` if any of them cannot be read.
+unsafe fn process_identity(process: HANDLE) -> Option<owner::Process> {
+    let mut image = vec![0u16; 32_768];
+    let mut length = image.len() as u32;
+    if QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, image.as_mut_ptr(), &mut length) == 0
+    {
+        return None;
+    }
+    image.truncate(length as usize);
+    let mut token = std::ptr::null_mut();
+    if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 || token.is_null() {
+        return None;
+    }
+    let token = OwnedHandle(token);
+    let user = token_information(token.0, TokenUser)?;
+    let user = sid_bytes((*(user.as_ptr() as *const TOKEN_USER)).User.Sid)?;
+    let label = token_information(token.0, TokenIntegrityLevel)?;
+    let integrity = last_sub_authority(
+        (*(label.as_ptr() as *const TOKEN_MANDATORY_LABEL))
+            .Label
+            .Sid,
+    )?;
+    Some(owner::Process {
+        image,
+        user,
+        integrity,
+    })
+}
+
+/// A token information structure, in a buffer aligned for its pointers.
+unsafe fn token_information(token: HANDLE, class: TOKEN_INFORMATION_CLASS) -> Option<Vec<u64>> {
+    let mut needed = 0u32;
+    GetTokenInformation(token, class, std::ptr::null_mut(), 0, &mut needed);
+    if needed == 0 || needed > 64 * 1024 {
+        return None;
+    }
+    let mut buffer = vec![0u64; (needed as usize).div_ceil(8)];
+    if GetTokenInformation(token, class, buffer.as_mut_ptr() as _, needed, &mut needed) == 0 {
+        return None;
+    }
+    Some(buffer)
+}
+
+unsafe fn sid_bytes(sid: PSID) -> Option<Vec<u8>> {
+    if sid.is_null() {
+        return None;
+    }
+    let length = GetLengthSid(sid) as usize;
+    if length == 0 {
+        return None;
+    }
+    Some(std::slice::from_raw_parts(sid as *const u8, length).to_vec())
+}
+
+unsafe fn last_sub_authority(sid: PSID) -> Option<u32> {
+    if sid.is_null() {
+        return None;
+    }
+    let count = GetSidSubAuthorityCount(sid);
+    if count.is_null() || *count == 0 {
+        return None;
+    }
+    let authority = GetSidSubAuthority(sid, u32::from(*count - 1));
+    if authority.is_null() {
+        None
+    } else {
+        Some(*authority)
+    }
 }
 
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {

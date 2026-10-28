@@ -10,9 +10,54 @@
  pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
      platform_impl::destroy(manager)
  }
+@@ -41,6 +44,8 @@
+ pub struct Builder<R: Runtime> {
+     callback: Box<SingleInstanceCallback<R>>,
+     dbus_id: Option<String>,
++    #[cfg(target_os = "windows")]
++    handoff_failed: Option<(String, String)>,
+ }
+ 
+ impl<R: Runtime> Default for Builder<R> {
+@@ -53,6 +58,8 @@
+                 }
+             }),
+             dbus_id: None,
++            #[cfg(target_os = "windows")]
++            handoff_failed: None,
+         }
+     }
+ }
+@@ -88,11 +95,26 @@
+         self
+     }
+ 
++    /// On Windows, the title and text of a message box shown when a second
++    /// launch cannot hand its arguments to the running app. Use fixed text:
++    /// never a path or file name.
++    #[cfg(target_os = "windows")]
++    pub fn handoff_failed_message(
++        mut self,
++        title: impl Into<String>,
++        text: impl Into<String>,
++    ) -> Self {
++        self.handoff_failed = Some((title.into(), text.into()));
++        self
++    }
++
+     pub fn build(self) -> TauriPlugin<R> {
+         platform_impl::init(
+             self.callback,
+             #[cfg(target_os = "linux")]
+             self.dbus_id,
++            #[cfg(target_os = "windows")]
++            self.handoff_failed,
+         )
+     }
+ }
 --- a/src/platform_impl/windows.rs
 +++ b/src/platform_impl/windows.rs
-@@ -6,48 +6,77 @@
+@@ -6,54 +6,102 @@
  use crate::semver_compat::semver_compat_string;
  
  use crate::SingleInstanceCallback;
@@ -29,22 +74,32 @@
  use windows_sys::Win32::{
 -    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM},
 +    Foundation::{
-+        CloseHandle, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT,
-+        WPARAM,
++        CloseHandle, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM,
++        LRESULT, WPARAM,
++    },
++    Security::{
++        GetLengthSid, GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation,
++        TokenIntegrityLevel, TokenUser, PSID, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL,
++        TOKEN_QUERY, TOKEN_USER,
 +    },
      System::{
          DataExchange::COPYDATASTRUCT,
          LibraryLoader::GetModuleHandleW,
 -        Threading::{CreateMutexW, ReleaseMutex},
-+        Threading::{CreateMutexW, GetCurrentThreadId, ReleaseMutex},
++        Threading::{
++            CreateMutexW, GetCurrentProcess, GetCurrentThreadId, OpenProcess, OpenProcessToken,
++            QueryFullProcessImageNameW, ReleaseMutex, PROCESS_NAME_WIN32,
++            PROCESS_QUERY_LIMITED_INFORMATION,
++        },
      },
      UI::WindowsAndMessaging::{
 -        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW,
 -        RegisterClassExW, SendMessageW, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
 -        WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY, WNDCLASSEXW, WS_EX_LAYERED,
 -        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
-+        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW, IsWindow,
-+        RegisterClassExW, SendMessageTimeoutW, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
++        self as w32wm, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW,
++        GetWindowThreadProcessId, IsWindow, MessageBoxW, RegisterClassExW, SendMessageTimeoutW,
++        CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND,
 +        SMTO_ABORTIFHUNG, SMTO_BLOCK, WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY,
 +        WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 +        WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
@@ -52,12 +107,10 @@
  };
  
 -const WMCOPYDATA_SINGLE_INSTANCE_DATA: usize = 1542;
--
--struct MutexHandle(isize);
--
--struct TargetWindowHandle(isize);
 +#[path = "windows_lifecycle.rs"]
 +mod lifecycle;
++#[path = "windows_owner.rs"]
++mod owner;
 +#[path = "windows_wire.rs"]
 +mod wire;
 +
@@ -67,7 +120,8 @@
 +    lifecycle: Mutex<lifecycle::Target>,
 +    userdata: Mutex<Option<Box<UserData<R>>>>,
 +}
-+
+ 
+-struct MutexHandle(isize);
 +// Only a newly created mutex is wrapped: a secondary instance never owns it.
 +impl MutexHandle {
 +    fn close(&self) {
@@ -84,7 +138,8 @@
 +        }
 +    }
 +}
-+
+ 
+-struct TargetWindowHandle(isize);
 +impl Drop for MutexHandle {
 +    fn drop(&mut self) {
 +        self.close();
@@ -100,7 +155,7 @@
  impl<R: Runtime> UserData<R> {
      unsafe fn from_hwnd_raw(hwnd: HWND) -> *mut Self {
          GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self
--    }
+     }
 -
 -    unsafe fn from_hwnd<'a>(hwnd: HWND) -> &'a mut Self {
 -        &mut *Self::from_hwnd_raw(hwnd)
@@ -108,10 +163,25 @@
 -
 -    fn run_callback(&mut self, args: Vec<String>, cwd: String) {
 -        (self.callback)(&self.app, args, cwd)
-     }
+-    }
  }
  
-@@ -61,51 +90,42 @@
+-pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
++/// The title and text shown when a second launch cannot hand its arguments
++/// to the running app. Fixed text: never a path or file name.
++pub type HandoffFailedMessage = (String, String);
++
++pub fn init<R: Runtime>(
++    callback: Box<SingleInstanceCallback<R>>,
++    handoff_failed: Option<HandoffFailedMessage>,
++) -> TauriPlugin<R> {
+     plugin::Builder::new("single-instance")
+-        .setup(|app, _api| {
++        .setup(move |app, _api| {
+             #[allow(unused_mut)]
+             let mut id = app.config().identifier.clone();
+             #[cfg(feature = "semver")]
+@@ -61,51 +109,54 @@
                  id.push('_');
                  id.push_str(semver_compat_string(&app.package_info().version).as_str());
              }
@@ -140,13 +210,6 @@
 -                            dwData: WMCOPYDATA_SINGLE_INSTANCE_DATA,
 -                            cbData: bytes.len() as _,
 -                            lpData: bytes.as_ptr() as _,
--                        };
--
--                        SendMessageW(hwnd, WM_COPYDATA, 0, &cds as *const _ as _);
--
--                        app.cleanup_before_exit();
--                        std::process::exit(0);
--                    }
 +            let error = unsafe { GetLastError() };
 +            if hmutex.is_null() {
 +                return Err(io::Error::other("single-instance reservation failed").into());
@@ -157,6 +220,23 @@
 +                let result = forward(&class_name, &window_name);
 +                if result.is_err() {
 +                    eprintln!("single-instance handoff failed");
++                    // Not silent: the patient's file did not reach the app.
++                    if let Some((title, text)) = &handoff_failed {
++                        let (title, text) = (encode_wide(title), encode_wide(text));
++                        unsafe {
++                            MessageBoxW(
++                                std::ptr::null_mut(),
++                                text.as_ptr(),
++                                title.as_ptr(),
++                                MB_OK | MB_ICONWARNING | MB_SETFOREGROUND,
++                            )
+                         };
+-
+-                        SendMessageW(hwnd, WM_COPYDATA, 0, &cds as *const _ as _);
+-
+-                        app.cleanup_before_exit();
+-                        std::process::exit(0);
+                     }
                  }
 -            } else {
 -                app.manage(MutexHandle(hmutex as _));
@@ -168,11 +248,10 @@
 -                let userdata = Box::into_raw(Box::new(userdata));
 -                let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
 -                app.manage(TargetWindowHandle(hwnd as _));
--            }
--
 +                app.cleanup_before_exit();
 +                std::process::exit(if result.is_ok() { 0 } else { 2 });
-+            }
+             }
+-
 +            let mutex = MutexHandle(Mutex::new(Some(hmutex as _)));
 +            let userdata = Box::new(UserData {
 +                app: app.clone(),
@@ -193,20 +272,25 @@
              Ok(())
          })
          .on_event(|app, event| {
-@@ -116,16 +136,87 @@
+@@ -116,16 +167,203 @@
          .build()
  }
  
+-pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
+-    if let Some(hmutex) = manager.try_state::<MutexHandle>() {
+-        unsafe {
+-            ReleaseMutex(hmutex.0 as _);
+-            CloseHandle(hmutex.0 as _);
 +fn forward(class_name: &[u16], window_name: &[u16]) -> io::Result<()> {
 +    let invalid = || io::Error::other("single-instance handoff failed");
-+    let cwd = std::env::current_dir().map_err(|_| invalid())?;
-+    let bytes = wire::encode(cwd.as_os_str(), std::env::args_os()).ok_or_else(invalid)?;
++    // The running app does not use the working directory, so none is sent.
++    let bytes = wire::encode(std::ffi::OsStr::new(""), std::env::args_os()).ok_or_else(invalid)?;
++    let ours = unsafe { process_identity(GetCurrentProcess()) }.ok_or_else(invalid)?;
 +    let started = Instant::now();
 +    let hwnd = loop {
-+        let hwnd = unsafe { FindWindowW(class_name.as_ptr(), window_name.as_ptr()) };
-+        if !hwnd.is_null() {
++        if let Some(hwnd) = own_window(class_name, window_name, &ours) {
 +            break hwnd;
-+        }
+         }
 +        if started.elapsed() >= FORWARD_TIMEOUT {
 +            return Err(invalid());
 +        }
@@ -244,16 +328,125 @@
 +    Ok(())
 +}
 +
- pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
--    if let Some(hmutex) = manager.try_state::<MutexHandle>() {
--        unsafe {
--            ReleaseMutex(hmutex.0 as _);
--            CloseHandle(hmutex.0 as _);
--        }
--    }
++/// The first window with this class and title that this user's own copy of
++/// this executable owns, at no lower integrity level. Files go only there.
++fn own_window(class_name: &[u16], window_name: &[u16], ours: &owner::Process) -> Option<HWND> {
++    let mut after = std::ptr::null_mut();
++    loop {
++        let hwnd = unsafe {
++            FindWindowExW(
++                std::ptr::null_mut(),
++                after,
++                class_name.as_ptr(),
++                window_name.as_ptr(),
++            )
++        };
++        if hwnd.is_null() {
++            return None;
++        }
++        if window_owner(hwnd).is_some_and(|owner| owner::may_receive(ours, &owner)) {
++            return Some(hwnd);
++        }
++        after = hwnd;
++    }
++}
++
++struct OwnedHandle(HANDLE);
++
++impl Drop for OwnedHandle {
++    fn drop(&mut self) {
++        unsafe { CloseHandle(self.0) };
++    }
++}
++
++fn window_owner(hwnd: HWND) -> Option<owner::Process> {
++    let mut process_id = 0u32;
++    unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
++    if process_id == 0 {
++        return None;
++    }
++    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
++    if process.is_null() {
++        return None;
++    }
++    let process = OwnedHandle(process);
++    unsafe { process_identity(process.0) }
++}
++
++/// The executable path, user and integrity level of a process that this
++/// process may query. `None` if any of them cannot be read.
++unsafe fn process_identity(process: HANDLE) -> Option<owner::Process> {
++    let mut image = vec![0u16; 32_768];
++    let mut length = image.len() as u32;
++    if QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, image.as_mut_ptr(), &mut length) == 0
++    {
++        return None;
+     }
 -    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
 -        unsafe { DestroyWindow(hwnd.0 as _) };
--    }
++    image.truncate(length as usize);
++    let mut token = std::ptr::null_mut();
++    if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 || token.is_null() {
++        return None;
+     }
++    let token = OwnedHandle(token);
++    let user = token_information(token.0, TokenUser)?;
++    let user = sid_bytes((*(user.as_ptr() as *const TOKEN_USER)).User.Sid)?;
++    let label = token_information(token.0, TokenIntegrityLevel)?;
++    let integrity = last_sub_authority(
++        (*(label.as_ptr() as *const TOKEN_MANDATORY_LABEL))
++            .Label
++            .Sid,
++    )?;
++    Some(owner::Process {
++        image,
++        user,
++        integrity,
++    })
++}
++
++/// A token information structure, in a buffer aligned for its pointers.
++unsafe fn token_information(token: HANDLE, class: TOKEN_INFORMATION_CLASS) -> Option<Vec<u64>> {
++    let mut needed = 0u32;
++    GetTokenInformation(token, class, std::ptr::null_mut(), 0, &mut needed);
++    if needed == 0 || needed > 64 * 1024 {
++        return None;
++    }
++    let mut buffer = vec![0u64; (needed as usize).div_ceil(8)];
++    if GetTokenInformation(token, class, buffer.as_mut_ptr() as _, needed, &mut needed) == 0 {
++        return None;
++    }
++    Some(buffer)
++}
++
++unsafe fn sid_bytes(sid: PSID) -> Option<Vec<u8>> {
++    if sid.is_null() {
++        return None;
++    }
++    let length = GetLengthSid(sid) as usize;
++    if length == 0 {
++        return None;
++    }
++    Some(std::slice::from_raw_parts(sid as *const u8, length).to_vec())
++}
++
++unsafe fn last_sub_authority(sid: PSID) -> Option<u32> {
++    if sid.is_null() {
++        return None;
++    }
++    let count = GetSidSubAuthorityCount(sid);
++    if count.is_null() || *count == 0 {
++        return None;
++    }
++    let authority = GetSidSubAuthority(sid, u32::from(*count - 1));
++    if authority.is_null() {
++        None
++    } else {
++        Some(*authority)
++    }
++}
++
++pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
 +    let Some(target) = manager.try_state::<TargetWindowHandle<R>>() else {
 +        return;
 +    };
@@ -290,14 +483,12 @@
  }
  
  unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
-@@ -138,28 +229,50 @@
+@@ -138,28 +376,50 @@
          WM_CREATE => {
              let create_struct = &*(lparam as *const CREATESTRUCTW);
              let userdata = create_struct.lpCreateParams as *const UserData<R>;
 -            SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _);
 -            0
--        }
--
 +            if lifecycle::install_userdata(
 +                || SetLastError(0),
 +                || SetWindowLongPtrW(hwnd, GWLP_USERDATA, userdata as _),
@@ -307,7 +498,8 @@
 +            } else {
 +                -1
 +            }
-+        }
+         }
+-
          WM_COPYDATA => {
 -            let cds_ptr = lparam as *const COPYDATASTRUCT;
 -            if (*cds_ptr).dwData == WMCOPYDATA_SINGLE_INSTANCE_DATA {
@@ -319,13 +511,10 @@
 -                let args = s.map(|s| s.to_string()).collect();
 -
 -                userdata.run_callback(args, cwd.to_string());
--            }
--            1
--        }
--
 +            if lparam == 0 {
 +                return 0;
-+            }
+             }
+-            1
 +            let cds = &*(lparam as *const COPYDATASTRUCT);
 +            if cds.dwData != wire::MESSAGE
 +                || cds.lpData.is_null()
@@ -352,7 +541,8 @@
 +            };
 +            callback(&app, args, cwd);
 +            wire::ACK as LRESULT
-+        }
+         }
+-
          WM_DESTROY => {
 -            let userdata = UserData::<R>::from_hwnd_raw(hwnd);
 -            drop(Box::from_raw(userdata));
@@ -361,7 +551,7 @@
              0
          }
          _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-@@ -170,7 +283,7 @@
+@@ -170,7 +430,7 @@
      class_name: &[u16],
      window_name: &[u16],
      userdata: *const UserData<R>,
@@ -370,7 +560,7 @@
      unsafe {
          let class = WNDCLASSEXW {
              cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-@@ -186,21 +299,14 @@
+@@ -186,21 +446,14 @@
              lpszClassName: class_name.as_ptr(),
              hIconSm: std::ptr::null_mut(),
          };
@@ -399,7 +589,7 @@
              class_name.as_ptr(),
              window_name.as_ptr(),
              WS_OVERLAPPED,
-@@ -213,15 +319,14 @@
+@@ -213,15 +466,14 @@
              GetModuleHandleW(std::ptr::null()),
              userdata as _,
          );
@@ -423,7 +613,7 @@
      }
  }
  
-@@ -236,19 +341,16 @@
+@@ -236,19 +488,16 @@
  unsafe fn SetWindowLongPtrW(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
      w32wm::SetWindowLongW(hwnd, index, value as _) as _
  }
@@ -866,5 +1056,127 @@
 +            || drop(data)
 +        ));
 +        assert_eq!(drops.get(), 1);
++    }
++}
+--- /dev/null
++++ b/src/platform_impl/windows_owner.rs
+@@ -0,0 +1,119 @@
++// Copyright 2019-2023 Tauri Programme within The Commons Conservancy
++// SPDX-License-Identifier: Apache-2.0
++// SPDX-License-Identifier: MIT
++
++//! Which window a second launch may hand its arguments to: only one owned by
++//! this user's own copy of the same executable, at no lower integrity level.
++//! This module uses only std so the comparison can also be tested on a host.
++
++/// What is compared about a process.
++pub(super) struct Process {
++    /// The executable's full path, as Windows reports it (UTF-16, no NUL).
++    pub(super) image: Vec<u16>,
++    /// The bytes of its user's SID.
++    pub(super) user: Vec<u8>,
++    /// Its mandatory integrity level (the label's last sub-authority).
++    pub(super) integrity: u32,
++}
++
++/// Whether `owner`, the process that owns the window found, may be handed
++/// this launch's arguments: the same executable, the same user, and an
++/// integrity level no lower than this launch's. Anything not read is refused.
++pub(super) fn may_receive(ours: &Process, owner: &Process) -> bool {
++    same_image(&ours.image, &owner.image)
++        && !ours.user.is_empty()
++        && ours.user == owner.user
++        && owner.integrity >= ours.integrity
++}
++
++/// The same path. Windows compares paths without regard to case; only ASCII
++/// letters are folded here, and a `\\?\` prefix is ignored. Any other
++/// difference counts as another executable.
++pub(super) fn same_image(a: &[u16], b: &[u16]) -> bool {
++    let (a, b) = (without_prefix(a), without_prefix(b));
++    !a.is_empty() && a.len() == b.len() && a.iter().zip(b).all(|(x, y)| fold(*x) == fold(*y))
++}
++
++fn without_prefix(path: &[u16]) -> &[u16] {
++    const PREFIX: [u16; 4] = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
++    path.strip_prefix(&PREFIX[..]).unwrap_or(path)
++}
++
++fn fold(unit: u16) -> u16 {
++    if (u16::from(b'a')..=u16::from(b'z')).contains(&unit) {
++        unit - 32
++    } else {
++        unit
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const LOW: u32 = 0x1000;
++    const MEDIUM: u32 = 0x2000;
++    const HIGH: u32 = 0x3000;
++    const APP: &str = "C:\\Program Files\\myCarlos\\myCarlos.exe";
++
++    fn wide(path: &str) -> Vec<u16> {
++        path.encode_utf16().collect()
++    }
++    // FAKE SIDs: revision 1, two sub-authorities, small numbers only.
++    fn user(last: u8) -> Vec<u8> {
++        vec![1, 2, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, last, 0, 0, 0]
++    }
++    fn process(image: &str, user: Vec<u8>, integrity: u32) -> Process {
++        Process {
++            image: wide(image),
++            user,
++            integrity,
++        }
++    }
++
++    #[test]
++    fn hands_over_only_to_the_same_users_same_executable_at_no_lower_integrity() {
++        let ours = process(APP, user(7), MEDIUM);
++        assert!(may_receive(&ours, &process(APP, user(7), MEDIUM)));
++        assert!(may_receive(&ours, &process(APP, user(7), HIGH)));
++        // Another user, a lower integrity level, or another executable.
++        assert!(!may_receive(&ours, &process(APP, user(8), MEDIUM)));
++        assert!(!may_receive(&ours, &process(APP, user(7), LOW)));
++        assert!(!may_receive(
++            &ours,
++            &process(
++                "C:\\Users\\FAKE\\AppData\\Local\\Temp\\myCarlos.exe",
++                user(7),
++                MEDIUM
++            )
++        ));
++        assert!(!may_receive(
++            &ours,
++            &process(
++                "C:\\Program Files\\myCarlos\\myCarlos.exe.old",
++                user(7),
++                MEDIUM
++            )
++        ));
++    }
++
++    #[test]
++    fn refuses_when_something_could_not_be_read() {
++        let ours = process(APP, user(7), MEDIUM);
++        assert!(!may_receive(&ours, &process("", user(7), MEDIUM)));
++        assert!(!may_receive(&ours, &process(APP, Vec::new(), MEDIUM)));
++        let unread = process("", Vec::new(), MEDIUM);
++        assert!(!may_receive(&unread, &unread));
++    }
++
++    #[test]
++    fn compares_paths_as_windows_does_for_case_and_the_long_path_prefix() {
++        assert!(same_image(&wide(APP), &wide(&APP.to_uppercase())));
++        assert!(same_image(&wide(APP), &wide(&format!("\\\\?\\{APP}"))));
++        assert!(!same_image(
++            &wide(APP),
++            &wide("C:\\Program Files\\myCarlos\\myCarIos.exe")
++        ));
++        assert!(!same_image(&wide(""), &wide("")));
 +    }
 +}

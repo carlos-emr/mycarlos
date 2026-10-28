@@ -2925,6 +2925,28 @@ fn notify_received(app: &tauri::AppHandle) {
     });
 }
 
+/// What a second launch on Windows says when it cannot hand what was opened to
+/// the myCarlos already running (#133): fixed text, never a path or file name,
+/// in the Windows display language when myCarlos has it, else English.
+#[cfg(any(windows, test))]
+fn handoff_failed_text(primary_language: u16) -> (&'static str, &'static str) {
+    let text = match primary_language {
+        // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
+        0x0c => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
+        0x0a => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
+        0x15 => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Zamknij myCarlos i spróbuj ponownie.",
+        0x16 => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
+    };
+    ("myCarlos", text)
+}
+
+/// The primary language of the Windows display language.
+#[cfg(windows)]
+fn windows_display_language() -> u16 {
+    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() & 0x3ff }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Queue before plugins or any webview exist. A callback during startup keeps its
@@ -2934,12 +2956,18 @@ pub fn run() {
     received.receive_command_line(std::env::args_os());
     let builder = tauri::Builder::default().manage(Arc::clone(&received));
     #[cfg(windows)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(
-        move |app, args, _cwd| {
-            received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
-            notify_received(app);
-        },
-    ));
+    let builder = {
+        let (title, text) = handoff_failed_text(windows_display_language());
+        builder.plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(move |app, args, _cwd| {
+                    received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
+                    notify_received(app);
+                })
+                .handoff_failed_message(title, text)
+                .build(),
+        )
+    };
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -3088,6 +3116,30 @@ pub fn run() {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
+        let (title, english) = handoff_failed_text(0x09);
+        assert_eq!(title, "myCarlos");
+        assert!(english.starts_with("myCarlos is already open, but it couldn't be reached."));
+        // A language myCarlos does not have (German) falls back to English.
+        assert_eq!(handoff_failed_text(0x07), (title, english));
+        for (language, start) in [
+            (0x0c, "myCarlos est déjà ouvert"),
+            (0x0a, "myCarlos ya está abierto"),
+            (0x15, "myCarlos jest już uruchomiony"),
+            (0x16, "O myCarlos já está aberto"),
+        ] {
+            let (title, text) = handoff_failed_text(language);
+            assert_eq!(title, "myCarlos");
+            assert!(text.starts_with(start), "{language:#x}");
+        }
+        // Fixed text only: never a path or a file name.
+        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16] {
+            let text = handoff_failed_text(language).1;
+            assert!(!text.contains('\\') && !text.contains('/') && !text.contains(':'));
+        }
+    }
 
     #[test]
     fn does_not_return_a_page_for_a_cancelled_view_ticket() {

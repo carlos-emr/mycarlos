@@ -44,6 +44,8 @@ pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
 pub struct Builder<R: Runtime> {
     callback: Box<SingleInstanceCallback<R>>,
     dbus_id: Option<String>,
+    #[cfg(target_os = "windows")]
+    handoff_failed: Option<(String, String)>,
 }
 
 impl<R: Runtime> Default for Builder<R> {
@@ -56,6 +58,8 @@ impl<R: Runtime> Default for Builder<R> {
                 }
             }),
             dbus_id: None,
+            #[cfg(target_os = "windows")]
+            handoff_failed: None,
         }
     }
 }
@@ -91,11 +95,26 @@ impl<R: Runtime> Builder<R> {
         self
     }
 
+    /// On Windows, the title and text of a message box shown when a second
+    /// launch cannot hand its arguments to the running app. Use fixed text:
+    /// never a path or file name.
+    #[cfg(target_os = "windows")]
+    pub fn handoff_failed_message(
+        mut self,
+        title: impl Into<String>,
+        text: impl Into<String>,
+    ) -> Self {
+        self.handoff_failed = Some((title.into(), text.into()));
+        self
+    }
+
     pub fn build(self) -> TauriPlugin<R> {
         platform_impl::init(
             self.callback,
             #[cfg(target_os = "linux")]
             self.dbus_id,
+            #[cfg(target_os = "windows")]
+            self.handoff_failed,
         )
     }
 }
