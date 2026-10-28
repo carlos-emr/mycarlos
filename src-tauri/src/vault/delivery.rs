@@ -2695,7 +2695,14 @@ mod approval_recovery_tests {
         ));
     }
 
-    fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
+    /// The checked-in synthetic Java delivery, opened and its signed PDF
+    /// verified, ready to commit: its link, envelope, contents and manifest.
+    fn signed_delivery() -> (
+        StoredLink,
+        wire::Outer,
+        wire::Opened,
+        crate::signed_pdf::Manifest,
+    ) {
         let packet: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/java-delivery-interop-v1.json"
         ))
@@ -2711,12 +2718,6 @@ mod approval_recovery_tests {
                 .unwrap();
         shared["receiver"] = packet["receiver"].clone();
         let link = wire::tests::fixture_link(&shared);
-        store
-            .mutate_recorded(|m, _| {
-                m.portal_links.push(link.clone());
-                Ok(())
-            })
-            .unwrap();
         let outer: wire::Outer = serde_json::from_value(packet["outer"].clone()).unwrap();
         let sealed = wire::decode(packet["blob"].as_str().unwrap()).unwrap();
         // Reference-clock input is a checked-in synthetic Java package. Verify
@@ -2756,6 +2757,16 @@ mod approval_recovery_tests {
         else {
             panic!("actual signed original must match this test link");
         };
+        (link, outer, opened, checked)
+    }
+    fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
+        let (link, outer, opened, checked) = signed_delivery();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
         let (id, added) = store
             .commit_delivery(
                 &outer,
@@ -2773,6 +2784,43 @@ mod approval_recovery_tests {
             .receipt
             .clone();
         (link, id, receipt)
+    }
+    /// Each unlock checks for new documents once (#128). A delivery its
+    /// portal lists again at a later unlock, because the pickup confirmation
+    /// did not reach the portal, is the one already filed: no second record,
+    /// history entry or receipt.
+    #[test]
+    fn should_file_a_delivery_listed_again_after_lock_and_unlock_only_once() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, id, receipt) = add_signed_pending_delivery(&store);
+        let filed = |store: &VaultStore| {
+            crate::vault::history_events_for_test(store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::DeliveryFiled)
+                .count()
+        };
+        assert_eq!(filed(&store), 1);
+        for _ in 0..2 {
+            let ended = store.portal_link_ticket();
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let session = store.portal_link_ticket();
+            assert_ne!(session, ended, "a new session after the unlock");
+            let history = crate::vault::history_events_for_test(&store).len();
+            let (_, outer, opened, checked) = signed_delivery();
+            assert_eq!(
+                store
+                    .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+                    .unwrap(),
+                (id, false)
+            );
+            assert_eq!(store.snapshot().unwrap().records.len(), 1);
+            assert_eq!(filed(&store), 1);
+            assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+            let pending = store.pending_receipts(&link, session).unwrap();
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].receipt, receipt);
+        }
     }
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
