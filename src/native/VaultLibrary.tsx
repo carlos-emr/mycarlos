@@ -568,7 +568,9 @@ export function VaultLibrary({
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const libraryRef = useRef<HTMLDivElement | null>(null);
-  useLibraryFocus(
+  // Library actions put focus back only after keyboard use. The recovery key
+  // setup asks for it however it was closed, as its opener may be gone.
+  const focusPageIfLost = useLibraryFocus(
     libraryRef,
     pageHeadingRef,
     Boolean(
@@ -1781,6 +1783,7 @@ export function VaultLibrary({
                 // shows, and the next setup's record of the key it would
                 // replace, is the vault with this key.
                 void refresh(stored).then(() => tell(saved));
+                focusPageIfLost();
               }}
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
@@ -1802,6 +1805,7 @@ export function VaultLibrary({
                     recordId: activeRecordId,
                   });
                 }
+                focusPageIfLost();
               }}
               onLocked={() => void onLock()}
               onLockAndLeave={onRequestLock ?? (() => void onLock())}

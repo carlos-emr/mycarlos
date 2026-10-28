@@ -3,6 +3,8 @@ import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLibraryFocus } from "./useLibraryFocus";
 
+let focusIfLost = () => {};
+
 function Library({
   busy = false,
   covered = false,
@@ -18,7 +20,12 @@ function Library({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  useLibraryFocus(root, heading, busy || covered || modal, location);
+  focusIfLost = useLibraryFocus(
+    root,
+    heading,
+    busy || covered || modal,
+    location,
+  );
   return (
     <>
       <button>Elsewhere</button>
@@ -38,11 +45,24 @@ function Library({
 }
 
 const frame = () => act(() => vi.advanceTimersToNextFrame());
+const keyPress = () =>
+  document.body.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+// As in WebKit (macOS, iOS): a click or tap does not focus the button pressed,
+// and takes focus from whatever had it.
+const webkitPress = (element: Element) => {
+  element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  if (document.activeElement instanceof HTMLElement)
+    document.activeElement.blur();
+};
 
 beforeEach(() => {
   vi.useFakeTimers({
     toFake: ["requestAnimationFrame", "cancelAnimationFrame"],
   });
+  // A keyboard user's journeys, unless a test presses with a pointer.
+  keyPress();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -110,6 +130,50 @@ describe("library focus recovery", () => {
     rerender(<Library covered />);
     frame();
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves focus on the page after a pointer press ends an operation", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    const trigger = screen.getByRole("button", { name: "Import" });
+    // Used earlier from the keyboard, then pressed with a pointer.
+    trigger.focus();
+    webkitPress(trigger);
+    rerender(<Library busy />);
+    rerender(<Library />);
+    frame();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves focus on the page when a pointer press closes a dialog", () => {
+    const { rerender } = render(<Library modal />);
+    const setup = screen.getByRole("button", { name: "Continue setup" });
+    setup.focus();
+    webkitPress(setup);
+    rerender(<Library />);
+    frame();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves focus on the page on entry after a pointer unlock", () => {
+    const unlock = document.createElement("button");
+    document.body.append(unlock);
+    webkitPress(unlock);
+    unlock.remove();
+    render(<Library />);
+    frame();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("recovers after a pointer press when asked to", () => {
+    const { rerender } = render(<Library modal />);
+    const setup = screen.getByRole("button", { name: "Continue setup" });
+    setup.focus();
+    webkitPress(setup);
+    focusIfLost();
+    rerender(<Library />);
+    frame();
+    expect(screen.getByRole("heading")).toHaveFocus();
   });
 
   it("cancels a pending recovery when locking unmounts the library", () => {
