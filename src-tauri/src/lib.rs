@@ -270,6 +270,10 @@ impl From<VaultError> for PublicText {
                 code: "corrupt",
                 message: "The vault is damaged or incomplete. No data was changed.",
             },
+            VaultError::NewerFormat => Self {
+                code: "vault_newer_format",
+                message: "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+            },
             VaultError::NotFound => Self {
                 code: "not_found",
                 message: "That item is no longer available.",
@@ -374,6 +378,10 @@ impl From<VaultError> for PublicText {
             VaultError::BackupUnreadable => Self {
                 code: "backup_unreadable",
                 message: "This file is not a complete myCarlos backup, or it was changed after it was saved. Nothing on this device was changed.",
+            },
+            VaultError::BackupNewerFormat => Self {
+                code: "backup_newer_format",
+                message: "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
             },
             VaultError::WrongRecoveryKey => Self {
                 code: "wrong_recovery_key",
@@ -579,6 +587,13 @@ struct ProfileDetailsRequest {
     profile_id: Uuid,
     details: vault::ProfileDetails,
     today: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenameProfileRequest {
+    profile_id: Uuid,
+    display_name: String,
 }
 
 #[derive(Deserialize)]
@@ -2484,6 +2499,17 @@ async fn vault_update_profile_details(
     .await
 }
 
+#[tauri::command]
+async fn vault_rename_profile(
+    store: State<'_, Arc<VaultStore>>,
+    request: RenameProfileRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.rename_profile(request.profile_id, &request.display_name, now_ms())
+    })
+    .await
+}
+
 /// Only a hint for an available PDF still in Shared with me. Unsupported devices,
 /// locked documents and uncertain text return no identity, never a trust claim.
 #[tauri::command]
@@ -3460,6 +3486,7 @@ pub fn run() {
             vault_create_profile,
             vault_update_profile_details,
             vault_shared_identity,
+            vault_rename_profile,
             vault_create_folder,
             vault_update_folder,
             vault_rename_record,
@@ -4032,6 +4059,26 @@ mod tests {
         // Every other error leaves the field out.
         let value = serde_json::to_value(PublicError::from(VaultError::Corrupt)).unwrap();
         assert!(value.get("recordId").is_none());
+    }
+
+    #[test]
+    fn a_vault_or_backup_from_a_newer_build_is_not_called_damaged() {
+        let vault = PublicError::from(VaultError::NewerFormat);
+        assert_eq!(vault.code, "vault_newer_format");
+        assert_eq!(
+            vault.message,
+            "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed."
+        );
+        // Opening a backup words it the same, said of the backup.
+        let backup = PublicError::from(VaultError::BackupNewerFormat).of_restore();
+        assert_eq!(backup.code, "backup_newer_format");
+        assert_eq!(
+            backup.message,
+            "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed."
+        );
+        for message in [vault.message, backup.message] {
+            assert!(!message.contains("damaged") && !message.contains("not a complete"));
+        }
     }
 
     #[test]
@@ -4708,6 +4755,25 @@ mod tests {
     }
 
     #[test]
+    fn profile_rename_payload_identifies_the_person_and_refuses_identity_fields() {
+        let id = Uuid::new_v4();
+        let request: RenameProfileRequest = serde_json::from_value(serde_json::json!({
+            "profileId": id, "displayName": "FAKE Corrected"
+        }))
+        .unwrap();
+        assert_eq!(request.profile_id, id);
+        assert_eq!(request.display_name, "FAKE Corrected");
+        for invalid in [
+            serde_json::json!({"profileId":"not-a-uuid", "displayName":"FAKE Corrected"}),
+            serde_json::json!({"folderId":id,"displayName":"FAKE Corrected"}),
+            serde_json::json!({"profileId":id,"displayName":"FAKE Corrected","fullName":"FAKE Identity"}),
+            serde_json::json!({"profileId":id,"displayName":"FAKE Corrected","birthDate":"2000-01-01"}),
+        ] {
+            assert!(serde_json::from_value::<RenameProfileRequest>(invalid).is_err());
+        }
+    }
+
+    #[test]
     fn production_webview_configuration_has_no_development_network_access() {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
@@ -4771,6 +4837,7 @@ mod tests {
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
             let _ = serde_json::from_slice::<NameRequest>(&payload);
+            let _ = serde_json::from_slice::<RenameProfileRequest>(&payload);
             let _ = serde_json::from_slice::<FolderRequest>(&payload);
             let _ = serde_json::from_slice::<UpdateFolderRequest>(&payload);
             let _ = serde_json::from_slice::<AssignFoldersRequest>(&payload);

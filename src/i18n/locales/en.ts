@@ -148,6 +148,8 @@ export const en = {
     "The portal request could not be completed. Check your connection and device clock, then try again.",
   "portal.errorRefused":
     "A clinic document could not be verified. It was not added and no pickup receipt was sent.",
+  "portal.errorDamaged":
+    "A saved document from this clinic is damaged or missing, so its pickup confirmation was not sent. Your other documents were still checked. Restore it from a backup, or ask the clinic to send it again.",
 
   // Window frame
   "frame.banner.title": "Synthetic-data development build",
@@ -312,6 +314,13 @@ export const en = {
 
   // Rename a document or folder
   "rename.title.document": "Rename document",
+  "rename.title.profile": "Rename person's folder",
+  "rename.label.profile": "Folder name",
+  "rename.help.profile":
+    "This changes only the displayed folder name. The person's folders and documents stay where they are.",
+  "rename.profile.controls": "Names cannot contain control characters.",
+  "rename.profile.saved": "Folder name changed to {name}.",
+  "rename.profile.action": "Rename “{name}”",
   "rename.title.folder": "Rename folder",
   "rename.label.folder": "Folder name",
   "rename.label.document": "File name",
@@ -560,6 +569,10 @@ export const en = {
     'No backup was saved: the document "{name}" ({where}) is damaged and can no longer be read, and a backup that holds it would not restore. Nothing was changed. Keep your older backups. Ask for help recovering this document from a good copy or backup before trying again.',
   "error.damaged.where": "added {date}",
   "error.damaged.whereFor": "added {date}, in {person}'s records",
+  "error.newerFormat.vault":
+    "This vault was saved by a newer version of myCarlos. Update myCarlos to open it. Nothing was changed.",
+  "error.newerFormat.backup":
+    "This backup was saved by a newer version of myCarlos. Update myCarlos to restore it. Nothing on this device was changed.",
 
   // The warning before the automatic lock (#68)
   "lockWarning.title": {
@@ -644,11 +657,15 @@ export const en = {
   "library.noMatch.title": "No matching records",
   "library.noMatch.help": "Try another search.",
   // Optional identity details and explicit shared-document suggestions (#97).
-  "personDetails.fullName": "Full name, as on clinic documents (optional)",
-  "personDetails.birthDate": "Birth date (optional)",
+  "personDetails.fullName": "Full name, as on clinic documents",
+  "personDetails.birthDate": "Date of birth",
+  "personDetails.birthDateUnknown": "I don't know this person's date of birth",
   "personDetails.help":
     "Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.",
   "personDetails.nameTooLong": "This full name is too long. Shorten it.",
+  "personDetails.fullNameRequired": "Enter the person's full name.",
+  "personDetails.birthDateRequired":
+    "Enter a date of birth or choose that it is unknown.",
   "personDetails.invalidDate":
     "Enter a valid birth date as year, month and day.",
   "personDetails.futureDate": "A birth date cannot be in the future.",

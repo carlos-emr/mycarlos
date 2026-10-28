@@ -101,6 +101,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     }),
     restore: vi.fn().mockResolvedValue(true),
     createProfile: vi.fn().mockResolvedValue("profile-2"),
+    renameProfile: vi.fn().mockResolvedValue(undefined),
     createFolder: vi.fn().mockResolvedValue("folder-1"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
     renameRecord: vi.fn().mockResolvedValue(undefined),
@@ -8797,6 +8798,40 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(line.textContent).not.toContain(RETRY);
     await pass(60_000);
     expect(bridge.checkDocuments).not.toHaveBeenCalled();
+  });
+
+  it("is not held back by a wait on the portal of a request that ended (D132c)", async () => {
+    // Another clinic's request ended; restarting it was asked to wait. The
+    // check asks only the clinic that approved this device, on its own
+    // portal.
+    const ended: PortalLinkSummary = {
+      ...waiting,
+      id: "fake-ended-link",
+      portalBase: "https://second-portal.example.test/patient",
+      approvalStatus: "expired",
+      approvalCanRestart: true,
+    };
+    const { bridge } = clinicBridge(vaultWith(approved, ended), {
+      restartDeviceApproval: vi.fn().mockRejectedValue({
+        code: "portal_rate_limited",
+        message: "FAKE native text.",
+        retryAfterMs: 120_000,
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Start a new approval request" }),
+    );
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByText(
+        /did not check for new clinic documents after unlocking/,
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("says confirmations still owed, and how to finish them, once", async () => {

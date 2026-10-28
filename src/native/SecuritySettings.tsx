@@ -167,6 +167,7 @@ export function SecuritySettings({
   };
   const [profileName, setProfileName] = useState("");
   const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
+  const [profileBirthDateUnknown, setProfileBirthDateUnknown] = useState(false);
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
@@ -197,7 +198,8 @@ export function SecuritySettings({
     if (
       busy ||
       readOnly ||
-      (onUpdateProfileDetails && detailsProblem(profileDetails))
+      (onUpdateProfileDetails &&
+        detailsProblem(profileDetails, profileBirthDateUnknown))
     )
       return;
     void (
@@ -208,6 +210,7 @@ export function SecuritySettings({
       if (created) {
         setProfileName("");
         setProfileDetails({});
+        setProfileBirthDateUnknown(false);
       }
     });
   };
@@ -521,6 +524,8 @@ export function SecuritySettings({
                 <PersonDetailsFields
                   details={profileDetails}
                   onChange={setProfileDetails}
+                  birthDateUnknown={profileBirthDateUnknown}
+                  onBirthDateUnknownChange={setProfileBirthDateUnknown}
                 />
               </fieldset>
             )}
@@ -530,7 +535,8 @@ export function SecuritySettings({
                 busy ||
                 readOnly ||
                 Boolean(
-                  onUpdateProfileDetails && detailsProblem(profileDetails),
+                  onUpdateProfileDetails &&
+                    detailsProblem(profileDetails, profileBirthDateUnknown),
                 ) ||
                 !profileName.trim() ||
                 nameTooLong(profileName) ||

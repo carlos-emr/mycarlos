@@ -113,12 +113,27 @@ export const waitingNow = (): LiveApproval => ({
 });
 
 /** A request that is saved and still open, as far as the saved state says. */
+/** Whether a request in each state can still be approved. Every state is
+ * named, so that a new one has to be decided here (Ben's D132c). A saved
+ * request with no status yet reads as pending. */
+const STILL_OPEN: Record<
+  NonNullable<PortalLinkSummary["approvalStatus"]>,
+  boolean
+> = {
+  pending: true,
+  challenge_ready: true,
+  accepted: false,
+  refused: false,
+  expired: false,
+  cancelled: false,
+};
+
 export function isAwaitingApproval(link: PortalLinkSummary): boolean {
   return (
     !link.incomplete &&
     link.approvalRequested &&
     !link.clinicApproved &&
-    ["pending", "challenge_ready"].includes(link.approvalStatus ?? "pending")
+    STILL_OPEN[link.approvalStatus ?? "pending"]
   );
 }
 

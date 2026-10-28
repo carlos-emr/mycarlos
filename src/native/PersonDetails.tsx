@@ -7,8 +7,14 @@ import {
 } from "../vault";
 import { NAME_INPUT_MAX_LENGTH, nameTooLong } from "./recordPresentation";
 
-export function detailsProblem(details: PersonDetails): MessageKey | null {
+export function detailsProblem(
+  details: PersonDetails,
+  birthDateUnknown = false,
+): MessageKey | null {
+  if (!details.fullName?.trim()) return "personDetails.fullNameRequired";
   if (nameTooLong(details.fullName ?? "")) return "personDetails.nameTooLong";
+  if (!details.birthDate && !birthDateUnknown)
+    return "personDetails.birthDateRequired";
   if (details.birthDate) {
     const date = details.birthDate;
     const parsed = new Date(`${date}T12:00:00Z`);
@@ -32,12 +38,16 @@ export function trimmedDetails(details: PersonDetails): PersonDetails {
 export function PersonDetailsFields({
   details,
   onChange,
+  birthDateUnknown,
+  onBirthDateUnknownChange,
 }: {
   details: PersonDetails;
   onChange: (details: PersonDetails) => void;
+  birthDateUnknown: boolean;
+  onBirthDateUnknownChange: (unknown: boolean) => void;
 }) {
   const { t } = useI18n();
-  const problem = detailsProblem(details);
+  const problem = detailsProblem(details, birthDateUnknown);
   return (
     <>
       <label>
@@ -45,6 +55,7 @@ export function PersonDetailsFields({
         <input
           autoComplete="off"
           maxLength={NAME_INPUT_MAX_LENGTH}
+          required
           value={details.fullName ?? ""}
           onChange={(e) => onChange({ ...details, fullName: e.target.value })}
         />
@@ -54,9 +65,22 @@ export function PersonDetailsFields({
         <input
           type="date"
           max={localDateText(new Date())}
+          required={!birthDateUnknown}
+          disabled={birthDateUnknown}
           value={details.birthDate ?? ""}
           onChange={(e) => onChange({ ...details, birthDate: e.target.value })}
         />
+      </label>
+      <label className="native-person-date-unknown">
+        <input
+          type="checkbox"
+          checked={birthDateUnknown}
+          onChange={(e) => {
+            onBirthDateUnknownChange(e.target.checked);
+            if (e.target.checked) onChange({ ...details, birthDate: "" });
+          }}
+        />
+        <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
       {problem && <p role="alert">{t(problem)}</p>}
@@ -76,6 +100,7 @@ export function PersonDetailsList({
   const [editing, setEditing] = useState<{
     id: string;
     details: PersonDetails;
+    birthDateUnknown: boolean;
   } | null>(null);
   return (
     <ul
@@ -89,7 +114,11 @@ export function PersonDetailsList({
               aria-label={t("personDetails.for", { name: person.displayName })}
               onSubmit={(e) => {
                 e.preventDefault();
-                if (busy || detailsProblem(editing.details)) return;
+                if (
+                  busy ||
+                  detailsProblem(editing.details, editing.birthDateUnknown)
+                )
+                  return;
                 void onSave(person.id, trimmedDetails(editing.details)).then(
                   (saved) => {
                     if (saved) setEditing(null);
@@ -101,12 +130,28 @@ export function PersonDetailsList({
               <fieldset disabled={busy}>
                 <PersonDetailsFields
                   details={editing.details}
-                  onChange={(details) => setEditing({ id: person.id, details })}
+                  onChange={(details) =>
+                    setEditing((current) => current && { ...current, details })
+                  }
+                  birthDateUnknown={editing.birthDateUnknown}
+                  onBirthDateUnknownChange={(birthDateUnknown) =>
+                    setEditing(
+                      (current) => current && { ...current, birthDateUnknown },
+                    )
+                  }
                 />
                 <div className="native-person-details-actions">
                   <button
                     className="button"
-                    disabled={busy || Boolean(detailsProblem(editing.details))}
+                    disabled={
+                      busy ||
+                      Boolean(
+                        detailsProblem(
+                          editing.details,
+                          editing.birthDateUnknown,
+                        ),
+                      )
+                    }
                   >
                     {t("personDetails.save")}
                   </button>
@@ -144,6 +189,7 @@ export function PersonDetailsList({
                       fullName: person.fullName,
                       birthDate: person.birthDate,
                     },
+                    birthDateUnknown: !person.birthDate,
                   })
                 }
               >

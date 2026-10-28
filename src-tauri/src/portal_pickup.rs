@@ -51,6 +51,19 @@ fn add_issue(
         }
         _ => crate::PublicText::from(error).code,
     };
+    add_issue_code(result, link, code);
+}
+/// A saved clinic document that no longer reads back: its receipt is held,
+/// never sent, and the rest of the check goes on.
+#[cfg(feature = "portal-linking")]
+pub(crate) const DAMAGED_CODE: &str = "pickup_damaged";
+/// Download failures in a row (no reply at all) after which the portal or
+/// the connection is taken to be down for this clinic, rather than waiting
+/// out a timeout for every delivery still listed.
+#[cfg(feature = "portal-linking")]
+const MAX_DOWNLOAD_FAILURES_IN_A_ROW: usize = 3;
+#[cfg(feature = "portal-linking")]
+fn add_issue_code(result: &mut CheckResult, link: &crate::portal_link::StoredLink, code: &str) {
     if result
         .issues
         .iter()
@@ -68,24 +81,99 @@ fn add_issue(
         code: code.into(),
     });
 }
+/// Whether a check for new documents contacts this link's clinic (Ben,
+/// D132c): only for a device the clinic approved, or with a request still
+/// open as last saved (pending, or ready for the clinic). A link with no
+/// saved request, or whose request was refused or has ended, is no reason to
+/// ask; a saved request with no status yet reads as pending, and is asked.
+/// The check after unlocking and Check for new documents both go by it.
+///
+/// "Approved" is judged by the clinic's current keys (`currently_approved`).
+/// That holds while a link's clinic keys are fixed when it is made; when key
+/// refresh or revocation comes, decide whether an acceptance signed by a
+/// retired key still counts here, or an approved device stops being asked.
+#[cfg(feature = "portal-linking")]
+pub(crate) fn worth_asking(link: &crate::portal_link::StoredLink) -> bool {
+    crate::portal_approval::currently_approved(link)
+        || link
+            .approval
+            .as_ref()
+            .is_some_and(|attempt| attempt.acceptance.is_none() && still_open(attempt.state()))
+}
+/// Whether a request in this state can still be approved. Every state is
+/// named, so that a new one has to be decided here.
+#[cfg(feature = "portal-linking")]
+fn still_open(state: crate::portal_approval::ApprovalState) -> bool {
+    use crate::portal_approval::ApprovalState;
+    match state {
+        ApprovalState::Pending | ApprovalState::ChallengeReady => true,
+        ApprovalState::Accepted
+        | ApprovalState::Refused
+        | ApprovalState::Expired
+        | ApprovalState::Cancelled => false,
+    }
+}
 #[cfg(feature = "portal-linking")]
 pub(crate) fn check(
     store: &crate::vault::VaultStore,
     session: u64,
 ) -> Result<CheckResult, crate::vault::VaultError> {
-    check_using(
+    check_asking_using(
         store,
         session,
         &crate::portal_approval::ApprovalHttp::default(),
         crate::portal_client::api,
     )
 }
+/// The check as the app runs it: only the clinics worth asking.
 #[cfg(feature = "portal-linking")]
+pub(crate) fn check_asking_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
+    check_links_using(store, session, approval, exchange, &worth_asking)
+}
+/// Every linked clinic, whatever its approval: for tests of the pipeline.
+#[cfg(all(test, feature = "portal-linking"))]
 pub(crate) fn check_using<F>(
     store: &crate::vault::VaultStore,
     session: u64,
     approval: &impl crate::portal_approval::ApprovalExchange,
     exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
+    check_links_using(store, session, approval, exchange, &|_| true)
+}
+#[cfg(feature = "portal-linking")]
+fn check_links_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+    include: &dyn Fn(&crate::portal_link::StoredLink) -> bool,
 ) -> Result<CheckResult, crate::vault::VaultError>
 where
     F: Fn(
@@ -178,11 +266,16 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
-    for original in store.delivery_links(session)? {
+    for original in store
+        .delivery_links(session)?
+        .into_iter()
+        .filter(|link| include(link))
+    {
         let outcome = (|| -> Result<(), VaultError> {
             // Known durable custody is independent of advisory approval refresh.
             // Retry it first, including for a link whose new request was refused.
-            for c in store.pending_receipts(&original, session)? {
+            // Damaged records are skipped here and reported once below.
+            for c in store.pending_receipts_checked(&original, session)?.ready {
                 send(&original, &c)?;
             }
             let (link, warning) =
@@ -193,6 +286,7 @@ where
             let mut after = 0;
             let mut through = None;
             let mut seen = std::collections::HashSet::new();
+            let mut download_failures = 0;
             for page_number in 0..100 {
                 if cancelled() {
                     return Err(VaultError::Cancelled);
@@ -235,7 +329,10 @@ where
                     if !seen.insert(outer.delivery_id.clone()) {
                         return Err(VaultError::Portal(LinkError::InvalidResponse));
                     }
-                    let response = exchange(
+                    // A delivery that can't be downloaded is reported and
+                    // skipped: the clinic's later deliveries are still fetched,
+                    // and the next check tries this one again.
+                    let response = match exchange(
                         &link,
                         "GET",
                         &format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
@@ -243,8 +340,26 @@ where
                         None,
                         outer.size as usize,
                         &cancelled,
-                    )
-                    .map_err(VaultError::Portal)?;
+                    ) {
+                        Ok(response) => {
+                            download_failures = 0;
+                            response
+                        }
+                        Err(error) => {
+                            let error = VaultError::Portal(error);
+                            if !is_per_link_failure(&error) {
+                                return Err(error);
+                            }
+                            if matches!(error, VaultError::Portal(LinkError::Network)) {
+                                download_failures += 1;
+                                if download_failures == MAX_DOWNLOAD_FAILURES_IN_A_ROW {
+                                    return Err(error);
+                                }
+                            }
+                            add_issue(&mut result, &link, error);
+                            continue;
+                        }
+                    };
                     if response.status != 200 {
                         #[derive(Deserialize)]
                         #[serde(deny_unknown_fields)]
@@ -258,12 +373,20 @@ where
                         {
                             continue;
                         }
-                        return Err(refused(&response));
+                        // A device the portal removed can fetch nothing more:
+                        // this clinic's check ends there (#128). Any other
+                        // refusal is this delivery's alone (#124's fix).
+                        let error = refused(&response);
+                        if matches!(error, VaultError::Portal(LinkError::DeviceRemoved)) {
+                            return Err(error);
+                        }
+                        add_issue(&mut result, &link, error);
+                        continue;
                     }
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((_, added)) => {
                             result.added += usize::from(added);
-                            for c in store.pending_receipts(&link, session)? {
+                            for c in store.pending_receipts_checked(&link, session)?.ready {
                                 send(&link, &c)?;
                             }
                         }
@@ -297,7 +420,11 @@ where
             .into_iter()
             .find(|l| l.id == original.id)
             .ok_or(VaultError::NotFound)?;
-        result.receipts_pending += store.pending_receipts(&current, session)?.len();
+        let pending = store.pending_receipts_checked(&current, session)?;
+        result.receipts_pending += pending.ready.len();
+        if pending.damaged > 0 {
+            add_issue_code(&mut result, &current, DAMAGED_CODE);
+        }
     }
     Ok(result)
 }
