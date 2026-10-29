@@ -739,7 +739,6 @@ export const MESSAGE_KEYS = [
   "ai.label",
   "ai.result.meta",
   "ai.summary.showInDocument",
-  "ai.summary.showSentence",
   "ai.summary.partial",
   "ai.summary.noText",
   "ai.explain.box",
@@ -748,6 +747,8 @@ export const MESSAGE_KEYS = [
   "ai.preferences.title",
   "ai.preferences.body",
   "ai.preferences.notInstalled",
+  "ai.working",
+  "ai.failed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1613,7 +1614,6 @@ const FLUENT_IDS_BY_KEY = {
   "ai.label": "ai-label",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
-  "ai.summary.showSentence": "ai-summary-showSentence",
   "ai.summary.partial": "ai-summary-partial",
   "ai.summary.noText": "ai-summary-noText",
   "ai.explain.box": "ai-explain-box",
@@ -1622,6 +1622,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.preferences.title": "ai-preferences-title",
   "ai.preferences.body": "ai-preferences-body",
   "ai.preferences.notInstalled": "ai-preferences-notInstalled",
+  "ai.working": "ai-working",
+  "ai.failed": "ai-failed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2452,7 +2454,6 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
-  "ai.summary.showSentence": { number: FluentArgument };
   "ai.summary.partial": { last: FluentArgument };
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;
@@ -2461,6 +2462,8 @@ export interface MessageArgsByKey {
   "ai.preferences.title": undefined;
   "ai.preferences.body": undefined;
   "ai.preferences.notInstalled": undefined;
+  "ai.working": undefined;
+  "ai.failed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

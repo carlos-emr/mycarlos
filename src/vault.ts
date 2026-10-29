@@ -1,5 +1,6 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import type { ModelStatus } from "./ai/types";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -463,6 +464,8 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn: the reader closed. */
   cancelView(): Promise<void>;
+  /** Whether the AI helper (#72) has a model on this computer. */
+  aiModelStatus(): Promise<ModelStatus>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -833,6 +836,7 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, page, width, password: password ?? null },
       }),
     cancelView: () => invoke<void>("vault_view_cancel"),
+    aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

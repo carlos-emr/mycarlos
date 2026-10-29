@@ -1491,8 +1491,6 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文件中顯示
 
-ai-summary-showSentence = 在文件中顯示第 { $number } 句
-
 ai-summary-partial = 此摘要僅涵蓋文件開頭部分：第 1 頁至第 { $last } 頁。
 
 ai-summary-noText = myCarlos 無法讀取此文件中的任何文字，因此無法產生摘要。這可能是掃描檔。
@@ -1508,3 +1506,7 @@ ai-preferences-title = AI 助理
 ai-preferences-body = 使用在此電腦上執行的 AI 模型，以淺白易懂的文字解釋您的文件。取得模型的功能將在 myCarlos 的後續版本中提供。
 
 ai-preferences-notInstalled = 未安裝
+
+ai-working = AI 助理正在處理…
+
+ai-failed = AI 助理未能完成。請重試。

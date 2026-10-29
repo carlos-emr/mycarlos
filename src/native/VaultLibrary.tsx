@@ -39,6 +39,8 @@ import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { nativeLocalModel } from "../ai/localModel";
+import { ModelNotInstalled, type ModelStatus } from "../ai/types";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -90,6 +92,11 @@ const SORT_CHOICES: ReadonlyArray<[NativeSort, MessageKey]> = [
   ["newest", "interface.VaultLibrary.newestFirst"],
   ["name", "interface.VaultLibrary.nameAZ"],
 ];
+
+/** The whole document's text for the AI helper. Part B's
+ * `bridge.documentText` (#72) takes its place; until then no model can be
+ * installed, so nothing asks for it. */
+const noDocumentText = () => Promise.reject(new ModelNotInstalled());
 
 export function VaultLibrary({
   bridge,
@@ -212,6 +219,23 @@ export function VaultLibrary({
   activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
+  // The AI helper (#72): on a computer only, as the reader's text is.
+  const localModel = useMemo(
+    () => nativeLocalModel(() => bridge.aiModelStatus()),
+    [bridge],
+  );
+  const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
+  useEffect(() => {
+    if (section !== "preferences" || !computer) return;
+    let current = true;
+    localModel.status().then(
+      (found) => current && setAiStatus(found),
+      () => current && setAiStatus({ state: "notInstalled" }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [computer, localModel, section]);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -2128,7 +2152,9 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && <PreferencesSettings />}
+            {section === "preferences" && (
+              <PreferencesSettings aiStatus={computer ? aiStatus : undefined} />
+            )}
 
             {section === "security" && (
               <SecuritySettings
@@ -2375,6 +2401,18 @@ export function VaultLibrary({
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}
+              ai={
+                computer
+                  ? {
+                      model: localModel,
+                      loadText: noDocumentText,
+                      onOpenPreferences: () => {
+                        setReaderRecordId(null);
+                        setSection("preferences");
+                      },
+                    }
+                  : undefined
+              }
             />
           )}
           {confirmHideDamaged && (

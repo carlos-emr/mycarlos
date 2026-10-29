@@ -449,6 +449,16 @@ h1, h2, p { margin: 0; }
 .native-reader-text { max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }
 .native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-reader-ai-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.native-reader-text mark { background: var(--amber-soft); color: var(--ink); }
+.native-reader-ai { max-height: 40vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
+.native-reader-ai h3 { margin: 0 0 6px; font-size: 1rem; }
+.native-reader-ai p { max-width: 70ch; margin: 4px 0; }
+.native-reader-ai-explain { display: grid; gap: 6px; max-width: 420px; }
+.native-reader-ai-explain input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-reader-ai-result ol { display: grid; gap: 6px; margin: 6px 0; padding-left: 1.4em; }
+.native-reader-ai .ai-label { color: var(--ink); font-weight: 700; }
+.native-reader-ai .ai-meta { color: var(--ink-soft); font-size: 0.875rem; }
 .native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
 .native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 

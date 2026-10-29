@@ -738,7 +738,6 @@
   "ai.label",
   "ai.result.meta",
   "ai.summary.showInDocument",
-  "ai.summary.showSentence",
   "ai.summary.partial",
   "ai.summary.noText",
   "ai.explain.box",
@@ -746,5 +745,7 @@
   "ai.explain.submit",
   "ai.preferences.title",
   "ai.preferences.body",
-  "ai.preferences.notInstalled"
+  "ai.preferences.notInstalled",
+  "ai.working",
+  "ai.failed"
 ]

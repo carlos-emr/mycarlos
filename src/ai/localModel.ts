@@ -5,6 +5,7 @@ import {
   type ExplainResult,
   type LocalModel,
   type ModelSentence,
+  type ModelStatus,
   type SummaryResult,
   type SummarySentence,
 } from "./types";
@@ -20,6 +21,15 @@ export const notInstalledModel: LocalModel = {
     throw new ModelNotInstalled();
   },
 };
+
+/** The model on this computer, as the native side reports it. None can be
+ * installed yet, so the native side always says so; work is refused here
+ * until the model PR adds it. */
+export function nativeLocalModel(
+  status: () => Promise<ModelStatus>,
+): LocalModel {
+  return { ...notInstalledModel, status };
+}
 
 /** Gives each sentence its place in the document, or `null` when its quote
  * is not there. */

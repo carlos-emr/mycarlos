@@ -48,6 +48,15 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
   });
 
+  it("asks the native side whether an AI model is installed", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue({ state: "notInstalled" });
+    await expect(bridge.aiModelStatus()).resolves.toEqual({
+      state: "notInstalled",
+    });
+    expect(invoke.mock.calls).toEqual([["ai_model_status"]]);
+  });
+
   it("sends the shared-file commands the native side registers", async () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue(undefined);

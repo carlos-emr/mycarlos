@@ -1661,8 +1661,6 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
 
-ai-summary-showSentence = Voir la phrase { $number } dans le document
-
 ai-summary-partial = Ce résumé ne couvre que le début du document : pages 1 à { $last }.
 
 ai-summary-noText = myCarlos n’a pu lire aucun texte dans ce document et ne peut donc pas le résumer. Il s’agit peut-être d’une numérisation.
@@ -1678,3 +1676,7 @@ ai-preferences-title = Assistant IA
 ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. L’obtention du modèle arrivera dans une prochaine version de myCarlos.
 
 ai-preferences-notInstalled = Non installé
+
+ai-working = L’assistant IA travaille…
+
+ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
