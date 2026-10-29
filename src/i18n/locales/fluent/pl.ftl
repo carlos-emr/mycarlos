@@ -1624,6 +1624,10 @@ interface-history-event-copySaved = Zapisano czytelną kopię
 
 interface-history-event-created = Utworzono sejf
 
+interface-history-event-deliveryRefusalsCleared = Wybrano „Spróbuj ponownie” dla niezweryfikowanych dokumentów z przychodni
+
+interface-history-event-deliveryRefused = Nie zweryfikowano dokumentu z przychodni
+
 interface-history-event-folderCreated = Utworzono folder
 
 interface-history-event-folderMoved = Przeniesiono folder

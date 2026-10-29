@@ -1426,6 +1426,10 @@ interface-history-event-copySaved = 可讀副本已儲存
 
 interface-history-event-created = 保險庫已建立
 
+interface-history-event-deliveryRefusalsCleared = 已選擇重試未通過驗證的診所文件
+
+interface-history-event-deliveryRefused = 診所文件未通過驗證
+
 interface-history-event-folderCreated = 資料夾已建立
 
 interface-history-event-folderMoved = 資料夾已移動

@@ -1591,6 +1591,10 @@ interface-history-event-copySaved = Copie lisible enregistrée
 
 interface-history-event-created = Coffre créé
 
+interface-history-event-deliveryRefusalsCleared = Nouvel essai demandé pour les documents non vérifiés de la clinique
+
+interface-history-event-deliveryRefused = Document de la clinique non vérifié
+
 interface-history-event-folderCreated = Dossier créé
 
 interface-history-event-folderMoved = Dossier déplacé

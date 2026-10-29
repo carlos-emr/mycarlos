@@ -221,6 +221,8 @@ pub enum MessageId {
     InterfaceHistoryEventBackupSaved,
     InterfaceHistoryEventCopySaved,
     InterfaceHistoryEventCreated,
+    InterfaceHistoryEventDeliveryRefusalsCleared,
+    InterfaceHistoryEventDeliveryRefused,
     InterfaceHistoryEventFolderCreated,
     InterfaceHistoryEventFolderMoved,
     InterfaceHistoryEventFolderRenamed,
@@ -1002,6 +1004,8 @@ impl MessageId {
         Self::InterfaceHistoryEventBackupSaved,
         Self::InterfaceHistoryEventCopySaved,
         Self::InterfaceHistoryEventCreated,
+        Self::InterfaceHistoryEventDeliveryRefusalsCleared,
+        Self::InterfaceHistoryEventDeliveryRefused,
         Self::InterfaceHistoryEventFolderCreated,
         Self::InterfaceHistoryEventFolderMoved,
         Self::InterfaceHistoryEventFolderRenamed,
@@ -1935,6 +1939,10 @@ impl MessageId {
             Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
             Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
             Self::InterfaceHistoryEventCreated => "interface-history-event-created",
+            Self::InterfaceHistoryEventDeliveryRefusalsCleared => {
+                "interface-history-event-deliveryRefusalsCleared"
+            }
+            Self::InterfaceHistoryEventDeliveryRefused => "interface-history-event-deliveryRefused",
             Self::InterfaceHistoryEventFolderCreated => "interface-history-event-folderCreated",
             Self::InterfaceHistoryEventFolderMoved => "interface-history-event-folderMoved",
             Self::InterfaceHistoryEventFolderRenamed => "interface-history-event-folderRenamed",
@@ -3444,6 +3452,12 @@ impl MessageId {
             "interface.history.event.backupSaved" => Some(Self::InterfaceHistoryEventBackupSaved),
             "interface.history.event.copySaved" => Some(Self::InterfaceHistoryEventCopySaved),
             "interface.history.event.created" => Some(Self::InterfaceHistoryEventCreated),
+            "interface.history.event.deliveryRefusalsCleared" => {
+                Some(Self::InterfaceHistoryEventDeliveryRefusalsCleared)
+            }
+            "interface.history.event.deliveryRefused" => {
+                Some(Self::InterfaceHistoryEventDeliveryRefused)
+            }
             "interface.history.event.folderCreated" => {
                 Some(Self::InterfaceHistoryEventFolderCreated)
             }

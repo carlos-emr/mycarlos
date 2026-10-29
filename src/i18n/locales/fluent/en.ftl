@@ -1558,6 +1558,10 @@ interface-history-event-copySaved = Readable copy saved
 
 interface-history-event-created = Vault created
 
+interface-history-event-deliveryRefusalsCleared = “Try again” chosen for unverified clinic documents
+
+interface-history-event-deliveryRefused = Clinic document not verified
+
 interface-history-event-folderCreated = Folder created
 
 interface-history-event-folderMoved = Folder moved

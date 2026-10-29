@@ -684,6 +684,8 @@
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
   "interface.history.event.folderCreated",
   "interface.history.event.folderMoved",
   "interface.history.event.folderRenamed",

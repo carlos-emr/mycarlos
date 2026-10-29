@@ -1426,6 +1426,10 @@ interface-history-event-copySaved = 可读副本已保存
 
 interface-history-event-created = 保险库已创建
 
+interface-history-event-deliveryRefusalsCleared = 已选择重试未通过验证的诊所文档
+
+interface-history-event-deliveryRefused = 诊所文档未通过验证
+
 interface-history-event-folderCreated = 文件夹已创建
 
 interface-history-event-folderMoved = 文件夹已移动

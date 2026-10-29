@@ -298,6 +298,8 @@ export interface AuditHistoryEntry {
     | "created"
     | "historyStarted"
     | "unlocked"
+    | "deliveryRefused"
+    | "deliveryRefusalsCleared"
     | "imported"
     | "renamed"
     | "moved"

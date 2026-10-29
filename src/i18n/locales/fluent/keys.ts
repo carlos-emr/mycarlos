@@ -685,6 +685,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
   "interface.history.event.folderCreated",
   "interface.history.event.folderMoved",
   "interface.history.event.folderRenamed",
@@ -1575,6 +1577,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryRefusalsCleared":
+    "interface-history-event-deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused":
+    "interface-history-event-deliveryRefused",
   "interface.history.event.folderCreated":
     "interface-history-event-folderCreated",
   "interface.history.event.folderMoved": "interface-history-event-folderMoved",
@@ -2452,6 +2458,8 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryRefusalsCleared": undefined;
+  "interface.history.event.deliveryRefused": undefined;
   "interface.history.event.folderCreated": undefined;
   "interface.history.event.folderMoved": undefined;
   "interface.history.event.folderRenamed": undefined;

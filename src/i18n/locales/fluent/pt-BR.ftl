@@ -1591,6 +1591,10 @@ interface-history-event-copySaved = Cópia legível salva
 
 interface-history-event-created = Cofre criado
 
+interface-history-event-deliveryRefusalsCleared = Nova tentativa solicitada para os documentos não verificados da clínica
+
+interface-history-event-deliveryRefused = Documento da clínica não verificado
+
 interface-history-event-folderCreated = Pasta criada
 
 interface-history-event-folderMoved = Pasta movida

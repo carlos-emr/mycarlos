@@ -1591,6 +1591,10 @@ interface-history-event-copySaved = Copia legible guardada
 
 interface-history-event-created = Bóveda creada
 
+interface-history-event-deliveryRefusalsCleared = Nuevo intento solicitado para los documentos no verificados de la clínica
+
+interface-history-event-deliveryRefused = Documento de la clínica no verificado
+
 interface-history-event-folderCreated = Carpeta creada
 
 interface-history-event-folderMoved = Carpeta movida
