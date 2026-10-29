@@ -1637,3 +1637,73 @@ describe("the code a clinic emails (#141)", () => {
     act(() => setLocaleOverride(null));
   });
 });
+
+describe("clinic documents that failed their checks (#143)", () => {
+  it("says on the clinic's card how many could not be verified, and Try again checks them again", async () => {
+    const refused: PortalLinkSummary = {
+      ...link,
+      clinicApproved: true,
+      approvalStatus: "accepted",
+      refusedDeliveries: 2,
+    };
+    const { bridge, props, rerender } = fixture({
+      snapshot: { ...snapshot, portalLinks: [refused] },
+    });
+    const forget = vi.fn().mockResolvedValue(undefined);
+    bridge.forgetRefusedDeliveries = forget;
+    rerender(<PortalDocuments {...props} />);
+    const line = screen.getByText(
+      humanText(
+        "2 documents from this clinic could not be verified. Ask the clinic to send them again.",
+      ),
+    );
+    expect(line).toBeVisible();
+    const tryAgain = screen.getByRole("button", {
+      name: humanText("Try again for FAKE Clinic"),
+    });
+    expect(tryAgain).toHaveTextContent("Try again");
+    expect(tryAgain).toHaveAccessibleDescription(line.textContent!);
+    await userEvent.setup().click(tryAgain);
+    await waitFor(() => expect(bridge.checkDocuments).toHaveBeenCalledOnce());
+    expect(forget).toHaveBeenCalledExactlyOnceWith("fake-link");
+    // Forgotten first, then checked again, in the same operation.
+    expect(forget.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(bridge.checkDocuments!).mock.invocationCallOrder[0],
+    );
+
+    // Nothing to try again with while the vault is read-only.
+    rerender(<PortalDocuments {...props} readOnly />);
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Try again for FAKE Clinic"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(line).toBeVisible();
+
+    // None remembered: nothing is said.
+    rerender(
+      <PortalDocuments
+        {...props}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [{ ...refused, refusedDeliveries: 0 }],
+        }}
+      />,
+    );
+    expect(line).not.toBeInTheDocument();
+  });
+  it("says it with each language's plural forms", () => {
+    for (const locale of LOCALES)
+      for (const count of [1, 2, 5, 22]) {
+        const text = translate(locale, "portal.refusedDocuments", { count });
+        expect(humanValue(text), `${locale} ${count}`).toContain(String(count));
+        expect(
+          humanValue(
+            translate(locale, "portal.tryAgainFor", {
+              clinic: "FAKE Clinic",
+            }),
+          ),
+        ).toContain("FAKE Clinic");
+      }
+  });
+});

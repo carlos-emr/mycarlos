@@ -14,6 +14,7 @@ import {
   type PollApproval,
   type PortalWaits,
 } from "./useApprovalPolling";
+import { RefusedDeliveries } from "./RefusedDeliveries";
 
 interface Props {
   bridge: VaultBridge;
@@ -275,12 +276,14 @@ export function PortalDocuments({
       link.approvalStatus ?? "",
     );
   const disabled = busy || readOnly || connecting || working;
-  const check = () => {
+  /** Checks every clinic; `first` runs before, in the same operation. */
+  const check = (first?: () => Promise<void>) => {
     polling.hold();
     // What this check found for each open request: the portal has it,
     // unless the check names a problem with that device's clinic.
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
+      await first?.();
       const { result, vault: next } = await checkClinicDocuments({
         bridge,
         links,
@@ -305,7 +308,7 @@ export function PortalDocuments({
       className="button"
       type="button"
       disabled={disabled || !links.some((link) => !link.incomplete)}
-      onClick={check}
+      onClick={() => check()}
     >
       {t(working && compact ? "portal.working" : "portal.check")}
     </button>
@@ -553,6 +556,15 @@ export function PortalDocuments({
             </h3>
             <p className="portal-address">{link.portalBase}</p>
             <p>{stateText(cardState(link, live))}</p>
+            <RefusedDeliveries
+              link={link}
+              disabled={disabled}
+              onTryAgain={
+                readOnly || !bridge.forgetRefusedDeliveries
+                  ? undefined
+                  : () => check(() => bridge.forgetRefusedDeliveries!(link.id))
+              }
+            />
             {left !== null && (
               <p>
                 {left > 0

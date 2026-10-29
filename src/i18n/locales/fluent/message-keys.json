@@ -772,5 +772,8 @@
   "portal.codeNotOpen",
   "portal.codeRefused",
   "portal.codeSubmit",
-  "portal.codeSubmitted"
+  "portal.codeSubmitted",
+  "portal.refusedDocuments",
+  "portal.tryAgain",
+  "portal.tryAgainFor"
 ]

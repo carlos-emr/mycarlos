@@ -2003,6 +2003,28 @@ async fn vault_restart_device_approval(
     }
 }
 
+/// Try again (#143): forgets a clinic's remembered refusals, so that the next
+/// check downloads and checks its documents again.
+#[tauri::command]
+async fn vault_forget_refused_deliveries(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    #[cfg(not(feature = "portal-linking"))]
+    {
+        let _ = (store, link_id);
+        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
+    }
+    #[cfg(feature = "portal-linking")]
+    {
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+    }
+}
+
 #[tauri::command]
 async fn vault_check_documents(
     store: State<'_, Arc<VaultStore>>,
@@ -3754,6 +3776,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_forget_refused_deliveries,
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_refresh_device_approval,

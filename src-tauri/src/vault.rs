@@ -46,8 +46,13 @@ mod original_pdf;
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 7;
+const VAULT_FORMAT: u32 = 8;
 const MANIFEST_FORMAT_V1: u32 = 1;
+/// Format 8 (#143) remembers clinic deliveries that failed their checks.
+const MANIFEST_FORMAT_REFUSED: u32 = 8;
+/// At most this many remembered refusals per linked clinic; the oldest goes
+/// first. A refusal lasts only as long as its delivery (at most 7 days).
+const MAX_REFUSED_PER_LINK: usize = 100;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
@@ -578,6 +583,50 @@ struct Manifest {
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
     history: HistoryState,
+    /// Clinic deliveries that failed their checks, so that they are not
+    /// downloaded and refused again (#143). Format 8 only. Kept here, not in
+    /// the link, so that the link a check is working from stays as saved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    refused_deliveries: Vec<RefusedDelivery>,
+}
+
+/// A clinic delivery that failed its checks (#143): what the portal's
+/// listing says of it, never the document or anything inside it.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RefusedDelivery {
+    link_id: Uuid,
+    delivery_id: String,
+    ciphertext_sha256: String,
+    refused_at_ms: u64,
+    /// The delivery's own expiry, in seconds, from the listing.
+    expires_at: u64,
+}
+
+/// A link's remembered refusals whose deliveries have not expired.
+fn refused_for(
+    manifest: &Manifest,
+    link_id: Uuid,
+    now_ms: u64,
+) -> impl Iterator<Item = &RefusedDelivery> {
+    manifest
+        .refused_deliveries
+        .iter()
+        .filter(move |r| r.link_id == link_id && !r.expired(now_ms))
+}
+
+impl RefusedDelivery {
+    /// Whether its delivery has expired, so the portal no longer offers it.
+    fn expired(&self, now_ms: u64) -> bool {
+        self.expires_at.saturating_mul(1000) <= now_ms
+    }
+
+    fn valid(&self) -> bool {
+        crate::portal_delivery::uuid4(&self.delivery_id)
+            && crate::portal_delivery::hash(&self.ciphertext_sha256)
+            && self.expires_at > 0
+            && self.expires_at <= 9_007_199_254_740_991
+    }
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -1062,6 +1111,7 @@ impl VaultStore {
                 records: Vec::new(),
                 history: HistoryState::default(),
                 portal_links: Vec::new(),
+                refused_deliveries: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -1487,7 +1537,12 @@ impl VaultStore {
                 .manifest
                 .portal_links
                 .iter()
-                .map(|link| self.link_summary(link))
+                .map(|link| {
+                    let mut summary = self.link_summary(link);
+                    summary.refused_deliveries =
+                        refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary
+                })
                 .collect(),
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
@@ -4300,6 +4355,25 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || link
                 .profile_id
                 .is_some_and(|id| !profile_ids.contains(&id) || id == shared_profile_id(vault_id))
+        {
+            return Err(VaultError::Corrupt);
+        }
+    }
+    // Remembered refusals (#143): format 8, for a saved link, one per
+    // delivery, and a bounded number per link.
+    if manifest.format_version < MANIFEST_FORMAT_REFUSED && !manifest.refused_deliveries.is_empty()
+    {
+        return Err(VaultError::Corrupt);
+    }
+    let mut refused = HashSet::new();
+    let mut refused_per_link = HashMap::<Uuid, usize>::new();
+    for entry in &manifest.refused_deliveries {
+        let count = refused_per_link.entry(entry.link_id).or_default();
+        *count += 1;
+        if !link_ids.contains(&entry.link_id)
+            || *count > MAX_REFUSED_PER_LINK
+            || !refused.insert((entry.link_id, entry.delivery_id.as_str()))
+            || !entry.valid()
         {
             return Err(VaultError::Corrupt);
         }
@@ -8538,6 +8612,7 @@ mod tests {
             ],
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            refused_deliveries: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -14079,6 +14154,7 @@ mod tests {
                 .collect(),
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            refused_deliveries: Vec::new(),
         }
     }
 

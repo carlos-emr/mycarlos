@@ -1739,3 +1739,13 @@ portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Rées
 portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] { $count } document de cette clinique n’a pas pu être vérifié. Demandez à la clinique de vous le renvoyer.
+    *[other] { $count } documents de cette clinique n’ont pas pu être vérifiés. Demandez à la clinique de vous les renvoyer.
+    }
+
+portal-tryAgain = Réessayer
+
+portal-tryAgainFor = Réessayer pour { $clinic }

@@ -126,6 +126,28 @@ impl Drop for PortalWork<'_> {
     }
 }
 
+/// How checking a downloaded delivery ended, when it was not filed.
+#[cfg(feature = "portal-linking")]
+enum Received {
+    /// The delivery was refused. `definite` when it failed its checks; not
+    /// when they could not be made (#143).
+    Refused { definite: bool },
+    /// Anything else, as before.
+    Failed(VaultError),
+}
+
+/// A refusal from filing (a saved delivery with another hash, an original
+/// PDF that does not match its manifest) is the document's own.
+#[cfg(feature = "portal-linking")]
+impl From<VaultError> for Received {
+    fn from(error: VaultError) -> Self {
+        match error {
+            VaultError::PickupRefused => Received::Refused { definite: true },
+            error => Received::Failed(error),
+        }
+    }
+}
+
 #[cfg(feature = "portal-linking")]
 impl VaultStore {
     /// Reserve portal work without queuing it behind another session's HTTP.
@@ -296,6 +318,11 @@ impl VaultStore {
             Ok(())
         })
     }
+    /// Checks a downloaded delivery and files it. A delivery that fails its
+    /// checks is refused, and remembered, so that the next check does not
+    /// download and refuse it again (#143). A check that could not be made
+    /// (the PDF helper, a damaged download) or was cancelled is not
+    /// remembered: the delivery is tried again next time.
     pub(crate) fn receive_delivery(
         &self,
         outer: &wire::Outer,
@@ -303,9 +330,163 @@ impl VaultStore {
         link: &StoredLink,
         session: u64,
     ) -> Result<(Uuid, bool), VaultError> {
+        match self.check_and_file_delivery(outer, sealed, link, session) {
+            Ok(filed) => Ok(filed),
+            Err(Received::Refused { definite }) => {
+                if definite && self.portal_link_ticket() == session {
+                    // If it cannot be saved, the next check downloads the
+                    // delivery and refuses it again, as before #143.
+                    let _ = self.remember_refusal(outer, link, session);
+                }
+                Err(VaultError::PickupRefused)
+            }
+            Err(Received::Failed(error)) => Err(error),
+        }
+    }
+
+    /// Whether this listed delivery failed its checks before, unchanged, and
+    /// has not expired: if so it is not downloaded again (#143).
+    pub(crate) fn refusal_remembered(
+        &self,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        session: u64,
+    ) -> Result<bool, VaultError> {
+        let guard = self.session();
+        let open = guard.as_ref().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        let remembered = refused_for(&open.manifest, link.id, crate::now_ms()).any(|r| {
+            r.delivery_id == outer.delivery_id && r.ciphertext_sha256 == outer.ciphertext_sha256
+        });
+        Ok(remembered)
+    }
+
+    fn remember_refusal(
+        &self,
+        outer: &wire::Outer,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        if self.refusal_remembered(link, outer, session)? {
+            return Ok(());
+        }
+        let now = crate::now_ms();
+        // A delivery past its expiry is no longer offered: nothing to skip.
+        if outer.expires_at.saturating_mul(1000) <= now {
+            return Ok(());
+        }
+        self.mutate_recorded(|manifest, entries| {
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            // Written only once the vault holds format 8 (the upgrade at a
+            // writable unlock), and only for a link it still holds.
+            if manifest.format_version < MANIFEST_FORMAT_REFUSED
+                || !manifest.portal_links.iter().any(|l| l.id == link.id)
+            {
+                return Err(VaultError::Invalid);
+            }
+            manifest.refused_deliveries.retain(|r| {
+                !r.expired(now) && !(r.link_id == link.id && r.delivery_id == outer.delivery_id)
+            });
+            // At most MAX_REFUSED_PER_LINK for a clinic: the oldest goes.
+            let kept = manifest
+                .refused_deliveries
+                .iter()
+                .filter(|r| r.link_id == link.id)
+                .count();
+            if kept >= MAX_REFUSED_PER_LINK {
+                let mut drop = kept + 1 - MAX_REFUSED_PER_LINK;
+                manifest.refused_deliveries.retain(|r| {
+                    if drop > 0 && r.link_id == link.id {
+                        drop -= 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            manifest.refused_deliveries.push(RefusedDelivery {
+                link_id: link.id,
+                delivery_id: outer.delivery_id.clone(),
+                ciphertext_sha256: outer.ciphertext_sha256.clone(),
+                refused_at_ms: now,
+                expires_at: outer.expires_at,
+            });
+            let mut entry = HistoryEntry::new(HistoryEvent::DeliveryRefused, now);
+            entry.portal_link_id = Some(link.id);
+            entry.delivery_id = Some(outer.delivery_id.clone());
+            entry.ciphertext_sha256 = Some(outer.ciphertext_sha256.clone());
+            entries.push(entry);
+            Ok(())
+        })
+    }
+
+    /// Drops remembered refusals whose deliveries have expired: the portal
+    /// no longer offers them (#143). Nothing is written when none has.
+    pub(crate) fn forget_expired_refusals(&self, session: u64) -> Result<(), VaultError> {
+        let now = crate::now_ms();
+        {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if !open
+                .manifest
+                .refused_deliveries
+                .iter()
+                .any(|r| r.expired(now))
+            {
+                return Ok(());
+            }
+        }
+        self.mutate_recorded(|manifest, _| {
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            manifest.refused_deliveries.retain(|r| !r.expired(now));
+            Ok(())
+        })
+    }
+
+    /// Try again (#143): forgets a clinic's remembered refusals, so that the
+    /// next check downloads and checks its documents again.
+    pub(crate) fn forget_refusals(&self, link_id: Uuid) -> Result<(), VaultError> {
+        {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if !open.manifest.portal_links.iter().any(|l| l.id == link_id) {
+                return Err(VaultError::NotFound);
+            }
+            if !open
+                .manifest
+                .refused_deliveries
+                .iter()
+                .any(|r| r.link_id == link_id)
+            {
+                return Ok(());
+            }
+        }
+        self.mutate_recorded(|manifest, entries| {
+            manifest.refused_deliveries.retain(|r| r.link_id != link_id);
+            let mut entry =
+                HistoryEntry::new(HistoryEvent::DeliveryRefusalsCleared, crate::now_ms());
+            entry.portal_link_id = Some(link_id);
+            entries.push(entry);
+            Ok(())
+        })
+    }
+
+    fn check_and_file_delivery(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<(Uuid, bool), Received> {
         let cancelled = || self.portal_link_ticket() != session;
         if cancelled() {
-            return Err(VaultError::Cancelled);
+            return Err(Received::Failed(VaultError::Cancelled));
         }
         let others = self
             .delivery_links(session)?
@@ -314,8 +495,13 @@ impl VaultStore {
             .filter_map(|l| l.clinic.as_ref())
             .flat_map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()))
             .collect::<Vec<_>>();
-        let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000)
-            .map_err(|_| VaultError::PickupRefused)?;
+        // Bytes that do not match the listing may be a damaged download, not
+        // the clinic's document: refused this time, not remembered.
+        let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000).map_err(
+            |refusal| Received::Refused {
+                definite: !matches!(refusal, wire::Refusal::HashMismatch),
+            },
+        )?;
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
         let pins = crate::signed_pdf::PinnedLink {
             clinic_id: clinic.clinic_id.clone(),
@@ -327,10 +513,18 @@ impl VaultStore {
                 .map(|k| k.kid.clone())
                 .collect(),
         };
+        // Only the helper's own verdict on the PDF is definite; a helper that
+        // is missing, failed or was stopped decides nothing.
         let checked = crate::signed_pdf_helper::verify(&opened.pdf, "", &[pins], &cancelled)
-            .map_err(|_| VaultError::PickupRefused)?;
+            .map_err(|failure| Received::Refused {
+                definite: matches!(
+                    failure,
+                    crate::signed_pdf_helper::Failure::Refused(_)
+                        | crate::signed_pdf_helper::Failure::TooLarge
+                ),
+            })?;
         let crate::signed_pdf::Verdict::Verified { kid, manifest: pdf } = checked else {
-            return Err(VaultError::PickupRefused);
+            return Err(Received::Refused { definite: true });
         };
         if kid != opened.manifest.kid
             || pdf.patient.name.as_deref() != Some(&opened.manifest.patient.name)
@@ -361,12 +555,15 @@ impl VaultStore {
                 .as_ref()
                 .is_some_and(|v| v != &opened.manifest.provider_name)
         {
-            return Err(VaultError::PickupRefused);
+            return Err(Received::Refused { definite: true });
         }
         if cancelled() {
-            return Err(VaultError::Cancelled);
+            return Err(Received::Failed(VaultError::Cancelled));
         }
+        // Its refusals (a saved delivery with another hash, an original PDF
+        // that does not match its manifest) are the document's own.
         self.commit_delivery(outer, opened, link, &pdf, crate::now_ms(), session)
+            .map_err(Received::from)
     }
 
     fn commit_delivery(
@@ -4143,5 +4340,299 @@ mod approval_recovery_tests {
             saved(&store).approval_history.len(),
             portal_approval::MAX_APPROVAL_REQUESTS - 1
         );
+    }
+
+    /// A delivery listed for `base`'s link that fails its checks for good:
+    /// FAKE bytes of the listed size and hash that do not decrypt (#143).
+    fn undecryptable(base: &wire::Outer, fill: u8) -> (wire::Outer, Vec<u8>) {
+        let bytes = vec![fill; 200];
+        let now = crate::now_ms() / 1000;
+        let mut outer = base.clone();
+        outer.delivery_id = Uuid::new_v4().to_string();
+        outer.size = bytes.len() as u64;
+        outer.ciphertext_sha256 = wire::sha256(&bytes);
+        outer.created_at = now - 60;
+        outer.expires_at = now + 86_400;
+        outer.validate().unwrap();
+        (outer, bytes)
+    }
+    /// One check of every link, listing `deliveries` for `link` and serving
+    /// each one's bytes; returns the result and the deliveries downloaded.
+    fn check_listing(
+        store: &VaultStore,
+        link: &StoredLink,
+        deliveries: &[(wire::Outer, Vec<u8>)],
+    ) -> (crate::portal_pickup::CheckResult, Vec<String>) {
+        let fetched = Mutex::new(Vec::new());
+        let outers = deliveries
+            .iter()
+            .map(|(o, _)| o.clone())
+            .collect::<Vec<_>>();
+        let result = crate::portal_pickup::check_using(
+            store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    return Ok(listing(&outers));
+                }
+                let (outer, bytes) = deliveries
+                    .iter()
+                    .find(|(o, _)| path.ends_with(&o.delivery_id))
+                    .unwrap();
+                fetched.lock().unwrap().push(outer.delivery_id.clone());
+                Ok(reply(200, bytes))
+            },
+        )
+        .unwrap();
+        (result, fetched.into_inner().unwrap())
+    }
+    fn refused_saved(store: &VaultStore) -> Vec<(Uuid, String, String)> {
+        let guard = store.session();
+        guard
+            .as_ref()
+            .unwrap()
+            .manifest
+            .refused_deliveries
+            .iter()
+            .map(|r| {
+                (
+                    r.link_id,
+                    r.delivery_id.clone(),
+                    r.ciphertext_sha256.clone(),
+                )
+            })
+            .collect()
+    }
+    fn history_count(store: &VaultStore, event: HistoryEvent) -> usize {
+        crate::vault::history_events_for_test(store)
+            .iter()
+            .filter(|e| e.event == event)
+            .count()
+    }
+    fn shown_refused(store: &VaultStore, link: &StoredLink) -> usize {
+        store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .find(|l| l.id == link.id)
+            .unwrap()
+            .refused_deliveries
+    }
+    /// #143: a clinic document that fails its checks is refused once. The
+    /// next check, and the check after the next unlock (the same pipeline
+    /// as Check for new documents), skip it without downloading it, so the
+    /// patient is not told again; the clinic's card still counts it.
+    #[test]
+    fn should_remember_a_refused_delivery_and_not_download_it_again_after_unlock() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let refused = undecryptable(&base, 7);
+        let (result, fetched) = check_listing(&store, &link, std::slice::from_ref(&refused));
+        assert_eq!((result.added, result.refused), (0, 1));
+        assert_eq!(fetched, vec![refused.0.delivery_id.clone()]);
+        assert_eq!(
+            refused_saved(&store),
+            vec![(
+                link.id,
+                refused.0.delivery_id.clone(),
+                refused.0.ciphertext_sha256.clone()
+            )]
+        );
+        assert_eq!(history_count(&store, HistoryEvent::DeliveryRefused), 1);
+        assert_eq!(shown_refused(&store, &link), 1);
+        for unlock in [false, true] {
+            if unlock {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+            }
+            let (result, fetched) = check_listing(&store, &link, std::slice::from_ref(&refused));
+            assert_eq!((result.added, result.refused), (0, 0));
+            assert!(fetched.is_empty(), "not downloaded again");
+            assert!(result.issues.is_empty());
+            assert_eq!(shown_refused(&store, &link), 1);
+        }
+        assert_eq!(history_count(&store, HistoryEvent::DeliveryRefused), 1);
+    }
+    /// #143: the same delivery re-sent with other contents (another hash) is
+    /// downloaded and checked again; a newer refusal replaces the old one.
+    #[test]
+    fn should_check_again_a_delivery_listed_with_another_hash() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let first = undecryptable(&base, 7);
+        check_listing(&store, &link, std::slice::from_ref(&first));
+        let mut again = undecryptable(&base, 8);
+        again.0.delivery_id = first.0.delivery_id.clone();
+        let (result, fetched) = check_listing(&store, &link, std::slice::from_ref(&again));
+        assert_eq!(result.refused, 1);
+        assert_eq!(fetched, vec![first.0.delivery_id.clone()]);
+        assert_eq!(
+            refused_saved(&store),
+            vec![(
+                link.id,
+                again.0.delivery_id.clone(),
+                again.0.ciphertext_sha256.clone()
+            )]
+        );
+    }
+    /// #143: bytes that do not match the listing may be a damaged download,
+    /// not the clinic's document: refused, not remembered, tried again.
+    #[test]
+    fn should_not_remember_a_download_that_does_not_match_its_listing() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let (outer, mut bytes) = undecryptable(&base, 7);
+        bytes[0] ^= 1;
+        for _ in 0..2 {
+            let (result, fetched) = check_listing(&store, &link, &[(outer.clone(), bytes.clone())]);
+            assert_eq!(result.refused, 1);
+            assert_eq!(fetched.len(), 1);
+        }
+        assert!(refused_saved(&store).is_empty());
+        assert_eq!(history_count(&store, HistoryEvent::DeliveryRefused), 0);
+        assert_eq!(shown_refused(&store, &link), 0);
+    }
+    /// #143: Try again forgets a clinic's refusals (with a history entry),
+    /// so the next check downloads and checks the document again; a refusal
+    /// is forgotten too once its delivery has expired.
+    #[test]
+    fn should_forget_refusals_on_try_again_and_when_their_delivery_expires() {
+        let (_temp, store, other, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let refused = undecryptable(&base, 7);
+        check_listing(&store, &link, std::slice::from_ref(&refused));
+        assert!(matches!(
+            store.forget_refusals(Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        // Another clinic's Try again leaves these alone, and writes nothing.
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.forget_refusals(other.id).unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+        assert_eq!(refused_saved(&store).len(), 1);
+        store.forget_refusals(link.id).unwrap();
+        assert!(refused_saved(&store).is_empty());
+        assert_eq!(shown_refused(&store, &link), 0);
+        assert_eq!(
+            history_count(&store, HistoryEvent::DeliveryRefusalsCleared),
+            1
+        );
+        let (result, fetched) = check_listing(&store, &link, std::slice::from_ref(&refused));
+        assert_eq!((result.refused, fetched.len()), (1, 1));
+        assert_eq!(refused_saved(&store).len(), 1);
+        // Expired: no longer counted or skipped, and dropped by the next check.
+        store
+            .mutate_manifest(|m| {
+                m.refused_deliveries[0].expires_at = crate::now_ms() / 1000 - 1;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(shown_refused(&store, &link), 0);
+        check_listing(&store, &link, &[]);
+        assert!(refused_saved(&store).is_empty());
+    }
+    /// #143: at most MAX_REFUSED_PER_LINK refusals are kept for a clinic;
+    /// the oldest goes first, and other clinics' are untouched.
+    #[test]
+    fn should_keep_at_most_the_newest_refusals_for_a_clinic() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let session = store.portal_link_ticket();
+        let outers = (0..=MAX_REFUSED_PER_LINK)
+            .map(|i| undecryptable(&base, i as u8).0)
+            .collect::<Vec<_>>();
+        for outer in &outers {
+            store.remember_refusal(outer, &link, session).unwrap();
+        }
+        let saved = refused_saved(&store);
+        assert_eq!(saved.len(), MAX_REFUSED_PER_LINK);
+        assert_eq!(saved[0].1, outers[1].delivery_id, "the oldest went");
+        assert_eq!(saved.last().unwrap().1, outers.last().unwrap().delivery_id);
+    }
+    /// #143: a format 7 vault opens with no remembered refusals and is
+    /// upgraded to format 8 at the writable unlock, after which a refusal is
+    /// remembered. A manifest is refused as damaged when it holds refusals
+    /// below format 8, or for no saved link, twice for one delivery, more
+    /// than MAX_REFUSED_PER_LINK for a link, or with a malformed id, hash or
+    /// expiry.
+    #[test]
+    fn should_upgrade_a_format7_vault_and_refuse_refusals_it_could_not_hold() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let (master, mut old) = {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            (Zeroizing::new(*open.master_key), open.manifest.clone())
+        };
+        old.format_version = 7;
+        assert!(serde_json::to_value(&old)
+            .unwrap()
+            .get("refusedDeliveries")
+            .is_none());
+        store.lock();
+        for _ in 0..2 {
+            old.generation += 1;
+            write_manifest_at(&store.root, &master, &old).unwrap();
+        }
+        let root = store.root.clone();
+        drop(store);
+        let store = VaultStore::new(root);
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.session().as_ref().unwrap().manifest.format_version,
+            VAULT_FORMAT
+        );
+        assert_eq!(VAULT_FORMAT, MANIFEST_FORMAT_REFUSED);
+        assert!(refused_saved(&store).is_empty());
+        let refused = undecryptable(&base, 7);
+        let (result, _) = check_listing(&store, &link, std::slice::from_ref(&refused));
+        assert_eq!(result.refused, 1);
+        assert_eq!(refused_saved(&store).len(), 1);
+
+        let manifest = store.session().as_ref().unwrap().manifest.clone();
+        assert!(validate_manifest_structure(&manifest, manifest.vault_id).is_ok());
+        let damaged = |change: &dyn Fn(&mut Manifest)| {
+            let mut changed = manifest.clone();
+            change(&mut changed);
+            matches!(
+                validate_manifest_structure(&changed, changed.vault_id),
+                Err(VaultError::Corrupt)
+            )
+        };
+        assert!(damaged(&|m| m.format_version = 7));
+        assert!(damaged(
+            &|m| m.refused_deliveries[0].link_id = Uuid::new_v4()
+        ));
+        assert!(damaged(&|m| {
+            let twice = m.refused_deliveries[0].clone();
+            m.refused_deliveries.push(twice);
+        }));
+        assert!(damaged(
+            &|m| m.refused_deliveries[0].delivery_id = "FAKE".into()
+        ));
+        assert!(damaged(
+            &|m| m.refused_deliveries[0].ciphertext_sha256 = "00".into()
+        ));
+        assert!(damaged(&|m| m.refused_deliveries[0].expires_at = 0));
+        assert!(damaged(&|m| {
+            let one = m.refused_deliveries[0].clone();
+            for _ in 0..MAX_REFUSED_PER_LINK {
+                let mut more = one.clone();
+                more.delivery_id = Uuid::new_v4().to_string();
+                m.refused_deliveries.push(more);
+            }
+        }));
     }
 }

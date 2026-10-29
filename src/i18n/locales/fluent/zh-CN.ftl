@@ -1559,3 +1559,9 @@ portal-codeRefused = 诊所门户网站未接受此验证码。请几分钟后�
 portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
+
+portal-refusedDocuments = 此诊所有 { $count } 份文档无法验证。请诊所重新发送。
+
+portal-tryAgain = 重试
+
+portal-tryAgainFor = 重试：{ $clinic }

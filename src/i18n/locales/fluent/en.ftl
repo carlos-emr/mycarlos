@@ -1703,3 +1703,13 @@ portal-codeRefused = The clinic portal didn't take the code. Try again in a few 
 portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] { $count } document from this clinic could not be verified. Ask the clinic to send it again.
+    *[other] { $count } documents from this clinic could not be verified. Ask the clinic to send them again.
+    }
+
+portal-tryAgain = Try again
+
+portal-tryAgainFor = Try again for { $clinic }

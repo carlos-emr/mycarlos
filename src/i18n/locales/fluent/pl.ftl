@@ -1775,3 +1775,15 @@ portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za 
 portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Poproś przychodnię o ponowne wysłanie.
+    [few] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Poproś przychodnię o ponowne wysłanie.
+    [many] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Poproś przychodnię o ponowne wysłanie.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Poproś przychodnię o ponowne wysłanie.
+    }
+
+portal-tryAgain = Spróbuj ponownie
+
+portal-tryAgainFor = Spróbuj ponownie: { $clinic }

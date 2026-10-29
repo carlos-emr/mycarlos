@@ -1739,3 +1739,13 @@ portal-codeRefused = O portal da clínica não aceitou o código. Tente novament
 portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] Não foi possível verificar { $count } documento desta clínica. Peça à clínica que o envie novamente.
+    *[other] Não foi possível verificar { $count } documentos desta clínica. Peça à clínica que os envie novamente.
+    }
+
+portal-tryAgain = Tentar de novo
+
+portal-tryAgainFor = Tentar de novo para { $clinic }

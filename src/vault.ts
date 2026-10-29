@@ -121,6 +121,9 @@ export interface PortalLinkSummary {
   approvalCodeSubmitted?: boolean;
   /** No more codes are taken for the current request. */
   approvalCodeLocked?: boolean;
+  /** How many of this clinic's documents failed their checks and are not
+   * downloaded again until they expire or the patient tries again (#143). */
+  refusedDeliveries?: number;
 }
 
 /** What a read-only status check of a linked device's approval found (#131).
@@ -369,6 +372,9 @@ export interface VaultBridge {
    * matches this clinic (#141). */
   submitApprovalCode?(linkId: string, code: string): Promise<void>;
   restartDeviceApproval?(linkId: string): Promise<void>;
+  /** Try again (#143): forgets a clinic's documents that failed their
+   * checks, so the next check downloads and checks them again. */
+  forgetRefusedDeliveries?(linkId: string): Promise<void>;
   /** Reads one linked device's approval status from its portal and saves the
    * clinic's answer (#131). It only reads: no request is sent or started. */
   refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
@@ -778,6 +784,8 @@ export function createVaultBridge(): VaultBridge {
     checkDocuments: () => invoke("vault_check_documents"),
     restartDeviceApproval: (linkId) =>
       invoke("vault_restart_device_approval", { linkId }),
+    forgetRefusedDeliveries: (linkId) =>
+      invoke("vault_forget_refused_deliveries", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
     submitApprovalCode: (linkId, code) =>
