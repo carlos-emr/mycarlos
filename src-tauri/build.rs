@@ -103,6 +103,7 @@ fn main() {
             "vault_portal_link",
             "vault_portal_connect",
             "vault_check_documents",
+            "vault_forget_refused_deliveries",
             "vault_request_device_approval",
             "vault_restart_device_approval",
             "vault_refresh_device_approval",

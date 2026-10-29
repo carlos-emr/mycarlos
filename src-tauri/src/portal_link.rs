@@ -264,6 +264,9 @@ pub struct LinkSummary {
     /// No more codes are taken for the current request: too many did not
     /// match this clinic, or the portal has had five.
     pub approval_code_locked: bool,
+    /// How many of this clinic's documents failed their checks and are
+    /// remembered, so not downloaded again (#143). The store adds it.
+    pub refused_deliveries: usize,
 }
 
 impl StoredLink {
@@ -359,6 +362,7 @@ impl StoredLink {
             // In memory only: the store adds them (`VaultStore::link_summary`).
             approval_code_submitted: false,
             approval_code_locked: false,
+            refused_deliveries: 0,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

@@ -685,6 +685,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
   "interface.history.event.folderCreated",
   "interface.history.event.folderMoved",
   "interface.history.event.folderRenamed",
@@ -774,6 +776,9 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "portal.refusedDocuments",
+  "portal.tryAgain",
+  "portal.tryAgainFor",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1572,6 +1577,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryRefusalsCleared":
+    "interface-history-event-deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused":
+    "interface-history-event-deliveryRefused",
   "interface.history.event.folderCreated":
     "interface-history-event-folderCreated",
   "interface.history.event.folderMoved": "interface-history-event-folderMoved",
@@ -1674,6 +1683,9 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.refusedDocuments": "portal-refusedDocuments",
+  "portal.tryAgain": "portal-tryAgain",
+  "portal.tryAgainFor": "portal-tryAgainFor",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2446,6 +2458,8 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryRefusalsCleared": undefined;
+  "interface.history.event.deliveryRefused": undefined;
   "interface.history.event.folderCreated": undefined;
   "interface.history.event.folderMoved": undefined;
   "interface.history.event.folderRenamed": undefined;
@@ -2535,6 +2549,9 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "portal.refusedDocuments": { count: FluentArgument };
+  "portal.tryAgain": undefined;
+  "portal.tryAgainFor": { clinic: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

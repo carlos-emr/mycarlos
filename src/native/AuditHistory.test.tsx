@@ -245,6 +245,42 @@ describe("AuditHistory verified native results", () => {
   );
 });
 
+describe("AuditHistory clinic documents that failed their checks (#143)", () => {
+  const rows = [
+    entry({ seq: 0, event: "deliveryRefused", name: null }),
+    entry({ seq: 1, event: "deliveryRefusalsCleared", name: null }),
+  ];
+  it("names a remembered refusal and a Try again", async () => {
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+      />,
+    );
+    for (const title of [
+      "Clinic document not verified",
+      "“Try again” chosen for unverified clinic documents",
+    ])
+      expect(
+        await screen.findByRole("heading", { level: 2, name: title }),
+      ).toBeVisible();
+  });
+  it("names them in another language too", async () => {
+    await act(async () => setLocaleOverride("pl"));
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+      />,
+    );
+    for (const title of [
+      "Nie zweryfikowano dokumentu z przychodni",
+      "Wybrano „Spróbuj ponownie” dla niezweryfikowanych dokumentów z przychodni",
+    ])
+      expect(
+        await screen.findByRole("heading", { level: 2, name: title }),
+      ).toBeVisible();
+  });
+});
+
 /** A history native code could check only up to a damaged or missing piece (D129), and after
  * it as far as the pinned end proves (D146). */
 const damaged = (
@@ -257,6 +293,7 @@ const damaged = (
   checkedUntilMs: entries.at(-1)?.atMs ?? null,
   checkedFromMs: laterEntries[0]?.atMs ?? null,
 });
+
 describe("AuditHistory dates keep the computer's format (D130)", () => {
   // Ben's D130: a Canadian computer's date and time, whatever language myCarlos uses.
   const atMs = Date.UTC(2026, 8, 30, 14, 31);

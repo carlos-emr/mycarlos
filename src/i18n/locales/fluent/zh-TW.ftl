@@ -1426,6 +1426,10 @@ interface-history-event-copySaved = 可讀副本已儲存
 
 interface-history-event-created = 保險庫已建立
 
+interface-history-event-deliveryRefusalsCleared = 已選擇重試未通過驗證的診所文件
+
+interface-history-event-deliveryRefused = 診所文件未通過驗證
+
 interface-history-event-folderCreated = 資料夾已建立
 
 interface-history-event-folderMoved = 資料夾已移動
@@ -1559,3 +1563,9 @@ portal-codeRefused = 診所入口網站未接受此驗證碼。請幾分鐘後�
 portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
+
+portal-refusedDocuments = 此診所有 { $count } 份文件無法驗證。請診所重新傳送。
+
+portal-tryAgain = 重試
+
+portal-tryAgainFor = 重試：{ $clinic }

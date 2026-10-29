@@ -18,6 +18,7 @@
     "allow-vault-portal-link",
     "allow-vault-portal-connect",
     "allow-vault-check-documents",
+    "allow-vault-forget-refused-deliveries",
     "allow-vault-request-device-approval",
     "allow-vault-restart-device-approval",
     "allow-vault-refresh-device-approval",

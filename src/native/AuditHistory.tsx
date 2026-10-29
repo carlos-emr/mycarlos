@@ -19,6 +19,9 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   created: "interface.history.event.created",
   historyStarted: "interface.history.event.historyStarted",
   unlocked: "interface.history.event.unlocked",
+  // #143: a clinic document that failed its checks, and Try again.
+  deliveryRefused: "interface.history.event.deliveryRefused",
+  deliveryRefusalsCleared: "interface.history.event.deliveryRefusalsCleared",
   imported: "interface.history.event.imported",
   renamed: "interface.history.event.renamed",
   moved: "interface.history.event.moved",

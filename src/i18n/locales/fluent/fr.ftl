@@ -1591,6 +1591,10 @@ interface-history-event-copySaved = Copie lisible enregistrée
 
 interface-history-event-created = Coffre créé
 
+interface-history-event-deliveryRefusalsCleared = Nouvel essai demandé pour les documents non vérifiés de la clinique
+
+interface-history-event-deliveryRefused = Document de la clinique non vérifié
+
 interface-history-event-folderCreated = Dossier créé
 
 interface-history-event-folderMoved = Dossier déplacé
@@ -1739,3 +1743,13 @@ portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Rées
 portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] { $count } document de cette clinique n’a pas pu être vérifié. Demandez à la clinique de vous le renvoyer.
+    *[other] { $count } documents de cette clinique n’ont pas pu être vérifiés. Demandez à la clinique de vous les renvoyer.
+    }
+
+portal-tryAgain = Réessayer
+
+portal-tryAgainFor = Réessayer pour { $clinic }

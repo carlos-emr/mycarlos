@@ -266,11 +266,16 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
-    for original in store
-        .delivery_links(session)?
-        .into_iter()
-        .filter(|link| include(link))
+    let links = store.delivery_links(session)?;
+    // Refusals whose deliveries have expired are no longer offered (#143).
+    // Only tidying: an expired refusal is ignored anyway, so a failure to
+    // write here does not stop the check, unless the vault locked.
+    if let Err(error @ (VaultError::Locked | VaultError::Cancelled)) =
+        store.forget_expired_refusals(session)
     {
+        return Err(error);
+    }
+    for original in links.into_iter().filter(|link| include(link)) {
         let outcome = (|| -> Result<(), VaultError> {
             // Known durable custody is independent of advisory approval refresh.
             // Retry it first, including for a link whose new request was refused.
@@ -328,6 +333,13 @@ where
                         .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
                     if !seen.insert(outer.delivery_id.clone()) {
                         return Err(VaultError::Portal(LinkError::InvalidResponse));
+                    }
+                    // A delivery that failed its checks before, unchanged, is
+                    // not downloaded and refused again (#143): the patient
+                    // was told then, and the clinic card says so until it
+                    // expires or the patient chooses Try again.
+                    if store.refusal_remembered(&link, &outer, session)? {
+                        continue;
                     }
                     // A delivery that can't be downloaded is reported and
                     // skipped: the clinic's later deliveries are still fetched,
