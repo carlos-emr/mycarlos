@@ -179,7 +179,7 @@ describe("native clinic document controls", () => {
   it("names the device in the language in use until the patient changes it (#124 review)", async () => {
     act(() => setLocaleOverride("fr"));
     try {
-      fixture();
+      fixture({ snapshot: { ...snapshot, portalLinks: [] } });
       const nameField = (locale: "fr" | "pl") =>
         screen.getByLabelText(translate(locale, "portal.deviceName"));
       await waitFor(() =>
@@ -200,7 +200,9 @@ describe("native clinic document controls", () => {
   it("sends the default device name in the patient's language, with no invisible marks (#124 review)", async () => {
     act(() => setLocaleOverride("fr"));
     try {
-      const { bridge } = fixture();
+      const { bridge } = fixture({
+        snapshot: { ...snapshot, portalLinks: [] },
+      });
       const user = userEvent.setup();
       await user.type(
         screen.getByLabelText(translate("fr", "portal.address")),
