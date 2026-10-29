@@ -624,6 +624,10 @@ h1, h2, p { margin: 0; }
 
 .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--backdrop); }
 .record-dialog { width: min(520px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: 0 24px 70px var(--dialog-shadow); }
+/* A word wider than its line breaks there instead of running out of the dialog: at 320px with
+   200% text in Arial's widths (no Roboto or Segoe UI), "CRIPTOGRAFADO" or "odzyskiwania…" can be.
+   break-word, not anywhere, so whole words still decide how things wrap. */
+.record-dialog { overflow-wrap: break-word; }
 /* #68: the warning before the automatic lock, over any other dialog. Large
    text and a large Keep open; at 400% the dialog scrolls, as every one does. */
 .lock-warning-backdrop { z-index: 30; }
@@ -739,7 +743,9 @@ h1, h2, p { margin: 0; }
      other one past the dialog's start edge, where it can't be scrolled to
      (e.g. "Annuler" beside "Enregistrer" at 200% text). */
   .dialog-actions { flex-wrap: wrap; justify-content: flex-start; }
-  .dialog-actions > * { flex: 1 1 calc(50% - 4px); }
+  /* max-width: 100% also caps each button's smallest width at the row, so a word longer than
+     the whole row breaks there (.record-dialog's overflow-wrap) instead of running out of the dialog. */
+  .dialog-actions > * { flex: 1 1 calc(50% - 4px); max-width: 100%; }
 }
 
 @media (max-width: 24.375em) {

@@ -180,6 +180,18 @@ const LARGE_TEXT = [
     font: 16,
     phone: false,
   },
+  // Arial's widths: the app's font list ends in Helvetica and Arial, used
+  // where there is no Roboto or Segoe UI. CI's Linux draws them in
+  // Liberation Sans, which has Arial's widths, so with this case a machine
+  // with Roboto finds what CI finds.
+  {
+    name: "at 320px with 200% default text in Arial's widths",
+    width: 320,
+    height: 900,
+    font: 32,
+    phone: true,
+    family: '"Liberation Sans", Arial',
+  },
 ];
 
 for (const large of LARGE_TEXT)
@@ -207,6 +219,10 @@ for (const large of LARGE_TEXT)
         }
         await page.goto("/");
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
+        if ("family" in large)
+          await page.addStyleTag({
+            content: `* { font-family: ${large.family}, sans-serif !important; }`,
+          });
         const check = async (dialogName: string) => {
           expect(await rootFont(page), "text size").toBe(`${large.font}px`);
           for (const problem of await outsideDialog(page, dialogName))
