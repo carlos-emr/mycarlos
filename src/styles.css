@@ -1228,6 +1228,13 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .portal-link-dialog label { display: grid; gap: .35rem; font-weight: 700; }
 .portal-link-dialog input, .portal-link-dialog select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; box-sizing: border-box; font: inherit; }
 .portal-link-dialog select { padding: 8px 10px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+/* Below 40em the dialogs' two footer buttons share a row and keep the
+   end alignment, so this dialog's long send label pushes Cancel out past
+   the start side, where it can't be scrolled to. Here each button gets its
+   own row, the dialog's width. */
+@media (max-width: 40em) {
+  .portal-link-dialog .dialog-actions { grid-template-columns: minmax(0, 1fr); }
+}
 .portal-documents > .native-inline-form { margin-block-start: 1.25rem; }
 /* #141: the code a clinic emailed, one column: label, hint, button, message. */
 .portal-documents .portal-code-form { grid-template-columns: minmax(0, 1fr); max-width: 36rem; gap: .5rem; }
