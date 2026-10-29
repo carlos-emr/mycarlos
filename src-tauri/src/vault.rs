@@ -50,8 +50,9 @@ const VAULT_FORMAT: u32 = 8;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 8 (#143) remembers clinic deliveries that failed their checks.
 const MANIFEST_FORMAT_REFUSED: u32 = 8;
-/// At most this many remembered refusals per linked clinic; the oldest goes
-/// first. A refusal lasts only as long as its delivery (at most 7 days).
+/// At most this many remembered refusals per linked clinic. Those kept stay;
+/// a further refusal is not remembered. A refusal lasts as long as its
+/// delivery, and at most 8 days.
 const MAX_REFUSED_PER_LINK: usize = 100;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;

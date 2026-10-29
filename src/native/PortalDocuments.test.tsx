@@ -1651,6 +1651,12 @@ describe("clinic documents that failed their checks (#143)", () => {
     });
     const forget = vi.fn().mockResolvedValue(undefined);
     bridge.forgetRefusedDeliveries = forget;
+    let finish!: () => void;
+    vi.mocked(bridge.checkDocuments!).mockReturnValue(
+      new Promise((resolve) => {
+        finish = () => resolve({ added: 0, refused: 0, receiptsPending: 0 });
+      }),
+    );
     rerender(<PortalDocuments {...props} />);
     const line = screen.getByText(
       humanText(
@@ -1670,12 +1676,18 @@ describe("clinic documents that failed their checks (#143)", () => {
     expect(forget.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(bridge.checkDocuments!).mock.invocationCallOrder[0],
     );
-    // Still not verified: focus is back on Try again.
-    await waitFor(() => expect(tryAgain).toHaveFocus());
-
-    // Not while another clinic operation runs.
+    // While it runs the button is disabled and focus falls to the page (as
+    // the browser does for a disabled control); once it has ended and the
+    // document is still not verified, focus is back on Try again.
     rerender(<PortalDocuments {...props} busy />);
     expect(tryAgain).toBeDisabled();
+    act(() => tryAgain.blur());
+    expect(document.body).toHaveFocus();
+    act(() => finish());
+    await waitFor(() => expect(bridge.checkDocuments).toHaveBeenCalledOnce());
+    expect(document.body).toHaveFocus();
+    rerender(<PortalDocuments {...props} />);
+    await waitFor(() => expect(tryAgain).toHaveFocus());
 
     // Nothing to try again with while the vault is read-only.
     rerender(<PortalDocuments {...props} readOnly />);
@@ -1734,7 +1746,9 @@ describe("clinic documents that failed their checks (#143)", () => {
     );
     act(() => finish());
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "FAKE Clinic" })).toHaveFocus(),
+      expect(
+        screen.getByRole("heading", { name: "FAKE Clinic" }),
+      ).toHaveFocus(),
     );
   });
   it("says it with each language's plural forms, and names the button with its words first", () => {
@@ -1748,9 +1762,10 @@ describe("clinic documents that failed their checks (#143)", () => {
       );
       expect(name).toContain("FAKE Clinic");
       // Label in name: the accessible name starts with the visible words.
-      expect(name.startsWith(translate(locale, "portal.tryAgain")), locale).toBe(
-        true,
-      );
+      expect(
+        name.startsWith(translate(locale, "portal.tryAgain")),
+        locale,
+      ).toBe(true);
     }
     // Polish: the genitive after the negated verb, in each plural form.
     const pl = (count: number) =>

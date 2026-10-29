@@ -382,6 +382,18 @@ impl VaultStore {
         if outer.expires_at.saturating_mul(1000) <= now {
             return Ok(());
         }
+        // At the limit for this clinic nothing is written at all (#143).
+        {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if refused_for(&open.manifest, link.id, now)
+                .filter(|r| r.delivery_id != outer.delivery_id)
+                .count()
+                >= MAX_REFUSED_PER_LINK
+            {
+                return Ok(());
+            }
+        }
         self.mutate_recorded(|manifest, entries| {
             if self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
@@ -399,7 +411,8 @@ impl VaultStore {
             // At most MAX_REFUSED_PER_LINK for a clinic. Those already kept
             // stay (dropping one would only have it downloaded and refused
             // again); a further one is refused at each check until older
-            // ones expire.
+            // ones expire. Checked above; an error here, which the caller
+            // ignores, keeps a race from committing a change that is none.
             if manifest
                 .refused_deliveries
                 .iter()
@@ -407,7 +420,7 @@ impl VaultStore {
                 .count()
                 >= MAX_REFUSED_PER_LINK
             {
-                return Ok(());
+                return Err(VaultError::Invalid);
             }
             manifest.refused_deliveries.push(RefusedDelivery {
                 link_id: link.id,
@@ -417,9 +430,7 @@ impl VaultStore {
                 // The portal sets the expiry; however far off it says, the
                 // refusal lasts no longer than a delivery can (7 days, and
                 // the day's grace after it).
-                expires_at: outer
-                    .expires_at
-                    .min(now / 1000 + MAX_REFUSAL_SECONDS),
+                expires_at: outer.expires_at.min(now / 1000 + MAX_REFUSAL_SECONDS),
             });
             let mut entry = HistoryEntry::new(HistoryEvent::DeliveryRefused, now);
             entry.portal_link_id = Some(link.id);
@@ -977,7 +988,11 @@ mod unknown_service_date_tests {
             let saved = &guard.as_ref().unwrap().manifest.refused_deliveries;
             assert_eq!(saved.len(), 1);
             assert_eq!(
-                (saved[0].link_id, &saved[0].delivery_id, &saved[0].ciphertext_sha256),
+                (
+                    saved[0].link_id,
+                    &saved[0].delivery_id,
+                    &saved[0].ciphertext_sha256
+                ),
                 (link.id, &outer.delivery_id, &outer.ciphertext_sha256)
             );
         }
@@ -4571,9 +4586,16 @@ mod approval_recovery_tests {
         let outers = (0..=MAX_REFUSED_PER_LINK)
             .map(|i| undecryptable(&base, i as u8).0)
             .collect::<Vec<_>>();
-        for outer in &outers {
+        let generation = |store: &VaultStore| store.session().as_ref().unwrap().manifest.generation;
+        for outer in &outers[..MAX_REFUSED_PER_LINK] {
             store.remember_refusal(outer, &link, session).unwrap();
         }
+        // The one over the limit writes nothing at all.
+        let before = generation(&store);
+        store
+            .remember_refusal(outers.last().unwrap(), &link, session)
+            .unwrap();
+        assert_eq!(generation(&store), before);
         let saved = refused_saved(&store);
         assert_eq!(saved.len(), MAX_REFUSED_PER_LINK);
         assert_eq!(saved[0].1, outers[0].delivery_id, "the first stays");
@@ -4584,6 +4606,39 @@ mod approval_recovery_tests {
             history_count(&store, HistoryEvent::DeliveryRefused),
             MAX_REFUSED_PER_LINK
         );
+    }
+    /// #143: forgetting expired refusals is only tidying. If it cannot be
+    /// written, the check goes on (and receipts still owed are still sent).
+    #[test]
+    fn should_go_on_with_a_check_when_expired_refusals_cannot_be_forgotten() {
+        struct Disarm;
+        impl Drop for Disarm {
+            fn drop(&mut self) {
+                FAIL_AT_TEST_BOUNDARY.set(&[]);
+            }
+        }
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let (outer, _) = undecryptable(&base, 7);
+        store
+            .remember_refusal(&outer, &link, store.portal_link_ticket())
+            .unwrap();
+        store
+            .mutate_manifest(|m| {
+                m.refused_deliveries[0].expires_at = crate::now_ms() / 1000 - 1;
+                Ok(())
+            })
+            .unwrap();
+        let disarm = Disarm;
+        FAIL_AT_TEST_BOUNDARY.set(&["manifest.before-first-write"]);
+        let (result, fetched) = check_listing(&store, &link, &[]);
+        drop(disarm);
+        assert!(result.issues.is_empty());
+        assert!(fetched.is_empty());
+        // Not written, so still there; ignored as expired.
+        assert_eq!(refused_saved(&store).len(), 1);
+        assert_eq!(shown_refused(&store, &link), 0);
     }
     /// #143: however far off the portal sets a delivery's expiry, its
     /// refusal is remembered for no longer than a delivery can last.
@@ -4607,6 +4662,10 @@ mod approval_recovery_tests {
     /// nothing is remembered for a session that has ended.
     #[test]
     fn should_not_remember_a_delivery_whose_pdf_could_not_be_checked() {
+        // With the real helper this delivery verifies and is filed.
+        if std::env::var_os("MYCARLOS_TEST_SIGNED_HELPER_EXE").is_some() {
+            return;
+        }
         let (_temp, store, _, _) = setup(false);
         let packet: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/java-delivery-interop-v1.json"

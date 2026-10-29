@@ -991,8 +991,8 @@ from stays as saved while refusals are added. It holds at most 100 refusals per
 link. Those kept stay until they expire or Try again; a further refusal is not
 remembered (dropping a kept one would only have it downloaded and refused again).
 Forgetting expired refusals at the start of a check is only tidying: if it cannot
-be written, the check goes on. Each refusal and each Try again is recorded in the
-history (`deliveryRefused`, `deliveryRefusalsCleared`) in the same commit. A
+be written, the check goes on. Each remembered refusal and each Try again is recorded
+in the history (`deliveryRefused`, `deliveryRefusalsCleared`) in the same commit. A
 manifest below format 8 that holds refusals is corrupt, as is a refusal for no
 saved link, a second refusal for one delivery, more than 100 for a link, or a
 malformed id, hash or expiry.
