@@ -593,6 +593,8 @@ h1, h2, p { margin: 0; }
 .hidden-settings-entry { max-width: 100%; }
 .hidden-entry-copy { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .hidden-entry-scope { display: block; color: var(--ink-soft); font-weight: 400; }
+/* What myCarlos keeps: Hidden above Audit history, in the right-hand column like other rows' controls. */
+.kept-entries { display: grid; align-content: start; justify-items: start; gap: 8px; }
 .audit-history-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
 .audit-history-entry { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; }
 .audit-history-entry h2 { margin: 0; font-size: 1rem; }
@@ -752,6 +754,8 @@ h1, h2, p { margin: 0; }
   .evaluation-content section + section { border-top: 1px solid var(--line); border-left: 0; padding-left: 0; }
   .setting-row { flex-wrap: wrap; gap: 10px; }
   .setting-row > .button { margin-left: auto; }
+  /* Narrow, What myCarlos keeps' buttons go under its text, at the right, as a row's own button does. */
+  .kept-setting > .kept-entries { flex-basis: 100%; justify-items: end; }
   .metric-grid { grid-template-columns: 1fr; }
   .metric-grid article { min-height: 82px; }
   .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; }
