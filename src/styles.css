@@ -1162,6 +1162,11 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 
 .portal-documents { margin-block-end: 2rem; }
 .portal-link { margin-block: 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; }
+/* #124 review: "Clinic documents" is a Security section like the others, so
+   its heading has their size (.setting-row h2), and a clinic's name in its
+   card is no larger than that heading. */
+.portal-documents > h2 { margin: 0; color: var(--ink); font-size: 1rem; line-height: 1.4; }
+.portal-link h3 { margin: 0 0 .5rem; color: var(--ink); font-size: 1rem; line-height: 1.4; overflow-wrap: anywhere; }
 .portal-documents label { display: grid; gap: .35rem; margin-block: .75rem; }
 .portal-documents input, .portal-documents textarea, .portal-documents select { max-width: 100%; min-width: 0; width: 100%; box-sizing: border-box; font: inherit; }
 .portal-link input[readonly], .portal-link textarea { overflow-wrap: anywhere; font-family: monospace; }
