@@ -9,6 +9,7 @@ import { ClinicServiceDate } from "./ClinicServiceDate";
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -278,8 +279,13 @@ export function DocumentReader({
   // A page that fails, or asks for the document's password, takes the page's
   // text box away. If the focus was in it, it goes to the password field or
   // the page area, not to the window, so the keys go on working.
-  useEffect(() => {
-    if (!(asking || error) || document.activeElement !== document.body) return;
+  // A layout effect: the focus moves in the same commit that removes the
+  // box, with no frame in between where it is on the window.
+  useLayoutEffect(() => {
+    if (!(asking || error)) return;
+    // Chromium may still name the removed box as the focused element here.
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && focused.isConnected) return;
     if (asking) passwordRef.current?.focus();
     else pageRef.current?.focus({ preventScroll: true });
   }, [asking, error]);
