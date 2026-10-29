@@ -1405,10 +1405,14 @@ impl VaultStore {
                 Ok(found) if all_read => entries.extend(found),
                 Ok(found) => later.extend(found),
                 // A damaged or missing piece: nothing in it can be checked, and what follows it
-                // only back from the pinned end.
+                // only back from the pinned end. A piece that holds no entries (padding, as the
+                // authenticated manifest counts them) loses none, so what was read after the
+                // last piece with entries stays for the pinned end to prove.
                 Err(error) if history_piece_damaged(&error) => {
                     all_read = false;
-                    later.clear();
+                    if segment.entry_count > 0 {
+                        later.clear();
+                    }
                 }
                 Err(error) => return Err(error),
             }
@@ -15583,6 +15587,30 @@ mod tests {
         assert!(!history_piece_damaged(&VaultError::NoSpace));
         assert!(!history_piece_damaged(&VaultError::Cancelled));
         assert!(!history_piece_damaged(&VaultError::Locked));
+    }
+
+    #[test]
+    fn history_view_keeps_the_proven_end_when_padding_is_damaged_too() {
+        // A damaged padding piece holds no events, so it must not hide what the pinned end
+        // proves after an earlier damaged piece with events.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        let middle = &history.segments[1];
+        let padding = history.segments.last().unwrap();
+        assert!(middle.entry_count > 0 && history.segments[2].entry_count > 0);
+        assert_eq!(padding.entry_count, 0, "the last piece is padding");
+        let before = usize::try_from(middle.first_seq).unwrap();
+        let after = usize::try_from(history.segments[2].first_seq).unwrap();
+        damage_segment(&root, middle);
+        damage_segment(&root, padding);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        assert!(!view.every_event_shown);
     }
 
     #[test]
