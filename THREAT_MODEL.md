@@ -27,12 +27,14 @@ The model covers:
 - local metadata, thumbnails, temporary files, logs, and crash artifacts;
 - the portable encrypted backup, and future multi-device enrollment and synchronization;
 - future CARLOS document handoff and provenance verification, including pickup from the portal
-  the patient links, myCarlos's first network use (carlos-portal #41); and
+  the patient links, myCarlos's first network use (carlos-portal #41);
+- the planned AI helper (#72): an on-device anonymizer with a preview and a text-file export, a
+  local model in a sandboxed helper, and the answers it saves; it adds no network use; and
 - build, signing, updating, and third-party dependencies.
 
-It does not approve a PDF renderer, synchronization service, analytics provider, or CARLOS
-protocol. The current encryption and passphrase-only recovery design is implemented but awaits
-independent review and target-device verification.
+It does not approve a PDF renderer, synchronization service, analytics provider, CARLOS
+protocol, or AI model or model runtime. The current encryption and passphrase-only recovery
+design is implemented but awaits independent review and target-device verification.
 
 ## Security and privacy objectives
 
@@ -66,6 +68,8 @@ flowchart LR
     Vault[Encrypted local vault]
     Backup[Portable backup file; future untrusted sync service]
     Portal[Linked portal mailbox; planned, carlos-portal #41]
+    Model[Local model helper; planned, #72]
+    Export[Anonymized text file; planned, #72]
 
     Source -->|untrusted document and metadata| Picker
     Picker -->|native handle or URI| Core
@@ -76,6 +80,9 @@ flowchart LR
     Vault -->|ciphertext and privacy-minimized metadata| Backup
     Core -->|device-signed requests, to the linked portal only| Portal
     Portal -->|packages sealed to this device, signed by the clinic| Core
+    Core -->|one document's text, bounded; no keys| Model
+    Model -->|answer text only| Core
+    Core -->|anonymized text, after the patient's preview| Export
 ```
 
 The important trust boundaries are:
@@ -91,6 +98,8 @@ The important trust boundaries are:
 | CARLOS to myCarlos | Verify origin, integrity, freshness, and intended recipient before showing verified provenance. |
 | Camera to webview | Video only, asked for after the patient chooses to use the camera, and stopped when the photo is taken or the dialog closes. The frame stays in memory; Rust checks and cleans the JPEG before it is encrypted. |
 | myCarlos to linked portal | Once linked, the portal is a mailbox, not a trusted source: it holds packages it cannot open (at linking, the clinic keys it returns are trusted on first use; NET-02). Connect only to the portal the patient linked, sign every request with that link's device key, and verify every package before anything is saved (NET-01 to NET-03, DEL-01 to DEL-06). |
+| Vault to the AI helper's model (planned, #72) | The model runs in a separate, sandboxed helper process with no vault keys, no network and no files but the checked model. It receives one document's text and returns text only; its answer is never treated as instructions, links or markup (AI-04, AI-05). |
+| Anonymized text to the patient's chosen AI service (planned, #72) | myCarlos does not send it. The patient saves a plain text file after a preview and takes it where they choose; once saved, it is outside the vault's protection, like a readable copy, and what the receiving service learns or keeps is up to it (AI-01 to AI-03, AI-08, AI-09). |
 
 ## Assets
 
@@ -108,14 +117,18 @@ The important trust boundaries are:
 | Backup and synchronization state | Cross-device disclosure, rollback, duplicate resurrection, or data loss. |
 | Logs, crash reports, clipboard, notifications, and OS snapshots | Secondary disclosure outside the vault. |
 | Signing and update credentials | Distribution of a malicious application update to every patient. |
+| Anonymized text and its exported files (planned, #72) | A missed detail re-identifies the patient or someone else; the file is a plaintext copy outside the vault. |
+| AI answers (planned, #72) | They disclose health information as the document does, and a wrong answer may be trusted as medical advice. |
+| The local model file and the model list built into the app (planned, #72) | A swapped model could exploit the model runtime or give deliberately misleading answers. |
 
 ## Threat actors and assumptions
 
 Credible threat actors include a finder or thief of a device, another user of a shared computer,
 malware with ordinary user privileges, a malicious document sender, a compromised website or deep
 link, a compromised backup provider, a compromised or malicious portal operator, a network attacker
-between the device and the portal, a supply-chain attacker, and an attacker controlling a future
-synchronization account.
+between the device and the portal, a supply-chain attacker, an attacker controlling a future
+synchronization account, a sender who writes instructions into a document to steer an AI model
+(prompt injection), and the AI service a patient gives exported text to (#72).
 
 The following limits must be communicated honestly:
 
@@ -126,6 +139,9 @@ The following limits must be communicated honestly:
 - OS key stores reduce key-extraction risk but do not replace a vault encryption and recovery model.
 - myCarlos can verify that a package was signed by a recognized clinic; it cannot guarantee that the
   clinical content entered by that clinic is medically correct.
+- Removing identifying details from text is never perfect, and an AI model can be wrong. myCarlos
+  can show both to the patient (a marked preview, a label on every answer) but cannot rule them
+  out. An AI service the patient is signed in to knows who they are, whatever was removed (#72).
 - Availability after total device loss depends on the recovery and backup design. Until those are
   implemented and tested, the application must not imply that records are recoverable.
 
@@ -195,6 +211,15 @@ reduce current risk.
 | SUP-02 | Critical | Signing or updater key compromise distributes a malicious release. | Offline or hardware-backed signing controls; separation of duties; signed update metadata; rotation and revocation runbook; rollback protection. | Staged malicious/expired/rollback update tests and key-loss exercise. | Design required |
 | SUP-03 | High | Analytics, support bundles, or crash reporting exfiltrate PHI or keys. | No analytics by default; field allow-list rather than redaction-only policy; local patient review of support bundles; approved data flow before enabling telemetry. | Seed canary PHI and verify it never leaves through diagnostics. | Future operations gate |
 | SUP-04 | High | A known vulnerable platform dependency is treated as supported. | Security gate per target; do not waive affected runtime advisories; publish an explicit supported-platform matrix. | Release pipeline refuses unsupported targets and high/critical unresolved runtime findings. | Linux deferred; other targets open |
+| AI-01 | High | The anonymizer misses an identifying detail, or the patient trusts it too much, so an exported text identifies the patient or someone else (planned, #72). | Removal on the device of every listed kind, which goes beyond #72's list on purpose: names (each profile's name and every name in People's details, matched as whole words ignoring case and accents, where a profile name that is a common word or a relationship, such as "Me" or "Mom", or is shorter than 3 letters, is not used alone; and names found by pattern in each app language, such as after "Dr.", "Dre", "Dra." or "lek.", or before 医生 / 醫師), health card numbers (each province's format), medical record, accession, requisition, specimen and order numbers, other identifying numbers (social insurance, insurance or claim numbers), dates of birth, ages of 90 and over, addresses, postal codes, phone and fax numbers, email and web addresses, the names of clinics, hospitals, labs and pharmacies (linked clinics' names included), "cc:" lists and typist initials. Matching runs on text normalised to NFKC, with format characters (Unicode Cf, such as zero-width characters) removed and full-width digits folded; the saved text is normalised the same way and has bidirectional controls removed. Other dates are shifted by one whole number of days drawn at random for each preview from a stated range (for example 30 to 365 days either way, never 0), never saved or logged; partial dates (a month and year, a year alone), dates in words and every app language's date formats are shifted, and an ambiguous date (03/04/2025) is removed instead; weekdays, relative dates ("in 2 weeks") and ages under 90 are left as they are. Each removed part becomes a labelled placeholder in the app's language ("[name 1]"), the same detail always getting the same placeholder within one export. The preview marks removed parts and shifted dates by more than colour, announces them to screen readers (UI-04, #67, #69), shows all of the text the file will hold (hidden text included), and must be shown before any save; the patient can remove more (putting a removed part back is not offered at first). The notice and the preview say removal can miss a name or a number, and that dates in another AI's answer are the shifted ones (`AI_HELPER_NOTICE.md`). | A synthetic corpus (letters, lab reports and imaging reports, in every app language) in which every listed kind and date form appears, also split across lines or columns, hyphenated, in capitals, with and without accents, with zero-width characters, full-width digits and look-alike letters; every one must be removed or shifted; FAKE canary identifiers from the vault's profiles never appear in an export; shifted dates keep their gaps; a page cut at the reader's text limit (`MAX_PAGE_TEXT_BYTES`) is flagged in the preview. | Planned (#72 part B); not built |
+| AI-02 | High | Compromised or faulty renderer code skips the anonymizer or the preview, or swaps in other text, so raw document text is saved (planned, #72). | The anonymizer runs in Rust on the reader's extracted text. Rust keeps the anonymized text in a preview session bound to one document and to the session generation, and gives the renderer the text with its removed parts and shifted dates marked, and an opaque ticket. The renderer sends back only further removals (character ranges), never text. Rust applies them and checks the result again for the vault's own identifiers (profile names and People's details, with AI-01's matching rules); a hit goes back to the preview with that part marked, and nothing is written. Rust writes only through the system's save dialog and only for a ticket it issued. The ticket ends at lock, at a new preview, when the document is hidden or People's details change, and after one save; the held text is zeroized when it ends. Residual: native code cannot prove the patient read the preview, and page code can already ask to save the original PDF as a readable copy (UI-02). | IPC tests: a save with no preview, with a forged or stale ticket, after lock and unlock, after the document is hidden, or with ranges out of bounds or overlapping; a property test that the saved text is the preview text minus the removals; no renderer-supplied string reaches the file. | Planned (#72 part B); not built |
+| AI-03 | Medium | The exported text file leaves the vault's protection: it may be copied to a synced or cloud folder, or listed in recent files (planned, #72). | Saved only to a place the patient picks in the system's save dialog, through the readable-copy save path (a cut-off save is cleaned up at the next start on a computer; on Android it can leave a partial file, as for readable copies); no clipboard, share sheet or network path at first. A warning before saving, like a readable copy's (UI-02); the notice says a synced folder copies the file. A generic suggested file name, never the document's title or a person's name (unlike a readable copy's). A history entry (#71) with the document, where it was saved and when; the text, the removed details and the date offset are never written to the history or to a log. | Export tests on every platform, as for readable copies; file-name tests with names in the title; history-entry tests; checks that the text, the removed details and the offset are never logged. | Planned (#72 part B); not built |
+| AI-04 | High | A swapped, truncated, altered or crafted model file exploits the model runtime (its file parser or inference code), or a substituted model gives deliberately misleading answers (planned, #72). | Only models on a list built into the app, each with its SHA-256 and size; once releases are signed (RESILIENCE-2), the list is part of the signed app. The helper reads the whole file into its own memory, hashing it as it reads, and uses the bytes only if the hash and size match; it never maps a file that other programs can write (on Windows it opens the file without write sharing). The file is checked when it is added and again at each load. It is kept outside the vault, in the app's own data folder, not in myCarlos's encrypted backups, and marked to be left out of device backups where the system allows. The runtime (llama.cpp, or the bake-off's choice) runs in a separate helper process with its own sandbox, built like the PDF helper's (IMP-02) and failing closed like it: its own system-call allow-list (threads, memory), no vault keys, no network, no file access beyond its input, and bounded memory and time. It runs on the CPU only at first; any use of a graphics chip needs its own reviewed sandbox exception. The runtime is pinned, its C/C++ source revision is recorded in the SBOM, and its project's security advisories are watched, because RustSec does not cover it (SUP-04). The model's licence allows the project to offer it to patients. | Wrong-hash, wrong-size, truncated, replaced-after-check and changed-in-place tests; helper network- and file-denial tests on each desktop system; fuzzing of the model loader where the runtime allows. | Planned (#72 part D or the later model step, after Ben picks the model from the bake-off); not built |
+| AI-05 | High | The model's answer is wrong, or text inside the document steers it (prompt injection), and the patient acts on a wrong explanation (planned, #72). | Two tools at first: a plain-words summary and "explain a term". No diagnosis, treatment or medication advice is asked for, and every answer is labelled "Written by AI and may be wrong. Check with your doctor." Each summary sentence links to the place in the document it came from; the app makes those links itself and checks each one against a real span of the text, never taking positions from the model's output. The model has no tools and takes no actions, so text inside a document can change only the answer's words. Answers are shown as plain text only (no links, markup or HTML), never as the clinic's words and never marked Verified. | A synthetic set with instructions written into documents; label tests on every answer in every language; rendering tests that markup and links in an answer stay plain text; source-link tests; a clinical-safety review (#25), which also decides whether the helper counts as software as a medical device. | Planned (#72 part D); not built |
+| AI-06 | Medium | AI answers, or the model's working data, leak outside the vault: temporary files, caches, logs, crash files or swap (planned, #72). | Answers saved only in the vault, encrypted, with the document, the tool, the model and the date (a vault format step, numbered when it lands); hidden with their document and never deleted (#71). The helper writes no files and keeps its working data in memory only. It allows no core dumps (on Linux, RLIMIT_CORE 0 and not dumpable), and Windows Error Reporting and macOS crash reports are checked for it. Prompts and answers are never logged. Swap stays open, as for the rest of the app (STORAGE-2). | Canary scans of application-controlled storage after runs, including cancelled and crashed ones; crash-report and log checks. | Planned (#72 part D); not built |
+| AI-07 | Medium | Running the model exhausts memory, CPU or battery, or freezes the app (planned, #72). | Offered only after a hardware check; one run at a time, and cancellable; bounded input length, answer length and time; runs in the helper process, off the app's main thread. | Long-document, low-memory and cancellation tests. | Planned (#72 part D); not built |
+| AI-08 | High | The AI helper becomes a network path: a cloud provider, a relay or an in-app model download added without review (#72). | The AI helper sends nothing. Its "cloud" way is a text file the patient saves (Ben, 29 October 2026), and the egress allow-list stays empty for it (`SECURITY_OPERATIONS.md`). How the model reaches the device is for Ben to choose (D-10); proposed here: a file the patient adds, so myCarlos fetches nothing. An in-app download, a provider or a relay each needs its own threat-model row and allow-list entry first (NET-01). | Captured traffic during AI actions on every platform; CSP and helper network-denial tests. | Decided: no provider (Ben, 29 October 2026). How the model reaches the device: proposed, awaiting Ben. Not built |
+| AI-09 | High | The AI service the patient gives the text to knows who the patient is (from their account), keeps the text or learns from it, or follows instructions a sender hid in the document for an AI (planned, #72). | myCarlos cannot control that service. The notice says plainly that a signed-in service knows who the patient is whatever was removed, that the service's rules then apply, that its answers can be wrong, and that their dates are the shifted ones (`AI_HELPER_NOTICE.md`). The preview shows all of the text the file will hold, hidden text included, so instructions a sender wrote for an AI can be seen and removed. Against such a service, the anonymizer mainly protects the other people named in the document and limits what the service keeps. | Notice review in the privacy assessment (#25); preview tests with hidden and white text. | Stated limit; not built |
 
 ## Mandatory design decisions
 
@@ -211,6 +236,7 @@ These decisions block the secure-vault implementation or its promotion:
 | D-07 Backup and sync | Threat model extension covering enrollment, metadata privacy, conflicts, tombstones, rollback, and server compromise. | Portable backup implemented (authenticated single-file ciphertext, verified before it replaces anything, crash-resumable activation); E2EE sync, append-only history, enrolled-device approval and immediate deletion selected, implementation open |
 | D-08 Diagnostics | Whether telemetry exists at all, allowed fields, consent, retention, support bundles, and incident access. | No telemetry; local redacted patient-exported diagnostics selected |
 | D-09 Network client | The hosts myCarlos may reach, TLS and pinning policy, proxies, when it connects, and what a restored vault does with its per-link device keys. | Linked-portal-only client and pickup at unlock or on request selected (carlos-portal #41); a restored vault keeps its link and says so (DEL-03, decided by Ben, 21 Oct); TLS pinning and proxy handling open |
+| D-10 AI helper (#72) | Where the anonymizer runs and who holds the text; the model list, runtime and sandbox; how the model reaches the device; how answers are stored; what may leave the device. | Ben, 29 October 2026: no cloud provider (anonymize, preview, save as a text file); summary and "explain a term" first; the local model chosen after a bake-off; synthetic data only until #25. Proposed here: a native-held preview (AI-02) and a sandboxed model helper (AI-04). **Two departures from #72, for Ben:** (1) #72 and part A have the patient download the model; to keep egress empty, this model has the patient add the file instead. Ben chooses (a) a file the patient adds, as here, or (b) an in-app download, which adds one host to the allow-list and needs its own row (the host, TLS, the hash checked before first use, clean-up of a partial file, what the host learns). (2) #72 has a Settings switch that turns the cloud way on; here each export is chosen per document, with a preview and a save dialog, and there is no switch. Model, runtime and answer format open |
 
 ## Secure Vault v0.1 security gate
 
@@ -336,3 +362,42 @@ portal receives (NET-03). Ben accepted this risk on 28 October 2026 so that
 myCarlos works with other EMRs' portals (NET-02, DEL-06). Possible later steps:
 show the portal's address next to "Verified" and at linking, and a clinic-key
 code checked during the staff fingerprint comparison.
+
+## AI helper (#72, planned)
+
+Issue #72 asks for an AI helper that explains a document in plain words. Ben's decisions
+(29 October 2026):
+
+1. **No cloud provider.** The "cloud" way is: myCarlos removes identifying details on the device,
+   shows a marked preview that the patient can edit by removing more, and the patient saves the
+   text as a plain text file and takes it to whichever AI service they choose. There is no
+   provider, no key and no network call (AI-08).
+2. **The export is a file save,** like "Save a copy", and is recorded in the history. Clipboard
+   copy and a redacted PDF are later ideas. The text comes from the reader's own text extraction
+   (`pdf_view.rs`, #48).
+3. **Synthetic data only** until the pilot privacy review (#25).
+4. **First tools:** a plain-words summary and "explain a term". Questions and filing come later.
+5. **The local model** is chosen after a bake-off of small open models on synthetic documents
+   (quality, speed, memory, licence).
+
+The work lands in steps, each citing its threat IDs: the anonymizer, preview and export (part B;
+AI-01 to AI-03); the bake-off report (part C, no app code); then the two tools behind a "model not
+installed" state (part D; AI-04 to AI-07). AI-09 is a stated limit of the export. The
+patient-facing notice for all of it is [`AI_HELPER_NOTICE.md`](AI_HELPER_NOTICE.md), in all seven
+languages.
+
+This model does **not** cover:
+
+- sending text to a cloud provider or a relay (the issue's first idea): that would add a host, a
+  key and a data processor, and needs its own review (NET-01, AI-08);
+- downloading the model from inside myCarlos, for the same reason (D-10 asks Ben which way);
+- scanned pages, which have no text until on-device text recognition exists;
+- phones: the PDF helper does not run there (IMP-02), so a phone can neither read a document's
+  text nor run a local model, and neither the export nor the AI on this device works on a phone
+  until a phone design is reviewed;
+- the later tools (questions to ask, filing suggestions).
+
+Stated limits: removing details is never perfect (AI-01); an AI service the patient is signed in
+to knows who they are, whatever was removed (AI-09); a local model can be wrong, and slow on an
+ordinary computer (AI-05, AI-07); and because the model list is built into the app, a new or
+updated model needs an app update, which reaches only patients who update (CODE-2).

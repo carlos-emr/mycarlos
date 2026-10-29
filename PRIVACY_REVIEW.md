@@ -3,7 +3,7 @@
 This is a plain-language draft for the privacy officer who will carry out the privacy impact
 assessment (PIA) of myCarlos. It describes what the app does today, in this repository, and
 what it does not do yet. It names no people, clinics or patients. Where a point needs a decision
-or a check, it is listed under "Open questions" at the end.
+or a check, it is listed under "Open questions" (section 10).
 
 **Status today.** myCarlos is an evaluation build. It is for synthetic (made-up) test data only and
 is not approved for real patient information or a pilot (`README.md`, `MVP_STATUS.md`,
@@ -203,7 +203,8 @@ saved (for example some network folders), on the systems where it can tell.
   (for example, by malware that records the screen or the keyboard).
 - **No record of use.** The app keeps no record of who opened the vault or what they looked at.
   Apart from the traces listed in section 2 (and, once the change under review lands, the count of
-  wrong tries), it records nothing about use.
+  wrong tries), it records nothing about use. The planned AI helper adds its text exports and saved
+  answers to those traces (section 11).
 
 ## 5. Backups
 
@@ -287,6 +288,9 @@ a developer works on the phone versions; an installed app loads its screens from
 
 What the patient saves themselves (backups, recovery kits, readable copies) leaves the vault only
 where the patient puts it.
+
+**The planned AI helper (#72, section 11) does not change this.** It sends nothing. Its text export
+is a file the patient saves, like a readable copy.
 
 ## 8. How it is protected
 
@@ -392,3 +396,94 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 12. **Retention:** how long should backups and deleted documents be kept, if any rule applies?
 13. **The planned link with CARLOS:** consent, and what the clinic's systems would see (for example
     who sent what to whom, and when), will need their own assessment when it is designed.
+14. **The AI helper's text export (section 11):** the patient may give an anonymized text to any AI
+    service. Is the notice enough, given that removing details is never perfect and that the
+    service's own terms then apply? Should the app suggest services that keep no data, or say
+    nothing about which to use?
+15. **Medical-device rules:** does a tool that explains a patient's own documents, never diagnoses
+    or advises, and labels every answer "may be wrong", stay outside the rules for software as a
+    medical device (#25)?
+16. **Other people's documents:** the helper can be used on documents in a child's or another
+    adult's profile. Is more guidance needed before their text is exported (see also question 4)?
+17. **Keeping AI answers:** answers are kept with their document, encrypted, and are only hidden
+    with it, never deleted (#71). Is that acceptable, or should the patient be able to remove an
+    answer they do not want?
+18. **Shifted dates:** shifting all dates by the same amount keeps the gaps between them. A reader
+    who knows one real date (a birth, or an event named in the text) can work out the rest. Is that
+    acceptable, or should dates be removed instead?
+19. **How the model reaches the device:** #72 has the patient download the model. To keep
+    myCarlos from making any network connection, the design proposes that the patient adds the
+    file instead (`THREAT_MODEL.md` D-10). If myCarlos downloads it, the download site sees the
+    device's address and when the model was fetched. Which should it be?
+20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
+    design has none: each export is chosen for one document, after a preview and a save dialog.
+    Is that enough, or should it also be switched on first?
+
+## 11. The planned AI helper (#72)
+
+Not built yet. This section describes what is planned, so that the assessment can cover it. It is
+for synthetic data only until this assessment approves real information (#25). The security side
+is in `THREAT_MODEL.md` (AI-01 to AI-09) and `SECURITY_OPERATIONS.md`, and the notice the patient
+sees is in `AI_HELPER_NOTICE.md`.
+
+**What it is for.** Letters, lab reports and imaging reports are full of medical terms. The AI
+helper is meant to explain one document in plain words. It can be used in two ways:
+
+- **On this device:** a small AI model runs in a separate helper inside myCarlos and writes a
+  plain-words summary of one document, or explains a word or phrase the patient selects. Nothing
+  leaves the device.
+- **With another AI service, by the patient:** myCarlos removes identifying details from a
+  document's text and shows the result. The patient then saves it as a text file and gives it to
+  whichever AI service they choose. myCarlos itself sends nothing anywhere. Ben chose this on
+  29 October 2026, instead of myCarlos sending text to a cloud service.
+
+**What is removed.** myCarlos looks for names (the patient's own profile names, the names in
+People's details, and other names the app recognises), health card and medical record numbers
+and other identifying numbers (such as lab order numbers), dates of birth, ages of 90 and over,
+addresses, postal codes, phone and fax numbers, email and web addresses, and the names of clinics,
+hospitals, labs, pharmacies and doctors, and removes them. Other dates are moved by one random
+number of days, the same for every date in that text, so the time between them stays the same.
+The number is new each time and is not kept. Dates in an answer from another AI are therefore the
+moved dates, not the real ones.
+
+**The preview.** Before anything is saved, the patient sees all of the text the file will hold,
+with the removed parts and the moved dates marked, and can remove more. Nothing is saved until the
+patient chooses to save it.
+
+**The text file.** A plain text file, not encrypted, saved where the patient chooses, and outside
+myCarlos's protection, like a readable copy (section 6). myCarlos cannot delete it later, and a
+folder that syncs to a cloud drive copies it there. The history records the save (which document,
+where, when), never the text. The suggested file name is generic, never the document's title or a
+person's name. Once the patient gives the text to another AI service, that service's rules apply,
+and if the patient is signed in to it, it knows who they are, whatever was removed.
+
+**The model.** A file of a few gigabytes that holds no patient information. It is added only if the
+patient chooses, kept outside the vault, not in myCarlos's backups (and left out of device backups
+where the system allows), and checked before every use against a list built into the app. It runs
+without access to the network or to the patient's other files. How the file reaches the device is
+open (question 19). Which model is used will be decided after a comparison of small open models on
+made-up documents.
+
+**The answers.** Saved in the vault, encrypted, with the document, the tool, the model and the date.
+Each is marked "Written by AI and may be wrong. Check with your doctor." An answer is hidden with
+its document and never deleted (#71), and it is in backups like the rest of the vault.
+
+**Limits.**
+
+- **Removing details is never perfect.** myCarlos can miss a name or a number, and a rare
+  condition, an unusual job or a small town in the text can still point to a person. The preview is
+  the patient's last check.
+- **A signed-in AI service knows the patient.** Removing details then mainly protects the other
+  people named in the document, and limits what the service keeps.
+- **The AI can be wrong.** It is not meant to diagnose or to advise on treatment or medicines. Each
+  sentence of a summary links to the part of the document it came from, so the patient can check
+  it.
+- **Scanned pages** have no text, so the helper cannot work on them until on-device text
+  recognition exists.
+- **Phones:** the PDF helper does not run on phones (`THREAT_MODEL.md` IMP-02), so a phone can
+  neither read a document's text nor run a local model. Neither the text export nor the AI on this
+  device works on a phone until a phone design is reviewed.
+- **Speed:** on an ordinary computer, a long document may take a minute or more.
+
+**What the patient is told.** The notice in `AI_HELPER_NOTICE.md`, in all seven languages, before
+the first use and at any time from Security.
