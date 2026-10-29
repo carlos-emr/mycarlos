@@ -245,6 +245,34 @@ for (const locale of ["en", "es", "fr", "pl", "pt-BR", "zh-CN", "zh-TW"])
       await button.scrollIntoViewIfNeeded();
       await expect(button).toBeInViewport();
     }
+    // In Chinese the send label wraps in balanced lines, never with one
+    // character alone on the second line.
+    if (locale.startsWith("zh")) {
+      const perLine = await dialog
+        .getByRole("button", { name: translate(locale, "portal.link") })
+        .evaluate((button) => {
+          const range = document.createRange();
+          const lines = new Map<number, number>();
+          const walker = document.createTreeWalker(
+            button,
+            NodeFilter.SHOW_TEXT,
+          );
+          for (let node = walker.nextNode(); node; node = walker.nextNode())
+            for (let i = 0; i < (node.textContent ?? "").length; i++) {
+              range.setStart(node, i);
+              range.setEnd(node, i + 1);
+              const box = range.getBoundingClientRect();
+              if (box.width === 0) continue;
+              const top = Math.round(box.top);
+              lines.set(top, (lines.get(top) ?? 0) + 1);
+            }
+          return [...lines.values()];
+        });
+      expect(
+        Math.min(...perLine),
+        `characters per line: ${perLine}`,
+      ).toBeGreaterThan(1);
+    }
     expect((await scan(page)).violations).toEqual([]);
     await page.screenshot({
       path: testInfo.outputPath(`after-dialog-320-${locale}.png`),
