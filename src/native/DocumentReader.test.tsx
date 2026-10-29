@@ -591,6 +591,53 @@ describe("the reader's page bar", () => {
     expect(text.scrollTop).toBe(0);
   });
 
+  it("leaves the focus where it is when a page fails and the focused control is still there", async () => {
+    const user = userEvent.setup();
+    renderReader(
+      vi.fn(async (index: number, _width: number, _password?: string) => {
+        if (index === 1) throw refusal("pdf_render_failed");
+        return { ...page(index), pageCount: 5 };
+      }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await user.click(pageButton("Next page"));
+    await screen.findByRole("alert");
+    expect(pageButton("Next page")).toHaveFocus();
+  });
+
+  it("gives the focus to the password field when a page turned from its text asks for it", async () => {
+    const user = userEvent.setup();
+    const lines = Array.from(
+      { length: 80 },
+      (_, line) => `FAKE line ${line + 1}`,
+    ).join("\n");
+    renderReader(
+      vi
+        .fn()
+        .mockImplementationOnce(async () => ({
+          ...page(0),
+          pageCount: 5,
+          text: lines,
+        }))
+        .mockRejectedValueOnce(refusal("pdf_locked"))
+        .mockImplementation(async (index: number) => ({
+          ...page(index),
+          pageCount: 5,
+          text: lines,
+        })),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await user.click(screen.getByText(humanText("Text on this page")));
+    const text = screen.getByRole("region", {
+      name: humanText("Text on this page"),
+    });
+    await user.click(text);
+    text.scrollTop = text.scrollHeight;
+    expect(fireEvent.keyDown(text, { key: "PageDown" })).toBe(false);
+    const field = await screen.findByLabelText(humanText("Document password"));
+    expect(field).toHaveFocus();
+  });
+
   it("shows no text of the last page while the next one is drawn", async () => {
     const user = userEvent.setup();
     let finish: (value: ViewedPage) => void = () => undefined;

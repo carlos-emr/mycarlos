@@ -292,7 +292,7 @@ export function DocumentReader({
   // box, with no frame in between where it is on the window.
   useLayoutEffect(() => {
     if (!(asking || error)) return;
-    // Chromium may still name the removed box as the focused element here.
+    // In case a removed element is still reported as focused.
     const focused = document.activeElement;
     if (focused && focused !== document.body && focused.isConnected) return;
     if (asking) passwordRef.current?.focus();
