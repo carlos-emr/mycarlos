@@ -75,7 +75,12 @@ describe("SecuritySettings profile layout", () => {
     const host = document.createElement("div");
     host.dataset.testDialogHost = "";
     document.body.append(host);
-    renderSettings({ dialogHost: host });
+    // As in the app, whose bridge always saves people's details: the Add
+    // profile dialog then has the person fields too.
+    renderSettings({
+      dialogHost: host,
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+    });
     const button = screen.getByRole("button", { name: "Add profile" });
     button.closest("main")!.classList.add("native-vault-page");
     const section = button.closest<HTMLElement>(".setting-row")!;
@@ -105,6 +110,9 @@ describe("SecuritySettings profile layout", () => {
           false,
         );
         expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
+        expect(button.scrollHeight).toBeLessThanOrEqual(
+          button.clientHeight + 1,
+        );
         expect(section.scrollWidth).toBeLessThanOrEqual(
           section.clientWidth + 1,
         );
