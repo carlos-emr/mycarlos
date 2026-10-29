@@ -820,10 +820,10 @@ The app writes format 7 (`VAULT_FORMAT` in `src-tauri/src/vault.rs`). At a
 writable unlock, `upgrade_manifest` raises an older manifest straight to 7 in a
 commit of its own, using the existing redundant/history transaction. Recovery
 never upgrades on its own: `VaultStore::unlock` calls it only when the unlock is
-not in recovery. The one other caller is the patient's confirmed removal of
-unavailable documents in the missing-documents recovery
-(`hide_unavailable_records`, #71), which upgrades first, in a commit of its own,
-before hiding them. A build older than the manifest refuses it as `NewerFormat`
+not in recovery. The one other caller is the patient's confirmed hiding of
+unavailable documents as damaged, in the missing-documents recovery
+(`hide_unavailable_records`, #71), which upgrades first, in a commit of its own.
+A build older than the manifest refuses it as `NewerFormat`
 (`ManifestRefusal::Newer`), not as damage.
 
 `validate_manifest_structure` refuses as corrupt a manifest whose format is too
