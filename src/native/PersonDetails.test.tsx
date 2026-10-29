@@ -151,6 +151,47 @@ describe("required profile identity details", () => {
     await waitFor(() => expect(edit).toHaveFocus());
     expect(save).toHaveBeenCalledTimes(2);
   });
+  it("opens a person with no details with the date box open, and one with only a full name as date unknown", () => {
+    render(
+      <PersonDetailsList
+        people={[
+          { id: "p1", displayName: "FAKE Fresh", createdAtMs: 1 },
+          {
+            id: "p2",
+            displayName: "FAKE Named",
+            createdAtMs: 2,
+            fullName: "FAKE Named Example",
+          },
+        ]}
+        busy={false}
+        onSave={vi.fn()}
+      />,
+    );
+    const open = (name: string) => {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: humanText(`Edit details for ${name}`),
+        }),
+      );
+      const dialog = screen.getByRole("dialog", { name: "Edit details" });
+      return {
+        dialog,
+        unknown: within(dialog).getByRole("checkbox", {
+          name: "I don't know this person's date of birth",
+        }),
+        date: within(dialog).getByLabelText("Date of birth"),
+      };
+    };
+    let shown = open("FAKE Fresh");
+    expect(shown.unknown).not.toBeChecked();
+    expect(shown.date).toBeEnabled();
+    fireEvent.click(
+      within(shown.dialog).getByRole("button", { name: "Cancel" }),
+    );
+    shown = open("FAKE Named");
+    expect(shown.unknown).toBeChecked();
+    expect(shown.date).toBeDisabled();
+  });
   it("disables editing while busy or read-only", () => {
     render(
       <PersonDetailsList
