@@ -421,7 +421,7 @@ impl From<VaultError> for PublicText {
             },
             VaultError::PdfMobileTooLarge => Self {
                 code: "pdf_mobile_too_large",
-                message: "This PDF is larger than 20 MB. Save a copy to read it in another app.",
+                message_key: "reader.iphone.tooLarge",
             },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
@@ -6011,6 +6011,7 @@ mod native_localization_tests {
             VaultError::PdfUnlockUnavailable,
             VaultError::PdfUnlockNoSandbox,
             VaultError::PdfTooLarge,
+            VaultError::PdfMobileTooLarge,
             VaultError::PdfViewFailed,
             VaultError::PdfViewUnavailable,
             VaultError::PdfViewNoSandbox,
