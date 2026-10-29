@@ -1360,8 +1360,9 @@ impl VaultStore {
     ///
     /// Every segment is read in order. `entries` are those before the first piece that is gone or
     /// does not authenticate, kept only while each follows the one before from the genesis value,
-    /// and never past the manifest's count. `later` are those after the last such piece, kept only
-    /// back from the end as far as the manifest's pinned head proves them (`linked_suffix`), and
+    /// and never past the manifest's count. `later` are those after the last such piece that holds
+    /// entries (a damaged padding piece hides nothing), kept only back from the end as far as the
+    /// manifest's pinned head proves them (`linked_suffix`), and
     /// never one already in `entries`. So every entry returned is authenticated by the chain from
     /// its start or from its pinned end, in order; nothing between is shown. `complete` is true
     /// exactly when every piece was read and `entries` are the whole chain the manifest pins (its
@@ -1407,7 +1408,8 @@ impl VaultStore {
                 // A damaged or missing piece: nothing in it can be checked, and what follows it
                 // only back from the pinned end. A piece that holds no entries (padding, as the
                 // authenticated manifest counts them) loses none, so what was read after the
-                // last piece with entries stays for the pinned end to prove.
+                // last piece with entries stays for the pinned end to prove. (`linked_suffix`
+                // alone already shows only what the head proves; the clear is belt and braces.)
                 Err(error) if history_piece_damaged(&error) => {
                     all_read = false;
                     if segment.entry_count > 0 {
@@ -15606,6 +15608,13 @@ mod tests {
         let after = usize::try_from(history.segments[2].first_seq).unwrap();
         damage_segment(&root, middle);
         damage_segment(&root, padding);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        assert!(!view.every_event_shown);
+        // The same when the padding piece is gone rather than damaged.
+        fs::remove_file(root.join("objects").join(&padding.object_name)).unwrap();
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);

@@ -556,7 +556,8 @@ screen can request the history. Native code reads every encrypted segment in ord
 display rows over IPC only for entries it has authenticated from one of the chain's two pinned
 ends. From the start: entries before the first segment that is missing or does not authenticate,
 while each follows the one before from the genesis value, and never past the manifest's count.
-From the end (Ben's D146): entries after the last such segment, walking back from the manifest's
+From the end (Ben's D146): entries after the last such segment that holds entries (a damaged
+filler segment hides nothing), walking back from the manifest's
 pinned head while each is the `prev` of the one after it with the number before it, so that the
 last is number `count - 1` and its hash is the head; none is shown twice. With the rows it returns
 `complete`, true only when the rows from the start are the whole chain the manifest pins (its
