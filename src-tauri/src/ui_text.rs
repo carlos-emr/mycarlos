@@ -37,7 +37,9 @@ pub(crate) enum UiLocale {
 /// recordPresentation.ts, builds the same): NFKC, so full-width letters read
 /// as their plain forms; every run of white space as one space, where white
 /// space is Unicode White_Space plus U+FEFF (JavaScript's `\s` plus U+0085);
-/// no space around it; lower case.
+/// no space around it; lower case. The two agree when they use the same
+/// Unicode version; this one is the check that counts. Invisible characters
+/// such as U+200B are not removed.
 fn shared_name_key(text: &str) -> String {
     let folded: String = text.nfkc().collect();
     let mut key = String::with_capacity(folded.len());
@@ -57,16 +59,15 @@ fn shared_name_key(text: &str) -> String {
 }
 
 /// Whether a name is "Shared with me" as any language shows it, ignoring case,
-/// space around or inside it and how its letters are typed. The folder is shown in the
-/// app's language, so a person by any of these names would read as it (#61).
-/// A language whose name cannot be read refuses the name rather than let it
-/// through.
+/// how much or what kind of space separates its words and how its letters are
+/// typed. The folder is shown in the app's language, so a person by any of
+/// these names would read as it (#61). A language whose name cannot be read
+/// refuses the name rather than let it through.
 pub(crate) fn names_shared_folder(name: &str) -> bool {
-    let key = shared_name_key;
-    let typed = key(name);
+    let typed = shared_name_key(name);
     UiLocale::ALL.iter().any(|locale| {
         match locale.text(MessageId::InterfaceLibrarySidebarSharedWithMe) {
-            Ok(shown) => key(&shown) == typed,
+            Ok(shown) => shared_name_key(&shown) == typed,
             Err(_) => true,
         }
     })

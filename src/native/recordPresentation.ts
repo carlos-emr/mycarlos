@@ -92,13 +92,17 @@ export const nameTooLong = (name: string) =>
   [...name.trim()].length > MAX_NAME_CHARS;
 
 /** "Shared with me" is the folder shared files go into (#61), shown in the
- * app's language, so no person may be called it in any of them. Case, space
- * around or inside it and how its letters are typed don't matter. The native side
- * refuses the same names, read from the same catalogues. */
-// NFKC also reads full-width letters as their plain forms, and every run of
-// white space (double, non-breaking or full-width spaces) counts as one space.
-// The set is JavaScript's \s plus U+0085, which is exactly Rust's White_Space
-// plus U+FEFF, so ui_text.rs builds the same key.
+ * app's language, so no person may be called it in any of them. Case, how
+ * much or what kind of space separates its words, and how its letters are
+ * typed don't matter. The native side refuses the same names, read from the
+ * same catalogues.
+ *
+ * NFKC reads full-width letters as their plain forms, and every run of white
+ * space (double, non-breaking or full-width spaces) counts as one space. The
+ * set is JavaScript's \s plus U+0085, which is exactly Rust's White_Space plus
+ * U+FEFF, so ui_text.rs builds the same key when both use the same Unicode
+ * version (the vault's check is the one that counts). Invisible characters
+ * such as U+200B are not removed: they are out of scope here. */
 const sharedKey = (name: string) =>
   name
     .normalize("NFKC")
