@@ -1,3 +1,5 @@
+import { humanText } from "../test/humanText";
+import { useTextState } from "../i18n";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -38,6 +40,7 @@ function renderLibrary(
 ) {
   let current = base;
   const bridge = {
+    platform: vi.fn().mockResolvedValue("windows"),
     isPhoto: vi.fn(async () => false),
     isLockedPdf: vi.fn(async (id: string) => id === "locked-1"),
     unlockPdf: vi.fn(async () => {
@@ -86,7 +89,7 @@ function renderLibrary(
   } as unknown as VaultBridge;
   function Harness() {
     const [snapshot, setSnapshot] = useState(base);
-    const [notice, setNotice] = useState("");
+    const [notice, setNotice] = useTextState();
     return (
       <VaultLibrary
         bridge={bridge}
@@ -119,9 +122,11 @@ function renderLibrary(
 
 const openDetails = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(
-    screen.getByRole("button", { name: "Details for FAKE Letter.pdf" }),
+    screen.getByRole("button", {
+      name: humanText("Details for FAKE Letter.pdf"),
+    }),
   );
-  return screen.getByRole("dialog", { name: "FAKE Letter.pdf" });
+  return screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") });
 };
 
 describe("a PDF locked with a password (#54)", () => {
@@ -138,24 +143,28 @@ describe("a PDF locked with a password (#54)", () => {
     expect(bridge.isLockedPdf).toHaveBeenCalledWith("locked-1");
     expect(
       await within(details).findByText(
-        "Locked with a password. Unlock adds a copy that opens without it, and keeps this one.",
+        humanText(
+          "Locked with a password. Unlock adds a copy that opens without it, and keeps this one.",
+        ),
       ),
     ).toBeVisible();
-    await user.click(within(details).getByRole("button", { name: "Unlock…" }));
+    await user.click(
+      within(details).getByRole("button", { name: humanText("Unlock…") }),
+    );
 
     const prompt = screen.getByRole("dialog", {
-      name: "Unlock FAKE Letter.pdf",
+      name: humanText("Unlock FAKE Letter.pdf"),
     });
     await user.type(
-      within(prompt).getByLabelText("Document password"),
+      within(prompt).getByLabelText(humanText("Document password")),
       "FAKE-wrong{Enter}",
     );
     // A wrong password keeps the prompt open, and says so.
-    expect(await within(prompt).findByRole("alert")).toHaveTextContent(
+    expect(await within(prompt).findByRole("alert")).toHaveHumanTextContent(
       "That password did not open the document.",
     );
     await user.type(
-      within(prompt).getByLabelText("Document password"),
+      within(prompt).getByLabelText(humanText("Document password")),
       "FAKE-portal-2026{Enter}",
     );
     expect(bridge.unlockPdf).toHaveBeenLastCalledWith(
@@ -164,24 +173,32 @@ describe("a PDF locked with a password (#54)", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Unlock FAKE Letter.pdf" }),
+        screen.queryByRole("dialog", {
+          name: humanText("Unlock FAKE Letter.pdf"),
+        }),
       ).toBeNull(),
     );
     // The details now show the copy, which is not locked, and say where the
     // original is.
-    const copy = await screen.findByRole("dialog", { name: "FAKE Letter.pdf" });
+    const copy = await screen.findByRole("dialog", {
+      name: humanText("FAKE Letter.pdf"),
+    });
     expect(
       within(copy).getByText(
-        "FAKE Letter.pdf unlocked. The locked original is kept as FAKE Letter (locked original).pdf.",
+        humanText(
+          "An unlocked copy was added. The locked original is now called FAKE Letter (locked original).pdf.",
+        ),
       ),
     ).toBeVisible();
     await waitFor(() =>
       expect(bridge.isLockedPdf).toHaveBeenLastCalledWith("copy-1"),
     );
-    expect(within(copy).queryByRole("button", { name: "Unlock…" })).toBeNull();
+    expect(
+      within(copy).queryByRole("button", { name: humanText("Unlock…") }),
+    ).toBeNull();
     expect(
       screen.getByRole("button", {
-        name: "Details for FAKE Letter (locked original).pdf",
+        name: humanText("Details for FAKE Letter (locked original).pdf"),
       }),
     ).toBeVisible();
   });
@@ -191,56 +208,71 @@ describe("a PDF locked with a password (#54)", () => {
     const bridge = renderLibrary();
     const details = await openDetails(user);
     await user.click(
-      await within(details).findByRole("button", { name: "Unlock…" }),
+      await within(details).findByRole("button", {
+        name: humanText("Unlock…"),
+      }),
     );
     const prompt = screen.getByRole("dialog", {
-      name: "Unlock FAKE Letter.pdf",
+      name: humanText("Unlock FAKE Letter.pdf"),
     });
     await user.type(
-      within(prompt).getByLabelText("Document password"),
+      within(prompt).getByLabelText(humanText("Document password")),
       "FAKE-portal-2026{Enter}",
     );
-    const copy = await screen.findByRole("dialog", { name: "FAKE Letter.pdf" });
-    await user.click(within(copy).getByRole("button", { name: "Hide" }));
+    const copy = await screen.findByRole("dialog", {
+      name: humanText("FAKE Letter.pdf"),
+    });
+    await user.click(
+      within(copy).getByRole("button", { name: humanText("Hide") }),
+    );
     await waitFor(() =>
       expect(bridge.hideRecord).toHaveBeenCalledExactlyOnceWith("copy-1"),
     );
     expect(
-      screen.queryByRole("button", { name: "Details for FAKE Letter.pdf" }),
+      screen.queryByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
     ).toBeNull();
     expect(
       screen.getByRole("button", {
-        name: "Details for FAKE Letter (locked original).pdf",
+        name: humanText("Details for FAKE Letter (locked original).pdf"),
       }),
     ).toBeVisible();
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    await user.click(screen.getByRole("button", { name: "Security" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Hidden/) }),
+    );
     const hidden = screen.getByRole("article", {
-      name: "FAKE Letter.pdf, hidden",
+      name: humanText("FAKE Letter.pdf, hidden"),
     });
     await user.click(
-      within(hidden).getByRole("button", { name: "Restore FAKE Letter.pdf" }),
+      within(hidden).getByRole("button", {
+        name: humanText("Restore FAKE Letter.pdf"),
+      }),
     );
     await waitFor(() =>
       expect(bridge.unhideRecord).toHaveBeenCalledExactlyOnceWith("copy-1"),
     );
     await user.click(
       within(
-        screen.getByRole("navigation", { name: "Record library" }),
-      ).getByRole("button", { name: /^My records/ }),
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^My records/) }),
     );
-    await user.click(screen.getByRole("button", { name: "FAKE Letter.pdf" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("FAKE Letter.pdf") }),
+    );
     const restoredDetails = await screen.findByRole("dialog", {
-      name: "FAKE Letter.pdf",
+      name: humanText("FAKE Letter.pdf"),
     });
     await user.click(
-      within(restoredDetails).getByRole("button", { name: "Read" }),
+      within(restoredDetails).getByRole("button", { name: humanText("Read") }),
     );
     const reader = await screen.findByRole("dialog", {
-      name: "FAKE Letter.pdf",
+      name: humanText("FAKE Letter.pdf"),
     });
     expect(
       await within(reader).findByRole("img", {
-        name: "Page 1 of 1. The page's text follows.",
+        name: humanText("Page 1 of 1. The page's text follows."),
       }),
     ).toBeVisible();
     expect(bridge.viewPage).toHaveBeenCalledWith(
@@ -249,11 +281,13 @@ describe("a PDF locked with a password (#54)", () => {
       expect.any(Number),
       undefined,
     );
-    await user.click(within(reader).getByRole("button", { name: "Close" }));
+    await user.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
     await waitFor(() => expect(bridge.cancelView).toHaveBeenCalled());
     expect(
       screen.getByRole("button", {
-        name: "Details for FAKE Letter (locked original).pdf",
+        name: humanText("Details for FAKE Letter (locked original).pdf"),
       }),
     ).toBeVisible();
   });
@@ -263,12 +297,14 @@ describe("a PDF locked with a password (#54)", () => {
     const bridge = renderLibrary();
     const details = await openDetails(user);
     await user.click(
-      await within(details).findByRole("button", { name: "Unlock…" }),
+      await within(details).findByRole("button", {
+        name: humanText("Unlock…"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
     expect(bridge.unlockPdf).not.toHaveBeenCalled();
     expect(
-      await screen.findByRole("dialog", { name: "FAKE Letter.pdf" }),
+      await screen.findByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
     ).toBeVisible();
   });
 
@@ -285,15 +321,19 @@ describe("a PDF locked with a password (#54)", () => {
     });
     const details = await openDetails(user);
     await user.click(
-      await within(details).findByRole("button", { name: "Unlock…" }),
+      await within(details).findByRole("button", {
+        name: humanText("Unlock…"),
+      }),
     );
     await user.type(
-      screen.getByLabelText("Document password"),
+      screen.getByLabelText(humanText("Document password")),
       "FAKE-portal-2026{Enter}",
     );
-    const back = await screen.findByRole("dialog", { name: "FAKE Letter.pdf" });
+    const back = await screen.findByRole("dialog", {
+      name: humanText("FAKE Letter.pdf"),
+    });
     expect(
-      await within(back).findByText(/The document is unchanged\.$/),
+      await within(back).findByText(humanText(/The document is unchanged\.$/)),
     ).toBeVisible();
     expect(bridge.unlockPdf).toHaveBeenCalledTimes(1);
   });
@@ -304,11 +344,13 @@ describe("a PDF locked with a password (#54)", () => {
     const details = await openDetails(user);
     expect(
       await within(details).findByText(
-        "Locked with a password. myCarlos cannot open it on this device yet.",
+        humanText(
+          "Locked with a password. myCarlos cannot open it on this device yet.",
+        ),
       ),
     ).toBeVisible();
     expect(
-      within(details).queryByRole("button", { name: "Unlock…" }),
+      within(details).queryByRole("button", { name: humanText("Unlock…") }),
     ).toBeNull();
   });
 
@@ -317,9 +359,11 @@ describe("a PDF locked with a password (#54)", () => {
     const bridge = renderLibrary({ isLockedPdf: vi.fn(async () => false) });
     const details = await openDetails(user);
     await waitFor(() => expect(bridge.isLockedPdf).toHaveBeenCalled());
-    expect(within(details).queryByText(/Locked with a password/)).toBeNull();
     expect(
-      within(details).queryByRole("button", { name: "Unlock…" }),
+      within(details).queryByText(humanText(/Locked with a password/)),
+    ).toBeNull();
+    expect(
+      within(details).queryByRole("button", { name: humanText("Unlock…") }),
     ).toBeNull();
   });
 });

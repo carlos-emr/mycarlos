@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -20,11 +21,13 @@ async function open() {
   render(
     <PhotoViewer name="FAKE photo.jpg" url={photoUrl()} onClose={vi.fn()} />,
   );
-  const image = screen.getByRole("img", { name: "Photo: FAKE photo.jpg" });
+  const image = screen.getByRole("img", {
+    name: humanText("Photo: FAKE photo.jpg"),
+  });
   await vi.waitFor(() =>
     expect((image as HTMLImageElement).complete).toBe(true),
   );
-  return screen.getByRole("region", { name: /^Photo\./ });
+  return screen.getByRole("region", { name: humanText(/^Photo\./) });
 }
 
 const centre = (frame: HTMLElement) => ({
@@ -37,7 +40,7 @@ afterEach(cleanup);
 describe("PhotoViewer (#73)", () => {
   it("keeps the middle of the view where it was when zooming in and out", async () => {
     const frame = await open();
-    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    fireEvent.click(screen.getByRole("button", { name: humanText("Zoom in") }));
     await vi.waitFor(() =>
       expect(frame.scrollWidth).toBeGreaterThan(frame.clientWidth),
     );
@@ -46,7 +49,7 @@ describe("PhotoViewer (#73)", () => {
     frame.scrollTop = frame.scrollHeight * 0.3 - frame.clientHeight / 2;
     const before = centre(frame);
     for (const button of ["Zoom in", "Zoom in", "Zoom out"]) {
-      fireEvent.click(screen.getByRole("button", { name: button }));
+      fireEvent.click(screen.getByRole("button", { name: humanText(button) }));
       const after = centre(frame);
       expect(after.x).toBeCloseTo(before.x, 2);
       expect(after.y).toBeCloseTo(before.y, 2);
@@ -56,7 +59,9 @@ describe("PhotoViewer (#73)", () => {
   it("moves around when the zoomed photo is dragged with a mouse", async () => {
     const frame = await open();
     for (let press = 0; press < 2; press++)
-      fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Zoom in") }),
+      );
     frame.scrollLeft = 200;
     frame.scrollTop = 200;
     const pointer = {
@@ -79,7 +84,9 @@ describe("PhotoViewer (#73)", () => {
   it("stops dragging when the button is no longer held, even if the release was missed", async () => {
     const frame = await open();
     for (let press = 0; press < 2; press++)
-      fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Zoom in") }),
+      );
     frame.scrollLeft = 200;
     frame.scrollTop = 200;
     const pointer = { pointerId: 9, pointerType: "mouse", button: 0 };
@@ -120,7 +127,7 @@ describe("PhotoViewer (#73)", () => {
       clientY: 300,
     });
     expect(frame).not.toHaveClass("dragging");
-    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    fireEvent.click(screen.getByRole("button", { name: humanText("Zoom in") }));
     fireEvent.pointerDown(frame, {
       pointerId: 2,
       pointerType: "touch",
@@ -133,7 +140,9 @@ describe("PhotoViewer (#73)", () => {
   it("still scrolls with the arrow keys", async () => {
     const frame = await open();
     for (let press = 0; press < 2; press++)
-      fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Zoom in") }),
+      );
     frame.scrollLeft = 0;
     frame.focus();
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");

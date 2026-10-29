@@ -549,7 +549,6 @@ h1, h2, p { margin: 0; }
 /* #71: the Hidden list keeps the trash list's layout, but its dates are when a document was
    hidden, not a countdown to deletion: nothing is deleted. */
 .native-hidden-list .file-row .hidden-date { color: var(--ink-soft); }
-.side-nav .native-hidden-nav { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
 .trash-marker { display: grid; place-items: center; color: var(--ink-faint); }
 .trash-marker .icon { width: 15px; height: 15px; }
 .countdown { color: var(--amber) !important; font-weight: 700; }
@@ -566,6 +565,17 @@ h1, h2, p { margin: 0; }
   border-bottom: 1px solid var(--line);
 }
 .setting-row > div { flex: 1; min-width: 0; }
+.hidden-settings-entry { max-width: 100%; }
+.hidden-entry-copy { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.hidden-entry-scope { display: block; color: var(--ink-soft); font-weight: 400; }
+.audit-history-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.audit-history-entry { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; }
+.audit-history-entry h2 { margin: 0; font-size: 1rem; }
+.audit-history-date { margin: 4px 0 10px; color: var(--ink-soft); }
+.audit-history-entry dl { display: grid; gap: 5px; margin: 0; }
+.audit-history-entry dl > div { display: grid; grid-template-columns: minmax(110px, 0.3fr) 1fr; gap: 10px; }
+.audit-history-entry dt { color: var(--ink-soft); }
+.audit-history-entry dd { margin: 0; overflow-wrap: anywhere; }
 .old-backups-guide {
   margin-top: 10px;
   padding: 11px 13px;
@@ -854,6 +864,11 @@ h1, h2, p { margin: 0; }
 .native-profile-row { display: flex; align-items: center; gap: 7px; min-height: 35px; margin-bottom: 4px; color: var(--ink-faint); font-size: 0.875rem; }
 .native-breadcrumb { margin: 0; padding: 3px 7px; border: 0; background: transparent; color: var(--teal-dark); font: inherit; font-weight: 700; }
 .native-breadcrumb:hover { text-decoration: underline; }
+/* A person's folder label can contain 120 characters, including one long word. */
+.native-person-location :is(.native-profile-row, .main-head, .head-actions) { flex-wrap: wrap; min-width: 0; }
+.native-person-location :is(.main-head > div, .native-top-level-narrow, .native-breadcrumb, .native-top-level-narrow .button, .native-person-rename) { min-width: 0; max-width: 100%; }
+.native-person-location :is(h1, .native-breadcrumb, .native-top-level-narrow .button, .native-person-rename) { overflow-wrap: anywhere; }
+.native-profile-rename-dialog .dialog-head h2 { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .native-sort select, .native-move-actions select, .native-dialog-actions select, .native-setting-form select {
   min-height: 35px;
   padding: 6px 28px 6px 9px;
@@ -1016,6 +1031,18 @@ h1, h2, p { margin: 0; }
   .native-filelist .file-row > :last-child { grid-column: 2; justify-self: start; }
   .native-filelist .file-head > :last-child:not(:nth-child(2)) { display: none; }
 }
+/* #119: other languages' words are longer. With large text on a phone, the
+   sort choices, List and Grid, and the people's buttons wrap onto more lines
+   inside the window instead of running past its edge; a word longer than a
+   button's line breaks, as names do. A folder's item count wraps like its name.
+   Only where the sidebar is hidden, so the computer's layout is unchanged. */
+@media (max-width: 56.25em) {
+  .native-vault-page :is(.view-controls, .native-sort-choice, .native-top-level-narrow) { min-width: 0; max-width: 100%; }
+  .native-vault-page .native-view-segment { flex-wrap: wrap; max-width: 100%; }
+  .native-vault-page .native-view-segment button { flex: 1 1 auto; justify-content: center; max-width: 100%; }
+  .native-vault-page .native-top-level-narrow .button { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .native-filelist .name-copy small { white-space: normal; overflow-wrap: anywhere; }
+}
 /* #67: Move to and its Move button have a row of their own. */
 .native-dialog-actions { flex-wrap: wrap; }
 .native-dialog-move { display: flex; flex-basis: 100%; grid-column: 1 / -1; align-items: end; gap: 8px; }
@@ -1123,10 +1150,38 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }
 }
 
-/* The backup setting can wrap its words and action at enlarged text sizes. */
+/* Optional identity details and explicit Shared with me suggestions. */
+.native-person-details-list { list-style: none; padding: 0; min-width: 0; }
+.native-profile-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.native-profile-settings > form { width: 100%; min-width: 0; }
+.native-profile-settings label, .native-profile-settings input { min-width: 0; }
+.native-profile-settings input { width: 100%; }
+.native-profile-settings .native-person-date-unknown { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 44px; }
+.native-profile-settings .native-person-date-unknown input { width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; }
+.native-person-date-unknown span { overflow-wrap: anywhere; }
 .native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .native-backup-settings > div > .button { max-width: 100%; }
+.native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }
+.native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
+.native-person-details-list form { width: 100%; }
+.native-person-details-list fieldset, .native-setting-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.native-person-details-actions, .native-person-suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-person-suggestion { display: flex; flex-direction: column; gap: 8px; margin-block: 8px; white-space: normal; overflow-wrap: anywhere; font-size: 0.875rem; }
 
+.portal-documents { margin-block-end: 2rem; }
+.portal-link { margin-block: 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; }
+.portal-documents label { display: grid; gap: .35rem; margin-block: .75rem; }
+.portal-documents input, .portal-documents textarea, .portal-documents select { max-width: 100%; min-width: 0; width: 100%; box-sizing: border-box; font: inherit; }
+.portal-link input[readonly], .portal-link textarea { overflow-wrap: anywhere; font-family: monospace; }
+.portal-address { overflow-wrap: anywhere; }
+.portal-documents .native-inline-form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; }
+.portal-documents .native-inline-form label { grid-column: auto; }
+.portal-documents .native-inline-form p { grid-column: 1 / -1; }
+.portal-documents input, .portal-documents select { min-height: 44px; }
+.portal-documents .native-inline-form button { justify-self: start; }
+@media (max-width: 40em) {
+  .portal-documents .native-inline-form { grid-template-columns: minmax(0, 1fr); }
+}
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
 .language-title { font-size: 0.875rem; font-weight: 700; }

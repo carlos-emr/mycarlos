@@ -1,3 +1,4 @@
+import {} from "../i18n";
 // What to do about backups saved before a recovery key was replaced. They
 // open with the passphrase or recovery key they were saved with, the old key
 // among them. Whether to delete them depends on why the key was replaced,
@@ -7,15 +8,15 @@
 
 /** A routine replacement: the old kit is safe. */
 export const OLD_BACKUPS_ROUTINE =
-  "Each backup you saved before now still opens with your old key, or the passphrase it was saved with. Keep the old key's kit safe. If you destroy it, those backups open only with their passphrase. A backup you save from now on opens with your new key.";
+  "interface.oldBackups.eachBackupYouSavedBeforeNowStill";
 
 /** A kit that may have been lost or seen: Security shows the steps. */
 export const OLD_BACKUPS_EXPOSED =
-  "Your old kit could still open backups saved before now. In Security, save a new backup, then delete the older ones: Security shows the steps.";
+  "interface.oldBackups.yourOldKitCouldStillOpenBackups";
 
 /** The same, for a vault that cannot save a backup just now. */
 export const OLD_BACKUPS_KEEP =
-  'Your old kit could still open backups saved before now, but keep them for now: this vault cannot save a new backup until you have done what the "Changes are paused" notice in the library says. Then save a new backup in Security, and delete the older ones.';
+  "interface.oldBackups.yourOldKitCouldStillOpenBackupsAlternative";
 
 /** Where the steps for older backups are: a new backup to save first, then
  * every other one to delete, keeping the one named here (the file written,

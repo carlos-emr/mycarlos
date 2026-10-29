@@ -1,3 +1,5 @@
+import { humanText } from "../test/humanText";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreateVault, ResetConfirmation, UnlockVault } from "./VaultAuth";
@@ -21,7 +23,7 @@ describe("CreateVault", () => {
       />,
     );
     fireEvent.change(
-      screen.getByLabelText("Whose records will you keep here?"),
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
       {
         target: { value: "Jamie" },
       },
@@ -30,18 +32,20 @@ describe("CreateVault", () => {
     // normalization, which is the form the vault checks.
     const short = "café lanterns!";
     expect([...short].length).toBe(15);
-    for (const field of screen.getAllByLabelText(/passphrase/i))
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
       fireEvent.change(field, { target: { value: short } });
 
-    expect(screen.getByText(/too short/)).toBeVisible();
-    const create = screen.getByRole("button", { name: "Create vault" });
+    expect(screen.getByText(humanText(/too short/))).toBeVisible();
+    const create = screen.getByRole("button", {
+      name: humanText("Create vault"),
+    });
     expect(create).toBeDisabled();
     fireEvent.submit(create.closest("form")!);
     expect(onCreate).not.toHaveBeenCalled();
 
     // Astral characters count once each, as the vault counts them.
     const astral = "\u{1F332}".repeat(15);
-    for (const field of screen.getAllByLabelText(/passphrase/i))
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
       fireEvent.change(field, { target: { value: astral } });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(create).toBeEnabled();
@@ -57,15 +61,19 @@ describe("CreateVault", () => {
         onCreate={vi.fn()}
       />,
     );
-    const profile = screen.getByLabelText("Whose records will you keep here?");
+    const profile = screen.getByLabelText(
+      humanText("Whose records will you keep here?"),
+    );
     fireEvent.change(profile, { target: { value: "\u{1F332}".repeat(120) } });
     expect(profile).toHaveValue("\u{1F332}".repeat(120));
     expect((profile as HTMLInputElement).maxLength).toBe(240);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     fireEvent.change(profile, { target: { value: "a".repeat(121) } });
-    expect(screen.getByRole("alert")).toHaveTextContent("too long");
-    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
+    expect(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    ).toBeDisabled();
   });
 
   it("refuses a profile name of only spaces, which the vault would refuse", () => {
@@ -79,16 +87,18 @@ describe("CreateVault", () => {
       />,
     );
     fireEvent.change(
-      screen.getByLabelText("Whose records will you keep here?"),
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
       {
         target: { value: "   " },
       },
     );
-    for (const field of screen.getAllByLabelText(/passphrase/i))
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
       fireEvent.change(field, {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
       });
-    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    ).toBeDisabled();
   });
 
   it("reads the passphrase rules with the passphrase field", () => {
@@ -101,7 +111,9 @@ describe("CreateVault", () => {
         onCreate={vi.fn()}
       />,
     );
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription(
       /^0 character password Your passphrase needs to be: At least 15 characters\s*, not yet/,
     );
   });
@@ -123,10 +135,12 @@ describe("CreateVault", () => {
     expect(status.getBoundingClientRect().height).toBe(0);
     // The same 12px as between the other fields.
     const above = screen
-      .getByRole("button", { name: "Show passphrase in Confirm passphrase" })
+      .getByRole("button", {
+        name: humanText("Show passphrase in Confirm passphrase"),
+      })
       .getBoundingClientRect();
     const create = screen
-      .getByRole("button", { name: "Create vault" })
+      .getByRole("button", { name: humanText("Create vault") })
       .getBoundingClientRect();
     expect(create.top - above.bottom).toBeCloseTo(12, 0);
   });
@@ -143,18 +157,20 @@ describe("CreateVault", () => {
       />,
     );
     fireEvent.change(
-      screen.getByLabelText("Whose records will you keep here?"),
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
       {
         target: { value: "Jamie" },
       },
     );
     const long = "a".repeat(1025);
-    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i))) {
       fireEvent.change(field, { target: { value: long } });
       expect(field).toHaveValue(long);
     }
-    expect(screen.getByRole("alert")).toHaveTextContent("too long");
-    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
+    expect(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    ).toBeDisabled();
   });
 });
 
@@ -179,8 +195,11 @@ describe("CreateVault passphrase help (#69)", () => {
     return { checkRules, onCreate };
   }
   const type = (label: string, value: string) =>
-    fireEvent.change(screen.getByLabelText(label), { target: { value } });
-  const rule = (name: string) => screen.getByText(name).closest("li")!;
+    fireEvent.change(screen.getByLabelText(humanText(label)), {
+      target: { value },
+    });
+  const rule = (name: string) =>
+    screen.getByText(humanText(name)).closest("li")!;
   // Lets the pause pass, then the answer arrive.
   const pause = (ms = 300) =>
     act(async () => {
@@ -199,7 +218,9 @@ describe("CreateVault passphrase help (#69)", () => {
       "Not your name",
     ])
       expect(rule(name)).toHaveAttribute("data-met", "false");
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription(
       /At least 15 characters\s*, not yet Not easy to guess\s*, not yet Not your name\s*, not yet/,
     );
   });
@@ -209,18 +230,18 @@ describe("CreateVault passphrase help (#69)", () => {
     type("Passphrase", "river");
     // Shown, and read with the box, but not an alert: that would interrupt a
     // screen reader at every keystroke.
-    expect(screen.getByText(/too short/)).toBeVisible();
+    expect(screen.getByText(humanText(/too short/))).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      /This passphrase is too short/,
-    );
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription(/This passphrase is too short/);
     expect(rule("At least 15 characters")).toHaveAttribute("data-met", "false");
     type("Passphrase", strong);
-    expect(screen.queryByText(/too short/)).not.toBeInTheDocument();
+    expect(screen.queryByText(humanText(/too short/))).not.toBeInTheDocument();
     expect(rule("At least 15 characters")).toHaveAttribute("data-met", "true");
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      /At least 15 characters\s*, done/,
-    );
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription(/At least 15 characters\s*, done/);
   });
 
   it("asks the vault once typing pauses, about what is typed now", async () => {
@@ -243,7 +264,9 @@ describe("CreateVault passphrase help (#69)", () => {
     expect(rule("Not your name")).toHaveAttribute("data-met", "false");
     // Create would only be refused, so it waits for a passphrase that passes.
     type("Confirm passphrase", "river azimuth cobalt jamie 934");
-    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    ).toBeDisabled();
 
     // A change forgets the answer until the vault answers again.
     checkRules.mockResolvedValue(allMet);
@@ -252,7 +275,9 @@ describe("CreateVault passphrase help (#69)", () => {
     type("Confirm passphrase", strong);
     await pause();
     expect(rule("Not your name")).toHaveAttribute("data-met", "true");
-    expect(screen.getByRole("button", { name: "Create vault" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    ).toBeEnabled();
   });
 
   it("says once, politely, when every rule is met", async () => {
@@ -266,12 +291,16 @@ describe("CreateVault passphrase help (#69)", () => {
     type("Passphrase", strong);
     expect(said()).toBeEmptyDOMElement();
     await pause();
-    expect(said()).toHaveTextContent("Your passphrase meets all the rules.");
+    expect(said()).toHaveHumanTextContent(
+      "Your passphrase meets all the rules.",
+    );
     // Typing on, the answer is forgotten until the next pause, but what was
     // said stands: it is not said again at every pause.
     type("Passphrase", `${strong} more`);
     expect(rule("Not easy to guess")).toHaveAttribute("data-met", "false");
-    expect(said()).toHaveTextContent("Your passphrase meets all the rules.");
+    expect(said()).toHaveHumanTextContent(
+      "Your passphrase meets all the rules.",
+    );
     // Too short again takes it back.
     type("Passphrase", "river");
     expect(said()).toBeEmptyDOMElement();
@@ -300,21 +329,25 @@ describe("CreateVault passphrase help (#69)", () => {
     type("Confirm passphrase", strong);
     await pause();
     expect(checkRules).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
     expect(onCreate).toHaveBeenCalledWith("Jamie", strong);
     await pause(5_000);
     expect(checkRules).toHaveBeenCalledOnce();
     // Nothing of the passphrase stays in the boxes.
-    expect(screen.getByLabelText("Passphrase")).toHaveValue("");
+    expect(screen.getByLabelText(humanText("Passphrase"))).toHaveValue("");
   });
 
   it("shows each box on its own, and hides both when the app is hidden", () => {
     renderCreate();
-    const passphrase = screen.getByLabelText("Passphrase");
-    const confirmation = screen.getByLabelText("Confirm passphrase");
-    const show = screen.getByRole("button", { name: "Show passphrase" });
+    const passphrase = screen.getByLabelText(humanText("Passphrase"));
+    const confirmation = screen.getByLabelText(humanText("Confirm passphrase"));
+    const show = screen.getByRole("button", {
+      name: humanText("Show passphrase"),
+    });
     const showConfirmation = screen.getByRole("button", {
-      name: "Show passphrase in Confirm passphrase",
+      name: humanText("Show passphrase in Confirm passphrase"),
     });
     expect(show).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(show);
@@ -363,13 +396,13 @@ describe("UnlockVault", () => {
       />,
     );
     // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
-    const passphrase = screen.getByLabelText("Passphrase");
+    const passphrase = screen.getByLabelText(humanText("Passphrase"));
     fireEvent.change(passphrase, { target: { value: "字".repeat(600) } });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
       "longer than any vault passphrase",
     );
-    const unlock = screen.getByRole("button", { name: "Unlock" });
+    const unlock = screen.getByRole("button", { name: humanText("Unlock") });
     expect(unlock).toBeDisabled();
     fireEvent.submit(unlock.closest("form")!);
     expect(onUnlock).not.toHaveBeenCalled();
@@ -393,13 +426,13 @@ describe("UnlockVault", () => {
     // The Unlock form's; the other is under "Forgot your passphrase?".
     const status = screen.getAllByRole("status")[0];
     expect(status).toBeEmptyDOMElement();
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      "0 character password",
-    );
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription("0 character password");
 
     rerender(<UnlockVault {...props} notice="FAKE wrong passphrase." />);
     expect(screen.getAllByRole("status")[0]).toBe(status);
-    expect(status).toHaveTextContent("FAKE wrong passphrase.");
+    expect(status).toHaveHumanTextContent("FAKE wrong passphrase.");
   });
 
   it("reads the message it opens with as the focused field's description", () => {
@@ -415,9 +448,9 @@ describe("UnlockVault", () => {
         onReset={vi.fn()}
       />,
     );
-    const passphrase = screen.getByLabelText("Passphrase");
+    const passphrase = screen.getByLabelText(humanText("Passphrase"));
     expect(passphrase).toHaveFocus();
-    expect(passphrase).toHaveAccessibleDescription(
+    expect(passphrase).toHaveHumanAccessibleDescription(
       "0 character password Vault locked.",
     );
   });
@@ -434,21 +467,26 @@ describe("UnlockVault", () => {
       onRestored: vi.fn(),
     };
     const { rerender } = render(<UnlockVault {...props} notice="" />);
-    fireEvent.change(screen.getByLabelText("Recovery key"), {
+    fireEvent.change(screen.getByLabelText(humanText("Recovery key")), {
       target: { value: "abcd efgh jkmn pqrs tvwx yz01 2345" },
     });
-    const replacement = screen.getByLabelText("New passphrase");
-    expect(replacement).toHaveAccessibleDescription(
+    const replacement = screen.getByLabelText(humanText("New passphrase"));
+    expect(replacement).toHaveHumanAccessibleDescription(
       /^0 character password Use at least 15 characters\./,
     );
     fireEvent.change(replacement, {
       target: { value: "lantern-orbit-willow-cascade-572" },
     });
-    const open = screen.getByRole("button", { name: "Open with recovery key" });
-    expect(open).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Confirm new passphrase"), {
-      target: { value: "lantern-orbit-willow-cascade-572" },
+    const open = screen.getByRole("button", {
+      name: humanText("Open with recovery key"),
     });
+    expect(open).toBeDisabled();
+    fireEvent.change(
+      screen.getByLabelText(humanText("Confirm new passphrase")),
+      {
+        target: { value: "lantern-orbit-willow-cascade-572" },
+      },
+    );
     expect(open).toBeEnabled();
     fireEvent.click(open);
     expect(onRecover).toHaveBeenCalledWith(
@@ -460,12 +498,12 @@ describe("UnlockVault", () => {
     rerender(<UnlockVault {...props} notice="FAKE wrong recovery key." />);
     const [unlockStatus, forgotStatus] = screen.getAllByRole("status");
     expect(unlockStatus).toBeEmptyDOMElement();
-    expect(forgotStatus).toHaveTextContent("FAKE wrong recovery key.");
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
-      "0 character password",
-    );
+    expect(forgotStatus).toHaveHumanTextContent("FAKE wrong recovery key.");
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription("0 character password");
     // The key is kept, so that a typo in it can be corrected.
-    expect(screen.getByLabelText("Recovery key")).toHaveValue(
+    expect(screen.getByLabelText(humanText("Recovery key"))).toHaveValue(
       "abcd efgh jkmn pqrs tvwx yz01 2345",
     );
   });
@@ -483,10 +521,12 @@ describe("UnlockVault", () => {
         onReset={vi.fn()}
       />,
     );
-    const field = screen.getByLabelText("Recovery key");
+    const field = screen.getByLabelText(humanText("Recovery key"));
     expect(field).toHaveAttribute("type", "password");
     fireEvent.change(field, { target: { value: "ABCD-EFGH" } });
-    const show = screen.getByRole("button", { name: "Show recovery key" });
+    const show = screen.getByRole("button", {
+      name: humanText("Show recovery key"),
+    });
     expect(show).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(show);
     expect(field).toHaveAttribute("type", "text");
@@ -516,20 +556,68 @@ describe("ResetConfirmation", () => {
       />,
     );
     const plainly = screen.getByText(
-      /Setting the vault aside takes all your documents/,
+      humanText(/Setting the vault aside takes all your documents/),
     );
-    const typed = screen.getByLabelText("Type RESET MYCARLOS VAULT");
-    expect(plainly).toHaveTextContent(
-      "nobody can open them without the passphrase",
+    const typed = screen.getByLabelText(humanText("Type RESET MYCARLOS VAULT"));
+    expect(plainly).toHaveHumanTextContent(
+      "its original passphrase or matching recovery key",
+    );
+    expect(plainly).toHaveHumanTextContent(
+      "Starting a new vault does not change those credentials",
+    );
+    expect(plainly).not.toHaveHumanTextContent(
+      "credentials for a new vault do not open it",
     );
     // The sentence comes first, so it is read before the box.
     expect(
       plainly.compareDocumentPosition(typed) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    const erase = screen.getByRole("button", { name: "Set vault aside" });
+    const erase = screen.getByRole("button", {
+      name: humanText("Set vault aside"),
+    });
     expect(erase).toBeDisabled();
     fireEvent.change(typed, { target: { value: "RESET MYCARLOS VAULT" } });
     fireEvent.click(erase);
     expect(onReset).toHaveBeenCalledWith("RESET MYCARLOS VAULT");
   });
 });
+
+for (const locale of LOCALES) {
+  it(`keeps reset consent disabled for wrong or stale language text in ${locale}`, () => {
+    setLocaleOverride(locale);
+    const onReset = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResetConfirmation
+        busy={false}
+        actionLabel="FAKE action"
+        onReset={onReset}
+      />,
+    );
+    const field = screen.getByRole("textbox");
+    const action = screen.getByRole("button", {
+      name: humanText("FAKE action"),
+    });
+    const phrase = translate(locale, "native.reset.phrase");
+    expect(
+      screen.getByLabelText(
+        humanText(translate(locale, "reset.type", { phrase })),
+      ),
+    ).toBe(field);
+    fireEvent.change(field, { target: { value: phrase.toLowerCase() } });
+    expect(action).toBeDisabled();
+    fireEvent.change(field, { target: { value: " " + phrase } });
+    expect(action).toBeDisabled();
+    fireEvent.change(field, { target: { value: phrase.normalize("NFD") } });
+    expect(action).toBeEnabled();
+    fireEvent.click(action);
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onReset).toHaveBeenCalledWith(phrase.normalize("NFD"));
+    const next = locale === "en" ? "fr" : "en";
+    act(() => setLocaleOverride(next));
+    expect(screen.getByRole("textbox")).toBe(field);
+    expect(field).toHaveValue(phrase.normalize("NFD"));
+    expect(action).toBeDisabled();
+    fireEvent.click(action);
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+}

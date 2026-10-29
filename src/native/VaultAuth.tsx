@@ -1,3 +1,4 @@
+import { useI18n, MessageKey } from "../i18n";
 import { LanguageSetting } from "./LanguageSetting";
 import { SecretInput } from "./SecretInput";
 import {
@@ -8,12 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../Icon";
-import { useI18n } from "../i18n";
-import type { MessageKey } from "../i18n";
+
 import { MAX_PASSPHRASE_BYTES, utf8Length } from "../vault";
 import {
   NAME_INPUT_MAX_LENGTH,
-  SHARED_FOLDER_NAME,
   nameIsShared,
   nameTooLong,
 } from "./recordPresentation";
@@ -101,9 +100,6 @@ function AuthNotice({
   );
 }
 
-// The native side compares the typed text with this exact phrase again.
-const RESET_CONFIRMATION = "RESET MYCARLOS VAULT";
-
 /** The typed confirmation shared by every place that can set the vault
  * aside (#71: nothing erases it). */
 export function ResetConfirmation({
@@ -116,15 +112,16 @@ export function ResetConfirmation({
   onReset: (confirmation: string) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const resetPhrase = t("native.reset.phrase");
   const [resetText, setResetText] = useState("");
   return (
     <>
       {/* #69: what erasing does, in plain words, before the typed check. */}
       <p className="reset-plainly">{t("reset.plainly")}</p>
       <label>
-        {t("reset.type", { phrase: RESET_CONFIRMATION })}
+        {t("reset.type", { phrase: resetPhrase })}
         <input
-          maxLength={RESET_CONFIRMATION.length + 1}
+          maxLength={resetPhrase.normalize("NFD").length + 1}
           value={resetText}
           onChange={(event) => setResetText(event.target.value)}
         />
@@ -132,7 +129,9 @@ export function ResetConfirmation({
       <button
         className="button danger"
         type="button"
-        disabled={busy || resetText !== RESET_CONFIRMATION}
+        disabled={
+          busy || resetText.normalize("NFC") !== resetPhrase.normalize("NFC")
+        }
         onClick={() => void onReset(resetText)}
       >
         {actionLabel}
@@ -239,7 +238,9 @@ export function CreateVault({
           {profileTooLong && <p role="alert">{t("create.profile.tooLong")}</p>}
           {profileShared && (
             <p role="alert">
-              {t("create.profile.sharedTaken", { folder: SHARED_FOLDER_NAME })}
+              {t("create.profile.sharedTaken", {
+                folder: t("interface.LibrarySidebar.sharedWithMe"),
+              })}
             </p>
           )}
           <label>
@@ -372,10 +373,12 @@ export function UnlockVault({
         {waiting > 0 && (
           <p className="native-received-waiting">
             {waiting === 1
-              ? t("unlock.waiting.one", { folder: SHARED_FOLDER_NAME })
+              ? t("unlock.waiting.one", {
+                  folder: t("interface.LibrarySidebar.sharedWithMe"),
+                })
               : t("unlock.waiting", {
                   count: waiting,
-                  folder: SHARED_FOLDER_NAME,
+                  folder: t("interface.LibrarySidebar.sharedWithMe"),
                 })}
           </p>
         )}

@@ -1,3 +1,4 @@
+import { useI18n, t as translateNow } from "../i18n";
 import type { Ref } from "react";
 import type { VaultFolder } from "../vault";
 
@@ -42,12 +43,15 @@ export function MoveTargetSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  useI18n();
   const options = (target: MoveTarget) => [
     <option
       key={target.profileId}
       value={moveTargetValue(target.profileId, null)}
     >
-      {targets.length > 1 ? `${target.name}'s records` : "My records"}
+      {targets.length > 1
+        ? translateNow("interface.person.records", { name: target.name })
+        : translateNow("sidebar.myRecords")}
     </option>,
     ...target.folders.map((folder) => (
       <option

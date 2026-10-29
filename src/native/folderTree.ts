@@ -1,3 +1,4 @@
+import { t as translateNow } from "../i18n";
 import type { VaultFolder, VaultRecord } from "../vault";
 
 /** The ids of a folder and of every folder beneath it. */
@@ -30,7 +31,7 @@ export function folderSubtree(
 export function folderPath(
   folderById: ReadonlyMap<string, VaultFolder>,
   folderId: string | null,
-  rootLabel = "My records",
+  rootLabel = translateNow("sidebar.myRecords"),
 ): string {
   const names: string[] = [];
   const seen = new Set<string>();
@@ -51,7 +52,7 @@ export function folderPath(
 export function recordPath(
   folderById: ReadonlyMap<string, VaultFolder>,
   record: VaultRecord,
-  rootLabel = "My records",
+  rootLabel = translateNow("sidebar.myRecords"),
 ): string {
   const paths = record.folderIds
     .filter((id) => folderById.has(id))
