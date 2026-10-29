@@ -62,19 +62,32 @@ const change = (label: string, value: string) =>
 describe("SecuritySettings profile layout", () => {
   afterEach(async () => {
     document.documentElement.style.fontSize = "";
+    document
+      .querySelectorAll("[data-test-dialog-host]")
+      .forEach((host) => host.remove());
     await page.viewport(1100, 760);
   });
 
-  it("keeps the profile name and Add profile action inside their section on a phone with enlarged text", async () => {
-    renderSettings();
-    const input = screen.getByRole("textbox", { name: "New profile name" });
+  // #109's checks, now that Add profile is a button that opens a dialog (Ben,
+  // 29 Oct). The dialog is drawn in a host outside the section, as the app's
+  // library draws it.
+  function renderProfiles() {
+    const host = document.createElement("div");
+    host.dataset.testDialogHost = "";
+    document.body.append(host);
+    renderSettings({ dialogHost: host });
     const button = screen.getByRole("button", { name: "Add profile" });
-    input.closest("main")!.classList.add("native-vault-page");
-    fireEvent.change(input, { target: { value: "FAKE Profile" } });
-    const form = input.closest("form")!;
-    const section = form.closest<HTMLElement>(".setting-row")!;
-    const intro = section.firstElementChild!;
-    section.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
+    button.closest("main")!.classList.add("native-vault-page");
+    const section = button.closest<HTMLElement>(".setting-row")!;
+    return { button, section, intro: section.firstElementChild! };
+  }
+  const font = "'DejaVu Sans', Verdana, sans-serif";
+  const inside = (box: DOMRect, edge: DOMRect) =>
+    box.left >= edge.left - 1 && box.right <= edge.right + 1;
+
+  it("keeps Add profile inside its section, and its dialog's fields inside the dialog, on a phone with enlarged text", async () => {
+    const { button, section, intro } = renderProfiles();
+    section.style.fontFamily = font;
     const overlaps = (a: DOMRect, b: DOMRect) =>
       Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
       Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
@@ -87,36 +100,40 @@ describe("SecuritySettings profile layout", () => {
         expect(introduction.width).toBeGreaterThanOrEqual(
           Math.min(220, row.width - 4),
         );
-        for (const control of [form, input, button]) {
-          const box = control.getBoundingClientRect();
-          expect(box.left).toBeGreaterThanOrEqual(row.left - 1);
-          expect(box.right).toBeLessThanOrEqual(row.right + 1);
-        }
-        expect(overlaps(introduction, form.getBoundingClientRect())).toBe(
+        expect(inside(button.getBoundingClientRect(), row)).toBe(true);
+        expect(overlaps(introduction, button.getBoundingClientRect())).toBe(
           false,
         );
         expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
-        expect(button.scrollHeight).toBeLessThanOrEqual(
-          button.clientHeight + 1,
-        );
         expect(section.scrollWidth).toBeLessThanOrEqual(
           section.clientWidth + 1,
         );
       }
     }
+    const { dialog } = openAddProfile();
+    dialog.style.fontFamily = font;
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: "New profile name" }),
+      { target: { value: "FAKE Profile" } },
+    );
+    for (const width of [360, 320]) {
+      await page.viewport(width, 800);
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        const edge = dialog.getBoundingClientRect();
+        for (const field of dialog.querySelectorAll("input, label"))
+          expect(inside(field.getBoundingClientRect(), edge)).toBe(true);
+        expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth + 1);
+      }
+    }
   });
 
-  it("keeps the profile form as wide as the other setting forms on a wide screen", () => {
-    renderSettings();
-    const input = screen.getByRole("textbox", { name: "New profile name" });
-    input.closest("main")!.classList.add("native-vault-page");
-    const profile = input.closest("form")!.getBoundingClientRect();
-    const passphrase = screen
-      .getByLabelText("Current passphrase")
-      .closest("form")!
-      .getBoundingClientRect();
-    expect(Math.abs(profile.width - passphrase.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(profile.right - passphrase.right)).toBeLessThanOrEqual(1);
+  it("puts Add profile beside the profiles' text on a wide screen, as the other rows' controls", () => {
+    const { button, intro } = renderProfiles();
+    const text = intro.getBoundingClientRect();
+    const box = button.getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(text.right);
+    expect(box.top).toBeLessThan(text.bottom);
   });
 });
 

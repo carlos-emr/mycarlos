@@ -663,7 +663,8 @@ export function VaultLibrary({
         cameraOpen ||
         confirmation ||
         confirmHideDamaged ||
-        recoverySetup,
+        recoverySetup ||
+        profileDialogOpen,
     ),
     `${section}:${profileId}:${currentFolderId ?? ""}`,
   );
@@ -682,6 +683,7 @@ export function VaultLibrary({
       confirmation ||
       confirmHideDamaged ||
       recoverySetup ||
+      profileDialogOpen ||
       busy
     )
       return;
@@ -706,6 +708,7 @@ export function VaultLibrary({
     confirmHideDamaged,
     notice,
     dialogResult,
+    profileDialogOpen,
     recoverySetup,
     renameTarget,
     cameraOpen,
@@ -1162,11 +1165,15 @@ export function VaultLibrary({
         : bridge.createProfile(name));
       created = true;
       await refresh();
-      setNotice(
-        deferredText(() =>
+      // Said once the Add profile dialog has closed and the status line is
+      // live again (see dialogResult above): set now, it is never read out.
+      setNotice("");
+      setDialogResult({
+        message: deferredText(() =>
           translateNow("interface.notice.personAdded", { name }),
         ),
-      );
+        recordId: null,
+      });
     }, ["box.profileName"]);
     return created;
   };
@@ -1196,11 +1203,14 @@ export function VaultLibrary({
       await bridge.updateProfileDetails!(id, details);
       saved = true;
       await refresh();
-      setNotice(
-        t("personDetails.saved", {
+      // After the Edit details dialog closes, as Add profile's.
+      setNotice("");
+      setDialogResult({
+        message: t("personDetails.saved", {
           name: people.find((p) => p.id === id)?.displayName ?? "",
         }),
-      );
+        recordId: null,
+      });
     });
     return saved;
   };
