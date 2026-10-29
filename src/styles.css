@@ -398,6 +398,12 @@ h1, h2, p { margin: 0; }
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 0.9375rem; }
 .search input::placeholder { color: var(--ink-faint); }
 .search:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+/* The library's search box with Check for new documents to its right. The box takes the rest of
+   the row; when that would leave it narrower than 20em (a phone, large text) the button goes
+   under it instead of squeezing it. */
+.library-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.library-search-row > .search { flex: 1 1 20em; min-width: 0; }
+.library-search-row > .button { flex: 0 1 auto; max-width: 100%; }
 .viewbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 10px; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .chip {
