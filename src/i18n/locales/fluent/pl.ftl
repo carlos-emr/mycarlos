@@ -114,7 +114,7 @@ frame-state-settingUp = Konfiguracja
 
 frame-window-label = Prywatny sejf myCarlos
 
-interface-camera-denied = myCarlos nie może używać aparatu. { $help } Następnie wybierz Spróbuj ponownie.
+interface-camera-denied = myCarlos nie może używać aparatu. { $help } Następnie proszę wybrać Spróbuj ponownie.
 
 interface-CameraDialog-cameraReady = Aparat gotowy.
 
@@ -122,7 +122,7 @@ interface-CameraDialog-cameraView = Podgląd aparatu
 
 interface-CameraDialog-myCarlosUsesTheCameraToSavePhotos = myCarlos używa aparatu do zapisywania zdjęć dokumentów dotyczących zdrowia. Zdjęcia pozostają zabezpieczone w myCarlos.
 
-interface-CameraDialog-photoTakenRetakeOrUseThePhoto = Zdjęcie zrobione. Zrób je ponownie lub użyj tego zdjęcia.
+interface-CameraDialog-photoTakenRetakeOrUseThePhoto = Zdjęcie zrobione. Proszę zrobić je ponownie lub użyć tego zdjęcia.
 
 interface-CameraDialog-retake = Zrób ponownie
 
@@ -134,7 +134,7 @@ interface-CameraDialog-takePhoto = Zrób zdjęcie
 
 interface-CameraDialog-theCameraIsOnOnlyWhileYou = Aparat działa tylko podczas robienia zdjęcia. Wyłącza się po zrobieniu zdjęcia, zamknięciu tego okna lub zablokowaniu myCarlos.
 
-interface-CameraDialog-thePhotoCouldNotBePreparedChoose = Nie udało się przygotować zdjęcia. Wybierz Zrób ponownie.
+interface-CameraDialog-thePhotoCouldNotBePreparedChoose = Nie udało się przygotować zdjęcia. Proszę wybrać Zrób ponownie.
 
 interface-CameraDialog-thePhotoYouTook = Zrobione zdjęcie
 
@@ -354,15 +354,15 @@ interface-photo-openYourPhonesSettingsThenAppsThen = Proszę otworzyć Ustawieni
 
 interface-photo-openYourPhonesSettingsThenMyCarlosAnd = Proszę otworzyć Ustawienia telefonu, następnie myCarlos i włączyć Aparat.
 
-interface-photo-theCameraCouldNotBeStartedChoose = Nie udało się uruchomić aparatu. Wybierz Spróbuj ponownie.
+interface-photo-theCameraCouldNotBeStartedChoose = Nie udało się uruchomić aparatu. Proszę wybrać Spróbuj ponownie.
 
 interface-photo-theCameraIsInUseByAnother = Inna aplikacja używa aparatu. Proszę ją zamknąć, a następnie wybrać Spróbuj ponownie.
 
 interface-photo-theCameraStoppedCheckThatItIs = Aparat przestał działać. Proszę sprawdzić, czy jest podłączony, a następnie wybrać Spróbuj ponownie.
 
-interface-photo-theCameraStoppedChooseTryAgain = Aparat przestał działać. Wybierz Spróbuj ponownie.
+interface-photo-theCameraStoppedChooseTryAgain = Aparat przestał działać. Proszę wybrać Spróbuj ponownie.
 
-interface-photo-thisPhonesCameraCouldNotBeFound = Nie znaleziono aparatu tego telefonu. Wybierz Spróbuj ponownie.
+interface-photo-thisPhonesCameraCouldNotBeFound = Nie znaleziono aparatu tego telefonu. Proszę wybrać Spróbuj ponownie.
 
 interface-reader-opening = Otwieranie strony { $page }…
 
@@ -751,7 +751,7 @@ native-error-07 = Ten klucz odzyskiwania nie otwiera tej kopii zapasowej. Kopię
 
 native-error-08 = To hasło główne nie otwiera tej kopii zapasowej. Kopię zapasową otwiera hasło główne użyte przy jej utworzeniu (a nie zmienione później) albo klucz odzyskiwania, który sejf miał w chwili jej zapisania, jeśli go miał.
 
-native-error-09 = Zdjęcie nie dotarło do sejfu, więc nie zostało zapisane. Wybierz Użyj zdjęcia, aby spróbować ponownie.
+native-error-09 = Zdjęcie nie dotarło do sejfu, więc nie zostało zapisane. Proszę wybrać Użyj zdjęcia, aby spróbować ponownie.
 
 native-error-10 = Nic nie zostało ukryte. Obecnie nie można wprowadzać zmian w sejfie; komunikat nad dokumentami wyjaśnia dlaczego.
 
