@@ -1506,7 +1506,9 @@ describe("the code a clinic emails (#141)", () => {
   });
 
   it("puts focus back on the control it left once the clinic work is over", async () => {
-    const { bridge, props, rerender } = fixture({ snapshot: showing() });
+    const { bridge, props, rerender, failures } = fixture({
+      snapshot: showing(),
+    });
     let refuse!: (error: unknown) => void;
     vi.mocked(bridge.submitApprovalCode!).mockImplementationOnce(
       () =>
@@ -1524,8 +1526,10 @@ describe("the code a clinic emails (#141)", () => {
     expect(confirm).toBeDisabled();
     act(() => confirm.blur());
     expect(document.activeElement).toBe(document.body);
-    refuse({ code: "approval_code_mismatch" });
-    await screen.findByText(mismatch);
+    // A failure that is not about the code itself (a code to correct takes
+    // focus to its field instead, below).
+    refuse({ code: "portal_unreachable" });
+    await waitFor(() => expect(failures).toHaveLength(1));
     // Not while it is still disabled; then back where it was.
     expect(document.activeElement).toBe(document.body);
     rerender(<PortalDocuments {...props} />);
@@ -1778,5 +1782,148 @@ describe("Link another clinic (#145)", () => {
       ).toBeVisible();
       unmount();
     }
+  });
+});
+
+describe("what a screen reader is told in the clinic panel (clinic audit)", () => {
+  const asked: PortalLinkSummary = {
+    ...link,
+    approvalStatus: "challenge_ready",
+    approvalByCode: true,
+  };
+  const codeBox = () =>
+    screen.getByRole("textbox", { name: "Code from your clinic's email" });
+  const hint =
+    "Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.";
+  const mismatch =
+    "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.";
+  const panelHeading = () =>
+    screen.getByRole("heading", { name: "Clinic documents" });
+
+  it("takes focus to a code's field when it needs correcting, so the reason is heard (S1)", async () => {
+    const { bridge, props, rerender } = fixture({
+      snapshot: { ...snapshot, portalLinks: [asked] },
+    });
+    let refuse!: (error: unknown) => void;
+    vi.mocked(bridge.submitApprovalCode!).mockImplementationOnce(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    const user = userEvent.setup();
+    await user.type(codeBox(), "482193645");
+    const confirm = screen.getByRole("button", { name: "Confirm code" });
+    await user.click(confirm);
+    // The app disables clinic controls while the work runs: focus falls.
+    rerender(<PortalDocuments {...props} busy working />);
+    act(() => confirm.blur());
+    refuse({ code: "approval_code_mismatch" });
+    await screen.findByText(mismatch);
+    rerender(<PortalDocuments {...props} />);
+    // Not back to Confirm code, which says nothing of why: to the field,
+    // which the reason describes.
+    await waitFor(() => expect(codeBox()).toHaveFocus());
+    expect(codeBox()).toHaveAccessibleDescription(`${hint} ${mismatch}`);
+    expect(codeBox()).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("says which clinic each card's buttons act for (C3)", () => {
+    const second: PortalLinkSummary = {
+      ...link,
+      id: "fake-second-link",
+      clinicName: "FAKE Second Clinic",
+      portalBase: "https://second.example.test/patient",
+      approvalStatus: "expired",
+      approvalCanRestart: true,
+    };
+    fixture({ snapshot: { ...snapshot, portalLinks: [asked, second] } });
+    // The visible words stay the name; the clinic is the description.
+    const copies = screen.getAllByRole("button", { name: "Copy device code" });
+    expect(copies).toHaveLength(2);
+    const [firstCopy, secondCopy] = copies;
+    expect(firstCopy).toHaveAccessibleDescription("FAKE Clinic");
+    expect(secondCopy).toHaveAccessibleDescription("FAKE Second Clinic");
+    expect(
+      screen.getByRole("button", { name: "Confirm code" }),
+    ).toHaveAccessibleDescription("FAKE Clinic");
+    const retries = screen.getAllByRole("button", {
+      name: "Retry saved approval request",
+    });
+    expect(retries).toHaveLength(2);
+    expect(retries[0]).toHaveAccessibleDescription("FAKE Clinic");
+    expect(retries[1]).toHaveAccessibleDescription("FAKE Second Clinic");
+    expect(
+      screen.getByRole("button", { name: "Start a new approval request" }),
+    ).toHaveAccessibleDescription("FAKE Second Clinic");
+  });
+
+  it("keeps focus on the panel's heading while a link is made, then on the clinic (C2)", async () => {
+    const { bridge, props, rerender } = fixture({ snapshot: unlinkedSnapshot });
+    const connect = pendingConnect();
+    vi.mocked(bridge.connectPortal!).mockReturnValueOnce(connect.promise);
+    const next = { ...snapshot, portalLinks: [link] };
+    vi.mocked(props.refresh).mockResolvedValue(next);
+    const user = userEvent.setup();
+    await fillConnectForm();
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
+    // The form is disabled while the link is made: focus waits on the
+    // panel's heading, not on the page.
+    await waitFor(() => expect(panelHeading()).toHaveFocus());
+    await act(async () =>
+      connect.finish({ link, approvalError: null } as never),
+    );
+    rerender(<PortalDocuments {...props} snapshot={next} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "FAKE Clinic" }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("gives focus back to the link form when no link came of it (C2)", async () => {
+    const { bridge, props } = fixture({ snapshot: unlinkedSnapshot });
+    let refuse!: (error: unknown) => void;
+    vi.mocked(bridge.connectPortal!).mockReturnValueOnce(
+      new Promise((_, reject) => {
+        refuse = reject;
+      }) as never,
+    );
+    vi.mocked(props.refresh).mockResolvedValue(unlinkedSnapshot);
+    const user = userEvent.setup();
+    await fillConnectForm();
+    const send = screen.getByRole("button", {
+      name: "Connect and request approval",
+    });
+    await user.click(send);
+    await waitFor(() => expect(panelHeading()).toHaveFocus());
+    await act(async () => refuse({ code: "portal_link_code_rejected" }));
+    // So the linking code can be corrected and sent again.
+    await waitFor(() => expect(send).toHaveFocus());
+  });
+
+  it("keeps focus on the panel's heading while a link from the dialog is made (C2)", async () => {
+    const { bridge } = fixture();
+    const connect = pendingConnect();
+    vi.mocked(bridge.connectPortal!).mockReturnValueOnce(connect.promise);
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://second.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGH",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(panelHeading()).toHaveFocus());
   });
 });
