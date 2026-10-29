@@ -966,10 +966,12 @@ next check; pending count and clinic guidance are shown together with progress.
 
 Format 8 adds one manifest list, `refusedDeliveries`. When a clinic delivery
 fails its checks (it does not decrypt or open, its signed PDF is not verified for
-this link, or what the PDF says differs from its envelope), the vault remembers
-what the portal's listing said of it: `linkId`, `deliveryId`,
-`ciphertextSha256`, `refusedAtMs` and the delivery's own `expiresAt` (seconds,
-at most 7 days after it was made). Nothing from inside the document is kept, and
+this link, what the PDF says differs from its envelope, or a delivery already
+filed is listed again with another hash), the vault remembers what the portal's
+listing said of it: `linkId`, `deliveryId`, `ciphertextSha256`, `refusedAtMs`
+and the delivery's own `expiresAt` (seconds; however far off the portal sets it,
+no later than 8 days after the refusal: a delivery's 7 days and the day's grace
+after them). Nothing from inside the document is kept, and
 the portal is not told: the refusal stays on this device (Ben, 29 Oct).
 
 A check for new documents, and the check after unlocking, skip a listed delivery
@@ -979,13 +981,17 @@ of its documents could not be verified. The same id with another hash is a
 different document and is checked again. Try again (`vault_forget_refused_deliveries`)
 forgets a clinic's refusals, so the next check checks them again. A refusal is
 dropped once its delivery has expired. A check that could not be made, such as a
-missing or failed PDF helper, a cancelled check, or bytes that do not match the
-listing (which may be a damaged download), is not remembered: that delivery is
+missing or failed PDF helper, a cancelled check, bytes that do not match the
+listing (which may be a damaged download), or a package version newer than this
+build reads (which an update may open), is not remembered: that delivery is
 tried again next time, as before.
 
 The list is kept apart from `portalLinks`, so that the link a check is working
 from stays as saved while refusals are added. It holds at most 100 refusals per
-link; the oldest goes first. Each refusal and each Try again is recorded in the
+link. Those kept stay until they expire or Try again; a further refusal is not
+remembered (dropping a kept one would only have it downloaded and refused again).
+Forgetting expired refusals at the start of a check is only tidying: if it cannot
+be written, the check goes on. Each refusal and each Try again is recorded in the
 history (`deliveryRefused`, `deliveryRefusalsCleared`) in the same commit. A
 manifest below format 8 that holds refusals is corrupt, as is a refusal for no
 saved link, a second refusal for one delivery, more than 100 for a link, or a

@@ -268,7 +268,13 @@ where
     let mut result = CheckResult::default();
     let links = store.delivery_links(session)?;
     // Refusals whose deliveries have expired are no longer offered (#143).
-    store.forget_expired_refusals(session)?;
+    // Only tidying: an expired refusal is ignored anyway, so a failure to
+    // write here does not stop the check, unless the vault locked.
+    if let Err(error @ (VaultError::Locked | VaultError::Cancelled)) =
+        store.forget_expired_refusals(session)
+    {
+        return Err(error);
+    }
     for original in links.into_iter().filter(|link| include(link)) {
         let outcome = (|| -> Result<(), VaultError> {
             // Known durable custody is independent of advisory approval refresh.

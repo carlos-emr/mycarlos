@@ -24,6 +24,7 @@ export function RefusedDeliveries({
         <button
           className="button"
           type="button"
+          id={`portal-try-again-${link.id}`}
           disabled={disabled}
           aria-label={t("portal.tryAgainFor", {
             clinic: link.clinicName ?? link.portalBase,

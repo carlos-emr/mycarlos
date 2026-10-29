@@ -1670,6 +1670,12 @@ describe("clinic documents that failed their checks (#143)", () => {
     expect(forget.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(bridge.checkDocuments!).mock.invocationCallOrder[0],
     );
+    // Still not verified: focus is back on Try again.
+    await waitFor(() => expect(tryAgain).toHaveFocus());
+
+    // Not while another clinic operation runs.
+    rerender(<PortalDocuments {...props} busy />);
+    expect(tryAgain).toBeDisabled();
 
     // Nothing to try again with while the vault is read-only.
     rerender(<PortalDocuments {...props} readOnly />);
@@ -1692,18 +1698,69 @@ describe("clinic documents that failed their checks (#143)", () => {
     );
     expect(line).not.toBeInTheDocument();
   });
-  it("says it with each language's plural forms", () => {
-    for (const locale of LOCALES)
+  it("gives focus to the clinic's name when its documents verified on Try again", async () => {
+    const refused: PortalLinkSummary = {
+      ...link,
+      clinicApproved: true,
+      approvalStatus: "accepted",
+      refusedDeliveries: 1,
+    };
+    const { bridge, props, rerender } = fixture({
+      snapshot: { ...snapshot, portalLinks: [refused] },
+    });
+    bridge.forgetRefusedDeliveries = vi.fn().mockResolvedValue(undefined);
+    let finish!: () => void;
+    vi.mocked(bridge.checkDocuments!).mockReturnValue(
+      new Promise((resolve) => {
+        finish = () => resolve({ added: 1, refused: 0, receiptsPending: 0 });
+      }),
+    );
+    rerender(<PortalDocuments {...props} />);
+    await userEvent.setup().click(
+      screen.getByRole("button", {
+        name: humanText("Try again for FAKE Clinic"),
+      }),
+    );
+    await waitFor(() => expect(bridge.checkDocuments).toHaveBeenCalledOnce());
+    // The document verified: none is remembered any more.
+    rerender(
+      <PortalDocuments
+        {...props}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [{ ...refused, refusedDeliveries: 0 }],
+        }}
+      />,
+    );
+    act(() => finish());
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "FAKE Clinic" })).toHaveFocus(),
+    );
+  });
+  it("says it with each language's plural forms, and names the button with its words first", () => {
+    for (const locale of LOCALES) {
       for (const count of [1, 2, 5, 22]) {
         const text = translate(locale, "portal.refusedDocuments", { count });
         expect(humanValue(text), `${locale} ${count}`).toContain(String(count));
-        expect(
-          humanValue(
-            translate(locale, "portal.tryAgainFor", {
-              clinic: "FAKE Clinic",
-            }),
-          ),
-        ).toContain("FAKE Clinic");
       }
+      const name = humanValue(
+        translate(locale, "portal.tryAgainFor", { clinic: "FAKE Clinic" }),
+      );
+      expect(name).toContain("FAKE Clinic");
+      // Label in name: the accessible name starts with the visible words.
+      expect(name.startsWith(translate(locale, "portal.tryAgain")), locale).toBe(
+        true,
+      );
+    }
+    // Polish: the genitive after the negated verb, in each plural form.
+    const pl = (count: number) =>
+      humanValue(translate("pl", "portal.refusedDocuments", { count }));
+    expect(pl(1)).toBe(
+      "Nie udało się zweryfikować 1 dokumentu z tej przychodni. Poproś przychodnię o ponowne wysłanie.",
+    );
+    for (const count of [2, 5, 22])
+      expect(pl(count)).toBe(
+        `Nie udało się zweryfikować ${count} dokumentów z tej przychodni. Poproś przychodnię o ponowne wysłanie.`,
+      );
   });
 });

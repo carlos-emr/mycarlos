@@ -126,6 +126,11 @@ impl Drop for PortalWork<'_> {
     }
 }
 
+/// The longest a refusal is remembered: a delivery's 7 days and the day's
+/// grace after its expiry (#143).
+#[cfg(feature = "portal-linking")]
+const MAX_REFUSAL_SECONDS: u64 = 8 * 86_400;
+
 /// How checking a downloaded delivery ended, when it was not filed.
 #[cfg(feature = "portal-linking")]
 enum Received {
@@ -391,29 +396,30 @@ impl VaultStore {
             manifest.refused_deliveries.retain(|r| {
                 !r.expired(now) && !(r.link_id == link.id && r.delivery_id == outer.delivery_id)
             });
-            // At most MAX_REFUSED_PER_LINK for a clinic: the oldest goes.
-            let kept = manifest
+            // At most MAX_REFUSED_PER_LINK for a clinic. Those already kept
+            // stay (dropping one would only have it downloaded and refused
+            // again); a further one is refused at each check until older
+            // ones expire.
+            if manifest
                 .refused_deliveries
                 .iter()
                 .filter(|r| r.link_id == link.id)
-                .count();
-            if kept >= MAX_REFUSED_PER_LINK {
-                let mut drop = kept + 1 - MAX_REFUSED_PER_LINK;
-                manifest.refused_deliveries.retain(|r| {
-                    if drop > 0 && r.link_id == link.id {
-                        drop -= 1;
-                        false
-                    } else {
-                        true
-                    }
-                });
+                .count()
+                >= MAX_REFUSED_PER_LINK
+            {
+                return Ok(());
             }
             manifest.refused_deliveries.push(RefusedDelivery {
                 link_id: link.id,
                 delivery_id: outer.delivery_id.clone(),
                 ciphertext_sha256: outer.ciphertext_sha256.clone(),
                 refused_at_ms: now,
-                expires_at: outer.expires_at,
+                // The portal sets the expiry; however far off it says, the
+                // refusal lasts no longer than a delivery can (7 days, and
+                // the day's grace after it).
+                expires_at: outer
+                    .expires_at
+                    .min(now / 1000 + MAX_REFUSAL_SECONDS),
             });
             let mut entry = HistoryEntry::new(HistoryEvent::DeliveryRefused, now);
             entry.portal_link_id = Some(link.id);
@@ -495,11 +501,15 @@ impl VaultStore {
             .filter_map(|l| l.clinic.as_ref())
             .flat_map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()))
             .collect::<Vec<_>>();
-        // Bytes that do not match the listing may be a damaged download, not
-        // the clinic's document: refused this time, not remembered.
+        // Bytes that do not match the listing may be a damaged download, and
+        // a newer package version may open after an update: neither is the
+        // clinic's document failing its checks, so neither is remembered.
         let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000).map_err(
             |refusal| Received::Refused {
-                definite: !matches!(refusal, wire::Refusal::HashMismatch),
+                definite: !matches!(
+                    refusal,
+                    wire::Refusal::HashMismatch | wire::Refusal::UnsupportedVersion
+                ),
             },
         )?;
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
@@ -948,7 +958,7 @@ mod unknown_service_date_tests {
             ));
             let temp = tempfile::tempdir().unwrap();
             let store = store(temp.path().join("vault"), &link);
-            let history_before = crate::vault::history_events_for_test(&store).len();
+            let history_before = crate::vault::history_events_for_test(&store);
             assert!(matches!(
                 store.receive_delivery(&outer, &sealed, &link, store.portal_link_ticket()),
                 Err(VaultError::PickupRefused)
@@ -958,9 +968,17 @@ mod unknown_service_date_tests {
                 .pending_receipts(&link, store.portal_link_ticket())
                 .unwrap()
                 .is_empty());
+            // The helper's verdict is definite: the refusal is remembered,
+            // with its one history entry, and nothing else is written (#143).
+            let history = crate::vault::history_events_for_test(&store);
+            assert_eq!(history.len(), history_before.len() + 1);
+            assert_eq!(history.last().unwrap().event, HistoryEvent::DeliveryRefused);
+            let guard = store.session();
+            let saved = &guard.as_ref().unwrap().manifest.refused_deliveries;
+            assert_eq!(saved.len(), 1);
             assert_eq!(
-                crate::vault::history_events_for_test(&store).len(),
-                history_before
+                (saved[0].link_id, &saved[0].delivery_id, &saved[0].ciphertext_sha256),
+                (link.id, &outer.delivery_id, &outer.ciphertext_sha256)
             );
         }
     }
@@ -4541,10 +4559,11 @@ mod approval_recovery_tests {
         check_listing(&store, &link, &[]);
         assert!(refused_saved(&store).is_empty());
     }
-    /// #143: at most MAX_REFUSED_PER_LINK refusals are kept for a clinic;
-    /// the oldest goes first, and other clinics' are untouched.
+    /// #143: at most MAX_REFUSED_PER_LINK refusals are kept for a clinic.
+    /// Those kept stay, so none is downloaded and refused again at each
+    /// check; a further one is not remembered.
     #[test]
-    fn should_keep_at_most_the_newest_refusals_for_a_clinic() {
+    fn should_keep_at_most_the_first_refusals_for_a_clinic() {
         let (_temp, store, _, _) = setup(false);
         let (link, base, _, _) = fixture_package();
         add_link(&store, &link);
@@ -4557,8 +4576,79 @@ mod approval_recovery_tests {
         }
         let saved = refused_saved(&store);
         assert_eq!(saved.len(), MAX_REFUSED_PER_LINK);
-        assert_eq!(saved[0].1, outers[1].delivery_id, "the oldest went");
-        assert_eq!(saved.last().unwrap().1, outers.last().unwrap().delivery_id);
+        assert_eq!(saved[0].1, outers[0].delivery_id, "the first stays");
+        assert!(!saved
+            .iter()
+            .any(|r| r.1 == outers.last().unwrap().delivery_id));
+        assert_eq!(
+            history_count(&store, HistoryEvent::DeliveryRefused),
+            MAX_REFUSED_PER_LINK
+        );
+    }
+    /// #143: however far off the portal sets a delivery's expiry, its
+    /// refusal is remembered for no longer than a delivery can last.
+    #[test]
+    fn should_remember_a_refusal_no_longer_than_a_delivery_lasts() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let (mut outer, _) = undecryptable(&base, 7);
+        outer.expires_at = u64::from(u32::MAX) * 4;
+        store
+            .remember_refusal(&outer, &link, store.portal_link_ticket())
+            .unwrap();
+        let guard = store.session();
+        let saved = &guard.as_ref().unwrap().manifest.refused_deliveries;
+        assert!(saved[0].expires_at <= crate::now_ms() / 1000 + MAX_REFUSAL_SECONDS);
+    }
+    /// #143: a delivery that opens, but whose signed PDF could not be checked
+    /// (unit tests have no PDF helper, as when it is missing or fails), is
+    /// refused this time and checked again next time, never remembered; and
+    /// nothing is remembered for a session that has ended.
+    #[test]
+    fn should_not_remember_a_delivery_whose_pdf_could_not_be_checked() {
+        let (_temp, store, _, _) = setup(false);
+        let packet: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/java-delivery-interop-v1.json"
+        ))
+        .unwrap();
+        let now = crate::now_ms() / 1000;
+        let (mut outer, sealed, link, _) = wire::tests::mutated_packet(&packet, |m| {
+            m["created_at"] = serde_json::json!(now);
+            m["expires_at"] = serde_json::json!(now + 3600);
+        });
+        outer.created_at = now;
+        outer.expires_at = now + 3600;
+        assert!(wire::open(&outer, &sealed, &link, &[], now).is_ok());
+        add_link(&store, &link);
+        store
+            .mutate_manifest(|m| {
+                m.portal_links.retain(|l| l.id == link.id);
+                Ok(())
+            })
+            .unwrap();
+        for _ in 0..2 {
+            let (result, fetched) =
+                check_listing(&store, &link, &[(outer.clone(), sealed.clone())]);
+            assert_eq!(result.refused, 1);
+            assert_eq!(fetched, vec![outer.delivery_id.clone()]);
+        }
+        assert!(refused_saved(&store).is_empty());
+        assert_eq!(history_count(&store, HistoryEvent::DeliveryRefused), 0);
+
+        let ended = store.portal_link_ticket();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let (definite, _) = undecryptable(&outer, 7);
+        assert!(matches!(
+            store.remember_refusal(&definite, &link, ended),
+            Err(VaultError::Cancelled)
+        ));
+        assert!(matches!(
+            store.receive_delivery(&definite, &[7; 200], &link, ended),
+            Err(VaultError::Cancelled)
+        ));
+        assert!(refused_saved(&store).is_empty());
     }
     /// #143: a format 7 vault opens with no remembered refusals and is
     /// upgraded to format 8 at the writable unlock, after which a refusal is

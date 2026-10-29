@@ -121,6 +121,19 @@ export function PortalDocuments({
   }>({ text: "" });
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
+  // After Try again (#143), focus goes back to the button, or to the
+  // clinic's name once its documents verified and the button is gone.
+  const [focusAfterRetry, setFocusAfterRetry] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusAfterRetry || busy || working) return;
+    if (document.activeElement === document.body) {
+      (
+        document.getElementById(`portal-try-again-${focusAfterRetry}`) ??
+        document.getElementById(`portal-link-title-${focusAfterRetry}`)
+      )?.focus();
+    }
+    setFocusAfterRetry(null);
+  }, [focusAfterRetry, busy, working, snapshot.portalLinks]);
   // The code each device's clinic emailed, as typed, and what the last try
   // with it found (#141). The code is cleared once it has been sent.
   const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
@@ -276,8 +289,9 @@ export function PortalDocuments({
       link.approvalStatus ?? "",
     );
   const disabled = busy || readOnly || connecting || working;
-  /** Checks every clinic; `first` runs before, in the same operation. */
-  const check = (first?: () => Promise<void>) => {
+  /** Checks every clinic; `first` runs before, in the same operation, and
+   * `after` once it has ended. */
+  const check = (first?: () => Promise<void>, after?: () => void) => {
     polling.hold();
     // What this check found for each open request: the portal has it,
     // unless the check names a problem with that device's clinic.
@@ -301,7 +315,10 @@ export function PortalDocuments({
       );
       // Reported after leaving this view too, as for connecting.
       setNotice(documentCheckText(result));
-    }).finally(() => polling.restart(known));
+    }).finally(() => {
+      polling.restart(known);
+      after?.();
+    });
   };
   const checkButton = (
     <button
@@ -562,7 +579,11 @@ export function PortalDocuments({
               onTryAgain={
                 readOnly || !bridge.forgetRefusedDeliveries
                   ? undefined
-                  : () => check(() => bridge.forgetRefusedDeliveries!(link.id))
+                  : () =>
+                      check(
+                        () => bridge.forgetRefusedDeliveries!(link.id),
+                        () => setFocusAfterRetry(link.id),
+                      )
               }
             />
             {left !== null && (
