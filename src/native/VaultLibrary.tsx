@@ -229,6 +229,11 @@ export function VaultLibrary({
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Security's profile dialogs (Ben, 29 Oct): drawn in this host, beside the
+  // other dialogs, and the page behind them is inert.
+  const [profileDialogHost, setProfileDialogHost] =
+    useState<HTMLElement | null>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
   // shown: it is fetched for the photo view and dropped when that closes.
   const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
@@ -1388,6 +1393,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1417,6 +1423,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1455,6 +1462,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -2167,6 +2175,8 @@ export function VaultLibrary({
                 onLock={lockAndConceal}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                dialogHost={profileDialogHost}
+                onDialogChange={setProfileDialogOpen}
                 hiddenCount={hiddenRecords.length}
                 focusHiddenEntry={returnFocusToHidden}
                 focusAuditEntry={returnFocusToHistory}
@@ -2450,6 +2460,7 @@ export function VaultLibrary({
               </p>
             </ConfirmDialog>
           )}
+          <div ref={setProfileDialogHost} />
         </section>
       </div>
     </div>

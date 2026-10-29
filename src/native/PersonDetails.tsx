@@ -1,4 +1,12 @@
-import { useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { useModalFocus } from "../useModalFocus";
 import { useI18n, type MessageKey } from "../i18n";
 import {
   localDateText,
@@ -87,16 +95,103 @@ export function PersonDetailsFields({
     </>
   );
 }
+/** Draws a dialog in the library's dialog host, beside its other dialogs and
+ * outside the page it makes inert; without a host, in place. */
+export function inDialogHost(dialog: ReactNode, host?: HTMLElement | null) {
+  return host ? createPortal(dialog, host) : dialog;
+}
+
+/** Adding a profile, or editing a person's details, in a dialog (Ben, 29 Oct):
+ * the same box as Rename. Focus goes to its first field; Escape, Cancel or a
+ * click outside close it, and focus goes back to the button that opened it.
+ * A refusal is shown inside it, as the page behind it is inert. */
+export function PersonDialog({
+  titleId,
+  title,
+  submitText,
+  submitDisabled,
+  busy,
+  refusal,
+  onSubmit,
+  onClose,
+  children,
+}: {
+  titleId: string;
+  title: string;
+  submitText: string;
+  submitDisabled: boolean;
+  busy: boolean;
+  refusal?: string;
+  onSubmit: (event: FormEvent) => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const { t } = useI18n();
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const close = () => {
+    if (!busy) onClose();
+  };
+  useModalFocus(true, dialogRef, close);
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={close}>
+      <section
+        ref={dialogRef}
+        className="record-dialog native-rename-dialog native-person-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="dialog-head">
+          <h2 id={titleId}>{title}</h2>
+        </header>
+        <form onSubmit={onSubmit}>
+          <div className="native-rename-fields">
+            {children}
+            {refusal && <p role="alert">{refusal}</p>}
+          </div>
+          <footer className="dialog-actions">
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={close}
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={submitDisabled}
+            >
+              {submitText}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 export function PersonDetailsList({
   people,
   busy,
   onSave,
+  focusId = null,
+  onFocusLeft,
 }: {
   people: PatientProfile[];
   busy: boolean;
   onSave: (profileId: string, details: PersonDetails) => Promise<boolean>;
+  /** A person just added: focus goes to their line (Ben, 29 Oct). */
+  focusId?: string | null;
+  onFocusLeft?: () => void;
 }) {
   const { t } = useI18n();
+  const lines = useRef(new Map<string, HTMLElement>());
+  useEffect(() => {
+    if (focusId) lines.current.get(focusId)?.focus();
+  }, [focusId, people]);
   const [editing, setEditing] = useState<{
     id: string;
     details: PersonDetails;
@@ -168,7 +263,17 @@ export function PersonDetailsList({
             </form>
           ) : (
             <>
-              <span>
+              {/* Focusable only while it is the place focus was sent to. */}
+              <span
+                ref={(line) => {
+                  if (line) lines.current.set(person.id, line);
+                  else lines.current.delete(person.id);
+                }}
+                tabIndex={focusId === person.id ? -1 : undefined}
+                onBlur={() => {
+                  if (focusId === person.id) onFocusLeft?.();
+                }}
+              >
                 <strong>{person.displayName}</strong>
                 {" · "}
                 {person.fullName || t("personDetails.noName")}
