@@ -1911,15 +1911,21 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
     await user.type(
-      screen.getByLabelText(humanText("New profile name")),
+      within(dialog).getByLabelText(humanText("New profile name")),
       " shared WITH me ",
     );
-    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+    expect(within(dialog).getByRole("alert")).toHaveHumanTextContent(
       "Shared with me is where shared files go. Choose another name.",
     );
     expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     ).toBeDisabled();
     expect(bridge.createProfile).not.toHaveBeenCalled();
   });
@@ -7473,24 +7479,34 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Security") }),
     );
 
-    const name = screen.getByLabelText(humanText("New profile name"));
-    await user.type(name, "Jamie's parent");
+    // Add profile opens a dialog (Ben, 29 Oct).
     await user.click(
       screen.getByRole("button", { name: humanText("Add profile") }),
     );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    await user.type(name, "Jamie's parent");
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
-    // The refusal names the box to check (#69).
+    // The refusal names the box to check (#69), inside the dialog, which
+    // stays open: the page behind it is inert.
     expect(
-      await screen.findByText(
+      await within(dialog).findByText(
         humanText("Check the profile name, then try again."),
       ),
     ).toBeVisible();
 
     await user.click(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     );
-    await waitFor(() => expect(name).toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("clears unfinished passphrase fields when leaving Security", async () => {
