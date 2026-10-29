@@ -1154,10 +1154,11 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .native-backup-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .native-backup-settings > div > .button { max-width: 100%; }
 .native-profile-settings > .native-person-details-list { grid-column: 1 / -1; margin: 0; }
-/* Wide screens: the profile form is 330px beside its text, as wide as the other setting
-   forms, and the people list still spans under both (#109). */
+/* Wide screens: main's grid stays (one column when the section is narrow, and the people
+   list spans under both), and the profile form is 330px at the right of its column, as wide
+   as the other setting forms (#109). */
 @media (min-width: 40.0625em) {
-  .native-profile-settings { grid-template-columns: minmax(0, 1fr) min(100%, 330px); }
+  .native-profile-settings > form { max-width: 330px; justify-self: end; }
 }
 .native-person-details-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; }
 .native-person-details-list form { width: 100%; }
