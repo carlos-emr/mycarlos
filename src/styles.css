@@ -455,10 +455,11 @@ h1, h2, p { margin: 0; }
 .native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
-/* #84: the last column (More options) may grow, so larger text doesn't cut the button off. */
+/* #84: the last column (More options) grows with the text, so larger text doesn't cut the
+   button off; a set width, not one per row, keeps every row's columns under their headings. */
 .file-head, .file-row {
   display: grid;
-  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem minmax(34px, auto);
+  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem max(34px, 2.125rem);
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -689,11 +690,11 @@ h1, h2, p { margin: 0; }
   .mobile-section-picker select { flex: 1; min-width: 0; min-height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
   .app-body { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) minmax(34px, auto); }
+  .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) max(34px, 2.125rem); }
   .file-head .column, .file-row .column { display: none; }
   .trash-list .file-head, .trash-list .file-row { grid-template-columns: 24px minmax(0, 1fr) 4.5rem 3.75rem; }
   .trash-list .file-row .countdown, .native-hidden-list .file-row .hidden-date { display: block; overflow: visible; white-space: normal; line-height: 1.3; }
-  /* The other columns are hidden here, so the name is the only way to tell items apart:
+  /* Most columns are hidden here, so the name is the only way to tell items apart:
      it wraps instead of being cut short (#84), as in the vault's list (#67). */
   .file-row :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
 }
@@ -715,7 +716,7 @@ h1, h2, p { margin: 0; }
   .filter-chips { width: 100%; }
   .view-controls { margin-left: 0; }
   .status-line { margin-top: 2px; }
-  .file-head, .file-row { grid-template-columns: 24px minmax(0, 1fr) minmax(28px, auto); gap: 10px; padding: 10px 12px; }
+  .file-head, .file-row { grid-template-columns: 24px minmax(0, 1fr) max(28px, 1.9rem); gap: 10px; padding: 10px 12px; }
   .file-row { min-height: 68px; }
   .file-head { min-height: 48px; }
   .document-icon { width: 36px; height: 36px; }
