@@ -9885,6 +9885,52 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     );
   });
 
+  // Demo fix (29 Oct, Ben): a vault with devices a reset portal deleted. The
+  // library is usable before the check ends; the native check says those
+  // devices are removed (and asks no more about them in this run of the app),
+  // and Clinic documents then lists only the working one.
+  it("keeps the library usable during a check with three gone devices, then lists only the working one", async () => {
+    const gone = [1, 2, 3].map(
+      (n): PortalLinkSummary => ({
+        ...approved,
+        id: `fake-gone-link-${n}`,
+        deviceKeyId: `FAKE_GONE_DEVICE_${n}`,
+      }),
+    );
+    const slow = later<Check>();
+    const { bridge } = clinicBridge(vaultWith(...gone, approved), {
+      checkDocuments: vi.fn().mockReturnValueOnce(slow.promise),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    // A saved document opens while the check runs.
+    await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await click(screen.getByRole("button", { name: "Close document details" }));
+    await act(async () =>
+      slow.settle(
+        found({
+          issues: gone.map((link) => issue(link, "portal_device_removed")),
+        }),
+      ),
+    );
+    await pass(0);
+    await click(screen.getByRole("button", { name: "Security" }));
+    expect(
+      screen.getAllByRole("heading", { name: "FAKE First Clinic", level: 3 }),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("button", {
+        name: translate("en", "portal.earlierShow", { count: 3 }),
+      }),
+    ).toBeVisible();
+  });
+
   it.each([
     [
       "a fault on this device",
