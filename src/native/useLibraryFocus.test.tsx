@@ -320,6 +320,23 @@ describe("library focus recovery", () => {
     ).toHaveFocus();
   });
 
+  it("keeps a late opened place's request when the reader presses again while busy (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    const opener = screen.getByRole("button", { name: "Elsewhere" });
+    opener.focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    // Nothing is said yet, so the reader presses the place again.
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
   it("takes a late opened place to its heading when nothing has focus by then (#121)", () => {
     const { rerender } = render(<Library />);
     frame();

@@ -1423,7 +1423,7 @@ export function VaultLibrary({
     >
       {/* Polite, but not a second status line: the library has one. While
           Rename is open it keeps what it said: news is not about the dialog,
-          and is read out once Rename closes (#121). */}
+          and is read out a moment after Rename closes (#121). */}
       <p className="sr-only" aria-live="polite">
         {holdNews ? announcedBeforeRename.current : sharedAnnouncement}
       </p>
