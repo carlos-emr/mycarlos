@@ -1389,6 +1389,8 @@ struct AuditHistory {
     checked_until_ms: Option<u64>,
     /// The time of the first later entry, when there is one.
     checked_from_ms: Option<u64>,
+    /// Every event the manifest pins is shown, even when part of the storage is damaged.
+    every_event_shown: bool,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -1406,6 +1408,7 @@ impl From<vault::HistoryView> for AuditHistory {
             complete: view.complete,
             checked_until_ms,
             checked_from_ms,
+            every_event_shown: view.every_event_shown,
         }
     }
 }
@@ -6042,6 +6045,7 @@ mod audit_history_ipc_tests {
                 entries,
                 later,
                 complete,
+                every_event_shown: complete,
             })
         };
         let partial = shown(entries(), Vec::new(), false);

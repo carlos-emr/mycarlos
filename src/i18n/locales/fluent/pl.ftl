@@ -1559,6 +1559,8 @@ interface-history-damaged = Część tej historii jest uszkodzona. Zdarzenia po 
 
 interface-history-damagedAll = Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc nie wyświetlono żadnego z nich.
 
+interface-history-damagedStorageOnly = Część miejsca, w którym zapisano tę historię, jest uszkodzona, ale wszystkie jej zdarzenia zostały zweryfikowane i są wyświetlane.
+
 interface-history-damagedBefore = Część tej historii jest uszkodzona. Zdarzenia sprzed { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
 
 interface-history-damagedBetween = Część tej historii jest uszkodzona. Zdarzenia między { $from } a { $to } nie mogą zostać zweryfikowane i nie są wyświetlane.

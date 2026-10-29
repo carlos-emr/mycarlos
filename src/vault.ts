@@ -253,6 +253,9 @@ export interface AuditHistoryView {
   complete: boolean;
   checkedUntilMs: number | null;
   checkedFromMs: number | null;
+  /** Every event the manifest pins is shown, even when part of its storage is
+   * damaged (only padding, say): no event is missing and there is no gap. */
+  everyEventShown?: boolean;
 }
 
 /** An audit event that native code authenticated from the start of the history chain. */

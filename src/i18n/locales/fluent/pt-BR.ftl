@@ -1527,6 +1527,8 @@ interface-history-damaged = Parte deste histórico está danificada. Os eventos 
 
 interface-history-damagedAll = Parte deste histórico está danificada. Os eventos dele não podem ser verificados, por isso nenhum é exibido.
 
+interface-history-damagedStorageOnly = Parte do armazenamento deste histórico está danificada, mas todos os eventos dele foram verificados e são exibidos.
+
 interface-history-damagedBefore = Parte deste histórico está danificada. Os eventos anteriores a { $date } não podem ser verificados e não são exibidos.
 
 interface-history-damagedBetween = Parte deste histórico está danificada. Os eventos entre { $from } e { $to } não podem ser verificados e não são exibidos.

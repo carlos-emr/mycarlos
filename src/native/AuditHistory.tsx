@@ -214,7 +214,11 @@ export function AuditHistory({
           {entries.length === 0 && view.laterEntries.length === 0 ? (
             view.complete && <p>{translateNow("interface.history.empty")}</p>
           ) : (
-            <HistoryList entries={entries} later={view.laterEntries} />
+            <HistoryList
+              entries={entries}
+              later={view.laterEntries}
+              contiguous={view.everyEventShown === true}
+            />
           )}
         </>
       )}
@@ -225,6 +229,9 @@ export function AuditHistory({
 /** The notice for a history that is not complete, from the native dates only (D146): the gap
  * between the two checked ends, or what lies before or after the only one, or all of it. */
 function damageNotice(view: AuditHistoryView): string {
+  // Only storage without events is damaged: every event checks out and is shown.
+  if (view.everyEventShown)
+    return translateNow("interface.history.damagedStorageOnly");
   const until = view.checkedUntilMs;
   const from = view.checkedFromMs;
   if (until !== null && from !== null)
@@ -246,9 +253,12 @@ function damageNotice(view: AuditHistoryView): string {
 function HistoryList({
   entries,
   later,
+  contiguous,
 }: {
   entries: AuditHistoryEntry[];
   later: AuditHistoryEntry[];
+  /** No event is missing between the two parts, so no gap is marked. */
+  contiguous: boolean;
 }) {
   return (
     <>
@@ -259,7 +269,7 @@ function HistoryList({
       </p>
       <ol className="audit-history-list">
         {[...later].reverse().map(historyItem)}
-        {later.length > 0 && entries.length > 0 && (
+        {!contiguous && later.length > 0 && entries.length > 0 && (
           <li key="gap" className="audit-history-gap">
             <p className="purpose-note warning">
               {translateNow("interface.history.gap")}

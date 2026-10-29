@@ -1381,6 +1381,7 @@ impl VaultStore {
                 entries: Vec::new(),
                 later: Vec::new(),
                 complete,
+                every_event_shown: complete,
             });
         }
         let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
@@ -1438,6 +1439,16 @@ impl VaultStore {
         // Each entry once: the later ones are those after the checked start.
         let shown = entries.len() as u64;
         later.retain(|entry| entry.seq >= shown);
+        // Every pinned event is shown when the shown events, in order, link from the start of
+        // the chain to the pinned count and head (#120 C1): a damaged piece then held none of
+        // them, and nothing lies between `entries` and `later`.
+        let mut every_event = entries.clone();
+        every_event.extend(later.iter().cloned());
+        let (whole, whole_head) =
+            history::linked_prefix(manifest.vault_id, &every_event, cancelled)
+                .map_err(|_| VaultError::Cancelled)?;
+        let every_event_shown =
+            whole == every_event.len() && whole == pinned && whole_head == manifest.history.head;
         run_at_test_boundary("history-verified");
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -1446,6 +1457,7 @@ impl VaultStore {
             entries,
             later,
             complete,
+            every_event_shown,
         })
     }
 
@@ -5557,6 +5569,10 @@ pub struct HistoryView {
     pub later: Vec<HistoryEntry>,
     /// Whether they are the whole chain the manifest pins.
     pub complete: bool,
+    /// Whether every event the manifest pins is shown: `entries` then `later` link from the
+    /// start of the chain to its pinned count and head. True when complete; when not, the
+    /// damaged pieces held none of the events (padding, say), so nothing is missing between.
+    pub every_event_shown: bool,
 }
 
 /// The entries in one segment. `Corrupt` when its object is gone or does not
@@ -15506,6 +15522,7 @@ mod tests {
         let store = store_with_long_history(&temp.path().join("FAKE-vault"));
         let view = store.history_view().unwrap();
         assert!(view.complete);
+        assert!(view.every_event_shown);
         assert!(view.later.is_empty());
         let guard = store.session();
         let manifest = &guard.as_ref().unwrap().manifest;
@@ -15540,6 +15557,8 @@ mod tests {
         assert!(!view.complete);
         assert_eq!(view.entries, all);
         assert!(view.later.is_empty());
+        // Only padding is damaged: every pinned event checks out and is shown (#120 C1).
+        assert!(view.every_event_shown);
     }
 
     #[test]
@@ -15572,12 +15591,16 @@ mod tests {
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);
         assert_eq!(view.later, all[after..]);
+        // A piece with events is lost: not every event is shown.
+        assert!(!view.every_event_shown);
         let path = root.join("objects").join(&middle.object_name);
         fs::remove_file(&path).unwrap();
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);
         assert_eq!(view.later, all[after..]);
+        // A piece with events is lost: not every event is shown.
+        assert!(!view.every_event_shown);
         // Later pieces that do not end at the pinned head prove nothing, so none is shown.
         store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
         let view = store.history_view().unwrap();
@@ -15680,7 +15703,8 @@ mod tests {
             HistoryView {
                 entries: Vec::new(),
                 later: Vec::new(),
-                complete: true
+                complete: true,
+                every_event_shown: true,
             }
         );
     }
