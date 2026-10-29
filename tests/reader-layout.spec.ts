@@ -165,6 +165,17 @@ function measure(page: Page) {
   });
 }
 
+/** The default text size the fit asked for is the one in use. A full-page
+ * screenshot puts Chrome's back to 16px, so only viewport shots are taken. */
+async function expectTextSize(page: Page, font: number) {
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize,
+    ),
+    "default text size",
+  ).toBe(`${font}px`);
+}
+
 const FITS = [
   { label: "1280-text100", width: 1280, height: 800, font: 16, narrow: false },
   { label: "1280-text200", width: 1280, height: 800, font: 32, narrow: true },
@@ -211,6 +222,7 @@ for (const [fit, locale] of [
       await page.screenshot({
         path: info.outputPath(`d144-${fit.label}-${locale}.png`),
       });
+      await expectTextSize(page, fit.font);
       const at = await measure(page);
       expect(at.words).toEqual([
         translate(locale, "interface.DocumentReader.firstPage"),
@@ -252,6 +264,9 @@ for (const [fit, locale] of [
         expect(at.display).toBe("flex");
         expect(new Set(at.parts.map((part) => part.middle)).size).toBe(1);
       }
+      // At 200% text the reader scrolls, so these checks always run there.
+      if (fit.font === 32)
+        expect(at.scrolls, "the reader scrolls at 200% text").toBe(true);
       if (at.scrolls) {
         // A control the focus moves to is scrolled clear of the bar.
         const summary = reader.locator(".native-reader-text summary");
@@ -273,13 +288,15 @@ for (const [fit, locale] of [
         await page.screenshot({
           path: info.outputPath(`d144-${fit.label}-${locale}-scrolled.png`),
         });
+        await expectTextSize(page, fit.font);
       }
       // The keys turn pages in the app too.
-      await reader.locator(".native-reader-page").focus();
+      await reader.focus();
       await page.keyboard.press("End");
       await expect(reader.locator(".native-reader-where")).toHaveText(
         translate(locale, "interface.reader.where", { page: 5, total: 5 }),
       );
+      await expectTextSize(page, fit.font);
     } finally {
       await context.close();
     }
@@ -293,6 +310,7 @@ test("shows a one-page document's count only, at the reader's foot", async ({
   try {
     const reader = await openReader(page, "en", "FAKE One-page note.pdf");
     await page.screenshot({ path: info.outputPath("d144-one-page.png") });
+    await expectTextSize(page, FITS[2].font);
     const bar = reader.locator(".native-reader-pages");
     await expect(bar).toHaveText(
       translate("en", "interface.reader.where", { page: 1, total: 1 }),
@@ -320,7 +338,7 @@ test("fits every language's page bar on one row just above the narrow layout", a
     const { context, page } = await readerAt(browser, info, fit, locale);
     try {
       const reader = await openReader(page, locale, "FAKE Long report.pdf");
-      await reader.locator(".native-reader-page").focus();
+      await reader.focus();
       await page.keyboard.press("End");
       await expect(reader.locator(".native-reader-where")).toHaveText(
         translate(locale, "interface.reader.where", { page: 12, total: 12 }),
@@ -335,8 +353,64 @@ test("fits every language's page bar on one row just above the narrow layout", a
         .toBe(1);
       expect.soft(at.cut, locale).toEqual([]);
       expect.soft(at.barWider, locale).toBeLessThanOrEqual(0);
+      await expectTextSize(page, fit.font);
     } finally {
       await context.close();
     }
+  }
+});
+
+// A page zoomed in is read down with Page Down, End and Home, as anywhere
+// else that scrolls. The key turns the page only at the page's edge, and the
+// next page shows its top.
+test("reads down a zoomed page with the keys before turning it", async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "sets its own sizes");
+  const { context, page } = await readerAt(browser, info, FITS[0], "en");
+  try {
+    const reader = await openReader(page, "en", "FAKE Clinic letter.pdf");
+    const where = (number: number) =>
+      translate("en", "interface.reader.where", { page: number, total: 5 });
+    const larger = reader.getByRole("button", {
+      name: translate("en", "interface.DocumentReader.larger"),
+      exact: true,
+    });
+    const zoom = reader.locator(".native-reader-zoom [aria-live]");
+    // Up to 400%: a press while a size is being drawn does nothing.
+    await expect(async () => {
+      if ((await zoom.textContent())?.includes("400") !== true)
+        await larger.click();
+      await expect(zoom).toContainText("400", { timeout: 500 });
+    }).toPass({ timeout: 30_000 });
+    await expect(reader.getByRole("status")).toHaveText(where(1));
+    const area = reader.locator(".native-reader-page");
+    const scroll = () =>
+      area.evaluate((element) => ({
+        top: element.scrollTop,
+        atBottom:
+          element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+        tall: element.scrollHeight > element.clientHeight * 2,
+      }));
+    await expect.poll(async () => (await scroll()).tall).toBe(true);
+    await area.focus();
+    expect((await scroll()).top).toBe(0);
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await scroll()).top).toBeGreaterThan(0);
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    await page.keyboard.press("End");
+    await expect.poll(async () => (await scroll()).atBottom).toBe(true);
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    // At the bottom, Page Down turns the page, which shows its top.
+    await page.keyboard.press("PageDown");
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(2));
+    await expect(reader.getByRole("status")).toHaveText(where(2));
+    expect((await scroll()).top).toBe(0);
+    // At the top, Home goes to the first page.
+    await page.keyboard.press("Home");
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    await expectTextSize(page, FITS[0].font);
+  } finally {
+    await context.close();
   }
 });
