@@ -479,8 +479,11 @@ describe("the reader's page bar", () => {
     const user = userEvent.setup();
     renderReader(pagesOf(5));
     await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
-    // From the reader itself, which keeps the focus when its text is clicked.
-    screen.getByRole("dialog").focus();
+    // A click on the reader's text keeps the focus in the reader, for the keys.
+    await user.click(
+      screen.getByRole("heading", { name: "FAKE_Bloodwork.pdf" }),
+    );
+    expect(screen.getByRole("dialog")).toHaveFocus();
     await user.keyboard("{End}");
     await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
     await user.keyboard("{PageUp}");
