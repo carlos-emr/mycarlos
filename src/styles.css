@@ -1124,6 +1124,10 @@ h1, h2, p { margin: 0; }
 .text-size-step { min-width: 44px; font-size: 1.25rem; line-height: 1; justify-content: center; }
 .text-size-control .button[aria-disabled="true"] { cursor: not-allowed; }
 .auto-lock-value { min-width: 6.5em; color: var(--ink); font-weight: 700; text-align: center; }
+.native-auto-lock-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.native-auto-lock-heading > * { min-width: 0; max-width: 100%; }
+.native-auto-lock-heading .button { min-height: 44px; }
+.native-auto-lock-heading .button:focus-visible { outline-offset: -3px; }
 /* More specific than the setting form's label rule, which it replaces here. */
 .native-setting-form .text-size-box { display: flex; align-items: center; gap: 4px; color: var(--ink); font-size: 1rem; }
 .native-setting-form .text-size-box input { width: 4.5em; min-height: 44px; text-align: center; font-size: 1rem; }

@@ -450,6 +450,23 @@ describe("SecuritySettings backup", () => {
 });
 
 describe("Automatic lock delay (#67)", () => {
+  it("puts Lock now beside the delay, before its steps, and locks (#110)", () => {
+    const props = renderSettings({ autoLockMinutes: 5 });
+    const heading = screen.getByRole("heading", {
+      name: humanText("Lock automatically 5 minutes"),
+    });
+    const lockNow = screen.getByRole("button", { name: "Lock now" });
+    const group = screen.getByRole("group", { name: "Automatic lock delay" });
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    // Right after the heading with its value, and before the delay's steps,
+    // in reading and Tab order.
+    expect(lockNow.previousElementSibling).toBe(heading);
+    expect(follows(lockNow, group)).toBe(true);
+    fireEvent.click(lockNow);
+    expect(props.onLock).toHaveBeenCalledOnce();
+  });
+
   it("steps by one minute with minus and plus, within 1 to 15", () => {
     const props = renderSettings({ autoLockMinutes: 5 });
     const group = screen.getByRole("group", {
