@@ -1754,22 +1754,22 @@ library-status-verified = Zweryfikowano
 
 portal-approvedByCode = Przychodnia potwierdziła to urządzenie kodem.
 
-portal-codeFormat = Wpisz 9 cyfr kodu z e-maila od przychodni.
+portal-codeFormat = Proszę wpisać 9 cyfr kodu z e-maila od przychodni.
 
-portal-codeHint = Wpisz 9-cyfrowy kod, który przychodnia wysłała e-mailem. Nigdy nie używaj kodu wyświetlonego na stronie internetowej.
+portal-codeHint = Proszę wpisać 9-cyfrowy kod, który przychodnia wysłała e-mailem. Proszę nigdy nie używać kodu wyświetlonego na stronie internetowej.
 
 portal-codeLabel = Kod z e-maila od przychodni
 
-portal-codeLocked = Wypróbowano zbyt wiele kodów dla tej prośby, więc myCarlos nie przyjmie kolejnego. Skontaktuj się z przychodnią.
+portal-codeLocked = Wypróbowano zbyt wiele kodów dla tej prośby, więc myCarlos nie przyjmie kolejnego. Proszę skontaktować się z przychodnią.
 
-portal-codeMismatch = Ten kod nie pasuje do tej przychodni. Sprawdź, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbuj ponownie.
+portal-codeMismatch = Ten kod nie pasuje do tej przychodni. Proszę sprawdzić, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbować ponownie.
 
-portal-codeNeeded = Przychodnia wysłała e-mailem kod do potwierdzenia tego urządzenia. Wpisz go poniżej.
+portal-codeNeeded = Przychodnia wysłała e-mailem kod do potwierdzenia tego urządzenia. Proszę wpisać go poniżej.
 
 portal-codeNotOpen = Ta prośba nie czeka teraz na kod. myCarlos pokaże odpowiedź przychodni przy następnym sprawdzeniu.
 
-portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za kilka minut.
+portal-codeRefused = Portal przychodni nie przyjął kodu. Proszę spróbować ponownie za kilka minut.
 
 portal-codeSubmit = Potwierdź kod
 
-portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
+portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, proszę ponowić prośbę.
