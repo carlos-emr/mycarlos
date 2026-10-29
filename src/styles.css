@@ -646,11 +646,13 @@ h1, h2, p { margin: 0; }
 .record-metadata { margin: 0; padding: 8px 20px; }
 /* The value takes the room beside its label and wraps there. Only when one of its words doesn't
    fit beside the label does it go under it, still on the right (at 200% text on a phone,
-   "Mis documentos" or a date ran past the dialog's edge). */
+   "Mis documentos" or a date ran past the dialog's edge). Its basis is its longest word, so that
+   word decides the line; on a line of its own it may shrink below it, and a single word longer
+   than the row breaks. */
 .record-metadata div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 20px; padding: 9px 0; border-bottom: 1px solid var(--metadata-line); font-size: 0.875rem; }
 .record-metadata div:last-child { border-bottom: 0; }
 .record-metadata dt { color: var(--ink-soft); }
-.record-metadata dd { flex: 1 1 0; margin: 0; font-weight: 700; text-align: right; overflow-wrap: break-word; }
+.record-metadata dd { flex: 1 1 auto; width: min-content; min-width: 0; max-width: 100%; margin: 0; font-weight: 700; text-align: right; overflow-wrap: break-word; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); }
 
 .evaluation-details { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-sm); }

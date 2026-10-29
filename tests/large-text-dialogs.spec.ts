@@ -9,8 +9,9 @@ import { translate } from "./support/fluent";
 // end (the recovery key's steps). Each dialog here is opened for real, in
 // every language, and every control in it must stay inside it.
 
-/** A vault with one patient, two folders and two documents (one in a folder
- * with a long name), and no recovery key yet (FAKE). */
+/** A vault with one patient, three folders and three documents (two in
+ * folders with long names, one of them a single word), and no recovery key
+ * yet (FAKE). */
 async function fakeVault(page: Page, locale: string) {
   await page.addInitScript((locale) => {
     localStorage.setItem("mycarlos.language.v1", locale);
@@ -32,6 +33,13 @@ async function fakeVault(page: Page, locale: string) {
           parentId: null,
           name: "FAKE Letters from Riverside Family Health Clinic",
           createdAtMs: 1759400000000,
+        },
+        {
+          id: "f3",
+          profileId: "p1",
+          parentId: null,
+          name: "FAKE_Laboratory_Results_2026",
+          createdAtMs: 1759500000000,
         },
       ],
       records: [
@@ -55,6 +63,17 @@ async function fakeVault(page: Page, locale: string) {
           mediaType: "application/pdf",
           plaintextSize: 51200,
           importedAtMs: 1760100000000,
+          available: true,
+        },
+        {
+          id: "r3",
+          profileId: "p1",
+          folderIds: ["f3"],
+          displayName: "FAKE Bloodwork.pdf",
+          sourceLabel: "Manual import — unverified",
+          mediaType: "application/pdf",
+          plaintextSize: 40960,
+          importedAtMs: 1760200000000,
           available: true,
         },
       ],
@@ -243,6 +262,23 @@ for (const width of [320, 360])
           })
           .click();
         await expect(recovery).toHaveCount(0);
+
+        // A document in a folder whose name is one long word.
+        await page
+          .getByRole("button", {
+            name: translate(locale, "library.folder.open", {
+              name: "FAKE_Laboratory_Results_2026",
+            }),
+          })
+          .click();
+        await page
+          .getByRole("button", { name: /^FAKE Bloodwork\.pdf/ })
+          .first()
+          .click();
+        await expect(
+          page.getByRole("dialog", { name: "FAKE Bloodwork.pdf" }),
+        ).toBeVisible();
+        await check("Document details, one-word folder name");
         for (const command of await unexpectedCommands(page))
           problems.push(`${locale}: unexpected command ${command}`);
       } finally {
@@ -253,8 +289,8 @@ for (const width of [320, 360])
   });
 
 // The metadata rows' wrap applies at every width. On a phone at 100% text a
-// long value (here the folder's name) goes under its label; a screenshot
-// shows it for review.
+// long value (here the folder's name) still wraps beside its label, as
+// before; a screenshot shows it for review.
 test("keeps a document's details inside the dialog at 360px with 100% text", async ({
   browser,
 }, info) => {
