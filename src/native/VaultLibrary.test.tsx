@@ -982,6 +982,7 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
   const heading = () => screen.getByRole("heading", { level: 1 });
+  // Folder buttons by their message, whose words #149 changes.
 
   it("takes the focus to the new place's heading when the reader opens one, by key or by pointer", async () => {
     const user = userEvent.setup();
@@ -1001,7 +1002,11 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     await vi.waitFor(() => expect(heading()).toHaveFocus());
     // From a folder in the page, by pointer: the same (Ben's D128).
     await user.click(
-      screen.getByRole("button", { name: humanText("Open FAKE 2025 Letters") }),
+      screen.getByRole("button", {
+        name: humanText(
+          translate("en", "library.folder.open", { name: "FAKE 2025 Letters" }),
+        ),
+      }),
     );
     expect(heading()).toHaveHumanTextContent("FAKE 2025 Letters");
     await vi.waitFor(() => expect(heading()).toHaveFocus());
@@ -1036,13 +1041,21 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       "In My records: 1 folder, 0 documents.",
     );
     fireEvent.click(
-      screen.getByRole("button", { name: humanText("Open FAKE Letters") }),
+      screen.getByRole("button", {
+        name: humanText(
+          translate("en", "library.folder.open", { name: "FAKE Letters" }),
+        ),
+      }),
     );
     expect(heading()).toHaveHumanAccessibleDescription(
       "In My records / FAKE Letters: 1 folder, 0 documents.",
     );
     fireEvent.click(
-      screen.getByRole("button", { name: humanText("Open FAKE 2025 Letters") }),
+      screen.getByRole("button", {
+        name: humanText(
+          translate("en", "library.folder.open", { name: "FAKE 2025 Letters" }),
+        ),
+      }),
     );
     expect(heading()).toHaveHumanAccessibleDescription(
       "In My records / FAKE Letters / FAKE 2025 Letters: 1 folder, 0 documents.",
