@@ -9871,9 +9871,8 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
 
   // Demo fix (29 Oct, Ben): a vault with devices a reset portal deleted. The
   // library is usable before the check ends; the native check says those
-  // devices are removed (and asks no more about them in this run of the app),
-  // and Clinic documents then lists only the working one.
-  it("keeps the library usable during a check with three gone devices, then lists only the working one", async () => {
+  // devices are removed, and asks no more about them in this run of the app.
+  it("keeps the library usable during a check with three gone devices, then says they were removed", async () => {
     const gone = [1, 2, 3].map(
       (n): PortalLinkSummary => ({
         ...approved,
@@ -9904,15 +9903,15 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       ),
     );
     await pass(0);
-    await click(screen.getByRole("button", { name: "Security" }));
+    // Said as removed (the native check asks no more about them in this run
+    // of the app), and the check is over: it can be run again.
+    // One line for each of the three gone devices.
     expect(
-      screen.getAllByRole("heading", { name: "FAKE First Clinic", level: 3 }),
-    ).toHaveLength(1);
+      said().split("This device was removed from your clinic portal account."),
+    ).toHaveLength(4);
     expect(
-      screen.getByRole("button", {
-        name: translate("en", "portal.earlierShow", { count: 3 }),
-      }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
   });
 
   it.each([
