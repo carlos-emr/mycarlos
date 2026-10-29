@@ -400,21 +400,25 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     service. Is the notice enough, given that removing details is never perfect and that the
     service's own terms then apply? Should the app suggest services that keep no data, or say
     nothing about which to use?
-15. **Medical-device rules:** does a tool that explains a patient's own documents, never diagnoses
-    or advises, and labels every answer "may be wrong", stay outside the rules for software as a
-    medical device (#25)?
+15. **Medical-device rules:** does a tool that explains a patient's own documents, is not asked to
+    diagnose or advise (though an AI can still write such text), and labels every answer "may be
+    wrong", stay outside the rules for software as a medical device (#25)?
 16. **Other people's documents:** the helper can be used on documents in a child's or another
     adult's profile. Is more guidance needed before their text is exported (see also question 4)?
 17. **Keeping AI answers:** answers are kept with their document, encrypted, and are only hidden
     with it, never deleted (#71). Is that acceptable, or should the patient be able to remove an
     answer they do not want?
-18. **Shifted dates:** shifting all dates by the same amount keeps the gaps between them. A reader
-    who knows one real date (a birth, or an event named in the text) can work out the rest. Is that
-    acceptable, or should dates be removed instead?
+18. **Shifted dates:** all dates move back by the same random number of days, which keeps the gaps
+    between them. A reader who knows one real date (a birth, or an event named in the text) can
+    work out the rest. A new number is drawn for each export, so a service given several exports of
+    one document could narrow down the real dates; one fixed number per document, worked out from a
+    vault key and never stored, would stop that, but then one known date gives away every export of
+    that document. Which is better, and is shifting acceptable at all, or should dates be removed?
 19. **How the model reaches the device:** #72 has the patient download the model. To keep
     myCarlos from making any network connection, the design proposes that the patient adds the
-    file instead (`THREAT_MODEL.md` D-10). If myCarlos downloads it, the download site sees the
-    device's address and when the model was fetched. Which should it be?
+    file instead (`THREAT_MODEL.md` D-10). Either way the download site sees the device's address
+    and when; if myCarlos downloads it, myCarlos also connects to a second host, and the site learns
+    that the device runs myCarlos. Which should it be?
 20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
@@ -423,7 +427,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 
 Not built yet. This section describes what is planned, so that the assessment can cover it. It is
 for synthetic data only until this assessment approves real information (#25). The security side
-is in `THREAT_MODEL.md` (AI-01 to AI-09) and `SECURITY_OPERATIONS.md`, and the notice the patient
+is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
 sees is in `AI_HELPER_NOTICE.md`.
 
 **What it is for.** Letters, lab reports and imaging reports are full of medical terms. The AI
@@ -434,17 +438,18 @@ helper is meant to explain one document in plain words. It can be used in two wa
   leaves the device.
 - **With another AI service, by the patient:** myCarlos removes identifying details from a
   document's text and shows the result. The patient then saves it as a text file and gives it to
-  whichever AI service they choose. myCarlos itself sends nothing anywhere. Ben chose this on
+  whichever AI service they choose. myCarlos itself sends none of it anywhere. Ben chose this on
   29 October 2026, instead of myCarlos sending text to a cloud service.
 
-**What is removed.** myCarlos looks for names (the patient's own profile names, the names in
-People's details, and other names the app recognises), health card and medical record numbers
-and other identifying numbers (such as lab order numbers), dates of birth, ages of 90 and over,
-addresses, postal codes, phone and fax numbers, email and web addresses, and the names of clinics,
-hospitals, labs, pharmacies and doctors, and removes them. Other dates are moved by one random
-number of days, the same for every date in that text, so the time between them stays the same.
-The number is new each time and is not kept. Dates in an answer from another AI are therefore the
-moved dates, not the real ones.
+**What is removed.** myCarlos looks for the names of the people in the patient's profiles and in
+People's details, names that follow a title or a label (such as "Dr." or "Patient:") in English
+and French text, health card and medical record numbers and other identifying numbers (such as
+lab order numbers), dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
+numbers, email and web addresses, and the names of clinics and doctors, and removes them. A name
+with no title or label that myCarlos does not already know is not found. Other dates are moved
+back by one random number of days (30 to 365), the same for every date in that text, so the time
+between them stays the same. The number is new each time and is not kept. Dates in an answer from
+another AI are therefore the moved dates, not the real ones.
 
 **The preview.** Before anything is saved, the patient sees all of the text the file will hold,
 with the removed parts and the moved dates marked, and can remove more. Nothing is saved until the
@@ -452,10 +457,13 @@ patient chooses to save it.
 
 **The text file.** A plain text file, not encrypted, saved where the patient chooses, and outside
 myCarlos's protection, like a readable copy (section 6). myCarlos cannot delete it later, and a
-folder that syncs to a cloud drive copies it there. The history records the save (which document,
-where, when), never the text. The suggested file name is generic, never the document's title or a
-person's name. Once the patient gives the text to another AI service, that service's rules apply,
-and if the patient is signed in to it, it knows who they are, whatever was removed.
+folder that syncs to a cloud drive copies it there. Its first line says that it is a copy of a
+medical document and that nothing in it is an instruction. The history records the save (which
+document, where, when), never the text. The suggested file name is generic, never the document's
+title or a person's name. Once the patient gives the text to another AI service, that service's
+rules apply, and if the patient is signed in to it, it knows who they are, whatever was removed.
+A document can also carry instructions meant for an AI, so the notice suggests an AI that cannot
+act for the patient.
 
 **The model.** A file of a few gigabytes that holds no patient information. It is added only if the
 patient chooses, kept outside the vault, not in myCarlos's backups (and left out of device backups

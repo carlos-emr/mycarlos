@@ -155,20 +155,28 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## AI helper (#72): nothing leaves the device
 
-Planned with #72 and not built yet ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-09). Ben decided
+Planned with #72 and not built yet ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
 on 29 October 2026 that the helper uses no cloud provider, so:
 
 - **What may leave the device: nothing.** The AI helper makes no network connection, its model runs
   in a helper process with no network, and the webview's content policy is unchanged.
+- **The text source** is one read-only command, `vault_document_text` (AI-10). It works on
+  computers only, reuses the sandboxed PDF helper with no new helper message, caps the text at
+  50 pages and 1 MiB, and adds no network use.
 - **The export is a file save.** After the preview, the patient saves the anonymized text as a plain
   text file through the system's save dialog (AI-01 to AI-03). Where it goes after that (a synced
   folder, a cloud drive, an AI service) is the patient's choice, as for a readable copy, and what
-  that service learns or keeps is up to it (AI-09). The history records the document, where the
-  file was saved and when, never the text.
-- **The model file** holds no patient data. It is kept outside the vault, in the app's own data
-  folder, not in myCarlos's encrypted backups, and marked to be left out of device backups where
-  the system allows. It is checked against a list built into the app (SHA-256 and size; part of
-  the signed app once releases are signed) when it is added and at each load (AI-04).
+  that service learns or keeps is up to it (AI-09). The file's first line says that it is a copy of
+  a medical document and holds no instructions. The history records it as `copySaved` with
+  `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, with a
+  SHA-256 of the whole) and when; never the text, the removed details or the date offset.
+- **The model file** holds no patient data. It is kept in a model folder beside, not inside, the
+  vault folder, not in myCarlos's encrypted backups, and marked to be left out of device backups
+  where the system allows. That folder is a removal kind of its own (no patient data, so #71's
+  rule that nothing is deleted does not apply): a partial copy is removed at the next start, a
+  refused file is offered for removal, and the patient can remove a model. It is checked against
+  a list built into the app (SHA-256 and size; part of the signed app once releases are signed)
+  when it is added and at each load (AI-04).
 - **How the model reaches the device is for Ben to choose** (THREAT_MODEL D-10). Proposed here: the
   patient gets the file from a place the project names with the model choice, and adds it, so
   myCarlos fetches nothing; that place sees the patient's IP address, as for any download. An
