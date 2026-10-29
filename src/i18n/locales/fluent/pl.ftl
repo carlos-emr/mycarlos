@@ -577,7 +577,7 @@ interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteka zaszyfrowanyc
 
 interface-VaultLibrary-nameAZ = Nazwa A–Z
 
-interface-VaultLibrary-new = Nowe
+interface-VaultLibrary-new = Nowy
 
 interface-VaultLibrary-newestFirst = Od najnowszych
 

@@ -560,7 +560,7 @@ interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos
 
 interface-VaultLibrary-nameAZ = Nome A–Z
 
-interface-VaultLibrary-new = Novos
+interface-VaultLibrary-new = Novo
 
 interface-VaultLibrary-newestFirst = Mais recentes primeiro
 
