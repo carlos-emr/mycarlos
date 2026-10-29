@@ -252,14 +252,16 @@ describe("shared PDF suggestions use explicit Move", () => {
           expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth + 1);
         }
       }
-      expect(unknown).toBeChecked();
-      unknown.focus();
-      await userEvent.keyboard(" ");
+      // FAKE Mom has no details yet, so the date box starts open.
       expect(unknown).not.toBeChecked();
       expect(within(form).getByLabelText("Date of birth")).toBeEnabled();
+      unknown.focus();
       await userEvent.keyboard(" ");
       expect(unknown).toBeChecked();
       expect(within(form).getByLabelText("Date of birth")).toBeDisabled();
+      await userEvent.keyboard(" ");
+      expect(unknown).not.toBeChecked();
+      expect(within(form).getByLabelText("Date of birth")).toBeEnabled();
     } finally {
       document.documentElement.style.fontSize = "";
     }
