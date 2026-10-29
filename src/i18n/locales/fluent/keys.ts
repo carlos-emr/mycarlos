@@ -730,6 +730,24 @@ export const MESSAGE_KEYS = [
   "interface.history.sessionNotRecorded",
   "interface.history.title",
   "interface.history.to",
+  "ai.summary.button",
+  "ai.summary.title",
+  "ai.explain.title",
+  "ai.notInstalled.title",
+  "ai.notInstalled.body",
+  "ai.notInstalled.openPreferences",
+  "ai.label",
+  "ai.result.meta",
+  "ai.summary.showInDocument",
+  "ai.summary.showSentence",
+  "ai.summary.partial",
+  "ai.summary.noText",
+  "ai.explain.box",
+  "ai.explain.hint",
+  "ai.explain.submit",
+  "ai.preferences.title",
+  "ai.preferences.body",
+  "ai.preferences.notInstalled",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1586,6 +1604,24 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionNotRecorded",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "ai.summary.button": "ai-summary-button",
+  "ai.summary.title": "ai-summary-title",
+  "ai.explain.title": "ai-explain-title",
+  "ai.notInstalled.title": "ai-notInstalled-title",
+  "ai.notInstalled.body": "ai-notInstalled-body",
+  "ai.notInstalled.openPreferences": "ai-notInstalled-openPreferences",
+  "ai.label": "ai-label",
+  "ai.result.meta": "ai-result-meta",
+  "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.showSentence": "ai-summary-showSentence",
+  "ai.summary.partial": "ai-summary-partial",
+  "ai.summary.noText": "ai-summary-noText",
+  "ai.explain.box": "ai-explain-box",
+  "ai.explain.hint": "ai-explain-hint",
+  "ai.explain.submit": "ai-explain-submit",
+  "ai.preferences.title": "ai-preferences-title",
+  "ai.preferences.body": "ai-preferences-body",
+  "ai.preferences.notInstalled": "ai-preferences-notInstalled",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2403,6 +2439,28 @@ export interface MessageArgsByKey {
   "interface.history.sessionNotRecorded": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "ai.summary.button": undefined;
+  "ai.summary.title": undefined;
+  "ai.explain.title": undefined;
+  "ai.notInstalled.title": undefined;
+  "ai.notInstalled.body": undefined;
+  "ai.notInstalled.openPreferences": undefined;
+  "ai.label": undefined;
+  "ai.result.meta": {
+    date: FluentArgument;
+    model: FluentArgument;
+    tool: FluentArgument;
+  };
+  "ai.summary.showInDocument": undefined;
+  "ai.summary.showSentence": { number: FluentArgument };
+  "ai.summary.partial": { last: FluentArgument };
+  "ai.summary.noText": undefined;
+  "ai.explain.box": undefined;
+  "ai.explain.hint": undefined;
+  "ai.explain.submit": undefined;
+  "ai.preferences.title": undefined;
+  "ai.preferences.body": undefined;
+  "ai.preferences.notInstalled": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

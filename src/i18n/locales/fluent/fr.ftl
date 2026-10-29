@@ -1642,3 +1642,39 @@ interface-history-title = Historique des événements
 interface-history-to = Vers
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve aussi un historique : les ouvertures du coffre-fort; la définition ou la modification de sa phrase secrète ou de sa clé de récupération, ainsi que l’enregistrement ou la restauration d’une sauvegarde; l’ajout de chaque profil patient et la création, le changement de nom ou le déplacement de chaque dossier; l’ajout, le changement de nom, le déplacement, le masquage ou la restauration de chaque document, ainsi que son enregistrement en dehors de myCarlos et l’emplacement choisi. Cet historique est chiffré avec le reste. Vous pouvez le consulter ici ; myCarlos ne le modifie et ne le supprime jamais.
+
+ai-summary-button = Résumé
+
+ai-summary-title = Résumé en mots simples
+
+ai-explain-title = Expliquer un terme
+
+ai-notInstalled-title = L’assistant IA n’est pas encore sur cet ordinateur
+
+ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. L’obtention du modèle arrivera dans une prochaine version de myCarlos.
+
+ai-notInstalled-openPreferences = Ouvrir les Préférences
+
+ai-label = Rédigé par une IA, peut contenir des erreurs. Vérifiez auprès de votre médecin.
+
+ai-result-meta = { $tool } · { $model } · { $date }
+
+ai-summary-showInDocument = Voir dans le document
+
+ai-summary-showSentence = Voir la phrase { $number } dans le document
+
+ai-summary-partial = Ce résumé ne couvre que le début du document : pages 1 à { $last }.
+
+ai-summary-noText = myCarlos n’a pu lire aucun texte dans ce document et ne peut donc pas le résumer. Il s’agit peut-être d’une numérisation.
+
+ai-explain-box = Mot ou expression
+
+ai-explain-hint = Sélectionnez des mots dans « Texte de cette page » ou tapez-les ici.
+
+ai-explain-submit = Expliquer
+
+ai-preferences-title = Assistant IA
+
+ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. L’obtention du modèle arrivera dans une prochaine version de myCarlos.
+
+ai-preferences-notInstalled = Non installé

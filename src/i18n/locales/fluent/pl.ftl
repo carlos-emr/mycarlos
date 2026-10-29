@@ -1676,3 +1676,39 @@ interface-history-title = Historia zdarzeń
 interface-history-to = Do
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. Możesz ją tutaj przeglądać; myCarlos nigdy jej nie zmienia ani nie usuwa.
+
+ai-summary-button = Podsumowanie
+
+ai-summary-title = Podsumowanie prostymi słowami
+
+ai-explain-title = Wyjaśnij termin
+
+ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym komputerze
+
+ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Pobieranie modelu pojawi się w jednej z kolejnych wersji myCarlos.
+
+ai-notInstalled-openPreferences = Otwórz Preferencje
+
+ai-label = Napisane przez AI i może zawierać błędy. Należy to skonsultować z lekarzem.
+
+ai-result-meta = { $tool } · { $model } · { $date }
+
+ai-summary-showInDocument = Pokaż w dokumencie
+
+ai-summary-showSentence = Pokaż zdanie { $number } w dokumencie
+
+ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
+
+ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
+
+ai-explain-box = Słowo lub wyrażenie
+
+ai-explain-hint = Można zaznaczyć słowa w sekcji „Tekst na tej stronie” lub wpisać je tutaj.
+
+ai-explain-submit = Wyjaśnij
+
+ai-preferences-title = Asystent AI
+
+ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Pobieranie modelu pojawi się w jednej z kolejnych wersji myCarlos.
+
+ai-preferences-notInstalled = Nie zainstalowano

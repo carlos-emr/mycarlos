@@ -1642,3 +1642,39 @@ interface-history-title = Histórico de auditoria
 interface-history-to = Para
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.
+
+ai-summary-button = Resumo
+
+ai-summary-title = Resumo em palavras simples
+
+ai-explain-title = Explicar um termo
+
+ai-notInstalled-title = O assistente de IA ainda não está neste computador
+
+ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. A obtenção do modelo virá em uma versão futura do myCarlos.
+
+ai-notInstalled-openPreferences = Abrir Preferências
+
+ai-label = Escrito por IA e pode conter erros. Confirme com o seu médico.
+
+ai-result-meta = { $tool } · { $model } · { $date }
+
+ai-summary-showInDocument = Ver no documento
+
+ai-summary-showSentence = Ver a frase { $number } no documento
+
+ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1 a { $last }.
+
+ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.
+
+ai-explain-box = Palavra ou expressão
+
+ai-explain-hint = Selecione palavras em “Texto nesta página” ou digite-as aqui.
+
+ai-explain-submit = Explicar
+
+ai-preferences-title = Assistente de IA
+
+ai-preferences-body = Explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. A obtenção do modelo virá em uma versão futura do myCarlos.
+
+ai-preferences-notInstalled = Não instalado

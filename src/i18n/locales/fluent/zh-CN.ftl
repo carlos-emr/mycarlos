@@ -1472,3 +1472,39 @@ interface-history-title = 操作记录
 interface-history-to = 目标
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保存操作记录：保险库何时打开；密码短语或恢复密钥何时设置或变更；备份何时保存或还原；各患者档案何时添加，以及各文件夹何时创建、重命名或移动；每份文档何时添加、重命名、移动、隐藏、还原或保存在 myCarlos 外部，以及保存位置。这些记录会和其他内容一起加密。您可以在此查看这些记录；myCarlos 绝不会变更或移除它们。
+
+ai-summary-button = 摘要
+
+ai-summary-title = 通俗易懂的摘要
+
+ai-explain-title = 解释术语
+
+ai-notInstalled-title = 此电脑上尚未安装 AI 助手
+
+ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。获取模型的功能将在 myCarlos 的后续版本中提供。
+
+ai-notInstalled-openPreferences = 打开偏好设置
+
+ai-label = 由 AI 撰写，可能有误。请向您的医生核实。
+
+ai-result-meta = { $tool } · { $model } · { $date }
+
+ai-summary-showInDocument = 在文档中显示
+
+ai-summary-showSentence = 在文档中显示第 { $number } 句
+
+ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
+
+ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描档。
+
+ai-explain-box = 字词或短语
+
+ai-explain-hint = 请在「本页文本」中选择字词，或在此输入。
+
+ai-explain-submit = 解释
+
+ai-preferences-title = AI 助手
+
+ai-preferences-body = 使用在此电脑上运行的 AI 模型，以通俗易懂的文字解释您的文档。获取模型的功能将在 myCarlos 的后续版本中提供。
+
+ai-preferences-notInstalled = 未安装

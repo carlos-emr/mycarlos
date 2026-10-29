@@ -1608,3 +1608,39 @@ interface-history-title = Audit history
 interface-history-to = To
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. You can read it here; myCarlos never changes or removes it.
+
+ai-summary-button = Summary
+
+ai-summary-title = Summary in plain words
+
+ai-explain-title = Explain a term
+
+ai-notInstalled-title = The AI helper isn't on this computer yet
+
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. Getting the model comes in a later version of myCarlos.
+
+ai-notInstalled-openPreferences = Open Preferences
+
+ai-label = Written by AI and may be wrong. Check with your doctor.
+
+ai-result-meta = { $tool } · { $model } · { $date }
+
+ai-summary-showInDocument = Show in document
+
+ai-summary-showSentence = Show sentence { $number } in the document
+
+ai-summary-partial = This summary covers only the start of the document: pages 1 to { $last }.
+
+ai-summary-noText = myCarlos could not read any text in this document, so it can't summarize it. It may be a scan.
+
+ai-explain-box = Word or phrase
+
+ai-explain-hint = Select words under “Text on this page”, or type them here.
+
+ai-explain-submit = Explain
+
+ai-preferences-title = AI helper
+
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Getting the model comes in a later version of myCarlos.
+
+ai-preferences-notInstalled = Not installed
