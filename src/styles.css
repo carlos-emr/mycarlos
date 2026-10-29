@@ -1235,6 +1235,10 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 @media (max-width: 40em) {
   .portal-link-dialog .dialog-actions { grid-template-columns: minmax(0, 1fr); }
 }
+/* In Chinese, a button label that wraps splits evenly instead of leaving one
+   character alone on its last line ("连接并申请批准" at 320 px, 200% text).
+   Other languages keep their wrapping. */
+.portal-link-dialog .dialog-actions .button:lang(zh) { text-wrap: balance; }
 .portal-documents > .native-inline-form { margin-block-start: 1.25rem; }
 /* #141: the code a clinic emailed, one column: label, hint, button, message. */
 .portal-documents .portal-code-form { grid-template-columns: minmax(0, 1fr); max-width: 36rem; gap: .5rem; }
