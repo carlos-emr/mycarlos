@@ -10515,6 +10515,8 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       "a device's Copy device code",
       async () => {
         await click(screen.getByRole("button", { name: "Security" }));
+        // The device code is behind Show device details.
+        await click(screen.getByText("Show device details"));
         return screen.getByRole("button", { name: "Copy device code" });
       },
       { name: "FAKE First Clinic", level: 3 },

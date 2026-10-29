@@ -91,8 +91,22 @@ export class PortalWaits {
   waiting(portal: string): boolean {
     return this.notBefore(portal) > steadyNow();
   }
+  // The devices a check this session found removed from their portal account
+  // (`portal_device_removed`). A removed device never comes back: connecting
+  // again makes a new device. Never saved; a lock forgets them with the waits.
+  private readonly removed = new Set<string>();
+  /** A check found this device removed. `session`, as for `wait`. */
+  deviceRemoved(linkId: string, session?: number): void {
+    if (session !== undefined && session !== this.ended) return;
+    this.removed.add(linkId);
+  }
+  /** A check this session found this device removed from its portal. */
+  isRemoved(linkId: string): boolean {
+    return this.removed.has(linkId);
+  }
   clear(): void {
     this.until.clear();
+    this.removed.clear();
     this.ended += 1;
   }
 }

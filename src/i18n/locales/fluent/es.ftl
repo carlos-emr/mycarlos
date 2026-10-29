@@ -1451,6 +1451,18 @@ portal-deviceCode = Código del dispositivo
 
 portal-deviceName = Nombre de este dispositivo
 
+portal-deviceDetailsShow = Mostrar los detalles del dispositivo
+
+portal-deviceDetailsHide = Ocultar los detalles del dispositivo
+
+portal-earlierShow =
+    { $count ->
+    [one] Mostrar { $count } intento anterior
+    *[other] Mostrar { $count } intentos anteriores
+    }
+
+portal-earlierHide = Ocultar los intentos anteriores
+
 portal-errorAddress = Introduzca la dirección HTTPS del portal sin nombre de usuario, contraseña, parámetros de consulta ni fragmento.
 
 portal-errorCancelled = La vinculación se detuvo porque la bóveda se bloqueó. Revise los dispositivos vinculados en el portal antes de volver a intentarlo.
