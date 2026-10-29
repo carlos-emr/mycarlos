@@ -658,6 +658,9 @@ export function SecuritySettings({
               onSave={onUpdateProfileDetails}
               focusId={focusPersonId}
               onFocusLeft={() => setFocusPersonId(null)}
+              dialogHost={dialogHost}
+              onDialogChange={onDialogChange}
+              refusalText={notice}
             />
           )}
           {addOpen &&
