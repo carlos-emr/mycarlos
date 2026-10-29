@@ -556,7 +556,7 @@ describe("AuditHistory recorded semantics", () => {
   );
 });
 
-describe("AuditHistory words for every recorded event and how (build 4)", () => {
+describe("AuditHistory words for every recorded event and how", () => {
   /** Every event history.rs records, as the vault names it (camelCase). */
   const recordedEvents = () => {
     const body = /pub enum HistoryEvent \{([\s\S]*?)\n\}/.exec(historyRs)![1];
