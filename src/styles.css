@@ -743,9 +743,16 @@ h1, h2, p { margin: 0; }
      other one past the dialog's start edge, where it can't be scrolled to
      (e.g. "Annuler" beside "Enregistrer" at 200% text). */
   .dialog-actions { flex-wrap: wrap; justify-content: flex-start; }
-  /* max-width: 100% also caps each button's smallest width at the row, so a word longer than
-     the whole row breaks there (.record-dialog's overflow-wrap) instead of running out of the dialog. */
+  /* max-width: 100% caps each button's smallest width at the row. */
   .dialog-actions > * { flex: 1 1 calc(50% - 4px); max-width: 100%; }
+  /* A button's words are one anonymous flex item, never narrower than its longest word, so
+     overflow-wrap can't break that word inside the button. In a column the words take the
+     button's whole width, and a word wider than the row breaks (.record-dialog's overflow-wrap);
+     the longest word still sets the button's smallest width, so it still decides when a button
+     gets a row of its own. A button with an icon keeps its row, its words in a span that may
+     shrink. Without :has() the rule is dropped and the button is as before. */
+  .dialog-actions > .button:not(:has(> svg)) { flex-direction: column; align-items: stretch; text-align: center; }
+  .dialog-actions > .button > span { min-width: 0; }
 }
 
 @media (max-width: 24.375em) {

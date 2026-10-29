@@ -138,6 +138,38 @@ function outsideDialog(page: Page, dialogName: string): Promise<string[]> {
           control.scrollHeight > control.clientHeight + 1)
       )
         found.push(`${name} spills out of its own box`);
+      // A button's words stay inside its padding. A word as wide as the
+      // whole button still passes the check above, with no room to spare.
+      if (control.tagName === "BUTTON") {
+        const style = getComputedStyle(control);
+        const start =
+          box.left +
+          parseFloat(style.borderLeftWidth) +
+          parseFloat(style.paddingLeft);
+        const end =
+          box.right -
+          parseFloat(style.borderRightWidth) -
+          parseFloat(style.paddingRight);
+        const words = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        let outside = false;
+        for (
+          let text = words.nextNode();
+          text && !outside;
+          text = words.nextNode()
+        ) {
+          if (
+            !text.textContent?.trim() ||
+            text.parentElement?.closest(".sr-only")
+          )
+            continue;
+          range.selectNodeContents(text);
+          outside = Array.from(range.getClientRects()).some(
+            (line) => line.left < start - 0.5 || line.right > end + 0.5,
+          );
+        }
+        if (outside) found.push(`${name}: its words run into its padding`);
+      }
     }
     return found;
   }, dialogName);
