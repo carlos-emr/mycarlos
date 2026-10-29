@@ -9,8 +9,8 @@ import { translate } from "./support/fluent";
 // end (the recovery key's steps). Each dialog here is opened for real, in
 // every language, and every control in it must stay inside it.
 
-/** A vault with one patient, a folder and a document, and no recovery key
- * yet (FAKE). */
+/** A vault with one patient, two folders and two documents (one in a folder
+ * with a long name), and no recovery key yet (FAKE). */
 async function fakeVault(page: Page, locale: string) {
   await page.addInitScript((locale) => {
     localStorage.setItem("mycarlos.language.v1", locale);
@@ -26,6 +26,13 @@ async function fakeVault(page: Page, locale: string) {
           name: "FAKE Lab results",
           createdAtMs: 1759300000000,
         },
+        {
+          id: "f2",
+          profileId: "p1",
+          parentId: null,
+          name: "FAKE Letters from Riverside Family Health Clinic",
+          createdAtMs: 1759400000000,
+        },
       ],
       records: [
         {
@@ -37,6 +44,17 @@ async function fakeVault(page: Page, locale: string) {
           mediaType: "application/pdf",
           plaintextSize: 96256,
           importedAtMs: 1760000000000,
+          available: true,
+        },
+        {
+          id: "r2",
+          profileId: "p1",
+          folderIds: ["f2"],
+          displayName: "FAKE Referral.pdf",
+          sourceLabel: "Manual import — unverified",
+          mediaType: "application/pdf",
+          plaintextSize: 51200,
+          importedAtMs: 1760100000000,
           available: true,
         },
       ],
@@ -235,7 +253,8 @@ for (const width of [320, 360])
   });
 
 // The metadata rows' wrap applies at every width. On a phone at 100% text a
-// long value goes under its label; a screenshot shows it for review.
+// long value (here the folder's name) goes under its label; a screenshot
+// shows it for review.
 test("keeps a document's details inside the dialog at 360px with 100% text", async ({
   browser,
 }, info) => {
@@ -251,11 +270,18 @@ test("keeps a document's details inside the dialog at 360px with 100% text", asy
     await fakeVault(page, "en");
     await page.goto("/");
     await page
-      .getByRole("button", { name: /^FAKE Clinic letter\.pdf/ })
+      .getByRole("button", {
+        name: translate("en", "library.folder.open", {
+          name: "FAKE Letters from Riverside Family Health Clinic",
+        }),
+      })
+      .click();
+    await page
+      .getByRole("button", { name: /^FAKE Referral\.pdf/ })
       .first()
       .click();
     await expect(
-      page.getByRole("dialog", { name: "FAKE Clinic letter.pdf" }),
+      page.getByRole("dialog", { name: "FAKE Referral.pdf" }),
     ).toBeVisible();
     expect(await rootFont(page)).toBe("16px");
     await page.screenshot({

@@ -644,12 +644,13 @@ h1, h2, p { margin: 0; }
 .preview-paper i:first-child { width: 68%; height: 6px; background: var(--content-strong-line); }
 .preview-paper i:nth-child(4) { width: 82%; }
 .record-metadata { margin: 0; padding: 8px 20px; }
-/* A value that doesn't fit beside its label goes under it, still on the right (at 200% text on a
-   phone, "Mis documentos" or a date ran past the dialog's edge). */
+/* The value takes the room beside its label and wraps there. Only when one of its words doesn't
+   fit beside the label does it go under it, still on the right (at 200% text on a phone,
+   "Mis documentos" or a date ran past the dialog's edge). */
 .record-metadata div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 20px; padding: 9px 0; border-bottom: 1px solid var(--metadata-line); font-size: 0.875rem; }
 .record-metadata div:last-child { border-bottom: 0; }
 .record-metadata dt { color: var(--ink-soft); }
-.record-metadata dd { min-width: 0; margin: 0 0 0 auto; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.record-metadata dd { flex: 1 1 0; margin: 0; font-weight: 700; text-align: right; overflow-wrap: break-word; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); }
 
 .evaluation-details { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-sm); }
