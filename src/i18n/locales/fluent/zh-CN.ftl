@@ -837,8 +837,6 @@ preferences-subtitle = 此电脑上 myCarlos 的外观
 
 record-kind-document = 文档
 
-record-source-manual = 手动导入 — 未验证
-
 recover-intro = 使用恢复密钥打开保险库并选择新密码短语。
 
 recover-key-format = 共 28 个英文字母和数字，分成 7 组、每组 4 个字符，如同恢复工具包上的内容或您抄下的内容。连字号、空格和其他标点符号不影响输入。

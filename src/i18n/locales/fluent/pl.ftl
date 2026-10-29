@@ -975,8 +975,6 @@ preferences-subtitle = Wygląd myCarlos na tym komputerze
 
 record-kind-document = Dokument
 
-record-source-manual = Import ręczny — niezweryfikowany
-
 recover-intro = Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
 
 recover-key-format = 28 liter i cyfr, w 7 grupach po 4, tak jak na zestawie lub tak, jak zostały zapisane. Myślniki, spacje i inne znaki interpunkcyjne nie mają znaczenia.

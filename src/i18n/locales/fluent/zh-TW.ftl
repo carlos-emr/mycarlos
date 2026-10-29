@@ -837,8 +837,6 @@ preferences-subtitle = 此電腦上 myCarlos 的外觀
 
 record-kind-document = 文件
 
-record-source-manual = 手動匯入 — 未驗證
-
 recover-intro = 使用復原金鑰開啟保險庫並選擇新密語。
 
 recover-key-format = 共 28 個英文字母和數字，分成 7 組、每組 4 個字元，如同復原套件上的內容或您抄下的內容。連字號、空格和其他標點符號不影響輸入。

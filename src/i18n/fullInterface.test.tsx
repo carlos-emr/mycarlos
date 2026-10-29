@@ -25,7 +25,6 @@ const record: VaultRecord = {
   folderIds: [],
   displayName: "FAKE {name} Hidden.pdf",
   sourceLabel: "Manual import — unverified",
-  sourceKind: "manual",
   mediaType: "application/pdf",
   plaintextSize: 1234567,
   importedAtMs: Date.UTC(2026, 9, 23, 12),

@@ -413,7 +413,6 @@ export const MESSAGE_KEYS = [
   "photo.zoomed",
   "preferences.subtitle",
   "record.kind.document",
-  "record.source.manual",
   "recover.intro",
   "recover.key.format",
   "recover.key.label",
@@ -1297,7 +1296,6 @@ const FLUENT_IDS_BY_KEY = {
   "photo.zoomed": "photo-zoomed",
   "preferences.subtitle": "preferences-subtitle",
   "record.kind.document": "record-kind-document",
-  "record.source.manual": "record-source-manual",
   "recover.intro": "recover-intro",
   "recover.key.format": "recover-key-format",
   "recover.key.label": "recover-key-label",
@@ -2151,7 +2149,6 @@ export interface MessageArgsByKey {
   "photo.zoomed": { percent: FluentArgument };
   "preferences.subtitle": undefined;
   "record.kind.document": undefined;
-  "record.source.manual": undefined;
   "recover.intro": undefined;
   "recover.key.format": undefined;
   "recover.key.label": undefined;
