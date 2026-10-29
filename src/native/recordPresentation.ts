@@ -93,9 +93,18 @@ export const nameTooLong = (name: string) =>
 
 /** "Shared with me" is the folder shared files go into (#61), shown in the
  * app's language, so no person may be called it in any of them. Case, space
- * around it and how its accents are typed don't matter. The native side
+ * around or inside it and how its letters are typed don't matter. The native side
  * refuses the same names, read from the same catalogues. */
-const sharedKey = (name: string) => name.trim().normalize("NFC").toLowerCase();
+// NFKC also reads full-width letters as their plain forms, and every run of
+// white space (double, non-breaking or full-width spaces) counts as one space.
+// The set is JavaScript's \s plus U+0085, which is exactly Rust's White_Space
+// plus U+FEFF, so ui_text.rs builds the same key.
+const sharedKey = (name: string) =>
+  name
+    .normalize("NFKC")
+    .replace(/[\s\u0085]+/gu, " ")
+    .trim()
+    .toLowerCase();
 const SHARED_NAMES = new Set(
   LOCALES.map((locale) =>
     sharedKey(translate(locale, "interface.LibrarySidebar.sharedWithMe")),

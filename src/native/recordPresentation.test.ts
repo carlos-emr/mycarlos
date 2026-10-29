@@ -73,6 +73,24 @@ describe("nameIsShared", () => {
     ])
       expect(nameIsShared(name), name).toBe(true);
   });
+  it("refuses it however its spaces and letters are typed, as the vault does", () => {
+    // The same cases as ui_text.rs, so both sides agree.
+    for (const name of [
+      "Shared  with me",
+      "Shared\u00a0with me",
+      "Shared\u3000with\u2003me",
+      "\ufeffShared with me\u0085",
+      "\uff33\uff48\uff41\uff52\uff45\uff44 with me",
+      "\t PARTAGÉS\u202favec moi \n",
+    ])
+      expect(nameIsShared(name), JSON.stringify(name)).toBe(true);
+    for (const name of [
+      "Sharedwith me",
+      "Shared with me 2",
+      "Shared \u200bwith me",
+    ])
+      expect(nameIsShared(name), JSON.stringify(name)).toBe(false);
+  });
   it("lets a name that only holds it, or differs by a letter, be a person's", () => {
     for (const name of ["Partagés avec moi 2", "Compartido", "Udostępnione mu"])
       expect(nameIsShared(name), name).toBe(false);

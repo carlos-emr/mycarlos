@@ -33,13 +33,36 @@ pub(crate) enum UiLocale {
     ZhTw,
 }
 
+/// The form two names are compared in (the renderer's `sharedKey`, in
+/// recordPresentation.ts, builds the same): NFKC, so full-width letters read
+/// as their plain forms; every run of white space as one space, where white
+/// space is Unicode White_Space plus U+FEFF (JavaScript's `\s` plus U+0085);
+/// no space around it; lower case.
+fn shared_name_key(text: &str) -> String {
+    let folded: String = text.nfkc().collect();
+    let mut key = String::with_capacity(folded.len());
+    let mut space = false;
+    for c in folded.chars() {
+        if c.is_whitespace() || c == '\u{FEFF}' {
+            space = true;
+        } else {
+            if space && !key.is_empty() {
+                key.push(' ');
+            }
+            space = false;
+            key.push(c);
+        }
+    }
+    key.to_lowercase()
+}
+
 /// Whether a name is "Shared with me" as any language shows it, ignoring case,
-/// space around it and how its accents are typed. The folder is shown in the
+/// space around or inside it and how its letters are typed. The folder is shown in the
 /// app's language, so a person by any of these names would read as it (#61).
 /// A language whose name cannot be read refuses the name rather than let it
 /// through.
 pub(crate) fn names_shared_folder(name: &str) -> bool {
-    let key = |text: &str| text.trim().nfc().collect::<String>().to_lowercase();
+    let key = shared_name_key;
     let typed = key(name);
     UiLocale::ALL.iter().any(|locale| {
         match locale.text(MessageId::InterfaceLibrarySidebarSharedWithMe) {
@@ -345,6 +368,28 @@ mod tests {
                 "{locale:?}"
             );
             assert!(!names_shared_folder(&format!("{shown} 2")), "{locale:?}");
+        }
+    }
+
+    #[test]
+    fn the_shared_folder_name_is_refused_however_its_spaces_and_letters_are_typed() {
+        // The same cases as recordPresentation.test.ts, so both sides agree.
+        for name in [
+            "Shared  with me",
+            "Shared\u{a0}with me",
+            "Shared\u{3000}with\u{2003}me",
+            "\u{feff}Shared with me\u{85}",
+            "\u{ff33}\u{ff48}\u{ff41}\u{ff52}\u{ff45}\u{ff44} with me",
+            "\t PARTAGÉS\u{202f}avec moi \n",
+        ] {
+            assert!(names_shared_folder(name), "{name:?}");
+        }
+        for name in [
+            "Sharedwith me",
+            "Shared with me 2",
+            "Shared \u{200b}with me",
+        ] {
+            assert!(!names_shared_folder(name), "{name:?}");
         }
     }
 
