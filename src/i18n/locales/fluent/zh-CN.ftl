@@ -1559,3 +1559,41 @@ portal-codeRefused = 诊所门户网站未接受此验证码。请几分钟后�
 portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
+
+interface-history-event-profileDetailsChanged = 个人资料已更改
+
+interface-history-event-portalLinkStarted = 已开始与诊所关联
+
+interface-history-event-portalLinked = 已与诊所关联
+
+interface-history-event-deviceApprovalRequested = 已申请设备批准
+
+interface-history-event-deviceApprovalVerified = 诊所已批准此设备
+
+interface-history-event-deviceApprovalStatusChanged = 批准状态已更改
+
+interface-history-event-deviceApprovalRequestRestarted = 已发起新的批准请求
+
+interface-history-event-deliveryFiled = 已收到诊所文档
+
+interface-history-event-deliveryReceiptSettled = 已向诊所发送领取回执
+
+interface-history-event-other = 其他事件
+
+interface-history-how-pending = 正在等待诊所
+
+interface-history-how-challengeReady = 诊所已收到
+
+interface-history-how-accepted = 已批准
+
+interface-history-how-refused = 诊所已拒绝
+
+interface-history-how-expired = 已过期
+
+interface-history-how-cancelled = 已取消
+
+interface-history-how-pickedUp = 诊所已记录领取
+
+interface-history-how-deliveryNotFound = 诊所门户已不再保存该文档
+
+interface-history-how-personFolder = 某人的文件夹

@@ -1739,3 +1739,41 @@ portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Rées
 portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
+
+interface-history-event-profileDetailsChanged = Renseignements de la personne modifiés
+
+interface-history-event-portalLinkStarted = Liaison avec la clinique commencée
+
+interface-history-event-portalLinked = Clinique liée
+
+interface-history-event-deviceApprovalRequested = Approbation de l’appareil demandée
+
+interface-history-event-deviceApprovalVerified = Appareil approuvé par la clinique
+
+interface-history-event-deviceApprovalStatusChanged = État de l’approbation modifié
+
+interface-history-event-deviceApprovalRequestRestarted = Nouvelle demande d’approbation commencée
+
+interface-history-event-deliveryFiled = Document de la clinique reçu
+
+interface-history-event-deliveryReceiptSettled = Accusé de réception envoyé à la clinique
+
+interface-history-event-other = Autre événement
+
+interface-history-how-pending = En attente de la clinique
+
+interface-history-how-challengeReady = Reçue par la clinique
+
+interface-history-how-accepted = Approuvée
+
+interface-history-how-refused = Refusée par la clinique
+
+interface-history-how-expired = Expirée
+
+interface-history-how-cancelled = Annulée
+
+interface-history-how-pickedUp = La clinique a enregistré la réception
+
+interface-history-how-deliveryNotFound = Le portail de la clinique ne l’avait plus
+
+interface-history-how-personFolder = Dossier d’une personne

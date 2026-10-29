@@ -1703,3 +1703,41 @@ portal-codeRefused = The clinic portal didn't take the code. Try again in a few 
 portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
+
+interface-history-event-profileDetailsChanged = Person's details changed
+
+interface-history-event-portalLinkStarted = Clinic link started
+
+interface-history-event-portalLinked = Clinic linked
+
+interface-history-event-deviceApprovalRequested = Device approval requested
+
+interface-history-event-deviceApprovalVerified = Device approved by the clinic
+
+interface-history-event-deviceApprovalStatusChanged = Approval status changed
+
+interface-history-event-deviceApprovalRequestRestarted = New approval request started
+
+interface-history-event-deliveryFiled = Clinic document received
+
+interface-history-event-deliveryReceiptSettled = Pickup confirmation sent to the clinic
+
+interface-history-event-other = Other event
+
+interface-history-how-pending = Waiting for the clinic
+
+interface-history-how-challengeReady = Received by the clinic
+
+interface-history-how-accepted = Approved
+
+interface-history-how-refused = Refused by the clinic
+
+interface-history-how-expired = Expired
+
+interface-history-how-cancelled = Cancelled
+
+interface-history-how-pickedUp = The clinic recorded the pickup
+
+interface-history-how-deliveryNotFound = The clinic portal no longer had it
+
+interface-history-how-personFolder = A person's folder
