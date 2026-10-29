@@ -35,6 +35,7 @@ function Library({
           {location}
         </h1>
         {showTrigger && <button disabled={busy}>Import</button>}
+        <button>Path</button>
         {modal && (
           <section role="dialog" aria-modal="true" aria-label="Recovery setup">
             <button>Continue setup</button>
@@ -329,6 +330,23 @@ describe("library focus recovery", () => {
     rerender(<Library location="Second folder" busy />);
     frame();
     // Nothing is said yet, so the reader presses the place again.
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
+  it("keeps a late opened place's request when the second press comes from another control (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    screen.getByRole("button", { name: "Elsewhere" }).focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    // The same place again, from the path this time.
+    screen.getByRole("button", { name: "Path" }).focus();
     openedPlace("Second folder");
     rerender(<Library location="Second folder" />);
     frame();

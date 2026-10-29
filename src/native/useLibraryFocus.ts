@@ -168,9 +168,12 @@ export function useLibraryFocus(
     requested.current = true;
   }, []);
   const openedPlace = useCallback((next: string) => {
-    // A second press while that place is still on its way (the library is
-    // busy) keeps the first request.
-    if (place.current === next) return;
+    // A second press on a place shown while the library was busy keeps that
+    // request, from whichever control it came: nothing has been said yet.
+    if (place.current === next && next === shown.current) {
+      opener.current = document.activeElement;
+      return;
+    }
     place.current = next === shown.current ? null : next;
     placeLate.current = false;
     opener.current = document.activeElement;
