@@ -814,12 +814,21 @@ state, described in the recovery-key sections above.
   and the remaining review gates are still required before release. See [HANDOFF.md](HANDOFF.md).
 
 
-### Future manifest format 5: portal link custody (#55)
+### Manifest formats 5–7: portal link custody, clinic delivery and approval (#55)
 
-This future branch reserves format 5 above held profile format 4. It does not
-authorize upgrading the current demo. A writable unlock upgrades older supported
-manifests using the existing redundant/history transaction; read-only recovery
-never writes a migration. Older applications refuse the new version.
+The app writes format 7 (`VAULT_FORMAT` in `src-tauri/src/vault.rs`). At a
+writable unlock, `upgrade_manifest` raises an older manifest straight to 7 in a
+commit of its own, using the existing redundant/history transaction. Read-only
+recovery never writes it: `VaultStore::unlock` calls it only when the unlock is
+not in recovery. A build older than the manifest refuses it as `NewerFormat`
+(`ManifestRefusal::Newer`), not as damage.
+
+`validate_manifest_structure` refuses as corrupt a manifest whose format is too
+old for what it holds:
+- below 5: any portal link, or a record's `originalPdf`;
+- below 6: a link's `approval`, or a record's `delivery`;
+- below 7: a link's `approvalHistory`, or an approval with a `status` or `reason`.
+The sections below describe each step; these rules are the checked part.
 
 `portalLinks` is absent for an empty list, at most 16 entries otherwise. Each
 entry keeps its UUID, canonical HTTPS portal base (including any deployment path),
@@ -909,9 +918,10 @@ retains the original receipt. `gone` never represents a cryptographic pickup.
 
 A link's optional `approval` keeps one first-device request UUID, exact signed
 intent and expiry, and any verified challenge/acceptance. Intent and history
-are committed before POST. This milestone implements `staff_first` only, with
-null predecessor; it does not authorize a later-device or lost-all-devices
-fallback. Exact clinic signatures bind the saved portal base, recipient, both
+are committed before POST. Two challenge kinds are accepted, `staff_first` and,
+for clinic code v1 (#141), `code`, both with no predecessor
+(`portal_approval::verify_challenge`); a later-device or lost-all-devices
+fallback is not implemented. Exact clinic signatures bind the saved portal base, recipient, both
 public keys, device ID, request, challenge and original compact hashes. Unsigned
 portal status alone never establishes approval. Stored historical evidence
 remains readable after revocation; current approval requires active pinned keys.
@@ -924,7 +934,8 @@ actual linking/staff approval and full native UI flow remain enablement gates.
 #### Format 7: recoverable approval requests and terminal status
 
 Format 7 retains original request IDs across explicit restarts. Each link keeps
-its current `approval` and bounded `approvalHistory` (at most 16 requests in all).
+its current `approval` and bounded `approvalHistory` (at most 16 requests in all,
+`portal_approval::MAX_APPROVAL_REQUESTS`).
 No request/proof is dropped to make room: a full history stops new requests and
 asks the patient to contact the clinic. Each attempt can also keep its typed
 advisory `status` and controlled `reason`; old format-6 attempts with neither
