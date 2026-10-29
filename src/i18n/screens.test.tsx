@@ -289,6 +289,11 @@ describe("the person-folder sidebar in each language", () => {
           `${tr("sidebar.folderOfPerson", { folder: "FAKE Results", person: "FAKE Blake" })} 0`,
         ),
       });
+      // Pinned as written, so a catalogue change back to ASCII brackets fails.
+      if (locale === "zh-CN")
+        expect(visibleText(folder.getAttribute("aria-label")!)).toBe(
+          "FAKE Results（FAKE Blake） 0",
+        );
       expect(folder).not.toHaveAttribute("draggable", "true");
       await user.click(folder);
       expect(props.onOpenFolder).toHaveBeenCalledWith("p2", "folder-p2");
