@@ -563,7 +563,11 @@ last is number `count - 1` and its hash is the head; none is shown twice. With t
 count and head). When it is false, Security shows a notice dated from the native fields: "Part of
 this history is damaged. Events between <date> and <date> can't be checked and aren't shown." (or
 "after <date>", "before <date>", or that none are shown), with a marker in the list where the gap
-is (Ben's D129 and D146, mycarlos#120). The notice follows those fields only; the renderer never
+is (Ben's D129 and D146, mycarlos#120). It also returns `everyEventShown`: whether the rows from
+the start and from the end, in order, are still the whole chain the manifest pins, so that only
+segments holding no entries (padding) are damaged. Security then says instead "Part of the storage
+for this history is damaged, but every event checks out and is shown." and marks no gap (#120 C1).
+The notice follows those fields only; the renderer never
 works it out. Its dates are the entries' recorded times, so after the device clock was set back
 the first can read later than the second; the order shown is always the chain's. A damaged
 segment is never opened or shown.

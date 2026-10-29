@@ -254,7 +254,9 @@ export interface AuditHistoryView {
   checkedUntilMs: number | null;
   checkedFromMs: number | null;
   /** Every event the manifest pins is shown, even when part of its storage is
-   * damaged (only padding, say): no event is missing and there is no gap. */
+   * damaged (only padding, say): no event is missing and there is no gap.
+   * Native code always sends it; it is optional so that a view without it is
+   * read the safe way, with the damage notice and the gap. */
   everyEventShown?: boolean;
 }
 

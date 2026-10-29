@@ -341,6 +341,8 @@ describe("AuditHistory damaged history (D129)", () => {
     );
   });
 
+  // Native code keeps padding last, so this view is defensive: the screen follows
+  // everyEventShown and marks no gap whatever the two parts hold.
   it("marks no gap between contiguous checked parts (#120 C1)", async () => {
     const early = [entry(), entry({ seq: 1, event: "unlocked" })];
     const later = [

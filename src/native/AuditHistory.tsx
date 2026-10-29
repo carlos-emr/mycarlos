@@ -226,8 +226,9 @@ export function AuditHistory({
   );
 }
 
-/** The notice for a history that is not complete, from the native dates only (D146): the gap
- * between the two checked ends, or what lies before or after the only one, or all of it. */
+/** The notice for a history that is not complete, from the native fields only (D146): that
+ * only storage without events is damaged (#120 C1), or else the gap between the two checked
+ * ends, or what lies before or after the only one, or all of it. */
 function damageNotice(view: AuditHistoryView): string {
   // Only storage without events is damaged: every event checks out and is shown.
   if (view.everyEventShown)

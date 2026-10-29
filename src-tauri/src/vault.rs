@@ -1366,6 +1366,8 @@ impl VaultStore {
     /// its start or from its pinned end, in order; nothing between is shown. `complete` is true
     /// exactly when every piece was read and `entries` are the whole chain the manifest pins (its
     /// count and head), as `verify` checks; a damaged padding piece makes it false too.
+    /// `every_event_shown` is true when `entries` then `later` are still that whole chain, so
+    /// only pieces without events are damaged (#120 C1).
     pub fn history_view(&self) -> Result<HistoryView, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -1442,13 +1444,14 @@ impl VaultStore {
         // Every pinned event is shown when the shown events, in order, link from the start of
         // the chain to the pinned count and head (#120 C1): a damaged piece then held none of
         // them, and nothing lies between `entries` and `later`.
-        let mut every_event = entries.clone();
-        every_event.extend(later.iter().cloned());
-        let (whole, whole_head) =
-            history::linked_prefix(manifest.vault_id, &every_event, cancelled)
-                .map_err(|_| VaultError::Cancelled)?;
-        let every_event_shown =
-            whole == every_event.len() && whole == pinned && whole_head == manifest.history.head;
+        let every_event_shown = complete || {
+            let mut every_event = entries.clone();
+            every_event.extend(later.iter().cloned());
+            let (whole, whole_head) =
+                history::linked_prefix(manifest.vault_id, &every_event, cancelled)
+                    .map_err(|_| VaultError::Cancelled)?;
+            whole == every_event.len() && whole == pinned && whole_head == manifest.history.head
+        };
         run_at_test_boundary("history-verified");
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -15559,6 +15562,16 @@ mod tests {
         assert!(view.later.is_empty());
         // Only padding is damaged: every pinned event checks out and is shown (#120 C1).
         assert!(view.every_event_shown);
+        // But not when the chain no longer ends at the pinned head, or holds more than the
+        // pinned count, even though no piece with events is damaged.
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        assert!(!store.history_view().unwrap().every_event_shown);
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.count -= 1;
+        assert!(!store.history_view().unwrap().every_event_shown);
+        store.session().as_mut().unwrap().manifest.history = history;
+        assert!(store.history_view().unwrap().every_event_shown);
     }
 
     #[test]
@@ -15647,6 +15660,7 @@ mod tests {
         store.session().as_mut().unwrap().manifest.history.count += 1;
         let view = store.history_view().unwrap();
         assert!(!view.complete);
+        assert!(!view.every_event_shown);
         assert_eq!(view.entries, all);
         assert!(view.later.is_empty());
         // The chain does not end at the pinned head.
@@ -15654,6 +15668,7 @@ mod tests {
         store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
         let view = store.history_view().unwrap();
         assert!(!view.complete);
+        assert!(!view.every_event_shown);
         assert_eq!(view.entries, all);
         assert!(view.later.is_empty());
         // Entries past the pinned count are never shown.
@@ -15661,6 +15676,7 @@ mod tests {
         store.session().as_mut().unwrap().manifest.history.count -= 1;
         let view = store.history_view().unwrap();
         assert!(!view.complete);
+        assert!(!view.every_event_shown);
         assert_eq!(view.entries, all[..all.len() - 1]);
         assert!(view.later.is_empty());
     }
@@ -15683,6 +15699,7 @@ mod tests {
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert!(view.entries.is_empty());
+        assert!(!view.every_event_shown);
         assert_eq!(
             view.later,
             all[usize::try_from(segments[1].first_seq).unwrap()..]
