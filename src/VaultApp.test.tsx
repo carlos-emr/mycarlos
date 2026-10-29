@@ -8884,6 +8884,108 @@ describe("clinic connection operations", () => {
     expect(bridge.connectPortal).not.toHaveBeenCalled();
   });
 
+  it("gives focus back to Link another clinic when a link sent from its dialog is refused (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValue({ code: "portal_link_code_rejected" }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(
+      await screen.findByText(
+        "The portal did not accept that code. Make a new linking code in your patient portal.",
+      ),
+    ).toBeVisible();
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    await waitFor(() => expect(document.activeElement).toBe(linkAnother));
+  });
+
+  it("gives focus to the new clinic after a link sent from the dialog, which then opens empty (#145)", async () => {
+    const second = {
+      ...connectedLink,
+      id: "fake-clinic-link-2",
+      clinicName: "FAKE Second Clinic",
+      portalBase: "https://second.example.test/patient",
+    };
+    let current: VaultSnapshot = {
+      ...clinicSnapshot,
+      portalLinks: [connectedLink],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      connectPortal: vi.fn().mockImplementation(async () => {
+        current = { ...current, portalLinks: [connectedLink, second] };
+        return { link: second, approvalError: null };
+      }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://second.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const heading = await screen.findByRole("heading", {
+      name: "FAKE Second Clinic",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    // Once the link is finished the button is usable again, and focus stays
+    // on the new clinic.
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    expect(document.activeElement).toBe(heading);
+    await user.click(linkAnother);
+    expect(screen.getByLabelText("Portal HTTPS address")).toHaveValue("");
+  });
+
   it("keeps local records usable and shares admission across clinic-view remounts", async () => {
     let current = clinicSnapshot;
     const pending = pendingConnection();

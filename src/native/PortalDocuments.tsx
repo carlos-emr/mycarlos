@@ -273,11 +273,14 @@ export function PortalDocuments({
   useEffect(() => () => dialogChange.current?.(false), []);
   useEffect(() => {
     if (connecting || focusLink || !returnToLinkAnother.current) return;
+    // A refused link leaves the button disabled for a render after
+    // `connecting` ends; wait until it can take focus again.
+    if (linkAnotherRef.current?.disabled) return;
     returnToLinkAnother.current = false;
     const active = document.activeElement;
     if (active === null || active === document.body)
       linkAnotherRef.current?.focus();
-  }, [connecting, focusLink]);
+  }, [connecting, focusLink, busy, working, readOnly]);
   const stateText = (state: CardState) =>
     "key" in state ? t(state.key) : vaultErrorMessage(state.failed);
   // A control an automatic check is about to remove or disable, if it has
