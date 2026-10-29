@@ -975,8 +975,6 @@ preferences-subtitle = Wygląd myCarlos na tym komputerze
 
 record-kind-document = Dokument
 
-record-source-manual = Import ręczny — niezweryfikowany
-
 recover-intro = Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
 
 recover-key-format = 28 liter i cyfr, w 7 grupach po 4, tak jak na zestawie lub tak, jak zostały zapisane. Myślniki, spacje i inne znaki interpunkcyjne nie mają znaczenia.
@@ -1447,19 +1445,19 @@ personSuggestion-offer = Wygląda na to, że ten dokument jest dla osoby { $name
 
 portal-address = Adres HTTPS portalu
 
-portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.
+portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Proszę sprawdzić aktualizacje przed rozpoczęciem nowej prośby.
 
-portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
+portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Proszę skontaktować się z przychodnią, aby ustalić dalsze kroki.
 
 portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Dokumenty z przychodni.
 
-portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.
+portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Proszę wysłać ponownie zapisaną prośbę.
 
-portal-approvalRefused = Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
+portal-approvalRefused = Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Proszę skontaktować się z przychodnią, aby ustalić dalsze kroki.
 
 portal-approved = Przychodnia zatwierdziła to urządzenie.
 
-portal-awaiting = Zapisano prośbę o zatwierdzenie. Sprawdź aktualizacje lub wyślij ją ponownie.
+portal-awaiting = Zapisano prośbę o zatwierdzenie. Proszę sprawdzić aktualizacje lub wysłać ją ponownie.
 
 portal-check = Sprawdź nowe dokumenty
 
@@ -1467,9 +1465,9 @@ portal-clinicIssue = { $clinic }: { $detail }
 
 portal-code = Kod połączenia
 
-portal-compare = Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
+portal-compare = Proszę zwrócić się do personelu przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
 
-portal-confirmationsPending = Zapisane dokumenty oczekujące na potwierdzenie odbioru: { $count }. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.
+portal-confirmationsPending = Zapisane dokumenty oczekujące na potwierdzenie odbioru: { $count }. Proszę sprawdzić ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.
 
 portal-copied = Skopiowano kod urządzenia.
 
@@ -1483,23 +1481,23 @@ portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
 
-portal-errorAddress = Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.
+portal-errorAddress = Proszę wpisać adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.
 
-portal-errorCancelled = Łączenie zostało przerwane, ponieważ sejf został zablokowany. Sprawdź połączone urządzenia w portalu przed kolejną próbą.
+portal-errorCancelled = Łączenie zostało przerwane, ponieważ sejf został zablokowany. Proszę sprawdzić połączone urządzenia w portalu przed kolejną próbą.
 
-portal-errorCode = Wpisz pełny kod połączenia wyświetlany w portalu pacjenta.
+portal-errorCode = Proszę wpisać pełny kod połączenia wyświetlany w portalu pacjenta.
 
-portal-errorCodeRejected = Portal nie zaakceptował kodu. Utwórz nowy kod połączenia w portalu pacjenta.
+portal-errorCodeRejected = Portal nie zaakceptował kodu. Proszę utworzyć nowy kod połączenia w portalu pacjenta.
 
-portal-errorDamaged = Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Przywróć go z kopii zapasowej albo poproś przychodnię o ponowne wysłanie.
+portal-errorDamaged = Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Proszę przywrócić go z kopii zapasowej albo poprosić przychodnię o ponowne wysłanie.
 
-portal-errorDeviceName = Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.
+portal-errorDeviceName = Proszę wybrać nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.
 
 portal-errorDisabled = Łączenie z portalem nie jest włączone w tej wersji.
 
-portal-errorExists = To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.
+portal-errorExists = To urządzenie jest już zarejestrowane. Proszę sprawdzić połączone urządzenia w portalu pacjenta.
 
-portal-errorIncomplete = Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.
+portal-errorIncomplete = Nie udało się wykonać żądania do portalu. Proszę sprawdzić połączenie i zegar urządzenia, a następnie spróbować ponownie.
 
 portal-errorKeys = Przychodnia nie opublikowała jeszcze klucza podpisu. Połączenie jest nieukończone.
 
@@ -1509,15 +1507,15 @@ portal-errorUnavailable = Łączenie z portalem nie jest jeszcze dostępne na ty
 
 portal-fingerprint = Pełny odcisk urządzenia
 
-portal-incomplete = Ta zapisana próba jest niekompletna. Sprawdź połączone urządzenia w portalu lub skontaktuj się z przychodnią przed ponownym łączeniem. Aplikacja nie może wznowić tej próby.
+portal-incomplete = Ta zapisana próba jest niekompletna. Proszę sprawdzić połączone urządzenia w portalu lub skontaktować się z przychodnią przed ponownym łączeniem. Aplikacja nie może wznowić tej próby.
 
-portal-intro = Połącz myCarlos, używając adresu i kodu z portalu pacjenta.
+portal-intro = Proszę połączyć myCarlos, używając adresu i kodu z portalu pacjenta.
 
 portal-link = Połącz i poproś o zatwierdzenie
 
 portal-matchPerson = Dopasuj dane z dokumentu
 
-portal-notRequested = Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
+portal-notRequested = Proszę zwrócić się do przychodni o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
 
 portal-partialResult = Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: { $added }. Nie udało się zweryfikować dokumentów: { $refused }.
 
@@ -1555,7 +1553,7 @@ portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia zna
 
 portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…
 
-portal-errorBusy = Trwa inna operacja związana z przychodnią. Poczekaj, aż się zakończy, i spróbuj ponownie.
+portal-errorBusy = Trwa inna operacja związana z przychodnią. Proszę poczekać, aż się zakończy, i spróbować ponownie.
 
 portal-linkedApprovalIssue = Urządzenie zostało połączone, ale nie udało się potwierdzić prośby o zatwierdzenie. Stan urządzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
 
@@ -1563,13 +1561,13 @@ portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
 portal-working = Trwa operacja związana z przychodnią…
 
-portal-approvalExpiredCard = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego samego urządzenia, wybierz Rozpocznij nową prośbę o zatwierdzenie. Dokumenty i połączenie tego urządzenia pozostają bez zmian.
+portal-approvalExpiredCard = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego samego urządzenia, proszę wybrać Rozpocznij nową prośbę o zatwierdzenie. Dokumenty i połączenie tego urządzenia pozostają bez zmian.
 
 portal-approvalPickedUp = System dokumentacji przychodni odebrał tę prośbę. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.
 
-portal-approvalReplyInvalid = Nie udało się zweryfikować odpowiedzi portalu przychodni na temat tej prośby, więc nie została użyta. Skontaktuj się z przychodnią.
+portal-approvalReplyInvalid = Nie udało się zweryfikować odpowiedzi portalu przychodni na temat tej prośby, więc nie została użyta. Proszę skontaktować się z przychodnią.
 
-portal-approvalStillOpen = Ta prośba o zatwierdzenie jest nadal otwarta w portalu przychodni. Poczekaj, aż się zakończy, zanim rozpoczniesz nową.
+portal-approvalStillOpen = Ta prośba o zatwierdzenie jest nadal otwarta w portalu przychodni. Proszę poczekać, aż się zakończy, przed rozpoczęciem nowej.
 
 portal-approvalTimeLeft =
     { $count ->
@@ -1581,7 +1579,7 @@ portal-approvalTimeLeft =
 
 portal-approvalTimeOver = Czas na tę prośbę minął.
 
-portal-approvalTimeOverRestart = Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, wybierz { $button }.
+portal-approvalTimeOverRestart = Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, proszę wybrać { $button }.
 
 portal-approvalTimeUp = Czas na tę prośbę minął. Sprawdzanie w przychodni…
 
@@ -1593,11 +1591,11 @@ portal-approvalWait = Portal przychodni poprosił myCarlos o rzadsze sprawdzanie
 
 portal-autoChecking = Dopóki ta strona jest otwarta, myCarlos automatycznie sprawdza, czy przychodnia odpowiedziała.
 
-portal-autoCheckStopped = Automatyczne sprawdzanie zostało zatrzymane. Aby sprawdzić ponownie, wybierz { $button }.
+portal-autoCheckStopped = Automatyczne sprawdzanie zostało zatrzymane. Aby sprawdzić ponownie, proszę wybrać { $button }.
 
 portal-awaitingClinic = Przychodnia otrzymała prośbę o zatwierdzenie. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.
 
-portal-deviceRemoved = To urządzenie zostało usunięte z konta w portalu przychodni. Aby znów go używać, połącz je ponownie, używając nowego kodu połączenia z portalu pacjenta.
+portal-deviceRemoved = To urządzenie zostało usunięte z konta w portalu przychodni. Aby znów go używać, proszę połączyć je ponownie, używając nowego kodu połączenia z portalu pacjenta.
 
 portal-errorRateLimited = Portal przychodni poprosił myCarlos, aby odczekał przed ponowną próbą.
 hidden-backToSecurity = Powrót do zabezpieczeń
@@ -1726,7 +1724,7 @@ interface-history-to = Do
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. Możesz ją tutaj przeglądać; myCarlos nigdy jej nie zmienia ani nie usuwa.
 
-portal-checkAgain = Aby sprawdzić ponownie, wybierz { $button }.
+portal-checkAgain = Aby sprawdzić ponownie, proszę wybrać { $button }.
 
 portal-unlockCheckConsent = Przy każdym odblokowaniu sejfu myCarlos łączy się z portalem przychodni każdego połączonego urządzenia, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty.
 
@@ -1740,10 +1738,10 @@ portal-unlockCheckWaiting = Po odblokowaniu sejfu myCarlos nie sprawdził nowych
 
 portal-unlockRefused =
     { $count ->
-    [one] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie został dodany. Skontaktuj się z przychodnią.
-    [few] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
-    [many] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
-    *[other] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
+    [one] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie został dodany. Proszę skontaktować się z przychodnią.
+    [few] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Proszę skontaktować się z przychodnią.
+    [many] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Proszę skontaktować się z przychodnią.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie zostały dodane. Proszę skontaktować się z przychodnią.
     }
 
 library-source-clinic = Z { $clinic }
@@ -1756,22 +1754,22 @@ library-status-verified = Zweryfikowano
 
 portal-approvedByCode = Przychodnia potwierdziła to urządzenie kodem.
 
-portal-codeFormat = Wpisz 9 cyfr kodu z e-maila od przychodni.
+portal-codeFormat = Proszę wpisać 9 cyfr kodu z e-maila od przychodni.
 
-portal-codeHint = Wpisz 9-cyfrowy kod, który przychodnia wysłała e-mailem. Nigdy nie używaj kodu wyświetlonego na stronie internetowej.
+portal-codeHint = Proszę wpisać 9-cyfrowy kod, który przychodnia wysłała e-mailem. Proszę nigdy nie używać kodu wyświetlonego na stronie internetowej.
 
 portal-codeLabel = Kod z e-maila od przychodni
 
-portal-codeLocked = Wypróbowano zbyt wiele kodów dla tej prośby, więc myCarlos nie przyjmie kolejnego. Skontaktuj się z przychodnią.
+portal-codeLocked = Wypróbowano zbyt wiele kodów dla tej prośby, więc myCarlos nie przyjmie kolejnego. Proszę skontaktować się z przychodnią.
 
-portal-codeMismatch = Ten kod nie pasuje do tej przychodni. Sprawdź, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbuj ponownie.
+portal-codeMismatch = Ten kod nie pasuje do tej przychodni. Proszę sprawdzić, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbować ponownie.
 
-portal-codeNeeded = Przychodnia wysłała e-mailem kod do potwierdzenia tego urządzenia. Wpisz go poniżej.
+portal-codeNeeded = Przychodnia wysłała e-mailem kod do potwierdzenia tego urządzenia. Proszę wpisać go poniżej.
 
 portal-codeNotOpen = Ta prośba nie czeka teraz na kod. myCarlos pokaże odpowiedź przychodni przy następnym sprawdzeniu.
 
-portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za kilka minut.
+portal-codeRefused = Portal przychodni nie przyjął kodu. Proszę spróbować ponownie za kilka minut.
 
 portal-codeSubmit = Potwierdź kod
 
-portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
+portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, proszę ponowić prośbę.

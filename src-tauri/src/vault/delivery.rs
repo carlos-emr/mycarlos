@@ -3788,6 +3788,46 @@ mod approval_recovery_tests {
             assert_eq!(result.issues[0].code, "portal_link_incomplete");
         }
     }
+    /// A package download that says the portal removed this device ends that
+    /// clinic's check there (#128): nothing more can be fetched with it, so
+    /// its later deliveries are not asked for, and it is said as removed, not
+    /// as a connection failure.
+    #[test]
+    fn should_end_a_clinics_check_when_a_package_download_says_the_device_was_removed() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, second, _sealed, _) = fixture_package();
+        add_link(&store, &link);
+        let mut first = second.clone();
+        first.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(listing(&[first.clone(), second.clone()]))
+                } else {
+                    Ok(refusal("device_removed"))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", first.delivery_id),
+            ]
+        );
+        assert_eq!((result.added, result.refused), (0, 0));
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
     #[test]
     fn should_stop_a_clinic_after_three_downloads_in_a_row_get_no_reply() {
         // None is no reply at all; Some is an HTTP status, which resets the count.

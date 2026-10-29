@@ -952,8 +952,6 @@ preferences-subtitle = Cómo se ve myCarlos en este equipo
 
 record-kind-document = Documento
 
-record-source-manual = Importación manual — sin verificar
-
 recover-intro = Use su clave de recuperación para abrir la bóveda y elegir una nueva frase de contraseña.
 
 recover-key-format = 28 letras y dígitos, en 7 grupos de 4, como aparecen en su kit o como los anotó. Los guiones, los espacios y otros signos de puntuación no importan.

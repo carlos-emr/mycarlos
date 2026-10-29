@@ -618,8 +618,6 @@ pub struct VaultRecord {
     pub folder_ids: Vec<Uuid>,
     pub display_name: String,
     pub source_label: String,
-    /// Presentation identity; the stored source label remains unchanged.
-    pub source_kind: &'static str,
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
@@ -1501,7 +1499,6 @@ impl VaultStore {
                     folder_ids: record.folder_ids.clone(),
                     display_name: record.display_name.clone(),
                     source_label: record.source_label.clone(),
-                    source_kind: "manual",
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,

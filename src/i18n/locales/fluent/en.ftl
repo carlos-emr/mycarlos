@@ -929,8 +929,6 @@ preferences-subtitle = How myCarlos looks on this computer
 
 record-kind-document = Document
 
-record-source-manual = Manual import — unverified
-
 recover-intro = Use your recovery key to open the vault and choose a new passphrase.
 
 recover-key-format = 28 letters and digits, in 7 groups of 4, as on your kit or as you wrote it down. Dashes, spaces and other punctuation do not matter.

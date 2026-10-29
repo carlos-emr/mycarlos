@@ -952,8 +952,6 @@ preferences-subtitle = Como o myCarlos aparece neste computador
 
 record-kind-document = Documento
 
-record-source-manual = Importação manual — não verificada
-
 recover-intro = Use sua chave de recuperação para abrir o cofre e escolher uma nova frase secreta.
 
 recover-key-format = 28 letras e números, em 7 grupos de 4, como no seu kit ou como você anotou. Traços, espaços e outros sinais de pontuação não importam.
