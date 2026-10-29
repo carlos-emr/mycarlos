@@ -3402,6 +3402,163 @@ mod approval_recovery_tests {
         other.approval.as_mut().unwrap().status = None;
         assert!(crate::portal_pickup::worth_asking(&other));
     }
+    fn not_found_page() -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status: 404,
+            body: Zeroizing::new(br#"{"detail":"not found"}"#.to_vec()),
+            date: None,
+            retry_after: None,
+        }
+    }
+    /// An approved device, and a second device of this vault with a request
+    /// still open, on the same portal (all FAKE). The second stands for a
+    /// device a reset portal deleted. It comes first: the portal's answer to
+    /// the working one, later in the check, still counts.
+    fn store_with_a_gone_device(temp: &tempfile::TempDir) -> (VaultStore, StoredLink, StoredLink) {
+        let (x, mut working, mut accepted) = portal_approval::first_fixture();
+        let first = &x["flows"]["first"];
+        accepted.challenge = Some(first["challenge"]["compact"].as_str().unwrap().into());
+        accepted.acceptance = Some(first["acceptance"]["compact"].as_str().unwrap().into());
+        accepted.status = Some(State::Accepted);
+        working.approval = Some(accepted);
+        let (mut gone, _, _, _) = signed_delivery();
+        // Same portal first: the request it signs names it.
+        gone.portal_base = working.portal_base.clone();
+        let mut attempt = portal_approval::create(&gone, crate::now_ms() / 1000).unwrap();
+        attempt.status = Some(State::Pending);
+        gone.approval = Some(attempt);
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Gone Device Patient", 1)
+            .unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(gone.clone());
+                m.portal_links.push(working.clone());
+                Ok(())
+            })
+            .unwrap();
+        assert!(crate::portal_pickup::worth_asking(&gone));
+        assert!(crate::portal_pickup::worth_asking(&working));
+        (store, working, gone)
+    }
+    /// Demo fix (29 Oct, Ben): a device a reset portal deleted answers "not
+    /// found". The portal answered another device of this vault in the same
+    /// check, so it is said removed and not asked again in this run: not its
+    /// documents, not its request's status.
+    #[test]
+    fn should_not_ask_again_about_a_device_its_portal_no_longer_knows() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, working, gone) = store_with_a_gone_device(&temp);
+        // One status read: the first check's. A second would find no reply.
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let asked = Mutex::new(Vec::new());
+        let check = || {
+            crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |l, _, _, _, _, _, _| {
+                    asked.lock().unwrap().push(l.id);
+                    Ok(if l.id == working.id {
+                        empty_page()
+                    } else {
+                        not_found_page()
+                    })
+                },
+            )
+            .unwrap()
+        };
+        let removed = |result: &crate::portal_pickup::CheckResult| {
+            result
+                .issues
+                .iter()
+                .filter(|i| i.link_id == gone.id)
+                .map(|i| i.code.as_str())
+                .collect::<Vec<_>>()
+                == vec!["portal_device_removed"]
+        };
+        let first = check();
+        assert_eq!(*asked.lock().unwrap(), vec![gone.id, working.id]);
+        assert!(
+            removed(&first),
+            "{:?}",
+            first.issues.iter().map(|i| &i.code).collect::<Vec<_>>()
+        );
+        assert!(!first.issues.iter().any(|i| i.link_id == working.id));
+        assert!(store.link_gone(gone.id));
+        asked.lock().unwrap().clear();
+        let second = check();
+        assert_eq!(*asked.lock().unwrap(), vec![working.id]);
+        assert!(removed(&second));
+        assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+        // A status refresh does not ask about it either.
+        assert!(matches!(
+            store.refresh_device_approval(gone.id, store.portal_link_ticket()),
+            Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
+        ));
+    }
+    /// root-53's review: a "not found" for one receipt (a delivery the portal
+    /// no longer has) says nothing about the device. A device whose receipt
+    /// got one, and whose check then failed, is not marked gone, even though
+    /// the same portal answered another device of this vault.
+    #[test]
+    fn should_not_mark_a_device_gone_for_a_receipt_not_found() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Receipt Not Found Patient", 1)
+            .unwrap();
+        let (with_receipt, _, _) = add_signed_pending_delivery(&store);
+        // Another device of this vault on the same portal, which answers.
+        let (_, mut other, _) = portal_approval::first_fixture();
+        other.approval = None;
+        other.portal_base = with_receipt.portal_base.clone();
+        add_link(&store, &other);
+        let posted = Mutex::new(0);
+        for _ in 0..2 {
+            crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, method, _, _, _, _, _| {
+                    if l.id == other.id {
+                        return Ok(empty_page());
+                    }
+                    assert_eq!(method, "POST");
+                    *posted.lock().unwrap() += 1;
+                    Ok(not_found_page())
+                },
+            )
+            .unwrap();
+            assert!(!store.link_gone(with_receipt.id));
+        }
+        // Asked again on the second check.
+        assert_eq!(*posted.lock().unwrap(), 2);
+    }
+    /// The control: "not found" from a portal that answered no device of
+    /// this vault may be a portal that is not there; it is asked again.
+    #[test]
+    fn should_ask_again_when_the_portal_answered_no_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, working, gone) = store_with_a_gone_device(&temp);
+        let approvals = Script::new(vec![Reply::Pending, Reply::Pending], vec![]);
+        let asked = Mutex::new(0);
+        for _ in 0..2 {
+            crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |_, _, _, _, _, _, _| {
+                    *asked.lock().unwrap() += 1;
+                    Ok(not_found_page())
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(*asked.lock().unwrap(), 4);
+        assert!(!store.link_gone(gone.id) && !store.link_gone(working.id));
+    }
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
