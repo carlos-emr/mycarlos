@@ -15,7 +15,9 @@ import {
   type VaultBridge,
 } from "../vault";
 
-const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
+/** A title for each event the vault records (history.rs `HistoryEvent`). A test checks
+ * that every event there has one; an event from a newer build is "Other event". */
+export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   created: "interface.history.event.created",
   historyStarted: "interface.history.event.historyStarted",
   unlocked: "interface.history.event.unlocked",
@@ -34,9 +36,30 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   folderRenamed: "interface.history.event.folderRenamed",
   folderMoved: "interface.history.event.folderMoved",
   setAside: "interface.history.event.setAside",
+  profileDetailsChanged: "interface.history.event.profileDetailsChanged",
+  portalLinkStarted: "interface.history.event.portalLinkStarted",
+  portalLinked: "interface.history.event.portalLinked",
+  deviceApprovalRequested: "interface.history.event.deviceApprovalRequested",
+  deviceApprovalVerified: "interface.history.event.deviceApprovalVerified",
+  deviceApprovalStatusChanged:
+    "interface.history.event.deviceApprovalStatusChanged",
+  deviceApprovalRequestRestarted:
+    "interface.history.event.deviceApprovalRequestRestarted",
+  deliveryFiled: "interface.history.event.deliveryFiled",
+  deliveryReceiptSettled: "interface.history.event.deliveryReceiptSettled",
 };
 
-const howLabels: Record<string, MessageKey> = {
+/** The title of an entry's event; never the formatting-failure text, even for an
+ * event this build does not know. */
+export function eventTitle(event: string): MessageKey {
+  return Object.hasOwn(eventLabels, event)
+    ? eventLabels[event as AuditHistoryEntry["event"]]
+    : "interface.history.event.other";
+}
+
+/** Words for each `how` the vault records. A how this build does not know is shown as
+ * it is. A test checks the values history.rs and the vault can write. */
+export const howLabels: Record<string, MessageKey> = {
   picked: "interface.history.how.picked",
   passphrase: "interface.history.how.passphrase",
   recoveryKey: "interface.history.how.recoveryKey",
@@ -44,6 +67,17 @@ const howLabels: Record<string, MessageKey> = {
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
   replaced: "interface.history.how.replaced",
+  personFolder: "interface.history.how.personFolder",
+  // A device approval request's state (portal_approval.rs `ApprovalState::code`).
+  pending: "interface.history.how.pending",
+  challenge_ready: "interface.history.how.challengeReady",
+  accepted: "interface.history.how.accepted",
+  refused: "interface.history.how.refused",
+  expired: "interface.history.how.expired",
+  cancelled: "interface.history.how.cancelled",
+  // What the portal said to a pickup confirmation (delivery.rs `settle_receipt`).
+  picked_up: "interface.history.how.pickedUp",
+  delivery_not_found: "interface.history.how.deliveryNotFound",
 };
 
 /** Dates keep the computer's own format, whatever language myCarlos uses (D130), as
@@ -276,7 +310,7 @@ function historyItem(entry: AuditHistoryEntry) {
   return (
     <li key={entry.seq}>
       <article className="audit-history-entry">
-        <h2>{translateNow(eventLabels[entry.event])}</h2>
+        <h2>{translateNow(eventTitle(entry.event))}</h2>
         <p className="audit-history-date">{formatTimestamp(entry.atMs)}</p>
         <dl>
           {details(entry).map(([label, value], index) => (

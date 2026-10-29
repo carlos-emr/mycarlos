@@ -1739,3 +1739,41 @@ portal-codeRefused = El portal de la clínica no aceptó el código. Vuelva a in
 portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.
+
+interface-history-event-profileDetailsChanged = Datos de la persona modificados
+
+interface-history-event-portalLinkStarted = Vinculación con la clínica iniciada
+
+interface-history-event-portalLinked = Clínica vinculada
+
+interface-history-event-deviceApprovalRequested = Aprobación del dispositivo solicitada
+
+interface-history-event-deviceApprovalVerified = Dispositivo aprobado por la clínica
+
+interface-history-event-deviceApprovalStatusChanged = Estado de la aprobación modificado
+
+interface-history-event-deviceApprovalRequestRestarted = Nueva solicitud de aprobación iniciada
+
+interface-history-event-deliveryFiled = Documento de la clínica recibido
+
+interface-history-event-deliveryReceiptSettled = Acuse de recibo enviado a la clínica
+
+interface-history-event-other = Otro evento
+
+interface-history-how-pending = En espera de la clínica
+
+interface-history-how-challengeReady = Recibida por la clínica
+
+interface-history-how-accepted = Aprobada
+
+interface-history-how-refused = Rechazada por la clínica
+
+interface-history-how-expired = Vencida
+
+interface-history-how-cancelled = Cancelada
+
+interface-history-how-pickedUp = La clínica registró la recepción
+
+interface-history-how-deliveryNotFound = El portal de la clínica ya no lo tenía
+
+interface-history-how-personFolder = Carpeta de una persona

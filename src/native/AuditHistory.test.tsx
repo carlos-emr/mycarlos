@@ -8,7 +8,18 @@ import type {
   AuditHistoryView,
   VaultBridge,
 } from "../vault";
-import { AuditHistory } from "./AuditHistory";
+import {
+  AuditHistory,
+  eventLabels,
+  eventTitle,
+  howLabels,
+} from "./AuditHistory";
+import { LOCALES } from "../i18n";
+import { formattingFailure } from "../i18n/catalogues";
+import historyRs from "../../src-tauri/src/history.rs?raw";
+import vaultRs from "../../src-tauri/src/vault.rs?raw";
+import deliveryRs from "../../src-tauri/src/vault/delivery.rs?raw";
+import approvalRs from "../../src-tauri/src/portal_approval.rs?raw";
 
 const entry = (
   overrides: Partial<AuditHistoryEntry> = {},
@@ -543,4 +554,149 @@ describe("AuditHistory recorded semantics", () => {
       ).not.toBeInTheDocument();
     },
   );
+});
+
+describe("AuditHistory words for every recorded event and how", () => {
+  /** Every event history.rs records, as the vault names it (camelCase). */
+  const recordedEvents = () => {
+    const body = /pub enum HistoryEvent \{([\s\S]*?)\n\}/.exec(historyRs)![1];
+    return [...body.matchAll(/^\s+([A-Z][A-Za-z]+),/gm)].map(
+      ([, name]) => name[0].toLowerCase() + name.slice(1),
+    );
+  };
+  /** Every `how` the vault writes. */
+  const recordedHows = () => {
+    // Passed in as arguments: an import's source, how a vault was opened.
+    const found = new Set(["picked", "camera", "passphrase", "recoveryKey"]);
+    for (const source of [vaultRs, deliveryRs, historyRs])
+      for (const [, how] of source.matchAll(/\.how = Some\(\s*"([A-Za-z_]+)"/g))
+        found.add(how);
+    // What the portal said to a pickup confirmation (settle_receipt).
+    for (const [, how] of deliveryRs.matchAll(
+      /ReceiptOutcome::\w+ => "([a-z_]+)"/g,
+    ))
+      found.add(how);
+    // A device approval request's state (ApprovalState::code).
+    const code =
+      /pub fn code\(self\) -> &'static str \{([\s\S]*?)\n {4}\}/.exec(
+        approvalRs,
+      )![1];
+    for (const [, how] of code.matchAll(/=> "([a-z_]+)"/g)) found.add(how);
+    return found;
+  };
+
+  it("has a title for every event history.rs records, in every language", () => {
+    const events = recordedEvents();
+    expect(events).toEqual(
+      expect.arrayContaining(["created", "portalLinked", "deliveryFiled"]),
+    );
+    for (const event of events) {
+      expect(Object.hasOwn(eventLabels, event), event).toBe(true);
+      for (const locale of LOCALES)
+        expect(
+          translate(locale, eventTitle(event)),
+          `${locale} ${event}`,
+        ).not.toBe(formattingFailure(locale));
+    }
+    // An event from a newer build is never the formatting failure.
+    expect(eventTitle("fromANewerBuild")).toBe("interface.history.event.other");
+  });
+
+  it("has words for every how the vault records, in every language", () => {
+    const hows = recordedHows();
+    expect([...hows]).toEqual(
+      expect.arrayContaining([
+        "personFolder",
+        "pending",
+        "challenge_ready",
+        "accepted",
+        "refused",
+        "expired",
+        "cancelled",
+        "picked_up",
+        "delivery_not_found",
+      ]),
+    );
+    for (const how of hows) {
+      // "shared" is told by where the document went (importedShared or movedFromShared).
+      if (how === "shared") continue;
+      expect(Object.hasOwn(howLabels, how), how).toBe(true);
+      for (const locale of LOCALES)
+        expect(translate(locale, howLabels[how]), `${locale} ${how}`).not.toBe(
+          formattingFailure(locale),
+        );
+    }
+  });
+
+  it("shows a clinic's events in words, and one it does not know as Other event", async () => {
+    const rows = [
+      entry({ seq: 0, event: "portalLinkStarted", name: null }),
+      entry({ seq: 1, event: "portalLinked", name: "FAKE Clinic" }),
+      entry({
+        seq: 2,
+        event: "deviceApprovalRequested",
+        name: null,
+        how: "pending",
+      }),
+      entry({
+        seq: 3,
+        event: "deviceApprovalStatusChanged",
+        name: null,
+        how: "challenge_ready",
+      }),
+      entry({
+        seq: 4,
+        event: "deviceApprovalVerified",
+        name: null,
+        how: "accepted",
+      }),
+      entry({ seq: 5, event: "deliveryFiled", name: "FAKE Letter.pdf" }),
+      entry({
+        seq: 6,
+        event: "deliveryReceiptSettled",
+        name: null,
+        how: "picked_up",
+      }),
+      entry({ seq: 7, event: "profileDetailsChanged", name: null }),
+      entry({
+        seq: 8,
+        event: "fromANewerBuild" as AuditHistoryEntry["event"],
+        name: null,
+        how: "fromANewerBuild",
+      }),
+    ];
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+      />,
+    );
+    for (const title of [
+      "Clinic link started",
+      "Clinic linked",
+      "Device approval requested",
+      "Approval status changed",
+      "Device approved by the clinic",
+      "Clinic document received",
+      "Pickup confirmation sent to the clinic",
+      "Person's details changed",
+      "Other event",
+    ])
+      expect(
+        await screen.findByRole("heading", {
+          level: 2,
+          name: humanText(title),
+        }),
+      ).toBeVisible();
+    for (const how of [
+      "Waiting for the clinic",
+      "Received by the clinic",
+      "Approved",
+      "The clinic recorded the pickup",
+    ])
+      expect(screen.getByText(humanText(how))).toBeVisible();
+    // Unknown words are shown as they are, never as the formatting failure.
+    expect(screen.getByText("fromANewerBuild")).toBeVisible();
+    expect(document.body.textContent).not.toContain(formattingFailure("en"));
+    expect(document.body.textContent).not.toMatch(/challenge_ready|picked_up/);
+  });
 });
