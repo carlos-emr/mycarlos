@@ -729,7 +729,12 @@ h1, h2, p { margin: 0; }
   .setting-row > .button { margin-left: auto; }
   .metric-grid { grid-template-columns: 1fr; }
   .metric-grid article { min-height: 82px; }
-  .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  /* Two buttons to a row, half each. A button whose longest word doesn't fit
+     its half gets a row of its own. A 1fr 1fr grid let such a button push the
+     other one past the dialog's start edge, where it can't be scrolled to
+     (e.g. "Annuler" beside "Enregistrer" at 200% text). */
+  .dialog-actions { flex-wrap: wrap; justify-content: flex-start; }
+  .dialog-actions > * { flex: 1 1 calc(50% - 4px); }
 }
 
 @media (max-width: 24.375em) {
@@ -1058,7 +1063,7 @@ h1, h2, p { margin: 0; }
   .native-move-actions select { flex: 1; min-width: 130px; }
   .native-setting-form { display: grid; }
   .native-setting-form form, .native-danger-setting details { width: 100%; min-width: 0; }
-  .native-dialog-actions { grid-template-columns: 1fr; }
+  .native-dialog-actions { display: grid; grid-template-columns: 1fr; }
   .native-dialog-actions label { width: 100%; }
   .native-dialog-actions select { width: 100%; }
 }
