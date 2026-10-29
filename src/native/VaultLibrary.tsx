@@ -98,6 +98,14 @@ const SORT_CHOICES: ReadonlyArray<[NativeSort, MessageKey]> = [
   ["name", "interface.VaultLibrary.nameAZ"],
 ];
 
+/** Where the reader is: a section, a person and a folder. Search results and
+ * focus are kept per place, and opening a place asks for its heading (#121). */
+const placeKey = (
+  section: NativeSection,
+  person: string,
+  folderId: string | null,
+) => `${section}:${person}:${folderId ?? ""}`;
+
 export function VaultLibrary({
   bridge,
   snapshot,
@@ -456,7 +464,7 @@ export function VaultLibrary({
       (view === "grid" && !activeRecordId) ||
       Boolean(readerRecordId),
   );
-  const searchLocation = `${section}:${profileId}:${currentFolderId ?? ""}`;
+  const searchLocation = placeKey(section, profileId, currentFolderId);
   const searchBlocked = Boolean(
     covered ||
       busy ||
@@ -621,7 +629,7 @@ export function VaultLibrary({
   }, [profileId]);
   /** Opens a person's top-level folder, or one of their folders. */
   const openPerson = (person: string, folderId: string | null = null) => {
-    openedPlace(`records:${person}:${folderId ?? ""}`);
+    openedPlace(placeKey("records", person, folderId));
     setSection("records");
     if (person === profileId) {
       setCurrentFolderId(folderId);
@@ -651,8 +659,9 @@ export function VaultLibrary({
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const locationSummaryId = useId();
+  const locationCountId = useId();
   // Rename keeps the whole page behind it from a screen reader: the parts
-  // inert for every dialog, and the banner and polite line as well (#121).
+  // inert for every dialog, and the banner as well (#121).
   const renaming = Boolean(renameTarget);
   const sortLabelId = useId();
   const libraryRef = useRef<HTMLDivElement | null>(null);
@@ -673,11 +682,11 @@ export function VaultLibrary({
         confirmHideDamaged ||
         recoverySetup,
     ),
-    `${section}:${profileId}:${currentFolderId ?? ""}`,
+    searchLocation,
   );
   /** Opens Shared with me, from the sidebar or a phone's row of places. */
   const openShared = () => {
-    openedPlace(`shared:${profileId}:`);
+    openedPlace(placeKey("shared", profileId, null));
     setSection("shared");
     setCurrentFolderId(null);
   };
@@ -782,6 +791,11 @@ export function VaultLibrary({
   // A shared file an add refused as not a PDF, marked in the list.
   // Said politely when files are added to Shared with me (#61).
   const [sharedAnnouncement, setSharedAnnouncement] = useTextState();
+  // What the polite line said as Rename opened, kept while it is open: text
+  // already there when a live region shows again is never read out, and a
+  // change after Rename closes is (#121).
+  const announcedBeforeRename = useRef(sharedAnnouncement);
+  if (!renaming) announcedBeforeRename.current = sharedAnnouncement;
   const sharedSeen = useRef(0);
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
@@ -1370,9 +1384,11 @@ export function VaultLibrary({
         documents: documentCount,
       })
     : translateNow("library.location.summary", {
-        place: currentFolder
-          ? folderPath(folderById, currentFolder.id, rootLocationTitle)
-          : rootLocationTitle,
+        place: folderPath(
+          folderById,
+          currentFolder?.id ?? null,
+          rootLocationTitle,
+        ),
         folders: translateNow("interface.count.folders", {
           count: visibleFolders.length,
         }),
@@ -1391,14 +1407,10 @@ export function VaultLibrary({
       inert={covered}
     >
       {/* Polite, but not a second status line: the library has one. While
-          Rename is open, what it says next is not about the dialog (#121). */}
-      <p
-        className="sr-only"
-        aria-live="polite"
-        inert={renaming}
-        aria-hidden={renaming || undefined}
-      >
-        {sharedAnnouncement}
+          Rename is open it keeps what it said: news is not about the dialog,
+          and is read out once Rename closes (#121). */}
+      <p className="sr-only" aria-live="polite">
+        {renaming ? announcedBeforeRename.current : sharedAnnouncement}
       </p>
       <div
         className="evaluation-banner"
@@ -1481,9 +1493,15 @@ export function VaultLibrary({
                     ? "page"
                     : undefined
                 }
-                onClick={() =>
-                  value === "security" ? openSecurity() : setSection(value)
-                }
+                onClick={() => {
+                  if (value === "security") return openSecurity();
+                  // The records are a place: their heading takes focus (#121).
+                  if (value === "records")
+                    openedPlace(
+                      placeKey("records", profileId, currentFolderId),
+                    );
+                  setSection(value);
+                }}
               >
                 {value === "records" && sharedNew
                   ? translateNow("interface.tab.withNew", {
@@ -1645,7 +1663,11 @@ export function VaultLibrary({
                     <h1
                       ref={pageHeadingRef}
                       tabIndex={-1}
-                      aria-describedby={locationSummaryId}
+                      // While a search is on, the line under it, which counts
+                      // what was found, not what the place holds.
+                      aria-describedby={
+                        normalizedQuery ? locationCountId : locationSummaryId
+                      }
                     >
                       {locationTitle}
                     </h1>
@@ -1658,7 +1680,7 @@ export function VaultLibrary({
                     >
                       {locationSummary}
                     </p>
-                    <p>
+                    <p id={locationCountId}>
                       {inShared
                         ? normalizedQuery
                           ? translateNow("interface.count.found", {

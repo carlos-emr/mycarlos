@@ -1036,7 +1036,7 @@ h1, h2, p { margin: 0; }
    button's line breaks, as names do. A folder's item count wraps like its name.
    Only where the sidebar is hidden, so the computer's layout is unchanged. */
 @media (max-width: 56.25em) {
-  .native-vault-page :is(.view-controls, .native-sort-choice, .native-top-level-narrow) { min-width: 0; max-width: 100%; }
+  .native-vault-page :is(.view-controls, .native-top-level-narrow) { min-width: 0; max-width: 100%; }
   .native-vault-page .native-view-segment { flex-wrap: wrap; max-width: 100%; }
   .native-vault-page .native-view-segment button { flex: 1 1 auto; justify-content: center; max-width: 100%; }
   .native-vault-page .native-top-level-narrow .button { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }

@@ -79,6 +79,9 @@ export function useLibraryFocus(
   // The location on screen, and the one a navigation asked to land on.
   const shown = useRef(location);
   const place = useRef<string | null>(null);
+  // That place came while the library was busy or covered: by the time it is
+  // free, the reader may have moved on.
+  const placeLate = useRef(false);
   useEffect(() => {
     shown.current = location;
   }, [location]);
@@ -102,7 +105,10 @@ export function useLibraryFocus(
     // note how it started. The end of an action keeps what its start noted.
     if (!wasBlocked.current) startedByKey.current = keyboardLast;
     wasBlocked.current = blocked;
-    if (blocked) return;
+    if (blocked) {
+      if (place.current === location) placeLate.current = true;
+      return;
+    }
     const byKey = startedByKey.current;
     // Wait for disabled controls and modal cleanup to finish their commit.
     // Superseding navigation, a dialog, a lock or unmount cancels this frame.
@@ -112,7 +118,11 @@ export function useLibraryFocus(
       // A place opened on the way to another (a person's folder opens after
       // the person) waits for the location it asked for.
       const opened = place.current === location;
-      if (opened) place.current = null;
+      const late = placeLate.current;
+      if (opened) {
+        place.current = null;
+        placeLate.current = false;
+      }
       const library = root.current;
       const focused = document.activeElement;
       if (
@@ -124,7 +134,7 @@ export function useLibraryFocus(
         ).some(available)
       )
         return;
-      if (opened) {
+      if (opened && !late) {
         // Over the control that opened it too: that one still names the old
         // place, or none.
         const target = heading.current;
@@ -132,14 +142,22 @@ export function useLibraryFocus(
           target.focus();
         return;
       }
+      // A place reached while the library was busy or covered is like the end
+      // of an action: focus the reader has put elsewhere since stays there.
       if (
-        !(byKey || asked) ||
+        !(byKey || asked || opened) ||
         (focused instanceof Element &&
           focused !== document.body &&
           focused !== document.documentElement &&
           available(focused))
       )
         return;
+      if (opened) {
+        const target = heading.current;
+        if (target && library.contains(target) && available(target))
+          target.focus();
+        return;
+      }
       const previous = trigger.current;
       const target =
         previous && library.contains(previous) && available(previous)
@@ -156,6 +174,7 @@ export function useLibraryFocus(
   }, []);
   const openedPlace = useCallback((next: string) => {
     place.current = next === shown.current ? null : next;
+    placeLate.current = false;
   }, []);
   return { recover, openedPlace };
 }

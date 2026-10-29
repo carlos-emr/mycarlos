@@ -59,7 +59,9 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     isLockedPdf: vi.fn().mockResolvedValue(false),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
-  render(
+  const onLock = vi.fn().mockResolvedValue(undefined);
+  const onAutoLockMinutes = vi.fn();
+  const library = (newInShared: number) => (
     <VaultLibrary
       bridge={bridge}
       snapshot={shown}
@@ -68,13 +70,16 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       setNotice={setNotice}
       run={async (operation) => operation()}
       refresh={async () => shown}
-      onLock={vi.fn().mockResolvedValue(undefined)}
+      onLock={onLock}
       autoLockMinutes={5}
-      onAutoLockMinutes={vi.fn()}
-      sharedNew={sharedNew}
-    />,
+      onAutoLockMinutes={onAutoLockMinutes}
+      sharedNew={newInShared}
+    />
   );
-  return { bridge, setNotice };
+  const { rerender } = render(library(sharedNew));
+  /** Files arrive in Shared with me while the library is open. */
+  const setSharedNew = (count: number) => rerender(library(count));
+  return { bridge, setNotice, setSharedNew };
 }
 
 function dragFolder(from: Element, to: Element) {
@@ -982,7 +987,6 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
   const heading = () => screen.getByRole("heading", { level: 1 });
-  // Folder buttons by their message, whose words #149 changes.
 
   it("takes the focus to the new place's heading when the reader opens one, by key or by pointer", async () => {
     const user = userEvent.setup();
@@ -1060,6 +1064,12 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     expect(heading()).toHaveHumanAccessibleDescription(
       "In My records / FAKE Letters / FAKE 2025 Letters: 1 folder, 0 documents.",
     );
+    // While a search is on, the line that counts what was found.
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "FAKE June" },
+    });
+    expect(heading()).toHaveHumanAccessibleDescription(/found$/);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
     fireEvent.click(
       within(
         screen.getByRole("navigation", { name: humanText("Record library") }),
@@ -1068,6 +1078,40 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     expect(heading()).toHaveHumanAccessibleDescription(
       "In Shared with me: 0 documents.",
     );
+  });
+
+  it("takes the focus to the heading of another person's folder opened from the sidebar, by key or by pointer", async () => {
+    const user = userEvent.setup();
+    const twoPeople: VaultSnapshot = {
+      ...snapshot,
+      profiles: [
+        { id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 },
+        { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+      ],
+    };
+    renderLibrary(twoPeople);
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    const person = (name: string) =>
+      within(sidebar).getByRole("button", {
+        name: humanText(new RegExp(`^${name}`)),
+      });
+    // Blake's records first; then one of Avery's folders: the person changes,
+    // then the folder opens, and only then does the heading take focus.
+    await user.click(person("FAKE Blake"));
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
+    person("FAKE 2025 Letters").focus();
+    await user.keyboard("{Enter}");
+    expect(heading()).toHaveHumanTextContent("FAKE 2025 Letters");
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
+    await user.click(person("FAKE Blake"));
+    await vi.waitFor(() =>
+      expect(heading()).toHaveHumanTextContent("FAKE Blake"),
+    );
+    await user.click(person("FAKE June Letters"));
+    expect(heading()).toHaveHumanTextContent("FAKE June Letters");
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
   });
 
   it("keeps the page behind Rename from a screen reader until Rename closes", async () => {
@@ -1102,10 +1146,6 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     expect(
       screen.queryByRole("button", { name: humanText("Lock now") }),
     ).toBeNull();
-    // The polite line too: what it says next is not about the dialog.
-    expect(
-      document.querySelector('.native-vault-page > [aria-live="polite"]'),
-    ).toHaveAttribute("aria-hidden", "true");
     fireEvent.click(
       within(dialog).getByRole("button", { name: humanText("Cancel") }),
     );
@@ -1118,9 +1158,32 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       screen.getByRole("navigation", { name: humanText("Record library") }),
     ).toBeVisible();
     expect(screen.getByRole("note")).toBeVisible();
-    expect(
-      document.querySelector('.native-vault-page > [aria-live="polite"]'),
-    ).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("holds news for the polite line while Rename is open, and reads it out once Rename closes", async () => {
+    const { setSharedNew } = renderLibrary();
+    const polite = () =>
+      document.querySelector('.native-vault-page > [aria-live="polite"]')!;
+    const added = translate("en", "interface.notice.sharedAdded", {
+      count: 2,
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Rename folder FAKE Letters"),
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: humanText("Rename folder"),
+    });
+    setSharedNew(2);
+    await nextFrames();
+    // Not hidden, which would lose it, and unchanged while the dialog is open.
+    expect(polite()).not.toHaveAttribute("aria-hidden");
+    expect(polite()).toHaveTextContent("");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    );
+    await vi.waitFor(() => expect(polite()).toHaveHumanTextContent(added));
   });
 
   it.each(LOCALES)(

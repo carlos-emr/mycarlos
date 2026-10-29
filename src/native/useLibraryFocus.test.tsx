@@ -261,14 +261,18 @@ describe("library focus recovery", () => {
     rerender(<Library />);
     frame();
     expect(trigger).toHaveFocus();
-    // Nor is the request kept for a later navigation it did not ask for.
+    // Nor is the request kept for a later navigation it did not ask for,
+    // even one back to the same place.
     trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     rerender(<Library location="Second folder" />);
     frame();
     expect(trigger).toHaveFocus();
+    rerender(<Library />);
+    frame();
+    expect(trigger).toHaveFocus();
   });
 
-  it("does not take focus from a dialog open over an opened place (#121)", () => {
+  it("does not take focus from a dialog open over an opened place, nor from where it returns focus (#121)", () => {
     const { rerender } = render(<Library />);
     frame();
     openedPlace("Second folder");
@@ -277,6 +281,41 @@ describe("library focus recovery", () => {
     setup.focus();
     frame();
     expect(setup).toHaveFocus();
+    // The dialog closes and puts focus back where it came from.
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it("leaves focus the reader moved while the library was busy as the opened place came (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    // The reader goes on to something else before the operation ends.
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it("takes a late opened place to its heading when nothing has focus by then (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    // A pointer user's press: no keyboard use to recover after.
+    webkitPress(screen.getByRole("button", { name: "Import" }));
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
   });
 
   it("cancels a pending recovery when locking unmounts the library", () => {
