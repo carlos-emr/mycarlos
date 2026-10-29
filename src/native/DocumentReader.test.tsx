@@ -175,13 +175,15 @@ describe("the document reader", () => {
     const fitted = viewPage.mock.calls[0][1];
     expect(
       screen.getByRole("button", { name: humanText("Fit width") }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     await user.click(screen.getByRole("button", { name: humanText("Larger") }));
     expect(screen.getByText(humanText("125%"))).toBeVisible();
     await vi.waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
     expect(viewPage.mock.calls[1][1]).toBeGreaterThan(fitted);
     const fit = screen.getByRole("button", { name: humanText("Fit width") });
-    await vi.waitFor(() => expect(fit).toBeEnabled());
+    await vi.waitFor(() =>
+      expect(fit).toHaveAttribute("aria-disabled", "false"),
+    );
     await user.click(fit);
     expect(screen.getByText(humanText("100%"))).toBeVisible();
     // Back to the width already drawn.
@@ -261,7 +263,10 @@ describe("the document reader", () => {
     // Sizes cannot be asked for while one is being drawn; the page buttons
     // wait for the page count.
     for (const name of ["Larger", "Smaller"])
-      expect(screen.getByRole("button", { name })).toBeDisabled();
+      expect(screen.getByRole("button", { name })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
     expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
     await user.click(screen.getByRole("button", { name: humanText("Larger") }));
     expect(viewPage).toHaveBeenCalledTimes(1);
@@ -474,7 +479,8 @@ describe("the reader's page bar", () => {
     const user = userEvent.setup();
     renderReader(pagesOf(5));
     await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
-    screen.getByRole("region", { name: humanText("Page 1") }).focus();
+    // From the reader itself, which keeps the focus when its text is clicked.
+    screen.getByRole("dialog").focus();
     await user.keyboard("{End}");
     await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
     await user.keyboard("{PageUp}");
@@ -496,6 +502,87 @@ describe("the reader's page bar", () => {
     expect(
       screen.getByRole("img", { name: humanText(/^Page 2 of 5/) }),
     ).toBeInTheDocument();
+  });
+
+  it("scrolls a page taller than its area with the keys, and turns it at the edge", async () => {
+    renderReader(pagesOf(5));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    const area = screen.getByRole("region", { name: humanText("Page 1") });
+    // Fitted to the reader's width, the page is taller than its area here.
+    expect(area.scrollHeight).toBeGreaterThan(area.clientHeight + 1);
+    area.focus();
+    // At its top, Page Down and End are left to the browser, to scroll it.
+    for (const key of ["PageDown", "End"])
+      expect(fireEvent.keyDown(area, { key })).toBe(true);
+    expect(
+      screen.getByRole("img", { name: humanText(/^Page 1 of 5/) }),
+    ).toBeInTheDocument();
+    // At its bottom, Page Down turns the page; the next one shows its top.
+    area.scrollTop = area.scrollHeight;
+    expect(fireEvent.keyDown(area, { key: "PageDown" })).toBe(false);
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    expect(area.scrollTop).toBe(0);
+    // At its top, Page Up turns back; scrolled down, Home scrolls up first.
+    expect(fireEvent.keyDown(area, { key: "PageUp" })).toBe(false);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    area.scrollTop = 50;
+    expect(fireEvent.keyDown(area, { key: "Home" })).toBe(true);
+    expect(
+      screen.getByRole("img", { name: humanText(/^Page 1 of 5/) }),
+    ).toBeInTheDocument();
+    // A page drawn before shows its top too.
+    fireEvent.click(pageButton("Next page"));
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    expect(area.scrollTop).toBe(0);
+  });
+
+  it("turns pages with the keys from a page button, and says which page is shown", async () => {
+    const user = userEvent.setup();
+    renderReader(pagesOf(5));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    pageButton("Next page").focus();
+    await user.keyboard("{End}");
+    await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Page 5 of 5");
+    expect(pageButton("Next page")).toHaveFocus();
+    await user.keyboard("{PageUp}");
+    await screen.findByRole("img", { name: humanText(/^Page 4 of 5/) });
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Page 4 of 5");
+  });
+
+  it("keeps the page keys working after a zoom button is used", async () => {
+    const user = userEvent.setup();
+    const viewPage = pagesOf(5);
+    renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    const larger = screen.getByRole("button", { name: humanText("Larger") });
+    await user.click(larger);
+    await vi.waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 5"),
+    );
+    // The button kept the focus while the larger page was drawn.
+    expect(larger).toHaveFocus();
+    await user.keyboard("{PageDown}");
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+  });
+
+  it("gives the focus to the page once the document's password is given", async () => {
+    const user = userEvent.setup();
+    const viewPage = vi
+      .fn()
+      .mockRejectedValueOnce(refusal("pdf_locked"))
+      .mockImplementation(async (index: number) => ({
+        ...page(index),
+        pageCount: 3,
+      }));
+    renderReader(viewPage);
+    const field = await screen.findByLabelText(humanText("Document password"));
+    await user.type(field, "FAKE-pw{Enter}");
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 3/) });
+    expect(
+      screen.getByRole("region", { name: humanText("Page 1") }),
+    ).toHaveFocus();
   });
 
   it("leaves Home, End, Page Up and Page Down to the password box", async () => {

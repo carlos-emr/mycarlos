@@ -58,25 +58,27 @@ export function cacheDrawnPage(
   }
 }
 
-/** A button in the page bar. It stays in the Tab order while it cannot be
- * used (aria-disabled, not disabled), so that the focus is not lost when, say,
- * Last page shows the last page, or while a page is being drawn. */
-function PageButton({
-  place,
+/** A page or zoom button. It stays in the Tab order while it cannot be used
+ * (aria-disabled, not disabled): Chromium drops the focus of a button that
+ * becomes disabled, and the page keys with it. That happens when, say, Last
+ * page shows the last page, Larger reaches the largest size, or a page is
+ * being drawn. */
+function ReaderButton({
+  className,
   unavailable,
   keys,
   onPress,
   children,
 }: {
-  place: "first" | "previous" | "next" | "last";
+  className?: string;
   unavailable: boolean;
-  keys: string;
+  keys?: string;
   onPress: () => void;
   children: ReactNode;
 }) {
   return (
     <button
-      className={`button native-reader-${place}`}
+      className={className ? `button ${className}` : "button"}
       type="button"
       aria-disabled={unavailable}
       aria-keyshortcuts={keys}
@@ -87,6 +89,13 @@ function PageButton({
       {children}
     </button>
   );
+}
+
+/** Whether a page area can still scroll the way a page key goes. */
+function canScrollToward(area: HTMLElement, key: string) {
+  return key === "Home" || key === "PageUp"
+    ? area.scrollTop > 0
+    : area.scrollTop + area.clientHeight < area.scrollHeight - 1;
 }
 
 /** The keys that turn pages (D144), and the page each one goes to. */
@@ -242,12 +251,20 @@ export function DocumentReader({
     };
   }, [asking, fitWidth, page, password, pictureWidth]);
 
+  // Another page is shown from its top, not where the last one was scrolled.
+  useEffect(() => {
+    if (pageRef.current) pageRef.current.scrollTop = 0;
+  }, [page]);
+
   const giveDocumentPassword = (event: FormEvent) => {
     event.preventDefault();
     if (!typed) return;
     setPassword(typed);
     setTyped("");
     setAsking(false);
+    // The form goes away with its focus: the page takes it, so that the
+    // page keys go on working.
+    pageRef.current?.focus();
   };
 
   const last = pageCount === null ? null : pageCount - 1;
@@ -258,14 +275,31 @@ export function DocumentReader({
     setPage(target);
   };
   // Home, End, Page Up and Page Down turn pages anywhere in the reader but in
-  // the password box, where Home and End move in what is typed. A key with
-  // Ctrl, Alt, Shift or Cmd is left to the system.
+  // a box that takes typing, where Home and End move in what is typed. A key
+  // with Ctrl, Alt, Shift or Cmd is left to the system. On a page taller than
+  // its area (zoomed in, say), the key scrolls the page first, as it does
+  // anywhere else, and turns it at its top or bottom edge.
   const turnPageWithKeys = (event: KeyboardEvent<HTMLElement>) => {
     const to = PAGE_KEYS.get(event.key);
-    if (!to || !turnsPages || last === null) return;
+    if (!to || !turnsPages || last === null || event.defaultPrevented) return;
     if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey)
       return;
-    if (event.target instanceof HTMLInputElement) return;
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    )
+      return;
+    const area = pageRef.current;
+    if (
+      area &&
+      target instanceof Node &&
+      area.contains(target) &&
+      canScrollToward(area, event.key)
+    )
+      return;
     event.preventDefault();
     goTo(to(page, last));
   };
@@ -287,6 +321,8 @@ export function DocumentReader({
         aria-modal="true"
         aria-labelledby="reader-title"
         aria-describedby="reader-trust"
+        // A click on the reader's text keeps the focus in it, for the keys.
+        tabIndex={-1}
         onKeyDown={turnPageWithKeys}
       >
         <header className="dialog-head native-reader-head">
@@ -318,39 +354,33 @@ export function DocumentReader({
             (D144). */}
         <div className="native-reader-controls">
           <span className="native-reader-zoom">
-            <button
-              className="button"
-              type="button"
-              disabled={loading || zoom <= ZOOM_MIN}
-              onClick={() =>
+            <ReaderButton
+              unavailable={loading || zoom <= ZOOM_MIN}
+              onPress={() =>
                 setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
               }
             >
               {translateNow("interface.DocumentReader.smaller")}
-            </button>
+            </ReaderButton>
             <span aria-live="polite">
               {translateNow("interface.reader.zoom", {
                 percent: Math.round(zoom * 100),
               })}
             </span>
-            <button
-              className="button"
-              type="button"
-              disabled={loading || zoom >= ZOOM_MAX}
-              onClick={() =>
+            <ReaderButton
+              unavailable={loading || zoom >= ZOOM_MAX}
+              onPress={() =>
                 setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
               }
             >
               {translateNow("interface.DocumentReader.larger")}
-            </button>
-            <button
-              className="button"
-              type="button"
-              disabled={loading || zoom === 1}
-              onClick={() => setZoom(1)}
+            </ReaderButton>
+            <ReaderButton
+              unavailable={loading || zoom === 1}
+              onPress={() => setZoom(1)}
             >
               {translateNow("interface.DocumentReader.fitWidth")}
-            </button>
+            </ReaderButton>
           </span>
         </div>
         <p
@@ -454,43 +484,43 @@ export function DocumentReader({
           >
             {turnsPages && (
               <>
-                <PageButton
-                  place="first"
+                <ReaderButton
+                  className="native-reader-first"
                   keys="Home"
                   unavailable={loading || page === 0}
                   onPress={() => goTo(0)}
                 >
                   {translateNow("interface.DocumentReader.firstPage")}
-                </PageButton>
-                <PageButton
-                  place="previous"
+                </ReaderButton>
+                <ReaderButton
+                  className="native-reader-previous"
                   keys="PageUp"
                   unavailable={loading || page === 0}
                   onPress={() => goTo(page - 1)}
                 >
                   {translateNow("interface.DocumentReader.previousPage")}
-                </PageButton>
+                </ReaderButton>
               </>
             )}
             <span className="native-reader-where">{where}</span>
             {turnsPages && (
               <>
-                <PageButton
-                  place="next"
+                <ReaderButton
+                  className="native-reader-next"
                   keys="PageDown"
                   unavailable={loading || page >= last}
                   onPress={() => goTo(page + 1)}
                 >
                   {translateNow("interface.DocumentReader.nextPage")}
-                </PageButton>
-                <PageButton
-                  place="last"
+                </ReaderButton>
+                <ReaderButton
+                  className="native-reader-last"
                   keys="End"
                   unavailable={loading || page >= last}
                   onPress={() => goTo(last)}
                 >
                   {translateNow("interface.DocumentReader.lastPage")}
-                </PageButton>
+                </ReaderButton>
               </>
             )}
           </div>

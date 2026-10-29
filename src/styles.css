@@ -440,14 +440,15 @@ h1, h2, p { margin: 0; }
 .native-reader-head h2 { overflow-wrap: anywhere; }
 .native-reader-head p { margin: 2px 0 0; color: var(--ink-soft); font-size: 0.875rem; }
 .native-reader-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
-.native-reader-where { min-width: 7em; text-align: center; font-weight: 700; }
+/* Digits of one width: the count keeps its width from page to page until the number gains a digit. */
+.native-reader-where { min-width: 7em; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
 .native-reader-zoom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 /* D144: the page buttons in a bar at the reader's foot. When large text makes the reader scroll,
    the bar stays in view at its bottom edge. One row, centred; a webview without container
    queries wraps the row instead of using the grid below. */
 .native-reader-pages { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--paper); }
 /* aria-disabled keeps the focus (DocumentReader.tsx); hovering does not make it look usable. */
-.native-reader-pages .button[aria-disabled="true"], .native-reader-pages .button[aria-disabled="true"]:hover { cursor: not-allowed; background: var(--disabled-bg); }
+.native-reader .button[aria-disabled="true"], .native-reader .button[aria-disabled="true"]:hover { cursor: not-allowed; background: var(--disabled-bg); }
 /* A narrow reader (a phone, or large text): two by two, with the count between the rows, so the
    order on screen is the order read out and tabbed through. In em, so that it follows the text
    size; measured on the reader, which stops growing at 1100px, not on the window. */
