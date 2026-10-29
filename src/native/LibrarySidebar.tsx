@@ -191,10 +191,14 @@ export function LibrarySidebar({
                     type="button"
                     key={folder.id}
                     aria-current={here ? "page" : undefined}
-                    // Two people can each have a "Lab results": say whose.
+                    // Two people can each have a "Lab results": say whose,
+                    // with each language's own brackets.
                     aria-label={
                       several
-                        ? `${folder.name} (${person.displayName}) ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
+                        ? `${translateNow("sidebar.folderOfPerson", {
+                            folder: folder.name,
+                            person: person.displayName,
+                          })} ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
                         : undefined
                     }
                     draggable={movable || undefined}

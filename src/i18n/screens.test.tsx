@@ -19,6 +19,7 @@ import { SecuritySettings } from "../native/SecuritySettings";
 import { RecoveryKeySetup } from "../native/RecoveryKeySetup";
 import { AutoLockSetting } from "../native/AutoLockSetting";
 import { LibrarySidebar } from "../native/LibrarySidebar";
+import { humanText } from "../test/humanText";
 import { readTypedZoom } from "../native/zoom";
 import { ComfortSetup } from "../native/ComfortSetup";
 import { LockWarning } from "../native/LockWarning";
@@ -281,8 +282,12 @@ describe("the person-folder sidebar in each language", () => {
           }),
         }),
       ).toHaveAttribute("aria-current", "page");
+      // Whose folder it is, in this language's own brackets (full-width in
+      // Chinese).
       const folder = within(nav).getByRole("button", {
-        name: "FAKE Results (FAKE Blake) 0",
+        name: humanText(
+          `${tr("sidebar.folderOfPerson", { folder: "FAKE Results", person: "FAKE Blake" })} 0`,
+        ),
       });
       expect(folder).not.toHaveAttribute("draggable", "true");
       await user.click(folder);
