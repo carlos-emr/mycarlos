@@ -1703,3 +1703,5 @@ portal-codeRefused = The clinic portal didn't take the code. Try again in a few 
 portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
+
+portal-linkAnother = Link another clinic

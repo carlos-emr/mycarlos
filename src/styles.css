@@ -1220,6 +1220,14 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 /* D142: the panel's intro reads as its own block, clear of the link form's box. */
 .portal-documents > h2 + p { margin-block-start: .25rem; }
 .portal-documents > p + p { margin-block-start: .5rem; }
+/* #145: "Link another clinic". The dialog is drawn beside the library's other
+   dialogs, outside .portal-documents, so its fields get the panel's sizes here:
+   one column, every field the dialog's width, 44px targets. Its title wraps
+   at large text instead of being cut short. */
+.portal-link-dialog .dialog-head h2 { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.portal-link-dialog label { display: grid; gap: .35rem; font-weight: 700; }
+.portal-link-dialog input, .portal-link-dialog select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; box-sizing: border-box; font: inherit; }
+.portal-link-dialog select { padding: 8px 10px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
 .portal-documents > .native-inline-form { margin-block-start: 1.25rem; }
 /* #141: the code a clinic emailed, one column: label, hint, button, message. */
 .portal-documents .portal-code-form { grid-template-columns: minmax(0, 1fr); max-width: 36rem; gap: .5rem; }

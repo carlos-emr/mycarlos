@@ -8847,6 +8847,43 @@ describe("clinic connection operations", () => {
       .closest("form")!;
   }
 
+  it("opens Link another clinic over an inert page, and returns focus to it (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi.fn(),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    // A clinic is linked: its card comes first, and the form is not on the page.
+    expect(
+      screen.getByRole("heading", { name: "FAKE First Clinic" }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Portal HTTPS address")).toBeNull();
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    const dialog = screen.getByRole("dialog", { name: "Link another clinic" });
+    expect(document.activeElement).toBe(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+    );
+    // The page behind the dialog is inert; the dialog is not.
+    expect(document.querySelector(".app-body")).toHaveAttribute("inert");
+    expect(dialog.closest("[inert]")).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(document.activeElement).toBe(linkAnother);
+    expect(bridge.connectPortal).not.toHaveBeenCalled();
+  });
+
   it("keeps local records usable and shares admission across clinic-view remounts", async () => {
     let current = clinicSnapshot;
     const pending = pendingConnection();
@@ -9100,6 +9137,15 @@ describe("clinic connection operations", () => {
       ),
     ).toBeVisible();
     // An error that arrives while a picker is open waits for its result.
+    // A clinic is linked now: the form opens from "Link another clinic"
+    // (#145), empty for the next clinic's address.
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
     await user.type(
       screen.getByLabelText("Linking code"),
       "01234567-89ABCDEFGK",
@@ -9323,7 +9369,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       screen.queryByText("Clinic operation in progress…"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Connect and request approval" }),
+      screen.getByRole("button", { name: "Link another clinic" }),
     ).toBeEnabled();
     await pass(3 * 60_000);
     expect(
@@ -9413,7 +9459,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       });
       await openClinicView(bridge);
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeEnabled();
       // The focused control is disabled once the vault reads read-only:
       // focus goes to the device's heading, not to the page.
@@ -9431,7 +9477,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       // Read again, once: the vault on screen is read-only now.
       expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots + 1);
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeDisabled();
       expect(
         screen.getByRole("button", { name: "Retry saved approval request" }),
@@ -10504,10 +10550,11 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       { name: "My records", level: 1 },
     ],
     [
-      "a box of the connect form",
+      "Link another clinic",
       async () => {
         await click(screen.getByRole("button", { name: "Security" }));
-        return screen.getByLabelText("Linking code");
+        // A clinic is linked: the form is behind this button (#145).
+        return screen.getByRole("button", { name: "Link another clinic" });
       },
       { name: "Clinic documents", level: 2 },
     ],

@@ -772,5 +772,6 @@
   "portal.codeNotOpen",
   "portal.codeRefused",
   "portal.codeSubmit",
-  "portal.codeSubmitted"
+  "portal.codeSubmitted",
+  "portal.linkAnother"
 ]

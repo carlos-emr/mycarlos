@@ -1,8 +1,17 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 import { useI18n, type MessageKey } from "../i18n";
 import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 import { checkClinicDocuments, documentCheckText } from "./documentCheck";
+import { useModalFocus } from "../useModalFocus";
 import {
   isAwaitingApproval,
   isRateLimited,
@@ -30,6 +39,70 @@ interface Props {
   refresh: () => Promise<VaultSnapshot>;
   setNotice: (text: string) => void;
   compact?: boolean;
+  /** Where the "Link another clinic" dialog is drawn: beside the library's
+   * other dialogs, outside the page it makes inert while one is open (#145).
+   * Without it, the dialog is drawn in place. */
+  dialogHost?: HTMLElement | null;
+  /** Told when that dialog opens and closes, so the library can make the
+   * rest of the page inert (#145). */
+  onDialogChange?: (open: boolean) => void;
+}
+
+/** "Link another clinic" (#145): the link form in the same dialog as a
+ * folder's Rename (#126). Focus goes to the address; Escape, Cancel or a
+ * click outside close it, and focus goes back to the button that opened it. */
+function LinkClinicDialog({
+  disabled,
+  firstField,
+  onSubmit,
+  onClose,
+  children,
+}: {
+  disabled: boolean;
+  firstField: RefObject<HTMLInputElement | null>;
+  onSubmit: (event: FormEvent) => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const { t } = useI18n();
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useModalFocus(true, dialogRef, onClose, firstField);
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        ref={dialogRef}
+        className="record-dialog native-rename-dialog portal-link-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="portal-link-dialog-title"
+        aria-describedby="portal-link-dialog-intro"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="dialog-head">
+          <h2 id="portal-link-dialog-title">{t("portal.linkAnother")}</h2>
+        </header>
+        <form onSubmit={onSubmit}>
+          <div className="native-rename-fields">
+            <p id="portal-link-dialog-intro">{t("portal.intro")}</p>
+            <p>{t("portal.connectConsent")}</p>
+            {children}
+          </div>
+          <footer className="dialog-actions">
+            <button className="button" type="button" onClick={onClose}>
+              {t("common.cancel")}
+            </button>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={disabled}
+            >
+              {t("portal.link")}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 /** What a device's card says about its approval: a message, or the error
@@ -105,6 +178,8 @@ export function PortalDocuments({
   refresh,
   setNotice,
   compact = false,
+  dialogHost,
+  onDialogChange,
 }: Props) {
   const { t } = useI18n();
   const [address, setAddress] = useState("");
@@ -120,6 +195,13 @@ export function PortalDocuments({
   }>({ text: "" });
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
+  // "Link another clinic" (#145): its dialog, and where focus goes once a
+  // link sent from it is over: the clinic's heading, or else back to the
+  // button that opened it.
+  const [linkDialog, setLinkDialog] = useState(false);
+  const linkAnotherRef = useRef<HTMLButtonElement | null>(null);
+  const addressRef = useRef<HTMLInputElement | null>(null);
+  const returnToLinkAnother = useRef(false);
   // The code each device's clinic emailed, as typed, and what the last try
   // with it found (#141). The code is cleared once it has been sent.
   const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
@@ -157,6 +239,7 @@ export function PortalDocuments({
     const heading = document.getElementById(`portal-link-title-${focusLink}`);
     if (!heading) return;
     if (document.activeElement === document.body) heading.focus();
+    returnToLinkAnother.current = false;
     setFocusLink(null);
   }, [connecting, focusLink, snapshot.portalLinks]);
   useEffect(() => {
@@ -171,6 +254,30 @@ export function PortalDocuments({
       bridge.checkDocuments,
   );
   const links = snapshot.portalLinks ?? [];
+  // The link form is on the panel until a clinic is linked (an attempt left
+  // incomplete is not one). After that, the clinics come first and the form
+  // opens from "Link another clinic" (#145).
+  const linked = links.some((link) => !link.incomplete);
+  // The library makes the page inert while the dialog is open. It is told in
+  // the same event that opens or closes the dialog, so that the page is no
+  // longer inert when the dialog hands focus back to its button.
+  const dialogChange = useRef(onDialogChange);
+  dialogChange.current = onDialogChange;
+  const showLinkDialog = (open: boolean) => {
+    setLinkDialog(open);
+    dialogChange.current?.(open);
+  };
+  useEffect(() => {
+    if (!linked && linkDialog) showLinkDialog(false);
+  });
+  useEffect(() => () => dialogChange.current?.(false), []);
+  useEffect(() => {
+    if (connecting || focusLink || !returnToLinkAnother.current) return;
+    returnToLinkAnother.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body)
+      linkAnotherRef.current?.focus();
+  }, [connecting, focusLink]);
   const stateText = (state: CardState) =>
     "key" in state ? t(state.key) : vaultErrorMessage(state.failed);
   // A control an automatic check is about to remove or disable, if it has
@@ -311,6 +418,7 @@ export function PortalDocuments({
     </button>
   );
   if (compact) return links.length > 0 ? checkButton : null;
+  /** Sends the link form; false when nothing was sent. */
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (
@@ -319,7 +427,7 @@ export function PortalDocuments({
       !code ||
       submittedRevision.current === codeRevision.current
     )
-      return;
+      return false;
     submitting.current = true;
     const revision = codeRevision.current;
     const previousIds = new Set(links.map((link) => link.id));
@@ -343,7 +451,11 @@ export function PortalDocuments({
           profileId: person || null,
         });
         await refresh();
-        if (shown.current) setFocusLink(result.link.id);
+        if (shown.current) {
+          setFocusLink(result.link.id);
+          // The next clinic has its own address: the form opens empty for it.
+          setAddress("");
+        }
         // The portal answered the request: it has it open (#131).
         known = {
           [result.link.id]: result.approvalError ? undefined : waitingNow(),
@@ -377,6 +489,12 @@ export function PortalDocuments({
       if (shown.current) setConnecting(false);
       polling.restart(known);
     });
+    return true;
+  };
+  const submitFromDialog = (event: FormEvent) => {
+    if (!submit(event)) return;
+    returnToLinkAnother.current = true;
+    showLinkDialog(false);
   };
   // The patient's own request or restart for one device: it finishes before
   // automatic checks begin again, and an answer from the portal means it has
@@ -458,6 +576,81 @@ export function PortalDocuments({
       polling.restart({ [link.id]: known });
     });
   };
+  // The link form's fields: on the panel before a clinic is linked, in the
+  // "Link another clinic" dialog after (#145).
+  const linkFields = (
+    <>
+      <label>
+        {t("portal.address")}
+        <input
+          ref={addressRef}
+          type="url"
+          required
+          value={address}
+          maxLength={1024}
+          autoCapitalize="none"
+          spellCheck={false}
+          onChange={(e) => setAddress(e.target.value)}
+          disabled={disabled}
+        />
+      </label>
+      <label>
+        {t("portal.code")}
+        <input
+          type="text"
+          required
+          value={code}
+          maxLength={64}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          onChange={(e) => {
+            codeRevision.current += 1;
+            setCode(e.target.value);
+          }}
+          disabled={disabled}
+        />
+      </label>
+      <label>
+        {t("portal.deviceName")}
+        <input
+          required
+          value={device}
+          maxLength={64}
+          onChange={(e) => setDevice(e.target.value)}
+          disabled={disabled}
+        />
+      </label>
+      <label>
+        {t("portal.person")}
+        <select
+          value={person}
+          onChange={(e) => setPerson(e.target.value)}
+          disabled={disabled}
+        >
+          <option value="">{t("portal.matchPerson")}</option>
+          {snapshot.profiles
+            .filter((p) => p.id !== snapshot.sharedProfileId)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.displayName}
+              </option>
+            ))}
+        </select>
+      </label>
+      <p>{t("portal.routing")}</p>
+    </>
+  );
+  const linkDialogShown = linkDialog && (
+    <LinkClinicDialog
+      disabled={disabled}
+      firstField={addressRef}
+      onSubmit={submitFromDialog}
+      onClose={() => showLinkDialog(false)}
+    >
+      {linkFields}
+    </LinkClinicDialog>
+  );
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
       {/* Focusable for the check after unlocking, which may disable the
@@ -465,72 +658,17 @@ export function PortalDocuments({
       <h2 id="portal-title" tabIndex={-1}>
         {t("portal.title")}
       </h2>
-      <p>{t("portal.intro")}</p>
-      <p>{t("portal.connectConsent")}</p>
+      {!linked && <p>{t("portal.intro")}</p>}
+      {!linked && <p>{t("portal.connectConsent")}</p>}
       <p>{t("portal.unlockCheckConsent")}</p>
-      <form className="native-inline-form" onSubmit={submit}>
-        <label>
-          {t("portal.address")}
-          <input
-            type="url"
-            required
-            value={address}
-            maxLength={1024}
-            autoCapitalize="none"
-            spellCheck={false}
-            onChange={(e) => setAddress(e.target.value)}
-            disabled={disabled}
-          />
-        </label>
-        <label>
-          {t("portal.code")}
-          <input
-            type="text"
-            required
-            value={code}
-            maxLength={64}
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            onChange={(e) => {
-              codeRevision.current += 1;
-              setCode(e.target.value);
-            }}
-            disabled={disabled}
-          />
-        </label>
-        <label>
-          {t("portal.deviceName")}
-          <input
-            required
-            value={device}
-            maxLength={64}
-            onChange={(e) => setDevice(e.target.value)}
-            disabled={disabled}
-          />
-        </label>
-        <label>
-          {t("portal.person")}
-          <select
-            value={person}
-            onChange={(e) => setPerson(e.target.value)}
-            disabled={disabled}
-          >
-            <option value="">{t("portal.matchPerson")}</option>
-            {snapshot.profiles
-              .filter((p) => p.id !== snapshot.sharedProfileId)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.displayName}
-                </option>
-              ))}
-          </select>
-        </label>
-        <p>{t("portal.routing")}</p>
-        <button className="button" type="submit" disabled={disabled}>
-          {t("portal.link")}
-        </button>
-      </form>
+      {!linked && (
+        <form className="native-inline-form" onSubmit={submit}>
+          {linkFields}
+          <button className="button" type="submit" disabled={disabled}>
+            {t("portal.link")}
+          </button>
+        </form>
+      )}
       {links.map((link) => {
         const live = polling.live[link.id];
         // By the portal's clock, never this device's (#131).
@@ -720,6 +858,18 @@ export function PortalDocuments({
           </div>
         );
       })}
+      {linked && (
+        <button
+          ref={linkAnotherRef}
+          className="button"
+          type="button"
+          aria-haspopup="dialog"
+          disabled={disabled}
+          onClick={() => showLinkDialog(true)}
+        >
+          {t("portal.linkAnother")}
+        </button>
+      )}
       <p role="status">
         {connecting ? (
           t("portal.connecting")
@@ -732,6 +882,10 @@ export function PortalDocuments({
         )}
       </p>
       {checkButton}
+      {linkDialogShown &&
+        (dialogHost
+          ? createPortal(linkDialogShown, dialogHost)
+          : linkDialogShown)}
     </section>
   );
 }
