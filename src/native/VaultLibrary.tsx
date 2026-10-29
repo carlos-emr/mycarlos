@@ -229,6 +229,12 @@ export function VaultLibrary({
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // "Link another clinic" in Security (#145): its dialog is drawn in this
+  // host, beside the other dialogs, and the page behind it is inert.
+  const [clinicDialogHost, setClinicDialogHost] = useState<HTMLElement | null>(
+    null,
+  );
+  const [clinicDialogOpen, setClinicDialogOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
   // shown: it is fetched for the photo view and dropped when that closes.
   const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
@@ -1388,6 +1394,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                clinicDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1417,6 +1424,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                clinicDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1455,6 +1463,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                clinicDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -2157,6 +2166,8 @@ export function VaultLibrary({
                     waits={approvalWaits}
                     refresh={refresh}
                     setNotice={setPortalNotice}
+                    dialogHost={clinicDialogHost}
+                    onDialogChange={setClinicDialogOpen}
                   />
                 }
                 busy={busy}
@@ -2450,6 +2461,7 @@ export function VaultLibrary({
               </p>
             </ConfirmDialog>
           )}
+          <div ref={setClinicDialogHost} />
         </section>
       </div>
     </div>

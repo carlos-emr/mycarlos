@@ -571,6 +571,7 @@ pub enum MessageId {
     PortalIncomplete,
     PortalIntro,
     PortalLink,
+    PortalLinkAnother,
     PortalLinkedApprovalIssue,
     PortalMatchPerson,
     PortalNotRequested,
@@ -1349,6 +1350,7 @@ impl MessageId {
         Self::PortalIncomplete,
         Self::PortalIntro,
         Self::PortalLink,
+        Self::PortalLinkAnother,
         Self::PortalLinkedApprovalIssue,
         Self::PortalMatchPerson,
         Self::PortalNotRequested,
@@ -2323,6 +2325,7 @@ impl MessageId {
             Self::PortalIncomplete => "portal-incomplete",
             Self::PortalIntro => "portal-intro",
             Self::PortalLink => "portal-link",
+            Self::PortalLinkAnother => "portal-linkAnother",
             Self::PortalLinkedApprovalIssue => "portal-linkedApprovalIssue",
             Self::PortalMatchPerson => "portal-matchPerson",
             Self::PortalNotRequested => "portal-notRequested",
@@ -3548,6 +3551,7 @@ impl MessageId {
             "portal.codeRefused" => Some(Self::PortalCodeRefused),
             "portal.codeSubmit" => Some(Self::PortalCodeSubmit),
             "portal.codeSubmitted" => Some(Self::PortalCodeSubmitted),
+            "portal.linkAnother" => Some(Self::PortalLinkAnother),
             _ => None,
         }
     }

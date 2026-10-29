@@ -1739,3 +1739,5 @@ portal-codeRefused = El portal de la clínica no aceptó el código. Vuelva a in
 portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.
+
+portal-linkAnother = Vincular otra clínica

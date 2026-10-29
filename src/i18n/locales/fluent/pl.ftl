@@ -1775,3 +1775,5 @@ portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za 
 portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
+
+portal-linkAnother = Połącz z inną przychodnią
