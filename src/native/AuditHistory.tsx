@@ -196,24 +196,34 @@ export function AuditHistory({
           </p>
         </div>
       </div>
-      {error ? (
+      {error && (
         <p className="purpose-note warning" role="alert">
           {typeof error === "string" ? error : error.render()}
         </p>
-      ) : view === null || entries === null ? (
-        <p className="status-line" role="status" aria-live="polite">
-          {translateNow("interface.history.loading")}
-        </p>
-      ) : (
+      )}
+      {/* One status line, on the page from the start, so a screen reader
+          reads out the change from "checking" to what was found. */}
+      <p className="status-line" role="status">
+        {error
+          ? ""
+          : view === null || entries === null
+            ? translateNow("interface.history.loading")
+            : entries.length + view.laterEntries.length > 0
+              ? translateNow("interface.history.events", {
+                  count: entries.length + view.laterEntries.length,
+                })
+              : view.complete
+                ? translateNow("interface.history.empty")
+                : ""}
+      </p>
+      {!error && view !== null && entries !== null && (
         <>
           {!view.complete && (
             <p className="purpose-note warning" role="alert">
               {damageNotice(view)}
             </p>
           )}
-          {entries.length === 0 && view.laterEntries.length === 0 ? (
-            view.complete && <p>{translateNow("interface.history.empty")}</p>
-          ) : (
+          {(entries.length > 0 || view.laterEntries.length > 0) && (
             <HistoryList entries={entries} later={view.laterEntries} />
           )}
         </>
@@ -252,11 +262,6 @@ function HistoryList({
 }) {
   return (
     <>
-      <p className="status-line" role="status">
-        {translateNow("interface.history.events", {
-          count: entries.length + later.length,
-        })}
-      </p>
       <ol className="audit-history-list">
         {[...later].reverse().map(historyItem)}
         {later.length > 0 && entries.length > 0 && (

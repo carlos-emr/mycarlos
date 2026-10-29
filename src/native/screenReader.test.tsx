@@ -5,7 +5,13 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride, translate } from "../i18n";
-import type { VaultRecord } from "../vault";
+import type {
+  AuditHistoryEntry,
+  AuditHistoryView,
+  VaultBridge,
+  VaultRecord,
+} from "../vault";
+import { AuditHistory } from "./AuditHistory";
 import { HiddenDocuments } from "./HiddenDocuments";
 import { LibrarySidebar } from "./LibrarySidebar";
 import { PersonDetailsFields } from "./PersonDetails";
@@ -248,6 +254,88 @@ describe("Hidden, as a screen reader reads it", () => {
         "button, ",
         en("interface.hidden.restore", { name: "FAKE Old Referral.pdf" }),
       ),
+    ]);
+  });
+});
+
+describe("the history, as a screen reader reads it", () => {
+  const event = (
+    seq: number,
+    kind: AuditHistoryEntry["event"],
+  ): AuditHistoryEntry => ({
+    seq,
+    atMs: Date.UTC(2026, 9, 1, 12) + seq * 60_000,
+    app: "FAKE 0.1.0",
+    event: kind,
+    name: kind === "imported" ? "FAKE Bloodwork.pdf" : null,
+    oldName: null,
+    from: null,
+    fromTotal: null,
+    to: null,
+    toTotal: null,
+    how: null,
+    place: null,
+    previousSession: null,
+  });
+  const view = (complete: boolean): AuditHistoryView => ({
+    entries: [event(1, "created"), event(2, "imported")],
+    laterEntries: [],
+    complete,
+    checkedUntilMs: complete ? null : Date.UTC(2026, 9, 1, 12, 2),
+    checkedFromMs: null,
+  });
+
+  it("reads out what was found once it is checked, newest event first, each headed by what happened", async () => {
+    setLocaleOverride("en");
+    let finish!: (verified: AuditHistoryView) => void;
+    const history = vi.fn(
+      () => new Promise<AuditHistoryView>((done) => (finish = done)),
+    );
+    const { container } = render(
+      <AuditHistory
+        bridge={{ history } as unknown as VaultBridge}
+        onBack={vi.fn()}
+        onLock={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    await virtual.start({ container });
+    finish(view(true));
+    // The status line was there while checking, so its result is read out.
+    await vi.waitFor(async () =>
+      expect((await virtual.spokenPhraseLog()).map(visibleText)).toContainEqual(
+        expect.stringMatching(
+          phrase("polite: ", en("interface.history.events", { count: 2 })),
+        ),
+      ),
+    );
+    await virtual.stop();
+    expectHeardInOrder(await readThrough(container), [
+      phrase("heading, ", en("interface.history.title"), ", level 1"),
+      phrase("heading, ", en("interface.history.event.imported"), ", level 2"),
+      phrase("heading, ", en("interface.history.event.created"), ", level 2"),
+    ]);
+  });
+
+  it("says when part of the history is damaged, as an alert", async () => {
+    setLocaleOverride("en");
+    const { container } = render(
+      <AuditHistory
+        bridge={
+          {
+            history: vi.fn().mockResolvedValue(view(false)),
+          } as unknown as VaultBridge
+        }
+        onBack={vi.fn()}
+        onLock={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    await screen.findByRole("alert");
+    // An alert is read out as it appears (a simulated reader does not log
+    // that); here it is also heard as an alert, before the events.
+    expectHeardInOrder(await readThrough(container), [
+      /^alert$/,
+      /damaged/,
+      phrase("heading, ", en("interface.history.event.imported"), ", level 2"),
     ]);
   });
 });

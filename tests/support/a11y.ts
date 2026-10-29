@@ -248,6 +248,31 @@ export async function fakeVault(
                       : null,
                   );
               return;
+            // Security's history: two events, all checked.
+            case "vault_history": {
+              const event = (seq: number, kind: string) => ({
+                seq,
+                atMs: Date.UTC(2026, 9, 1, 12) + seq * 60_000,
+                app: "FAKE 0.1.0",
+                event: kind,
+                name: kind === "imported" ? "FAKE Bloodwork.pdf" : null,
+                oldName: null,
+                from: null,
+                fromTotal: null,
+                to: null,
+                toTotal: null,
+                how: kind === "imported" ? "picked" : null,
+                place: null,
+                previousSession: null,
+              });
+              return {
+                entries: [event(1, "created"), event(2, "imported")],
+                laterEntries: [],
+                complete: true,
+                checkedUntilMs: null,
+                checkedFromMs: null,
+              };
+            }
             case "vault_import_pick":
               return "FAKE-pick";
             case "vault_import_picked":

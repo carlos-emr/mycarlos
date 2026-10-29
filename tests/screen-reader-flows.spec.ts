@@ -179,3 +179,37 @@ test("Hidden: Security's entry says what it counts, each document says it is hid
   await expectAnnounced(page, "restored");
   await expectOnlyFakedCommands(page);
 });
+
+test("History: what was found is read out, and each event is headed by what happened", async ({
+  page,
+}) => {
+  await fakeVault(page, "unlocked");
+  await recordAnnouncements(page);
+  await unlocked(page);
+  await openSection(page, "Security");
+  const main = page.getByRole("main");
+  await main.getByRole("button", { name: "Audit history" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Audit history", level: 1 }),
+  ).toBeVisible();
+  await expectAnnounced(page, "2 events");
+  await expect(main).toMatchAriaSnapshot(`
+    - main:
+      - button /Back to Security/
+      - heading "Audit history" [level=1]
+      - status: /2.? events/
+      - list:
+        - listitem:
+          - article:
+            - heading "Document added" [level=2]
+        - listitem:
+          - article:
+            - heading "Vault created" [level=2]
+  `);
+  await screenReaderSmoke(page, "history");
+  await main.getByRole("button", { name: /Back to Security/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Security", level: 1 }),
+  ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
