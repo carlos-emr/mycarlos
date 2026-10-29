@@ -25,7 +25,12 @@ Windows may warn about an unknown publisher or block this unsigned app. Organiza
 may also prevent installation. A signed publisher build is not available yet; do not disable
 Windows security features to install this evaluation.
 
-The app is not connected to CARLOS EMR. Forgetting the passphrase loses access to this test vault.
+BUILD.txt says which build this is. "Send-and-delete demo enabled: false" is an evaluation
+build: the app is not connected to CARLOS EMR or any clinic. "true" is a demo build: the app can
+link to a clinic's test patient portal and receive documents from it. Use a demo build only with
+that test portal and FAKE patients.
+
+Forgetting the passphrase loses access to this test vault.
 Uninstalling the app can leave its vault data behind. To erase the test vault, use Security >
 Erase entire vault before uninstalling. Reset does not delete any readable copies you exported.
 
