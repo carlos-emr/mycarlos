@@ -397,30 +397,30 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <div className="native-auto-lock-heading">
-              <h2>
-                {translateNow("security.autoLock.title")}{" "}
-                <span className="state-pill">
-                  {translateNow("security.autoLock.minutes", {
-                    count: autoLockMinutes,
-                  })}
-                </span>
-              </h2>
-              <button
-                className="button"
-                type="button"
-                onClick={() => void onLock()}
-              >
-                {translateNow("security.lockNow")}
-              </button>
-            </div>
+            <h2>
+              {translateNow("security.autoLock.title")}{" "}
+              <span className="state-pill">
+                {translateNow("security.autoLock.minutes", {
+                  count: autoLockMinutes,
+                })}
+              </span>
+            </h2>
             <p>{translateNow("security.autoLock.body")}</p>
           </div>
-          <div>
+          {/* Lock now right after the delay's steps; it wraps under them
+              when the row has no room. */}
+          <div className="native-auto-lock-controls">
             <AutoLockSetting
               minutes={autoLockMinutes}
               onMinutes={onAutoLockMinutes}
             />
+            <button
+              className="button"
+              type="button"
+              onClick={() => void onLock()}
+            >
+              {translateNow("security.lockNow")}
+            </button>
           </div>
         </section>
         <section className="setting-row">
