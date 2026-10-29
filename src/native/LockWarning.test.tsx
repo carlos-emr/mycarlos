@@ -1,3 +1,4 @@
+import { visibleText } from "../test/humanText";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LockWarning } from "./LockWarning";
@@ -18,22 +19,24 @@ describe("the warning before the automatic lock counts down (#77)", () => {
     const dialog = screen.getByRole("alertdialog");
     const heading = screen.getByRole("heading");
     const shown = () =>
-      heading.querySelector("[aria-hidden='true']")!.textContent;
+      visibleText(
+        heading.querySelector("[aria-hidden='true']")!.textContent ?? "",
+      );
     const name =
       "myCarlos will lock in 30 seconds to keep your records private.";
     expect(shown()).toBe(name);
-    expect(dialog).toHaveAccessibleName(name);
+    expect(dialog).toHaveHumanAccessibleName(name);
     pass(1000);
     expect(shown()).toBe(
       "myCarlos will lock in 29 seconds to keep your records private.",
     );
     // What a screen reader would say again: unchanged.
-    expect(dialog).toHaveAccessibleName(name);
+    expect(dialog).toHaveHumanAccessibleName(name);
     pass(28_000);
     expect(shown()).toBe(
       "myCarlos will lock in 1 second to keep your records private.",
     );
-    expect(dialog).toHaveAccessibleName(name);
+    expect(dialog).toHaveHumanAccessibleName(name);
   });
 
   it("says once, at 10 seconds, how little time is left", () => {
@@ -43,9 +46,9 @@ describe("the warning before the automatic lock counts down (#77)", () => {
     pass(19_000);
     expect(status).toBeEmptyDOMElement();
     pass(1000);
-    expect(status).toHaveTextContent("10 seconds left.");
+    expect(status).toHaveHumanTextContent("10 seconds left.");
     // The same words from then on, so nothing is said again.
     pass(5000);
-    expect(status).toHaveTextContent("10 seconds left.");
+    expect(status).toHaveHumanTextContent("10 seconds left.");
   });
 });

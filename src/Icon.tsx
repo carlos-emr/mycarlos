@@ -20,6 +20,7 @@ export type IconName =
   | "plus"
   | "reset"
   | "search"
+  | "settings"
   | "shield"
   | "sort"
   | "star"
@@ -119,6 +120,14 @@ export function Icon({ name }: { name: IconName }) {
       break;
     case "shield":
       content = <path d="M12 3 5 6v5c0 4.7 2.9 8 7 10 4.1-2 7-5.3 7-10V6Z" />;
+      break;
+    case "settings":
+      content = (
+        <>
+          <path d="M9.30,5.32 10.02,2.71 13.98,2.71 14.70,5.32 16.43,6.33 19.06,5.64 21.04,9.06 19.13,11.00 19.13,13.00 21.04,14.94 19.06,18.36 16.43,17.67 14.70,18.68 13.98,21.29 10.02,21.29 9.30,18.68 7.57,17.67 4.94,18.36 2.96,14.94 4.87,13.00 4.87,11.00 2.96,9.06 4.94,5.64 7.57,6.33Z" />
+          <circle cx="12" cy="12" r="3.3" />
+        </>
+      );
       break;
     case "plus":
       content = <path d="M12 5v14M5 12h14" />;

@@ -1,3 +1,4 @@
+import { messagePattern, translate } from "./support/fluent";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands, fakeVault } from "./support/a11y";
 
@@ -180,7 +181,7 @@ test("after typing in Search, pointer actions leave focus on the page (#90)", as
     page.getByRole("heading", { name: "My records", level: 1 }),
   ).toBeVisible();
   const search = page.getByRole("searchbox", {
-    name: "Search everything in My records",
+    name: translate("en", "interface.search.all", { location: "My records" }),
   });
   await press(search);
   await expect(search).toBeFocused();
@@ -189,7 +190,9 @@ test("after typing in Search, pointer actions leave focus on the page (#90)", as
   const importer = page.getByRole("button", { name: "Choose files to import" });
   await press(importer);
   await expect(
-    page.getByText("1 file(s) encrypted and imported."),
+    page.getByText(
+      messagePattern("en", "interface.notice.imported", { count: 1 }),
+    ),
   ).toBeVisible();
   await expect(importer).toBeEnabled();
   await settle(page);
@@ -221,7 +224,9 @@ test("opening a folder with a pointer leaves focus on the new heading or the pag
   await expect(
     page.getByRole("heading", { name: "My records", level: 1 }),
   ).toBeVisible();
-  const opener = page.getByRole("button", { name: "Open FAKE Letters" });
+  const opener = page.getByRole("button", {
+    name: translate("en", "library.folder.open", { name: "FAKE Letters" }),
+  });
   // A tap scrolls the folder into view first (phone): measure from there.
   await opener.scrollIntoViewIfNeeded();
   await settle(page);

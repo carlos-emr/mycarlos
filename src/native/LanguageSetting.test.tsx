@@ -38,6 +38,25 @@ describe("saved app language", () => {
     expect(getLocale()).toBe("en");
   });
 
+  it("labels Simplified Chinese as Mandarin, with the English word marked as English", async () => {
+    const user = userEvent.setup();
+    render(<LanguageSetting />);
+    const simplified = screen.getByRole("radio", {
+      name: "简体中文 (Mandarin)",
+    });
+    const label = simplified.closest("label")!;
+    expect(label.querySelector('[lang="zh-CN"]')).toHaveTextContent(
+      /^简体中文$/,
+    );
+    expect(label.querySelector('[lang="en"]')).toHaveTextContent(
+      /^\(Mandarin\)$/,
+    );
+    expect(screen.getByRole("radio", { name: "繁體中文" })).toBeInTheDocument();
+    await user.click(simplified);
+    expect(getLanguagePreference().choice).toBe("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
+  });
+
   for (const locale of LOCALES) {
     it(`switches Preferences immediately and restores ${locale} before rendering`, () => {
       render(<PreferencesSettings />);
