@@ -78,7 +78,11 @@ async function fakeReaderVault(page: Page, locale: Locale) {
             width: request.width,
             height: drawn.height,
             image: drawn.image,
-            text: `FAKE text on page ${request.page + 1}`,
+            // Long enough for "Text on this page" to scroll.
+            text: Array.from(
+              { length: 80 },
+              (_, line) => `FAKE line ${line + 1} on page ${request.page + 1}`,
+            ).join("\n"),
           };
         }
         return undefined;
@@ -406,9 +410,68 @@ test("reads down a zoomed page with the keys before turning it", async ({
     await expect(reader.locator(".native-reader-where")).toHaveText(where(2));
     await expect(reader.getByRole("status")).toHaveText(where(2));
     expect((await scroll()).top).toBe(0);
-    // At the top, Home goes to the first page.
-    await page.keyboard.press("Home");
+    // At the top, Page Up turns back to page 1, shown from its bottom, so
+    // that reading back goes on where it left off.
+    await page.keyboard.press("PageUp");
     await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    await expect.poll(async () => (await scroll()).atBottom).toBe(true);
+    // Home scrolls page 1 to its top; the first page has none before it.
+    await page.keyboard.press("Home");
+    await expect.poll(async () => (await scroll()).top).toBe(0);
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    await expectTextSize(page, FITS[0].font);
+  } finally {
+    await context.close();
+  }
+});
+
+// "Text on this page", opened and clicked into, scrolls with the arrow keys,
+// Page Down and End like any text. The page turns only once the text has
+// been read to its end.
+test("scrolls the page's text with the keys after a click in it", async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "sets its own sizes");
+  const { context, page } = await readerAt(browser, info, FITS[0], "en");
+  try {
+    const reader = await openReader(page, "en", "FAKE Clinic letter.pdf");
+    const where = (number: number) =>
+      translate("en", "interface.reader.where", { page: number, total: 5 });
+    await reader
+      .getByText(translate("en", "interface.DocumentReader.textOnThisPage"))
+      .click();
+    const line = reader.locator(".native-reader-text div").first();
+    await expect(line).toContainText("FAKE line 2 on page 1");
+    await line.click({ position: { x: 24, y: 12 } });
+    // The box that scrolls the text, whichever element that is.
+    const text = () =>
+      line.evaluate((element) => {
+        let box: HTMLElement | null = element;
+        while (box && box.scrollHeight <= box.clientHeight + 1)
+          box = box.parentElement;
+        return {
+          top: box?.scrollTop ?? -1,
+          atBottom: box
+            ? box.scrollTop + box.clientHeight >= box.scrollHeight - 1
+            : false,
+          isText: box?.closest(".native-reader-text") !== null,
+        };
+      });
+    expect((await text()).isText, "the text box scrolls").toBe(true);
+    expect((await text()).top).toBe(0);
+    for (let press = 0; press < 3; press++)
+      await page.keyboard.press("ArrowDown");
+    await expect.poll(async () => (await text()).top).toBeGreaterThan(0);
+    const before = (await text()).top;
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await text()).top).toBeGreaterThan(before);
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    await page.keyboard.press("End");
+    await expect.poll(async () => (await text()).atBottom).toBe(true);
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
+    // At the end of the text, Page Down turns the page.
+    await page.keyboard.press("PageDown");
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(2));
     await expectTextSize(page, FITS[0].font);
   } finally {
     await context.close();

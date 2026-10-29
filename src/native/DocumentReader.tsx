@@ -251,10 +251,30 @@ export function DocumentReader({
     };
   }, [asking, fitWidth, page, password, pictureWidth]);
 
-  // Another page is shown from its top, not where the last one was scrolled.
+  // Another page is shown from its top left, with its text from the top,
+  // not where the last one was scrolled. Page Up at a page's top shows the
+  // page before from its bottom, once drawn, so that reading back goes on
+  // where it left off.
+  const textRef = useRef<HTMLDivElement | null>(null);
+  const fromBottom = useRef<number | null>(null);
   useEffect(() => {
-    if (pageRef.current) pageRef.current.scrollTop = 0;
+    if (pageRef.current) {
+      pageRef.current.scrollTop = 0;
+      pageRef.current.scrollLeft = 0;
+    }
+    if (textRef.current) textRef.current.scrollTop = 0;
+    if (fromBottom.current !== page) fromBottom.current = null;
   }, [page]);
+  const pageDrawn = (drawnPage: number) => {
+    if (fromBottom.current !== drawnPage || !pageRef.current) return;
+    fromBottom.current = null;
+    pageRef.current.scrollTop = pageRef.current.scrollHeight;
+  };
+  // After a wrong password, the form comes back with the focus in it.
+  const passwordRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (asking && wrongTries > 0) passwordRef.current?.focus();
+  }, [asking, wrongTries]);
 
   const giveDocumentPassword = (event: FormEvent) => {
     event.preventDefault();
@@ -276,9 +296,10 @@ export function DocumentReader({
   };
   // Home, End, Page Up and Page Down turn pages anywhere in the reader but in
   // a box that takes typing, where Home and End move in what is typed. A key
-  // with Ctrl, Alt, Shift or Cmd is left to the system. On a page taller than
-  // its area (zoomed in, say), the key scrolls the page first, as it does
-  // anywhere else, and turns it at its top or bottom edge.
+  // with Ctrl, Alt, Shift or Cmd is left to the system, and so is a key with
+  // no page to turn to. On a page taller than its area (zoomed in, say), or
+  // in the page's text, the key scrolls first, as it does anywhere else, and
+  // turns the page at the top or bottom edge.
   const turnPageWithKeys = (event: KeyboardEvent<HTMLElement>) => {
     const to = PAGE_KEYS.get(event.key);
     if (!to || !turnsPages || last === null || event.defaultPrevented) return;
@@ -292,16 +313,17 @@ export function DocumentReader({
       (target instanceof HTMLElement && target.isContentEditable)
     )
       return;
-    const area = pageRef.current;
-    if (
-      area &&
-      target instanceof Node &&
-      area.contains(target) &&
-      canScrollToward(area, event.key)
-    )
-      return;
+    const scroller = [pageRef.current, textRef.current].find(
+      (box) => box !== null && target instanceof Node && box.contains(target),
+    );
+    if (scroller && canScrollToward(scroller, event.key)) return;
+    const next = to(page, last);
+    if (next === page || next < 0 || next > last) return;
     event.preventDefault();
-    goTo(to(page, last));
+    if (loading) return;
+    if (event.key === "PageUp" && scroller === pageRef.current)
+      fromBottom.current = next;
+    goTo(next);
   };
   const where =
     pageCount === null
@@ -410,6 +432,7 @@ export function DocumentReader({
               {translateNow("interface.DocumentReader.documentPassword")}
             </label>
             <input
+              ref={passwordRef}
               id="reader-password"
               type="password"
               autoComplete="off"
@@ -455,6 +478,7 @@ export function DocumentReader({
                 total: shown.pageCount,
               })}
               style={{ width: `${cssWidth}px` }}
+              onLoad={() => pageDrawn(shown.page)}
             />
           )}
         </div>
@@ -463,7 +487,17 @@ export function DocumentReader({
             <summary>
               {translateNow("interface.DocumentReader.textOnThisPage")}
             </summary>
-            <div>
+            {/* Focusable and scrolled on its own, so that a click in the
+                text lets the keys scroll it, and the page keys turn the
+                page only at its end. */}
+            <div
+              ref={textRef}
+              tabIndex={0}
+              role="region"
+              aria-label={translateNow(
+                "interface.DocumentReader.textOnThisPage",
+              )}
+            >
               {(shown.readableText ?? shown.text).trim() ||
                 translateNow(
                   "interface.DocumentReader.noTextCouldBeReadOnThis",

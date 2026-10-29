@@ -204,6 +204,8 @@ describe("the document reader", () => {
     expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "That password did not open the document.",
     );
+    // The form comes back with the focus in it.
+    expect(screen.getByLabelText(humanText("Document password"))).toHaveFocus();
     await user.type(
       screen.getByLabelText(humanText("Document password")),
       "FAKE-portal-2026{Enter}",
@@ -520,14 +522,20 @@ describe("the reader's page bar", () => {
     expect(
       screen.getByRole("img", { name: humanText(/^Page 1 of 5/) }),
     ).toBeInTheDocument();
-    // At its bottom, Page Down turns the page; the next one shows its top.
+    // At its bottom, Page Down turns the page.
     area.scrollTop = area.scrollHeight;
     expect(fireEvent.keyDown(area, { key: "PageDown" })).toBe(false);
     await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
-    expect(area.scrollTop).toBe(0);
-    // At its top, Page Up turns back; scrolled down, Home scrolls up first.
+    // At its top, Page Up turns back, to the page before's bottom, so that
+    // reading back goes on where it left off.
     expect(fireEvent.keyDown(area, { key: "PageUp" })).toBe(false);
     await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await vi.waitFor(() =>
+      expect(area.scrollTop + area.clientHeight).toBeGreaterThanOrEqual(
+        area.scrollHeight - 1,
+      ),
+    );
+    // Scrolled down, Home scrolls up first.
     area.scrollTop = 50;
     expect(fireEvent.keyDown(area, { key: "Home" })).toBe(true);
     expect(
@@ -539,11 +547,60 @@ describe("the reader's page bar", () => {
     expect(area.scrollTop).toBe(0);
   });
 
+  it("lets the keys scroll the page's text before turning the page", async () => {
+    const user = userEvent.setup();
+    const lines = (index: number) =>
+      Array.from(
+        { length: 80 },
+        (_, line) => `FAKE line ${line + 1} on page ${index + 1}`,
+      ).join("\n");
+    renderReader(
+      vi.fn(async (index: number, _width: number, _password?: string) => ({
+        ...page(index),
+        pageCount: 5,
+        text: lines(index),
+      })),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await user.click(screen.getByText(humanText("Text on this page")));
+    // The text scrolls in its own box, which a click or Tab can focus.
+    const text = screen.getByRole("region", {
+      name: humanText("Text on this page"),
+    });
+    expect(text.scrollHeight).toBeGreaterThan(text.clientHeight + 1);
+    await user.click(text);
+    expect(text).toHaveFocus();
+    for (const key of ["ArrowDown", "PageDown", "End"])
+      expect(fireEvent.keyDown(text, { key })).toBe(true);
+    text.scrollTop = text.scrollHeight;
+    expect(fireEvent.keyDown(text, { key: "PageDown" })).toBe(false);
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+  });
+
+  it("shows a reader button that cannot be used as unavailable", async () => {
+    renderReader(pagesOf(5));
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    for (const button of [
+      screen.getByRole("button", { name: humanText("Fit width") }),
+      pageButton("Previous page"),
+    ]) {
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(getComputedStyle(button).cursor).toBe("not-allowed");
+    }
+    expect(getComputedStyle(pageButton("Next page")).cursor).not.toBe(
+      "not-allowed",
+    );
+  });
+
   it("turns pages with the keys from a page button, and says which page is shown", async () => {
     const user = userEvent.setup();
     renderReader(pagesOf(5));
     await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
     pageButton("Next page").focus();
+    // A key with no page to turn to is the browser's.
+    expect(fireEvent.keyDown(pageButton("Next page"), { key: "Home" })).toBe(
+      true,
+    );
     await user.keyboard("{End}");
     await screen.findByRole("img", { name: humanText(/^Page 5 of 5/) });
     expect(screen.getByRole("status")).toHaveHumanTextContent("Page 5 of 5");

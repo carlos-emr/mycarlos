@@ -470,9 +470,10 @@ h1, h2, p { margin: 0; }
 .native-reader-page img { display: inline-block; max-width: none; height: auto; box-shadow: var(--shadow-sm); background: var(--paper); }
 /* It scrolls itself, so without flex-shrink: 0 a reader too short for everything (large text on a
    phone) would squeeze it to nothing; the reader scrolls instead. */
-.native-reader-text { flex-shrink: 0; max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
+.native-reader-text { flex-shrink: 0; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }
-.native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The text scrolls in its own box, which takes the focus (DocumentReader.tsx). */
+.native-reader-text div { max-height: 30vh; overflow: auto; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
 .native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 
