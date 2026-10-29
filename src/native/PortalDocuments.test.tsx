@@ -1,6 +1,6 @@
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { humanValue } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
@@ -175,6 +175,54 @@ describe("native clinic document controls", () => {
       expect(screen.getByLabelText("Linking code")).toHaveValue(""),
     );
     expect(failures).toHaveLength(1);
+  });
+  it("names the device in the language in use until the patient changes it (#124 review)", async () => {
+    onTestFinished(() => act(() => setLocaleOverride(null)));
+    act(() => setLocaleOverride("fr"));
+    fixture();
+    const nameField = (locale: "fr" | "pl") =>
+      screen.getByLabelText(translate(locale, "portal.deviceName"));
+    await waitFor(() =>
+      expect(nameField("fr")).toHaveValue("myCarlos sur Windows"),
+    );
+    act(() => setLocaleOverride("pl"));
+    expect(nameField("pl")).toHaveValue("myCarlos na Windows");
+    // A name the patient typed is theirs: it stays in every language.
+    const user = userEvent.setup();
+    await user.clear(nameField("pl"));
+    await user.type(nameField("pl"), "FAKE tablet");
+    act(() => setLocaleOverride("fr"));
+    expect(nameField("fr")).toHaveValue("FAKE tablet");
+  });
+  it("sends the default device name in the patient's language, with no invisible marks (#124 review)", async () => {
+    onTestFinished(() => act(() => setLocaleOverride(null)));
+    act(() => setLocaleOverride("fr"));
+    const { bridge } = fixture();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(translate("fr", "portal.address")),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText(translate("fr", "portal.code")),
+      "01234567-89ABCDEFGH",
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(translate("fr", "portal.deviceName")),
+      ).toHaveValue("myCarlos sur Windows"),
+    );
+    await user.click(
+      screen.getByRole("button", { name: translate("fr", "portal.link") }),
+    );
+    await waitFor(() =>
+      expect(bridge.linkPortal).toHaveBeenCalledWith({
+        portalBase: "https://portal.example.test/patient",
+        code: "01234567-89ABCDEFGH",
+        deviceName: "myCarlos sur Windows",
+        profileId: null,
+      }),
+    );
   });
   it("checks only on explicit action and disables writes in recovery", async () => {
     const { bridge, props, rerender } = fixture();

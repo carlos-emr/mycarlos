@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useI18n } from "../i18n";
+import { formatDeviceName, useI18n } from "../i18n";
 import { vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
@@ -24,10 +24,13 @@ export function PortalDocuments({
   setNotice,
   compact = false,
 }: Props) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
-  const [device, setDevice] = useState("myCarlos");
+  // The patient's own name for this device. Until they change it, the name
+  // is the default in the language in use ("myCarlos on Windows").
+  const [device, setDevice] = useState<string | null>(null);
+  const [platformName, setPlatformName] = useState<string | null>(null);
   const [person, setPerson] = useState("");
   const [copyState, setCopyState] = useState("");
   const shown = useRef(true);
@@ -43,10 +46,7 @@ export function PortalDocuments({
           android: "Android",
           ios: "iOS",
         };
-        if (shown.current && os[platform])
-          setDevice((current) =>
-            current === "myCarlos" ? `myCarlos on ${os[platform]}` : current,
-          );
+        if (shown.current && os[platform]) setPlatformName(os[platform]);
       })
       .catch(() => {});
     return () => {
@@ -60,6 +60,9 @@ export function PortalDocuments({
   )
     return null;
   const links = snapshot.portalLinks ?? [];
+  const deviceName =
+    device ??
+    (platformName ? formatDeviceName(locale, platformName) : "myCarlos");
   const terminal = (link: PortalLinkSummary) =>
     ["refused", "expired", "cancelled", "accepted"].includes(
       link.approvalStatus ?? "",
@@ -143,7 +146,7 @@ export function PortalDocuments({
         await bridge.linkPortal!({
           portalBase: address,
           code,
-          deviceName: device,
+          deviceName,
           profileId: person || null,
         });
         // The one-use code is not retained after this attempt.
@@ -190,7 +193,7 @@ export function PortalDocuments({
           {t("portal.deviceName")}
           <input
             required
-            value={device}
+            value={deviceName}
             maxLength={64}
             onChange={(e) => setDevice(e.target.value)}
             disabled={disabled}
