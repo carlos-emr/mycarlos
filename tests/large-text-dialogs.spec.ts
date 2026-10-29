@@ -43,15 +43,27 @@ async function fakeVault(page: Page, locale: string) {
       recovery: null,
       recoveryKeySetAtMs: null,
     };
+    // Any command these dialogs should not send fails the test.
+    const unexpected: string[] = [];
+    Reflect.set(window, "__FAKE_UNEXPECTED__", unexpected);
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return "unlocked";
         if (command === "vault_snapshot") return structuredClone(snapshot);
         if (command === "runtime_info") return { platform: "windows" };
+        if (
+          command === "vault_touch" ||
+          command === "vault_set_auto_lock" ||
+          command === "vault_recovery_key_cancel"
+        )
+          return;
+        // Files shared to myCarlos are looked for on focus (#49): none.
+        if (command === "received_list") return [];
         // A made-up key, in groups, only for the dialog to show.
         if (command === "vault_recovery_key_begin")
           return Array.from({ length: 8 }, (_, i) => `FAKE${i}`).join("-");
-        return undefined;
+        unexpected.push(command);
+        throw new Error(`Unexpected IPC command: ${command}`);
       },
     });
   }, locale);
@@ -89,6 +101,10 @@ function outsideDialog(page: Page, dialogName: string): Promise<string[]> {
     return found;
   }, dialogName);
 }
+
+/** Commands the app sent that the fake vault did not expect. */
+const unexpectedCommands = (page: Page): Promise<string[]> =>
+  page.evaluate(() => Reflect.get(window, "__FAKE_UNEXPECTED__") as string[]);
 
 // The default text size stays at 200%: nothing here takes a full-page
 // screenshot, which puts Chrome's default text size back to 16px.
@@ -205,9 +221,45 @@ for (const width of [320, 360])
           })
           .click();
         await expect(recovery).toHaveCount(0);
+        for (const command of await unexpectedCommands(page))
+          problems.push(`${locale}: unexpected command ${command}`);
       } finally {
         await context.close();
       }
     }
     expect(problems, "controls outside their dialog").toEqual([]);
   });
+
+// The metadata rows' wrap applies at every width. On a phone at 100% text a
+// long value goes under its label; a screenshot shows it for review.
+test("keeps a document's details inside the dialog at 360px with 100% text", async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "sets its own phone sizes");
+  const context = await browser.newContext({
+    baseURL: info.project.use.baseURL,
+    viewport: { width: 360, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  try {
+    const page = await context.newPage();
+    await fakeVault(page, "en");
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: /^FAKE Clinic letter\.pdf/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: "FAKE Clinic letter.pdf" }),
+    ).toBeVisible();
+    expect(await rootFont(page)).toBe("16px");
+    await page.screenshot({
+      path: info.outputPath("details-360-text100.png"),
+    });
+    expect(await outsideDialog(page, "Document details")).toEqual([]);
+    expect(await unexpectedCommands(page)).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
