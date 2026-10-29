@@ -761,7 +761,7 @@ native-error-12 = Na tym urządzeniu już istnieje sejf.
 
 native-error-13 = Na tym urządzeniu nie ma sejfu.
 
-native-error-14 = Odblokuj sejf, aby kontynuować.
+native-error-14 = Proszę odblokować sejf, aby kontynuować.
 
 native-error-15 = Ten sejf jest otwarty w innym oknie myCarlos. Proszę zablokować lub zamknąć tamto okno i spróbować ponownie.
 
@@ -977,7 +977,7 @@ record-kind-document = Dokument
 
 record-source-manual = Import ręczny — niezweryfikowany
 
-recover-intro = Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
+recover-intro = Proszę użyć klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
 
 recover-key-format = 28 liter i cyfr, w 7 grupach po 4, tak jak na zestawie lub tak, jak zostały zapisane. Myślniki, spacje i inne znaki interpunkcyjne nie mają znaczenia.
 
@@ -1385,7 +1385,7 @@ unlock-waiting =
 
 unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
-language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Wybierz inny język lub uruchom aplikację ponownie, a przed kolejną próbą sprawdź swoje dokumenty.
+language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Proszę wybrać inny język lub uruchomić aplikację ponownie, a przed kolejną próbą sprawdzić swoje dokumenty.
 
 error-newerFormat-backup = Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.
 
@@ -1393,7 +1393,7 @@ error-newerFormat-vault = Ten sejf został zapisany przez nowszą wersję myCarl
 
 personDetails-birthDate = Data urodzenia
 
-personDetails-birthDateRequired = Wpisz datę urodzenia lub zaznacz, że jej nie znasz.
+personDetails-birthDateRequired = Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.
 
 personDetails-birthDateUnknown = Nie znam daty urodzenia tej osoby
 
@@ -1407,13 +1407,13 @@ personDetails-for = Dane osoby { $name }
 
 personDetails-fullName = Imię i nazwisko, jak na dokumentach z przychodni
 
-personDetails-fullNameRequired = Wpisz imię i nazwisko tej osoby.
+personDetails-fullNameRequired = Proszę wpisać imię i nazwisko tej osoby.
 
 personDetails-futureDate = Data urodzenia nie może być w przyszłości.
 
 personDetails-help = Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.
 
-personDetails-invalidDate = Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.
+personDetails-invalidDate = Proszę wpisać prawidłową datę urodzenia: rok, miesiąc i dzień.
 
 personDetails-list = Dane osób
 
