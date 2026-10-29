@@ -1767,6 +1767,7 @@ describe("Link another clinic (#145)", () => {
   });
 
   it("says Link another clinic in every supported language", () => {
+    onTestFinished(() => setLocaleOverride(null));
     for (const locale of LOCALES) {
       setLocaleOverride(locale);
       const { unmount } = fixture();
@@ -1777,6 +1778,5 @@ describe("Link another clinic (#145)", () => {
       ).toBeVisible();
       unmount();
     }
-    setLocaleOverride("en");
   });
 });
