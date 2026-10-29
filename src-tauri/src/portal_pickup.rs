@@ -193,17 +193,16 @@ where
     };
     use serde::Deserialize;
     let cancelled = || store.portal_link_ticket() != session;
-    // Whether the portal answered "not found" for the link being checked: it
-    // does not know this device (its authentication failed), as when a reset
-    // portal deleted it. Told apart below from a portal that is not there.
+    // Whether the portal answered "not found" to the link's list of
+    // deliveries, which ended its check: it does not know this device (its
+    // authentication failed), as when a reset portal deleted it. Only that
+    // answer counts: a "not found" for one receipt or one delivery never
+    // does. Told apart below from a portal that is not there.
     let not_found = std::cell::Cell::new(false);
     // A refusal that says the portal removed this device is told apart from
     // a connection failure (#128); any other answer is not one this check
     // can use.
     let refused = |response: &crate::portal_client::ApiResponse| {
-        if response.status == 404 {
-            not_found.set(true);
-        }
         VaultError::Portal(if crate::portal_approval::device_removed(response) {
             LinkError::DeviceRemoved
         } else {
@@ -332,6 +331,9 @@ where
                 )
                 .map_err(VaultError::Portal)?;
                 if response.status != 200 {
+                    // The device's own list: "not found" here ends this
+                    // link's check, so the error returned is this answer.
+                    not_found.set(response.status == 404);
                     return Err(refused(&response));
                 }
                 let page: Page = serde_json::from_slice(&response.body)
