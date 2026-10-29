@@ -852,6 +852,13 @@ pub struct VaultStore {
     /// request id (clinic code v1). Never the code itself. In memory only.
     #[cfg(feature = "portal-linking")]
     approval_codes: Mutex<HashMap<Uuid, delivery::CodeProgress>>,
+    /// Linked devices this run of the app found gone from their portal:
+    /// removed there, or unknown to a portal that answered another device of
+    /// this vault in the same check (a reset portal deletes devices). Later
+    /// checks and status refreshes do not ask about them again. By link id,
+    /// in memory only: never saved, and a restart asks once more.
+    #[cfg(feature = "portal-linking")]
+    gone_links: Mutex<std::collections::HashSet<Uuid>>,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -875,6 +882,8 @@ impl VaultStore {
             portal_check_running: AtomicBool::new(false),
             #[cfg(feature = "portal-linking")]
             approval_codes: Mutex::new(HashMap::new()),
+            #[cfg(feature = "portal-linking")]
+            gone_links: Mutex::new(std::collections::HashSet::new()),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -1620,8 +1629,40 @@ impl VaultStore {
         }
         #[cfg(feature = "portal-linking")]
         {
-            self.poll_staff_approval(link_id, session)
+            use portal_link::LinkError;
+            // A device already found gone is not asked about again.
+            if self.link_gone(link_id) {
+                return Err(VaultError::Portal(LinkError::DeviceRemoved));
+            }
+            let result = self.poll_staff_approval(link_id, session);
+            let removed =
+                |error: &VaultError| matches!(error, VaultError::Portal(LinkError::DeviceRemoved));
+            if match &result {
+                Ok(check) => check.issue.as_ref().is_some_and(removed),
+                Err(error) => removed(error),
+            } {
+                self.mark_link_gone(link_id);
+            }
+            result
         }
+    }
+
+    /// Whether this run of the app found this linked device gone from its
+    /// portal (see `gone_links`).
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn link_gone(&self, link_id: Uuid) -> bool {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(&link_id)
+    }
+
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn mark_link_gone(&self, link_id: Uuid) {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(link_id);
     }
 
     fn link_portal_using(

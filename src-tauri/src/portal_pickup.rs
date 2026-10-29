@@ -193,10 +193,17 @@ where
     };
     use serde::Deserialize;
     let cancelled = || store.portal_link_ticket() != session;
+    // Whether the portal answered "not found" for the link being checked: it
+    // does not know this device (its authentication failed), as when a reset
+    // portal deleted it. Told apart below from a portal that is not there.
+    let not_found = std::cell::Cell::new(false);
     // A refusal that says the portal removed this device is told apart from
     // a connection failure (#128); any other answer is not one this check
     // can use.
     let refused = |response: &crate::portal_client::ApiResponse| {
+        if response.status == 404 {
+            not_found.set(true);
+        }
         VaultError::Portal(if crate::portal_approval::device_removed(response) {
             LinkError::DeviceRemoved
         } else {
@@ -266,11 +273,27 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
+    // Portals that answered a device of this vault in this check, and the
+    // devices one of them did not know.
+    let mut answered = std::collections::HashSet::new();
+    let mut unknown = Vec::new();
     for original in store
         .delivery_links(session)?
         .into_iter()
         .filter(|link| include(link))
     {
+        // A device this run of the app already found gone from its portal is
+        // not asked again (in memory only): said as removed, with no request,
+        // and its receipts, which that portal can never take, are not counted.
+        if store.link_gone(original.id) {
+            add_issue(
+                &mut result,
+                &original,
+                VaultError::Portal(LinkError::DeviceRemoved),
+            );
+            continue;
+        }
+        not_found.set(false);
         let outcome = (|| -> Result<(), VaultError> {
             // Known durable custody is independent of advisory approval refresh.
             // Retry it first, including for a link whose new request was refused.
@@ -407,11 +430,21 @@ where
             }
             Ok(())
         })();
-        if let Err(error) = outcome {
-            if !is_per_link_failure(&error) {
-                return Err(error);
+        match outcome {
+            Ok(()) => {
+                answered.insert(original.portal_base.clone());
             }
-            add_issue(&mut result, &original, error);
+            Err(error) => {
+                if !is_per_link_failure(&error) {
+                    return Err(error);
+                }
+                if matches!(error, VaultError::Portal(LinkError::DeviceRemoved)) {
+                    store.mark_link_gone(original.id);
+                } else if not_found.get() {
+                    unknown.push(original.clone());
+                }
+                add_issue(&mut result, &original, error);
+            }
         }
         // Approval reconciliation may have updated the link. Re-read its
         // current immutable identity/state before validating kept custody.
@@ -424,6 +457,20 @@ where
         result.receipts_pending += pending.ready.len();
         if pending.damaged > 0 {
             add_issue_code(&mut result, &current, DAMAGED_CODE);
+        }
+    }
+    // "Not found" from a portal that answered another device of this vault in
+    // the same check: that portal does not know this device, as if it had
+    // removed it. It is said so, and not asked again in this run of the app.
+    for link in unknown {
+        if answered.contains(&link.portal_base) {
+            store.mark_link_gone(link.id);
+            result.issues.retain(|issue| issue.link_id != link.id);
+            add_issue(
+                &mut result,
+                &link,
+                VaultError::Portal(LinkError::DeviceRemoved),
+            );
         }
     }
     Ok(result)
