@@ -75,6 +75,26 @@ matrices, signing, and release controls remain. The chosen scope still defers se
 viewing and deletion propagation to backups or synchronized devices. Cloud synchronization and
 CARLOS integration follow only after the local vault lifecycle passes review.
 
+## Localization catalogs
+
+Project Fluent (`.ftl`) is the single translation source for the React interface and native
+Rust messages. Both consume the same seven bundled resources. Generated TypeScript keys,
+Rust message IDs, trusted rich-text slots and emergency formatting-error copy come from those
+resources. `npm run i18n:check` rejects syntax, duplicate, reference, locale contract and
+binding drift faults before builds and exercises negative validator cases.
+
+The shipped locales are en, fr, es, pl, pt-BR, zh-CN and zh-TW. Chinese negotiation gives
+explicit Hans/Hant script priority, then chooses Traditional for TW/HK/MO and Simplified for
+other Chinese regions. A saved choice remains stable. Dates and times follow the computer,
+independently of UI language; number formatting follows the UI language.
+
+Formatting faults are visible and recoverable; native consent text resolves before an action
+can proceed. React renders arguments as escaped text, with generated trusted element slots
+kept separate. Human-facing insertions use bidi isolation. Printed recovery key bytes are
+rendered directly; printed metadata and native kit text omit formatter-added isolation so
+copying retains exact values. Machine codes, cryptographic fields and original documents
+are outside translation.
+
 ## Approved patient-pilot direction
 
 The subsequent product decisions are recorded in

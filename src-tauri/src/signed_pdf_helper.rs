@@ -406,6 +406,7 @@ pub enum Failure {
 /// the helper's input budget. The original encrypted object is never changed.
 pub(crate) struct ImportProbe {
     bytes: zeroize::Zeroizing<Vec<u8>>,
+    prefix: zeroize::Zeroizing<Vec<u8>>,
     over: bool,
 }
 
@@ -413,14 +414,21 @@ impl ImportProbe {
     pub(crate) fn new() -> Self {
         Self {
             bytes: zeroize::Zeroizing::new(Vec::new()),
+            prefix: zeroize::Zeroizing::new(Vec::new()),
             over: false,
         }
     }
 
+    pub(crate) fn is_pdf(&self) -> bool {
+        self.prefix
+            .windows(b"%PDF-".len())
+            .any(|part| part == b"%PDF-")
+    }
+
     pub(crate) fn finish(self, cancelled: &dyn Fn() -> bool) -> Option<Failure> {
         self.finish_with(|bytes| {
-            // No authenticated portal linking exists yet. Test pins are never
-            // a production fallback, so this path cannot grant Verified.
+            // This compatibility diagnostic never grants Verified. Durable trust
+            // analysis must consume the encrypted authenticated link inventory.
             verify(bytes, "", &[], cancelled)
                 .err()
                 .unwrap_or(Failure::Refused(Refusal::UnknownSigner))
@@ -446,6 +454,9 @@ impl ImportProbe {
 impl Write for ImportProbe {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         use zeroize::Zeroize;
+        let remaining = 1024_usize.saturating_sub(self.prefix.len());
+        self.prefix
+            .extend_from_slice(&bytes[..bytes.len().min(remaining)]);
         if !self.over {
             if self.bytes.len().saturating_add(bytes.len())
                 > crate::pdf_unlock::MAX_LOCKED_PDF_BYTES

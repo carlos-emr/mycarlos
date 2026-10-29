@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { LOCALES } from "../src/i18n/types";
 
 // #67 and #84: on a phone with large text (the reader's 200% default text,
 // 32px), the library keeps every document's name readable and the lock
@@ -115,4 +116,111 @@ for (const width of [390, 320])
     } finally {
       await context.close();
     }
+  });
+
+/** Visible controls in the window that run past its edges, spill out of their
+ * own box, cut their words short, or are cut off by a box hiding overflow;
+ * and the page scrolling sideways. */
+function cutOrOutside(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = [];
+    const frame = document
+      .querySelector(".app-window")!
+      .getBoundingClientRect();
+    const left = Math.max(0, frame.left);
+    const right = Math.min(window.innerWidth, frame.right);
+    if (document.documentElement.scrollWidth > window.innerWidth + 1)
+      found.push(
+        `the page scrolls sideways (${document.documentElement.scrollWidth}px in ${window.innerWidth}px)`,
+      );
+    const hidden = (element: Element) => {
+      const style = getComputedStyle(element);
+      return style.clip !== "auto" || style.clipPath !== "none";
+    };
+    const hides = (overflow: string) =>
+      overflow === "hidden" || overflow === "clip";
+    const controls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".app-window :is(button, a[href], input, select, summary, label)",
+      ),
+    ).filter((control) => control.checkVisibility() && !hidden(control));
+    for (const control of controls) {
+      const name = `${control.tagName.toLowerCase()} "${(control.getAttribute("aria-label") ?? control.textContent ?? "").trim().slice(0, 40)}"`;
+      const box = control.getBoundingClientRect();
+      if (box.left < left - 1 || box.right > right + 1)
+        found.push(`${name} runs past the window`);
+      if (
+        !control.matches("input, select") &&
+        (control.scrollWidth > control.clientWidth + 1 ||
+          control.scrollHeight > control.clientHeight + 1)
+      )
+        found.push(`${name} spills out of its own box`);
+      const cut = Array.from(control.querySelectorAll<HTMLElement>("*")).find(
+        (inner) =>
+          inner.checkVisibility() &&
+          !hidden(inner) &&
+          inner.scrollWidth > inner.clientWidth + 1,
+      );
+      if (cut) found.push(`${name} cuts "${cut.textContent!.trim()}" short`);
+      for (
+        let outer = control.parentElement;
+        outer && outer !== document.body;
+        outer = outer.parentElement
+      ) {
+        const style = getComputedStyle(outer);
+        const edge = outer.getBoundingClientRect();
+        if (
+          (hides(style.overflowX) &&
+            (box.left < edge.left - 1 || box.right > edge.right + 1)) ||
+          (hides(style.overflowY) &&
+            (box.top < edge.top - 1 || box.bottom > edge.bottom + 1))
+        ) {
+          found.push(`${name} is cut off by .${outer.classList[0]}`);
+          break;
+        }
+      }
+    }
+    return found;
+  });
+}
+
+// #119: longer words in other languages (es "Más recientes primero", pt-BR
+// "Compartilhados comigo") wrap onto more lines at 200% text on a phone,
+// instead of running past the window or being cut short.
+for (const width of [360, 320])
+  test(`keeps the library's controls whole and in the window at ${width}px with 200% default text in every language`, async ({
+    browser,
+  }, info) => {
+    test.skip(info.project.name !== "desktop", "sets its own phone sizes");
+    const problems: string[] = [];
+    for (const locale of LOCALES) {
+      const context = await browser.newContext({
+        baseURL: info.project.use.baseURL,
+        viewport: { width, height: 1400 },
+        isMobile: true,
+        hasTouch: true,
+      });
+      try {
+        const page = await context.newPage();
+        await page.addInitScript((locale) => {
+          localStorage.setItem("mycarlos.language.v1", locale);
+        }, locale);
+        await fakeVault(page);
+        const cdp = await context.newCDPSession(page);
+        await cdp.send("Page.setFontSizes", { fontSizes: { standard: 32 } });
+        await page.goto("/");
+        await expect(page.locator("html")).toHaveAttribute("lang", locale);
+        await expect(
+          page.getByRole("button", {
+            name: "FAKE Clinic letter.pdf",
+            exact: true,
+          }),
+        ).toBeVisible();
+        for (const problem of await cutOrOutside(page))
+          problems.push(`${locale}: ${problem}`);
+      } finally {
+        await context.close();
+      }
+    }
+    expect(problems, "controls cut off or outside the window").toEqual([]);
   });
