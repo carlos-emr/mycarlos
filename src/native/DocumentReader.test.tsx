@@ -584,6 +584,44 @@ describe("the reader's page bar", () => {
     expect(fireEvent.keyDown(text, { key: "PageDown" })).toBe(false);
     await screen.findByRole("img", { name: humanText(/^Page 3 of 5/) });
     expect(text).toHaveFocus();
+    // A page drawn before shows its text from the top too.
+    text.scrollTop = 100;
+    fireEvent.click(pageButton("Previous page"));
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    expect(text.scrollTop).toBe(0);
+  });
+
+  it("shows no text of the last page while the next one is drawn", async () => {
+    const user = userEvent.setup();
+    let finish: (value: ViewedPage) => void = () => undefined;
+    const lines = (index: number) =>
+      Array.from(
+        { length: 80 },
+        (_, line) => `FAKE line ${line + 1} on page ${index + 1}`,
+      ).join("\n");
+    renderReader(
+      vi.fn((index: number, _width: number, _password?: string) =>
+        index === 0
+          ? Promise.resolve({ ...page(0), pageCount: 5, text: lines(0) })
+          : new Promise<ViewedPage>((resolve) => {
+              finish = resolve;
+            }),
+      ),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await user.click(screen.getByText(humanText("Text on this page")));
+    const text = screen.getByRole("region", {
+      name: humanText("Text on this page"),
+    });
+    await user.click(pageButton("Next page"));
+    await screen.findByText(humanText("Opening page 2…"));
+    // The box stays, busy and empty: no page 1 text under page 2's number.
+    expect(text).toHaveAttribute("aria-busy", "true");
+    expect(text).not.toHaveTextContent("on page 1");
+    finish({ ...page(1), pageCount: 5, text: lines(1) });
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    expect(text).toHaveAttribute("aria-busy", "false");
+    expect(text).toHaveTextContent("FAKE line 1 on page 2");
   });
 
   it("gives the focus to the page when a page turned from its text fails", async () => {

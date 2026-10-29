@@ -185,12 +185,23 @@ const FITS = [
   { label: "1280-text200", width: 1280, height: 800, font: 32, narrow: true },
   { label: "360-text100", width: 360, height: 740, font: 16, narrow: true },
   { label: "360-text200", width: 360, height: 740, font: 32, narrow: true },
+  // The app's own Text size (Preferences) zooms the whole webview: at 200% a
+  // 1280x720 window lays out like 640x360 with 16px text, drawn with twice
+  // the pixels (as large-text-accessibility.spec.ts models it).
+  {
+    label: "app-text200",
+    width: 640,
+    height: 360,
+    font: 16,
+    narrow: true,
+    scale: 2,
+  },
 ] as const;
 
 async function readerAt(
   browser: import("@playwright/test").Browser,
   info: TestInfo,
-  fit: { width: number; height: number; font: number },
+  fit: { width: number; height: number; font: number; scale?: number },
   locale: Locale,
 ) {
   const phone = fit.width < 600;
@@ -199,6 +210,7 @@ async function readerAt(
     viewport: { width: fit.width, height: fit.height },
     isMobile: phone,
     hasTouch: phone,
+    deviceScaleFactor: fit.scale ?? 1,
   });
   const page = await context.newPage();
   await fakeReaderVault(page, locale);
@@ -247,8 +259,10 @@ for (const [fit, locale] of [
       // The zoom at the top left, above the page.
       expect(at.zoom.left - at.reader.left).toBeLessThanOrEqual(24);
       expect(at.zoom.bottom).toBeLessThanOrEqual(at.area.top + 1);
-      // The page keeps room to be read.
-      expect(at.area.height).toBeGreaterThanOrEqual(200);
+      // The page keeps room to be read: at least min(16em, 40vh).
+      expect(at.area.height).toBeGreaterThanOrEqual(
+        Math.min(16 * fit.font, 0.4 * at.viewportHeight) - 1,
+      );
       // Nothing cut, nothing sideways, nothing too small to press.
       expect(at.readerWider, "reader scrolls sideways").toBeLessThanOrEqual(0);
       expect(at.barWider, "bar wider than the reader").toBeLessThanOrEqual(0);
@@ -483,6 +497,62 @@ test("scrolls the page's text with the keys after a click in it", async ({
     await expect(reader.locator(".native-reader-where")).toHaveText(where(3));
     await expect(line).toBeFocused();
     await expectTextSize(page, FITS[0].font);
+  } finally {
+    await context.close();
+  }
+});
+
+// At 200% text the reader itself scrolls. A page turned from inside the text
+// keeps the focused text box above the page bar, even without the scroll
+// anchoring that Chromium uses to keep a focused box in place (WebKit has
+// none): the box keeps its height while the next page is drawn.
+test("keeps the text box above the bar after a turn at 360px with 200% text, without scroll anchoring", async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "sets its own sizes");
+  const { context, page } = await readerAt(browser, info, FITS[3], "en");
+  try {
+    const reader = await openReader(page, "en", "FAKE Clinic letter.pdf");
+    await page.addStyleTag({
+      content: "* { overflow-anchor: none !important; }",
+    });
+    await reader
+      .getByText(translate("en", "interface.DocumentReader.textOnThisPage"))
+      .click();
+    await reader.evaluate(
+      (element) => (element.scrollTop = element.scrollHeight),
+    );
+    const box = reader.locator(".native-reader-text div").first();
+    await box.click({ position: { x: 24, y: 12 } });
+    await expect(box).toBeFocused();
+    await page.keyboard.press("End");
+    await expect
+      .poll(() =>
+        box.evaluate(
+          (element) =>
+            element.scrollTop + element.clientHeight >=
+            element.scrollHeight - 1,
+        ),
+      )
+      .toBe(true);
+    await page.keyboard.press("PageDown");
+    await expect(reader.locator(".native-reader-where")).toHaveText(
+      translate("en", "interface.reader.where", { page: 2, total: 5 }),
+    );
+    await expect(box).toContainText("FAKE line 1 on page 2");
+    await expect(box).toBeFocused();
+    const boxNow = (await box.boundingBox())!;
+    const bar = (await reader.locator(".native-reader-pages").boundingBox())!;
+    const readerBox = (await reader.boundingBox())!;
+    expect(
+      boxNow.y,
+      "the text box's top is in the reader",
+    ).toBeGreaterThanOrEqual(readerBox.y - 1);
+    expect(
+      boxNow.y + boxNow.height,
+      "the text box is above the page bar",
+    ).toBeLessThanOrEqual(bar.y + 1);
+    await expectTextSize(page, FITS[3].font);
   } finally {
     await context.close();
   }

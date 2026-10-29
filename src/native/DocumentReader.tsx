@@ -271,6 +271,15 @@ export function DocumentReader({
     fromBottom.current = null;
     pageRef.current.scrollTop = pageRef.current.scrollHeight;
   };
+  // The text box keeps its height while the next page is drawn. Emptied, it
+  // would let a scrolling reader scroll up, and the new text would then come
+  // back under the page bar (WebKit has no scroll anchoring to keep the
+  // focused box in place).
+  const textHeight = useRef(0);
+  useLayoutEffect(() => {
+    if (current && textRef.current)
+      textHeight.current = textRef.current.offsetHeight;
+  });
   // After a wrong password, the form comes back with the focus in it.
   const passwordRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
@@ -513,6 +522,9 @@ export function DocumentReader({
               role="region"
               aria-labelledby="reader-text-title"
               aria-busy={!current}
+              style={
+                current ? undefined : { minHeight: `${textHeight.current}px` }
+              }
             >
               {current
                 ? (shown.readableText ?? shown.text).trim() ||
