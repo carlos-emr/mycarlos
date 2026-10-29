@@ -59,6 +59,10 @@ async function fakeVault(page: Page, locale: string) {
           return;
         // Files shared to myCarlos are looked for on focus (#49): none.
         if (command === "received_list") return [];
+        // A document's details ask whether its PDF has its own password.
+        if (command === "vault_is_locked_pdf") return false;
+        // The recovery key's steps show the key's label.
+        if (command === "vault_recovery_key_label") return "FAKE-KEY1";
         // A made-up key, in groups, only for the dialog to show.
         if (command === "vault_recovery_key_begin")
           return Array.from({ length: 8 }, (_, i) => `FAKE${i}`).join("-");
