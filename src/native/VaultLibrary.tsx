@@ -52,6 +52,7 @@ import {
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { folderPath, folderSubtree, recordPath } from "./folderTree";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import { useLibraryFocus } from "./useLibraryFocus";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 import {
   OLD_BACKUPS_EXPOSED,
@@ -641,12 +642,26 @@ export function VaultLibrary({
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const focusPageIfLost = () =>
-    window.setTimeout(() => {
-      const focused = document.activeElement;
-      if (!focused || focused === document.body || !focused.isConnected)
-        pageHeadingRef.current?.focus();
-    }, ANNOUNCE_DELAY_MS);
+  const libraryRef = useRef<HTMLDivElement | null>(null);
+  // Library actions put focus back only after keyboard use. The recovery key
+  // setup asks for it however it was closed, as its opener may be gone.
+  const focusPageIfLost = useLibraryFocus(
+    libraryRef,
+    pageHeadingRef,
+    Boolean(
+      busy ||
+        covered ||
+        activeRecord ||
+        readerRecordId ||
+        shownPhoto ||
+        renameTarget ||
+        cameraOpen ||
+        confirmation ||
+        confirmHideDamaged ||
+        recoverySetup,
+    ),
+    `${section}:${profileId}:${currentFolderId ?? ""}`,
+  );
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   useEffect(() => {
@@ -1250,7 +1265,6 @@ export function VaultLibrary({
         ];
       };
       setNotice(deferredText(() => said().filter(Boolean).join(" ")));
-      focusPageIfLost();
     });
 
   const moveRecord = (recordId: string, folderId: string | null) =>
@@ -1333,7 +1347,11 @@ export function VaultLibrary({
       : translateNow("interface.search.all", { location: rootLocationTitle });
 
   return (
-    <div className="evaluation-page native-vault-page" inert={covered}>
+    <div
+      ref={libraryRef}
+      className="evaluation-page native-vault-page"
+      inert={covered}
+    >
       {/* Polite, but not a second status line: the library has one. */}
       <p className="sr-only" aria-live="polite">
         {sharedAnnouncement}

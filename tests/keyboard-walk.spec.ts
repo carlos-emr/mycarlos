@@ -1,5 +1,5 @@
 import { messagePattern, translate } from "./support/fluent";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import {
   dialogByKeyboard,
   expectAnnounced,
@@ -265,43 +265,35 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expectOnlyFakedCommands(page);
 });
 
-// #90: a control that runs something is disabled while it runs, and
-// a focused control that is disabled loses the focus to the page itself;
-// nothing puts it back. A new screen or location (after unlocking, opening a
-// folder, or closing details whose document has moved away) also leaves it
-// on the page. Each place is checked, so the failure lists them all. #75
-// fixed one: after Move in a document's details, focus goes back to "Move to".
-// The other six (unlocking, an import, closing those details, a selection-bar
-// move, Move folder, opening a folder) still fail.
+// #90: actions retain their usable trigger or focus the new location heading.
+// #75's details Move -> Move to remains a positive control in this journey.
 test("focus is never left on the page itself after an action (#90)", async ({
   page,
 }) => {
-  test.fail(true, "#90: focus is left on the page after these actions");
   await fakeVault(page, "locked");
   await page.goto("/");
-  const lostAfter: string[] = [];
-  const after = async (what: string) => {
-    if (
-      await page.evaluate(
-        () =>
-          !document.activeElement || document.activeElement === document.body,
-      )
-    )
-      lostAfter.push(what);
-  };
+  const after = (what: string, target: Locator) =>
+    expect(target, `focus after ${what}`).toBeFocused();
+  const heading = page.getByRole("heading", {
+    name: "My records",
+    exact: true,
+  });
 
   await page.getByLabel("Passphrase", { exact: true }).focus();
   await page.keyboard.type("FAKE passphrase for the fake");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
-  await after("unlocking");
+  await after("unlocking", heading);
 
   await page.getByRole("button", { name: "Choose files to import" }).focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
-  await after("an import");
+  await after(
+    "an import",
+    page.getByRole("button", { name: "Choose files to import" }),
+  );
 
   await page
     .getByRole("button", { name: "FAKE Letter.pdf", exact: true })
@@ -315,10 +307,13 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(
     details.getByRole("definition").filter({ hasText: /^FAKE Results$/ }),
   ).toBeVisible();
-  await after("a move with Move in the details");
+  await after(
+    "a move with Move in the details",
+    details.getByRole("combobox", { name: "Move to" }),
+  );
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
-  await after("closing details whose document moved away");
+  await after("closing details whose document moved away", heading);
 
   await page
     .getByRole("button", {
@@ -331,7 +326,7 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(
     page.getByRole("combobox", { name: "Move selected to" }),
   ).toBeHidden();
-  await after("a move with the selection bar");
+  await after("a move with the selection bar", heading);
 
   await page.getByText("Move a folder with the keyboard").focus();
   await page.keyboard.press("Enter");
@@ -340,7 +335,7 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await page.getByRole("button", { name: "Move folder" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Move folder" })).toBeEnabled();
-  await after("Move folder");
+  await after("Move folder", page.getByRole("button", { name: "Move folder" }));
 
   await page
     .getByRole("button", {
@@ -351,9 +346,29 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(
     page.getByRole("heading", { name: "FAKE Letters", level: 1 }),
   ).toBeVisible();
-  await after("opening a folder");
+  await after(
+    "opening a folder",
+    page.getByRole("heading", { name: "FAKE Letters", exact: true }),
+  );
+  await expectOnlyFakedCommands(page);
+});
 
-  expect(lostAfter, "focus is left on the page itself after").toEqual([]);
+test("library focus recovery leaves the unlock recovery offer in control (#90)", async ({
+  page,
+}) => {
+  await fakeVault(page, "locked", { recoveryKey: false });
+  await page.goto("/");
+  await page
+    .getByLabel("Passphrase", { exact: true })
+    .fill("FAKE passphrase for the fake");
+  await page.keyboard.press("Enter");
+  const offer = page.getByRole("dialog");
+  await expect(offer).toBeVisible();
+  await expect(offer.locator(":focus")).toHaveCount(1);
+  await page.locator(".native-lock-button").focus();
+  // The library behind the offer is inert, so it cannot take that focus.
+  await expect(offer.locator(":focus")).toHaveCount(1);
+  await expectOnlyFakedCommands(page);
 });
 
 // #91 (fixed by #75): "Move to" used to move the document as soon as its
