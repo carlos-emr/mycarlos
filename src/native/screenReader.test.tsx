@@ -1,6 +1,6 @@
 import { humanText, visibleText } from "../test/humanText";
 import { virtual } from "@guidepup/virtual-screen-reader";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -299,7 +299,7 @@ describe("the history, as a screen reader reads it", () => {
       />,
     );
     await virtual.start({ container });
-    finish(view(true));
+    await act(async () => finish(view(true)));
     // The status line was there while checking, so its result is read out.
     await vi.waitFor(async () =>
       expect((await virtual.spokenPhraseLog()).map(visibleText)).toContainEqual(
@@ -334,7 +334,11 @@ describe("the history, as a screen reader reads it", () => {
     // that); here it is also heard as an alert, before the events.
     expectHeardInOrder(await readThrough(container), [
       /^alert$/,
-      /damaged/,
+      phrase(
+        en("interface.history.damaged", {
+          date: new Date(Date.UTC(2026, 9, 1, 12, 2)).toLocaleString(),
+        }),
+      ),
       phrase("heading, ", en("interface.history.event.imported"), ", level 2"),
     ]);
   });

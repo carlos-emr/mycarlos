@@ -576,6 +576,8 @@ h1, h2, p { margin: 0; }
 .audit-history-entry dl > div { display: grid; grid-template-columns: minmax(110px, 0.3fr) 1fr; gap: 10px; }
 .audit-history-entry dt { color: var(--ink-soft); }
 .audit-history-entry dd { margin: 0; overflow-wrap: anywhere; }
+/* Beside an error or a damaged, empty history the status line is empty: no room. */
+.audit-history .status-line:empty { min-height: 0; margin-bottom: 0; }
 .old-backups-guide {
   margin-top: 10px;
   padding: 11px 13px;
