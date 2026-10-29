@@ -1225,6 +1225,12 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .portal-documents label { display: grid; gap: .35rem; margin-block: .75rem; }
 .portal-documents input, .portal-documents textarea, .portal-documents select { max-width: 100%; min-width: 0; width: 100%; box-sizing: border-box; font: inherit; }
 .portal-link input[readonly], .portal-link textarea { overflow-wrap: anywhere; font-family: monospace; }
+/* Clinic documents lists working links only; earlier attempts and each card's device code and
+   fingerprint wait behind a button and a disclosure. */
+.portal-device-details { margin-block: .75rem; }
+.portal-device-details > summary { cursor: pointer; font-weight: 700; }
+.portal-device-details[open] > summary { margin-bottom: .5rem; }
+.portal-earlier-toggle { margin-block: .25rem 1rem; }
 .portal-address { overflow-wrap: anywhere; }
 .portal-documents .native-inline-form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; margin-block-start: .75rem; }
 .portal-documents .native-inline-form label { grid-column: auto; }

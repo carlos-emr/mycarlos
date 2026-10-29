@@ -1291,6 +1291,14 @@ portal-deviceCode = 裝置代碼
 
 portal-deviceName = 此裝置的名稱
 
+portal-deviceDetailsShow = 顯示裝置詳細資料
+
+portal-deviceDetailsHide = 隱藏裝置詳細資料
+
+portal-earlierShow = 顯示先前的 { $count } 次嘗試
+
+portal-earlierHide = 隱藏先前的嘗試
+
 portal-errorAddress = 請輸入入口網站的 HTTPS 網址，不要包含使用者名稱、密碼、查詢參數或片段識別碼。
 
 portal-errorCancelled = 保險庫已鎖定，因此連結已停止。請先在入口網站的「Linked devices」（已連結的裝置）頁面查看，再重試。
