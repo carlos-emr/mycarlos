@@ -1451,6 +1451,18 @@ portal-deviceCode = Code de l’appareil
 
 portal-deviceName = Nom de cet appareil
 
+portal-deviceDetailsShow = Afficher les détails de l’appareil
+
+portal-deviceDetailsHide = Masquer les détails de l’appareil
+
+portal-earlierShow =
+    { $count ->
+    [one] Afficher { $count } tentative précédente
+    *[other] Afficher { $count } tentatives précédentes
+    }
+
+portal-earlierHide = Masquer les tentatives précédentes
+
 portal-errorAddress = Saisissez l’adresse HTTPS du portail sans nom d’utilisateur, mot de passe, paramètres de requête ni fragment.
 
 portal-errorCancelled = L’association s’est arrêtée parce que le coffre-fort s’est verrouillé. Consultez les appareils associés dans le portail avant de réessayer.
