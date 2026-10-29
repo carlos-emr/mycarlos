@@ -27,12 +27,12 @@ export function PortalDocuments({
   const { locale, t } = useI18n();
   const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
-  // The patient's own name for this device. Until they change it, the name
-  // is the default in the language in use ("myCarlos on Windows").
-  const [device, setDevice] = useState<string | null>(null);
+  // The name the patient typed for this device, if any. Until they type one,
+  // `device` is the default in the language in use ("myCarlos on Windows").
+  const [typedDevice, setDevice] = useState<string | null>(null);
   const [platformName, setPlatformName] = useState<string | null>(null);
-  const deviceName =
-    device ??
+  const device =
+    typedDevice ??
     (platformName ? formatDeviceName(locale, platformName) : "myCarlos");
   const [person, setPerson] = useState("");
   const [copyState, setCopyState] = useState("");
@@ -146,7 +146,7 @@ export function PortalDocuments({
         await bridge.linkPortal!({
           portalBase: address,
           code,
-          deviceName,
+          deviceName: device,
           profileId: person || null,
         });
         // The one-use code is not retained after this attempt.
@@ -193,7 +193,7 @@ export function PortalDocuments({
           {t("portal.deviceName")}
           <input
             required
-            value={deviceName}
+            value={device}
             maxLength={64}
             onChange={(e) => setDevice(e.target.value)}
             disabled={disabled}
