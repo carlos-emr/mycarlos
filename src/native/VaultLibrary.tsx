@@ -791,11 +791,26 @@ export function VaultLibrary({
   // A shared file an add refused as not a PDF, marked in the list.
   // Said politely when files are added to Shared with me (#61).
   const [sharedAnnouncement, setSharedAnnouncement] = useTextState();
-  // What the polite line said as Rename opened, kept while it is open: text
-  // already there when a live region shows again is never read out, and a
-  // change after Rename closes is (#121).
+  // News for the polite line waits while Rename is open, and a moment after
+  // it closes: until then the line is outside the dialog's modal tree, and
+  // then focus returning is read out first (see announce.ts). What the line
+  // said as Rename opened is kept, so it is not read out again (#121).
+  const [holdingNews, setHoldingNews] = useState(false);
+  useEffect(() => {
+    if (renaming) {
+      setHoldingNews(true);
+      return;
+    }
+    if (!holdingNews) return;
+    const timer = window.setTimeout(
+      () => setHoldingNews(false),
+      ANNOUNCE_DELAY_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [renaming, holdingNews]);
+  const holdNews = renaming || holdingNews;
   const announcedBeforeRename = useRef(sharedAnnouncement);
-  if (!renaming) announcedBeforeRename.current = sharedAnnouncement;
+  if (!holdNews) announcedBeforeRename.current = sharedAnnouncement;
   const sharedSeen = useRef(0);
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
@@ -1410,7 +1425,7 @@ export function VaultLibrary({
           Rename is open it keeps what it said: news is not about the dialog,
           and is read out once Rename closes (#121). */}
       <p className="sr-only" aria-live="polite">
-        {renaming ? announcedBeforeRename.current : sharedAnnouncement}
+        {holdNews ? announcedBeforeRename.current : sharedAnnouncement}
       </p>
       <div
         className="evaluation-banner"

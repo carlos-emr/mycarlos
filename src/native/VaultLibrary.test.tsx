@@ -990,6 +990,11 @@ describe("VaultLibrary for a screen reader (#121)", () => {
 
   it("takes the focus to the new place's heading when the reader opens one, by key or by pointer", async () => {
     const user = userEvent.setup();
+    // The library opens after a pointer press, so #111's recovery on entry
+    // (keyboard users only) leaves the focus alone.
+    document.body.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true }),
+    );
     renderLibrary();
     const sidebar = screen.getByRole("navigation", {
       name: humanText("Record library"),
@@ -1183,6 +1188,10 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     fireEvent.click(
       within(dialog).getByRole("button", { name: humanText("Cancel") }),
     );
+    // Not as Rename closes, while focus returning is read out, but a moment
+    // after.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(polite()).toHaveTextContent("");
     await vi.waitFor(() => expect(polite()).toHaveHumanTextContent(added));
   });
 

@@ -303,6 +303,23 @@ describe("library focus recovery", () => {
     expect(elsewhere).toHaveFocus();
   });
 
+  it("takes a late opened place to its heading when focus is still on the control that opened it (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    // A control that stays enabled while the library is busy, as the
+    // sidebar's places do.
+    const opener = screen.getByRole("button", { name: "Elsewhere" });
+    opener.focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
   it("takes a late opened place to its heading when nothing has focus by then (#121)", () => {
     const { rerender } = render(<Library />);
     frame();

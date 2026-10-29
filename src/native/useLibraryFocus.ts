@@ -82,6 +82,8 @@ export function useLibraryFocus(
   // That place came while the library was busy or covered: by the time it is
   // free, the reader may have moved on.
   const placeLate = useRef(false);
+  // What had focus as the place was asked for: the control that opened it.
+  const opener = useRef<Element | null>(null);
   useEffect(() => {
     shown.current = location;
   }, [location]);
@@ -134,30 +136,23 @@ export function useLibraryFocus(
         ).some(available)
       )
         return;
-      if (opened && !late) {
-        // Over the control that opened it too: that one still names the old
-        // place, or none.
-        const target = heading.current;
-        if (target && library.contains(target) && available(target))
-          target.focus();
-        return;
-      }
-      // A place reached while the library was busy or covered is like the end
-      // of an action: focus the reader has put elsewhere since stays there.
-      if (
-        !(byKey || asked || opened) ||
-        (focused instanceof Element &&
-          focused !== document.body &&
-          focused !== document.documentElement &&
-          available(focused))
-      )
-        return;
+      const focusedElsewhere =
+        focused instanceof Element &&
+        focused !== document.body &&
+        focused !== document.documentElement &&
+        available(focused);
       if (opened) {
+        // Over the control that opened it too: that one still names the old
+        // place, or none. A place reached while the library was busy or
+        // covered is like the end of an action: focus the reader has put on
+        // something else since stays there.
+        if (late && focusedElsewhere && focused !== opener.current) return;
         const target = heading.current;
         if (target && library.contains(target) && available(target))
           target.focus();
         return;
       }
+      if (!(byKey || asked) || focusedElsewhere) return;
       const previous = trigger.current;
       const target =
         previous && library.contains(previous) && available(previous)
@@ -175,6 +170,7 @@ export function useLibraryFocus(
   const openedPlace = useCallback((next: string) => {
     place.current = next === shown.current ? null : next;
     placeLate.current = false;
+    opener.current = document.activeElement;
   }, []);
   return { recover, openedPlace };
 }
