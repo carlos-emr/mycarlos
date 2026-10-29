@@ -616,8 +616,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Cette photo est déjà dan
 
 interface-VaultLibrary-topLevel = Niveau supérieur
 
-interface-VaultLibrary-unlockedLockNow = Déverrouillé · Verrouiller maintenant
-
 interface-VaultLibrary-working = Opération en cours…
 
 kit-keep = Conservez-la dans un endroit privé, loin de l’appareil. Toute personne qui a cette clé et une copie de votre coffre-fort peut l’ouvrir. Si vous configurez une nouvelle clé de récupération, celle-ci n’ouvre plus le coffre-fort sur cet appareil.
@@ -677,6 +675,12 @@ library-items =
     [many] { $count } d’éléments visibles dans la bibliothèque
     *[other] { $count } éléments visibles dans la bibliothèque
     }
+
+library-location-documents = Dans { $place } : { $documents }.
+
+library-location-summary = Dans { $place } : { $folders }, { $documents }.
+
+library-lock-unlocked = Déverrouillé
 
 library-noMatch-help = Essayez une autre recherche.
 

@@ -915,12 +915,19 @@ h1, h2, p { margin: 0; }
 /* #67: all choices in view, and words on every button. */
 .native-sort { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .native-sort .icon { width: 16px; height: 16px; }
-.native-sort-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: 0; padding: 0; border: 0; }
-.native-sort-choice legend { float: left; margin-right: 2px; padding: 0; color: var(--ink-soft); font-weight: 700; }
-.native-sort-choice label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--ink); font-weight: 600; cursor: pointer; }
-.native-sort-choice input { flex: none; width: 18px; height: 18px; margin: 0; }
-/* With words on List and Grid, the radios and the segment can need more than a
-   narrow window's width, so the segment moves to its own line, whole. */
+/* #121: "Sort by" stays in view before its choices, each its own Tab stop. With
+   large text on a narrow window, the choices go under the label and then under
+   each other, each whole: the window hides what runs past its edge. A 1px gap
+   over the line colour draws the dividers both across and down. */
+.native-sort-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; max-width: 100%; }
+.native-sort-label { color: var(--ink-soft); font-weight: 700; }
+.native-sort-segment { flex-wrap: wrap; gap: 1px; max-width: 100%; background: var(--line); }
+.native-sort-segment button { flex: 1 1 auto; width: auto; min-width: 44px; max-width: 100%; min-height: 44px; padding-inline: 12px; background: var(--paper); color: var(--ink); font: inherit; font-weight: 600; }
+.native-sort-segment button + button { border-left: 0; }
+/* Drawn inside the button, so the segment's rounded corners do not cut it off. */
+.native-sort-segment button:focus-visible { outline-offset: -4px; }
+/* With words on List and Grid, the sort choices and the view segment can need
+   more than a narrow window's width, so the segment moves to its own line, whole. */
 .native-vault-page .view-controls { flex-wrap: wrap; row-gap: 0; }
 .native-view-segment { flex: none; }
 .native-view-segment button { flex: none; grid-auto-flow: column; gap: 6px; width: auto; min-width: 44px; min-height: 44px; padding-inline: 12px; font: inherit; font-weight: 600; }
@@ -1141,6 +1148,9 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
      Keep their original colours, without opting any app controls out. */
   .paper-preview, .preview-paper { forced-color-adjust: none; }
   :focus-visible, .vault-card input:focus { outline: 3px solid Highlight; outline-offset: 2px; }
+  /* A selected segment button already has a Highlight ring; with focus it gets a
+     different one, so a keyboard user can tell focus from selection (#121). */
+  .native-vault-page .segment button[aria-pressed="true"]:focus-visible { outline: 3px solid CanvasText; outline-offset: -6px; }
   .text-size-box input[aria-invalid="true"] { outline: 2px solid CanvasText; }
   .search:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
   button:disabled, .button[aria-disabled="true"] { opacity: 1; color: GrayText; }

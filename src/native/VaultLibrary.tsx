@@ -12,7 +12,14 @@ import type { PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Icon } from "../Icon";
 import {
   isWrongPdfPassword,
@@ -614,6 +621,7 @@ export function VaultLibrary({
   }, [profileId]);
   /** Opens a person's top-level folder, or one of their folders. */
   const openPerson = (person: string, folderId: string | null = null) => {
+    openedPlace(`records:${person}:${folderId ?? ""}`);
     setSection("records");
     if (person === profileId) {
       setCurrentFolderId(folderId);
@@ -642,10 +650,15 @@ export function VaultLibrary({
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const locationSummaryId = useId();
+  // Rename keeps the whole page behind it from a screen reader: the parts
+  // inert for every dialog, and the banner and polite line as well (#121).
+  const renaming = Boolean(renameTarget);
+  const sortLabelId = useId();
   const libraryRef = useRef<HTMLDivElement | null>(null);
   // Library actions put focus back only after keyboard use. The recovery key
   // setup asks for it however it was closed, as its opener may be gone.
-  const focusPageIfLost = useLibraryFocus(
+  const { recover: focusPageIfLost, openedPlace } = useLibraryFocus(
     libraryRef,
     pageHeadingRef,
     Boolean(
@@ -662,6 +675,12 @@ export function VaultLibrary({
     ),
     `${section}:${profileId}:${currentFolderId ?? ""}`,
   );
+  /** Opens Shared with me, from the sidebar or a phone's row of places. */
+  const openShared = () => {
+    openedPlace(`shared:${profileId}:`);
+    setSection("shared");
+    setCurrentFolderId(null);
+  };
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   useEffect(() => {
@@ -1340,6 +1359,25 @@ export function VaultLibrary({
   const locationTitle = inShared
     ? rootLocationTitle
     : (currentFolder?.name ?? rootLocationTitle);
+  // Read with the heading when it takes focus: where the reader is, with what
+  // the place holds, in words a screen reader says plainly (#121).
+  const documentCount = translateNow("interface.count.documents", {
+    count: visibleRecords.length,
+  });
+  const locationSummary = inShared
+    ? translateNow("library.location.documents", {
+        place: rootLocationTitle,
+        documents: documentCount,
+      })
+    : translateNow("library.location.summary", {
+        place: currentFolder
+          ? folderPath(folderById, currentFolder.id, rootLocationTitle)
+          : rootLocationTitle,
+        folders: translateNow("interface.count.folders", {
+          count: visibleFolders.length,
+        }),
+        documents: documentCount,
+      });
   const searchLabel = inShared
     ? translateNow("interface.VaultLibrary.searchSharedWithMe")
     : currentFolder
@@ -1352,11 +1390,22 @@ export function VaultLibrary({
       className="evaluation-page native-vault-page"
       inert={covered}
     >
-      {/* Polite, but not a second status line: the library has one. */}
-      <p className="sr-only" aria-live="polite">
+      {/* Polite, but not a second status line: the library has one. While
+          Rename is open, what it says next is not about the dialog (#121). */}
+      <p
+        className="sr-only"
+        aria-live="polite"
+        inert={renaming}
+        aria-hidden={renaming || undefined}
+      >
         {sharedAnnouncement}
       </p>
-      <div className="evaluation-banner" role="note">
+      <div
+        className="evaluation-banner"
+        role="note"
+        inert={renaming}
+        aria-hidden={renaming || undefined}
+      >
         <strong>{translateNow("frame.banner.title")}</strong>
         <span>
           {translateNow(
@@ -1373,6 +1422,7 @@ export function VaultLibrary({
         >
           <header
             className="titlebar"
+            aria-hidden={renaming || undefined}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
@@ -1393,7 +1443,15 @@ export function VaultLibrary({
               onClick={() => void lockAndConceal()}
             >
               <Icon name="lock-open" />
-              {translateNow("interface.VaultLibrary.unlockedLockNow")}
+              {/* Named by its words "Lock now", so voice control's "click
+                  Lock now" works in every language (WCAG 2.5.3); the state
+                  before them is not read out with the button (#121). */}
+              <span>
+                <span aria-hidden="true">
+                  {translateNow("library.lock.unlocked")} ·{" "}
+                </span>
+                {translateNow("security.lockNow")}
+              </span>
             </button>
           </header>
 
@@ -1402,6 +1460,7 @@ export function VaultLibrary({
           <nav
             className="mobile-section-picker native-section-tabs"
             aria-label={translateNow("interface.VaultLibrary.section")}
+            aria-hidden={renaming || undefined}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
@@ -1440,6 +1499,7 @@ export function VaultLibrary({
 
           <div
             className="app-body"
+            aria-hidden={renaming || undefined}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
@@ -1478,10 +1538,7 @@ export function VaultLibrary({
                   .length,
                 folders: snapshot.folders.length,
               }}
-              onOpenShared={() => {
-                setSection("shared");
-                setCurrentFolderId(null);
-              }}
+              onOpenShared={openShared}
               onOpenSecurity={openSecurity}
               onOpenPreferences={() => setSection("preferences")}
             />
@@ -1532,10 +1589,7 @@ export function VaultLibrary({
                           dragOver(event, "breadcrumb:root")
                         }
                         onDrop={(event) => dropInto(event, null)}
-                        onClick={() => {
-                          setSection("records");
-                          setCurrentFolderId(null);
-                        }}
+                        onClick={() => openPerson(profileId, null)}
                       >
                         {profile ? personFolderName(profile, people) : ""}
                       </button>
@@ -1573,10 +1627,7 @@ export function VaultLibrary({
                       className="button"
                       type="button"
                       aria-current={inShared ? "page" : undefined}
-                      onClick={() => {
-                        setSection("shared");
-                        setCurrentFolderId(null);
-                      }}
+                      onClick={openShared}
                     >
                       <Icon name="letter" />
                       {translateNow("interface.LibrarySidebar.sharedWithMe")}
@@ -1591,9 +1642,22 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                    <h1
+                      ref={pageHeadingRef}
+                      tabIndex={-1}
+                      aria-describedby={locationSummaryId}
+                    >
                       {locationTitle}
                     </h1>
+                    {/* Only the heading's description: the line under it
+                        shows the same counts. */}
+                    <p
+                      className="sr-only"
+                      id={locationSummaryId}
+                      aria-hidden="true"
+                    >
+                      {locationSummary}
+                    </p>
                     <p>
                       {inShared
                         ? normalizedQuery
@@ -1942,24 +2006,31 @@ export function VaultLibrary({
                     )}
                   </span>
                   <div className="view-controls">
-                    {/* Both choices in view, with words (#67). */}
-                    <fieldset className="native-sort-choice">
-                      <legend>
+                    {/* Both choices in view, with words (#67), each its own
+                        Tab stop under a label that stays in view and names
+                        the group (#121). */}
+                    <div
+                      className="native-sort-choice"
+                      role="group"
+                      aria-labelledby={sortLabelId}
+                    >
+                      <span className="native-sort-label" id={sortLabelId}>
                         {translateNow("interface.VaultLibrary.sortBy")}
-                      </legend>
-                      {SORT_CHOICES.map(([value, label]) => (
-                        <label key={value}>
-                          <input
-                            type="radio"
-                            name="native-sort"
-                            value={value}
-                            checked={sort === value}
-                            onChange={() => setSort(value)}
-                          />
-                          {translateNow(label)}
-                        </label>
-                      ))}
-                    </fieldset>
+                      </span>
+                      <span className="segment native-sort-segment">
+                        {SORT_CHOICES.map(([value, label]) => (
+                          <button
+                            className={sort === value ? "selected" : ""}
+                            type="button"
+                            key={value}
+                            aria-pressed={sort === value}
+                            onClick={() => setSort(value)}
+                          >
+                            {translateNow(label)}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
                     <span
                       className="segment native-view-segment"
                       aria-label={translateNow(
@@ -2093,7 +2164,7 @@ export function VaultLibrary({
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
-                  onOpenFolder={setCurrentFolderId}
+                  onOpenFolder={(folderId) => openPerson(profileId, folderId)}
                   onOpenRecord={(recordId) => {
                     // The details dialog repeats the notice. One left over from
                     // an earlier operation would read as being about this record.
