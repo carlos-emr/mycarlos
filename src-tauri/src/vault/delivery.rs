@@ -3498,6 +3498,44 @@ mod approval_recovery_tests {
             Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
         ));
     }
+    /// root-53's review: a "not found" for one receipt (a delivery the portal
+    /// no longer has) says nothing about the device. A device whose receipt
+    /// got one, and whose check then failed, is not marked gone, even though
+    /// the same portal answered another device of this vault.
+    #[test]
+    fn should_not_mark_a_device_gone_for_a_receipt_not_found() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Receipt Not Found Patient", 1)
+            .unwrap();
+        let (with_receipt, _, _) = add_signed_pending_delivery(&store);
+        // Another device of this vault on the same portal, which answers.
+        let (_, mut other, _) = portal_approval::first_fixture();
+        other.approval = None;
+        other.portal_base = with_receipt.portal_base.clone();
+        add_link(&store, &other);
+        let posted = Mutex::new(0);
+        for _ in 0..2 {
+            crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, method, _, _, _, _, _| {
+                    if l.id == other.id {
+                        return Ok(empty_page());
+                    }
+                    assert_eq!(method, "POST");
+                    *posted.lock().unwrap() += 1;
+                    Ok(not_found_page())
+                },
+            )
+            .unwrap();
+            assert!(!store.link_gone(with_receipt.id));
+        }
+        // Asked again on the second check.
+        assert_eq!(*posted.lock().unwrap(), 2);
+    }
     /// The control: "not found" from a portal that answered no device of
     /// this vault may be a portal that is not there; it is asked again.
     #[test]
