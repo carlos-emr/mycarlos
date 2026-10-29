@@ -300,13 +300,18 @@ describe("the history, as a screen reader reads it", () => {
     );
     await virtual.start({ container });
     await act(async () => finish(view(true)));
-    // The status line was there while checking, so its result is read out.
-    await vi.waitFor(async () =>
-      expect((await virtual.spokenPhraseLog()).map(visibleText)).toContainEqual(
-        expect.stringMatching(
-          phrase("polite: ", en("interface.history.events", { count: 2 })),
+    // The status line was there while checking, so its result is read out
+    // (after the announce delay, hence the longer wait).
+    await vi.waitFor(
+      async () =>
+        expect(
+          (await virtual.spokenPhraseLog()).map(visibleText),
+        ).toContainEqual(
+          expect.stringMatching(
+            phrase("polite: ", en("interface.history.events", { count: 2 })),
+          ),
         ),
-      ),
+      { timeout: 2000 },
     );
     await virtual.stop();
     expectHeardInOrder(await readThrough(container), [

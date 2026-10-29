@@ -9,7 +9,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import type {
   AuditHistoryEntry,
   AuditHistoryView,
@@ -47,6 +47,14 @@ function pending<T>() {
 }
 /** A date as the computer writes it (D130): the language myCarlos uses does not change it. */
 const shownDate = (ms: number) => new Date(ms).toLocaleString();
+/** The whole text, not a part of it ("1 event", never "11 events"). */
+const whole = (text: string) =>
+  new RegExp(`^${visibleText(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+/** Waits that include the status line's announce delay get more room. */
+const HELD = { timeout: 2000 };
+const ONE_EVENT = whole(
+  translate("en", "interface.history.events", { count: 1 }),
+);
 /** A whole history, as native code returns it when every piece checks out. */
 const complete = (entries: AuditHistoryEntry[]): AuditHistoryView => ({
   entries,
@@ -85,12 +93,16 @@ describe("AuditHistory verified native results", () => {
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
     await act(async () => request.resolve(complete([])));
     // The status line says what was found, after the announce delay.
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveHumanTextContent(
-        "There are no history events.",
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          whole("There are no history events."),
+        ),
+      HELD,
     );
     expect(screen.getByText("There are no history events.")).toBeVisible();
+    // The page's only message keeps a plain paragraph's look.
+    expect(screen.getByRole("status")).not.toHaveClass("status-line");
     expect(shown.bridge.history).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: /Back to Security/i }));
     expect(shown.onBack).toHaveBeenCalledOnce();
@@ -142,8 +154,12 @@ describe("AuditHistory verified native results", () => {
     ).toHaveHumanTextContent(shownDate(1768478400000));
     expect(view.container.querySelector("img")).toBeNull();
     expect(rows).toEqual(original);
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveHumanTextContent("2 events"),
+    await waitFor(
+      () =>
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          whole("2 events"),
+        ),
+      HELD,
     );
   });
 
@@ -162,10 +178,12 @@ describe("AuditHistory verified native results", () => {
       expect(screen.getByRole("heading", { level: 2 })).toHaveHumanTextContent(
         translate(locale, "interface.history.event.created"),
       );
-      await waitFor(() =>
-        expect(screen.getByRole("status")).toHaveHumanTextContent(
-          translate(locale, "interface.history.events", { count: 1 }),
-        ),
+      await waitFor(
+        () =>
+          expect(screen.getByRole("status")).toHaveHumanTextContent(
+            whole(translate(locale, "interface.history.events", { count: 1 })),
+          ),
+        HELD,
       );
       expect(screen.getByText(shownDate(entry().atMs))).toBeVisible();
       expect(shown.bridge.history).toHaveBeenCalledOnce();
@@ -189,7 +207,27 @@ describe("AuditHistory verified native results", () => {
         "Checking and reading the complete history…",
       );
       await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
-      expect(screen.getByRole("status")).toHaveHumanTextContent("1 event");
+      expect(screen.getByRole("status")).toHaveHumanTextContent(ONE_EVENT);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads out a result that arrives after that at once", async () => {
+    vi.useFakeTimers();
+    try {
+      const request = pending<AuditHistoryView>();
+      render(
+        <AuditHistory
+          {...props(bridge(vi.fn().mockReturnValue(request.promise)))}
+        />,
+      );
+      await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Checking and reading the complete history…",
+      );
+      await act(async () => request.resolve(complete([entry()])));
+      expect(screen.getByRole("status")).toHaveHumanTextContent(ONE_EVENT);
     } finally {
       vi.useRealTimers();
     }
@@ -204,6 +242,7 @@ describe("AuditHistory verified native results", () => {
     );
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.getByRole("status").getBoundingClientRect().height).toBe(0);
     expect(document.body).not.toHaveHumanTextContent("/private/vault");
     await act(async () => setLocaleOverride("fr"));
     expect(alert).toHaveHumanTextContent(
@@ -253,6 +292,15 @@ describe("AuditHistory verified native results", () => {
         if (oldResult === "rows") old.resolve(complete([entry()]));
         else old.reject(unverified);
       });
+      // The first session's count has been read out before the switch.
+      if (oldResult === "rows")
+        await waitFor(
+          () =>
+            expect(screen.getByRole("status")).toHaveHumanTextContent(
+              ONE_EVENT,
+            ),
+          HELD,
+        );
       const nextProps = props(bridge(vi.fn().mockReturnValue(next.promise)));
       view.rerender(<AuditHistory {...nextProps} />);
       expect(screen.queryByText("FAKE Avery")).not.toBeInTheDocument();
@@ -262,6 +310,9 @@ describe("AuditHistory verified native results", () => {
         next.resolve(complete([entry({ name: "FAKE Blake" })])),
       );
       expect(screen.getByText("FAKE Blake")).toBeVisible();
+      // The status line is long in place by now: the new count shows at once.
+      if (oldResult === "rows")
+        expect(screen.getByRole("status")).toHaveHumanTextContent(ONE_EVENT);
       expect(nextProps.onLock).not.toHaveBeenCalled();
     },
   );
@@ -375,8 +426,12 @@ describe("AuditHistory damaged history (D129)", () => {
     expect(
       screen.queryByText("Events here can't be checked and aren't shown."),
     ).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveHumanTextContent("2 events"),
+    await waitFor(
+      () =>
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          whole("2 events"),
+        ),
+      HELD,
     );
     // The warning comes first: before the count, and before the list.
     for (const after of [screen.getByRole("status"), screen.getByRole("list")])
@@ -424,8 +479,12 @@ describe("AuditHistory damaged history (D129)", () => {
       "Vault opened",
       "Vault created",
     ]);
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveHumanTextContent("4 events"),
+    await waitFor(
+      () =>
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          whole("4 events"),
+        ),
+      HELD,
     );
     await act(async () => setLocaleOverride("pl"));
     expect(alert).toHaveHumanTextContent(
@@ -485,10 +544,10 @@ describe("AuditHistory damaged history (D129)", () => {
       "Part of this history is damaged. Its events can't be checked, so none are shown.",
     );
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
-    // Once checked, the status line is empty: not "checking", not "no events".
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toBeEmptyDOMElement(),
-    );
+    // The status line is empty at once, not "checking" or "no events", and
+    // takes no room.
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.getByRole("status").getBoundingClientRect().height).toBe(0);
     expect(
       screen.queryByText("There are no history events."),
     ).not.toBeInTheDocument();

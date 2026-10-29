@@ -165,16 +165,15 @@ export function AuditHistory({
   }, []);
   const total = view ? view.entries.length + view.laterEntries.length : 0;
   // Beside an error, or a damaged history with nothing that checks out, the
-  // alert says it all and the status line is empty.
-  const status: "loading" | "events" | "empty" | "none" = error
-    ? "none"
-    : view === null || !settled
-      ? "loading"
-      : total > 0
-        ? "events"
-        : view.complete
-          ? "empty"
-          : "none";
+  // alert says it all and the status line is empty at once.
+  const status: "loading" | "events" | "empty" | "none" =
+    error || (view !== null && !view.complete && total === 0)
+      ? "none"
+      : view === null || !settled
+        ? "loading"
+        : total > 0
+          ? "events"
+          : "empty";
   useEffect(() => {
     let current = true;
     void bridge.history().then(
