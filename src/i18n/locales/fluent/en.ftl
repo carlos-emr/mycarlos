@@ -1419,6 +1419,18 @@ portal-deviceCode = Device code
 
 portal-deviceName = Name for this device
 
+portal-deviceDetailsShow = Show device details
+
+portal-deviceDetailsHide = Hide device details
+
+portal-earlierShow =
+    { $count ->
+    [one] Show { $count } earlier attempt
+    *[other] Show { $count } earlier attempts
+    }
+
+portal-earlierHide = Hide earlier attempts
+
 portal-errorAddress = Enter the portal HTTPS address without a username, password, query, or fragment.
 
 portal-errorCancelled = Linking stopped because the vault locked. Check Linked devices in the portal before trying again.

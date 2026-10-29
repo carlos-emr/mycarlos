@@ -1483,6 +1483,20 @@ portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
 
+portal-deviceDetailsShow = Pokaż szczegóły urządzenia
+
+portal-deviceDetailsHide = Ukryj szczegóły urządzenia
+
+portal-earlierShow =
+    { $count ->
+    [one] Pokaż { $count } wcześniejszą próbę
+    [few] Pokaż { $count } wcześniejsze próby
+    [many] Pokaż { $count } wcześniejszych prób
+    *[other] Pokaż { $count } wcześniejszej próby
+    }
+
+portal-earlierHide = Ukryj wcześniejsze próby
+
 portal-errorAddress = Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.
 
 portal-errorCancelled = Łączenie zostało przerwane, ponieważ sejf został zablokowany. Sprawdź połączone urządzenia w portalu przed kolejną próbą.

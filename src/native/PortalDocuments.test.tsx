@@ -236,16 +236,109 @@ describe("native clinic document controls", () => {
     await act(async () => {
       fireEvent.submit(submittedForm);
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText(translate("en", "portal.incomplete")),
-      ).toBeVisible(),
-    );
+    // The attempt is kept, and listed with the earlier attempts: focus goes
+    // to the button that shows them.
+    const earlier = await screen.findByRole("button", {
+      name: translate("en", "portal.earlierShow", { count: 1 }),
+    });
+    await waitFor(() => expect(earlier).toHaveFocus());
+    expect(earlier).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByText(translate("en", "portal.incomplete")),
+    ).not.toBeInTheDocument();
+    fireEvent.click(earlier);
+    expect(earlier).toHaveAttribute("aria-expanded", "true");
+    expect(earlier).toHaveAccessibleName("Hide earlier attempts");
+    expect(
+      screen.getByText(translate("en", "portal.incomplete")),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Retry saved approval request" }),
     ).not.toBeInTheDocument();
     expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+  });
+
+  it("lists only working links; earlier attempts and device details wait behind buttons", async () => {
+    const attempt = (id: string): PortalLinkSummary => ({
+      ...link,
+      id,
+      incomplete: true,
+      clinicName: null,
+      approvalRequested: false,
+      deviceKeyId: `FAKE_${id}`,
+    });
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [attempt("first-try"), link, attempt("second-try")],
+      },
+    });
+    const user = userEvent.setup();
+    const incomplete = translate("en", "portal.incomplete");
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent),
+    ).toEqual(["FAKE Clinic"]);
+    expect(screen.queryByText(incomplete)).not.toBeInTheDocument();
+    // The device code and fingerprint wait behind Show device details.
+    expect(screen.getByLabelText("Device code")).not.toBeVisible();
+    await user.click(screen.getByText("Show device details"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Device code")).toBeVisible(),
+    );
+    expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+    expect(screen.getByText("Hide device details")).toBeVisible();
+    const earlier = screen.getByRole("button", {
+      name: translate("en", "portal.earlierShow", { count: 2 }),
+    });
+    expect(earlier).toHaveAttribute("aria-expanded", "false");
+    await user.click(earlier);
+    expect(earlier).toHaveAttribute("aria-expanded", "true");
+    expect(earlier).toHaveAccessibleName("Hide earlier attempts");
+    expect(screen.getAllByText(incomplete)).toHaveLength(2);
+    await user.click(earlier);
+    expect(screen.queryByText(incomplete)).not.toBeInTheDocument();
+  });
+
+  it("lists a device a check found removed with the earlier attempts, for the session", async () => {
+    const approved: PortalLinkSummary = {
+      ...link,
+      clinicApproved: true,
+      approvalStatus: "accepted",
+    };
+    const waits = new PortalWaits();
+    const { bridge } = fixture({
+      snapshot: { ...snapshot, portalLinks: [approved] },
+      waits,
+    });
+    vi.mocked(bridge.checkDocuments!).mockResolvedValue({
+      added: 0,
+      refused: 0,
+      receiptsPending: 0,
+      issues: [
+        {
+          linkId: approved.id,
+          clinicName: "FAKE Clinic",
+          code: "portal_device_removed",
+        },
+      ],
+    });
+    expect(screen.getByRole("heading", { name: "FAKE Clinic" })).toBeVisible();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Check for new documents" }));
+    expect(
+      await screen.findByRole("button", {
+        name: translate("en", "portal.earlierShow", { count: 1 }),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "FAKE Clinic" }),
+    ).not.toBeInTheDocument();
+    expect(waits.isRemoved(approved.id)).toBe(true);
+    // Never saved: a lock forgets it with the waits.
+    waits.clear();
+    expect(waits.isRemoved(approved.id)).toBe(false);
   });
 
   it("still reports a completion after the clinic view unmounts", async () => {
@@ -1255,6 +1348,14 @@ describe("automatic approval status checks (#131)", () => {
     expect(button("Retry saved approval request")).toBeEnabled();
     expect(button("Start a new approval request")).toBeEnabled();
     await pass(10_000);
+    // Said in the panel; the card goes to the earlier attempts.
+    expect(screen.getAllByText(removed)).toHaveLength(1);
+    expect(
+      screen.queryByRole("heading", { name: "FAKE Clinic" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      button(translate("en", "portal.earlierShow", { count: 1 })),
+    );
     expect(screen.getAllByText(removed)).toHaveLength(2);
     expect(button("Retry saved approval request")).toBeDisabled();
     expect(button("Start a new approval request")).toBeDisabled();

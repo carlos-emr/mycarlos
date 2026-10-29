@@ -1451,6 +1451,18 @@ portal-deviceCode = Código do dispositivo
 
 portal-deviceName = Nome deste dispositivo
 
+portal-deviceDetailsShow = Mostrar os detalhes do dispositivo
+
+portal-deviceDetailsHide = Ocultar os detalhes do dispositivo
+
+portal-earlierShow =
+    { $count ->
+    [one] Mostrar { $count } tentativa anterior
+    *[other] Mostrar { $count } tentativas anteriores
+    }
+
+portal-earlierHide = Ocultar as tentativas anteriores
+
 portal-errorAddress = Digite o endereço HTTPS do portal sem nome de usuário, senha, parâmetros de consulta ou fragmento.
 
 portal-errorCancelled = A vinculação foi interrompida porque o cofre foi bloqueado. Confira os dispositivos vinculados no portal antes de tentar novamente.

@@ -126,6 +126,11 @@ export function PortalDocuments({
     {},
   );
   const [codeIssues, setCodeIssues] = useState<Record<string, string>>({});
+  // Only working links are listed. Attempts that never finished, and devices
+  // a check found removed from their portal, wait behind a button; each
+  // card's device code and fingerprint wait behind "Show device details".
+  const [showEarlier, setShowEarlier] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState<Record<string, boolean>>({});
   const submitting = useRef(false);
   const codeRevision = useRef(0);
   const submittedRevision = useRef<number | null>(null);
@@ -152,11 +157,24 @@ export function PortalDocuments({
       shown.current = false;
     };
   }, [bridge]);
+  // A device's heading. A device listed with the earlier attempts while they
+  // are hidden has none: focus goes to the button that shows them, else to
+  // the panel's heading.
+  const focusDevice = (linkId: string) =>
+    (
+      document.getElementById(`portal-link-title-${linkId}`) ??
+      document.getElementById("portal-earlier-toggle") ??
+      document.getElementById("portal-title")
+    )?.focus();
   useEffect(() => {
     if (connecting || !focusLink) return;
-    const heading = document.getElementById(`portal-link-title-${focusLink}`);
-    if (!heading) return;
-    if (document.activeElement === document.body) heading.focus();
+    // A failed attempt is saved, and listed with the earlier attempts.
+    const saved = snapshot.portalLinks?.some((link) => link.id === focusLink);
+    const target =
+      document.getElementById(`portal-link-title-${focusLink}`) ??
+      (saved ? document.getElementById("portal-earlier-toggle") : null);
+    if (!target) return;
+    if (document.activeElement === document.body) target.focus();
     setFocusLink(null);
   }, [connecting, focusLink, snapshot.portalLinks]);
   useEffect(() => {
@@ -186,6 +204,13 @@ export function PortalDocuments({
   // check that finds nothing new says nothing; nor does the first check
   // confirming that the portal has a request the card already calls saved.
   const said = ({ before, after, recovery }: CheckChange) => {
+    // Kept for the session, so the device stays with the earlier attempts
+    // after this view is left and opened again.
+    if (
+      after.live?.kind === "failed" &&
+      hasVaultErrorCode(after.live.error, "portal_device_removed")
+    )
+      waits?.deviceRemoved(after.link.id);
     const focused = document.activeElement;
     if (
       focused &&
@@ -231,7 +256,7 @@ export function PortalDocuments({
     if (untilReadOnly && !readOnly) return;
     checkFocus.current = null;
     if (control.isConnected && !(control as HTMLButtonElement).disabled) return;
-    document.getElementById(`portal-link-title-${linkId}`)?.focus();
+    focusDevice(linkId);
   });
   // The control in a code form that had focus when its code was sent
   // (#141). While the clinic work runs it is disabled, and focus falls to the
@@ -259,7 +284,7 @@ export function PortalDocuments({
     codeFocus.current = null;
     if (!lost) return;
     if (control.isConnected) control.focus();
-    else document.getElementById(`portal-link-title-${linkId}`)?.focus();
+    else focusDevice(linkId);
   });
   const polling = useApprovalPolling({
     links,
@@ -458,6 +483,215 @@ export function PortalDocuments({
       polling.restart({ [link.id]: known });
     });
   };
+  const card = (link: PortalLinkSummary) => {
+    const live = polling.live[link.id];
+    // By the portal's clock, never this device's (#131).
+    const left = isAwaitingApproval(link) ? timeLeft(live, polling.now) : null;
+    // The latest check says the portal removed this device: neither a
+    // retry nor a new request can work until it is connected again.
+    const removed =
+      live?.kind === "failed" &&
+      hasVaultErrorCode(live.error, "portal_device_removed");
+    return (
+      <div className="portal-link" id={`portal-link-${link.id}`} key={link.id}>
+        <h3 id={`portal-link-title-${link.id}`} tabIndex={-1}>
+          {link.clinicName ?? link.portalBase}
+        </h3>
+        <p className="portal-address">{link.portalBase}</p>
+        <p>{stateText(cardState(link, live))}</p>
+        {left !== null && (
+          <p>
+            {left > 0
+              ? t("portal.approvalTimeLeft", {
+                  count: Math.ceil(left / 60_000),
+                })
+              : // A new request may start by the portal's clock;
+                // otherwise "checking" only while checks run.
+                link.approvalCanRestart
+                ? t("portal.approvalTimeOverRestart", {
+                    button: t("portal.restartApproval"),
+                  })
+                : t(
+                    polling.checking?.has(link.id)
+                      ? "portal.approvalTimeUp"
+                      : "portal.approvalTimeOver",
+                  )}
+          </p>
+        )}
+        {polling.checking?.has(link.id) && <p>{t("portal.autoChecking")}</p>}
+        {!readOnly &&
+          isAwaitingApproval(link) &&
+          ((polling.stopped && live?.kind !== "missing") ||
+            (live?.kind === "failed" &&
+              // Checking again cannot help a removed device.
+              !hasVaultErrorCode(live.error, "portal_device_removed"))) && (
+            <p>{t("portal.autoCheckStopped", { button: t("portal.check") })}</p>
+          )}
+        {!readOnly &&
+          !removed &&
+          !link.clinicApproved &&
+          link.approvalStatus === "challenge_ready" &&
+          link.approvalByCode &&
+          !link.approvalCodeSubmitted &&
+          !link.approvalCodeLocked &&
+          bridge.submitApprovalCode && (
+            <form
+              className="native-inline-form portal-code-form"
+              id={`portal-code-form-${link.id}`}
+              noValidate
+              onSubmit={(event) => submitCode(event, link)}
+            >
+              <label>
+                {t("portal.codeLabel")}
+                <input
+                  className="portal-code-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={32}
+                  value={approvalCodes[link.id] ?? ""}
+                  aria-describedby={
+                    codeIssues[link.id]
+                      ? `portal-code-hint-${link.id} portal-code-issue-${link.id}`
+                      : `portal-code-hint-${link.id}`
+                  }
+                  aria-invalid={codeIssues[link.id] ? true : undefined}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setApprovalCodes((codes) => ({
+                      ...codes,
+                      [link.id]: value,
+                    }));
+                    setCodeIssues((issues) => ({
+                      ...issues,
+                      [link.id]: "",
+                    }));
+                  }}
+                  disabled={disabled}
+                />
+              </label>
+              <p id={`portal-code-hint-${link.id}`}>{t("portal.codeHint")}</p>
+              <button className="button" type="submit" disabled={disabled}>
+                {t("portal.codeSubmit")}
+              </button>
+              <p id={`portal-code-issue-${link.id}`} aria-live="polite">
+                {codeIssues[link.id] ?? ""}
+              </p>
+            </form>
+          )}
+        <details
+          className="portal-device-details"
+          open={detailsOpen[link.id] ?? false}
+          onToggle={(event) => {
+            const open = event.currentTarget.open;
+            setDetailsOpen((all) => ({ ...all, [link.id]: open }));
+          }}
+        >
+          <summary>
+            {t(
+              detailsOpen[link.id]
+                ? "portal.deviceDetailsHide"
+                : "portal.deviceDetailsShow",
+            )}
+          </summary>
+          {/* It asks staff to compare the fingerprint shown here. */}
+          {!link.incomplete && !link.clinicApproved && (
+            <p>{t("portal.compare")}</p>
+          )}
+          <label>
+            {t("portal.deviceCode")}
+            <input
+              readOnly
+              value={link.deviceKeyId}
+              spellCheck={false}
+              onFocus={(event) => event.currentTarget.select()}
+              onClick={(event) => event.currentTarget.select()}
+            />
+          </label>
+          <button
+            className="button"
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              void navigator.clipboard
+                ?.writeText(link.deviceKeyId)
+                .then(() => setStatusLine({ text: t("portal.copied") }))
+                .catch(() => setStatusLine({ text: t("portal.copyFailed") }));
+              if (!navigator.clipboard)
+                setStatusLine({ text: t("portal.copyFailed") });
+            }}
+          >
+            {t("portal.copy")}
+          </button>
+          <label>
+            {t("portal.fingerprint")}
+            <textarea
+              readOnly
+              value={link.deviceFingerprint}
+              rows={4}
+              spellCheck={false}
+              onFocus={(event) => event.currentTarget.select()}
+              onClick={(event) => event.currentTarget.select()}
+            />
+          </label>
+        </details>
+        {!link.incomplete && !link.clinicApproved && (
+          <>
+            <button
+              className="button"
+              type="button"
+              disabled={
+                disabled ||
+                removed ||
+                terminal(link) ||
+                !bridge.requestDeviceApproval
+              }
+              onClick={() => requestAction(link, bridge.requestDeviceApproval!)}
+            >
+              {t(
+                link.approvalRequested
+                  ? "portal.retryApproval"
+                  : "portal.requestApproval",
+              )}
+            </button>
+            {/* Offered once the request has ended; not while the portal's
+                  clock still gives it time, whatever this device's says. */}
+            {link.approvalCanRestart && !(left !== null && left > 0) && (
+              <button
+                className="button"
+                type="button"
+                disabled={disabled || removed || !bridge.restartDeviceApproval}
+                onClick={() =>
+                  requestAction(link, bridge.restartDeviceApproval!)
+                }
+              >
+                {t("portal.restartApproval")}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+  // Only working links are listed: an attempt that never finished, or a
+  // device a check found removed from its portal account, is kept in the
+  // vault (#130) and listed only when the patient asks for earlier attempts.
+  const removedNow = (link: PortalLinkSummary) => {
+    const live = polling.live[link.id];
+    return (
+      waits?.isRemoved(link.id) === true ||
+      (live?.kind === "failed" &&
+        hasVaultErrorCode(live.error, "portal_device_removed"))
+    );
+  };
+  const workingLinks = links.filter(
+    (link) => !link.incomplete && !removedNow(link),
+  );
+  const earlierLinks = links.filter(
+    (link) => link.incomplete || removedNow(link),
+  );
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
       {/* Focusable for the check after unlocking, which may disable the
@@ -531,195 +765,26 @@ export function PortalDocuments({
           {t("portal.link")}
         </button>
       </form>
-      {links.map((link) => {
-        const live = polling.live[link.id];
-        // By the portal's clock, never this device's (#131).
-        const left = isAwaitingApproval(link)
-          ? timeLeft(live, polling.now)
-          : null;
-        // The latest check says the portal removed this device: neither a
-        // retry nor a new request can work until it is connected again.
-        const removed =
-          live?.kind === "failed" &&
-          hasVaultErrorCode(live.error, "portal_device_removed");
-        return (
-          <div
-            className="portal-link"
-            id={`portal-link-${link.id}`}
-            key={link.id}
+      {workingLinks.map(card)}
+      {earlierLinks.length > 0 && (
+        <>
+          <button
+            id="portal-earlier-toggle"
+            className="button portal-earlier-toggle"
+            type="button"
+            aria-expanded={showEarlier}
+            aria-controls="portal-earlier"
+            onClick={() => setShowEarlier((open) => !open)}
           >
-            <h3 id={`portal-link-title-${link.id}`} tabIndex={-1}>
-              {link.clinicName ?? link.portalBase}
-            </h3>
-            <p className="portal-address">{link.portalBase}</p>
-            <p>{stateText(cardState(link, live))}</p>
-            {left !== null && (
-              <p>
-                {left > 0
-                  ? t("portal.approvalTimeLeft", {
-                      count: Math.ceil(left / 60_000),
-                    })
-                  : // A new request may start by the portal's clock;
-                    // otherwise "checking" only while checks run.
-                    link.approvalCanRestart
-                    ? t("portal.approvalTimeOverRestart", {
-                        button: t("portal.restartApproval"),
-                      })
-                    : t(
-                        polling.checking?.has(link.id)
-                          ? "portal.approvalTimeUp"
-                          : "portal.approvalTimeOver",
-                      )}
-              </p>
-            )}
-            {polling.checking?.has(link.id) && (
-              <p>{t("portal.autoChecking")}</p>
-            )}
-            {!readOnly &&
-              isAwaitingApproval(link) &&
-              ((polling.stopped && live?.kind !== "missing") ||
-                (live?.kind === "failed" &&
-                  // Checking again cannot help a removed device.
-                  !hasVaultErrorCode(live.error, "portal_device_removed"))) && (
-                <p>
-                  {t("portal.autoCheckStopped", { button: t("portal.check") })}
-                </p>
-              )}
-            {!readOnly &&
-              !removed &&
-              !link.clinicApproved &&
-              link.approvalStatus === "challenge_ready" &&
-              link.approvalByCode &&
-              !link.approvalCodeSubmitted &&
-              !link.approvalCodeLocked &&
-              bridge.submitApprovalCode && (
-                <form
-                  className="native-inline-form portal-code-form"
-                  id={`portal-code-form-${link.id}`}
-                  noValidate
-                  onSubmit={(event) => submitCode(event, link)}
-                >
-                  <label>
-                    {t("portal.codeLabel")}
-                    <input
-                      className="portal-code-input"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      maxLength={32}
-                      value={approvalCodes[link.id] ?? ""}
-                      aria-describedby={
-                        codeIssues[link.id]
-                          ? `portal-code-hint-${link.id} portal-code-issue-${link.id}`
-                          : `portal-code-hint-${link.id}`
-                      }
-                      aria-invalid={codeIssues[link.id] ? true : undefined}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setApprovalCodes((codes) => ({
-                          ...codes,
-                          [link.id]: value,
-                        }));
-                        setCodeIssues((issues) => ({
-                          ...issues,
-                          [link.id]: "",
-                        }));
-                      }}
-                      disabled={disabled}
-                    />
-                  </label>
-                  <p id={`portal-code-hint-${link.id}`}>
-                    {t("portal.codeHint")}
-                  </p>
-                  <button className="button" type="submit" disabled={disabled}>
-                    {t("portal.codeSubmit")}
-                  </button>
-                  <p id={`portal-code-issue-${link.id}`} aria-live="polite">
-                    {codeIssues[link.id] ?? ""}
-                  </p>
-                </form>
-              )}
-            <label>
-              {t("portal.deviceCode")}
-              <input
-                readOnly
-                value={link.deviceKeyId}
-                spellCheck={false}
-                onFocus={(event) => event.currentTarget.select()}
-                onClick={(event) => event.currentTarget.select()}
-              />
-            </label>
-            <button
-              className="button"
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                void navigator.clipboard
-                  ?.writeText(link.deviceKeyId)
-                  .then(() => setStatusLine({ text: t("portal.copied") }))
-                  .catch(() => setStatusLine({ text: t("portal.copyFailed") }));
-                if (!navigator.clipboard)
-                  setStatusLine({ text: t("portal.copyFailed") });
-              }}
-            >
-              {t("portal.copy")}
-            </button>
-            <label>
-              {t("portal.fingerprint")}
-              <textarea
-                readOnly
-                value={link.deviceFingerprint}
-                rows={4}
-                spellCheck={false}
-                onFocus={(event) => event.currentTarget.select()}
-                onClick={(event) => event.currentTarget.select()}
-              />
-            </label>
-            {!link.incomplete && !link.clinicApproved && (
-              <>
-                <p>{t("portal.compare")}</p>
-                <button
-                  className="button"
-                  type="button"
-                  disabled={
-                    disabled ||
-                    removed ||
-                    terminal(link) ||
-                    !bridge.requestDeviceApproval
-                  }
-                  onClick={() =>
-                    requestAction(link, bridge.requestDeviceApproval!)
-                  }
-                >
-                  {t(
-                    link.approvalRequested
-                      ? "portal.retryApproval"
-                      : "portal.requestApproval",
-                  )}
-                </button>
-                {/* Offered once the request has ended; not while the portal's
-                  clock still gives it time, whatever this device's says. */}
-                {link.approvalCanRestart && !(left !== null && left > 0) && (
-                  <button
-                    className="button"
-                    type="button"
-                    disabled={
-                      disabled || removed || !bridge.restartDeviceApproval
-                    }
-                    onClick={() =>
-                      requestAction(link, bridge.restartDeviceApproval!)
-                    }
-                  >
-                    {t("portal.restartApproval")}
-                  </button>
-                )}
-              </>
-            )}
+            {showEarlier
+              ? t("portal.earlierHide")
+              : t("portal.earlierShow", { count: earlierLinks.length })}
+          </button>
+          <div id="portal-earlier" hidden={!showEarlier}>
+            {showEarlier && earlierLinks.map(card)}
           </div>
-        );
-      })}
+        </>
+      )}
       <p role="status">
         {connecting ? (
           t("portal.connecting")

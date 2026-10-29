@@ -1291,6 +1291,14 @@ portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
 
+portal-deviceDetailsShow = 显示设备详情
+
+portal-deviceDetailsHide = 隐藏设备详情
+
+portal-earlierShow = 显示之前的 { $count } 次尝试
+
+portal-earlierHide = 隐藏之前的尝试
+
 portal-errorAddress = 请输入门户网站的 HTTPS 网址，不要包含用户名、密码、查询参数或片段标识符。
 
 portal-errorCancelled = 保险库已锁定，因此关联已停止。请先在门户网站的「Linked devices」（已关联的设备）页面查看，再重试。
