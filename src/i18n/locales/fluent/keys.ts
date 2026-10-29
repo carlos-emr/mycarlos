@@ -778,6 +778,25 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "interface.history.event.profileDetailsChanged",
+  "interface.history.event.portalLinkStarted",
+  "interface.history.event.portalLinked",
+  "interface.history.event.deviceApprovalRequested",
+  "interface.history.event.deviceApprovalVerified",
+  "interface.history.event.deviceApprovalStatusChanged",
+  "interface.history.event.deviceApprovalRequestRestarted",
+  "interface.history.event.deliveryFiled",
+  "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.other",
+  "interface.history.how.pending",
+  "interface.history.how.challengeReady",
+  "interface.history.how.accepted",
+  "interface.history.how.refused",
+  "interface.history.how.expired",
+  "interface.history.how.cancelled",
+  "interface.history.how.pickedUp",
+  "interface.history.how.deliveryNotFound",
+  "interface.history.how.personFolder",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1682,6 +1701,36 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "interface.history.event.profileDetailsChanged":
+    "interface-history-event-profileDetailsChanged",
+  "interface.history.event.portalLinkStarted":
+    "interface-history-event-portalLinkStarted",
+  "interface.history.event.portalLinked":
+    "interface-history-event-portalLinked",
+  "interface.history.event.deviceApprovalRequested":
+    "interface-history-event-deviceApprovalRequested",
+  "interface.history.event.deviceApprovalVerified":
+    "interface-history-event-deviceApprovalVerified",
+  "interface.history.event.deviceApprovalStatusChanged":
+    "interface-history-event-deviceApprovalStatusChanged",
+  "interface.history.event.deviceApprovalRequestRestarted":
+    "interface-history-event-deviceApprovalRequestRestarted",
+  "interface.history.event.deliveryFiled":
+    "interface-history-event-deliveryFiled",
+  "interface.history.event.deliveryReceiptSettled":
+    "interface-history-event-deliveryReceiptSettled",
+  "interface.history.event.other": "interface-history-event-other",
+  "interface.history.how.pending": "interface-history-how-pending",
+  "interface.history.how.challengeReady":
+    "interface-history-how-challengeReady",
+  "interface.history.how.accepted": "interface-history-how-accepted",
+  "interface.history.how.refused": "interface-history-how-refused",
+  "interface.history.how.expired": "interface-history-how-expired",
+  "interface.history.how.cancelled": "interface-history-how-cancelled",
+  "interface.history.how.pickedUp": "interface-history-how-pickedUp",
+  "interface.history.how.deliveryNotFound":
+    "interface-history-how-deliveryNotFound",
+  "interface.history.how.personFolder": "interface-history-how-personFolder",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2547,6 +2596,25 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "interface.history.event.profileDetailsChanged": undefined;
+  "interface.history.event.portalLinkStarted": undefined;
+  "interface.history.event.portalLinked": undefined;
+  "interface.history.event.deviceApprovalRequested": undefined;
+  "interface.history.event.deviceApprovalVerified": undefined;
+  "interface.history.event.deviceApprovalStatusChanged": undefined;
+  "interface.history.event.deviceApprovalRequestRestarted": undefined;
+  "interface.history.event.deliveryFiled": undefined;
+  "interface.history.event.deliveryReceiptSettled": undefined;
+  "interface.history.event.other": undefined;
+  "interface.history.how.pending": undefined;
+  "interface.history.how.challengeReady": undefined;
+  "interface.history.how.accepted": undefined;
+  "interface.history.how.refused": undefined;
+  "interface.history.how.expired": undefined;
+  "interface.history.how.cancelled": undefined;
+  "interface.history.how.pickedUp": undefined;
+  "interface.history.how.deliveryNotFound": undefined;
+  "interface.history.how.personFolder": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

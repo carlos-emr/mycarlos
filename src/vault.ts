@@ -309,7 +309,16 @@ export interface AuditHistoryEntry {
     | "folderCreated"
     | "folderRenamed"
     | "folderMoved"
-    | "setAside";
+    | "setAside"
+    | "profileDetailsChanged"
+    | "portalLinkStarted"
+    | "portalLinked"
+    | "deviceApprovalRequested"
+    | "deviceApprovalVerified"
+    | "deviceApprovalStatusChanged"
+    | "deviceApprovalRequestRestarted"
+    | "deliveryFiled"
+    | "deliveryReceiptSettled";
   name: string | null;
   oldName: string | null;
   from: string[] | null;

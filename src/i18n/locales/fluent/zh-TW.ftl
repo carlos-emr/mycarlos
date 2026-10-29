@@ -1567,3 +1567,41 @@ portal-codeRefused = 診所入口網站未接受此驗證碼。請幾分鐘後�
 portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
+
+interface-history-event-profileDetailsChanged = 個人資料已變更
+
+interface-history-event-portalLinkStarted = 已開始與診所連結
+
+interface-history-event-portalLinked = 已與診所連結
+
+interface-history-event-deviceApprovalRequested = 已申請裝置核准
+
+interface-history-event-deviceApprovalVerified = 診所已核准此裝置
+
+interface-history-event-deviceApprovalStatusChanged = 核准狀態已變更
+
+interface-history-event-deviceApprovalRequestRestarted = 已提出新的核准請求
+
+interface-history-event-deliveryFiled = 已收到診所文件
+
+interface-history-event-deliveryReceiptSettled = 已向診所傳送領取回執
+
+interface-history-event-other = 其他事件
+
+interface-history-how-pending = 正在等待診所
+
+interface-history-how-challengeReady = 診所已收到
+
+interface-history-how-accepted = 已核准
+
+interface-history-how-refused = 診所已拒絕
+
+interface-history-how-expired = 已過期
+
+interface-history-how-cancelled = 已取消
+
+interface-history-how-pickedUp = 診所已記錄領取
+
+interface-history-how-deliveryNotFound = 診所入口網站已不再保存該文件
+
+interface-history-how-personFolder = 某人的資料夾

@@ -1789,3 +1789,41 @@ portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za 
 portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
+
+interface-history-event-profileDetailsChanged = Zmieniono dane osoby
+
+interface-history-event-portalLinkStarted = Rozpoczęto łączenie z przychodnią
+
+interface-history-event-portalLinked = Połączono z przychodnią
+
+interface-history-event-deviceApprovalRequested = Poproszono o zatwierdzenie urządzenia
+
+interface-history-event-deviceApprovalVerified = Przychodnia zatwierdziła urządzenie
+
+interface-history-event-deviceApprovalStatusChanged = Zmienił się stan zatwierdzenia
+
+interface-history-event-deviceApprovalRequestRestarted = Rozpoczęto nową prośbę o zatwierdzenie
+
+interface-history-event-deliveryFiled = Odebrano dokument z przychodni
+
+interface-history-event-deliveryReceiptSettled = Wysłano przychodni potwierdzenie odbioru
+
+interface-history-event-other = Inne zdarzenie
+
+interface-history-how-pending = Oczekuje na przychodnię
+
+interface-history-how-challengeReady = Przychodnia otrzymała prośbę
+
+interface-history-how-accepted = Zatwierdzono
+
+interface-history-how-refused = Przychodnia odrzuciła prośbę
+
+interface-history-how-expired = Wygasła
+
+interface-history-how-cancelled = Anulowano
+
+interface-history-how-pickedUp = Przychodnia odnotowała odbiór
+
+interface-history-how-deliveryNotFound = Portal przychodni już go nie miał
+
+interface-history-how-personFolder = Folder osoby
