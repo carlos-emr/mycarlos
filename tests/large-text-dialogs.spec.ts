@@ -147,33 +147,68 @@ function outsideDialog(page: Page, dialogName: string): Promise<string[]> {
 const unexpectedCommands = (page: Page): Promise<string[]> =>
   page.evaluate(() => Reflect.get(window, "__FAKE_UNEXPECTED__") as string[]);
 
-// The default text size stays at 200%: nothing here takes a full-page
+// The default text size stays as set: nothing here takes a full-page
 // screenshot, which puts Chrome's default text size back to 16px.
 const rootFont = (page: Page) =>
   page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
 
-for (const width of [320, 360])
-  test(`keeps every dialog's buttons inside it at ${width}px with 200% default text in every language`, async ({
+// Two ways to 200% text:
+// - A phone's own text size, or the browser's default text: 32px on a phone
+//   at 320 or 360px.
+// - The app's Text size (Preferences), which zooms the whole webview: at
+//   200% a 1280x720 window lays out like 640x360, drawn with twice the
+//   pixels, with 16px text (as large-text-accessibility.spec.ts models it).
+const LARGE_TEXT = [
+  {
+    name: "at 320px with 200% default text",
+    width: 320,
+    height: 900,
+    font: 32,
+    phone: true,
+  },
+  {
+    name: "at 360px with 200% default text",
+    width: 360,
+    height: 900,
+    font: 32,
+    phone: true,
+  },
+  {
+    name: "with the app's text size at 200%",
+    width: 640,
+    height: 360,
+    font: 16,
+    phone: false,
+  },
+];
+
+for (const large of LARGE_TEXT)
+  test(`keeps every dialog's buttons inside it ${large.name} in every language`, async ({
     browser,
   }, info) => {
-    test.skip(info.project.name !== "desktop", "sets its own phone sizes");
+    test.skip(info.project.name !== "desktop", "sets its own sizes");
     const problems: string[] = [];
     for (const locale of LOCALES) {
       const context = await browser.newContext({
         baseURL: info.project.use.baseURL,
-        viewport: { width, height: 900 },
-        isMobile: true,
-        hasTouch: true,
+        viewport: { width: large.width, height: large.height },
+        ...(large.phone
+          ? { isMobile: true, hasTouch: true }
+          : { deviceScaleFactor: 2 }),
       });
       try {
         const page = await context.newPage();
         await fakeVault(page, locale);
-        const cdp = await context.newCDPSession(page);
-        await cdp.send("Page.setFontSizes", { fontSizes: { standard: 32 } });
+        if (large.font !== 16) {
+          const cdp = await context.newCDPSession(page);
+          await cdp.send("Page.setFontSizes", {
+            fontSizes: { standard: large.font },
+          });
+        }
         await page.goto("/");
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         const check = async (dialogName: string) => {
-          expect(await rootFont(page), "text is at 200%").toBe("32px");
+          expect(await rootFont(page), "text size").toBe(`${large.font}px`);
           for (const problem of await outsideDialog(page, dialogName))
             problems.push(`${locale}: ${problem}`);
         };
