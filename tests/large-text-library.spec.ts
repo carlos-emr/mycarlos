@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { translate } from "../src/i18n/core";
+import { translate } from "./support/fluent";
 import { LOCALES } from "../src/i18n/types";
 
 // #67 and #84: on a phone with large text (the reader's 200% default text,
