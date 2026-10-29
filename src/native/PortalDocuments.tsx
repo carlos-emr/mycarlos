@@ -31,6 +31,9 @@ export function PortalDocuments({
   // is the default in the language in use ("myCarlos on Windows").
   const [device, setDevice] = useState<string | null>(null);
   const [platformName, setPlatformName] = useState<string | null>(null);
+  const deviceName =
+    device ??
+    (platformName ? formatDeviceName(locale, platformName) : "myCarlos");
   const [person, setPerson] = useState("");
   const [copyState, setCopyState] = useState("");
   const shown = useRef(true);
@@ -60,9 +63,6 @@ export function PortalDocuments({
   )
     return null;
   const links = snapshot.portalLinks ?? [];
-  const deviceName =
-    device ??
-    (platformName ? formatDeviceName(locale, platformName) : "myCarlos");
   const terminal = (link: PortalLinkSummary) =>
     ["refused", "expired", "cancelled", "accepted"].includes(
       link.approvalStatus ?? "",
