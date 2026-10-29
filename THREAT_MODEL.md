@@ -338,10 +338,11 @@ myCarlos works with other EMRs' portals (NET-02, DEL-06). Possible later steps:
 show the portal's address next to "Verified" and at linking, and a clinic-key
 code checked during the staff fingerprint comparison.
 
-Clinic code v1 (DEL-07) narrows this risk for clinics that use it. The code
-CARLOS emails is bound to the clinic key that signed the request's challenge, so
-on a device linked to a look-alike portal the real code does not match: it is
-never sent, and the device is not approved by code. What remains: a code is only
-as strong as the patient's email account; a re-link or recovery on the same
-device uses the existing approval and needs no code; and clinics that approve by
-staff only do not get this check.
+Clinic code v1 (DEL-07) does not narrow this risk. A look-alike portal signs
+its own challenges with the keys myCarlos took from it, so it can ask for staff
+approval and accept the device itself (`verify_challenge` accepts either kind),
+and a device with an open request already picks up what that portal sends
+(`worth_asking`). What clinic code v1 does stop is the related DEL-07 case: the
+clinic's real emailed code never matches on a device linked to a look-alike
+portal, so it is never sent there and cannot approve a device at the real
+clinic, and the patient is told to check the portal address.
