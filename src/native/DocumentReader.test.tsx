@@ -575,6 +575,44 @@ describe("the reader's page bar", () => {
     text.scrollTop = text.scrollHeight;
     expect(fireEvent.keyDown(text, { key: "PageDown" })).toBe(false);
     await screen.findByRole("img", { name: humanText(/^Page 2 of 5/) });
+    // The box stayed while page 2 was drawn: the focus is still in it, it
+    // shows page 2's text from the top, and the keys go on.
+    expect(text).toHaveFocus();
+    expect(text).toHaveTextContent("FAKE line 1 on page 2");
+    expect(text.scrollTop).toBe(0);
+    text.scrollTop = text.scrollHeight;
+    expect(fireEvent.keyDown(text, { key: "PageDown" })).toBe(false);
+    await screen.findByRole("img", { name: humanText(/^Page 3 of 5/) });
+    expect(text).toHaveFocus();
+  });
+
+  it("gives the focus to the page when a page turned from its text fails", async () => {
+    const user = userEvent.setup();
+    renderReader(
+      vi.fn(async (index: number, _width: number, _password?: string) => {
+        if (index === 1) throw refusal("pdf_render_failed");
+        return {
+          ...page(index),
+          pageCount: 5,
+          text: Array.from(
+            { length: 80 },
+            (_, line) => `FAKE line ${line}`,
+          ).join("\n"),
+        };
+      }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    await user.click(screen.getByText(humanText("Text on this page")));
+    const text = screen.getByRole("region", {
+      name: humanText("Text on this page"),
+    });
+    await user.click(text);
+    text.scrollTop = text.scrollHeight;
+    expect(fireEvent.keyDown(text, { key: "PageDown" })).toBe(false);
+    await screen.findByRole("alert");
+    expect(
+      screen.getByRole("region", { name: humanText("Page 2") }),
+    ).toHaveFocus();
   });
 
   it("shows a reader button that cannot be used as unavailable", async () => {

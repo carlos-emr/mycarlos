@@ -275,6 +275,14 @@ export function DocumentReader({
   useEffect(() => {
     if (asking && wrongTries > 0) passwordRef.current?.focus();
   }, [asking, wrongTries]);
+  // A page that fails, or asks for the document's password, takes the page's
+  // text box away. If the focus was in it, it goes to the password field or
+  // the page area, not to the window, so the keys go on working.
+  useEffect(() => {
+    if (!(asking || error) || document.activeElement !== document.body) return;
+    if (asking) passwordRef.current?.focus();
+    else pageRef.current?.focus({ preventScroll: true });
+  }, [asking, error]);
 
   const giveDocumentPassword = (event: FormEvent) => {
     event.preventDefault();
@@ -482,26 +490,30 @@ export function DocumentReader({
             />
           )}
         </div>
-        {current && (
+        {/* Kept while the next page is drawn (empty and busy), so that a
+            page turned from inside the text keeps the focus there, and the
+            box stays open from page to page. */}
+        {shown && !asking && !error && (
           <details className="native-reader-text">
-            <summary>
+            <summary id="reader-text-title">
               {translateNow("interface.DocumentReader.textOnThisPage")}
             </summary>
             {/* Focusable and scrolled on its own, so that a click in the
                 text lets the keys scroll it, and the page keys turn the
-                page only at its end. */}
+                page only at its top or end. */}
             <div
               ref={textRef}
               tabIndex={0}
               role="region"
-              aria-label={translateNow(
-                "interface.DocumentReader.textOnThisPage",
-              )}
+              aria-labelledby="reader-text-title"
+              aria-busy={!current}
             >
-              {(shown.readableText ?? shown.text).trim() ||
-                translateNow(
-                  "interface.DocumentReader.noTextCouldBeReadOnThis",
-                )}
+              {current
+                ? (shown.readableText ?? shown.text).trim() ||
+                  translateNow(
+                    "interface.DocumentReader.noTextCouldBeReadOnThis",
+                  )
+                : ""}
             </div>
           </details>
         )}

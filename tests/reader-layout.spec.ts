@@ -472,6 +472,16 @@ test("scrolls the page's text with the keys after a click in it", async ({
     // At the end of the text, Page Down turns the page.
     await page.keyboard.press("PageDown");
     await expect(reader.locator(".native-reader-where")).toHaveText(where(2));
+    // The text box stayed while page 2 was drawn: the focus is still in it,
+    // it shows page 2's text from its top, and the keys turn again.
+    await expect(line).toBeFocused();
+    await expect(line).toContainText("FAKE line 1 on page 2");
+    expect((await text()).top).toBe(0);
+    await page.keyboard.press("End");
+    await expect.poll(async () => (await text()).atBottom).toBe(true);
+    await page.keyboard.press("PageDown");
+    await expect(reader.locator(".native-reader-where")).toHaveText(where(3));
+    await expect(line).toBeFocused();
     await expectTextSize(page, FITS[0].font);
   } finally {
     await context.close();

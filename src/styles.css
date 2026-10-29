@@ -468,8 +468,9 @@ h1, h2, p { margin: 0; }
    the window, the reader scrolls instead, with the page bar kept at its foot. */
 .native-reader-page { flex: 1; min-height: min(16em, 40vh); overflow: auto; scrollbar-gutter: stable; padding: 12px; background: var(--canvas-2); text-align: center; }
 .native-reader-page img { display: inline-block; max-width: none; height: auto; box-shadow: var(--shadow-sm); background: var(--paper); }
-/* It scrolls itself, so without flex-shrink: 0 a reader too short for everything (large text on a
-   phone) would squeeze it to nothing; the reader scrolls instead. */
+/* "Text on this page" keeps its height in a reader too short for everything (large text on a
+   phone), and the reader scrolls instead. Its text scrolls in a box of its own (below), so the
+   details box does not shrink by itself either; flex-shrink: 0 keeps it that way. */
 .native-reader-text { flex-shrink: 0; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }
 /* The text scrolls in its own box, which takes the focus (DocumentReader.tsx). */
