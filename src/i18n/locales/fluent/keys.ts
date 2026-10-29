@@ -674,6 +674,62 @@ export const MESSAGE_KEYS = [
   "rename.profile.controls",
   "rename.profile.saved",
   "rename.title.profile",
+  "hidden.backToSecurity",
+  "interface.history.appVersion",
+  "interface.history.damaged",
+  "interface.history.damagedAll",
+  "interface.history.damagedBefore",
+  "interface.history.damagedBetween",
+  "interface.history.empty",
+  "interface.history.error.unverified",
+  "interface.history.event.backupRestored",
+  "interface.history.event.backupSaved",
+  "interface.history.event.copySaved",
+  "interface.history.event.created",
+  "interface.history.event.folderCreated",
+  "interface.history.event.folderMoved",
+  "interface.history.event.folderRenamed",
+  "interface.history.event.hidden",
+  "interface.history.event.historyStarted",
+  "interface.history.event.imported",
+  "interface.history.event.moved",
+  "interface.history.event.passphraseChanged",
+  "interface.history.event.profileCreated",
+  "interface.history.event.recoveryKeySet",
+  "interface.history.event.renamed",
+  "interface.history.event.restored",
+  "interface.history.event.setAside",
+  "interface.history.event.unlocked",
+  "interface.history.events",
+  "interface.history.from",
+  "interface.history.gap",
+  "interface.history.how",
+  "interface.history.how.camera",
+  "interface.history.how.damaged",
+  "interface.history.how.importedShared",
+  "interface.history.how.movedFromShared",
+  "interface.history.how.passphrase",
+  "interface.history.how.patient",
+  "interface.history.how.picked",
+  "interface.history.how.recoveryKey",
+  "interface.history.how.replaced",
+  "interface.history.intro",
+  "interface.history.laterSessionNotRecorded",
+  "interface.history.loading",
+  "interface.history.moreFolders",
+  "interface.history.name",
+  "interface.history.personRootFolder",
+  "interface.history.place",
+  "interface.history.previousName",
+  "interface.history.previousSession",
+  "interface.history.rootFolder",
+  "interface.history.scopeNote",
+  "interface.history.sessionLockedAutomatically",
+  "interface.history.sessionLockedByApp",
+  "interface.history.sessionLockedByPerson",
+  "interface.history.sessionNotRecorded",
+  "interface.history.title",
+  "interface.history.to",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1460,6 +1516,76 @@ const FLUENT_IDS_BY_KEY = {
   "rename.profile.controls": "rename-profile-controls",
   "rename.profile.saved": "rename-profile-saved",
   "rename.title.profile": "rename-title-profile",
+  "hidden.backToSecurity": "hidden-backToSecurity",
+  "interface.history.appVersion": "interface-history-appVersion",
+  "interface.history.damaged": "interface-history-damaged",
+  "interface.history.damagedAll": "interface-history-damagedAll",
+  "interface.history.damagedBefore": "interface-history-damagedBefore",
+  "interface.history.damagedBetween": "interface-history-damagedBetween",
+  "interface.history.empty": "interface-history-empty",
+  "interface.history.error.unverified": "interface-history-error-unverified",
+  "interface.history.event.backupRestored":
+    "interface-history-event-backupRestored",
+  "interface.history.event.backupSaved": "interface-history-event-backupSaved",
+  "interface.history.event.copySaved": "interface-history-event-copySaved",
+  "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.folderCreated":
+    "interface-history-event-folderCreated",
+  "interface.history.event.folderMoved": "interface-history-event-folderMoved",
+  "interface.history.event.folderRenamed":
+    "interface-history-event-folderRenamed",
+  "interface.history.event.hidden": "interface-history-event-hidden",
+  "interface.history.event.historyStarted":
+    "interface-history-event-historyStarted",
+  "interface.history.event.imported": "interface-history-event-imported",
+  "interface.history.event.moved": "interface-history-event-moved",
+  "interface.history.event.passphraseChanged":
+    "interface-history-event-passphraseChanged",
+  "interface.history.event.profileCreated":
+    "interface-history-event-profileCreated",
+  "interface.history.event.recoveryKeySet":
+    "interface-history-event-recoveryKeySet",
+  "interface.history.event.renamed": "interface-history-event-renamed",
+  "interface.history.event.restored": "interface-history-event-restored",
+  "interface.history.event.setAside": "interface-history-event-setAside",
+  "interface.history.event.unlocked": "interface-history-event-unlocked",
+  "interface.history.events": "interface-history-events",
+  "interface.history.from": "interface-history-from",
+  "interface.history.gap": "interface-history-gap",
+  "interface.history.how": "interface-history-how",
+  "interface.history.how.camera": "interface-history-how-camera",
+  "interface.history.how.damaged": "interface-history-how-damaged",
+  "interface.history.how.importedShared":
+    "interface-history-how-importedShared",
+  "interface.history.how.movedFromShared":
+    "interface-history-how-movedFromShared",
+  "interface.history.how.passphrase": "interface-history-how-passphrase",
+  "interface.history.how.patient": "interface-history-how-patient",
+  "interface.history.how.picked": "interface-history-how-picked",
+  "interface.history.how.recoveryKey": "interface-history-how-recoveryKey",
+  "interface.history.how.replaced": "interface-history-how-replaced",
+  "interface.history.intro": "interface-history-intro",
+  "interface.history.laterSessionNotRecorded":
+    "interface-history-laterSessionNotRecorded",
+  "interface.history.loading": "interface-history-loading",
+  "interface.history.moreFolders": "interface-history-moreFolders",
+  "interface.history.name": "interface-history-name",
+  "interface.history.personRootFolder": "interface-history-personRootFolder",
+  "interface.history.place": "interface-history-place",
+  "interface.history.previousName": "interface-history-previousName",
+  "interface.history.previousSession": "interface-history-previousSession",
+  "interface.history.rootFolder": "interface-history-rootFolder",
+  "interface.history.scopeNote": "interface-history-scopeNote",
+  "interface.history.sessionLockedAutomatically":
+    "interface-history-sessionLockedAutomatically",
+  "interface.history.sessionLockedByApp":
+    "interface-history-sessionLockedByApp",
+  "interface.history.sessionLockedByPerson":
+    "interface-history-sessionLockedByPerson",
+  "interface.history.sessionNotRecorded":
+    "interface-history-sessionNotRecorded",
+  "interface.history.title": "interface-history-title",
+  "interface.history.to": "interface-history-to",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2218,6 +2344,65 @@ export interface MessageArgsByKey {
   "rename.profile.controls": undefined;
   "rename.profile.saved": { name: FluentArgument };
   "rename.title.profile": undefined;
+  "hidden.backToSecurity": undefined;
+  "interface.history.appVersion": undefined;
+  "interface.history.damaged": { date: FluentArgument };
+  "interface.history.damagedAll": undefined;
+  "interface.history.damagedBefore": { date: FluentArgument };
+  "interface.history.damagedBetween": {
+    from: FluentArgument;
+    to: FluentArgument;
+  };
+  "interface.history.empty": undefined;
+  "interface.history.error.unverified": undefined;
+  "interface.history.event.backupRestored": undefined;
+  "interface.history.event.backupSaved": undefined;
+  "interface.history.event.copySaved": undefined;
+  "interface.history.event.created": undefined;
+  "interface.history.event.folderCreated": undefined;
+  "interface.history.event.folderMoved": undefined;
+  "interface.history.event.folderRenamed": undefined;
+  "interface.history.event.hidden": undefined;
+  "interface.history.event.historyStarted": undefined;
+  "interface.history.event.imported": undefined;
+  "interface.history.event.moved": undefined;
+  "interface.history.event.passphraseChanged": undefined;
+  "interface.history.event.profileCreated": undefined;
+  "interface.history.event.recoveryKeySet": undefined;
+  "interface.history.event.renamed": undefined;
+  "interface.history.event.restored": undefined;
+  "interface.history.event.setAside": undefined;
+  "interface.history.event.unlocked": undefined;
+  "interface.history.events": { count: FluentArgument };
+  "interface.history.from": undefined;
+  "interface.history.gap": undefined;
+  "interface.history.how": undefined;
+  "interface.history.how.camera": undefined;
+  "interface.history.how.damaged": undefined;
+  "interface.history.how.importedShared": undefined;
+  "interface.history.how.movedFromShared": undefined;
+  "interface.history.how.passphrase": undefined;
+  "interface.history.how.patient": undefined;
+  "interface.history.how.picked": undefined;
+  "interface.history.how.recoveryKey": undefined;
+  "interface.history.how.replaced": undefined;
+  "interface.history.intro": undefined;
+  "interface.history.laterSessionNotRecorded": undefined;
+  "interface.history.loading": undefined;
+  "interface.history.moreFolders": { count: FluentArgument };
+  "interface.history.name": undefined;
+  "interface.history.personRootFolder": undefined;
+  "interface.history.place": undefined;
+  "interface.history.previousName": undefined;
+  "interface.history.previousSession": undefined;
+  "interface.history.rootFolder": undefined;
+  "interface.history.scopeNote": undefined;
+  "interface.history.sessionLockedAutomatically": { date: FluentArgument };
+  "interface.history.sessionLockedByApp": { date: FluentArgument };
+  "interface.history.sessionLockedByPerson": { date: FluentArgument };
+  "interface.history.sessionNotRecorded": undefined;
+  "interface.history.title": undefined;
+  "interface.history.to": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

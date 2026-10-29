@@ -1,25 +1,10 @@
-import { t as translateNow, useI18n, formatNumber } from "../i18n";
+import { t as translateNow, useI18n } from "../i18n";
 import { Fragment, useMemo } from "react";
 import { Icon } from "../Icon";
 
 import type { PatientProfile, VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
-
-/** A sidebar count: the bare number is shown; a screen reader hears what it
- * counts ("3 documents"), after the visible name, so the button's name still
- * starts with its visible words (WCAG 2.5.3). */
-function NavCount({ count }: { count: number }) {
-  return (
-    <>
-      <span className="nav-count" aria-hidden="true">
-        {formatNumber(count)}
-      </span>
-      <span className="sr-only">
-        {translateNow("sidebar.documents", { count })}
-      </span>
-    </>
-  );
-}
+import { SpokenCount } from "./SpokenCount";
 
 interface LibrarySidebarProps {
   /** The brand line: the open person's name, or the vault's while Shared
@@ -30,7 +15,13 @@ interface LibrarySidebarProps {
   people: PatientProfile[];
   /** The open person, while their records are shown. */
   profileId: string;
-  section: "records" | "shared" | "hidden" | "security" | "preferences";
+  section:
+    | "records"
+    | "shared"
+    | "hidden"
+    | "history"
+    | "security"
+    | "preferences";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
   sharedNew: number;
@@ -47,11 +38,8 @@ interface LibrarySidebarProps {
   drag: VaultDragDrop;
   onOpenPerson: (profileId: string) => void;
   onOpenFolder: (profileId: string, folderId: string) => void;
-  /** Hidden documents at the current location (#71). */
-  hiddenCount: number;
   /** Hidden can be opened from Shared with me; keep its whole-vault footer. */
   hiddenFromShared?: boolean;
-  onOpenHidden: () => void;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
 }
@@ -103,9 +91,7 @@ export function LibrarySidebar({
   sharedNew,
   onOpenShared,
   vaultTotals,
-  hiddenCount,
   hiddenFromShared = false,
-  onOpenHidden,
   onOpenSecurity,
   onOpenPreferences,
 }: LibrarySidebarProps) {
@@ -184,7 +170,7 @@ export function LibrarySidebar({
                     ? person.displayName
                     : translateNow("sidebar.myRecords")}
                 </span>
-                <NavCount count={counts.loose.get(person.id) ?? 0} />
+                <SpokenCount count={counts.loose.get(person.id) ?? 0} />
               </button>
               {(trees.get(person.id) ?? []).map(({ folder, depth }) => {
                 const zone = `sidebar:${folder.id}`;
@@ -222,7 +208,7 @@ export function LibrarySidebar({
                   >
                     <Icon name="folder" />{" "}
                     <span className="native-nav-name">{folder.name}</span>
-                    <NavCount count={counts.byFolder.get(folder.id) ?? 0} />
+                    <SpokenCount count={counts.byFolder.get(folder.id) ?? 0} />
                   </button>
                 );
               })}
@@ -268,9 +254,21 @@ export function LibrarySidebar({
         </button>
         <span className="nav-label">{translateNow("sidebar.settings")}</span>
         <button
-          className={section === "security" ? "selected" : ""}
+          className={
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "selected"
+              : ""
+          }
+          aria-current={
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "page"
+              : undefined
+          }
           type="button"
-          aria-current={section === "security" ? "page" : undefined}
           onClick={onOpenSecurity}
         >
           <Icon name="shield" /> {translateNow("security.title")}
@@ -282,18 +280,6 @@ export function LibrarySidebar({
           onClick={onOpenPreferences}
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}
-        </button>
-        {/* At the bottom of the sidebar, set apart, like the mocks' Trash
-            (#71): out of view, not a folder or a setting. */}
-        <button
-          className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
-          type="button"
-          aria-current={section === "hidden" ? "page" : undefined}
-          onClick={onOpenHidden}
-        >
-          <Icon name="hidden" />
-          {translateNow("interface.HiddenDocuments.hidden")}{" "}
-          <NavCount count={hiddenCount} />
         </button>
       </nav>
       <div className="storage">

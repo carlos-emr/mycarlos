@@ -551,10 +551,33 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 "differs from the backup" leaves the history and the format out of the comparison, since every
 unlock, and every backup saved, adds to the history.
 
-**Never shown, and kept on the device.** No command returns the history to the app's screens, and
-nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
-recorded automatically and tamper-evident on the device only, with no auditor export. A backup
-carries it only as part of the encrypted vault.
+**Verified read-only view, kept on the device.** While the vault is unlocked, the Security
+screen can request the history. Native code reads every encrypted segment in order and returns
+display rows over IPC only for entries it has authenticated from one of the chain's two pinned
+ends. From the start: entries before the first segment that is missing or does not authenticate,
+while each follows the one before from the genesis value, and never past the manifest's count.
+From the end (Ben's D146): entries after the last such segment, walking back from the manifest's
+pinned head while each is the `prev` of the one after it with the number before it, so that the
+last is number `count - 1` and its hash is the head; none is shown twice. With the rows it returns
+`complete`, true only when the rows from the start are the whole chain the manifest pins (its
+count and head). When it is false, Security shows a notice dated from the native fields: "Part of
+this history is damaged. Events between <date> and <date> can't be checked and aren't shown." (or
+"after <date>", "before <date>", or that none are shown), with a marker in the list where the gap
+is (Ben's D129 and D146, mycarlos#120). The notice follows those fields only; the renderer never
+works it out. Its dates are the entries' recorded times, so after the device clock was set back
+the first can read later than the second; the order shown is always the chain's. A damaged
+segment is never opened or shown.
+Those rows include recorded names, folder labels, times, methods, session notes and saved
+locations (including file paths or provider addresses). Native record/profile/folder identifiers,
+chain hashes, wrapped keys and object paths are not returned. Some entries lack person context;
+folder labels are not complete paths and saved locations can be shortened. A lock request
+cancels the read; the renderer conceals content while confirming the lock and ignores late
+responses from an earlier view or session.
+
+The view never edits entries or saves a separate history file: Ben chose (#71, 19 October) a
+history recorded automatically and tamper-evident on the device, with no auditor export. A backup
+carries it only as part of the encrypted vault. The view does not overcome rollback of a complete
+vault or an inaccurate device clock; those limits and the outside-anchor follow-up remain.
 
 ### Manifest format 4: optional profile identity details
 

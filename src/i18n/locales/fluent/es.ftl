@@ -431,7 +431,6 @@ interface-search-all = Buscar en todo { $location }
 
 interface-SecuritySettings-evaluationBuild = Versión de evaluación
 
-interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también conserva un historial: cuándo se abrió la bóveda; cuándo se configuró o cambió su frase de contraseña o clave de recuperación, y cuándo se guardó o restauró una copia de seguridad; cuándo se añadió cada perfil de paciente y se creó, cambió de nombre o movió cada carpeta; y cuándo se añadió, cambió de nombre, movió, ocultó, restauró o guardó fuera de myCarlos cada documento, y dónde se guardó. Se cifra junto con todo lo demás. myCarlos no lo muestra y nunca lo modifica ni lo elimina.
 
 interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne = myCarlos nunca elimina un documento. Ocultarlo lo retira de la vista: permanece en la bóveda cifrada, en Ocultos, y puede restaurarse. Usted puede conservar o eliminar las copias legibles que guarde fuera de myCarlos.
 
@@ -1519,3 +1518,127 @@ rename-profile-controls = Los nombres no pueden contener caracteres de control.
 rename-profile-saved = El nombre de la carpeta se ha cambiado a { $name }.
 
 rename-title-profile = Cambiar el nombre de la carpeta de la persona
+
+hidden-backToSecurity = Volver a Seguridad
+
+interface-history-appVersion = Versión de myCarlos
+
+interface-history-damaged = Parte de este historial está dañada. Los eventos posteriores al { $date } no se pueden verificar y no se muestran.
+
+interface-history-damagedAll = Parte de este historial está dañada. Sus eventos no se pueden verificar, así que no se muestra ninguno.
+
+interface-history-damagedBefore = Parte de este historial está dañada. Los eventos anteriores al { $date } no se pueden verificar y no se muestran.
+
+interface-history-damagedBetween = Parte de este historial está dañada. Los eventos entre el { $from } y el { $to } no se pueden verificar y no se muestran.
+
+interface-history-empty = No hay eventos en el historial.
+
+interface-history-error-unverified = No se pudo leer ni verificar el historial. No se muestra ningún evento.
+
+interface-history-event-backupRestored = Copia de seguridad restaurada
+
+interface-history-event-backupSaved = Copia de seguridad cifrada guardada
+
+interface-history-event-copySaved = Copia legible guardada
+
+interface-history-event-created = Bóveda creada
+
+interface-history-event-folderCreated = Carpeta creada
+
+interface-history-event-folderMoved = Carpeta movida
+
+interface-history-event-folderRenamed = Carpeta renombrada
+
+interface-history-event-hidden = Documento ocultado
+
+interface-history-event-historyStarted = Historial iniciado
+
+interface-history-event-imported = Documento añadido
+
+interface-history-event-moved = Documento movido
+
+interface-history-event-passphraseChanged = Frase de contraseña cambiada
+
+interface-history-event-profileCreated = Perfil de paciente añadido
+
+interface-history-event-recoveryKeySet = Clave de recuperación configurada
+
+interface-history-event-renamed = Documento renombrado
+
+interface-history-event-restored = Documento restaurado
+
+interface-history-event-setAside = Bóveda apartada
+
+interface-history-event-unlocked = Bóveda abierta
+
+interface-history-events =
+    { $count ->
+    [one] { $count } evento
+    [many] { $count } eventos
+    *[other] { $count } eventos
+    }
+
+interface-history-from = Desde
+
+interface-history-gap = Los eventos de esta parte no se pueden verificar y no se muestran.
+
+interface-history-how = Cómo
+
+interface-history-how-camera = Añadido con la cámara
+
+interface-history-how-damaged = Ocultado porque faltaba el archivo
+
+interface-history-how-importedShared = Añadido a Compartido conmigo
+
+interface-history-how-movedFromShared = Movido desde Compartido conmigo
+
+interface-history-how-passphrase = Frase de contraseña
+
+interface-history-how-patient = Ocultado por usted
+
+interface-history-how-picked = Importado desde un archivo elegido
+
+interface-history-how-recoveryKey = Clave de recuperación
+
+interface-history-how-replaced = Restaurado reemplazando una bóveda existente
+
+interface-history-intro = Lista de solo lectura de los eventos guardados en su bóveda cifrada.
+
+interface-history-laterSessionNotRecorded = No se registró al menos una sesión posterior.
+
+interface-history-loading = Comprobando y leyendo todo el historial…
+
+interface-history-moreFolders =
+    { $count ->
+    [one] { $count } carpeta más
+    [many] { $count } carpetas más
+    *[other] { $count } carpetas más
+    }
+
+interface-history-name = Nombre
+
+interface-history-personRootFolder = Nivel superior de una persona
+
+interface-history-place = Dónde
+
+interface-history-previousName = Nombre anterior
+
+interface-history-previousSession = Sesión anterior
+
+interface-history-rootFolder = Nivel superior (ubicación no registrada)
+
+interface-history-scopeNote = Algunas entradas no identifican a la persona ni distinguen carpetas con el mismo nombre. Las etiquetas de las carpetas son los nombres registrados, no rutas completas. Las ubicaciones guardadas pueden estar abreviadas.
+
+interface-history-sessionLockedAutomatically = Bloqueada automáticamente el { $date }
+
+interface-history-sessionLockedByApp = Bloqueada por la aplicación el { $date }
+
+interface-history-sessionLockedByPerson = Bloqueada por usted el { $date }
+
+interface-history-sessionNotRecorded = La sesión anterior no quedó registrada.
+
+interface-history-title = Historial de auditoría
+
+interface-history-to = Hasta
+
+interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también conserva un historial: cuándo se abrió la bóveda; cuándo se configuró o cambió su frase de contraseña o clave de recuperación, y cuándo se guardó o restauró una copia de seguridad; cuándo se añadió cada perfil de paciente y se creó, cambió de nombre o movió cada carpeta; y cuándo se añadió, cambió de nombre, movió, ocultó, restauró o guardó fuera de myCarlos cada documento, y dónde se guardó. Se cifra junto con todo lo demás. Puede consultarlo aquí; myCarlos nunca lo modifica ni lo elimina.

@@ -123,14 +123,14 @@ describe("the record library's sidebar, as a screen reader reads it", () => {
   });
 
   for (const locale of ["en", "fr", "zh-TW"] as const) {
-    it(`says what each count counts, after the visible name, and which section is open (${locale})`, async () => {
+    it(`says what each count counts, after the visible name, and that Security is open while Hidden is (${locale})`, async () => {
       setLocaleOverride(locale);
       const { container } = render(
         <LibrarySidebar
           profileName="FAKE Avery"
           people={[{ id: "p1", displayName: "FAKE Avery", createdAtMs: 1 }]}
           profileId="p1"
-          section="security"
+          section="hidden"
           sharedNew={0}
           onOpenShared={vi.fn()}
           vaultTotals={{ documents: 3, folders: 1 }}
@@ -149,8 +149,6 @@ describe("the record library's sidebar, as a screen reader reads it", () => {
           drag={drag}
           onOpenPerson={vi.fn()}
           onOpenFolder={vi.fn()}
-          hiddenCount={1}
-          onOpenHidden={vi.fn()}
           onOpenSecurity={vi.fn()}
           onOpenPreferences={vi.fn()}
         />,
@@ -165,10 +163,7 @@ describe("the record library's sidebar, as a screen reader reads it", () => {
         tr("sidebar.documents", 1),
       );
       expect(button("FAKE Results")).toContain(tr("sidebar.documents", 2));
-      expect(
-        button(translate(locale, "interface.HiddenDocuments.hidden")),
-      ).toContain(tr("sidebar.documents", 1));
-      // The open section is said to be the current one; the others are not.
+      // Hidden is part of Security: Security is the current section.
       expect(button(translate(locale, "security.title"))).toMatch(
         /, current page$/,
       );

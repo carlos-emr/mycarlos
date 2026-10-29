@@ -15,6 +15,7 @@ import {
 } from "./PersonDetails";
 import type { PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
+import { SpokenCount } from "./SpokenCount";
 import {
   useEffect,
   useRef,
@@ -57,6 +58,12 @@ interface SecuritySettingsProps {
     id: string,
     details: PersonDetails,
   ) => Promise<boolean>;
+  hiddenCount: number;
+  focusHiddenEntry?: boolean;
+  hiddenScopeName: string;
+  onOpenHidden: () => void;
+  focusAuditEntry?: boolean;
+  onOpenAuditHistory: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -148,6 +155,12 @@ export function SecuritySettings({
   onLock,
   onChangePassphrase,
   onCreateProfile,
+  hiddenCount,
+  focusHiddenEntry = false,
+  hiddenScopeName,
+  onOpenHidden,
+  focusAuditEntry = false,
+  onOpenAuditHistory,
   people = [],
   onUpdateProfileDetails,
   recoveryKeySetAtMs,
@@ -160,6 +173,14 @@ export function SecuritySettings({
   onSpeedTest,
 }: SecuritySettingsProps) {
   const { t } = useI18n();
+  const hiddenEntryRef = useRef<HTMLButtonElement | null>(null);
+  const auditEntryRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (focusHiddenEntry) hiddenEntryRef.current?.focus();
+  }, [focusHiddenEntry]);
+  useEffect(() => {
+    if (focusAuditEntry) auditEntryRef.current?.focus();
+  }, [focusAuditEntry]);
   const [speedTest, setSpeedTest] = useState<{
     running: boolean;
     result: UiText;
@@ -295,11 +316,35 @@ export function SecuritySettings({
                 "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
               )}
             </p>
+            <button
+              ref={hiddenEntryRef}
+              className="button hidden-settings-entry"
+              type="button"
+              onClick={onOpenHidden}
+            >
+              <Icon name="hidden" />
+              <span className="hidden-entry-copy">
+                {translateNow("interface.HiddenDocuments.hidden")}{" "}
+                <SpokenCount count={hiddenCount} />{" "}
+                <span className="hidden-entry-scope">{hiddenScopeName}</span>
+              </span>
+            </button>
             <p>
               {translateNow(
                 "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
               )}
             </p>
+            <button
+              ref={auditEntryRef}
+              className="button hidden-settings-entry"
+              type="button"
+              onClick={onOpenAuditHistory}
+            >
+              <Icon name="clock" />
+              <span className="hidden-entry-copy">
+                {translateNow("interface.history.title")}
+              </span>
+            </button>
             <p>
               {translateNow(
                 "interface.SecuritySettings.startingAgainOrRestoringABackupOver",

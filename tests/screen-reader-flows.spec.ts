@@ -16,8 +16,7 @@ import {
 // ".?" in the patterns). screenReaderSmoke adds axe, a name for every
 // control, visible words leading each name (WCAG 2.5.3) and heading order.
 //
-// Clinic code and the history view are not on this branch yet; they get the
-// same checks when they are.
+// Clinic code is not on this branch yet; it gets the same checks when it is.
 
 test.beforeEach(({}, testInfo) => {
   test.skip(
@@ -55,7 +54,6 @@ test("the library: the sidebar says what it counts, controls lead with their vis
       - button "Shared with me"
       - button "Security"
       - button "Preferences"
-      - button /^Hidden .?0.? documents$/
   `);
   await expect(
     nav.getByRole("button", { name: /^My records/ }),
@@ -150,20 +148,30 @@ test("Security: a clinic waiting to approve this device says so", async ({
   await expectOnlyFakedCommands(page);
 });
 
-test("Hidden: each document says it is hidden, Restore says what, and restoring is read out", async ({
+test("Hidden: Security's entry says what it counts, each document says it is hidden, and restoring is read out", async ({
   page,
 }) => {
   await fakeVault(page, "unlocked", { hiddenDocument: true });
   await recordAnnouncements(page);
   await unlocked(page);
-  await openSection(page, "Hidden");
+  await openSection(page, "Security");
   const main = page.getByRole("main");
+  // Hidden is reached from Security, and its count says what it counts.
+  const entry = main.getByRole("button", { name: /^Hidden .?1.? document/ });
+  await entry.click();
   await expect(main).toMatchAriaSnapshot(`
     - main:
+      - button /Back to Security/
       - heading "Hidden" [level=1]
       - article /FAKE Old Referral\\.pdf.?, hidden/:
         - button /^Restore .?FAKE Old Referral\\.pdf.?$/
   `);
+  // Still within Security, for a screen reader as on screen.
+  await expect(
+    page
+      .getByRole("navigation", { name: "Record library" })
+      .getByRole("button", { name: "Security" }),
+  ).toHaveAttribute("aria-current", "page");
   await screenReaderSmoke(page, "Hidden");
   await main
     .getByRole("button", { name: /^Restore .?FAKE Old Referral\.pdf/ })
