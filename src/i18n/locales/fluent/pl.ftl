@@ -1465,7 +1465,7 @@ portal-clinicIssue = { $clinic }: { $detail }
 
 portal-code = Kod połączenia
 
-portal-compare = Proszę poprosić personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
+portal-compare = Proszę zwrócić się do personelu przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
 
 portal-confirmationsPending = Zapisane dokumenty oczekujące na potwierdzenie odbioru: { $count }. Proszę sprawdzić ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.
 
@@ -1515,7 +1515,7 @@ portal-link = Połącz i poproś o zatwierdzenie
 
 portal-matchPerson = Dopasuj dane z dokumentu
 
-portal-notRequested = Proszę poprosić przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
+portal-notRequested = Proszę zwrócić się do przychodni o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
 
 portal-partialResult = Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: { $added }. Nie udało się zweryfikować dokumentów: { $refused }.
 
