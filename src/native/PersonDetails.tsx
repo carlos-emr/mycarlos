@@ -317,7 +317,11 @@ export function PersonDetailsList({
                     fullName: person.fullName,
                     birthDate: person.birthDate,
                   },
-                  birthDateUnknown: !person.birthDate,
+                  // A person with no details yet (a profile just made)
+                  // starts with the date box open; "unknown" is ticked
+                  // only once a full name was saved without a date.
+                  birthDateUnknown:
+                    !person.birthDate && Boolean(person.fullName),
                 })
               }
             >
