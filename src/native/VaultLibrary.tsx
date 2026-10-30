@@ -40,7 +40,7 @@ import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
 import { nativeLocalModel } from "../ai/localModel";
-import { ModelNotInstalled, type ModelStatus } from "../ai/types";
+import type { ModelStatus } from "../ai/types";
 import { AnonymizePreview } from "./AnonymizePreview";
 import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
@@ -94,11 +94,6 @@ const SORT_CHOICES: ReadonlyArray<[NativeSort, MessageKey]> = [
   ["newest", "interface.VaultLibrary.newestFirst"],
   ["name", "interface.VaultLibrary.nameAZ"],
 ];
-
-/** The whole document's text for the AI helper. Part B's
- * `bridge.documentText` (#72) takes its place; until then no model can be
- * installed, so nothing asks for it. */
-const noDocumentText = () => Promise.reject(new ModelNotInstalled());
 
 export function VaultLibrary({
   bridge,
@@ -2476,7 +2471,11 @@ export function VaultLibrary({
                 computer
                   ? {
                       model: localModel,
-                      loadText: noDocumentText,
+                      // Part B's whole-document text (#171). A locked PDF
+                      // is refused there, which the panel says as a failure;
+                      // passing the reader's document password is the model
+                      // step's work.
+                      loadText: () => bridge.documentText(readerRecord.id),
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
                         setSection("preferences");
